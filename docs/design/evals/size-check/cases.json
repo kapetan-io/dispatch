@@ -1,0 +1,245 @@
+[
+  {
+    "name": "shape",
+    "input": "shape.md",
+    "expected": "TOO_BIG",
+    "deferred": [
+      "materialized POSIX-filesystem view or graph-query product (a separate future product)",
+      "PR-review service: PR entity, reviews, comments, checks, PR events",
+      "merge coordinator that serializes protected-branch merges (post-MVP)",
+      "per-ref push queue (held in reserve)",
+      "compaction aggressiveness tuning; contention and compaction metrics surface",
+      "scale backend (Scylla + FoundationDB); horizontal scale",
+      "cross-fork dedup with OID-level reference counting",
+      "commit-graph tree extraction",
+      "rebase, squash and cherry-pick mutations",
+      "fork",
+      "LFS",
+      "git:// and SSH transports",
+      "identity and authz service (Layers 1 and 2); granular scope enforcement",
+      "SSE gateway",
+      "promisor-backend HasMany support",
+      "activity-based storage tiering (hot, warm, cold)"
+    ]
+  },
+  {
+    "name": "tiger",
+    "input": "tiger.md",
+    "expected": "TOO_BIG",
+    "deferred": [
+      "(nothing the judge should fail on: Part V's Adoption commits to every chain, including effects and canonical form, and 'The honest limits' states costs, not deferrals)"
+    ]
+  },
+  {
+    "name": "masked-blob",
+    "input": "masked-blob.md",
+    "expected": "FITS",
+    "deferred": [
+      "(nothing deferred; ENG-123's sideband PackError fix is a separate item)"
+    ]
+  },
+  {
+    "name": "did-you-mean",
+    "input": "did-you-mean.md",
+    "expected": "FITS",
+    "deferred": [
+      "an endpoint list in the generated 404 (stated limitation)",
+      "did-you-mean for undeclared guesses (stated limitation)"
+    ]
+  },
+  {
+    "name": "fetch",
+    "input": "fetch.md",
+    "expected": null,
+    "deferred": [
+      "shallow clone and fetch (N-01 to N-07)",
+      "partial clone and filter (N-08 to N-17)",
+      "protocol v0 fetch and v2-to-v0 fallback, including v0 ref-tips-only want-validation",
+      "streaming-OFS resolver (RS-008)",
+      "want-acceptance via allowReachableSHA1InWant or allowAnySHA1InWant",
+      "exercising the D24 bounded-ancestry primitive (only its contract is drawn)",
+      "delta-compressed fetch packs",
+      "Tier-1 commit-graph record persistence",
+      "generation-number pruning; Tier-2 reachability bitmaps",
+      "auth and tenant identity; per-tenant quotas, rate limits and metering",
+      "multi-round negotiation beyond a single round per request",
+      "seed-fetch observability surface"
+    ]
+  },
+  {
+    "name": "graph",
+    "input": "graph.md",
+    "expected": "TOO_BIG",
+    "deferred": [
+      "mutations: applyDiff, commit.create, merge, lifecycle",
+      "repo.mergeability",
+      "webhooks and eventing",
+      "lifecycle metadata on Repo",
+      "rename and copy detection (detect_renames)",
+      "rich revision syntax (~, ^, A..B, :path)",
+      "Layer-3 reachability enforcement",
+      "activating repo:* and pr:* scope categories",
+      "range requests or resumable streaming on files.get",
+      "batched object reads (GetMany)",
+      "commit-graph acceleration (generation numbers, scale backend)",
+      "repos.list with identity-service Layer-1 RBAC",
+      "a whole-diff octet-stream variant of commits.diff"
+    ]
+  },
+  {
+    "name": "shallow",
+    "input": "shallow.md",
+    "expected": null,
+    "deferred": [
+      "DoS depth and deepen-since caps (fairness and tenancy hardening)",
+      "protocol v0 shallow negotiation",
+      "packfile-uris or ref-in-want interaction with shallow",
+      "delta-compressed shallow packs",
+      "bitmap or generation-number accelerated bounded walk",
+      "reachability-permission or tenancy interaction with the shallow boundary",
+      "deepen-not extended revision syntax",
+      "a shallow-depth observability dimension"
+    ]
+  },
+  {
+    "name": "partial",
+    "input": "partial.md",
+    "expected": null,
+    "deferred": [
+      "sparse:oid filters",
+      "general tree:<n> for n of 1 or more",
+      "combine: filters",
+      "shallow clone",
+      "delta-compressed packs",
+      "bitmap-accelerated filtered enumeration (scale backend)",
+      "the scale-backend type and size mask contract (recorded, not built)"
+    ]
+  },
+  {
+    "name": "auth",
+    "input": "auth.md",
+    "expected": null,
+    "deferred": [
+      "Layer-3 reachability enforcement",
+      "ref-level write scoping (Grant.Refs is modeled, not enforced)",
+      "protected-ref enforcement",
+      "Layer-1 coarse RBAC; Layer-2 capability-token attenuation",
+      "graph, PR and admin operation enforcement",
+      "SSE-gateway event authorization",
+      "short-lived, minted or exchanged tokens; OIDC",
+      "a real identity service; caching and revoke-event subscription",
+      "forge-policy authz",
+      "Negotiate auth",
+      "TLS for Basic and Bearer"
+    ]
+  },
+  {
+    "name": "slip-stream",
+    "input": "slip-stream.md",
+    "expected": "TOO_BIG",
+    "heldout": true,
+    "deferred": [
+      "mutable partition count or /streams.repartition (v2)",
+      "partition-map-version wire field (v2)",
+      "ordering semantics across a resize (v2)",
+      "at-time start position",
+      "multi-tenancy, RBAC, namespaces, API keys, any authn or authz",
+      "scheduled delivery (EnqueueAt)",
+      "key-shared consumption within a shared subscription",
+      "clustering, leader election, multi-node coordination",
+      "embedded durable single-binary backend (BadgerDB)",
+      "server-side dedup, transactions, exactly-once",
+      "leases, per-event acks, retries, redelivery, dead-letter",
+      "cold-read coalescing of identical scans",
+      "read-through LRU cache over historical blocks",
+      "straddle-splitting part-hot and part-cold reads",
+      "remote set-degraded admin endpoint",
+      "degrade-and-serve readiness mode"
+    ]
+  },
+  {
+    "name": "change-bot",
+    "input": "change-bot.md",
+    "expected": "TOO_BIG",
+    "heldout": true,
+    "deferred": [
+      "field renames",
+      "dependency upgrades or major-version import-path rewrites",
+      "autonomous change detection",
+      "cross-repo or public-API moves on the no-review path",
+      "splitting a package across shards or tracks",
+      "hand-written shims on the Track-A path",
+      "go build subprocess or linker-level failure coverage",
+      "engine long tail: dot or aliased imports, embedded fields, generics, go: directives",
+      "real-corpus false-reject measurement and full taint inventory",
+      "unmodeled name-reflective mechanisms and third-party reflection-keyed registries"
+    ]
+  },
+  {
+    "name": "tiger-wave1",
+    "input": "tiger-wave1.md",
+    "expected": "TOO_BIG",
+    "heldout": true,
+    "deferred": [
+      "tiger pin subcommand",
+      "//tiger:bounded, dismissal and generic //tiger:<rule-id> deviation directives",
+      "SSA analyzers: norecursion, maporder, poolzero, effects, frames, variant, contracts",
+      "cross-package-fact analyzers: invariantrefs, restrictions, surfacediff, closedworld",
+      "wave 1.5 tune-heavy or heuristic analyzers (noabbrev, assertdensity, domaintypes and the rest)",
+      "chain 1 ownership analyzers: ownership, escapecheck, chandecl extensions",
+      "TS-M10 enforcement of //tiger:batched",
+      "activating the reported severity level",
+      "machine-verified loop termination (chain 4 variant)",
+      "direction-aware config comparison in tiger golangci",
+      "reimplementing auto rules golangci-lint already enforces",
+      "auto-fix, editor or LSP integration, dashboards",
+      "TS-D06 ratchet tooling and the refactor prover",
+      "blocking, annotating or tracker-linking skipped tests",
+      "per-verb argument grammars (effect lattices, frame sets)",
+      "a bespoke config file"
+    ]
+  },
+  {
+    "name": "heartbeat",
+    "input": "heartbeat.md",
+    "expected": "FITS",
+    "heldout": true,
+    "deferred": [
+      "heartbeats for unstructured octet-stream streams",
+      "client-to-server heartbeats or pings",
+      "automatic reconnection or retry on heartbeat timeout",
+      "heartbeats for bidirectional streaming",
+      "heartbeat interval negotiation"
+    ]
+  },
+  {
+    "name": "dlq",
+    "input": "dlq.md",
+    "expected": "FITS",
+    "heldout": true,
+    "deferred": [
+      "storage-backend changes",
+      "changing lifecycle dead-item detection or delete-after-confirm sequencing",
+      "cross-Logical or cluster-level coordination",
+      "reworking opportunistic distribution",
+      "type-system enforcement of Store writes behind a loop-only seam",
+      "deterministic co-location of dead-lettered items"
+    ]
+  },
+  {
+    "name": "docs-cmd",
+    "input": "docs-cmd.md",
+    "expected": null,
+    "heldout": true,
+    "deferred": [
+      "alternative renderers (Swagger UI, Stoplight)",
+      "theming, branding, custom CSS",
+      "auth on the served docs",
+      "hosting, deployment or publishing",
+      "multiple specs or multi-file doc sites",
+      "bundling or dereferencing external $refs",
+      "watching files beyond the top-level spec",
+      "Codespaces and Gitpod remote URL detection"
+    ]
+  }
+]

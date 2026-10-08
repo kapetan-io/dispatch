@@ -1,0 +1,8 @@
+{
+  "name": "dispatch",
+  "description": "An autonomous build workflow for Claude Code. Design a feature with you, then build approved Linear tickets into merged pull requests.",
+  "author": {
+    "name": "Derrick J. Wippler"
+  },
+  "repository": "https://github.com/kapetan-io/dispatch"
+}
