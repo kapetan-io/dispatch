@@ -17,8 +17,11 @@ type Entry struct {
 	LastStatus     string `json:"last_status"`
 	LaunchFailures int    `json:"launch_failures"`
 	// PendingComment is an escalation comment Linear has not accepted yet.
-	// The ticket is already in Needs Human, and each tick retries it.
+	// The ticket is already in Needs Human, and each tick retries it by
+	// TicketID, whatever state the ticket has moved to since.
 	PendingComment string `json:"pending_comment,omitempty"`
+	// TicketID is Linear's internal id for the ticket a pending comment goes on.
+	TicketID string `json:"ticket_id,omitempty"`
 }
 
 // Cache maps a ticket identifier such as ENG-123 to its entry.

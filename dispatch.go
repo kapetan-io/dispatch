@@ -267,18 +267,20 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 	}
 
 	// A comment that failed after its ticket moved to Needs Human is the only
-	// record of why, and Plan never revisits a Needs Human ticket.
-	for _, t := range tickets {
-		e := c[t.Identifier]
+	// record of why, and Plan never revisits a Needs Human ticket. It is
+	// retried from the cache, because the ticket may since have left the
+	// started states that ManagedTickets reads.
+	for id, e := range c {
 		if e.PendingComment == "" {
 			continue
 		}
-		if err := lin.Comment(ctx, t.ID, e.PendingComment); err != nil {
-			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while commenting on %s: %v\n", t.Identifier, err)
+		if err := lin.Comment(ctx, e.TicketID, e.PendingComment); err != nil {
+			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while commenting on %s: %v\n", id, err)
 			continue
 		}
 		e.PendingComment = ""
-		c[t.Identifier] = e
+		e.TicketID = ""
+		c[id] = e
 	}
 
 	launch := opts.Launcher
@@ -351,6 +353,7 @@ func escalate(ctx context.Context, lin linear.Client, cfg config.Config, c cache
 	if err := lin.Comment(ctx, t.ID, body); err != nil {
 		e := c[t.Identifier]
 		e.PendingComment = body
+		e.TicketID = t.ID
 		c[t.Identifier] = e
 		return fmt.Errorf("moved to Needs Human, but the comment failed and will be retried next tick (%q): %w", body, err)
 	}

@@ -294,8 +294,9 @@ func TestTickPostsAnEscalationCommentThatFailedOnAnEarlierTick(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stderr, "while escalating ENG-1: moved to Needs Human, but the comment failed")
 
-	// The move went through, so Linear now reports the ticket in Needs Human.
-	h.tickets(ticket("ENG-1", "Needs Human", ""))
+	// The ticket has since left the started states the dispatcher reads, so
+	// the retry can't depend on finding it among managed tickets.
+	h.tickets()
 	h.linear.failComments(false)
 
 	_, err = h.run("tick")
@@ -306,6 +307,7 @@ func TestTickPostsAnEscalationCommentThatFailedOnAnEarlierTick(t *testing.T) {
 	assert.Equal(t, "MoveTicket", mutations[0].operation)
 	assert.Equal(t, "CommentTicket", mutations[1].operation)
 	assert.Contains(t, mutations[1].variables["body"], `has no "repo" label`)
+	assert.Equal(t, "uuid-ENG-1", mutations[1].variables["id"])
 
 	_, err = h.run("tick")
 	require.NoError(t, err)
