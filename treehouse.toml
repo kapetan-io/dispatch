@@ -1,0 +1,41 @@
+max_trees = 4
+root = ""
+
+# Worktree root directory (relative to repo root or absolute path).
+# Worktrees are placed under {root}/.treehouse/. Default: $HOME
+# Override per-command with the --root flag or the TREEHOUSE_ROOT env var.
+# Use "." to keep the pool in-project at <repo>/.treehouse/, next to the
+# code and removed with the project. Example: root = "."
+
+# Branch new and recycled worktrees are cut from.
+# Unset (default) infers it from the repository: origin/HEAD, then the
+# checked-out branch, then init.defaultBranch.
+# When set, the branch must exist locally or on origin; treehouse fails
+# rather than falling back to the inferred default.
+# Override per-command with the --base flag. Example: base_branch = "develop"
+
+# Unique worktree directory names.
+# Unset (default) names every slot's directory after the repository, so
+# tooling that derives per-checkout identity from the directory name reads
+# every slot as the same checkout.
+# Set true to name new slots <repo>-<slot>; worktrees already in the pool
+# keep their paths either way.
+# Override per-command with the --unique-leaf flag or the
+# TREEHOUSE_UNIQUE_LEAF env var. Example: unique_leaf = true
+
+# Where a newly created pool slot is placed.
+# Unset (default) uses {pool}/{slot}/{repo}. Placeholders: {pool}, {slot}
+# (required), {repo}, {repo_parent}; one of {pool} or {repo} is required as
+# well, to scope the template to this repository. {repo_parent} does not count:
+# two repositories side by side expand it identically. {repo} alone can still
+# collide between two repositories whose directories share a name.
+# Worktrees already in the pool keep their recorded paths.
+# Override per-command with the --worktree-path flag or the
+# TREEHOUSE_WORKTREE_PATH env var.
+# Example: worktree_path = "{repo_parent}/{repo}-{slot}"
+
+# Opt-in tracked-file copy-on-write sharing for fresh Git slots on macOS/APFS.
+# Values: off (default), fresh. Existing slots and ignored output are untouched.
+# Requires no concurrent destination writers during setup; see README.
+# Override with --apfs-sharing or TREEHOUSE_APFS_SHARING.
+# Example: apfs_sharing = "fresh"
