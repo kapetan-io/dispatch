@@ -1,0 +1,466 @@
+package dispatch_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/kapetan-io/dispatch"
+)
+
+func TestTickDryRunListsLaunchWithoutActing(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	out, err := h.run("tick", "--dry-run")
+	require.NoError(t, err)
+
+	assert.Equal(t, "launch ENG-1\n", out)
+	assert.Empty(t, h.launches())
+	assert.Empty(t, h.linear.mutations())
+}
+
+func TestTickLaunchesApprovedTicketWithNoWorker(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "launch ENG-1: ok\n", out)
+	assert.Equal(t, []string{h.repo + " ENG-1 thrawn01/eng-1 --model sonnet --no-focus"}, h.launches())
+	assert.Empty(t, h.linear.mutations())
+}
+
+func TestTickLeavesTicketWithLiveWorker(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "working")
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, out)
+	assert.Empty(t, h.launches())
+}
+
+func TestTickRelaunchesWhenWorkspaceHasNoClaude(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "")
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Len(t, h.launches(), 1)
+}
+
+func TestTickWaitsWhenWorkerCapIsFull(t *testing.T) {
+	h := newHarness(t)
+	h.config("max_in_progress = 1\n")
+	h.tickets(
+		ticket("ENG-1", "In Progress", "dispatch"),
+		ticket("ENG-2", "In Progress", "dispatch"),
+	)
+	h.worker("ENG-1", "idle")
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "wait ENG-2: 1 of 1 workers already running\n", out)
+	assert.Empty(t, h.launches())
+}
+
+func TestTickIgnoresTicketsThatAreNotInProgress(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(
+		ticket("ENG-1", "In Review", "dispatch"),
+		ticket("ENG-2", "Needs Human", "dispatch"),
+	)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, out)
+	assert.Empty(t, h.launches())
+}
+
+func TestTickEscalatesAfterRepeatedLaunchFailures(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.launchResult(`{"status":"pool_error","detail":"treehouse lease failed"}`)
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	assert.Empty(t, h.linear.mutations())
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "escalate ENG-1: launch failed 2 times")
+	mutations := h.linear.mutations()
+	require.Len(t, mutations, 2)
+	assert.Equal(t, "CommentTicket", mutations[0].operation)
+	assert.Contains(t, mutations[0].variables["body"], "treehouse lease failed")
+	assert.Equal(t, "MoveTicket", mutations[1].operation)
+	assert.Equal(t, needsHumanID, mutations[1].variables["state"])
+}
+
+func TestTickNeverEscalatesForAFullPool(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.launchResult(`{"status":"pool_exhausted","detail":"all 4/4 pool trees are taken"}`)
+
+	for range 3 {
+		_, err := h.run("tick")
+		require.NoError(t, err)
+	}
+
+	assert.Len(t, h.launches(), 3)
+	assert.Empty(t, h.linear.mutations())
+}
+
+func TestTickSkipsTicketsItNeverLaunches(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		ticket fakeTicket
+		want   string
+	}{
+		{
+			name:   "ParentTicket",
+			ticket: withChildren(ticket("ENG-1", "In Progress", "dispatch")),
+			want:   "skip ENG-1: has sub-issues, and a parent never gets a worker\n",
+		},
+		{
+			name:   "DesignTicket",
+			ticket: withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design"),
+			want:   "skip ENG-1: carries \"design\", which this dispatcher does not launch yet\n",
+		},
+		{
+			name:   "ReviewTicket",
+			ticket: withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"),
+			want:   "skip ENG-1: carries \"design-review\", which this dispatcher does not launch yet\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.tickets(test.ticket)
+
+			out, err := h.run("tick")
+			require.NoError(t, err)
+
+			assert.Equal(t, test.want, out)
+			assert.Empty(t, h.launches())
+			assert.Empty(t, h.linear.mutations())
+		})
+	}
+}
+
+func TestTickEscalatesTicketItCannotPlaceInARepo(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		repo     string
+		wantBody string
+	}{
+		{
+			name:     "NoRepoLabel",
+			repo:     "",
+			wantBody: "has no \"repo\" label",
+		},
+		{
+			name:     "RepoNotConfigured",
+			repo:     "tiger",
+			wantBody: "its repo \"tiger\" is not in the dispatcher's config",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.tickets(ticket("ENG-1", "In Progress", test.repo))
+
+			_, err := h.run("tick")
+			require.NoError(t, err)
+
+			assert.Empty(t, h.launches())
+			mutations := h.linear.mutations()
+			require.Len(t, mutations, 2)
+			assert.Contains(t, mutations[0].variables["body"], test.wantBody)
+			assert.Equal(t, needsHumanID, mutations[1].variables["state"])
+		})
+	}
+}
+
+func TestTickExitsWhenAnotherTickHoldsTheLock(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	require.NoError(t, os.MkdirAll(h.state, 0o755))
+	held, err := os.OpenFile(filepath.Join(h.state, "tick.lock"), os.O_RDWR|os.O_CREATE, 0o644)
+	require.NoError(t, err)
+	defer func() { _ = held.Close() }()
+	require.NoError(t, syscall.Flock(int(held.Fd()), syscall.LOCK_EX|syscall.LOCK_NB))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, out)
+	assert.Empty(t, h.launches())
+}
+
+func TestRunRejectsUnknownCommand(t *testing.T) {
+	h := newHarness(t)
+
+	_, err := h.run("launch")
+
+	require.ErrorContains(t, err, `unknown command "launch"`)
+}
+
+const needsHumanID = "state-needs-human"
+
+// harness runs the dispatcher against a fake Linear server and fake herdr,
+// treehouse and launcher commands, all rooted in one temp directory.
+type harness struct {
+	t      *testing.T
+	dir    string
+	repo   string
+	state  string
+	extra  string
+	linear *fakeLinear
+}
+
+func newHarness(t *testing.T) *harness {
+	dir := t.TempDir()
+	h := &harness{
+		t:      t,
+		dir:    dir,
+		repo:   filepath.Join(dir, "repo"),
+		state:  filepath.Join(dir, "state"),
+		linear: newFakeLinear(t),
+	}
+	require.NoError(t, os.MkdirAll(h.repo, 0o755))
+	h.writeFile("workspaces.json", `{"result":{"workspaces":[]}}`)
+	h.writeFile("agents.json", `{"result":{"agents":[]}}`)
+	h.writeFile("trees.json", `[]`)
+	h.writeFile("launch.json", `{"status":"ok"}`)
+	h.script("herdr", `case "$1 $2" in
+"workspace list") cat "`+dir+`/workspaces.json" ;;
+"agent list") cat "`+dir+`/agents.json" ;;
+*) exit 2 ;;
+esac`)
+	h.script("treehouse", `cat "`+dir+`/trees.json"`)
+	h.script("launcher", `echo "$PWD $*" >> "`+dir+`/launches.log"
+cat "`+dir+`/launch.json"`)
+	return h
+}
+
+func (h *harness) config(extra string) {
+	h.extra = extra
+}
+
+func (h *harness) run(args ...string) (string, error) {
+	h.writeFile("config.toml", h.extra+fmt.Sprintf("\n[repos]\ndispatch = %q\n", h.repo))
+	var stdout, stderr bytes.Buffer
+	err := dispatch.Run(context.Background(), args, dispatch.Options{
+		ConfigPath: filepath.Join(h.dir, "config.toml"),
+		StateDir:   h.state,
+		LinearURL:  h.linear.server.URL,
+		LinearKey:  "test-key",
+		Herdr:      filepath.Join(h.dir, "herdr"),
+		Treehouse:  filepath.Join(h.dir, "treehouse"),
+		Launcher:   filepath.Join(h.dir, "launcher"),
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+	})
+	return stdout.String(), err
+}
+
+func (h *harness) tickets(tickets ...fakeTicket) {
+	h.linear.setTickets(tickets)
+}
+
+// worker gives a ticket a leased tree and a herdr workspace on it. An empty
+// status means the workspace has no Claude agent.
+func (h *harness) worker(ticket, status string) {
+	tree := filepath.Join(h.dir, "trees", ticket)
+	trees := []map[string]string{}
+	require.NoError(h.t, json.Unmarshal(h.readFile("trees.json"), &trees))
+	trees = append(trees, map[string]string{"path": tree, "status": "leased", "lease_holder": ticket})
+	h.writeJSON("trees.json", trees)
+
+	var ws struct {
+		Result struct {
+			Workspaces []map[string]any `json:"workspaces"`
+		} `json:"result"`
+	}
+	require.NoError(h.t, json.Unmarshal(h.readFile("workspaces.json"), &ws))
+	id := "w-" + ticket
+	ws.Result.Workspaces = append(ws.Result.Workspaces, map[string]any{
+		"workspace_id": id,
+		"label":        ticket,
+		"worktree":     map[string]string{"checkout_path": tree},
+	})
+	h.writeJSON("workspaces.json", ws)
+
+	if status == "" {
+		return
+	}
+	var agents struct {
+		Result struct {
+			Agents []map[string]string `json:"agents"`
+		} `json:"result"`
+	}
+	require.NoError(h.t, json.Unmarshal(h.readFile("agents.json"), &agents))
+	agents.Result.Agents = append(agents.Result.Agents, map[string]string{
+		"agent":        "claude",
+		"agent_status": status,
+		"pane_id":      id + ":p1",
+		"workspace_id": id,
+	})
+	h.writeJSON("agents.json", agents)
+}
+
+func (h *harness) launchResult(result string) {
+	h.writeFile("launch.json", result)
+}
+
+func (h *harness) launches() []string {
+	b, err := os.ReadFile(filepath.Join(h.dir, "launches.log"))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	require.NoError(h.t, err)
+	return strings.Split(strings.TrimSpace(string(b)), "\n")
+}
+
+func (h *harness) script(name, body string) {
+	require.NoError(h.t, os.WriteFile(filepath.Join(h.dir, name), []byte("#!/usr/bin/env bash\n"+body+"\n"), 0o755))
+}
+
+func (h *harness) writeFile(name, content string) {
+	require.NoError(h.t, os.WriteFile(filepath.Join(h.dir, name), []byte(content), 0o644))
+}
+
+func (h *harness) writeJSON(name string, v any) {
+	b, err := json.Marshal(v)
+	require.NoError(h.t, err)
+	h.writeFile(name, string(b))
+}
+
+func (h *harness) readFile(name string) []byte {
+	b, err := os.ReadFile(filepath.Join(h.dir, name))
+	require.NoError(h.t, err)
+	return b
+}
+
+// fakeTicket is one node of Linear's assignedIssues response.
+type fakeTicket map[string]any
+
+// ticket builds an ai-labeled ENG ticket in status, labeled with repo when
+// repo is not empty.
+func ticket(id, status, repo string) fakeTicket {
+	labels := []map[string]any{{"name": "ai", "parent": nil}}
+	if repo != "" {
+		labels = append(labels, map[string]any{"name": repo, "parent": map[string]string{"name": "repo"}})
+	}
+	return fakeTicket{
+		"id":         "uuid-" + id,
+		"identifier": id,
+		"title":      "ticket " + id,
+		"branchName": "thrawn01/" + strings.ToLower(id),
+		"state":      map[string]string{"name": status},
+		"team":       map[string]string{"key": "ENG"},
+		"labels":     map[string]any{"nodes": labels},
+		"children":   map[string]any{"nodes": []any{}},
+	}
+}
+
+func withChildren(t fakeTicket) fakeTicket {
+	t["children"] = map[string]any{"nodes": []any{map[string]string{"id": "child"}}}
+	return t
+}
+
+func withLabel(t fakeTicket, name string) fakeTicket {
+	labels := t["labels"].(map[string]any)["nodes"].([]map[string]any)
+	t["labels"] = map[string]any{"nodes": append(labels, map[string]any{"name": name, "parent": nil})}
+	return t
+}
+
+type mutation struct {
+	operation string
+	variables map[string]string
+}
+
+// fakeLinear answers the dispatcher's GraphQL operations by name and records
+// every mutation.
+type fakeLinear struct {
+	server  *httptest.Server
+	mu      sync.Mutex
+	nodes   []fakeTicket
+	changes []mutation
+}
+
+func newFakeLinear(t *testing.T) *fakeLinear {
+	f := &fakeLinear{}
+	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
+	t.Cleanup(f.server.Close)
+	return f
+}
+
+func (f *fakeLinear) setTickets(nodes []fakeTicket) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nodes = nodes
+}
+
+func (f *fakeLinear) mutations() []mutation {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]mutation(nil), f.changes...)
+}
+
+func (f *fakeLinear) serve(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		OperationName string            `json:"operationName"`
+		Variables     map[string]string `json:"variables"`
+	}
+	if r.Header.Get("Authorization") != "test-key" {
+		http.Error(w, "bad key", http.StatusUnauthorized)
+		return
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var data any
+	switch req.OperationName {
+	case "ManagedTickets":
+		data = map[string]any{"viewer": map[string]any{"assignedIssues": map[string]any{"nodes": f.nodes}}}
+	case "TeamStates":
+		data = map[string]any{"teams": map[string]any{"nodes": []any{map[string]any{
+			"key": "ENG",
+			"states": map[string]any{"nodes": []any{
+				map[string]string{"id": "state-in-progress", "name": "In Progress"},
+				map[string]string{"id": needsHumanID, "name": "Needs Human"},
+			}},
+		}}}}
+	case "MoveTicket", "CommentTicket":
+		f.changes = append(f.changes, mutation{operation: req.OperationName, variables: req.Variables})
+		data = map[string]any{}
+	default:
+		http.Error(w, "unknown operation "+req.OperationName, http.StatusBadRequest)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"data": data})
+}

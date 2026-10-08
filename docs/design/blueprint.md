@@ -204,7 +204,7 @@ Worker state is one of these.
 
 Cheap actions run before launches, because one launch can take over 5 minutes.
 
-1. Take the lock, a directory holding the tick's pid. Exit 0 if a live tick holds it. A lock whose pid is gone is taken over, so a crashed tick never blocks the ticks after it.
+1. Take the lock, an exclusive `flock` on `tick.lock` in the state directory, which records the holder's pid for diagnosis. Exit 0 if another tick holds it. The OS releases the lock when a tick dies, so a crashed tick never blocks the ticks after it.
 2. Read the herdr snapshot, `treehouse status --json` for each configured repo, and the dispatcher cache.
 3. Read Linear in one query. Fetch every ticket holding a lease, every In Progress and In Review ticket assigned to you with the `ai` label, and every child of an In Progress parent.
 4. Tear down trees whose tickets are Done, Canceled or Duplicate. Close the workspace, then `treehouse return --if-lease-holder <ticket> --force`. A dirty or unpushed tree only gets its workspace closed and one comment.
