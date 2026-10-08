@@ -262,7 +262,7 @@ max_in_progress = 4
 nudge_limit = 2
 launch_failure_limit = 2
 plugin_root = "~/Development/dispatch"   # the plugin workers load, and where bin/dispatch-launch lives
-worker_model = "opus"
+worker_model = "sonnet"               # your 2026-08-25 policy: sonnet for coding tickets
 
 [linear]
 api_key_keychain = "dispatch-linear-api-key"   # macOS keychain service; LINEAR_API_KEY overrides
