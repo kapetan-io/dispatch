@@ -246,6 +246,7 @@ func TestRunTicksOnEachIntervalUntilCanceled(t *testing.T) {
 	require.NoError(t, <-done)
 	assert.Contains(t, out, "ticking every 20ms")
 	assert.GreaterOrEqual(t, strings.Count(out, "launch ENG-1: ok"), 3)
+	assert.Regexp(t, `(?m)^\d\d:\d\d:\d\d tick: 1 ticket, 1 action, Linear 1 call in \d+ms \(2400 of 2500 requests left this hour\), took \d+ms$`, out)
 }
 
 func TestRunKeepsTickingAfterAFailedTick(t *testing.T) {
@@ -270,7 +271,7 @@ cat "`+h.dir+`/trees.json"`)
 	cancel()
 
 	require.NoError(t, <-done)
-	assert.Contains(t, stderr, "dispatch: tick failed: while running treehouse status")
+	assert.Regexp(t, `^\d\d:\d\d:\d\d dispatch: tick failed after \d+ms: while running treehouse status`, stderr)
 }
 
 func TestRunRejectsANonPositiveInterval(t *testing.T) {
@@ -495,6 +496,8 @@ func (f *fakeLinear) serve(w http.ResponseWriter, r *http.Request) {
 		OperationName string            `json:"operationName"`
 		Variables     map[string]string `json:"variables"`
 	}
+	w.Header().Set("X-RateLimit-Requests-Limit", "2500")
+	w.Header().Set("X-RateLimit-Requests-Remaining", "2400")
 	if r.Header.Get("Authorization") != "test-key" {
 		http.Error(w, "bad key", http.StatusUnauthorized)
 		return

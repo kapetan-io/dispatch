@@ -38,4 +38,4 @@ Open a herdr window and run:
 dispatch run
 ```
 
-It ticks now and every `interval_minutes` after, printing a timestamped line per tick and one line per action. Ctrl-C stops it. To check what a tick would do without acting, run `dispatch tick --dry-run`.
+It ticks now and every `interval_minutes` after. Each tick prints one line per action, then a summary such as `16:05:07 tick: 0 tickets, 0 actions, Linear 1 call in 240ms (2499 of 2500 requests left this hour), took 405ms`. Ctrl-C stops it. To check what a tick would do without acting, run `dispatch tick --dry-run`.

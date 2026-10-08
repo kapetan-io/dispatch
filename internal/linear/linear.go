@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // DefaultURL is Linear's GraphQL endpoint.
@@ -62,6 +64,35 @@ type Client struct {
 	URL  string
 	Key  string
 	HTTP *http.Client
+	// Stats, when set, records every call this client makes.
+	Stats *Stats
+}
+
+// Stats counts a client's calls to Linear and keeps the hourly request budget
+// Linear reported on the last response. The budget fields stay zero until a
+// response carries them.
+type Stats struct {
+	Calls             int
+	Elapsed           time.Duration
+	RequestsRemaining int
+	RequestsLimit     int
+}
+
+func (s *Stats) record(start time.Time, resp *http.Response) {
+	if s == nil {
+		return
+	}
+	s.Calls++
+	s.Elapsed += time.Since(start)
+	if resp == nil {
+		return
+	}
+	if n, err := strconv.Atoi(resp.Header.Get("X-RateLimit-Requests-Remaining")); err == nil {
+		s.RequestsRemaining = n
+	}
+	if n, err := strconv.Atoi(resp.Header.Get("X-RateLimit-Requests-Limit")); err == nil {
+		s.RequestsLimit = n
+	}
 }
 
 const managedTickets = `query ManagedTickets($label: String!) {
@@ -211,7 +242,9 @@ func (c Client) do(ctx context.Context, operation, query string, variables map[s
 	if httpc == nil {
 		httpc = http.DefaultClient
 	}
+	start := time.Now()
 	resp, err := httpc.Do(req)
+	c.Stats.record(start, resp)
 	if err != nil {
 		return fmt.Errorf("while calling Linear %s: %w", operation, err)
 	}

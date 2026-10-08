@@ -71,7 +71,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		return tick(ctx, opts, *dryRun)
+		_, err := tick(ctx, opts, *dryRun)
+		return err
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ContinueOnError)
 		fs.SetOutput(opts.Stderr)
@@ -128,9 +129,18 @@ func run(ctx context.Context, opts Options, interval time.Duration) error {
 	}
 	_, _ = fmt.Fprintf(opts.Stdout, "dispatch: ticking every %s, Ctrl-C to stop\n", interval)
 	for {
-		_, _ = fmt.Fprintf(opts.Stdout, "--- %s tick\n", time.Now().Format(time.TimeOnly))
-		if err := tick(ctx, opts, false); err != nil && ctx.Err() == nil {
-			_, _ = fmt.Fprintln(opts.Stderr, "dispatch: tick failed:", err)
+		start := time.Now()
+		sum, err := tick(ctx, opts, false)
+		took := time.Since(start).Round(time.Millisecond)
+		switch {
+		case ctx.Err() != nil:
+		case err != nil:
+			_, _ = fmt.Fprintf(opts.Stderr, "%s dispatch: tick failed after %s: %v\n", start.Format(time.TimeOnly), took, err)
+		case sum.skipped:
+			_, _ = fmt.Fprintf(opts.Stdout, "%s tick skipped: another tick is running\n", start.Format(time.TimeOnly))
+		default:
+			_, _ = fmt.Fprintf(opts.Stdout, "%s tick: %s, %s, %s, took %s\n", start.Format(time.TimeOnly),
+				count(sum.tickets, "ticket"), count(sum.actions, "action"), linearSummary(sum.linear), took)
 		}
 		select {
 		case <-ctx.Done():
@@ -140,56 +150,82 @@ func run(ctx context.Context, opts Options, interval time.Duration) error {
 	}
 }
 
-func tick(ctx context.Context, opts Options, dryRun bool) error {
+// tickSummary is what `dispatch run` prints after each tick.
+type tickSummary struct {
+	skipped bool
+	tickets int
+	actions int
+	linear  linear.Stats
+}
+
+func linearSummary(s linear.Stats) string {
+	out := fmt.Sprintf("Linear %s in %s", count(s.Calls, "call"), s.Elapsed.Round(time.Millisecond))
+	if s.RequestsLimit > 0 {
+		out += fmt.Sprintf(" (%d of %d requests left this hour)", s.RequestsRemaining, s.RequestsLimit)
+	}
+	return out
+}
+
+func count(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}
+
+func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err error) {
 	if err := os.MkdirAll(opts.StateDir, 0o755); err != nil {
-		return fmt.Errorf("while creating state dir: %w", err)
+		return sum, fmt.Errorf("while creating state dir: %w", err)
 	}
 	l, err := lock.Acquire(filepath.Join(opts.StateDir, "tick.lock"))
 	if errors.Is(err, lock.ErrHeld) {
 		_, _ = fmt.Fprintln(opts.Stderr, "dispatch: another tick is running")
-		return nil
+		return tickSummary{skipped: true}, nil
 	}
 	if err != nil {
-		return err
+		return sum, err
 	}
 	defer func() { _ = l.Release() }()
 
 	cfg, err := config.Load(opts.ConfigPath)
 	if err != nil {
-		return err
+		return sum, err
 	}
 	cachePath := filepath.Join(opts.StateDir, "cache.json")
 	c, err := cache.Load(cachePath)
 	if err != nil {
-		return err
+		return sum, err
 	}
 	key, err := linearKey(ctx, opts, cfg)
 	if err != nil {
-		return err
+		return sum, err
 	}
-	lin := linear.Client{URL: opts.LinearURL, Key: key}
+	var stats linear.Stats
+	defer func() { sum.linear = stats }()
+	lin := linear.Client{URL: opts.LinearURL, Key: key, Stats: &stats}
 
 	snap, err := herdr.Read(ctx, opts.Herdr)
 	if err != nil {
-		return err
+		return sum, err
 	}
 	var trees []treehouse.Tree
 	for _, dir := range cfg.Repos {
 		t, err := treehouse.Status(ctx, opts.Treehouse, dir)
 		if err != nil {
-			return err
+			return sum, err
 		}
 		trees = append(trees, t...)
 	}
 	tickets, err := lin.ManagedTickets(ctx, cfg.Linear.AILabel, cfg.Linear.Teams)
 	if err != nil {
-		return err
+		return sum, err
 	}
 
 	workers := map[string]worker.Worker{}
 	for _, t := range tickets {
 		workers[t.Identifier] = worker.Find(t.Identifier, trees, snap)
 	}
+	sum.tickets = len(tickets)
 	actions := reconcile.Plan(reconcile.Input{
 		Tickets:        tickets,
 		Workers:        workers,
@@ -199,11 +235,12 @@ func tick(ctx context.Context, opts Options, dryRun bool) error {
 		Repos:          cfg.Repos,
 	})
 
+	sum.actions = len(actions)
 	if dryRun {
 		for _, a := range actions {
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		}
-		return nil
+		return sum, nil
 	}
 
 	launch := opts.Launcher
@@ -216,7 +253,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) error {
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Escalate:
 			if err := escalate(ctx, lin, cfg, a.Ticket, a.Reason); err != nil {
-				return err
+				return sum, err
 			}
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Launch:
@@ -236,7 +273,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) error {
 			}
 			reason := fmt.Sprintf("its worker failed to launch %d times in a row. The launcher said `%s`: %s", e.LaunchFailures, r.Status, r.Detail)
 			if err := escalate(ctx, lin, cfg, a.Ticket, reason); err != nil {
-				return err
+				return sum, err
 			}
 			e.LaunchFailures = 0
 			c[a.Ticket.Identifier] = e
@@ -248,7 +285,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) error {
 		e.LastStatus = t.Status
 		c[t.Identifier] = e
 	}
-	return c.Save(cachePath)
+	return sum, c.Save(cachePath)
 }
 
 // escalate moves a ticket to Needs Human with one comment saying why.
