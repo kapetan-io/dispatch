@@ -196,6 +196,13 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 	if err != nil {
 		return sum, err
 	}
+	// Save even when the tick fails partway, so a launch failure already
+	// counted is not forgotten and the escalation limit is still reached.
+	defer func() {
+		if serr := c.Save(cachePath); serr != nil && err == nil {
+			err = serr
+		}
+	}()
 	key, err := linearKey(ctx, opts, cfg)
 	if err != nil {
 		return sum, err
@@ -252,8 +259,10 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		case reconcile.Skip, reconcile.Wait:
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Escalate:
+			// One ticket's failed escalation must not hold up the others.
 			if err := escalate(ctx, lin, cfg, a.Ticket, a.Reason); err != nil {
-				return sum, err
+				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while escalating %s: %v\n", a.Ticket.Identifier, err)
+				continue
 			}
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Launch:
@@ -273,7 +282,8 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			}
 			reason := fmt.Sprintf("its worker failed to launch %d times in a row. The launcher said `%s`: %s", e.LaunchFailures, r.Status, r.Detail)
 			if err := escalate(ctx, lin, cfg, a.Ticket, reason); err != nil {
-				return sum, err
+				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while escalating %s: %v\n", a.Ticket.Identifier, err)
+				continue
 			}
 			e.LaunchFailures = 0
 			c[a.Ticket.Identifier] = e
@@ -285,7 +295,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		e.LastStatus = t.Status
 		c[t.Identifier] = e
 	}
-	return sum, c.Save(cachePath)
+	return sum, nil
 }
 
 // escalate moves a ticket to Needs Human with one comment saying why.
@@ -294,10 +304,12 @@ func escalate(ctx context.Context, lin linear.Client, cfg config.Config, t linea
 	if err != nil {
 		return err
 	}
-	if err := lin.Comment(ctx, t.ID, "The dispatcher moved this ticket to Needs Human because "+reason); err != nil {
+	// Move before commenting: a move that fails leaves the ticket In Progress,
+	// and commenting first would post the same comment again on every tick.
+	if err := lin.Move(ctx, t.ID, state); err != nil {
 		return err
 	}
-	return lin.Move(ctx, t.ID, state)
+	return lin.Comment(ctx, t.ID, "The dispatcher moved this ticket to Needs Human because "+reason)
 }
 
 func linearKey(ctx context.Context, opts Options, cfg config.Config) (string, error) {

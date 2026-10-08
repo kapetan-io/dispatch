@@ -96,14 +96,12 @@ elif git -C "$repo" show-ref --verify --quiet "refs/remotes/origin/$branch"; the
 fi
 
 # --- tree --------------------------------------------------------------------
-# A tree already holding this ticket's lease, or already on its branch, is
-# reused, so a relaunch resumes in place.
+# A tree already holding this ticket's lease is reused, so a relaunch resumes
+# in place. A tree is never adopted just for having the branch checked out: it
+# could be the user's own clone, or a pool tree treehouse may hand to someone
+# else. If the branch is checked out elsewhere, the switch below fails loudly.
 pool_json=$(cd "$repo" && treehouse status --json 2>/dev/null)
 ck=$(jq -r --arg t "$ticket" '.[]? | select(.lease_holder==$t) | .path' <<<"$pool_json" 2>/dev/null | head -n1)
-if [ -z "$ck" ]; then
-  ck=$(git -C "$repo" worktree list --porcelain \
-       | awk -v b="refs/heads/$branch" '$1=="worktree"{p=$2} $1=="branch" && $2==b {print p; exit}')
-fi
 if [ -z "$ck" ]; then
   log "leasing a treehouse tree for $ticket"
   lease_err_file=$(mktemp)
@@ -157,14 +155,16 @@ if [ -n "$ws" ]; then
 fi
 
 # Open the checkout as a worktree so its workspace nests under the repo in
-# herdr's sidebar. Falls back to a bare workspace if herdr refuses.
+# herdr's sidebar. There is no bare-workspace fallback: herdr reports a bare
+# workspace with no worktree path, so the dispatcher could never find its
+# worker and would launch another one on every tick.
 if [ -z "$ws" ]; then
   # herdr refuses a linked worktree as the source, so name the main checkout
   # even when the launcher runs from inside a pool tree.
   main_checkout=$(dirname "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)")
   opened=$(herdr worktree open --cwd "$main_checkout" --path "$ck" --label "$label" --no-focus --json 2>&1)
   ws=$(jq -r '.result.worktree.open_workspace_id // .result.workspace.workspace_id // empty' <<<"$opened" 2>/dev/null)
-  [ -n "$ws" ] || log "worktree open did not nest $ck ($opened), falling back to a bare workspace"
+  [ -n "$ws" ] || finish workspace_failed detail="herdr worktree open failed for $ck: $opened" worktree="$ck"
 fi
 
 # The worker's env. The shim dir carries a `claude` wrapper that re-adds the
@@ -177,26 +177,18 @@ env_args=(
   --env "DISPATCH_PLUGIN_ROOT=$plugin_root"
 )
 
-pane=""
-if [ -n "$ws" ]; then
-  # worktree open carries no --env, but tab create does, so the worker runs
-  # in a fresh stamped tab and the agent-less tabs the workspace opened with
-  # are closed.
-  created=$(herdr tab create --workspace "$ws" --cwd "$ck" --label "$label" "${env_args[@]}" --no-focus 2>&1)
-  pane=$(jq -r '.result.root_pane.pane_id // empty' <<<"$created" 2>/dev/null)
-  [ -n "$pane" ] || finish workspace_failed detail="herdr tab create failed in $ws: $created" workspace="$ws" worktree="$ck"
-  while read -r tid; do
-    [ -n "$tid" ] && herdr tab close "$tid" >/dev/null 2>&1
-  done < <(herdr pane list 2>/dev/null \
-           | jq -r --arg ws "$ws" --arg p "$pane" \
-               '.result.panes[] | select(.workspace_id==$ws and .pane_id!=$p and ((.agent // "")=="")) | .tab_id' \
-           | sort -u)
-else
-  created=$(herdr workspace create --cwd "$ck" --label "$label" "${env_args[@]}" --no-focus 2>&1)
-  ws=$(jq -r '.result.workspace.workspace_id // empty' <<<"$created" 2>/dev/null)
-  pane=$(jq -r '.result.root_pane.pane_id // empty' <<<"$created" 2>/dev/null)
-  [ -n "$ws" ] && [ -n "$pane" ] || finish workspace_failed detail="herdr workspace create failed for $ck: $created" worktree="$ck"
-fi
+# worktree open carries no --env, but tab create does, so the worker runs in a
+# fresh stamped tab and the agent-less tabs the workspace opened with are
+# closed.
+created=$(herdr tab create --workspace "$ws" --cwd "$ck" --label "$label" "${env_args[@]}" --no-focus 2>&1)
+pane=$(jq -r '.result.root_pane.pane_id // empty' <<<"$created" 2>/dev/null)
+[ -n "$pane" ] || finish workspace_failed detail="herdr tab create failed in $ws: $created" workspace="$ws" worktree="$ck"
+while read -r tid; do
+  [ -n "$tid" ] && herdr tab close "$tid" >/dev/null 2>&1
+done < <(herdr pane list 2>/dev/null \
+         | jq -r --arg ws "$ws" --arg p "$pane" \
+             '.result.panes[] | select(.workspace_id==$ws and .pane_id!=$p and ((.agent // "")=="")) | .tab_id' \
+         | sort -u)
 
 # --- agent -------------------------------------------------------------------
 agent_name=$session_name
@@ -219,7 +211,12 @@ start_agent() {
     return 1
   }
 }
-start_agent || { sleep 3; start_agent; } || finish agent_start_failed \
+# A timed-out start may still bring Claude up, so retry only into a pane that
+# has no Claude agent.
+pane_has_claude() {
+  herdr agent list 2>/dev/null | jq -e --arg p "$pane" '.result.agents[] | select(.pane_id==$p and .agent=="claude")' >/dev/null 2>&1
+}
+start_agent || { sleep 3; pane_has_claude || start_agent; } || pane_has_claude || finish agent_start_failed \
   detail="herdr agent start failed in pane $pane" workspace="$ws" pane="$pane" worktree="$ck"
 
 # --- kickoff -----------------------------------------------------------------
@@ -230,7 +227,7 @@ start_agent || { sleep 3; start_agent; } || finish agent_start_failed \
 # still idle with the text gone from its input box.
 probe=${kickoff:0:24}
 inject() {  # 0 = landed, 1 = unconfirmed
-  local screen consent_try=0 ready=0 try
+  local screen status consent_try=0 ready=0 try
   herdr agent wait "$pane" --until idle --timeout 15000 >/dev/null 2>&1
   for _ in $(seq 30); do
     screen=$(herdr agent read "$pane" --source visible --lines 30 2>/dev/null | tr '\n' ' ')
@@ -263,6 +260,15 @@ inject() {  # 0 = landed, 1 = unconfirmed
     herdr agent wait "$pane" --until working --until blocked --timeout 15000 >/dev/null 2>&1 && return 0
     screen=$(herdr agent read "$pane" --source visible --lines 30 2>/dev/null | tr '\n' ' ')
     trace "not-working" "$screen"
+    # Retype only while the agent sits idle. done means a fast kickoff already
+    # ran, and working or blocked means it is running, so never type it again.
+    status=$(herdr agent list 2>/dev/null \
+      | jq -r --arg p "$pane" '.result.agents[] | select(.pane_id==$p) | .agent_status' | head -n1)
+    case $status in
+      idle) ;;
+      working|blocked|done) return 0 ;;
+      *) return 1 ;;
+    esac
     # Typed but never submitted: press Enter rather than type it twice.
     if grep -qF "$probe" <<<"$screen"; then
       herdr pane send-keys "$pane" Enter >/dev/null 2>&1
@@ -272,9 +278,14 @@ inject() {  # 0 = landed, 1 = unconfirmed
   done
   return 1
 }
-inject || finish injection_unconfirmed \
-  detail="worker is up but the kickoff never appeared; type it by hand: herdr pane run $pane \"$kickoff\" && herdr pane send-keys $pane Enter" \
-  workspace="$ws" pane="$pane" agent="$agent_name" worktree="$ck"
+# An unconfirmed kickoff closes the workspace. Left open, its idle Claude
+# would look like a live worker, and no tick would retry or escalate.
+if ! inject; then
+  herdr workspace close "$ws" >/dev/null 2>&1
+  finish injection_unconfirmed \
+    detail="Claude started but herdr never showed the kickoff running, so the workspace was closed and the next tick retries. Set DISPATCH_LAUNCH_TRACE=<file> to record the screens." \
+    workspace="$ws" pane="$pane" worktree="$ck"
+fi
 
 finish ok ticket="$ticket" branch="$branch" worktree="$ck" workspace="$ws" \
   pane="$pane" agent="$agent_name" kickoff="$kickoff"

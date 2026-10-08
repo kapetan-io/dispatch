@@ -113,10 +113,10 @@ func TestTickEscalatesAfterRepeatedLaunchFailures(t *testing.T) {
 	assert.Contains(t, out, "escalate ENG-1: launch failed 2 times")
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 2)
-	assert.Equal(t, "CommentTicket", mutations[0].operation)
-	assert.Contains(t, mutations[0].variables["body"], "treehouse lease failed")
-	assert.Equal(t, "MoveTicket", mutations[1].operation)
-	assert.Equal(t, needsHumanID, mutations[1].variables["state"])
+	assert.Equal(t, "MoveTicket", mutations[0].operation)
+	assert.Equal(t, needsHumanID, mutations[0].variables["state"])
+	assert.Equal(t, "CommentTicket", mutations[1].operation)
+	assert.Contains(t, mutations[1].variables["body"], "treehouse lease failed")
 }
 
 func TestTickNeverEscalatesForAFullPool(t *testing.T) {
@@ -196,10 +196,28 @@ func TestTickEscalatesTicketItCannotPlaceInARepo(t *testing.T) {
 			assert.Empty(t, h.launches())
 			mutations := h.linear.mutations()
 			require.Len(t, mutations, 2)
-			assert.Contains(t, mutations[0].variables["body"], test.wantBody)
-			assert.Equal(t, needsHumanID, mutations[1].variables["state"])
+			assert.Equal(t, needsHumanID, mutations[0].variables["state"])
+			assert.Contains(t, mutations[1].variables["body"], test.wantBody)
 		})
 	}
+}
+
+func TestTickLaunchesOtherTicketsWhenAnEscalationFails(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(
+		ticket("ENG-1", "In Progress", ""),
+		ticket("ENG-2", "In Progress", "dispatch"),
+	)
+	h.linear.failMoves()
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "launch ENG-2: ok\n", out)
+	assert.Len(t, h.launches(), 1)
+	// The failed move left ENG-1 In Progress, so no comment was posted that a
+	// later tick would post again.
+	assert.Empty(t, h.linear.mutations())
 }
 
 func TestTickExitsWhenAnotherTickHoldsTheLock(t *testing.T) {
@@ -470,6 +488,13 @@ type fakeLinear struct {
 	mu      sync.Mutex
 	nodes   []fakeTicket
 	changes []mutation
+	noMoves bool
+}
+
+func (f *fakeLinear) failMoves() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.noMoves = true
 }
 
 func newFakeLinear(t *testing.T) *fakeLinear {
@@ -521,6 +546,10 @@ func (f *fakeLinear) serve(w http.ResponseWriter, r *http.Request) {
 			}},
 		}}}}
 	case "MoveTicket", "CommentTicket":
+		if req.OperationName == "MoveTicket" && f.noMoves {
+			http.Error(w, "move refused", http.StatusInternalServerError)
+			return
+		}
 		f.changes = append(f.changes, mutation{operation: req.OperationName, variables: req.Variables})
 		data = map[string]any{}
 	default:
