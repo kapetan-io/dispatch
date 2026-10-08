@@ -64,6 +64,7 @@ The autonomous build workflow now lives in its own Claude Code plugin repo, `kap
 2. **Run the dispatcher in a herdr window.** Done 2026-10-08. You chose a herdr window you start and stop over launchd, so you can watch it. `dispatch run` ticks every `interval_minutes`, keeps going after a failed tick, and stops on Ctrl-C. The README has the install and run steps. A live 3-second run against real Linear, herdr and treehouse ticked cleanly and exited on SIGINT.
 3. **Open the PR for ENG-226** in the Purpose and Implementation format, with `Fixes ENG-226`. You review and merge it. Workers load the plugin from `plugin_root`, which is your main checkout, so the launcher and skill must be on main before a dispatched run.
 4. **Pilot end to end.** After merging, pull main and `go install`. Approve one real `ai` ticket, ideally piece 2 of the dispatcher, by moving it to In Progress. Start `dispatch run` in a herdr window and watch the ticket reach In Review or Needs Human.
+   Piece 1 never returns a tree once a ticket is Done, Canceled or in Needs Human. That is the teardown piece's job (blueprint tick step 4, with the dirty-tree guard). Until it ships, return a finished ticket's tree by hand with `treehouse return <path>` from the repo, or launches stall on `pool_exhausted`, which the run window prints with the holders. The worker cap also counts live agents, not leased trees.
 5. **Feed what the pilot teaches** into the decision log, then cut and build the next piece.
 
 ## Dependencies & Ordering

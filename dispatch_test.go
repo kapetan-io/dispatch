@@ -124,11 +124,14 @@ func TestTickNeverEscalatesForAFullPool(t *testing.T) {
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.launchResult(`{"status":"pool_exhausted","detail":"all 4/4 pool trees are taken"}`)
 
+	var out string
 	for range 3 {
-		_, err := h.run("tick")
+		var err error
+		out, err = h.run("tick")
 		require.NoError(t, err)
 	}
 
+	assert.Equal(t, "launch ENG-1: pool_exhausted: all 4/4 pool trees are taken\n", out)
 	assert.Len(t, h.launches(), 3)
 	assert.Empty(t, h.linear.mutations())
 }
@@ -218,6 +221,67 @@ func TestTickLaunchesOtherTicketsWhenAnEscalationFails(t *testing.T) {
 	// The failed move left ENG-1 In Progress, so no comment was posted that a
 	// later tick would post again.
 	assert.Empty(t, h.linear.mutations())
+}
+
+func TestTickNeverCommentsWhenLinearRefusesTheMove(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", ""))
+	h.linear.unsuccessfulMoves()
+
+	out, stderr, err := h.runContext(context.Background(), "tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, out)
+	assert.Contains(t, stderr, "while escalating ENG-1: linear MoveTicket: Linear reported success=false")
+	mutations := h.linear.mutations()
+	require.Len(t, mutations, 1)
+	assert.Equal(t, "MoveTicket", mutations[0].operation)
+}
+
+func TestTickFailsWhenManagedTicketsSpanMoreThanOnePage(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.linear.hasMorePages()
+
+	_, err := h.run("tick")
+
+	require.ErrorContains(t, err, "more than 100 started \"ai\" tickets are assigned to you")
+	assert.Empty(t, h.launches())
+}
+
+func TestTickHoldsBackOnlyTheRepoWhosePoolCannotBeRead(t *testing.T) {
+	h := newHarness(t)
+	// A moved clone: treehouse can't run in a directory that doesn't exist.
+	h.addRepo("tiger", filepath.Join(h.dir, "moved"))
+	h.tickets(
+		ticket("ENG-1", "In Progress", "dispatch"),
+		ticket("ENG-2", "In Progress", "tiger"),
+	)
+
+	out, stderr, err := h.runContext(context.Background(), "tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "wait ENG-2: the tiger pool could not be read this tick\nlaunch ENG-1: ok\n", out)
+	assert.Contains(t, stderr, "dispatch: while reading the tiger pool:")
+	assert.Equal(t, []string{h.repo + " ENG-1 thrawn01/eng-1 --model sonnet --no-focus"}, h.launches())
+	assert.Empty(t, h.linear.mutations())
+}
+
+func TestTickCountsTicketsInAnUnreadRepoAgainstTheWorkerCap(t *testing.T) {
+	h := newHarness(t)
+	h.config("max_in_progress = 1\n")
+	h.addRepo("tiger", filepath.Join(h.dir, "moved"))
+	h.tickets(
+		ticket("ENG-1", "In Progress", "dispatch"),
+		ticket("ENG-2", "In Progress", "tiger"),
+	)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	// ENG-2 may have a live worker nobody could see, so ENG-1 must not launch.
+	assert.Contains(t, out, "wait ENG-1: 1 of 1 workers already running")
+	assert.Empty(t, h.launches())
 }
 
 func TestTickExitsWhenAnotherTickHoldsTheLock(t *testing.T) {
@@ -311,6 +375,7 @@ type harness struct {
 	repo   string
 	state  string
 	extra  string
+	repos  string
 	linear *fakeLinear
 }
 
@@ -343,13 +408,18 @@ func (h *harness) config(extra string) {
 	h.extra = extra
 }
 
+// addRepo adds a repo to the config's [repos] table.
+func (h *harness) addRepo(label, dir string) {
+	h.repos += fmt.Sprintf("%s = %q\n", label, dir)
+}
+
 func (h *harness) run(args ...string) (string, error) {
 	stdout, _, err := h.runContext(context.Background(), args...)
 	return stdout, err
 }
 
 func (h *harness) runContext(ctx context.Context, args ...string) (string, string, error) {
-	h.writeFile("config.toml", h.extra+fmt.Sprintf("\n[repos]\ndispatch = %q\n", h.repo))
+	h.writeFile("config.toml", h.extra+fmt.Sprintf("\n[repos]\ndispatch = %q\n", h.repo)+h.repos)
 	var stdout, stderr bytes.Buffer
 	err := dispatch.Run(ctx, args, dispatch.Options{
 		ConfigPath: filepath.Join(h.dir, "config.toml"),
@@ -478,7 +548,7 @@ func withLabel(t fakeTicket, name string) fakeTicket {
 
 type mutation struct {
 	operation string
-	variables map[string]string
+	variables map[string]any
 }
 
 // fakeLinear answers the dispatcher's GraphQL operations by name and records
@@ -488,7 +558,22 @@ type fakeLinear struct {
 	mu      sync.Mutex
 	nodes   []fakeTicket
 	changes []mutation
-	noMoves bool
+	noMoves           bool
+	movesUnsuccessful bool
+	morePages         bool
+}
+
+// unsuccessfulMoves makes Linear answer a move with HTTP 200 and success:false.
+func (f *fakeLinear) unsuccessfulMoves() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.movesUnsuccessful = true
+}
+
+func (f *fakeLinear) hasMorePages() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.morePages = true
 }
 
 func (f *fakeLinear) failMoves() {
@@ -519,7 +604,7 @@ func (f *fakeLinear) mutations() []mutation {
 func (f *fakeLinear) serve(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		OperationName string            `json:"operationName"`
-		Variables     map[string]string `json:"variables"`
+		Variables     map[string]any `json:"variables"`
 	}
 	w.Header().Set("X-RateLimit-Requests-Limit", "2500")
 	w.Header().Set("X-RateLimit-Requests-Remaining", "2400")
@@ -536,7 +621,10 @@ func (f *fakeLinear) serve(w http.ResponseWriter, r *http.Request) {
 	var data any
 	switch req.OperationName {
 	case "ManagedTickets":
-		data = map[string]any{"viewer": map[string]any{"assignedIssues": map[string]any{"nodes": f.nodes}}}
+		data = map[string]any{"viewer": map[string]any{"assignedIssues": map[string]any{
+			"nodes":    f.nodes,
+			"pageInfo": map[string]bool{"hasNextPage": f.morePages},
+		}}}
 	case "TeamStates":
 		data = map[string]any{"teams": map[string]any{"nodes": []any{map[string]any{
 			"key": "ENG",
@@ -545,13 +633,16 @@ func (f *fakeLinear) serve(w http.ResponseWriter, r *http.Request) {
 				map[string]string{"id": needsHumanID, "name": "Needs Human"},
 			}},
 		}}}}
-	case "MoveTicket", "CommentTicket":
-		if req.OperationName == "MoveTicket" && f.noMoves {
+	case "MoveTicket":
+		if f.noMoves {
 			http.Error(w, "move refused", http.StatusInternalServerError)
 			return
 		}
 		f.changes = append(f.changes, mutation{operation: req.OperationName, variables: req.Variables})
-		data = map[string]any{}
+		data = map[string]any{"issueUpdate": map[string]bool{"success": !f.movesUnsuccessful}}
+	case "CommentTicket":
+		f.changes = append(f.changes, mutation{operation: req.OperationName, variables: req.Variables})
+		data = map[string]any{"commentCreate": map[string]bool{"success": true}}
 	default:
 		http.Error(w, "unknown operation "+req.OperationName, http.StatusBadRequest)
 		return

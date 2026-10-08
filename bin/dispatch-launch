@@ -87,7 +87,7 @@ done
 
 # --- branch ------------------------------------------------------------------
 git -C "$repo" fetch --no-tags origin "$branch" >/dev/null 2>&1
-existed=0
+existed=0 fresh=0
 if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
   existed=1
 elif git -C "$repo" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
@@ -124,6 +124,7 @@ if [ -z "$ck" ]; then
   ck=$(jq -r '.path // empty' <<<"$lease_json" 2>/dev/null)
   [ -n "$ck" ] || finish pool_error detail="lease succeeded but treehouse JSON had no path: $lease_json"
   log "leased $ck"
+  fresh=1
   co_ok=1
   if [ $existed -eq 1 ]; then
     git -C "$ck" switch "$branch" >&2 || co_ok=0
@@ -138,6 +139,17 @@ if [ -z "$ck" ]; then
     finish checkout_failed detail="git switch to $branch failed in leased tree $ck (lease returned)"
   fi
 fi
+
+# give_back closes the workspace and returns the lease when this run took the
+# lease and no Claude ever ran in the tree, so a failed launch holds no pool
+# slot. A lease from an earlier run may hold a worker's uncommitted work, and
+# --force would discard it, so that one is kept.
+give_back() {
+  [ "$fresh" = 1 ] || return 0
+  [ -n "${ws:-}" ] && herdr workspace close "$ws" >/dev/null 2>&1
+  log "returning the lease on $ck"
+  (cd "$repo" && treehouse return "$ck" --if-lease-holder "$ticket" --force >&2)
+}
 
 # --- workspace ---------------------------------------------------------------
 ws=$(herdr workspace list 2>/dev/null \
@@ -164,7 +176,7 @@ if [ -z "$ws" ]; then
   main_checkout=$(dirname "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)")
   opened=$(herdr worktree open --cwd "$main_checkout" --path "$ck" --label "$label" --no-focus --json 2>&1)
   ws=$(jq -r '.result.worktree.open_workspace_id // .result.workspace.workspace_id // empty' <<<"$opened" 2>/dev/null)
-  [ -n "$ws" ] || finish workspace_failed detail="herdr worktree open failed for $ck: $opened" worktree="$ck"
+  [ -n "$ws" ] || { give_back; finish workspace_failed detail="herdr worktree open failed for $ck: $opened" worktree="$ck"; }
 fi
 
 # The worker's env. The shim dir carries a `claude` wrapper that re-adds the
@@ -182,7 +194,7 @@ env_args=(
 # closed.
 created=$(herdr tab create --workspace "$ws" --cwd "$ck" --label "$label" "${env_args[@]}" --no-focus 2>&1)
 pane=$(jq -r '.result.root_pane.pane_id // empty' <<<"$created" 2>/dev/null)
-[ -n "$pane" ] || finish workspace_failed detail="herdr tab create failed in $ws: $created" workspace="$ws" worktree="$ck"
+[ -n "$pane" ] || { give_back; finish workspace_failed detail="herdr tab create failed in $ws: $created" workspace="$ws" worktree="$ck"; }
 while read -r tid; do
   [ -n "$tid" ] && herdr tab close "$tid" >/dev/null 2>&1
 done < <(herdr pane list 2>/dev/null \
@@ -216,8 +228,8 @@ start_agent() {
 pane_has_claude() {
   herdr agent list 2>/dev/null | jq -e --arg p "$pane" '.result.agents[] | select(.pane_id==$p and .agent=="claude")' >/dev/null 2>&1
 }
-start_agent || { sleep 3; pane_has_claude || start_agent; } || pane_has_claude || finish agent_start_failed \
-  detail="herdr agent start failed in pane $pane" workspace="$ws" pane="$pane" worktree="$ck"
+start_agent || { sleep 3; pane_has_claude || start_agent; } || pane_has_claude || { give_back; finish agent_start_failed \
+  detail="herdr agent start failed in pane $pane" workspace="$ws" pane="$pane" worktree="$ck"; }
 
 # --- kickoff -----------------------------------------------------------------
 # A submitted kickoff is confirmed by herdr's agent status leaving idle, never

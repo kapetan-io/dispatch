@@ -50,6 +50,9 @@ type Input struct {
 	RepoLabelGroup string
 	// Repos maps a repo label to its local clone.
 	Repos map[string]string
+	// UnreadRepos are repo labels whose treehouse pool could not be read this
+	// tick. Their tickets' workers are unknown, not absent.
+	UnreadRepos map[string]bool
 }
 
 // designLabels mark tickets whose sessions this piece of the dispatcher does
@@ -58,9 +61,11 @@ var designLabels = []string{"design", "design-review"}
 
 // Plan returns the actions for one tick, launches last, in ticket order.
 func Plan(in Input) []Action {
+	// A ticket in an unread repo counts as running, so the cap errs low rather
+	// than launching past a live worker nobody could see.
 	running := 0
 	for _, t := range in.Tickets {
-		if t.Status == in.InProgress && in.Workers[t.Identifier].State != worker.None {
+		if t.Status == in.InProgress && (in.Workers[t.Identifier].State != worker.None || in.unread(t)) {
 			running++
 		}
 	}
@@ -85,6 +90,10 @@ func Plan(in Input) []Action {
 			actions = append(actions, Action{Kind: Escalate, Ticket: t, Reason: fmt.Sprintf("it has no %q label, so the dispatcher can't tell which repo to build in. Add one and move it back to In Progress.", in.RepoLabelGroup)})
 			continue
 		}
+		if in.UnreadRepos[repo] {
+			actions = append(actions, Action{Kind: Wait, Ticket: t, Reason: fmt.Sprintf("the %s pool could not be read this tick", repo)})
+			continue
+		}
 		dir, ok := in.Repos[repo]
 		if !ok {
 			actions = append(actions, Action{Kind: Escalate, Ticket: t, Reason: fmt.Sprintf("its repo %q is not in the dispatcher's config. Add it under [repos] and move the ticket back to In Progress.", repo)})
@@ -98,6 +107,11 @@ func Plan(in Input) []Action {
 		launches = append(launches, Action{Kind: Launch, Ticket: t, RepoDir: dir})
 	}
 	return append(actions, launches...)
+}
+
+func (in Input) unread(t linear.Ticket) bool {
+	repo, ok := t.LabelIn(in.RepoLabelGroup)
+	return ok && in.UnreadRepos[repo]
 }
 
 func designLabel(t linear.Ticket) (string, bool) {

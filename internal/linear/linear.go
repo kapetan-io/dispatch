@@ -95,16 +95,24 @@ func (s *Stats) record(start time.Time, resp *http.Response) {
 	}
 }
 
-const managedTickets = `query ManagedTickets($label: String!) {
+// maxManaged is the page size for managed tickets. A second page is an error
+// rather than a loop: tickets left off it would go unlaunched, and their live
+// workers uncounted against max_in_progress.
+const maxManaged = 100
+
+// The nested connections are capped because Linear charges a query by its
+// page sizes, and only the presence of a child matters.
+const managedTickets = `query ManagedTickets($label: String!, $teams: [String!], $first: Int!) {
   viewer {
-    assignedIssues(first: 250, filter: {labels: {name: {eq: $label}}, state: {type: {eq: "started"}}}) {
+    assignedIssues(first: $first, filter: {labels: {name: {eq: $label}}, state: {type: {eq: "started"}}, team: {key: {in: $teams}}}) {
       nodes {
         id identifier title branchName
         state { name }
         team { key }
-        labels { nodes { name parent { name } } }
-        children { nodes { id } }
+        labels(first: 25) { nodes { name parent { name } } }
+        children(first: 1) { nodes { id } }
       }
+      pageInfo { hasNextPage }
     }
   }
 }`
@@ -141,11 +149,17 @@ func (c Client) ManagedTickets(ctx context.Context, label string, teams []string
 						} `json:"nodes"`
 					} `json:"children"`
 				} `json:"nodes"`
+				PageInfo struct {
+					HasNextPage bool `json:"hasNextPage"`
+				} `json:"pageInfo"`
 			} `json:"assignedIssues"`
 		} `json:"viewer"`
 	}
-	if err := c.do(ctx, "ManagedTickets", managedTickets, map[string]any{"label": label}, &resp); err != nil {
+	if err := c.do(ctx, "ManagedTickets", managedTickets, map[string]any{"label": label, "teams": teams, "first": maxManaged}, &resp); err != nil {
 		return nil, err
+	}
+	if resp.Viewer.AssignedIssues.PageInfo.HasNextPage {
+		return nil, fmt.Errorf("more than %d started %q tickets are assigned to you; dispatch reads one page and would miss the rest", maxManaged, label)
 	}
 	var tickets []Ticket
 	for _, n := range resp.Viewer.AssignedIssues.Nodes {
@@ -214,7 +228,18 @@ const moveTicket = `mutation MoveTicket($id: String!, $state: String!) {
 
 // Move sets a ticket's status.
 func (c Client) Move(ctx context.Context, ticketID, stateID string) error {
-	return c.do(ctx, "MoveTicket", moveTicket, map[string]any{"id": ticketID, "state": stateID}, nil)
+	var out struct {
+		IssueUpdate struct {
+			Success bool `json:"success"`
+		} `json:"issueUpdate"`
+	}
+	if err := c.do(ctx, "MoveTicket", moveTicket, map[string]any{"id": ticketID, "state": stateID}, &out); err != nil {
+		return err
+	}
+	if !out.IssueUpdate.Success {
+		return fmt.Errorf("linear MoveTicket: Linear reported success=false for %s", ticketID)
+	}
+	return nil
 }
 
 const commentTicket = `mutation CommentTicket($id: String!, $body: String!) {
@@ -223,7 +248,18 @@ const commentTicket = `mutation CommentTicket($id: String!, $body: String!) {
 
 // Comment adds a comment to a ticket.
 func (c Client) Comment(ctx context.Context, ticketID, body string) error {
-	return c.do(ctx, "CommentTicket", commentTicket, map[string]any{"id": ticketID, "body": body}, nil)
+	var out struct {
+		CommentCreate struct {
+			Success bool `json:"success"`
+		} `json:"commentCreate"`
+	}
+	if err := c.do(ctx, "CommentTicket", commentTicket, map[string]any{"id": ticketID, "body": body}, &out); err != nil {
+		return err
+	}
+	if !out.CommentCreate.Success {
+		return fmt.Errorf("linear CommentTicket: Linear reported success=false for %s", ticketID)
+	}
+	return nil
 }
 
 func (c Client) do(ctx context.Context, operation, query string, variables map[string]any, out any) error {
@@ -267,9 +303,6 @@ func (c Client) do(ctx context.Context, operation, query string, variables map[s
 	}
 	if len(envelope.Errors) > 0 {
 		return fmt.Errorf("linear %s: %s", operation, envelope.Errors[0].Message)
-	}
-	if out == nil {
-		return nil
 	}
 	return json.Unmarshal(envelope.Data, out)
 }

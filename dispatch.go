@@ -215,13 +215,25 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 	if err != nil {
 		return sum, err
 	}
+	// A repo whose pool can't be read holds back only its own tickets, so one
+	// moved clone doesn't stop launches in every other repo.
 	var trees []treehouse.Tree
-	for _, dir := range cfg.Repos {
+	readErrs := map[string]error{}
+	for label, dir := range cfg.Repos {
 		t, err := treehouse.Status(ctx, opts.Treehouse, dir)
 		if err != nil {
-			return sum, err
+			readErrs[label] = err
+			continue
 		}
 		trees = append(trees, t...)
+	}
+	unread := map[string]bool{}
+	for label, err := range readErrs {
+		if len(readErrs) == len(cfg.Repos) {
+			return sum, err
+		}
+		_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the %s pool: %v\n", label, err)
+		unread[label] = true
 	}
 	tickets, err := lin.ManagedTickets(ctx, cfg.Linear.AILabel, cfg.Linear.Teams)
 	if err != nil {
@@ -240,6 +252,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		MaxInProgress:  cfg.MaxInProgress,
 		RepoLabelGroup: cfg.Linear.RepoLabelGroup,
 		Repos:          cfg.Repos,
+		UnreadRepos:    unread,
 	})
 
 	sum.actions = len(actions)
@@ -271,6 +284,12 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			if !r.Failed() {
 				e.LaunchFailures = 0
 				c[a.Ticket.Identifier] = e
+				// A full pool is a silent wait in Linear, so the window says who
+				// holds every tree.
+				if r.Status == launcher.StatusPoolExhausted {
+					_, _ = fmt.Fprintf(opts.Stdout, "%s: %s: %s\n", a, r.Status, r.Detail)
+					continue
+				}
 				_, _ = fmt.Fprintf(opts.Stdout, "%s: %s\n", a, r.Status)
 				continue
 			}
