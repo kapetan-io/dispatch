@@ -1,7 +1,8 @@
 // Package dispatch is the stateless dispatcher. Each tick reads what Linear
 // says should happen, compares it with the herdr workspaces and treehouse
-// trees that exist, and fixes the difference. launchd runs `dispatch tick`
-// on an interval.
+// trees that exist, and fixes the difference. `dispatch run` ticks on an
+// interval in the foreground, in a herdr window the user watches, starts and
+// stops.
 package dispatch
 
 import (
@@ -14,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kapetan-io/dispatch/internal/cache"
 	"github.com/kapetan-io/dispatch/internal/config"
@@ -47,9 +49,12 @@ type Options struct {
 }
 
 const usage = `usage: dispatch tick [--dry-run]
+       dispatch run [--interval DURATION]
 
   tick         run one pass: launch a worker for each approved ticket that has none
-  --dry-run    print the actions a tick would take, one per line, without acting`
+  --dry-run    print the actions a tick would take, one per line, without acting
+  run          tick now and then once per interval until interrupted (Ctrl-C)
+  --interval   time between ticks; defaults to the config's interval_minutes`
 
 // Run executes one dispatch command. main is a thin wrapper around it.
 func Run(ctx context.Context, args []string, opts Options) error {
@@ -67,6 +72,14 @@ func Run(ctx context.Context, args []string, opts Options) error {
 			return err
 		}
 		return tick(ctx, opts, *dryRun)
+	case "run":
+		fs := flag.NewFlagSet("run", flag.ContinueOnError)
+		fs.SetOutput(opts.Stderr)
+		interval := fs.Duration("interval", 0, "time between ticks")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		return run(ctx, opts, *interval)
 	default:
 		_, _ = fmt.Fprintln(opts.Stderr, usage)
 		return fmt.Errorf("unknown command %q", args[0])
@@ -96,6 +109,35 @@ func withDefaults(o Options) Options {
 		o.Stderr = os.Stderr
 	}
 	return o
+}
+
+// run ticks until ctx ends. A failed tick is reported and the loop goes on,
+// because the next tick may succeed (a Linear outage, a herdr restart), and
+// the user watching the window decides whether to stop it. The lock is held
+// only during each tick, so a one-off `dispatch tick` still runs between them.
+func run(ctx context.Context, opts Options, interval time.Duration) error {
+	if interval <= 0 {
+		cfg, err := config.Load(opts.ConfigPath)
+		if err != nil {
+			return err
+		}
+		interval = time.Duration(cfg.IntervalMinutes) * time.Minute
+	}
+	if interval <= 0 {
+		return fmt.Errorf("interval must be positive, got %s", interval)
+	}
+	_, _ = fmt.Fprintf(opts.Stdout, "dispatch: ticking every %s, Ctrl-C to stop\n", interval)
+	for {
+		_, _ = fmt.Fprintf(opts.Stdout, "--- %s tick\n", time.Now().Format(time.TimeOnly))
+		if err := tick(ctx, opts, false); err != nil && ctx.Err() == nil {
+			_, _ = fmt.Fprintln(opts.Stderr, "dispatch: tick failed:", err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(interval):
+		}
+	}
 }
 
 func tick(ctx context.Context, opts Options, dryRun bool) error {

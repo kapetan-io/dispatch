@@ -121,7 +121,7 @@ Out of scope.
 | `gh`, authenticated | PR state for In Review tickets |
 | GitHub repo settings | "Allow auto-merge" on, and branch protection on main requiring the CodeRabbit review and CI checks. CodeRabbit's approval already counts, since PR #68 shows `reviewDecision: APPROVED` with coderabbitai as its only reviewer. |
 | Linear workflow | A Needs Human status on personal teams. At work, a `needs-human` label instead, and no parent auto-close setting. |
-| launchd | Runs `dispatch tick` on an interval and survives reboots |
+| A herdr window you keep open | Runs `dispatch run`, which ticks on an interval. You start and stop it, and it does not survive a reboot or a herdr restart. |
 | Claude Code CLI | `--dangerously-skip-permissions` (already used by the launcher) and `--disallowedTools` |
 
 ---
@@ -134,7 +134,8 @@ Out of scope.
 
 | Command | Behavior |
 |---|---|
-| `dispatch tick` | One pass of the run described under Architecture. This is what launchd runs. Exits 0 when another tick holds the lock. |
+| `dispatch run [--interval DURATION]` | Ticks now and then once per interval (default `interval_minutes`) until interrupted. A failed tick is printed and the loop goes on. It holds the lock only during each tick. |
+| `dispatch tick` | One pass of the run described under Architecture. `dispatch run` calls it on each interval. Exits 0 when another tick holds the lock. |
 | `dispatch tick --dry-run` | Reads everything and prints the actions it would take, one per line, without acting. |
 | `dispatch tell <ticket> "<text>"` | Types text into the ticket's worker through `herdr agent prompt`. Fails when the worker is blocked or absent. |
 
@@ -178,7 +179,7 @@ The build-worker skill (`skills/build/SKILL.md`, invoked as `/dispatch:build <ti
 flowchart LR
   you([You]) -->|approve, answer, pause, cancel| linear[(Linear)]
   gh[(GitHub)] -->|merge moves ticket to Done| linear
-  launchd -->|every N minutes| dispatch[dispatch tick]
+  window[herdr window: dispatch run] -->|every N minutes| dispatch[dispatch tick]
   dispatch -->|read tickets; write promote, parent Done, Needs Human| linear
   dispatch -->|read agents and workspaces; launch, nudge, rename, close| herdr
   dispatch -->|read leases; return trees| treehouse

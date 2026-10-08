@@ -60,23 +60,16 @@ The autonomous build workflow now lives in its own Claude Code plugin repo, `kap
 
 ## What's Left to Do
 
-1. **Run the launcher for real once.** From `~/.treehouse/dispatch-711e16/1/dispatch`, make a throwaway ticket (labeled `ai` and `dispatch`, assigned to you), then run `bin/dispatch-launch <TICKET> <branch>` by hand. Check:
-   - the lease, the nested workspace, and the env-stamped tab
-   - that Claude starts with the plugin
-   - that `/dispatch:build` resolves
-   - the JSON result
-
-   Fix what breaks. This is the riskiest untested part.
-2. **Write the launchd job.** Install with `go install ./cmd/dispatch`. Add a plist template, for example `launchd/io.kapetan.dispatch.plist`, that runs `dispatch tick` every 5 minutes. Its PATH needs herdr, treehouse, jq, git, gh and claude, and its logs go to `~/.local/state/dispatch/`. Add README install steps. Loading it into launchd is setup, so ask the user first.
+1. **Run the launcher for real once.** Done 2026-10-08 on throwaway ENG-227 (canceled). The lease, the nested workspace, the env-stamped tab, Claude on sonnet with the plugin, `/dispatch:build` and the JSON result all worked. It found three bugs, fixed in `52b0780`. The kickoff was typed twice, because while a skill runs Claude's screen never shows the submitted text, so the launcher now confirms by herdr's agent status. herdr refused a pool tree as the nesting source, so the launcher now names the main checkout. New branches tracked `origin/main`, so they now use `--no-track`. Still unexercised are the `claude` shim on a herdr restart and the consent and folder-trust dialogs, which this machine had already accepted. `DISPATCH_LAUNCH_TRACE=<file>` records every screen the kickoff step reads.
+2. **Run the dispatcher in a herdr window.** Done 2026-10-08. You chose a herdr window you start and stop over launchd, so you can watch it. `dispatch run` ticks every `interval_minutes`, keeps going after a failed tick, and stops on Ctrl-C. The README has the install and run steps. A live 3-second run against real Linear, herdr and treehouse ticked cleanly and exited on SIGINT.
 3. **Open the PR for ENG-226** in the Purpose and Implementation format, with `Fixes ENG-226`. You review and merge it. Workers load the plugin from `plugin_root`, which is your main checkout, so the launcher and skill must be on main before a dispatched run.
-4. **Pilot end to end.** After merging, pull main and `go install`. Approve one real `ai` ticket, ideally piece 2 of the dispatcher, by moving it to In Progress. Run `dispatch tick` by hand and watch it reach In Review or Needs Human. Then load launchd.
+4. **Pilot end to end.** After merging, pull main and `go install`. Approve one real `ai` ticket, ideally piece 2 of the dispatcher, by moving it to In Progress. Start `dispatch run` in a herdr window and watch the ticket reach In Review or Needs Human.
 5. **Feed what the pilot teaches** into the decision log, then cut and build the next piece.
 
 ## Dependencies & Ordering
 
 - Step 1 before step 3, because the launcher must work before it merges.
 - Step 3 before step 4, because workers load the plugin from main.
-- Loading launchd needs your yes.
 
 ## Pointers for Next Session
 

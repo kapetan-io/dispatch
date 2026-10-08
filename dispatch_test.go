@@ -13,6 +13,7 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -225,6 +226,62 @@ func TestRunRejectsUnknownCommand(t *testing.T) {
 	require.ErrorContains(t, err, `unknown command "launch"`)
 }
 
+func TestRunTicksOnEachIntervalUntilCanceled(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	var out string
+
+	go func() {
+		var err error
+		out, _, err = h.runContext(ctx, "run", "--interval", "20ms")
+		done <- err
+	}()
+	// The fake herdr never shows a worker, so every tick launches ENG-1 again.
+	require.Eventually(t, func() bool { return len(h.launches()) >= 3 }, 5*time.Second, 10*time.Millisecond)
+	cancel()
+
+	require.NoError(t, <-done)
+	assert.Contains(t, out, "ticking every 20ms")
+	assert.GreaterOrEqual(t, strings.Count(out, "launch ENG-1: ok"), 3)
+}
+
+func TestRunKeepsTickingAfterAFailedTick(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	// treehouse fails its first call only, so the first tick fails and the
+	// second one launches.
+	h.writeFile("treehouse-fails", "")
+	h.script("treehouse", `if [ -f "`+h.dir+`/treehouse-fails" ]; then rm "`+h.dir+`/treehouse-fails"; exit 1; fi
+cat "`+h.dir+`/trees.json"`)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	var stderr string
+
+	go func() {
+		var err error
+		_, stderr, err = h.runContext(ctx, "run", "--interval", "20ms")
+		done <- err
+	}()
+	require.Eventually(t, func() bool { return len(h.launches()) >= 1 }, 5*time.Second, 10*time.Millisecond)
+	cancel()
+
+	require.NoError(t, <-done)
+	assert.Contains(t, stderr, "dispatch: tick failed: while running treehouse status")
+}
+
+func TestRunRejectsANonPositiveInterval(t *testing.T) {
+	h := newHarness(t)
+	h.config("interval_minutes = 0\n")
+
+	_, err := h.run("run")
+
+	require.ErrorContains(t, err, "interval must be positive")
+}
+
 const needsHumanID = "state-needs-human"
 
 // harness runs the dispatcher against a fake Linear server and fake herdr,
@@ -268,9 +325,14 @@ func (h *harness) config(extra string) {
 }
 
 func (h *harness) run(args ...string) (string, error) {
+	stdout, _, err := h.runContext(context.Background(), args...)
+	return stdout, err
+}
+
+func (h *harness) runContext(ctx context.Context, args ...string) (string, string, error) {
 	h.writeFile("config.toml", h.extra+fmt.Sprintf("\n[repos]\ndispatch = %q\n", h.repo))
 	var stdout, stderr bytes.Buffer
-	err := dispatch.Run(context.Background(), args, dispatch.Options{
+	err := dispatch.Run(ctx, args, dispatch.Options{
 		ConfigPath: filepath.Join(h.dir, "config.toml"),
 		StateDir:   h.state,
 		LinearURL:  h.linear.server.URL,
@@ -281,7 +343,7 @@ func (h *harness) run(args ...string) (string, error) {
 		Stdout:     &stdout,
 		Stderr:     &stderr,
 	})
-	return stdout.String(), err
+	return stdout.String(), stderr.String(), err
 }
 
 func (h *harness) tickets(tickets ...fakeTicket) {

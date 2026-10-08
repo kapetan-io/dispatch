@@ -2,7 +2,7 @@
 
 An autonomous build workflow for Claude Code, packaged as a Claude Code plugin.
 
-You design a feature with Claude in an interactive session. An autonomous review then checks the design and splits it into small Linear build tickets. Once you approve, a stateless dispatcher, run by launchd every 5 minutes, starts a Claude worker for each ticket in its own worktree, and each worker carries its ticket to a merged pull request.
+You design a feature with Claude in an interactive session. An autonomous review then checks the design and splits it into small Linear build tickets. Once you approve, a stateless dispatcher, running every 5 minutes in a herdr window you keep open, starts a Claude worker for each ticket in its own worktree, and each worker carries its ticket to a merged pull request.
 
 ## Status
 
@@ -21,3 +21,21 @@ Load the plugin in place for one session:
 ```sh
 claude --plugin-dir ~/Development/dispatch
 ```
+
+## Running the dispatcher
+
+Install the CLI from your checkout, which is also the plugin root that workers load:
+
+```sh
+cd ~/Development/dispatch && go install ./cmd/dispatch
+```
+
+The dispatcher reads `~/.config/dispatch/config.toml` and the Linear API key from the keychain entry it names. It shells out to `herdr`, `treehouse`, `git`, `jq` and `claude`, so run it from a shell that has them on PATH.
+
+Open a herdr window and run:
+
+```sh
+dispatch run
+```
+
+It ticks now and every `interval_minutes` after, printing a timestamped line per tick and one line per action. Ctrl-C stops it. To check what a tick would do without acting, run `dispatch tick --dry-run`.
