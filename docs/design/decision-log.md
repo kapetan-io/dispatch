@@ -159,12 +159,12 @@ These come from draft 2 of the proposal. The decisions above remove its set chec
 
 ## Dispatcher blueprint edits owed
 
-`blueprint.md` predates this log, so read this list before treating it as current.
+`blueprint.md` predates this log, so read this list before treating it as current. Items marked (applied, ENG-226) were applied to `blueprint.md` with the first piece of the dispatcher.
 
 The decisions above contradict or extend `blueprint.md` in these places.
 
-- Remove the "no terminal questions" rule, the dialog nudge, the `esc` handling and `AskUserQuestion` from `--disallowedTools` (decision 9).
-- "A parent ticket never gets a worker" becomes "never gets a dispatched worker". The dispatcher skips `design` tickets in every step except promoting their children and closing them.
+- Remove the "no terminal questions" rule, the dialog nudge, the `esc` handling and `AskUserQuestion` from `--disallowedTools` (decision 9). (applied, ENG-226)
+- "A parent ticket never gets a worker" becomes "never gets a dispatched worker". (applied, ENG-226) The dispatcher skips `design` tickets in every step except promoting their children and closing them.
 - Step 6 closes a feature ticket only when it is In Progress, its build tickets have all finished, and at least one build ticket is Done. A canceled review ticket, or a review with zero build tickets, never closes the feature.
 - Step 5 treats the children of a Canceled or Backlog feature ticket as paused.
 - Step 7 never promotes a `design` ticket, and never promotes a Todo child that still holds a lease. Today, pausing a child by moving it to Todo gets it promoted again in the same tick.
@@ -172,12 +172,12 @@ The decisions above contradict or extend `blueprint.md` in these places.
 - Notify you when a launch has waited on `pool_exhausted` for several ticks. Today that wait is silent.
 - The party and statuses tables gain the new writers. You approve a design by moving the review ticket to Done, the review worker creates build tickets, and an agent moves tickets when you tell it to. Done no longer means only "Merged".
 - Rewrite the worker contract without the old skill names, and fold the build stage above into it.
-- The reconcile row for a blocked worker ("Second tick in a row, set Needs Human with the screen text") becomes "notify you, and notify again if it stays unanswered" (decision 9).
+- The reconcile row for a blocked worker ("Second tick in a row, set Needs Human with the screen text") becomes "notify you, and notify again if it stays unanswered" (decision 9). (applied, ENG-226)
 - Proposed, to reconcile two entries above: the step 5 pause under a Backlog feature ticket applies to build tickets only, so a review you start directly can run while the feature ticket is still in Backlog.
 - A grill tree left behind, because you started the review from Linear's UI, is torn down with the dirty-tree guard once the feature ticket is Done.
-- The dispatcher manages only tickets assigned to you that carry the AI label. Remove `manual_label` and the managed-ticket scope limitation (breakdown step, settled 2 and 5).
-- Worker contract item 4 drops the ticket-id ADR filename rule. ADR files keep `NNNN-` numbering (breakdown step, settled 7).
-- Proposed, not yet asked. An agent that runs a tick on "approved" starts it detached through launchd, because that tick closes the review worker's own workspace mid-run and can leave the lock held. Add stale-lock recovery, since the lock records its pid.
+- The dispatcher manages only tickets assigned to you that carry the AI label. Remove `manual_label` and the managed-ticket scope limitation (breakdown step, settled 2 and 5). (applied, ENG-226)
+- Worker contract item 4 drops the ticket-id ADR filename rule. ADR files keep `NNNN-` numbering (breakdown step, settled 7). (applied, ENG-226)
+- Proposed, not yet asked. An agent that runs a tick on "approved" starts it detached through launchd, because that tick closes the review worker's own workspace mid-run and can leave the lock held. Stale-lock recovery, with the lock recording its pid, was applied with ENG-226 (pstack's `orch` store does the same).
 - Proposed, not yet asked. A Todo ticket whose blocker is Canceled goes to Needs Human with one comment. Today it waits in Todo forever and the feature never closes.
 - Proposed, not yet asked. A library ticket's PR references its ticket with `Refs`, not `Fixes`, so Linear's GitHub integration doesn't move it to Done at merge (the statuses table's "Done, Merged" row) and unblock the main ticket before a release exists. The library worker moves it to Done after you approve and it tags the release. The dispatcher keeps a library worker's workspace while its ticket is In Review with a merged PR, and its nudge asks for the release step (breakdown step, settled 6).
 - A ticket may hold leases in more than one repo, one per repo, when its design includes a library (breakdown step, settled 6). Worker lookup, teardown and the dirty-tree guard handle every lease the ticket holds, and `max_trees` is checked per repo.
