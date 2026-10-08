@@ -78,7 +78,7 @@ Each criterion is checked through the dispatcher's surface (`dispatch tick`, `di
 4. An In Progress ticket with an idle worker receives the stall nudge. After two nudges with no status change, the ticket is Needs Human with exactly one dispatcher comment.
 5. A ticket moved from Needs Human back to In Progress receives the resume nudge on the next tick, and the dispatcher posts no comment.
 6. For an In Review ticket, a push that moves the PR head resets the nudge count, so a review that arrives days later starts a fresh count.
-7. A blocked worker gets `esc` and the dialog nudge. If it is still blocked on the next tick, the ticket is Needs Human with the screen text from `herdr agent read` in the comment.
+7. A blocked worker, one asking you a question through AskUserQuestion, triggers a macOS notification on the first tick it is blocked and again on later ticks while it stays blocked. The dispatcher never dismisses the dialog and never sets Needs Human for it (decision 9).
 8. Two consecutive failed launches set Needs Human with the launcher's error. `pool_exhausted` never counts as a failure.
 9. An In Review ticket whose PR has a failing check, changes requested, unresolved review threads or a merge conflict, and whose worker is idle or gone, receives the PR nudge naming the problem. A gone worker is resumed first.
 10. A Done, Canceled or Duplicate ticket with a clean, pushed tree has its workspace closed and its tree returned. `treehouse status` shows the slot available.

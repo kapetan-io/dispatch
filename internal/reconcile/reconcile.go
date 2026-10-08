@@ -81,6 +81,12 @@ func Plan(in Input) []Action {
 			actions = append(actions, Action{Kind: Skip, Ticket: t, Reason: "has sub-issues, and a parent never gets a worker"})
 			continue
 		}
+		// Every decision below reads labels, and a missing design label would
+		// launch a design ticket as a build.
+		if t.LabelsTruncated {
+			actions = append(actions, Action{Kind: Escalate, Ticket: t, Reason: "it has more labels than the dispatcher reads, so it can't reliably tell its repo or whether it is a design ticket. Remove some labels and move it back to In Progress."})
+			continue
+		}
 		if l, ok := designLabel(t); ok {
 			actions = append(actions, Action{Kind: Skip, Ticket: t, Reason: fmt.Sprintf("carries %q, which this dispatcher does not launch yet", l)})
 			continue

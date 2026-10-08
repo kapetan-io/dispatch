@@ -1,6 +1,7 @@
 // Package cache holds the per-ticket counters a tick carries to the next one.
-// Deleting the cache loses nothing that matters: every field is a counter
-// that may reset or a last-seen value that may repeat one notification.
+// Deleting the cache loses little: every field is a counter that may reset,
+// a last-seen value that may repeat one notification, or an escalation
+// comment Linear has not yet accepted, which would then never be posted.
 package cache
 
 import (
@@ -15,6 +16,9 @@ import (
 type Entry struct {
 	LastStatus     string `json:"last_status"`
 	LaunchFailures int    `json:"launch_failures"`
+	// PendingComment is an escalation comment Linear has not accepted yet.
+	// The ticket is already in Needs Human, and each tick retries it.
+	PendingComment string `json:"pending_comment,omitempty"`
 }
 
 // Cache maps a ticket identifier such as ENG-123 to its entry.

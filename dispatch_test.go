@@ -31,6 +31,7 @@ func TestTickDryRunListsLaunchWithoutActing(t *testing.T) {
 	assert.Equal(t, "launch ENG-1\n", out)
 	assert.Empty(t, h.launches())
 	assert.Empty(t, h.linear.mutations())
+	assert.NoFileExists(t, filepath.Join(h.state, "cache.json"))
 }
 
 func TestTickLaunchesApprovedTicketWithNoWorker(t *testing.T) {
@@ -282,6 +283,51 @@ func TestTickCountsTicketsInAnUnreadRepoAgainstTheWorkerCap(t *testing.T) {
 	// ENG-2 may have a live worker nobody could see, so ENG-1 must not launch.
 	assert.Contains(t, out, "wait ENG-1: 1 of 1 workers already running")
 	assert.Empty(t, h.launches())
+}
+
+func TestTickPostsAnEscalationCommentThatFailedOnAnEarlierTick(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", ""))
+	h.linear.failComments(true)
+
+	_, stderr, err := h.runContext(context.Background(), "tick")
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "while escalating ENG-1: moved to Needs Human, but the comment failed")
+
+	// The move went through, so Linear now reports the ticket in Needs Human.
+	h.tickets(ticket("ENG-1", "Needs Human", ""))
+	h.linear.failComments(false)
+
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	mutations := h.linear.mutations()
+	require.Len(t, mutations, 2)
+	assert.Equal(t, "MoveTicket", mutations[0].operation)
+	assert.Equal(t, "CommentTicket", mutations[1].operation)
+	assert.Contains(t, mutations[1].variables["body"], `has no "repo" label`)
+
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	assert.Len(t, h.linear.mutations(), 2)
+}
+
+func TestTickEscalatesATicketWhoseLabelsDidNotFitOnePage(t *testing.T) {
+	h := newHarness(t)
+	// The design label may be among the labels Linear left off the page, so
+	// this ticket must not be launched as a build.
+	cut := ticket("ENG-1", "In Progress", "dispatch")
+	cut["labels"].(map[string]any)["pageInfo"] = map[string]bool{"hasNextPage": true}
+	h.tickets(cut)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "escalate ENG-1: it has more labels than the dispatcher reads")
+	assert.Empty(t, h.launches())
+	mutations := h.linear.mutations()
+	require.Len(t, mutations, 2)
+	assert.Equal(t, needsHumanID, mutations[0].variables["state"])
 }
 
 func TestTickExitsWhenAnotherTickHoldsTheLock(t *testing.T) {
@@ -554,12 +600,13 @@ type mutation struct {
 // fakeLinear answers the dispatcher's GraphQL operations by name and records
 // every mutation.
 type fakeLinear struct {
-	server  *httptest.Server
-	mu      sync.Mutex
-	nodes   []fakeTicket
-	changes []mutation
+	server            *httptest.Server
+	mu                sync.Mutex
+	nodes             []fakeTicket
+	changes           []mutation
 	noMoves           bool
 	movesUnsuccessful bool
+	noComments        bool
 	morePages         bool
 }
 
@@ -568,6 +615,12 @@ func (f *fakeLinear) unsuccessfulMoves() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.movesUnsuccessful = true
+}
+
+func (f *fakeLinear) failComments(on bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.noComments = on
 }
 
 func (f *fakeLinear) hasMorePages() {
@@ -603,7 +656,7 @@ func (f *fakeLinear) mutations() []mutation {
 
 func (f *fakeLinear) serve(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		OperationName string            `json:"operationName"`
+		OperationName string         `json:"operationName"`
 		Variables     map[string]any `json:"variables"`
 	}
 	w.Header().Set("X-RateLimit-Requests-Limit", "2500")
@@ -641,6 +694,10 @@ func (f *fakeLinear) serve(w http.ResponseWriter, r *http.Request) {
 		f.changes = append(f.changes, mutation{operation: req.OperationName, variables: req.Variables})
 		data = map[string]any{"issueUpdate": map[string]bool{"success": !f.movesUnsuccessful}}
 	case "CommentTicket":
+		if f.noComments {
+			http.Error(w, "comment refused", http.StatusInternalServerError)
+			return
+		}
 		f.changes = append(f.changes, mutation{operation: req.OperationName, variables: req.Variables})
 		data = map[string]any{"commentCreate": map[string]bool{"success": true}}
 	default:

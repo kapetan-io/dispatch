@@ -199,6 +199,9 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 	// Save even when the tick fails partway, so a launch failure already
 	// counted is not forgotten and the escalation limit is still reached.
 	defer func() {
+		if dryRun {
+			return
+		}
 		if serr := c.Save(cachePath); serr != nil && err == nil {
 			err = serr
 		}
@@ -263,6 +266,21 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		return sum, nil
 	}
 
+	// A comment that failed after its ticket moved to Needs Human is the only
+	// record of why, and Plan never revisits a Needs Human ticket.
+	for _, t := range tickets {
+		e := c[t.Identifier]
+		if e.PendingComment == "" {
+			continue
+		}
+		if err := lin.Comment(ctx, t.ID, e.PendingComment); err != nil {
+			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while commenting on %s: %v\n", t.Identifier, err)
+			continue
+		}
+		e.PendingComment = ""
+		c[t.Identifier] = e
+	}
+
 	launch := opts.Launcher
 	if launch == "" {
 		launch = filepath.Join(cfg.PluginRoot, "bin", "dispatch-launch")
@@ -273,7 +291,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Escalate:
 			// One ticket's failed escalation must not hold up the others.
-			if err := escalate(ctx, lin, cfg, a.Ticket, a.Reason); err != nil {
+			if err := escalate(ctx, lin, cfg, c, a.Ticket, a.Reason); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while escalating %s: %v\n", a.Ticket.Identifier, err)
 				continue
 			}
@@ -300,10 +318,11 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 				continue
 			}
 			reason := fmt.Sprintf("its worker failed to launch %d times in a row. The launcher said `%s`: %s", e.LaunchFailures, r.Status, r.Detail)
-			if err := escalate(ctx, lin, cfg, a.Ticket, reason); err != nil {
+			if err := escalate(ctx, lin, cfg, c, a.Ticket, reason); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while escalating %s: %v\n", a.Ticket.Identifier, err)
 				continue
 			}
+			e = c[a.Ticket.Identifier]
 			e.LaunchFailures = 0
 			c[a.Ticket.Identifier] = e
 			_, _ = fmt.Fprintf(opts.Stdout, "escalate %s: launch failed %d times\n", a.Ticket.Identifier, cfg.LaunchFailureLimit)
@@ -318,7 +337,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 }
 
 // escalate moves a ticket to Needs Human with one comment saying why.
-func escalate(ctx context.Context, lin linear.Client, cfg config.Config, t linear.Ticket, reason string) error {
+func escalate(ctx context.Context, lin linear.Client, cfg config.Config, c cache.Cache, t linear.Ticket, reason string) error {
 	state, err := lin.StateID(ctx, t.Team, cfg.Linear.Statuses.NeedsHuman)
 	if err != nil {
 		return err
@@ -328,7 +347,14 @@ func escalate(ctx context.Context, lin linear.Client, cfg config.Config, t linea
 	if err := lin.Move(ctx, t.ID, state); err != nil {
 		return err
 	}
-	return lin.Comment(ctx, t.ID, "The dispatcher moved this ticket to Needs Human because "+reason)
+	body := "The dispatcher moved this ticket to Needs Human because " + reason
+	if err := lin.Comment(ctx, t.ID, body); err != nil {
+		e := c[t.Identifier]
+		e.PendingComment = body
+		c[t.Identifier] = e
+		return fmt.Errorf("moved to Needs Human, but the comment failed and will be retried next tick (%q): %w", body, err)
+	}
+	return nil
 }
 
 func linearKey(ctx context.Context, opts Options, cfg config.Config) (string, error) {

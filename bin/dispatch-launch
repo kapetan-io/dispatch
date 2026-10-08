@@ -141,12 +141,19 @@ if [ -z "$ck" ]; then
 fi
 
 # give_back closes the workspace and returns the lease when this run took the
-# lease and no Claude ever ran in the tree, so a failed launch holds no pool
-# slot. A lease from an earlier run may hold a worker's uncommitted work, and
-# --force would discard it, so that one is kept.
+# lease, so a failed launch holds no pool slot. Any Claude in the workspace
+# has not been given the kickoff yet, so closing it loses no work. A lease
+# from an earlier run may hold a worker's uncommitted work, and --force would
+# discard it, so that one is kept.
 give_back() {
   [ "$fresh" = 1 ] || return 0
-  [ -n "${ws:-}" ] && herdr workspace close "$ws" >/dev/null 2>&1
+  # The lease goes back only after the workspace is confirmed closed. A tree
+  # returned with its workspace still open would match that workspace by
+  # path, so the next ticket to lease it would never start.
+  if [ -n "${ws:-}" ] && ! herdr workspace close "$ws" >/dev/null 2>&1; then
+    log "workspace $ws did not close, keeping the lease on $ck"
+    return 0
+  fi
   log "returning the lease on $ck"
   (cd "$repo" && treehouse return "$ck" --if-lease-holder "$ticket" --force >&2)
 }

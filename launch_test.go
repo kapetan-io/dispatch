@@ -34,8 +34,34 @@ func TestLaunchKeepsALeaseFromAnEarlierRunWhenTheWorkspaceFails(t *testing.T) {
 	assert.Empty(t, l.returns())
 }
 
+func TestLaunchClosesTheWorkspaceBeforeReturningALeaseItTook(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.writeFile("trees.json", `[]`)
+	l.writeFile("open-works", "")
+
+	result := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "workspace_failed", result["status"])
+	assert.Equal(t, "workspace close w9\n", l.readFile("closes.log"))
+	assert.Equal(t, []string{"return " + l.tree + " --if-lease-holder ENG-1 --force"}, l.returns())
+}
+
+func TestLaunchKeepsALeaseWhoseWorkspaceWouldNotClose(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.writeFile("trees.json", `[]`)
+	l.writeFile("open-works", "")
+	// A tree returned with its workspace still open would match that
+	// workspace by path, so the next ticket to lease it would never start.
+	l.writeFile("close-fails", "")
+
+	result := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "workspace_failed", result["status"])
+	assert.Empty(t, l.returns())
+}
+
 // launchHarness runs bin/dispatch-launch in a throwaway git repo against fake
-// herdr and treehouse commands whose `herdr worktree open` always fails.
+// herdr and treehouse commands that make the launch fail before Claude starts.
 type launchHarness struct {
 	t    *testing.T
 	dir  string
@@ -60,10 +86,15 @@ func newLaunchHarness(t *testing.T) *launchHarness {
 	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "init")
 	l.git(l.repo, "worktree", "add", "-q", "--detach", l.tree)
 
+	// worktree open fails unless the open-works file exists, and then tab
+	// create fails instead. workspace close fails when close-fails exists.
 	l.script("herdr", `case "$1 $2" in
 "workspace list") echo '{"result":{"workspaces":[]}}' ;;
-"worktree open") echo '{"error":{"code":"refused","message":"no"}}'; exit 1 ;;
-"workspace close") echo '{"result":{"type":"ok"}}' ;;
+"worktree open")
+  [ -f "`+dir+`/open-works" ] || { echo '{"error":{"code":"refused","message":"no"}}'; exit 1; }
+  echo '{"result":{"worktree":{"open_workspace_id":"w9"}}}' ;;
+"tab create") echo '{"error":{"code":"refused","message":"no"}}'; exit 1 ;;
+"workspace close") [ -f "`+dir+`/close-fails" ] && exit 1; echo "$*" >> "`+dir+`/closes.log" ;;
 *) exit 2 ;;
 esac`)
 	l.script("treehouse", `case "$1" in
@@ -94,6 +125,12 @@ func (l *launchHarness) returns() []string {
 	}
 	require.NoError(l.t, err)
 	return strings.Split(strings.TrimSpace(string(b)), "\n")
+}
+
+func (l *launchHarness) readFile(name string) string {
+	b, err := os.ReadFile(filepath.Join(l.dir, name))
+	require.NoError(l.t, err)
+	return string(b)
 }
 
 func (l *launchHarness) git(dir string, args ...string) {

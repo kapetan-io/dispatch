@@ -31,6 +31,9 @@ type Ticket struct {
 	Labels     []Label
 	// HasChildren marks a parent ticket, which never gets a dispatched worker.
 	HasChildren bool
+	// LabelsTruncated means Labels is only the first page, so a repo or design
+	// label may be missing from it.
+	LabelsTruncated bool
 }
 
 // Label is a Linear label and the label group it belongs to, if any.
@@ -109,7 +112,7 @@ const managedTickets = `query ManagedTickets($label: String!, $teams: [String!],
         id identifier title branchName
         state { name }
         team { key }
-        labels(first: 25) { nodes { name parent { name } } }
+        labels(first: 25) { nodes { name parent { name } } pageInfo { hasNextPage } }
         children(first: 1) { nodes { id } }
       }
       pageInfo { hasNextPage }
@@ -142,6 +145,9 @@ func (c Client) ManagedTickets(ctx context.Context, label string, teams []string
 								Name string `json:"name"`
 							} `json:"parent"`
 						} `json:"nodes"`
+						PageInfo struct {
+							HasNextPage bool `json:"hasNextPage"`
+						} `json:"pageInfo"`
 					} `json:"labels"`
 					Children struct {
 						Nodes []struct {
@@ -167,13 +173,14 @@ func (c Client) ManagedTickets(ctx context.Context, label string, teams []string
 			continue
 		}
 		t := Ticket{
-			ID:          n.ID,
-			Identifier:  n.Identifier,
-			Title:       n.Title,
-			Branch:      n.BranchName,
-			Status:      n.State.Name,
-			Team:        n.Team.Key,
-			HasChildren: len(n.Children.Nodes) > 0,
+			ID:              n.ID,
+			Identifier:      n.Identifier,
+			Title:           n.Title,
+			Branch:          n.BranchName,
+			Status:          n.State.Name,
+			Team:            n.Team.Key,
+			HasChildren:     len(n.Children.Nodes) > 0,
+			LabelsTruncated: n.Labels.PageInfo.HasNextPage,
 		}
 		for _, l := range n.Labels.Nodes {
 			label := Label{Name: l.Name}
