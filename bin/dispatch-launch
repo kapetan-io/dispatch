@@ -24,6 +24,12 @@ set -uo pipefail
 
 log() { echo "dispatch-launch: $*" >&2; }
 
+# DISPATCH_LAUNCH_TRACE=<file> appends every screen the kickoff step reads.
+trace() {
+  [ -n "${DISPATCH_LAUNCH_TRACE:-}" ] || return 0
+  printf '=== %s %s\n%s\n' "$(date +%T)" "$1" "$2" >>"$DISPATCH_LAUNCH_TRACE"
+}
+
 # finish <status> [key=value ...] — print the one JSON result and exit.
 finish() {
   local status=$1; shift
@@ -125,7 +131,7 @@ if [ -z "$ck" ]; then
     git -C "$ck" switch "$branch" >&2 || co_ok=0
   else
     git -C "$repo" fetch --no-tags origin "$base" >/dev/null 2>&1
-    git -C "$ck" switch -c "$branch" "origin/$base" >&2 ||
+    git -C "$ck" switch --no-track -c "$branch" "origin/$base" >&2 ||
       git -C "$ck" switch -c "$branch" "$base" >&2 || co_ok=0
   fi
   if [ $co_ok -eq 0 ]; then
@@ -153,7 +159,10 @@ fi
 # Open the checkout as a worktree so its workspace nests under the repo in
 # herdr's sidebar. Falls back to a bare workspace if herdr refuses.
 if [ -z "$ws" ]; then
-  opened=$(herdr worktree open --cwd "$repo" --path "$ck" --label "$label" --no-focus --json 2>&1)
+  # herdr refuses a linked worktree as the source, so name the main checkout
+  # even when the launcher runs from inside a pool tree.
+  main_checkout=$(dirname "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)")
+  opened=$(herdr worktree open --cwd "$main_checkout" --path "$ck" --label "$label" --no-focus --json 2>&1)
   ws=$(jq -r '.result.worktree.open_workspace_id // .result.workspace.workspace_id // empty' <<<"$opened" 2>/dev/null)
   [ -n "$ws" ] || log "worktree open did not nest $ck ($opened), falling back to a bare workspace"
 fi
@@ -214,14 +223,18 @@ start_agent || { sleep 3; start_agent; } || finish agent_start_failed \
   detail="herdr agent start failed in pane $pane" workspace="$ws" pane="$pane" worktree="$ck"
 
 # --- kickoff -----------------------------------------------------------------
-# The probe is the kickoff's own prefix, never the bare ticket id, because the
-# input box renders ghost suggestions that can contain the ticket.
+# A submitted kickoff is confirmed by herdr's agent status leaving idle, never
+# by finding its text on screen: while a skill runs, Claude's screen shows only
+# the spinner and an empty input box, and a text probe misread that as a lost
+# kickoff and typed it again. The kickoff is retyped only while the agent is
+# still idle with the text gone from its input box.
 probe=${kickoff:0:24}
 inject() {  # 0 = landed, 1 = unconfirmed
-  local screen after consent_try=0
+  local screen consent_try=0 ready=0 try
   herdr agent wait "$pane" --until idle --timeout 15000 >/dev/null 2>&1
   for _ in $(seq 30); do
     screen=$(herdr agent read "$pane" --source visible --lines 30 2>/dev/null | tr '\n' ' ')
+    trace "dialogs" "$screen"
     # One-time bypass-permissions consent. Match the option text, never
     # "bypass permissions", which the status line shows forever after.
     if grep -qiF 'yes, i accept' <<<"$screen"; then
@@ -239,18 +252,23 @@ inject() {  # 0 = landed, 1 = unconfirmed
       herdr pane send-keys "$pane" Enter >/dev/null 2>&1
       sleep 1; continue
     fi
-    grep -qF "$probe" <<<"$screen" && return 0
-    if grep -qF '❯' <<<"$screen"; then
-      herdr pane run "$pane" "$kickoff" >/dev/null 2>&1
-      herdr pane send-keys "$pane" Enter >/dev/null 2>&1
-      # Poll for the echo before retyping, or the kickoff queues twice.
-      for _ in $(seq 10); do
-        sleep 1
-        after=$(herdr agent read "$pane" --source visible --lines 30 2>/dev/null | tr '\n' ' ')
-        grep -qF "$probe" <<<"$after" && return 0
-      done
-    fi
+    if grep -qF '❯' <<<"$screen"; then ready=1; break; fi
     sleep 1
+  done
+  [ $ready -eq 1 ] || return 1
+  for try in 1 2 3; do
+    trace "typing" "$kickoff (try $try)"
+    herdr pane run "$pane" "$kickoff" >/dev/null 2>&1
+    herdr pane send-keys "$pane" Enter >/dev/null 2>&1
+    herdr agent wait "$pane" --until working --until blocked --timeout 15000 >/dev/null 2>&1 && return 0
+    screen=$(herdr agent read "$pane" --source visible --lines 30 2>/dev/null | tr '\n' ' ')
+    trace "not-working" "$screen"
+    # Typed but never submitted: press Enter rather than type it twice.
+    if grep -qF "$probe" <<<"$screen"; then
+      herdr pane send-keys "$pane" Enter >/dev/null 2>&1
+      herdr agent wait "$pane" --until working --until blocked --timeout 15000 >/dev/null 2>&1 && return 0
+      return 1
+    fi
   done
   return 1
 }
