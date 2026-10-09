@@ -22,6 +22,9 @@ type Entry struct {
 	// ResumePending marks a ticket moved from Needs Human back to In Progress
 	// whose worker has not yet been sent the resume nudge.
 	ResumePending bool `json:"resume_pending,omitempty"`
+	// NotifyPending marks a Needs Human notification that failed to show and
+	// is retried each tick until it does.
+	NotifyPending bool `json:"notify_pending,omitempty"`
 	// BlockedTicks counts consecutive ticks the ticket's worker sat blocked.
 	BlockedTicks int `json:"blocked_ticks"`
 	// PendingComment is an escalation comment Linear has not accepted yet.

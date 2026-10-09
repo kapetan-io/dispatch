@@ -678,3 +678,100 @@ func TestTickSendsTheResumeNudgeToAWorkerThatWasBlockedWhenTheTicketMovedBack(t 
 	assert.Equal(t, "nudge ENG-1: resume\n", out)
 	assert.Equal(t, []string{"w-ENG-1:p1|" + resumeText1}, h.prompts())
 }
+
+func TestTickSendsTheResumeNudgeAfterANeedsHumanNotificationFailed(t *testing.T) {
+	h := newHarness(t)
+	h.worker("ENG-1", "idle")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))
+	h.writeFile("notify-fails", "")
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	h.removeFile("notify-fails")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "nudge ENG-1: resume\n", out)
+}
+
+func TestTickSendsTheResumeNudgeAfterAnEscalationAlertFailed(t *testing.T) {
+	h := newHarness(t)
+	h.worker("ENG-1", "idle")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	for range 2 {
+		_, err := h.run("tick")
+		require.NoError(t, err)
+	}
+	h.writeFile("notify-fails", "")
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	h.removeFile("notify-fails")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "nudge ENG-1: resume\n", out)
+}
+
+func TestTickNotifiesWhenAReviewTicketEntersNeedsHuman(t *testing.T) {
+	h := newHarness(t)
+	h.worker("ENG-1", "working")
+	h.tickets(withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	h.tickets(withLabel(ticket("ENG-1", "Needs Human", "dispatch"), "design-review"))
+	for range 3 {
+		_, err = h.run("tick")
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1|dispatch"}, h.notifications())
+}
+
+func TestTickStartsFreshWhenAPausedTicketReturns(t *testing.T) {
+	h := newHarness(t)
+	h.worker("ENG-1", "idle")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	for range 2 {
+		_, err := h.run("tick")
+		require.NoError(t, err)
+	}
+	// Moved to Todo, the ticket is not a started ticket and drops out of the read.
+	h.tickets()
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "nudge ENG-1: stall\n", out)
+	assert.Empty(t, h.linear.mutations())
+}
+
+func TestTickDropsAPendingResumeWhenTheTicketIsPaused(t *testing.T) {
+	h := newHarness(t)
+	h.worker("ENG-1", "blocked")
+	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	h.tickets()
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.setWorkerStatus("ENG-1", "idle")
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "nudge ENG-1: stall\n", out)
+}

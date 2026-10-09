@@ -342,12 +342,13 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
 				e := c[a.Ticket.Identifier]
 				e.BlockedTicks = 0
-				if a.Reason == reconcile.ReasonEnteredNeedsHuman {
-					e.LastStatus = ""
-				}
+				e.NotifyPending = a.Reason == reconcile.ReasonEnteredNeedsHuman
 				c[a.Ticket.Identifier] = e
 				continue
 			}
+			e := c[a.Ticket.Identifier]
+			e.NotifyPending = false
+			c[a.Ticket.Identifier] = e
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Launch:
 			r := launcher.Launch(ctx, launch, a.RepoDir, a.Ticket.Identifier, a.Ticket.Branch, cfg.WorkerModel)
@@ -393,6 +394,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 // lands, so a worker that was blocked or working when the answer arrived still
 // gets the resume text once it goes idle.
 func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Worker, statuses config.Statuses) {
+	seen := map[string]bool{}
 	for _, t := range tickets {
 		e := c[t.Identifier]
 		if e.LastStatus != t.Status {
@@ -408,8 +410,25 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 		} else if e.LastStatus == statuses.NeedsHuman {
 			e.ResumePending = true
 		}
+		if t.Status != statuses.NeedsHuman {
+			e.NotifyPending = false
+		}
 		e.LastStatus = t.Status
 		c[t.Identifier] = e
+		seen[t.Identifier] = true
+	}
+	// A ticket missing from the read was paused or finished, and its worker may
+	// have been torn down and relaunched since. Counters from before would
+	// escalate it on a nudge it never received, so only what must outlive the
+	// ticket's absence is kept.
+	for id, e := range c {
+		if seen[id] {
+			continue
+		}
+		c[id] = cache.Entry{LaunchFailures: e.LaunchFailures, PendingComment: e.PendingComment, TicketID: e.TicketID}
+		if c[id] == (cache.Entry{}) {
+			delete(c, id)
+		}
 	}
 }
 
@@ -426,13 +445,11 @@ func escalate(ctx context.Context, lin linear.Client, cfg config.Config, c cache
 	}
 	// Tell the user now instead of a tick later. Setting last_status here is
 	// what keeps the next tick's Plan from notifying a second time, and a
-	// failed alert clears it so that tick notifies instead.
+	// failed alert marks the notification pending so the next tick retries it.
 	e := c[t.Identifier]
 	e.LastStatus = cfg.Linear.Statuses.NeedsHuman
 	e.Nudges = 0
-	if err := alert(reconcile.NeedsHumanText(t)); err != nil {
-		e.LastStatus = ""
-	}
+	e.NotifyPending = alert(reconcile.NeedsHumanText(t)) != nil
 	c[t.Identifier] = e
 	body := "The dispatcher moved this ticket to Needs Human because " + reason
 	if err := lin.Comment(ctx, t.ID, body); err != nil {

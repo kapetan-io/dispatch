@@ -160,17 +160,18 @@ func Plan(in Input) []Action {
 
 // watch decides what a ticket needs from the user or its live worker: a
 // notification for a ticket entering Needs Human or a worker asking a question,
-// and a nudge for an idle In Progress worker. It skips design and review
-// tickets, which the grill and the review own, and tickets whose labels were
-// cut short or that have children, because it can't tell whether they are
-// design tickets.
+// and a nudge for an idle In Progress worker. It skips the grill's feature
+// ticket, which carries "design", and tickets whose labels were cut short or
+// that have children, because it can't tell whether they are design tickets.
+// A review ticket still notifies, since its hand-off is a move to Needs Human,
+// but it is never nudged.
 func (in Input) watch(t linear.Ticket) (Action, bool) {
-	if _, design := designLabel(t); design || t.LabelsTruncated || t.HasChildren {
+	if t.LabelsTruncated || t.HasChildren || t.HasLabel("design") {
 		return Action{}, false
 	}
 	prev := in.Cache[t.Identifier]
 	if t.Status == in.NeedsHuman {
-		if prev.LastStatus == in.NeedsHuman {
+		if prev.LastStatus == in.NeedsHuman && !prev.NotifyPending {
 			return Action{}, false
 		}
 		return Action{Kind: Notify, Ticket: t, Reason: ReasonEnteredNeedsHuman, Text: NeedsHumanText(t)}, true
@@ -186,7 +187,8 @@ func (in Input) watch(t linear.Ticket) (Action, bool) {
 		}
 		return Action{Kind: Notify, Ticket: t, Reason: ReasonBlocked, Text: fmt.Sprintf("%s is waiting on your answer in its herdr workspace", t.Identifier)}, true
 	case worker.Idle:
-		if t.Status != in.InProgress {
+		// The review worker's nudges have their own text, which a later piece adds.
+		if t.Status != in.InProgress || t.HasLabel("design-review") {
 			return Action{}, false
 		}
 		nudges := prev.Nudges
