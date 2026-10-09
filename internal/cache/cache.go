@@ -40,6 +40,9 @@ type Entry struct {
 	PendingComment string `json:"pending_comment,omitempty"`
 	// TicketID is Linear's internal id for the ticket a pending comment goes on.
 	TicketID string `json:"ticket_id,omitempty"`
+	// TeardownWarned marks a finished ticket whose dirty tree already got its
+	// one comment. It is dropped once the ticket holds no lease.
+	TeardownWarned bool `json:"teardown_warned,omitempty"`
 }
 
 // NudgesAt is the nudge count that still stands for an In Review ticket now in

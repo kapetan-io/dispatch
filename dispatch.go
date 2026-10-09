@@ -269,6 +269,10 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		return sum, err
 	}
 
+	leased, err := leasedTickets(ctx, lin, cfg, trees, tickets)
+	if err != nil {
+		return sum, err
+	}
 	workers := map[string]worker.Worker{}
 	for _, t := range tickets {
 		workers[t.Identifier] = worker.Find(t.Identifier, trees, snap)
@@ -287,7 +291,12 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		RepoLabelGroup: cfg.Linear.RepoLabelGroup,
 		Repos:          cfg.Repos,
 		UnreadRepos:    unread,
+		Done:           cfg.Linear.Statuses.Done,
+		Paused:         cfg.Linear.Statuses.Paused,
+		Leased:         leased,
+		Leases:         leaseWorkers(leased, trees, snap),
 	}
+	input.Unfinished, input.CheckErrors = inspectTrees(ctx, input)
 	input.PRs = readPRs(ctx, opts, input)
 	actions := reconcile.Plan(input)
 
@@ -316,7 +325,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		c[id] = e
 	}
 
-	settle(c, tickets, workers, input.PRs, cfg.Linear.Statuses)
+	settle(c, tickets, workers, input.PRs, cfg.Linear.Statuses, heldFinished(input))
 
 	alert := func(message string) error {
 		return notify.Send(ctx, opts.Osascript, "dispatch", message)
@@ -349,6 +358,21 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			e.ResumePending = false
 			c[a.Ticket.Identifier] = e
 			_, _ = fmt.Fprintln(opts.Stdout, a)
+		case reconcile.Teardown:
+			// One tree's failure must not hold up the other trees.
+			if err := teardown(ctx, opts, a); err != nil {
+				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while tearing down %s: %v\n", a.Ticket.Identifier, err)
+			}
+		case reconcile.Stop:
+			if err := herdr.CloseWorkspace(ctx, opts.Herdr, a.WorkspaceID); err != nil {
+				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while stopping %s: %v\n", a.Ticket.Identifier, err)
+				continue
+			}
+			_, _ = fmt.Fprintln(opts.Stdout, a)
+		case reconcile.Keep:
+			if err := keep(ctx, opts, lin, c, a); err != nil {
+				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while keeping the tree of %s: %v\n", a.Ticket.Identifier, err)
+			}
 		case reconcile.Notify:
 			if err := alert(a.Text); err != nil {
 				// Settle already advanced the counters, so reset them to make Plan
@@ -410,7 +434,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 // A ticket back in In Progress stays resume-pending until a resume nudge
 // lands, so a worker that was blocked or working when the answer arrived still
 // gets the resume text once it goes idle.
-func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Worker, prs map[string]pullrequest.PR, statuses config.Statuses) {
+func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Worker, prs map[string]pullrequest.PR, statuses config.Statuses, held map[string]bool) {
 	seen := map[string]bool{}
 	for _, t := range tickets {
 		e := c[t.Identifier]
@@ -453,7 +477,9 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 		if seen[id] {
 			continue
 		}
-		c[id] = cache.Entry{LaunchFailures: e.LaunchFailures, PendingComment: e.PendingComment, TicketID: e.TicketID}
+		// A finished ticket keeps its dirty-tree warning while it holds a lease,
+		// and the warning goes once the tree is returned.
+		c[id] = cache.Entry{LaunchFailures: e.LaunchFailures, PendingComment: e.PendingComment, TicketID: e.TicketID, TeardownWarned: e.TeardownWarned && held[id]}
 		if c[id] == (cache.Entry{}) {
 			delete(c, id)
 		}

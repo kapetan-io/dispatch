@@ -84,6 +84,16 @@ func Prompt(ctx context.Context, bin, pane, text string) error {
 	return nil
 }
 
+// CloseWorkspace closes a workspace and the panes in it, which ends any worker
+// running there.
+func CloseWorkspace(ctx context.Context, bin, workspace string) error {
+	out, err := exec.CommandContext(ctx, bin, "workspace", "close", workspace).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("while closing herdr workspace %s: %w: %s", workspace, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 func run(ctx context.Context, bin string, out any, args ...string) error {
 	b, err := exec.CommandContext(ctx, bin, args...).Output()
 	if err != nil {

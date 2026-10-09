@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -413,7 +414,10 @@ func TestRunRejectsANonPositiveInterval(t *testing.T) {
 	require.ErrorContains(t, err, "interval must be positive")
 }
 
-const needsHumanID = "state-needs-human"
+const (
+	needsHumanID = "state-needs-human"
+	viewerID     = "viewer-1"
+)
 
 // harness runs the dispatcher against a fake Linear server and fake herdr,
 // treehouse and launcher commands, all rooted in one temp directory.
@@ -443,6 +447,11 @@ func newHarness(t *testing.T) *harness {
 	h.writeFile("launch.json", `{"status":"ok"}`)
 	h.script("herdr", `case "$1 $2" in
 "workspace list") cat "`+dir+`/workspaces.json" ;;
+"workspace close")
+  [ -f "`+dir+`/close-fails" ] && exit 1
+  echo "$3" >> "`+dir+`/closes.log"
+  jq --arg id "$3" '.result.workspaces |= map(select(.workspace_id != $id))' "`+dir+`/workspaces.json" > "`+dir+`/workspaces.tmp"
+  mv "`+dir+`/workspaces.tmp" "`+dir+`/workspaces.json" ;;
 "agent list") cat "`+dir+`/agents.json" ;;
 "agent prompt")
   [ -f "`+dir+`/prompt-fails" ] && { echo '{"error":{"code":"agent_blocked"}}'; exit 1; }
@@ -457,7 +466,15 @@ echo "${@: -2:1}|${@: -1}" >> "`+dir+`/notifications.log"`)
 for arg; do case "$arg" in branch=*) branch="${arg#branch=}" ;; esac; done
 echo "$branch" >> "`+dir+`/gh.log"
 cat "`+dir+`/pr-${branch##*/}.json" 2>/dev/null || echo '{"data":{"repository":{"pullRequests":{"nodes":[]}}}}'`)
-	h.script("treehouse", `cat "`+dir+`/trees.json"`)
+	// return frees the tree the way treehouse does, so later ticks see it available.
+	h.script("treehouse", `case "$1" in
+return)
+  [ -f "`+dir+`/return-fails" ] && exit 1
+  echo "$PWD|$*" >> "`+dir+`/returns.log"
+  jq --arg p "$2" 'map(if .path == $p then .lease_holder = "" | .status = "available" else . end)' "`+dir+`/trees.json" > "`+dir+`/trees.tmp"
+  mv "`+dir+`/trees.tmp" "`+dir+`/trees.json" ;;
+*) cat "`+dir+`/trees.json" ;;
+esac`)
 	h.script("launcher", `echo "$PWD $*" >> "`+dir+`/launches.log"
 cat "`+dir+`/launch.json"`)
 	return h
@@ -507,7 +524,11 @@ func (h *harness) tickets(tickets ...fakeTicket) {
 // worker gives a ticket a leased tree and a herdr workspace on it. An empty
 // status means the workspace has no Claude agent.
 func (h *harness) worker(ticket, status string) {
-	tree := filepath.Join(h.dir, "trees", ticket)
+	h.workerOn(ticket, filepath.Join(h.dir, "trees", ticket), "w-"+ticket, status)
+}
+
+// workerOn is worker for a tree at a chosen path and workspace id.
+func (h *harness) workerOn(ticket, tree, id, status string) {
 	trees := []map[string]string{}
 	require.NoError(h.t, json.Unmarshal(h.readFile("trees.json"), &trees))
 	trees = append(trees, map[string]string{"path": tree, "status": "leased", "lease_holder": ticket})
@@ -519,7 +540,6 @@ func (h *harness) worker(ticket, status string) {
 		} `json:"result"`
 	}
 	require.NoError(h.t, json.Unmarshal(h.readFile("workspaces.json"), &ws))
-	id := "w-" + ticket
 	ws.Result.Workspaces = append(ws.Result.Workspaces, map[string]any{
 		"workspace_id": id,
 		"label":        ticket,
@@ -580,6 +600,16 @@ func (h *harness) lines(name string) []string {
 	return strings.Split(strings.TrimSpace(string(b)), "\n")
 }
 
+// closes lists the herdr workspaces that were closed.
+func (h *harness) closes() []string {
+	return h.lines("closes.log")
+}
+
+// returns lists the treehouse return calls, as "<directory>|<arguments>".
+func (h *harness) returns() []string {
+	return h.lines("returns.log")
+}
+
 func (h *harness) launchResult(result string) {
 	h.writeFile("launch.json", result)
 }
@@ -633,6 +663,7 @@ func ticket(id, status, repo string) fakeTicket {
 		"title":      "ticket " + id,
 		"branchName": "thrawn01/" + strings.ToLower(id),
 		"state":      map[string]string{"name": status},
+		"assignee":   map[string]string{"id": viewerID},
 		"team":       map[string]string{"key": "ENG"},
 		"labels":     map[string]any{"nodes": labels},
 		"children":   map[string]any{"nodes": []any{}},
@@ -661,11 +692,13 @@ type fakeLinear struct {
 	server            *httptest.Server
 	mu                sync.Mutex
 	nodes             []fakeTicket
+	elsewhere         []fakeTicket
 	changes           []mutation
 	noMoves           bool
 	movesUnsuccessful bool
 	noComments        bool
 	morePages         bool
+	lookupCalls       int
 }
 
 // unsuccessfulMoves makes Linear answer a move with HTTP 200 and success:false.
@@ -706,6 +739,20 @@ func (f *fakeLinear) setTickets(nodes []fakeTicket) {
 	f.nodes = nodes
 }
 
+// setElsewhere sets the tickets Linear knows that are not started, such as a
+// Done or Todo ticket, which only a lookup by identifier finds.
+func (f *fakeLinear) setElsewhere(nodes ...fakeTicket) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.elsewhere = nodes
+}
+
+func (f *fakeLinear) lookups() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lookupCalls
+}
+
 func (f *fakeLinear) mutations() []mutation {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -736,6 +783,26 @@ func (f *fakeLinear) serve(w http.ResponseWriter, r *http.Request) {
 			"nodes":    f.nodes,
 			"pageInfo": map[string]bool{"hasNextPage": f.morePages},
 		}}}
+	case "LeasedTickets":
+		f.lookupCalls++
+		// Answer like Linear: only the tickets the filter names.
+		var asked []string
+		filter, _ := req.Variables["filter"].(map[string]any)
+		for _, c := range filter["or"].([]any) {
+			c := c.(map[string]any)
+			key := c["team"].(map[string]any)["key"].(map[string]any)["eq"].(string)
+			asked = append(asked, fmt.Sprintf("%s-%v", key, c["number"].(map[string]any)["eq"]))
+		}
+		found := []fakeTicket{}
+		for _, n := range f.elsewhere {
+			if slices.Contains(asked, n["identifier"].(string)) {
+				found = append(found, n)
+			}
+		}
+		data = map[string]any{
+			"viewer": map[string]string{"id": viewerID},
+			"issues": map[string]any{"nodes": found, "pageInfo": map[string]bool{"hasNextPage": false}},
+		}
 	case "TeamStates":
 		data = map[string]any{"teams": map[string]any{"nodes": []any{map[string]any{
 			"key": "ENG",
