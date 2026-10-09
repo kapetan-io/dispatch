@@ -261,6 +261,7 @@ Phase 1 owes this design three things on every ticket. It must carry a repo labe
 interval_minutes = 5
 max_in_progress = 4
 nudge_limit = 2
+blocked_renotify_ticks = 3            # re-notify a blocked worker every 3rd tick (15 minutes at the default interval)
 launch_failure_limit = 2
 plugin_root = "~/Development/dispatch"   # the plugin workers load, and where bin/dispatch-launch lives
 worker_model = "sonnet"               # your 2026-08-25 policy: sonnet for coding tickets
@@ -297,12 +298,14 @@ With the label form of `needs_human`, an In Progress ticket carrying the label c
     "pr_head": "9f2c1e0",
     "launch_failures": 0,
     "blocked_ticks": 0,
+    "resume_pending": false,
+    "notify_pending": false,
     "teardown_warned": false
   }
 }
 ```
 
-`nudges` resets when the status changes, and for In Review tickets also when `pr_head` moves. Workers are not required to commit as they go, so commits are never a progress signal while In Progress. `launch_failures` resets on a successful launch. `blocked_ticks` resets when the worker is not blocked. `teardown_warned` keeps the dirty-tree comment to one per ticket. Entries for tickets with no lease and a terminal status are dropped.
+`nudges` resets when the status changes, and for In Review tickets also when `pr_head` moves. Workers are not required to commit as they go, so commits are never a progress signal while In Progress. `launch_failures` resets on a successful launch. `blocked_ticks` resets when the worker is not blocked. `resume_pending` is set when a ticket moves from Needs Human back to In Progress and cleared once the resume nudge lands, so a worker that was blocked or working at that moment still gets it. `notify_pending` marks a Needs Human notification that failed to show, retried each tick. A ticket missing from the Linear read (paused or finished) keeps only `launch_failures` and a pending comment, so a ticket that returns starts its nudge count fresh. `teardown_warned` keeps the dirty-tree comment to one per ticket. Entries for tickets with no lease and a terminal status are dropped.
 
 ### Security
 

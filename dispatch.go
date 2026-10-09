@@ -23,6 +23,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/launcher"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/lock"
+	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/reconcile"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/worker"
@@ -42,6 +43,8 @@ type Options struct {
 	// Herdr and Treehouse are the commands to run. Default "herdr" and "treehouse".
 	Herdr     string
 	Treehouse string
+	// Osascript is the command that shows notifications. Defaults to "osascript".
+	Osascript string
 	// Launcher defaults to bin/dispatch-launch under the config's plugin_root.
 	Launcher string
 	Stdout   io.Writer
@@ -50,11 +53,13 @@ type Options struct {
 
 const usage = `usage: dispatch tick [--dry-run]
        dispatch run [--interval DURATION]
+       dispatch tell <ticket> "<text>"
 
   tick         run one pass: launch a worker for each approved ticket that has none
   --dry-run    print the actions a tick would take, one per line, without acting
   run          tick now and then once per interval until interrupted (Ctrl-C)
-  --interval   time between ticks; defaults to the config's interval_minutes`
+  --interval   time between ticks; defaults to the config's interval_minutes
+  tell         type text into the ticket's worker; fails when the worker is blocked or absent`
 
 // Run executes one dispatch command. main is a thin wrapper around it.
 func Run(ctx context.Context, args []string, opts Options) error {
@@ -73,6 +78,12 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		}
 		_, err := tick(ctx, opts, *dryRun)
 		return err
+	case "tell":
+		if len(args) != 3 {
+			_, _ = fmt.Fprintln(opts.Stderr, usage)
+			return errors.New(`tell takes a ticket and the text to type`)
+		}
+		return tell(ctx, opts, args[1], args[2])
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ContinueOnError)
 		fs.SetOutput(opts.Stderr)
@@ -102,6 +113,9 @@ func withDefaults(o Options) Options {
 	}
 	if o.Treehouse == "" {
 		o.Treehouse = "treehouse"
+	}
+	if o.Osascript == "" {
+		o.Osascript = "osascript"
 	}
 	if o.Stdout == nil {
 		o.Stdout = os.Stdout
@@ -252,7 +266,12 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		Tickets:        tickets,
 		Workers:        workers,
 		InProgress:     cfg.Linear.Statuses.InProgress,
+		InReview:       cfg.Linear.Statuses.InReview,
+		NeedsHuman:     cfg.Linear.Statuses.NeedsHuman,
 		MaxInProgress:  cfg.MaxInProgress,
+		NudgeLimit:     cfg.NudgeLimit,
+		RenotifyTicks:  cfg.BlockedRenotifyTicks,
+		Cache:          c,
 		RepoLabelGroup: cfg.Linear.RepoLabelGroup,
 		Repos:          cfg.Repos,
 		UnreadRepos:    unread,
@@ -283,6 +302,11 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		c[id] = e
 	}
 
+	settle(c, tickets, workers, cfg.Linear.Statuses)
+
+	alert := func(message string) error {
+		return notify.Send(ctx, opts.Osascript, "dispatch", message)
+	}
 	launch := opts.Launcher
 	if launch == "" {
 		launch = filepath.Join(cfg.PluginRoot, "bin", "dispatch-launch")
@@ -293,10 +317,38 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Escalate:
 			// One ticket's failed escalation must not hold up the others.
-			if err := escalate(ctx, lin, cfg, c, a.Ticket, a.Reason); err != nil {
+			if err := escalate(ctx, lin, cfg, c, alert, a.Ticket, a.Reason); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while escalating %s: %v\n", a.Ticket.Identifier, err)
 				continue
 			}
+			_, _ = fmt.Fprintln(opts.Stdout, a)
+		case reconcile.Nudge:
+			// herdr refuses a worker that turned blocked after the snapshot. A
+			// refused nudge is not counted, so it can't push the ticket toward
+			// Needs Human.
+			if err := herdr.Prompt(ctx, opts.Herdr, a.PaneID, a.Text); err != nil {
+				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while nudging %s: %v\n", a.Ticket.Identifier, err)
+				continue
+			}
+			e := c[a.Ticket.Identifier]
+			e.Nudges++
+			e.ResumePending = false
+			c[a.Ticket.Identifier] = e
+			_, _ = fmt.Fprintln(opts.Stdout, a)
+		case reconcile.Notify:
+			if err := alert(a.Text); err != nil {
+				// Settle already advanced the counters, so reset them to make Plan
+				// find this notification due again.
+				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
+				e := c[a.Ticket.Identifier]
+				e.BlockedTicks = 0
+				e.NotifyPending = a.Reason == reconcile.ReasonEnteredNeedsHuman
+				c[a.Ticket.Identifier] = e
+				continue
+			}
+			e := c[a.Ticket.Identifier]
+			e.NotifyPending = false
+			c[a.Ticket.Identifier] = e
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Launch:
 			r := launcher.Launch(ctx, launch, a.RepoDir, a.Ticket.Identifier, a.Ticket.Branch, cfg.WorkerModel)
@@ -320,7 +372,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 				continue
 			}
 			reason := fmt.Sprintf("its worker failed to launch %d times in a row. The launcher said `%s`: %s", e.LaunchFailures, r.Status, r.Detail)
-			if err := escalate(ctx, lin, cfg, c, a.Ticket, reason); err != nil {
+			if err := escalate(ctx, lin, cfg, c, alert, a.Ticket, reason); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while escalating %s: %v\n", a.Ticket.Identifier, err)
 				continue
 			}
@@ -330,16 +382,58 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			_, _ = fmt.Fprintf(opts.Stdout, "escalate %s: launch failed %d times\n", a.Ticket.Identifier, cfg.LaunchFailureLimit)
 		}
 	}
-	for _, t := range tickets {
-		e := c[t.Identifier]
-		e.LastStatus = t.Status
-		c[t.Identifier] = e
-	}
 	return sum, nil
 }
 
+// settle rolls the cache forward to this tick. Order matters. Plan has already
+// read last tick's counters, and the actions that follow add to these ones
+// (Nudges++) or undo them when a nudge or notification fails, so settling
+// after the actions would lose those changes.
+//
+// A ticket back in In Progress stays resume-pending until a resume nudge
+// lands, so a worker that was blocked or working when the answer arrived still
+// gets the resume text once it goes idle.
+func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Worker, statuses config.Statuses) {
+	seen := map[string]bool{}
+	for _, t := range tickets {
+		e := c[t.Identifier]
+		if e.LastStatus != t.Status {
+			e.Nudges = 0
+		}
+		if workers[t.Identifier].State == worker.Blocked {
+			e.BlockedTicks++
+		} else {
+			e.BlockedTicks = 0
+		}
+		if t.Status != statuses.InProgress {
+			e.ResumePending = false
+		} else if e.LastStatus == statuses.NeedsHuman {
+			e.ResumePending = true
+		}
+		if t.Status != statuses.NeedsHuman {
+			e.NotifyPending = false
+		}
+		e.LastStatus = t.Status
+		c[t.Identifier] = e
+		seen[t.Identifier] = true
+	}
+	// A ticket missing from the read was paused or finished, and its worker may
+	// have been torn down and relaunched since. Counters from before would
+	// escalate it on a nudge it never received, so only what must outlive the
+	// ticket's absence is kept.
+	for id, e := range c {
+		if seen[id] {
+			continue
+		}
+		c[id] = cache.Entry{LaunchFailures: e.LaunchFailures, PendingComment: e.PendingComment, TicketID: e.TicketID}
+		if c[id] == (cache.Entry{}) {
+			delete(c, id)
+		}
+	}
+}
+
 // escalate moves a ticket to Needs Human with one comment saying why.
-func escalate(ctx context.Context, lin linear.Client, cfg config.Config, c cache.Cache, t linear.Ticket, reason string) error {
+func escalate(ctx context.Context, lin linear.Client, cfg config.Config, c cache.Cache, alert func(string) error, t linear.Ticket, reason string) error {
 	state, err := lin.StateID(ctx, t.Team, cfg.Linear.Statuses.NeedsHuman)
 	if err != nil {
 		return err
@@ -349,9 +443,17 @@ func escalate(ctx context.Context, lin linear.Client, cfg config.Config, c cache
 	if err := lin.Move(ctx, t.ID, state); err != nil {
 		return err
 	}
+	// Tell the user now instead of a tick later. Setting last_status here is
+	// what keeps the next tick's Plan from notifying a second time, and a
+	// failed alert marks the notification pending so the next tick retries it.
+	e := c[t.Identifier]
+	e.LastStatus = cfg.Linear.Statuses.NeedsHuman
+	e.Nudges = 0
+	e.NotifyPending = alert(reconcile.NeedsHumanText(t)) != nil
+	c[t.Identifier] = e
 	body := "The dispatcher moved this ticket to Needs Human because " + reason
 	if err := lin.Comment(ctx, t.ID, body); err != nil {
-		e := c[t.Identifier]
+		e = c[t.Identifier]
 		e.PendingComment = body
 		e.TicketID = t.ID
 		c[t.Identifier] = e

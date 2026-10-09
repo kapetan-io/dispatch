@@ -76,7 +76,7 @@ func TestTickWaitsWhenWorkerCapIsFull(t *testing.T) {
 		ticket("ENG-1", "In Progress", "dispatch"),
 		ticket("ENG-2", "In Progress", "dispatch"),
 	)
-	h.worker("ENG-1", "idle")
+	h.worker("ENG-1", "working")
 
 	out, err := h.run("tick")
 	require.NoError(t, err)
@@ -85,7 +85,7 @@ func TestTickWaitsWhenWorkerCapIsFull(t *testing.T) {
 	assert.Empty(t, h.launches())
 }
 
-func TestTickIgnoresTicketsThatAreNotInProgress(t *testing.T) {
+func TestTickLaunchesNothingForTicketsThatAreNotInProgress(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(
 		ticket("ENG-1", "In Review", "dispatch"),
@@ -95,7 +95,7 @@ func TestTickIgnoresTicketsThatAreNotInProgress(t *testing.T) {
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Empty(t, out)
+	assert.Equal(t, "notify ENG-2: entered Needs Human\n", out)
 	assert.Empty(t, h.launches())
 }
 
@@ -444,8 +444,14 @@ func newHarness(t *testing.T) *harness {
 	h.script("herdr", `case "$1 $2" in
 "workspace list") cat "`+dir+`/workspaces.json" ;;
 "agent list") cat "`+dir+`/agents.json" ;;
+"agent prompt")
+  [ -f "`+dir+`/prompt-fails" ] && { echo '{"error":{"code":"agent_blocked"}}'; exit 1; }
+  echo "$3|$4" >> "`+dir+`/prompts.log" ;;
 *) exit 2 ;;
 esac`)
+	// The notification message and title are osascript's last two arguments.
+	h.script("osascript", `[ -f "`+dir+`/notify-fails" ] && exit 1
+echo "${@: -2:1}|${@: -1}" >> "`+dir+`/notifications.log"`)
 	h.script("treehouse", `cat "`+dir+`/trees.json"`)
 	h.script("launcher", `echo "$PWD $*" >> "`+dir+`/launches.log"
 cat "`+dir+`/launch.json"`)
@@ -476,6 +482,7 @@ func (h *harness) runContext(ctx context.Context, args ...string) (string, strin
 		LinearKey:  "test-key",
 		Herdr:      filepath.Join(h.dir, "herdr"),
 		Treehouse:  filepath.Join(h.dir, "treehouse"),
+		Osascript:  filepath.Join(h.dir, "osascript"),
 		Launcher:   filepath.Join(h.dir, "launcher"),
 		Stdout:     &stdout,
 		Stderr:     &stderr,
@@ -528,6 +535,41 @@ func (h *harness) worker(ticket, status string) {
 	h.writeJSON("agents.json", agents)
 }
 
+// setWorkerStatus changes the herdr status of a worker added with worker.
+func (h *harness) setWorkerStatus(ticket, status string) {
+	var agents struct {
+		Result struct {
+			Agents []map[string]string `json:"agents"`
+		} `json:"result"`
+	}
+	require.NoError(h.t, json.Unmarshal(h.readFile("agents.json"), &agents))
+	for _, a := range agents.Result.Agents {
+		if a["workspace_id"] == "w-"+ticket {
+			a["agent_status"] = status
+		}
+	}
+	h.writeJSON("agents.json", agents)
+}
+
+// prompts lists what was typed into workers, as "<pane>|<text>".
+func (h *harness) prompts() []string {
+	return h.lines("prompts.log")
+}
+
+// notifications lists the macOS notifications shown, as "<message>|<title>".
+func (h *harness) notifications() []string {
+	return h.lines("notifications.log")
+}
+
+func (h *harness) lines(name string) []string {
+	b, err := os.ReadFile(filepath.Join(h.dir, name))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	require.NoError(h.t, err)
+	return strings.Split(strings.TrimSpace(string(b)), "\n")
+}
+
 func (h *harness) launchResult(result string) {
 	h.writeFile("launch.json", result)
 }
@@ -543,6 +585,10 @@ func (h *harness) launches() []string {
 
 func (h *harness) script(name, body string) {
 	require.NoError(h.t, os.WriteFile(filepath.Join(h.dir, name), []byte("#!/usr/bin/env bash\n"+body+"\n"), 0o755))
+}
+
+func (h *harness) removeFile(name string) {
+	require.NoError(h.t, os.Remove(filepath.Join(h.dir, name)))
 }
 
 func (h *harness) writeFile(name, content string) {

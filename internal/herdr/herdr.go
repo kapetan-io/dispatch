@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strings"
 )
 
 // Snapshot is herdr's view of every workspace and agent at one moment.
@@ -70,6 +71,17 @@ func Read(ctx context.Context, bin string) (Snapshot, error) {
 		s.Agents = append(s.Agents, Agent{Kind: a.Agent, Status: a.Status, PaneID: a.PaneID, WorkspaceID: a.WorkspaceID})
 	}
 	return s, nil
+}
+
+// Prompt types text into the agent in pane and submits it. herdr refuses a
+// blocked agent before sending any input, so a question on screen is never
+// answered by accident.
+func Prompt(ctx context.Context, bin, pane, text string) error {
+	out, err := exec.CommandContext(ctx, bin, "agent", "prompt", pane, text).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("while prompting herdr pane %s: %w: %s", pane, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func run(ctx context.Context, bin string, out any, args ...string) error {
