@@ -112,6 +112,19 @@ Each build worker runs these steps on its own build ticket.
   - The redesign review ticket links to the build ticket whose findings triggered it and to the comment with the evidence, so the audit trail shows why the redesign exists. On your approval, the triggering build ticket's PR is closed, and every build ticket of the old design that has not merged is canceled with a comment linking to the redesign ticket. The new design's tickets start fresh.
   - Shipped work is never reverted. Pieces already merged stay, and the redesign starts from what is on main. Because the first piece blocks the rest, a redesign during the first piece cancels only unstarted tickets.
 
+## Dispatcher pilot (ENG-228, 2026-10-08)
+
+The dispatcher launched a build worker for its own piece 2 (ENG-228), which built it, opened PR #4 and carried it to merge. A person stepped in three times.
+
+- **An In Review worker has no wake-up until piece 3.** The worker opened PR #4 and stopped, waiting for a PR nudge that only piece 3 sends. It was nudged by hand twice, once for a CodeRabbit thread and a missing CI run, and once for an outside review. Piece 3 is ENG-232. The PR nudge text changed from "Fix it and push" to "Handle it as your build skill's step 7 says, and push", because "fix it" told the worker to skip step 7's check of each claim.
+- **Teardown is by hand until its piece ships.** After merge the worker's workspace was closed and its tree returned by hand. With `max_trees` at 4, launches stall after four finished tickets if nobody does this.
+- **Step 7 worked.** For each review comment the worker wrote a failing test before changing code, replied with the test name and resolved the thread. It once corrected the reviewer's repro.
+- **Step 4 let findings go unchecked.** Its correctness lens flagged two paths that held real bugs, and the worker set both aside as low severity. Step 4 now requires the same evidence as step 7 (ENG-231).
+- **An outside review found bugs CodeRabbit missed.** A critical-review sub-agent plus one validator per finding proved three state bugs across ticks on PR #4 after CodeRabbit had approved. The findings reached the worker as a GitHub review, which step 7 handles like any other.
+- **CI arrived mid-pilot.** PR #3 added the `test` check after ENG-228's branch was cut, so PR #4 ran CI only after its rebase. Branch protection requiring that check is not set up yet.
+- **herdr and `--name`.** Recorded under decision 9.
+- **An agent that moves a ticket must run a tick.** Decision 10 says so, but no skill an agent loads carries it yet, so ENG-232 waited on the timer until you asked. One `dispatch tick` launched it in seconds. The shared skill for advancing a phase (decision 10) carries this rule, and is built when the grill and review need it.
+
 ## Breakdown step (in progress)
 
 The breakdown runs inside the review worker, after the review rounds and before your approval (decisions 2 and 3). It turns the reviewed blueprint into build tickets.
