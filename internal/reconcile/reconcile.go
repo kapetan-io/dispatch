@@ -75,7 +75,8 @@ type Action struct {
 	Text   string
 	// WorkspaceID and TreePath name what a Teardown, Keep or Stop acts on.
 	// WorkspaceID is empty when a Keep or Stop has no live worker to stop, so a
-	// workspace someone opened by hand is left open.
+	// workspace someone opened by hand is left open. A Teardown always closes
+	// its workspace, since a worker whose Claude exited leaves one behind.
 	WorkspaceID string
 	TreePath    string
 }

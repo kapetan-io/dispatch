@@ -60,6 +60,21 @@ func TestTickReturnsATreeWhoseWorkspaceIsAlreadyClosed(t *testing.T) {
 	assert.Equal(t, []string{h.repo + "|return " + path + " --if-lease-holder ENG-1 --force"}, h.returns())
 }
 
+func TestTickReturnsATreeWhoseWorkspaceHoldsNoAgent(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	// A worker whose Claude exited leaves its workspace open, and the slot only
+	// comes back if teardown closes it.
+	h.worker("ENG-1", "")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
+	assert.Equal(t, []string{h.repo + "|return " + path + " --if-lease-holder ENG-1 --force"}, h.returns())
+}
+
 func TestTickDryRunListsTeardownWithoutActing(t *testing.T) {
 	h := newHarness(t)
 	h.gitTree("ENG-1")
