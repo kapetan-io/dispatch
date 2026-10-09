@@ -1,89 +1,86 @@
-# Handoff: dispatch, first piece in progress (2026-10-08)
+# Handoff: dispatch, piece 1 shipped and the pilot running (2026-10-09)
 
-The autonomous build workflow now lives in its own Claude Code plugin repo, `kapetan-io/dispatch`. Design is paused, and the first piece of the dispatcher is being built under ENG-226. Pick it up to finish piece 1 and run it on a real ticket.
+Piece 1 of the dispatcher (ENG-226) is merged, and the pilot is live: `dispatch run` launched a real build worker for piece 2 (ENG-228), which is building now. Pick this up to land the two fix PRs, carry the pilot to a merged PR, and cut piece 3.
+
+Read `docs/design/decision-log.md` first, its Glossary and "Working with you" above all. Ask the user in plain chat, one question at a time, never with the AskUserQuestion questionnaire, and restate the context.
 
 ## What We Worked On
 
-- Settled the design through 2026-10-08. `docs/design/decision-log.md` is the record. Read its Glossary and "Working with you" first.
-- Built and tuned the size-check eval suite (`docs/design/evals/size-check/`). The adopted wording is `arms/complete-pieces-5.md`.
-- Created the repo and the Linear setup, then cut the dispatcher into 6 pieces with the size check. All 3 runs agreed on the first piece.
-- Built most of piece 1, ENG-226 (https://linear.app/kapetan-io/issue/ENG-226): you move a ticket labeled `ai` to In Progress, and `dispatch tick` gives it a leased tree, a herdr workspace and a build worker.
+- Ran the launcher for real on a throwaway ticket (ENG-227, canceled). It worked end to end and found three bugs, all fixed before merge.
+- Replaced the planned launchd job with `dispatch run`, a foreground loop the user runs and stops in a herdr window. Each tick prints a summary line with Linear call stats.
+- Took PR #1 through a review sub-agent, validator sub-agents and CodeRabbit until it approved. The user merged it, and ENG-226 is Done.
+- Started the pilot. Created ENG-228 (piece 2, nudges and questions), and the user moved it to In Progress. The worker stalled on a question herdr couldn't see, which led to ENG-229 (PR #2). CI was missing, which led to ENG-230 (PR #3).
 
-## Where the work is
+## PR(s) In Flight
 
-- Repo: https://github.com/kapetan-io/dispatch, private. Your main checkout is `~/Development/dispatch`, on `main`.
-- ENG-226 is built in a leased treehouse tree, not your checkout, per the "always worktrees" rule.
-  - Tree: `~/.treehouse/dispatch-711e16/1/dispatch`, lease holder `ENG-226`
-  - Branch: `thrawn01/eng-226-dispatch-launch-a-build-worker-for-an-approved-ticket`, pushed. No PR yet.
-- Commits on the branch, after main's `1ae4c68`:
-  - `0a996fe` applies the owed blueprint edits that touch piece 1.
-  - `be324e8` defaults workers to sonnet, per your coding-ticket model policy.
-  - `9a432f8` adds `dispatch tick` and `--dry-run` with surface tests.
-  - `0d256f6` adds `bin/dispatch-launch`, `scripts/shims/claude` and `skills/build/SKILL.md`.
+### PR #2: Let herdr see worker questions, and keep workers from asking non-product questions
+- Branch: `thrawn01/eng-229-dispatch-let-herdr-see-worker-questions-and-keep-workers`
+- Linear: ENG-229, In Review, no `ai` label
+- **State:** CodeRabbit approved `33cba9f`. This handoff is a later commit on the branch, so CodeRabbit reviews again. No CI runs on it until PR #3 merges.
+- **Outstanding threads:** none
+- **Ready for:** merge by the user once CodeRabbit approves the handoff commit
 
-## Files Changed on the branch
+### PR #3: Run vet, the tests and shellcheck in CI on every PR
+- Branch: `thrawn01/ci-run-tests`, head `e44b05f`
+- Linear: ENG-230, In Review, no `ai` label
+- **State:** CI passed on the first push in 1m21s. CodeRabbit asked for `persist-credentials: false` on checkout. That is fixed in `e44b05f`, with the token also limited to `contents: read`. CodeRabbit approved `e44b05f` and CI passed on it.
+- **Outstanding threads:** none
+- **Ready for:** merge by the user
 
-- `dispatch.go` and `cmd/dispatch/main.go`. `Run(ctx, args, opts)` with `tick [--dry-run]`. It takes the lock, reads config, cache, herdr, treehouse and Linear, plans, then launches or escalates. Two failed launches in a row move the ticket to Needs Human with the launcher's error. `pool_exhausted` never counts as a failure.
-- `internal/` packages:
-  - `config`, `lock` (an flock that the OS releases if a tick dies), `cache`
-  - `linear` (GraphQL: managed tickets, state id, move, comment)
-  - `herdr`, `treehouse`, `worker` (ticket to lease to workspace to agent)
-  - `reconcile` (a pure `Plan`: launch, wait, skip, escalate)
-  - `launcher` (runs `bin/dispatch-launch` and parses its JSON)
-- `dispatch_test.go`. 12 surface tests against a fake Linear server and fake herdr, treehouse and launcher scripts. All pass. Two deliberate breaks, the worker cap and the failure counting, each failed their test.
-- `bin/dispatch-launch`. Rewritten from `~/.claude/skills/captain/captain-launch` and keeps its herdr fixes.
-  - Leases a tree under the ticket id. A repo without `treehouse.toml` returns `not_pooled`.
-  - Opens a nested herdr workspace with an env-stamped tab.
-  - Starts Claude with `--plugin-dir <plugin_root>`, `--disallowedTools "EnterPlanMode,ExitPlanMode"` and `--dangerously-skip-permissions`, and types `/dispatch:build <ticket>`.
-  - Returns `already_running` when the workspace already has a Claude pane.
-  - Passes shellcheck. **Never run against real herdr yet.**
-- `scripts/shims/claude`. Re-adds the plugin and the worker flags when herdr restarts a worker with a bare `claude --resume`.
-- `skills/build/SKILL.md`. The build-worker skill: the seven build steps, "decide how, never what", and stopping when the design proves wrong. **Never run yet.**
-- `docs/design/blueprint.md`. The owed edits for piece 1 are applied, and the decision log marks them "(applied, ENG-226)".
+## The pilot (ENG-228)
 
-## Setup done (you approved it on 2026-10-08)
+- Ticket: https://linear.app/kapetan-io/issue/ENG-228, In Progress, labels `ai`, `dispatch`, `Feature`
+- Worker: herdr agent `eng-228`, workspace `w3F`, pane `w3F:p2`, in tree `~/.treehouse/dispatch-711e16/2/dispatch` (leased to ENG-228)
+- The user runs `dispatch run` in their own herdr window and starts and stops it themselves.
+- At handoff the worker was in build step 2, implementing and writing tests, with nothing committed. It had added `internal/notify/`, `tell.go` and `nudge_test.go`, and edited `dispatch.go` plus the `cache`, `config`, `herdr` and `reconcile` packages.
+- Its ticket comment records the re-notify answer (`blocked_renotify_ticks`, default 3, chosen by the user's agent on the user's say-so) and three calls it made itself: notifying through `osascript` with the text passed as an argument, notifying in the same tick it escalates, and counting the resume nudge toward the two-nudge limit.
+- **This worker was launched before PR #2.** Its Claude session has `--name eng-228`, so herdr reports it `idle` or `done`, never `blocked`, while it waits on a question. Look at its window if it seems quiet. A note telling it to settle non-product questions itself was typed into its session.
 
-- Linear API key in the login keychain under service `dispatch-linear-api-key`. Verified against Linear.
-- `ai` label on ENG. It already existed and was reused, with a description added. **ENG-65 "Claude orchestration" already carries it**, in Todo. It's safe unless moved to In Progress. Remove the label there if it means something else.
-- `dispatch` repo label under the `repo` group.
-- Needs Human status on ENG, created through the API as a started-type status after In Review.
-- `treehouse.toml` in the repo, with `max_trees = 4`, committed on main.
-- `~/.config/dispatch/config.toml` written. A live `go run ./cmd/dispatch tick --dry-run` against real Linear, herdr and treehouse exited 0 with no actions, because no `ai` ticket is In Progress. That proves the Linear query parses, not that it returns tickets.
-- No branch protection or auto-merge on the repo yet, by your choice. Workers leave PRs in In Review for you to merge.
+## Files Changed (PR #2 and #3, on top of main `27ebb1b`)
 
-## Key Decisions (brief), all in `decision-log.md`
+- `bin/dispatch-launch`: no `--name` for Claude, and `session_name` renamed to `worker_name`, which is herdr's agent name.
+- `scripts/shims/claude`: no longer re-adds a name.
+- `skills/build/SKILL.md`: a "Work autonomously" rule. Ask only about product behavior or scope, contract shape, security defaults, superseding an ADR, or an acceptance criterion that can't be observed at the surface. Decide everything else, note it on the ticket, and keep going.
+- `launch_test.go`: tests that no `--name` reaches `herdr agent start`, and that the shim restores the plugin and flags but no name.
+- `docs/design/decision-log.md`: decision 9 records the herdr `--name` limitation.
+- `.github/workflows/test.yml` (PR #3): `go vet`, `go test -race`, shellcheck.
 
-- One design makes one build ticket per piece. The first piece blocks the rest, and a redesign never reverts shipped work.
-- The grill runs poteto's arena as a trial. The grill and the review settle questions a run can answer with prototypes. `deliberate` is dropped.
-- When unsure, take poteto's (pstack's) way and adapt later. Skills stay light, and wording a skill depends on gets an eval first (about 45 runs).
-- The workflow is its own plugin repo. Implementation is iterative, one piece at a time.
+## Key Decisions (brief)
+
+- The dispatcher runs as `dispatch run` in a herdr window the user watches, not under launchd. Recorded in the decision log's Framing.
+- Workers ask only the four decision-4 calls, plus a criterion that can't be observed. A ticket's open question is not by itself a reason to ask.
+- Claude is never started with `--name`, because herdr then cannot see its questions (upstream herdrdev/herdr#4573, unfixed in herdr 0.9.3 and master).
+- Fix PRs found in a pilot get their own ticket without the `ai` label, so the dispatcher never picks them up.
+- Review loop used on every PR: a critical-review sub-agent, one validator sub-agent per finding before fixing, then CodeRabbit until it approves. Older CodeRabbit summaries are hidden as outdated so new ones stand out.
+
+## Unresolved Items
+
+- **Trees are never returned.** Piece 1 has no teardown. Tree 1 is still leased to ENG-226 (Done). Return it when this session ends, from the main checkout: `treehouse return ~/.treehouse/dispatch-711e16/1/dispatch`. Tree 2 must be returned by hand after ENG-228 is Done.
+- **The build skill's new wording has had no eval.** The decision log wants about 45 runs before wording a skill depends on ships. The user has not decided between an eval and adjusting as the pilot runs.
+- **herdrdev/herdr#4573.** The user was asked whether to add the experiment and a suggested fix upstream (only the blocked check should ignore rules that carry text). No answer yet.
+- **A stray empty pool state** at `~/.treehouse/gitnotoml-037230`, left by a validator's probe. Removing it was denied to the agent. The user can run `rm -r ~/.treehouse/gitnotoml-037230`.
+- **ENG-65 "Claude orchestration"** carries the `ai` label in Todo. It is harmless unless moved to In Progress. Remove the label if it means something else.
 
 ## What's Left to Do
 
-1. **Run the launcher for real once.** Done 2026-10-08 on throwaway ENG-227 (canceled). The lease, the nested workspace, the env-stamped tab, Claude on sonnet with the plugin, `/dispatch:build` and the JSON result all worked. It found three bugs, fixed in `52b0780`. The kickoff was typed twice, because while a skill runs Claude's screen never shows the submitted text, so the launcher now confirms by herdr's agent status. herdr refused a pool tree as the nesting source, so the launcher now names the main checkout. New branches tracked `origin/main`, so they now use `--no-track`. Still unexercised are the `claude` shim on a herdr restart and the consent and folder-trust dialogs, which this machine had already accepted. `DISPATCH_LAUNCH_TRACE=<file>` records every screen the kickoff step reads.
-2. **Run the dispatcher in a herdr window.** Done 2026-10-08. You chose a herdr window you start and stop over launchd, so you can watch it. `dispatch run` ticks every `interval_minutes`, keeps going after a failed tick, and stops on Ctrl-C. The README has the install and run steps. A live 3-second run against real Linear, herdr and treehouse ticked cleanly and exited on SIGINT.
-3. **Open the PR for ENG-226** in the Purpose and Implementation format, with `Fixes ENG-226`. You review and merge it. Workers load the plugin from `plugin_root`, which is your main checkout, so the launcher and skill must be on main before a dispatched run.
-4. **Pilot end to end.** After merging, pull main and `go install`. Approve one real `ai` ticket, ideally piece 2 of the dispatcher, by moving it to In Progress. Start `dispatch run` in a herdr window and watch the ticket reach In Review or Needs Human.
-   Piece 1 never returns a tree once a ticket is Done, Canceled or in Needs Human. That is the teardown piece's job (blueprint tick step 4, with the dirty-tree guard). Until it ships, return a finished ticket's tree by hand with `treehouse return <path>` from the repo, or launches stall on `pool_exhausted`, which the run window prints with the holders. The worker cap also counts live agents, not leased trees.
-5. **Feed what the pilot teaches** into the decision log, then cut and build the next piece.
+1. The user merges PR #3, then PR #2 once CodeRabbit approves the handoff commit. Afterwards `git -C ~/Development/dispatch pull`. Neither PR changes Go code the binary uses, so no `go install` is needed. Workers load the launcher, shim and skill from that checkout, so the next launch picks them up.
+2. Watch ENG-228 to In Review or Needs Human. Once PR #3 is on main, its PR gets CI after its rebase.
+3. When ENG-228's PR is up, review it with a critical-review sub-agent and validators, as with PR #1. Its worker follows the PR through CodeRabbit itself (build step 7).
+4. After ENG-228 merges and is Done, close workspace `w3F` and return tree 2 by hand.
+5. Feed what the pilot taught into `decision-log.md`: the `--name` finding (done), questions herdr can't see, the autonomy rule, CI. Then cut and file piece 3, getting the PR merged (blueprint criteria 6, 9 and 17), in the same shape as ENG-228.
+6. Setup that needs the user's yes: branch protection on main requiring the `test` check and CodeRabbit, and auto-merge.
 
 ## Dependencies & Ordering
 
-- Step 1 before step 3, because the launcher must work before it merges.
-- Step 3 before step 4, because workers load the plugin from main.
+- PR #3 before ENG-228's PR is reviewed, so that PR runs CI.
+- PR #2 before any new worker launches, so herdr can see that worker's questions.
+- ENG-228 merged before piece 3, because pieces build in order and the first unmerged piece blocks the rest.
 
 ## Pointers for Next Session
 
-- Resume in the ENG-226 tree: `cd ~/.treehouse/dispatch-711e16/1/dispatch`. Return it later with `treehouse return ~/.treehouse/dispatch-711e16/1/dispatch` from the repo.
-- Tests: `go test ./...` there. Live check: `go run ./cmd/dispatch tick --dry-run`.
-- Plugin layout rules: https://code.claude.com/docs/en/plugins/components.md. Scripts in `bin/` go on the Bash PATH of sessions with the plugin, and `${CLAUDE_PLUGIN_ROOT}` works in SKILL.md bodies. Load the plugin locally with `claude --plugin-dir ~/Development/dispatch`.
-- herdr 0.9.0 JSON:
-  - `herdr workspace list` returns `.result.workspaces[]` with `workspace_id` and `worktree.checkout_path`.
-  - `herdr agent list` returns `.result.agents[]` with `agent`, `agent_status`, `pane_id` and `workspace_id`.
-  - `treehouse status --json` returns an array with `path`, `status` and `lease_holder`.
-- Linear is reached through the API key, not the MCP, for the dispatcher. Personal keys go in `Authorization` with no scheme.
-- An empty `~/.claude/docs/features/` directory is left over from the move. A safety check blocked removing it, so delete it yourself if you like.
-- Transcripts:
-  - This session: `~/.claude/projects/-Users-thrawn--claude/62a94c4f-c48b-45c2-8beb-39499c082d26.jsonl`
-  - Earlier design sessions: `b0dcc5c7-…` and `2cb41809-…` in the same folder.
-- How you want to work is in the decision log's "Working with you". Ask in plain chat, one question at a time, never with the AskUserQuestion questionnaire, and with the context restated.
+- Main checkout and plugin root: `~/Development/dispatch`. This session's tree: `~/.treehouse/dispatch-711e16/1/dispatch`.
+- Check the worker: `herdr agent list | jq '.result.agents[] | select(.name=="eng-228")'` and `herdr agent read w3F:p2 --source visible --lines 40`.
+- Trace a launch's kickoff screens: `DISPATCH_LAUNCH_TRACE=<file> bin/dispatch-launch <TICKET> <branch>`.
+- Live checks: `dispatch tick --dry-run`. Tests: `go test -race ./...`.
+- CodeRabbit inline comments put the finding text after a long block of tool logs. Extract the bold title and the paragraph after it.
+- This session's transcript: `~/.claude/projects/-Users-thrawn--treehouse-dispatch-711e16-1-dispatch/e71827ff-2843-441e-a5b5-52ca1142fed9.jsonl`.
