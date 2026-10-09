@@ -19,7 +19,7 @@ You report only through the ticket's status and comments, using the Linear tools
 
 ## Steps
 
-1. **Orient.** Read the ticket, its comments, and the design it cites. Every acceptance criterion must be observable at the surface. If one isn't, ask.
+1. **Orient.** Read the ticket, its comments, and the design it cites. Every acceptance criterion must be observable at the surface. If one isn't, ask. A ticket already In Review has its PR open, so skip to step 7.
 2. **Implement.** Give every acceptance criterion at least one passing surface test, following the surface-testing skill. Write tests before or after the code, as suits the change.
 3. **Test review.** Have a fresh sub-agent check the acceptance criteria and invariants against the tests and write the missing ones through the surface. Treat a new failing test as a likely bug and fix the code.
 4. **Code review.** Run three fresh sub-agent lenses: correctness, fit with the ticket, and the next reader. Check every finding with evidence, a failing test or a trace through the code, before you fix it or set it aside. Calling a finding low severity is not evidence; a worker once set two findings aside that way and shipped the bugs behind them. Stop after one clean round or three rounds. Blockers that survive go to the user.

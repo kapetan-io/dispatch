@@ -19,6 +19,9 @@ type Entry struct {
 	// Nudges counts nudges sent, the resume nudge included, since the ticket
 	// last changed status or was escalated.
 	Nudges int `json:"nudges"`
+	// PRHead is the SHA of the In Review ticket's PR head when last read. A
+	// different head means the worker pushed, which resets Nudges.
+	PRHead string `json:"pr_head,omitempty"`
 	// ResumePending marks a ticket moved from Needs Human back to In Progress
 	// whose worker has not yet been sent the resume nudge.
 	ResumePending bool `json:"resume_pending,omitempty"`
@@ -33,6 +36,16 @@ type Entry struct {
 	PendingComment string `json:"pending_comment,omitempty"`
 	// TicketID is Linear's internal id for the ticket a pending comment goes on.
 	TicketID string `json:"ticket_id,omitempty"`
+}
+
+// NudgesAt is the nudge count that still stands for an In Review ticket now in
+// status with its PR at head. A status change or a push starts the count over.
+// Plan and the tick's settle step both use it, so they can't disagree.
+func (e Entry) NudgesAt(status, head string) int {
+	if e.LastStatus != status || e.PRHead != head {
+		return 0
+	}
+	return e.Nudges
 }
 
 // Cache maps a ticket identifier such as ENG-123 to its entry.

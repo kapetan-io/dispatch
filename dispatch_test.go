@@ -452,6 +452,11 @@ esac`)
 	// The notification message and title are osascript's last two arguments.
 	h.script("osascript", `[ -f "`+dir+`/notify-fails" ] && exit 1
 echo "${@: -2:1}|${@: -1}" >> "`+dir+`/notifications.log"`)
+	// gh's branch= argument names the PR file to print, and each call is logged.
+	h.script("gh", `[ -f "`+dir+`/gh-fails" ] && exit 1
+for arg; do case "$arg" in branch=*) branch="${arg#branch=}" ;; esac; done
+echo "$branch" >> "`+dir+`/gh.log"
+cat "`+dir+`/pr-${branch##*/}.json" 2>/dev/null || echo '{"data":{"repository":{"pullRequests":{"nodes":[]}}}}'`)
 	h.script("treehouse", `cat "`+dir+`/trees.json"`)
 	h.script("launcher", `echo "$PWD $*" >> "`+dir+`/launches.log"
 cat "`+dir+`/launch.json"`)
@@ -482,6 +487,7 @@ func (h *harness) runContext(ctx context.Context, args ...string) (string, strin
 		LinearKey:  "test-key",
 		Herdr:      filepath.Join(h.dir, "herdr"),
 		Treehouse:  filepath.Join(h.dir, "treehouse"),
+		GH:         filepath.Join(h.dir, "gh"),
 		Osascript:  filepath.Join(h.dir, "osascript"),
 		Launcher:   filepath.Join(h.dir, "launcher"),
 		Stdout:     &stdout,
