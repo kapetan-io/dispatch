@@ -1,0 +1,23 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: vet
+        run: go vet ./...
+      - name: test
+        # The surface tests drive bin/dispatch-launch and fake herdr and
+        # treehouse with bash, git and jq, which the runner image provides.
+        run: go test -race ./...
+      - name: shellcheck
+        run: shellcheck -S warning bin/dispatch-launch scripts/shims/claude
