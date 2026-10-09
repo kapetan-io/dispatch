@@ -5,11 +5,18 @@ on:
   push:
     branches: [main]
 
+# The job runs PR code and pushes nothing, so its token stays read-only and
+# out of the checkout's git config.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
