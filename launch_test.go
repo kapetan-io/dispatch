@@ -60,6 +60,22 @@ func TestLaunchKeepsALeaseWhoseWorkspaceWouldNotClose(t *testing.T) {
 	assert.Empty(t, l.returns())
 }
 
+func TestLaunchNeverGivesClaudeASessionName(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.writeFile("trees.json", `[]`)
+	l.writeFile("open-works", "")
+	l.writeFile("tab-works", "")
+
+	result := l.launch("ENG-1", "thrawn01/eng-1")
+
+	// Claude draws a --name below an open question, which hides the question
+	// from herdr's blocked detection.
+	assert.Equal(t, "agent_start_failed", result["status"])
+	starts := l.readFile("starts.log")
+	assert.Contains(t, starts, "agent start eng-1 --kind claude --pane w9:p1")
+	assert.NotContains(t, starts, "--name")
+}
+
 // launchHarness runs bin/dispatch-launch in a throwaway git repo against fake
 // herdr and treehouse commands that make the launch fail before Claude starts.
 type launchHarness struct {
@@ -87,13 +103,20 @@ func newLaunchHarness(t *testing.T) *launchHarness {
 	l.git(l.repo, "worktree", "add", "-q", "--detach", l.tree)
 
 	// worktree open fails unless the open-works file exists, and then tab
-	// create fails instead. workspace close fails when close-fails exists.
+	// create fails unless tab-works exists, and then agent start fails after
+	// logging its arguments. workspace close fails when close-fails exists.
 	l.script("herdr", `case "$1 $2" in
 "workspace list") echo '{"result":{"workspaces":[]}}' ;;
 "worktree open")
   [ -f "`+dir+`/open-works" ] || { echo '{"error":{"code":"refused","message":"no"}}'; exit 1; }
   echo '{"result":{"worktree":{"open_workspace_id":"w9"}}}' ;;
-"tab create") echo '{"error":{"code":"refused","message":"no"}}'; exit 1 ;;
+"tab create")
+  [ -f "`+dir+`/tab-works" ] || { echo '{"error":{"code":"refused","message":"no"}}'; exit 1; }
+  echo '{"result":{"root_pane":{"pane_id":"w9:p1"}}}' ;;
+"pane list") echo '{"result":{"panes":[]}}' ;;
+"pane read") echo '$ ' ;;
+"agent list") echo '{"result":{"agents":[]}}' ;;
+"agent start") echo "$*" >> "`+dir+`/starts.log"; exit 1 ;;
 "workspace close") [ -f "`+dir+`/close-fails" ] && exit 1; echo "$*" >> "`+dir+`/closes.log" ;;
 *) exit 2 ;;
 esac`)

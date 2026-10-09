@@ -65,8 +65,10 @@ if [ -z "$ticket" ] || [ -z "$branch" ]; then
   log "usage: dispatch-launch <TICKET> <BRANCH> [--base REF] [--model NAME]"
   finish usage_error detail="TICKET and BRANCH are required"
 fi
-# The worker's Claude session name is the lowercased ticket id, so a relaunch
-# reclaims the same name.
+# The worker's herdr agent name is the lowercased ticket id, so a relaunch
+# reclaims the same name. Claude itself is never given --name: it draws the
+# name in a rule below an open question, and herdr then misses the question
+# and reports the worker done instead of blocked.
 session_name=$(tr '[:upper:]' '[:lower:]' <<<"$ticket")
 label="$ticket"
 kickoff="/dispatch:build $ticket"
@@ -187,12 +189,11 @@ if [ -z "$ws" ]; then
 fi
 
 # The worker's env. The shim dir carries a `claude` wrapper that re-adds the
-# worker's name, plugin and flags when herdr restarts it with a bare
-# `claude --resume`, since herdr does not replay agent argv.
+# plugin and worker flags when herdr restarts it with a bare `claude --resume`,
+# since herdr does not replay agent argv.
 env_args=(
   --env "PATH=$plugin_root/scripts/shims:$PATH"
   --env "AUTONOMOUS_WORKER=1"
-  --env "DISPATCH_WORKER_NAME=$session_name"
   --env "DISPATCH_PLUGIN_ROOT=$plugin_root"
 )
 
@@ -224,7 +225,7 @@ start_agent() {
   done
   local out
   out=$(herdr agent start "$agent_name" --kind claude --pane "$pane" --timeout 90000 -- \
-        --model "$model" --name "$session_name" --plugin-dir "$plugin_root" \
+        --model "$model" --plugin-dir "$plugin_root" \
         --disallowedTools "EnterPlanMode,ExitPlanMode" --dangerously-skip-permissions 2>&1) || {
     log "agent start failed: $out"
     return 1

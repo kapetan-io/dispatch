@@ -83,6 +83,7 @@ Three kinds of ticket appear below. The **feature ticket** holds the blueprint a
    - Linear can't edit an uploaded attachment, so anything a later step changes must be a document. Attachments are only for read-only material, such as grill experiments.
 9. **Workers may ask questions in the terminal.**
    - Questions must go through AskUserQuestion, so herdr shows the worker as blocked. A question typed as plain text leaves the worker idle, and the stall nudge would then read as your go-ahead.
+   - herdr sees the question only when Claude runs without `--name`. A named session draws its name in a rule below the dialog, and herdr's Claude detector reads only the text after the last rule, so it reported the ENG-228 pilot worker as idle and a test session as done, never blocked. The launcher and the `claude` shim no longer pass `--name` (2026-10-08).
    - When a worker blocks on a question, the dispatcher labels its workspace and notifies you, and notifies again if it stays unanswered. It never dismisses the dialog.
    - Workers write each answer down. Answers that change the design are appended to the blueprint's decision log with a `save_document` patch, never a full save, so parallel workers don't overwrite each other. Build workers re-read the blueprint at the same checkpoints where they re-read comments.
    - Needs Human stays for things you do outside the window, such as approving a design or settling a disputed human review on a PR.
