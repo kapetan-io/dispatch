@@ -282,6 +282,12 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 	if lookupFailed {
 		_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the tickets that hold trees: %v\n", err)
 	}
+	leased := map[string]bool{}
+	for _, tree := range trees {
+		if tree.LeaseHolder != "" {
+			leased[tree.LeaseHolder] = true
+		}
+	}
 	workers := map[string]worker.Worker{}
 	for _, t := range tickets {
 		workers[t.Identifier] = worker.Find(t.Identifier, trees, snap)
@@ -304,6 +310,23 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		Paused:         cfg.Linear.Statuses.Paused,
 		LeaseHolders:   holders,
 		Leases:         leaseWorkers(holders, trees, snap),
+		Todo:           cfg.Linear.Statuses.Todo,
+		AILabel:        cfg.Linear.AILabel,
+		Teams:          cfg.Linear.Teams,
+		BlockerDone:    cfg.Linear.Statuses.CloseParent,
+		Leased:         leased,
+	}
+	// Only promotion and closing wait on the children, so a failed read holds
+	// back those two and nothing else.
+	if parents := input.Parents(); len(parents) > 0 {
+		ids := make([]string, len(parents))
+		for i, parent := range parents {
+			ids[i] = parent.ID
+		}
+		var readErr error
+		if input.Children, readErr = lin.ParentChildren(ctx, ids); readErr != nil {
+			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the children of open parents: %v\n", readErr)
+		}
 	}
 	input.Unfinished, input.CheckErrors = inspectTrees(ctx, input)
 	input.PRs = readPRs(ctx, opts, input)
@@ -386,6 +409,18 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			if err := keep(ctx, opts, lin, c, a); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while keeping the tree of %s: %v\n", a.Ticket.Identifier, err)
 			}
+		case reconcile.Promote:
+			if err := move(ctx, lin, a.Ticket, cfg.Linear.Statuses.InProgress); err != nil {
+				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while promoting %s: %v\n", a.Ticket.Identifier, err)
+				continue
+			}
+			_, _ = fmt.Fprintln(opts.Stdout, a)
+		case reconcile.Close:
+			if err := move(ctx, lin, a.Ticket, cfg.Linear.Statuses.CloseParent); err != nil {
+				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while closing %s: %v\n", a.Ticket.Identifier, err)
+				continue
+			}
+			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Notify:
 			if err := alert(a.Text); err != nil {
 				// Settle already advanced the counters, so reset them to make Plan
@@ -528,6 +563,15 @@ func readPRs(ctx context.Context, opts Options, in reconcile.Input) map[string]p
 		}
 	}
 	return prs
+}
+
+// move sets a ticket's status by name.
+func move(ctx context.Context, lin linear.Client, t linear.Ticket, status string) error {
+	state, err := lin.StateID(ctx, t.Team, status)
+	if err != nil {
+		return err
+	}
+	return lin.Move(ctx, t.ID, state)
 }
 
 // escalate moves a ticket to Needs Human with one comment saying why.

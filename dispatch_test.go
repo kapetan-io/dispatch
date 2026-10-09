@@ -700,6 +700,30 @@ type fakeLinear struct {
 	morePages         bool
 	lookupCalls       int
 	noLookups         bool
+	children          []fakeTicket
+	childReads        [][]any
+	noChildren        bool
+}
+
+// setChildren sets the children Linear returns for open parents.
+func (f *fakeLinear) setChildren(children ...fakeTicket) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.children = children
+}
+
+// failChildren makes Linear refuse the read of a parent's children.
+func (f *fakeLinear) failChildren() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.noChildren = true
+}
+
+// childReadParents lists the parent ids each children read asked for.
+func (f *fakeLinear) childReadParents() [][]any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([][]any(nil), f.childReads...)
 }
 
 // failLookups makes Linear refuse the lookup of tickets by identifier.
@@ -829,11 +853,24 @@ func (f *fakeLinear) serve(w http.ResponseWriter, r *http.Request) {
 			"viewer": map[string]string{"id": viewerID},
 			"issues": map[string]any{"nodes": found, "pageInfo": map[string]bool{"hasNextPage": ignored}},
 		}
+	case "ParentChildren":
+		if f.noChildren {
+			http.Error(w, "children refused", http.StatusInternalServerError)
+			return
+		}
+		asked, _ := req.Variables["parents"].([]any)
+		f.childReads = append(f.childReads, asked)
+		data = map[string]any{
+			"viewer": map[string]string{"id": viewerID},
+			"issues": map[string]any{"nodes": f.children, "pageInfo": map[string]bool{"hasNextPage": false}},
+		}
 	case "TeamStates":
 		data = map[string]any{"teams": map[string]any{"nodes": []any{map[string]any{
 			"key": "ENG",
 			"states": map[string]any{"nodes": []any{
+				map[string]string{"id": "state-todo", "name": "Todo"},
 				map[string]string{"id": "state-in-progress", "name": "In Progress"},
+				map[string]string{"id": "state-done", "name": "Done"},
 				map[string]string{"id": needsHumanID, "name": "Needs Human"},
 			}},
 		}}}}

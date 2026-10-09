@@ -46,7 +46,17 @@ While `dispatch run` ticks, an In Progress ticket whose worker is idle or finish
 
 An In Review ticket whose worker is idle gets the PR nudge when its PR has a failed check, changes requested, an unresolved review thread or a merge conflict. The nudge names the problem and tells the worker to handle it as its build skill's step 7 says. A worker that is gone is relaunched on its existing tree, then nudged on the tick after it goes idle. After `nudge_limit` PR nudges with no push, the ticket goes to Needs Human with one comment, and a push that moves the PR head resets the count. The dispatcher reads PRs through `gh`, so it must be authenticated.
 
-A worker blocked on a question (AskUserQuestion), on an In Progress or In Review ticket, fires a macOS notification (through `osascript`) on its first blocked tick and again every `blocked_renotify_ticks` ticks (default 3) while it stays blocked. The dispatcher never answers the question and never sets Needs Human for it. A ticket entering Needs Human fires one notification.
+A worker blocked on a question (AskUserQuestion), on an In Progress or In Review ticket, fires a macOS notification (through `osascript`) on its first blocked tick and again every `blocked_renotify_ticks` ticks (default 3) while it stays blocked. The dispatcher never answers the question and never sets Needs Human for it. A ticket entering Needs Human fires one notification, a parent included.
+
+## Parents
+
+Move a parent ticket to In Progress and the dispatcher starts its children for you. Each tick it reads every child of an In Progress parent and acts in this order.
+
+- **Close.** A parent whose children are all Done, Canceled or Duplicate is moved to `close_parent` (default Done). A parent whose children couldn't be read is never closed.
+- **Promote.** A child in `todo` (default Todo) that is assigned to you, carries the `ai` label and has no unfinished blocker moves to In Progress, and the next tick launches its worker. A child waits until every blocker is Done, so a Canceled blocker holds it. A child that holds a treehouse lease was paused with its tree kept, so it stays in Todo until you move it to In Progress yourself. A child whose blocker list ran past one page waits too.
+- **Cap.** Promotion stops when the In Progress tickets other than parents reach `max_in_progress`. A child waiting for a slot is promoted on a later tick, and the tick prints `wait <child>` each time.
+
+A parent never gets a worker, whatever its status. Parents labeled `design` or `design-review` are left alone until the grill and review skills exist. If the children can't be read, the tick prints the error and skips promotion and closing, and everything else runs as usual. Promotion is the only way the dispatcher moves a ticket to In Progress.
 
 ## Teardown and pausing
 

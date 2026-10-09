@@ -35,9 +35,13 @@ type Linear struct {
 }
 
 type Statuses struct {
-	InProgress string `toml:"in_progress"`
-	InReview   string `toml:"in_review"`
-	NeedsHuman string `toml:"needs_human"`
+	// Todo is the status of a child waiting for promotion. CloseParent is the
+	// status a parent gets once its children are finished.
+	Todo        string `toml:"todo"`
+	CloseParent string `toml:"close_parent"`
+	InProgress  string `toml:"in_progress"`
+	InReview    string `toml:"in_review"`
+	NeedsHuman  string `toml:"needs_human"`
 	// Done lists the statuses of a finished ticket, whose worker and tree are
 	// cleaned up. Paused lists the statuses of a ticket whose worker is stopped
 	// and whose tree is kept.
@@ -60,11 +64,13 @@ func defaults() Config {
 			AILabel:        "ai",
 			RepoLabelGroup: "repo",
 			Statuses: Statuses{
-				InProgress: "In Progress",
-				InReview:   "In Review",
-				NeedsHuman: "Needs Human",
-				Done:       []string{"Done", "Canceled", "Duplicate"},
-				Paused:     []string{"Backlog", "Todo"},
+				Todo:        "Todo",
+				CloseParent: "Done",
+				InProgress:  "In Progress",
+				InReview:    "In Review",
+				NeedsHuman:  "Needs Human",
+				Done:        []string{"Done", "Canceled", "Duplicate"},
+				Paused:      []string{"Backlog", "Todo"},
 			},
 		},
 	}

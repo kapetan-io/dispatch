@@ -51,7 +51,7 @@ State invariants, each with its enforcement.
 |---|---|
 | A worker never goes idle while its ticket is In Progress and not marked Needs Human. | Worker contract. The dispatcher nudges an idle worker and escalates after two nudges. |
 | A ticket has at most one live worker. | Dispatcher lock. Liveness lookup through the ticket's treehouse lease before launch. The launcher refuses when a live Claude pane already sits in the ticket's workspace. |
-| A parent ticket never gets a dispatched worker. | The dispatcher skips any ticket that has sub-issues. |
+| A parent ticket never gets a dispatched worker. | The dispatcher skips any ticket that has sub-issues. A parent still notifies on Needs Human. |
 | The dispatcher touches only tickets assigned to you that carry the `ai` label. | The Linear query filters on both. Tickets you work by hand lack the label. |
 | The dispatcher moves a ticket into In Progress only when it is a Todo child of an In Progress parent. | Promotion rule, and nothing else in the dispatcher writes In Progress. |
 | A tree with uncommitted or unpushed work is never returned to the pool. | The dispatcher checks `git status` and the upstream before `treehouse return --force`. |
@@ -211,7 +211,7 @@ Cheap actions run before launches, because one launch can take over 5 minutes.
 4. Tear down trees whose tickets are Done, Canceled or Duplicate. Close the workspace, then `treehouse return --if-lease-holder <ticket> --force`. A dirty or unpushed tree only gets its workspace closed and one comment.
 5. Stop workers whose tickets went back to Backlog or Todo. Close the workspace and keep the lease.
 6. Set a parent to Done when every child is Done, Canceled or Duplicate.
-7. Promote Todo children of In Progress parents whose blockers are all Done, while the In Progress count stays under the cap.
+7. Promote Todo children of In Progress parents whose blockers are all Done, while the In Progress count, parents excluded, stays under the cap. A child that still holds a lease is never promoted, so a child you just paused stays paused.
 8. Apply the reconcile table to every In Progress and In Review ticket, except launches.
 9. Rename each worker's workspace with its status emoji.
 10. Fire a macOS notification for each ticket that entered Needs Human since the cache's last-seen status.
@@ -278,6 +278,7 @@ in_progress = "In Progress"
 in_review = "In Review"
 done = ["Done", "Canceled", "Duplicate"]
 paused = ["Backlog", "Todo"]
+close_parent = "Done"            # what a parent becomes when its children finish
 
 [linear.needs_human]
 status = "Needs Human"           # at work: label = "needs-human"
