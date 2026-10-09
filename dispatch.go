@@ -60,13 +60,17 @@ type Options struct {
 const usage = `usage: dispatch tick [--dry-run]
        dispatch run [--interval DURATION]
        dispatch tell <ticket> "<text>"
+       dispatch ticket-hint
 
   tick         run one pass: launch a worker for each approved ticket that has none,
                and clean up after finished and paused tickets
   --dry-run    print the actions a tick would take, one per line, without acting
   run          tick now and then once per interval until interrupted (Ctrl-C)
   --interval   time between ticks; defaults to the config's interval_minutes
-  tell         type text into the ticket's worker; fails when the worker is blocked or absent`
+  tell         type text into the ticket's worker; fails when the worker is blocked or absent
+  ticket-hint  print a reminder to use the dispatch:ticket skill when run in a repo listed under
+               [repos] in the config, or a worktree of one; prints nothing elsewhere.
+               The plugin's SessionStart hook runs it`
 
 // Run executes one dispatch command. main is a thin wrapper around it.
 func Run(ctx context.Context, args []string, opts Options) error {
@@ -91,6 +95,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 			return errors.New(`tell takes a ticket and the text to type`)
 		}
 		return tell(ctx, opts, args[1], args[2])
+	case "ticket-hint":
+		return ticketHint(ctx, opts)
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ContinueOnError)
 		fs.SetOutput(opts.Stderr)
