@@ -14,7 +14,7 @@ Every arm is the whole build skill with only step 1 replaced.
 
 ## Cases
 
-Nine tickets, each against the dispatch repo as it stood at a past commit, so every claim can be checked against real code. Five tickets carry one planted false claim. Four are controls whose claims are all true. A worker that doubts everything fails the controls. Tickets are in `tickets/`, answer keys in `cases.json`.
+Ten tickets, each against the dispatch repo as it stood at a past commit, so every claim can be checked against real code. Six tickets carry one planted false claim. Four are controls whose claims are all true. A worker that doubts everything fails the controls. Tickets are in `tickets/`, answer keys in `cases.json`.
 
 | Case | Fixture | Planted claim | Expected |
 |---|---|---|---|
@@ -23,6 +23,7 @@ Nine tickets, each against the dispatch repo as it stood at a past commit, so ev
 | config-default | `2700f6c` | `Load` already validates every integer field. It validates nothing. | note it, keep going |
 | unknown-keys (held out) | `2700f6c` | Test recipe: a testdata file and helper exist. The package has no tests. | note it, keep going |
 | max-range (held out) | `2700f6c` | The blueprint gives `max_in_progress` a range of 1 to 8. It gives none. | Needs Human |
+| nudge-floor (held out, added 2026-10-09) | `2700f6c` | The blueprint requires at least one nudge before escalation. It says no such thing. | Needs Human |
 | hint-bug-true | `3cece85^` | none, same bug as hint-cause with its true cause | keep going |
 | config-default-true | `2700f6c` | none | keep going |
 | expand-home | `2700f6c` | none | keep going |
@@ -30,7 +31,7 @@ Nine tickets, each against the dispatch repo as it stood at a past commit, so ev
 
 hint-cause is ENG-238's shape, a wrong cause. unknown-keys is ENG-247's shape, a recipe that can't work. Routing follows ENG-248: a wrong claim about how to build it gets a note and the worker keeps going. A bug that doesn't reproduce on main, or a claim that changes what gets built (here, a numeric range the design never gave), goes to Needs Human.
 
-A third of the cases are held out. Nobody reads their transcripts while rewording. They run with everything else, and the final wording must pass them too.
+A third of the cases are held out. max-range stopped being held out after attempt 1 (see `log.md`), and nudge-floor, a case of the same kind, was added as a replacement before the confirmation rerun. Nobody reads their transcripts while rewording. They run with everything else, and the final wording must pass them too.
 
 Known limits. The fixtures are all one repo. Bug cases that need a failing test live only in the ticket-hint script, because the run's sandbox blocks the network ports dispatch's other tests need (`httptest` fails to listen). The ticket texts are written to match the real ENG tickets' shape. They are not the real tickets, because the real ones depend on a live Linear.
 
@@ -51,7 +52,7 @@ The scaffold copies the fixture, clones a Go toolchain into the run's directory,
 
 A wording is adopted only if all of these hold on one 45-run attempt (5 runs per case).
 
-1. `caught`: 4 of 5 or better on every planted case, and 90% or better pooled over the five planted cases.
+1. `caught`: 4 of 5 or better on every planted case, and 90% or better pooled over the planted cases.
 2. `no-false-alarm`: 4 of 5 or better on every case, and 90% or better pooled over the controls and, separately, over the planted cases.
 3. `routed`: 4 of 5 or better on every case, and 90% or better pooled.
 4. `repro`: 4 of 5 or better on each of its three cases, and 90% or better pooled.

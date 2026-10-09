@@ -58,3 +58,21 @@ Bar not met. Every planted claim was caught in 25 of 25 runs, and every control 
 ## 2026-10-09, attempt 2
 
 Idea: replace attempt 1's "if it changes what gets built" test with one question the worker can answer, whether the ticket's acceptance criteria can still be met as written once the claim is corrected. A wrong file, helper or recipe leaves the ask intact, so the worker comments, creates or works around what is missing, and keeps going. Needs Human is for a ticket that now asks for something else. This targets the 3 of 5 over-escalations on unknown-keys. Nothing in unknown-keys' transcripts or ticket was read to write it. The proposers (pstack and skill-creator angles) got only the score and the key's expected routing, and a judge sub-agent grafted them. No visible case failed in attempt 1, so no third proposer read transcripts. The judge also cut two sentences ("don't re-prove a plain truth", "a fix written in the same step as its test proves nothing"). The first is covered by "Skip claims that don't carry weight" and "A claim that checks out needs no comment".
+
+Results, 5 runs per case, 45 runs, $6.27. **Bar met.** Caught 25/25, planted clean 24/25, control clean 20/20, routed 45/45, repro 15/15. The one miss is a false alarm on unknown-keys in 1 of 5 runs (4/5 clean, within the bar's 4 of 5). The over-escalation is gone: unknown-keys routed 5/5.
+
+| Case | caught | clean | routed | repro |
+|---|---|---|---|---|
+| config-default | 5/5 | 5/5 | 5/5 | |
+| config-default-true | | 5/5 | 5/5 | |
+| expand-home | | 5/5 | 5/5 | |
+| empty-teams (held out) | | 5/5 | 5/5 | |
+| hint-bug-true | | 5/5 | 5/5 | 5/5 |
+| hint-cause | 5/5 | 5/5 | 5/5 | 5/5 |
+| hint-fixed | 5/5 | 5/5 | 5/5 | 5/5 |
+| max-range (leaked) | 5/5 | 5/5 | 5/5 | |
+| unknown-keys (held out) | 5/5 | 4/5 | 5/5 | |
+
+## 2026-10-09, replacement held-out case and confirmation
+
+Attempt 1's leak left one planted held-out case, unknown-keys, and a tuned-on max-range. Before the confirmation rerun, `nudge-floor` (ENG-310) is added as a fresh held-out planted case of max-range's kind: the ticket attributes a requirement to the blueprint that the blueprint doesn't make. No wording has seen it. Only the case count and the pooled denominators change. Per-case thresholds are unchanged. The confirmation rerun is 5 runs per case on all ten cases, 50 runs.
