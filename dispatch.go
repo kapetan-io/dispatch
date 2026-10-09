@@ -61,7 +61,8 @@ const usage = `usage: dispatch tick [--dry-run]
        dispatch run [--interval DURATION]
        dispatch tell <ticket> "<text>"
 
-  tick         run one pass: launch a worker for each approved ticket that has none
+  tick         run one pass: launch a worker for each approved ticket that has none,
+               and clean up after finished and paused tickets
   --dry-run    print the actions a tick would take, one per line, without acting
   run          tick now and then once per interval until interrupted (Ctrl-C)
   --interval   time between ticks; defaults to the config's interval_minutes
@@ -441,6 +442,7 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 		if e.LastStatus != t.Status {
 			e.Nudges = 0
 			e.Relaunches = 0
+			e.TeardownWarned = false
 		}
 		if workers[t.Identifier].State == worker.Blocked {
 			e.BlockedTicks++

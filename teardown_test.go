@@ -443,6 +443,235 @@ func TestTickReadsDoneAndPausedStatusesFromConfig(t *testing.T) {
 	assert.Equal(t, "teardown ENG-1: Shipped, clean and pushed\nstop ENG-2: moved back to Parked\n", out)
 }
 
+func TestTickClosesTheWorkspaceBeforeItReturnsTheTree(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	// A worker still running in the tree could write to it after the return.
+	h.script("treehouse", `case "$1" in
+return)
+  if grep -q '"w-ENG-1"' "`+h.dir+`/workspaces.json"; then echo open >> "`+h.dir+`/order.log"; else echo closed >> "`+h.dir+`/order.log"; fi
+  echo "$PWD|$*" >> "`+h.dir+`/returns.log" ;;
+*) cat "`+h.dir+`/trees.json" ;;
+esac`)
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"closed"}, h.lines("order.log"))
+	assert.Equal(t, []string{h.repo + "|return " + path + " --if-lease-holder ENG-1 --force"}, h.returns())
+}
+
+func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.worker("ENG-1", "working")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	// The plan saw a clean tree, and the worker writes a file as it is killed.
+	h.script("herdr", `case "$1 $2" in
+"workspace list") cat "`+h.dir+`/workspaces.json" ;;
+"workspace close")
+  echo "$3" >> "`+h.dir+`/closes.log"
+  echo late > "`+path+`/late.txt"
+  jq --arg id "$3" '.result.workspaces |= map(select(.workspace_id != $id))' "`+h.dir+`/workspaces.json" > "`+h.dir+`/workspaces.tmp"
+  mv "`+h.dir+`/workspaces.tmp" "`+h.dir+`/workspaces.json" ;;
+"agent list") cat "`+h.dir+`/agents.json" ;;
+*) exit 2 ;;
+esac`)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "keep ENG-1: the worker left uncommitted changes in "+path+"\n", out)
+	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
+	assert.Empty(t, h.returns())
+	assert.FileExists(t, filepath.Join(path, "late.txt"))
+
+	// The next tick's plan sees the work and posts the one comment.
+	out, err = h.run("tick")
+	require.NoError(t, err)
+	assert.Equal(t, "keep ENG-1: Done, but its tree has uncommitted changes\n", out)
+	assert.Len(t, h.linear.mutations(), 1)
+	assert.Empty(t, h.returns())
+	assert.Len(t, h.closes(), 1)
+}
+
+func TestTickDryRunListsKeepAndStopWithoutActing(t *testing.T) {
+	h := newHarness(t)
+	dirty := h.gitTree("ENG-1")
+	h.dirty(dirty)
+	h.gitTree("ENG-2")
+	h.worker("ENG-1", "idle")
+	h.worker("ENG-2", "idle")
+	h.linear.setElsewhere(
+		ticket("ENG-1", "Done", "dispatch"),
+		ticket("ENG-2", "Todo", "dispatch"),
+	)
+
+	out, err := h.run("tick", "--dry-run")
+	require.NoError(t, err)
+
+	assert.Equal(t, "keep ENG-1: Done, but its tree has uncommitted changes\nstop ENG-2: moved back to Todo\n", out)
+	assert.Empty(t, h.closes())
+	assert.Empty(t, h.returns())
+	assert.Empty(t, h.linear.mutations())
+	assert.NoFileExists(t, filepath.Join(h.state, "cache.json"))
+}
+
+func TestTickCommentsOnADirtyTreeThatHasNoWorkspace(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.dirty(path)
+	h.lease("ENG-1", path)
+	h.linear.setElsewhere(ticket("ENG-1", "Canceled", "dispatch"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "keep ENG-1: Canceled, but its tree has uncommitted changes\n", out)
+	assert.Empty(t, h.closes())
+	assert.Empty(t, h.returns())
+	assert.Len(t, h.linear.mutations(), 1)
+
+	out, err = h.run("tick")
+	require.NoError(t, err)
+	assert.Empty(t, out)
+	assert.Len(t, h.linear.mutations(), 1)
+}
+
+func TestTickKeepsATreeWhoseCommitsNoRemoteHas(t *testing.T) {
+	h := newHarness(t)
+	// A tree with no remote at all has nowhere its commits could be pushed.
+	path := filepath.Join(h.dir, "trees", "ENG-1")
+	require.NoError(t, os.MkdirAll(path, 0o755))
+	h.git(path, "init", "--initial-branch=main")
+	h.commit(path)
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "keep ENG-1: Done, but its tree has 1 commit that no remote has\n", out)
+	assert.Empty(t, h.returns())
+}
+
+func TestTickPostsOneCommentForSeveralKeptTrees(t *testing.T) {
+	h := newHarness(t)
+	first := h.gitTree("ENG-1")
+	second := h.gitTree("library")
+	h.dirty(first)
+	h.commit(second)
+	h.workerOn("ENG-1", first, "w-ENG-1", "idle")
+	h.workerOn("ENG-1", second, "w-library", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.ElementsMatch(t, []string{"w-ENG-1", "w-library"}, h.closes())
+	assert.Empty(t, h.returns())
+	mutations := h.linear.mutations()
+	require.Len(t, mutations, 1)
+	assert.Contains(t, mutations[0].variables["body"], "`"+first+"` has uncommitted changes")
+	assert.Contains(t, mutations[0].variables["body"], "`"+second+"` has 1 commit that no remote has")
+
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	assert.Len(t, h.linear.mutations(), 1)
+}
+
+func TestTickLeavesTheWorkersOfPausedTicketsItDoesNotManage(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		ticket fakeTicket
+	}{
+		{
+			name:   "DesignTicket",
+			ticket: withLabel(ticket("ENG-1", "Todo", "dispatch"), "design"),
+		},
+		{
+			name:   "ReviewTicketInBacklog",
+			ticket: withLabel(ticket("ENG-1", "Backlog", "dispatch"), "design-review"),
+		},
+		{
+			name:   "AssignedToSomeoneElse",
+			ticket: assignedTo(ticket("ENG-1", "Todo", "dispatch"), "someone-else"),
+		},
+		{
+			name:   "NoAILabel",
+			ticket: withoutLabels(ticket("ENG-1", "Backlog", "dispatch")),
+		},
+		{
+			name: "LabelsDidNotFitOnePage",
+			ticket: func() fakeTicket {
+				cut := ticket("ENG-1", "Todo", "dispatch")
+				cut["labels"].(map[string]any)["pageInfo"] = map[string]bool{"hasNextPage": true}
+				return cut
+			}(),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.gitTree("ENG-1")
+			h.worker("ENG-1", "idle")
+			h.linear.setElsewhere(test.ticket)
+
+			_, err := h.run("tick")
+			require.NoError(t, err)
+
+			assert.Empty(t, h.closes())
+			assert.Empty(t, h.returns())
+			assert.Empty(t, h.linear.mutations())
+		})
+	}
+}
+
+func TestTickStopsEveryWorkerOfAPausedTicket(t *testing.T) {
+	h := newHarness(t)
+	first := h.gitTree("ENG-1")
+	second := h.gitTree("library")
+	h.workerOn("ENG-1", first, "w-ENG-1", "working")
+	h.workerOn("ENG-1", second, "w-library", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Backlog", "dispatch"))
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.ElementsMatch(t, []string{"w-ENG-1", "w-library"}, h.closes())
+	assert.Empty(t, h.returns())
+}
+
+func TestTickDoesNothingForAPausedTicketWithNoWorkspace(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.lease("ENG-1", path)
+	h.linear.setElsewhere(ticket("ENG-1", "Todo", "dispatch"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, out)
+	assert.Empty(t, h.closes())
+	assert.Empty(t, h.returns())
+}
+
+func TestTickSkipsAPausedTicketWhoseLabelsDidNotFitOnePage(t *testing.T) {
+	h := newHarness(t)
+	h.gitTree("ENG-1")
+	h.worker("ENG-1", "idle")
+	cut := ticket("ENG-1", "Todo", "dispatch")
+	cut["labels"].(map[string]any)["pageInfo"] = map[string]bool{"hasNextPage": true}
+	h.linear.setElsewhere(cut)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "skip ENG-1: it has more labels than the dispatcher reads")
+	assert.Empty(t, h.closes())
+}
+
 // gitTree makes a pool tree that is clean and pushed: a clone of a bare
 // remote on main, at the path h.worker gives the ticket.
 func (h *harness) gitTree(ticket string) string {
@@ -491,4 +720,28 @@ func assignedTo(t fakeTicket, user string) fakeTicket {
 func withoutLabels(t fakeTicket) fakeTicket {
 	t["labels"] = map[string]any{"nodes": []map[string]any{}}
 	return t
+}
+
+func TestTickCommentsAgainWhenATicketFinishesASecondTimeWithWorkInItsTree(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.dirty(path)
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	require.Len(t, h.linear.mutations(), 1)
+
+	// Reopened, the ticket is managed again and its old warning no longer applies.
+	h.linear.setElsewhere()
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "working")
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	h.tickets()
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Len(t, h.linear.mutations(), 2)
 }
