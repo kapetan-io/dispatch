@@ -54,9 +54,11 @@ Each tick also looks at every tree held by a ticket assigned to you with the `ai
 
 - A finished ticket whose tree is clean and fully pushed has its herdr workspace closed and its tree returned with `treehouse return --force`, so `treehouse status` shows the slot available.
 - A finished ticket whose tree has uncommitted changes, or commits that no remote has, keeps its tree. Its workspace is closed, and the ticket gets one comment saying what the tree holds. Push or discard the work and the next tick returns the tree.
-- A ticket moved back to Backlog or Todo has its workspace closed and keeps its tree. Moving it to In Progress again relaunches a worker on that tree.
+- A ticket moved back to Backlog or Todo has its worker's workspace closed and keeps its tree. Moving it to In Progress again relaunches a worker on that tree.
 
-Trees of `design` and `design-review` tickets are left alone until the grill and review skills exist. A tree whose git state can't be read stays leased, and the tick prints why.
+"Pushed" means every commit, on any branch or a detached HEAD, is reachable from a remote-tracking ref. A branch squash-merged and then pruned from the remote counts as unpushed, so its tree stays leased with the comment until you discard it. Only a workspace with a Claude agent in it is closed when a worker is stopped, so a workspace you opened by hand on a kept tree stays open.
+
+Trees of `design` and `design-review` tickets are left alone until the grill and review skills exist. A tree whose git state can't be read, or whose ticket has more labels than the dispatcher reads, stays leased, and the tick prints why. If the lookup of tickets holding trees fails, the tick prints the error and skips teardown but still launches and nudges.
 
 To type into a worker yourself:
 

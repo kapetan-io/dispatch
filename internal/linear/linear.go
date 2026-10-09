@@ -220,9 +220,11 @@ const leasedTickets = `query LeasedTickets($filter: IssueFilter!, $first: Int!) 
 }`
 
 // LeasedTickets returns the tickets named by identifiers, whatever their
-// status, so a finished or paused ticket that still holds a tree can be found.
-// Only tickets assigned to the key's owner that carry label come back, and
-// identifiers outside teams, or not shaped like a ticket id, are ignored.
+// status and including archived ones, so a finished or paused ticket that
+// still holds a tree can be found. Only tickets assigned to the key's owner
+// come back, and of those the ones that carry label, plus any whose labels were
+// cut short, because the caller can't tell whether they do. Identifiers outside
+// teams, or not shaped like a ticket id, are ignored.
 func (c Client) LeasedTickets(ctx context.Context, label string, teams, identifiers []string) ([]Ticket, error) {
 	var filters []map[string]any
 	for _, id := range identifiers {

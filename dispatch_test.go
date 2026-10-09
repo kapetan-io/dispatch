@@ -466,7 +466,7 @@ echo "${@: -2:1}|${@: -1}" >> "`+dir+`/notifications.log"`)
 for arg; do case "$arg" in branch=*) branch="${arg#branch=}" ;; esac; done
 echo "$branch" >> "`+dir+`/gh.log"
 cat "`+dir+`/pr-${branch##*/}.json" 2>/dev/null || echo '{"data":{"repository":{"pullRequests":{"nodes":[]}}}}'`)
-	// return frees the tree the way treehouse does, so later ticks see it available.
+	// return marks the tree available, so later ticks see the slot free.
 	h.script("treehouse", `case "$1" in
 return)
   [ -f "`+dir+`/return-fails" ] && exit 1
@@ -699,6 +699,14 @@ type fakeLinear struct {
 	noComments        bool
 	morePages         bool
 	lookupCalls       int
+	noLookups         bool
+}
+
+// failLookups makes Linear refuse the lookup of tickets by identifier.
+func (f *fakeLinear) failLookups() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.noLookups = true
 }
 
 // unsuccessfulMoves makes Linear answer a move with HTTP 200 and success:false.
@@ -785,6 +793,10 @@ func (f *fakeLinear) serve(w http.ResponseWriter, r *http.Request) {
 		}}}
 	case "LeasedTickets":
 		f.lookupCalls++
+		if f.noLookups {
+			http.Error(w, "lookup refused", http.StatusInternalServerError)
+			return
+		}
 		// Answer like Linear: only the tickets the filter names.
 		var asked []string
 		filter, _ := req.Variables["filter"].(map[string]any)

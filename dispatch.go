@@ -270,9 +270,11 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		return sum, err
 	}
 
-	leased, err := leasedTickets(ctx, lin, cfg, trees, tickets)
+	// Teardown is an addition to the tick, so a lookup that fails holds back
+	// only the teardown and leaves launches and nudges running.
+	holders, err := leaseHolders(ctx, lin, cfg, trees, tickets)
 	if err != nil {
-		return sum, err
+		_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the tickets that hold trees: %v\n", err)
 	}
 	workers := map[string]worker.Worker{}
 	for _, t := range tickets {
@@ -294,8 +296,8 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		UnreadRepos:    unread,
 		Done:           cfg.Linear.Statuses.Done,
 		Paused:         cfg.Linear.Statuses.Paused,
-		Leased:         leased,
-		Leases:         leaseWorkers(leased, trees, snap),
+		LeaseHolders:   holders,
+		Leases:         leaseWorkers(holders, trees, snap),
 	}
 	input.Unfinished, input.CheckErrors = inspectTrees(ctx, input)
 	input.PRs = readPRs(ctx, opts, input)
@@ -359,17 +361,15 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			e.ResumePending = false
 			c[a.Ticket.Identifier] = e
 			_, _ = fmt.Fprintln(opts.Stdout, a)
+		// One tree's failure must not hold up the other trees.
 		case reconcile.Teardown:
-			// One tree's failure must not hold up the other trees.
 			if err := teardown(ctx, opts, a); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while tearing down %s: %v\n", a.Ticket.Identifier, err)
 			}
 		case reconcile.Stop:
-			if err := herdr.CloseWorkspace(ctx, opts.Herdr, a.WorkspaceID); err != nil {
+			if err := stop(ctx, opts, a); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while stopping %s: %v\n", a.Ticket.Identifier, err)
-				continue
 			}
-			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Keep:
 			if err := keep(ctx, opts, lin, c, a); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while keeping the tree of %s: %v\n", a.Ticket.Identifier, err)

@@ -31,11 +31,10 @@ const (
 	// Teardown closes the workspace on a finished ticket's tree and returns the
 	// tree to the pool.
 	Teardown Kind = "teardown"
-	// Keep stops a finished ticket's worker and leaves its tree leased, because
-	// the tree holds work that returning it would destroy. A non-empty Text is
-	// the one comment that says why.
+	// Keep is Stop for a finished ticket whose tree holds work that returning
+	// it would destroy. A non-empty Text is the one comment that says why.
 	Keep Kind = "keep"
-	// Stop closes the workspace of a paused ticket and keeps its tree.
+	// Stop closes the workspace of a ticket's live worker and keeps its tree.
 	Stop Kind = "stop"
 )
 
@@ -74,7 +73,8 @@ type Action struct {
 	PaneID string
 	Text   string
 	// WorkspaceID and TreePath name what a Teardown, Keep or Stop acts on.
-	// WorkspaceID is empty when the tree has no open workspace.
+	// WorkspaceID is empty when a Keep or Stop has no live worker to stop, so a
+	// workspace someone opened by hand is left open.
 	WorkspaceID string
 	TreePath    string
 }
@@ -114,14 +114,15 @@ type Input struct {
 	// Done and Paused are the statuses of a finished and a paused ticket.
 	Done   []string
 	Paused []string
-	// Leased holds the managed tickets that hold a lease and are not in Tickets,
-	// which is how finished and paused tickets are found.
-	Leased []linear.Ticket
-	// Leases maps a Leased ticket to a worker for each tree it holds.
+	// LeaseHolders holds the managed tickets that hold a lease and are not in
+	// Tickets, which is how finished and paused tickets are found.
+	LeaseHolders []linear.Ticket
+	// Leases maps a lease holder to a worker for each tree it holds.
 	Leases map[string][]worker.Worker
 	// Unfinished maps a tree path to what returning it would destroy, empty for
-	// a clean, pushed tree. CheckErrors holds the trees that could not be read.
-	// Both cover only the trees of tickets for which Retires is true.
+	// a clean, pushed tree. A path in neither map was not inspected and is never
+	// returned. CheckErrors holds the trees that could not be read. Both cover
+	// only the trees of tickets for which Retires is true.
 	Unfinished  map[string]string
 	CheckErrors map[string]error
 }
@@ -140,7 +141,8 @@ func Plan(in Input) []Action {
 			running++
 		}
 	}
-	actions, launches := in.retire(), []Action(nil)
+	actions := in.retire()
+	var launches []Action
 	for _, t := range in.Tickets {
 		if a, ok := in.watch(t); ok {
 			actions = append(actions, a)

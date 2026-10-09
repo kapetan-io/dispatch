@@ -14,10 +14,10 @@ import (
 	"github.com/kapetan-io/dispatch/internal/worker"
 )
 
-// leasedTickets reads the tickets that hold a tree but are not among the
+// leaseHolders reads the tickets that hold a tree but are not among the
 // managed ones, which is how finished and paused tickets are found. It makes
 // no call when every lease belongs to a managed ticket.
-func leasedTickets(ctx context.Context, lin linear.Client, cfg config.Config, trees []treehouse.Tree, managed []linear.Ticket) ([]linear.Ticket, error) {
+func leaseHolders(ctx context.Context, lin linear.Client, cfg config.Config, trees []treehouse.Tree, managed []linear.Ticket) ([]linear.Ticket, error) {
 	var holders []string
 	for _, tr := range trees {
 		if tr.LeaseHolder == "" || slices.Contains(holders, tr.LeaseHolder) {
@@ -37,7 +37,7 @@ func leasedTickets(ctx context.Context, lin linear.Client, cfg config.Config, tr
 // tree is reported and kept leased.
 func inspectTrees(ctx context.Context, in reconcile.Input) (unfinished map[string]string, failed map[string]error) {
 	unfinished, failed = map[string]string{}, map[string]error{}
-	for _, t := range in.Leased {
+	for _, t := range in.LeaseHolders {
 		if !in.Retires(t) {
 			continue
 		}
@@ -56,7 +56,7 @@ func inspectTrees(ctx context.Context, in reconcile.Input) (unfinished map[strin
 // heldFinished lists the finished tickets that still hold a lease.
 func heldFinished(in reconcile.Input) map[string]bool {
 	held := map[string]bool{}
-	for _, t := range in.Leased {
+	for _, t := range in.LeaseHolders {
 		if slices.Contains(in.Done, t.Status) && len(in.Leases[t.Identifier]) > 0 {
 			held[t.Identifier] = true
 		}
@@ -79,10 +79,19 @@ func teardown(ctx context.Context, opts Options, a reconcile.Action) error {
 		return err
 	}
 	if why != "" {
-		_, _ = fmt.Fprintf(opts.Stdout, "keep %s: the worker left %s in %s\n", a.Ticket.Identifier, why, a.TreePath)
+		_, _ = fmt.Fprintln(opts.Stdout, reconcile.Action{Kind: reconcile.Keep, Ticket: a.Ticket, Reason: "the worker left " + why + " in " + a.TreePath})
 		return nil
 	}
 	if err := treehouse.Return(ctx, opts.Treehouse, a.RepoDir, a.TreePath, a.Ticket.Identifier); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(opts.Stdout, a)
+	return nil
+}
+
+// stop closes the workspace of a paused ticket's worker. The tree stays leased.
+func stop(ctx context.Context, opts Options, a reconcile.Action) error {
+	if err := herdr.CloseWorkspace(ctx, opts.Herdr, a.WorkspaceID); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintln(opts.Stdout, a)
@@ -110,10 +119,10 @@ func keep(ctx context.Context, opts Options, lin linear.Client, c cache.Cache, a
 	return nil
 }
 
-// leaseWorkers finds a worker for each tree each leased ticket holds.
-func leaseWorkers(leased []linear.Ticket, trees []treehouse.Tree, snap herdr.Snapshot) map[string][]worker.Worker {
+// leaseWorkers finds a worker for each tree each lease holder holds.
+func leaseWorkers(holders []linear.Ticket, trees []treehouse.Tree, snap herdr.Snapshot) map[string][]worker.Worker {
 	leases := map[string][]worker.Worker{}
-	for _, t := range leased {
+	for _, t := range holders {
 		leases[t.Identifier] = worker.FindAll(t.Identifier, trees, snap)
 	}
 	return leases
