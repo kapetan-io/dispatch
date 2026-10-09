@@ -51,7 +51,8 @@ State invariants, each with its enforcement.
 |---|---|
 | A worker never goes idle while its ticket is In Progress and not marked Needs Human. | Worker contract. The dispatcher nudges an idle worker and escalates after two nudges. |
 | A ticket has at most one live worker. | Dispatcher lock. Liveness lookup through the ticket's treehouse lease before launch. The launcher refuses when a live Claude pane already sits in the ticket's workspace. |
-| A parent ticket never gets a worker. | The dispatcher skips any ticket that has sub-issues. |
+| A parent ticket never gets a dispatched worker. | The dispatcher skips any ticket that has sub-issues. |
+| The dispatcher touches only tickets assigned to you that carry the `ai` label. | The Linear query filters on both. Tickets you work by hand lack the label. |
 | The dispatcher moves a ticket into In Progress only when it is a Todo child of an In Progress parent. | Promotion rule, and nothing else in the dispatcher writes In Progress. |
 | A tree with uncommitted or unpushed work is never returned to the pool. | The dispatcher checks `git status` and the upstream before `treehouse return --force`. |
 | In Progress workers never exceed the configured cap. | The dispatcher counts before promoting or launching. treehouse `max_trees` caps trees per repo. |
@@ -65,7 +66,7 @@ Behavioral constraints.
 - The dispatcher comments on a ticket only when it sets Needs Human, or when it refuses to tear down a dirty tree. It never comments to record a nudge.
 - A worker never stops on a failing check. A flake gets its own ticket and a re-run. A real failure gets fixed.
 - A worker enables auto-merge only when the base branch requires at least one approving review. On a branch with no protection, auto-merge would merge the moment checks pass.
-- A worker never asks a question in its terminal. Questions go in a Needs Human comment.
+- A worker may ask you a question in its terminal through AskUserQuestion, which herdr shows as blocked. Needs Human is for things you do outside the window, such as approving a design or settling a disputed review.
 
 ### Acceptance Criteria
 
@@ -77,7 +78,7 @@ Each criterion is checked through the dispatcher's surface (`dispatch tick`, `di
 4. An In Progress ticket with an idle worker receives the stall nudge. After two nudges with no status change, the ticket is Needs Human with exactly one dispatcher comment.
 5. A ticket moved from Needs Human back to In Progress receives the resume nudge on the next tick, and the dispatcher posts no comment.
 6. For an In Review ticket, a push that moves the PR head resets the nudge count, so a review that arrives days later starts a fresh count.
-7. A blocked worker gets `esc` and the dialog nudge. If it is still blocked on the next tick, the ticket is Needs Human with the screen text from `herdr agent read` in the comment.
+7. A blocked worker, one asking you a question through AskUserQuestion, triggers a macOS notification on the first tick it is blocked and again on later ticks while it stays blocked. The dispatcher never dismisses the dialog and never sets Needs Human for it (decision 9).
 8. Two consecutive failed launches set Needs Human with the launcher's error. `pool_exhausted` never counts as a failure.
 9. An In Review ticket whose PR has a failing check, changes requested, unresolved review threads or a merge conflict, and whose worker is idle or gone, receives the PR nudge naming the problem. A gone worker is resumed first.
 10. A Done, Canceled or Duplicate ticket with a clean, pushed tree has its workspace closed and its tree returned. `treehouse status` shows the slot available.
@@ -86,7 +87,7 @@ Each criterion is checked through the dispatcher's surface (`dispatch tick`, `di
 13. A ticket entering Needs Human fires exactly one macOS notification.
 14. After every tick, each worker's herdr workspace label starts with the emoji for its Linear status.
 15. Two ticks started together result in one doing work and the other exiting without side effects.
-16. Every launched worker runs with `--disallowedTools AskUserQuestion,EnterPlanMode,ExitPlanMode`.
+16. Every launched worker runs with `--disallowedTools EnterPlanMode,ExitPlanMode`.
 17. Every PR a worker opens on a protected branch has auto-merge enabled.
 
 ### Scope
@@ -120,7 +121,7 @@ Out of scope.
 | `gh`, authenticated | PR state for In Review tickets |
 | GitHub repo settings | "Allow auto-merge" on, and branch protection on main requiring the CodeRabbit review and CI checks. CodeRabbit's approval already counts, since PR #68 shows `reviewDecision: APPROVED` with coderabbitai as its only reviewer. |
 | Linear workflow | A Needs Human status on personal teams. At work, a `needs-human` label instead, and no parent auto-close setting. |
-| launchd | Runs `dispatch tick` on an interval and survives reboots |
+| A herdr window you keep open | Runs `dispatch run`, which ticks on an interval. You start and stop it, and it does not survive a reboot or a herdr restart. |
 | Claude Code CLI | `--dangerously-skip-permissions` (already used by the launcher) and `--disallowedTools` |
 
 ---
@@ -133,7 +134,8 @@ Out of scope.
 
 | Command | Behavior |
 |---|---|
-| `dispatch tick` | One pass of the run described under Architecture. This is what launchd runs. Exits 0 when another tick holds the lock. |
+| `dispatch run [--interval DURATION]` | Ticks now and then once per interval (default `interval_minutes`) until interrupted. A failed tick is printed and the loop goes on. It holds the lock only during each tick. |
+| `dispatch tick` | One pass of the run described under Architecture. `dispatch run` calls it on each interval. Exits 0 when another tick holds the lock. |
 | `dispatch tick --dry-run` | Reads everything and prints the actions it would take, one per line, without acting. |
 | `dispatch tell <ticket> "<text>"` | Types text into the ticket's worker through `herdr agent prompt`. Fails when the worker is blocked or absent. |
 
@@ -146,30 +148,30 @@ Fixed text, no source tag. `<ticket>`, `<pr>` and `<problem>` are filled in.
 | Stall (In Progress, worker idle) | `<ticket> is still In Progress. Re-read the ticket and its latest comments, then keep going. If the PR is ready, move it to In Review. If you need a decision from me, move it to Needs Human and comment what you need.` |
 | Resume (Needs Human back to In Progress) | `I answered on <ticket>. Read the latest comments and continue.` |
 | PR (In Review, PR needs work) | `PR <pr> for <ticket> has <problem>. Fix it and push.` |
-| Dialog (worker was blocked, dialog dismissed) | `Don't ask questions in the terminal. Put the question in a comment on <ticket> and move it to Needs Human.` |
 
 #### Worker contract
 
-These replace the captain sections of `skills/shared/captain-worker-contract.md` and the captain checks in linear-start, linear-resume and captain-done.
+The build-worker skill (`skills/build/SKILL.md`, invoked as `/dispatch:build <ticket>`) carries this contract and the seven build steps in `decision-log.md`. No old workflow skill is called.
 
-1. The autonomy switch becomes `AUTONOMOUS_WORKER=1`, replacing `CAPTAIN_SESSION_NAME` in all four files.
+1. The launcher sets `AUTONOMOUS_WORKER=1` in the worker's environment.
 2. Before going idle, the worker moves its ticket to In Review (PR open, auto-merge enabled where allowed) or to Needs Human with a comment. It never goes idle in In Progress.
 3. The worker reads its ticket's comments before verify, before opening the PR, and on every nudge.
-4. During verify the worker rebases onto main. New ADR filenames carry the ticket id so parallel branches never claim the same number.
-5. On a failing check, the worker re-runs a flake after filing a ticket for it with linear-create, and fixes a real failure. It escalates only for a decision or missing access.
+4. During verify the worker rebases onto main. New ADR files keep adr-write's `NNNN-` numbering. After the rebase the worker checks that no other ADR on main claims the same number, and renumbers its own if one does.
+5. On a failing check, the worker re-runs a flake after filing a Backlog ticket for it, and fixes a real failure. It escalates only for a decision or missing access.
 6. The worker runs no `/loop`, cron or babysit-pr polling. A nudge is its only wake-up.
-7. The worker sends no reports to a captain and posts no `## Ticket Done` timeline entry.
-8. Nudges and `dispatch tell` text are treated as coming from you. The `[captain]` prefix rule is removed.
+7. The worker reports only through its ticket's status and comments.
+8. Nudges and `dispatch tell` text are treated as coming from you.
+9. The worker may ask you a question in its terminal through AskUserQuestion. It writes each answer down on the ticket.
 
 #### Launcher
 
-Today's `captain-launch` becomes the worker launcher. Its inputs are the ticket id, Linear's branch name and the repo's local clone. Its JSON result keeps today's statuses (`ok`, `pool_exhausted`, `pool_error`, `herdr_unavailable`, `checkout_failed`) and adds `already_running`. Changes:
+`bin/dispatch-launch`, rewritten from `captain-launch`, is the worker launcher. It runs from the repo's local clone, and its inputs are the ticket id and Linear's branch name. It prints one JSON object whose statuses are `ok`, `already_running`, `pool_exhausted`, `pool_error`, `herdr_unavailable`, `checkout_failed`, `not_pooled` and the failures it kept from `captain-launch`. Changes from `captain-launch`:
 
 - No `--captain` flag. It sets `AUTONOMOUS_WORKER=1` in the worker's environment.
-- It always leases through treehouse with the ticket id as lease holder. The `herdr worktree create` path is removed.
-- It launches Claude with `--disallowedTools AskUserQuestion,EnterPlanMode,ExitPlanMode` alongside the existing flags.
+- It always leases through treehouse with the ticket id as lease holder. A repo without `treehouse.toml` returns `not_pooled`. The `herdr worktree create` path is removed.
+- It starts Claude with this plugin loaded (`--plugin-dir`) and `--disallowedTools EnterPlanMode,ExitPlanMode`, and types `/dispatch:build <ticket>` as the kickoff.
 - It returns `already_running` when the ticket's workspace already has a live Claude pane, instead of typing a second kickoff into it.
-- It always runs with `--no-focus`.
+- It never takes focus.
 
 ### Architecture
 
@@ -177,7 +179,7 @@ Today's `captain-launch` becomes the worker launcher. Its inputs are the ticket 
 flowchart LR
   you([You]) -->|approve, answer, pause, cancel| linear[(Linear)]
   gh[(GitHub)] -->|merge moves ticket to Done| linear
-  launchd -->|every N minutes| dispatch[dispatch tick]
+  window[herdr window: dispatch run] -->|every N minutes| dispatch[dispatch tick]
   dispatch -->|read tickets; write promote, parent Done, Needs Human| linear
   dispatch -->|read agents and workspaces; launch, nudge, rename, close| herdr
   dispatch -->|read leases; return trees| treehouse
@@ -203,9 +205,9 @@ Worker state is one of these.
 
 Cheap actions run before launches, because one launch can take over 5 minutes.
 
-1. Take the lock (`mkdir` on a lock directory). Exit 0 if it is held.
+1. Take the lock, an exclusive `flock` on `tick.lock` in the state directory, which records the holder's pid for diagnosis. Exit 0 if another tick holds it. The OS releases the lock when a tick dies, so a crashed tick never blocks the ticks after it.
 2. Read the herdr snapshot, `treehouse status --json` for each configured repo, and the dispatcher cache.
-3. Read Linear in one query. Fetch every ticket holding a lease, every In Progress and In Review ticket in scope, and every child of an In Progress parent.
+3. Read Linear in one query. Fetch every ticket holding a lease, every In Progress and In Review ticket assigned to you with the `ai` label, and every child of an In Progress parent.
 4. Tear down trees whose tickets are Done, Canceled or Duplicate. Close the workspace, then `treehouse return --if-lease-holder <ticket> --force`. A dirty or unpushed tree only gets its workspace closed and one comment.
 5. Stop workers whose tickets went back to Backlog or Todo. Close the workspace and keep the lease.
 6. Set a parent to Done when every child is Done, Canceled or Duplicate.
@@ -223,7 +225,7 @@ Cheap actions run before launches, because one launch can take over 5 minutes.
 | In Progress | none | Launch. On `pool_exhausted` or a full cap, wait for the next tick. After 2 failed launches in a row, set Needs Human with the launcher's error. |
 | In Progress | working | Nothing |
 | In Progress | idle | Send the stall nudge, or the resume nudge if the cache's last-seen status was Needs Human. After 2 nudges with no status change, set Needs Human. |
-| In Progress or In Review | blocked | First time, send `esc` and the dialog nudge. Second tick in a row, set Needs Human with the screen text. |
+| In Progress or In Review | blocked | The worker is asking you a question. Notify you, and notify again if it stays unanswered. Never dismiss the dialog. |
 | In Review | none | If the PR needs work, launch to resume, then send the PR nudge. Otherwise nothing, and the tree stays leased. |
 | In Review | idle | If the PR needs work, send the PR nudge. After 2 PR nudges with no push, set Needs Human. |
 | In Review | working | Nothing |
@@ -260,11 +262,14 @@ interval_minutes = 5
 max_in_progress = 4
 nudge_limit = 2
 launch_failure_limit = 2
+plugin_root = "~/Development/dispatch"   # the plugin workers load, and where bin/dispatch-launch lives
+worker_model = "sonnet"               # your 2026-08-25 policy: sonnet for coding tickets
 
 [linear]
-api_key_env = "LINEAR_API_KEY"   # or read from the macOS keychain
+api_key_keychain = "dispatch-linear-api-key"   # macOS keychain service; LINEAR_API_KEY overrides
 teams = ["ENG"]
-manual_label = "manual"          # TODO: see Limitations, managed-ticket scope
+ai_label = "ai"                  # only tickets assigned to you with this label are managed
+repo_label_group = "repo"        # a ticket's repo is its label in this group
 
 [linear.statuses]
 todo = "Todo"
@@ -276,10 +281,8 @@ paused = ["Backlog", "Todo"]
 [linear.needs_human]
 status = "Needs Human"           # at work: label = "needs-human"
 
-[repos]
-"repo:gubernator" = "~/Development/gubernator"
-"repo:tiger" = "~/Development/tiger"
-"repo:mono-repo" = "~/Development/mono-repo"
+[repos]                          # repo label -> local clone with a treehouse.toml
+dispatch = "~/Development/dispatch"
 ```
 
 With the label form of `needs_human`, an In Progress ticket carrying the label counts as Needs Human, and removing the label counts as the move back to In Progress.
@@ -315,7 +318,7 @@ One machine runs everything. A tick costs one Linear query, one herdr snapshot, 
 ### Limitations & Future Work
 
 - **A busy loop is invisible.** A worker that stays `working` forever never gets nudged. A time limit in the cache could catch it. Build it only after it happens.
-- **Managed-ticket scope.** A ticket you work by hand outside treehouse has no lease, so the dispatcher sees In Progress with no worker and launches a duplicate. TODO: Decide between an opt-out `manual` label and limiting the dispatcher to configured Linear projects.
+- **Managed-ticket scope.** Settled by the `ai` label. The dispatcher manages only tickets assigned to you that carry it, so a ticket you work by hand without the label is never launched.
 - **One machine.** A ticket worked on another machine looks the same as a crashed worker. Out of scope until the work setup needs it.
 - **Work environment.** No admin rights means a `needs-human` label instead of a status, and the dispatcher closes parents itself. Branch protection already exists there.
 - **Notifications stay on the Mac.** Slack delivery replaces the macOS notification later.
