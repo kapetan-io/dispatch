@@ -123,6 +123,7 @@ The dispatcher launched a build worker for its own piece 2 (ENG-228), which buil
 - **An outside review found bugs CodeRabbit missed.** A critical-review sub-agent plus one validator per finding proved three state bugs across ticks on PR #4 after CodeRabbit had approved. The findings reached the worker as a GitHub review, which step 7 handles like any other.
 - **CI arrived mid-pilot.** PR #3 added the `test` check after ENG-228's branch was cut, so PR #4 ran CI only after its rebase. Branch protection requiring that check is not set up yet.
 - **herdr and `--name`.** Recorded under decision 9.
+- **An agent that moves a ticket must run a tick.** Decision 10 says so, but no skill an agent loads carries it yet, so ENG-232 waited on the timer until you asked. One `dispatch tick` launched it in seconds. The shared skill for advancing a phase (decision 10) carries this rule, and is built when the grill and review need it.
 
 ## Breakdown step (in progress)
 
