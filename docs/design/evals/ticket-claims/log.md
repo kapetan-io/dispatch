@@ -30,3 +30,11 @@ trust failed the check, which needs under 40%. The judges were right, not broken
 | unknown-keys (held out) | 2/3 | 3/3 | 3/3 | |
 
 Today's wording notices false claims some of the time and never routes max-range to Needs Human (the worker builds the range, notes that the blueprint doesn't give one, and keeps going). It raises no false alarms on the controls. The headroom is real, so a wording can be told apart from today's.
+
+## 2026-10-09, attempt 1
+
+Idea: workers already found wrong claims some of the time, but left the correction in their chat message, wrote test and fix in one edit, and built the max-range ticket as written. `arms/attempt-1.md` says the final message is not the ticket, makes the failing test run come before any source edit, asks "what does the wrong claim change?" to route a note or Needs Human, and tells the worker to skip claims that carry no weight.
+
+Proposals came from three fresh sub-agents, one reading the baseline's failing visible transcripts (hint-cause, config-default, hint-bug-true; none of the held-out cases), one reading pstack, one applying skill-creator guidance. A judge sub-agent grafted them.
+
+**Held-out leak.** The judge's brief described the baseline's failure on max-range ("a ticket citing a design range the design never gave was built as written"), and the grafted wording first said "any range or behavior it calls settled design". That is held-out information in the tuning loop. The phrase is removed from the wording, but max-range no longer counts as held out for attempt 1 and any later attempt. Its result is still scored under bar item 1 to 4. If a wording passes, a replacement held-out case of the same kind (a design claim the design doesn't make) is added before the confirmation rerun, and the final wording must pass it too.
