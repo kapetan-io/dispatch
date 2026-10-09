@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
 # claude shim for dispatch workers. dispatch-launch puts this dir first on the
-# worker's PATH and sets DISPATCH_WORKER_NAME and DISPATCH_PLUGIN_ROOT in its
-# env, which herdr replays on restart. herdr restarts a worker with a bare
-# `claude --resume` and does not replay argv, so this shim re-adds the
-# worker's name, this plugin and the worker flags. Print-mode runs (-p) pass
-# through untouched, so a throwaway session never takes the worker's name.
+# worker's PATH and sets DISPATCH_PLUGIN_ROOT in its env, which herdr replays
+# on restart. herdr restarts a worker with a bare `claude --resume` and does
+# not replay argv, so this shim re-adds this plugin and the worker flags.
+# Print-mode runs (-p) pass through untouched. It never adds --name: Claude
+# draws the name below an open question, and herdr then misses the question.
 set -u
 args=("$@")
-named=0 has_plugin=0 has_disallowed=0 has_skip=0 print_mode=0
+has_plugin=0 has_disallowed=0 has_skip=0 print_mode=0
 for a in "$@"; do
   case $a in
-    -n|--name) named=1 ;;
     --plugin-dir) has_plugin=1 ;;
     --disallowedTools|--disallowed-tools) has_disallowed=1 ;;
     --dangerously-skip-permissions) has_skip=1 ;;
@@ -18,7 +17,6 @@ for a in "$@"; do
   esac
 done
 if [ "$print_mode" = 0 ]; then
-  [ "$named" = 0 ] && [ -n "${DISPATCH_WORKER_NAME:-}" ] && args+=(-n "$DISPATCH_WORKER_NAME")
   [ "$has_plugin" = 0 ] && [ -n "${DISPATCH_PLUGIN_ROOT:-}" ] && args+=(--plugin-dir "$DISPATCH_PLUGIN_ROOT")
   if [ "${AUTONOMOUS_WORKER:-}" = 1 ]; then
     [ "$has_disallowed" = 0 ] && args+=(--disallowedTools "EnterPlanMode,ExitPlanMode")
