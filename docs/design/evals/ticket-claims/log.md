@@ -38,3 +38,19 @@ Idea: workers already found wrong claims some of the time, but left the correcti
 Proposals came from three fresh sub-agents, one reading the baseline's failing visible transcripts (hint-cause, config-default, hint-bug-true; none of the held-out cases), one reading pstack, one applying skill-creator guidance. A judge sub-agent grafted them.
 
 **Held-out leak.** The judge's brief described the baseline's failure on max-range ("a ticket citing a design range the design never gave was built as written"), and the grafted wording first said "any range or behavior it calls settled design". That is held-out information in the tuning loop. The phrase is removed from the wording, but max-range no longer counts as held out for attempt 1 and any later attempt. Its result is still scored under bar item 1 to 4. If a wording passes, a replacement held-out case of the same kind (a design claim the design doesn't make) is added before the confirmation rerun, and the final wording must pass it too.
+
+Results, 5 runs per case, 45 runs, $6.08, kept. A first run of this attempt (`attempt-1.json`) started with the wording before the held-out phrase was removed. It was left to finish and is discarded unread. The numbers below are the rerun with the corrected wording.
+
+| Case | caught | clean | routed | repro |
+|---|---|---|---|---|
+| config-default | 5/5 | 5/5 | 5/5 | |
+| config-default-true | | 5/5 | 5/5 | |
+| expand-home | | 5/5 | 5/5 | |
+| empty-teams (held out) | | 5/5 | 5/5 | |
+| hint-bug-true | | 5/5 | 5/5 | 5/5 |
+| hint-cause | 5/5 | 5/5 | 5/5 | 5/5 |
+| hint-fixed | 5/5 | 5/5 | 5/5 | 5/5 |
+| max-range (leaked, see above) | 5/5 | 5/5 | 5/5 | |
+| unknown-keys (held out) | 5/5 | **2/5** | **2/5** | |
+
+Bar not met. Every planted claim was caught in 25 of 25 runs, and every control passed 20 of 20. Max-range went from 0/3 routed to 5/5. The one miss is unknown-keys, the ticket whose test recipe names files that don't exist. In 3 of 5 runs the worker moved the ticket to Needs Human and raised an alarm, where the key says note it and keep going. Held-out transcripts are not read, so the cause is not known beyond that. The wording says a wrong claim "that changes what gets built" goes to Needs Human, and a missing recipe is plausibly read as one.
