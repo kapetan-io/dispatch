@@ -16,6 +16,11 @@ import (
 type Entry struct {
 	LastStatus     string `json:"last_status"`
 	LaunchFailures int    `json:"launch_failures"`
+	// Nudges counts nudges sent, the resume nudge included, since the ticket
+	// last changed status or was escalated.
+	Nudges int `json:"nudges"`
+	// BlockedTicks counts consecutive ticks the ticket's worker sat blocked.
+	BlockedTicks int `json:"blocked_ticks"`
 	// PendingComment is an escalation comment Linear has not accepted yet.
 	// The ticket is already in Needs Human, and each tick retries it by
 	// TicketID, whatever state the ticket has moved to since.

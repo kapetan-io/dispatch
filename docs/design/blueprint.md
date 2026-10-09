@@ -261,6 +261,7 @@ Phase 1 owes this design three things on every ticket. It must carry a repo labe
 interval_minutes = 5
 max_in_progress = 4
 nudge_limit = 2
+blocked_renotify_ticks = 3            # re-notify a blocked worker every 3rd tick (15 minutes at the default interval)
 launch_failure_limit = 2
 plugin_root = "~/Development/dispatch"   # the plugin workers load, and where bin/dispatch-launch lives
 worker_model = "sonnet"               # your 2026-08-25 policy: sonnet for coding tickets

@@ -39,3 +39,17 @@ dispatch run
 ```
 
 It ticks now and every `interval_minutes` after. Each tick prints one line per action, then a summary such as `16:05:07 tick: 0 tickets, 0 actions, Linear 1 call in 240ms (2499 of 2500 requests left this hour), took 405ms`. Ctrl-C stops it. To check what a tick would do without acting, run `dispatch tick --dry-run`.
+
+## Nudges, notifications and `tell`
+
+While `dispatch run` ticks, an In Progress ticket whose worker is idle or finished gets the stall nudge typed into its session. After `nudge_limit` nudges (default 2) with no status change, the ticket goes to Needs Human with one comment. A ticket you move from Needs Human back to In Progress gets the resume nudge, with no comment.
+
+A worker blocked on a question (AskUserQuestion), on an In Progress or In Review ticket, fires a macOS notification (through `osascript`) on its first blocked tick and again every `blocked_renotify_ticks` ticks (default 3) while it stays blocked. The dispatcher never answers the question and never sets Needs Human for it. A ticket entering Needs Human fires one notification.
+
+To type into a worker yourself:
+
+```sh
+dispatch tell ENG-228 "use the v2 endpoint"
+```
+
+It fails when the ticket's worker is blocked on a question or absent.
