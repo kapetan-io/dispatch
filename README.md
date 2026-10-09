@@ -48,6 +48,18 @@ An In Review ticket whose worker is idle gets the PR nudge when its PR has a fai
 
 A worker blocked on a question (AskUserQuestion), on an In Progress or In Review ticket, fires a macOS notification (through `osascript`) on its first blocked tick and again every `blocked_renotify_ticks` ticks (default 3) while it stays blocked. The dispatcher never answers the question and never sets Needs Human for it. A ticket entering Needs Human fires one notification.
 
+## Teardown and pausing
+
+Each tick also looks at every tree held by a ticket assigned to you with the `ai` label, whatever the ticket's status. Statuses come from `[linear.statuses]`: `done` (default Done, Canceled, Duplicate) and `paused` (default Backlog, Todo).
+
+- A finished ticket whose tree is clean and fully pushed has its herdr workspace closed and its tree returned with `treehouse return --force`, so `treehouse status` shows the slot available.
+- A finished ticket whose tree has uncommitted changes, or commits that no remote has, keeps its tree. Its worker's workspace is closed, and the ticket gets one comment saying what the tree holds. Push or discard the work and the next tick returns the tree.
+- A ticket moved back to Backlog or Todo has its worker's workspace closed and keeps its tree. Moving it to In Progress again relaunches a worker on that tree.
+
+"Pushed" means every commit reachable from the tree's HEAD is also reachable from a remote-tracking ref. A branch squash-merged and then pruned from the remote counts as unpushed, so its tree stays leased with the comment until you discard it. A pause or a kept tree closes only a workspace with a Claude agent in it, so a workspace you opened by hand there stays open. A clean tree is returned whatever workspace is open on it, because a worker whose Claude exited leaves an agentless workspace behind and the slot has to come back.
+
+Trees of `design` and `design-review` tickets are left alone until the grill and review skills exist. A tree whose git state can't be read, or whose ticket has more labels than the dispatcher reads, stays leased, and the tick prints why. If the lookup of tickets holding trees fails, the tick prints the error and skips teardown but still launches and nudges.
+
 To type into a worker yourself:
 
 ```sh

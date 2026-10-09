@@ -28,6 +28,15 @@ const (
 	Nudge Kind = "nudge"
 	// Notify raises a macOS notification with Text as the message.
 	Notify Kind = "notify"
+	// Teardown closes the workspace on a finished ticket's tree and returns the
+	// tree to the pool.
+	Teardown Kind = "teardown"
+	// Stop closes the workspace of a paused ticket's live worker and keeps its tree.
+	Stop Kind = "stop"
+	// Keep closes the workspace of a finished ticket's live worker and leaves
+	// its tree leased, because returning it would destroy work. A non-empty Text
+	// is the one comment that says why.
+	Keep Kind = "keep"
 )
 
 // Reasons are the labels `dispatch tick --dry-run` prints. The executor
@@ -64,6 +73,12 @@ type Action struct {
 	// Notify shows.
 	PaneID string
 	Text   string
+	// WorkspaceID and TreePath name what a Teardown, Keep or Stop acts on.
+	// WorkspaceID is empty when a Keep or Stop has no live worker to stop, so a
+	// workspace someone opened by hand is left open. A Teardown always closes
+	// its workspace, since a worker whose Claude exited leaves one behind.
+	WorkspaceID string
+	TreePath    string
 }
 
 func (a Action) String() string {
@@ -98,6 +113,20 @@ type Input struct {
 	// UnreadRepos are repo labels whose treehouse pool could not be read this
 	// tick. Their tickets' workers are unknown, not absent.
 	UnreadRepos map[string]bool
+	// Done and Paused are the statuses of a finished and a paused ticket.
+	Done   []string
+	Paused []string
+	// LeaseHolders holds the managed tickets that hold a lease and are not in
+	// Tickets, which is how finished and paused tickets are found.
+	LeaseHolders []linear.Ticket
+	// Leases maps a lease holder to a worker for each tree it holds.
+	Leases map[string][]worker.Worker
+	// Unfinished maps a tree path to what returning it would destroy, empty for
+	// a clean, pushed tree. A path in neither map was not inspected and is never
+	// returned. CheckErrors holds the trees that could not be read. Both cover
+	// only the trees of tickets for which Retires is true.
+	Unfinished  map[string]string
+	CheckErrors map[string]error
 }
 
 // designLabels mark tickets whose sessions this piece of the dispatcher does
@@ -114,7 +143,8 @@ func Plan(in Input) []Action {
 			running++
 		}
 	}
-	var actions, launches []Action
+	actions := in.retire()
+	var launches []Action
 	for _, t := range in.Tickets {
 		if a, ok := in.watch(t); ok {
 			actions = append(actions, a)

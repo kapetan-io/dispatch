@@ -120,6 +120,60 @@ const managedTickets = `query ManagedTickets($label: String!, $teams: [String!],
   }
 }`
 
+// issueNode is the shape of one issue in the ticket queries.
+type issueNode struct {
+	ID         string `json:"id"`
+	Identifier string `json:"identifier"`
+	Title      string `json:"title"`
+	BranchName string `json:"branchName"`
+	State      struct {
+		Name string `json:"name"`
+	} `json:"state"`
+	Team struct {
+		Key string `json:"key"`
+	} `json:"team"`
+	Assignee *struct {
+		ID string `json:"id"`
+	} `json:"assignee"`
+	Labels struct {
+		Nodes []struct {
+			Name   string `json:"name"`
+			Parent *struct {
+				Name string `json:"name"`
+			} `json:"parent"`
+		} `json:"nodes"`
+		PageInfo struct {
+			HasNextPage bool `json:"hasNextPage"`
+		} `json:"pageInfo"`
+	} `json:"labels"`
+	Children struct {
+		Nodes []struct {
+			ID string `json:"id"`
+		} `json:"nodes"`
+	} `json:"children"`
+}
+
+func (n issueNode) ticket() Ticket {
+	t := Ticket{
+		ID:              n.ID,
+		Identifier:      n.Identifier,
+		Title:           n.Title,
+		Branch:          n.BranchName,
+		Status:          n.State.Name,
+		Team:            n.Team.Key,
+		HasChildren:     len(n.Children.Nodes) > 0,
+		LabelsTruncated: n.Labels.PageInfo.HasNextPage,
+	}
+	for _, l := range n.Labels.Nodes {
+		label := Label{Name: l.Name}
+		if l.Parent != nil {
+			label.Group = l.Parent.Name
+		}
+		t.Labels = append(t.Labels, label)
+	}
+	return t
+}
+
 // ManagedTickets returns the started tickets assigned to the key's owner that
 // carry label, limited to teams. In Progress, In Review and Needs Human are
 // all started statuses.
@@ -127,34 +181,7 @@ func (c Client) ManagedTickets(ctx context.Context, label string, teams []string
 	var resp struct {
 		Viewer struct {
 			AssignedIssues struct {
-				Nodes []struct {
-					ID         string `json:"id"`
-					Identifier string `json:"identifier"`
-					Title      string `json:"title"`
-					BranchName string `json:"branchName"`
-					State      struct {
-						Name string `json:"name"`
-					} `json:"state"`
-					Team struct {
-						Key string `json:"key"`
-					} `json:"team"`
-					Labels struct {
-						Nodes []struct {
-							Name   string `json:"name"`
-							Parent *struct {
-								Name string `json:"name"`
-							} `json:"parent"`
-						} `json:"nodes"`
-						PageInfo struct {
-							HasNextPage bool `json:"hasNextPage"`
-						} `json:"pageInfo"`
-					} `json:"labels"`
-					Children struct {
-						Nodes []struct {
-							ID string `json:"id"`
-						} `json:"nodes"`
-					} `json:"children"`
-				} `json:"nodes"`
+				Nodes    []issueNode `json:"nodes"`
 				PageInfo struct {
 					HasNextPage bool `json:"hasNextPage"`
 				} `json:"pageInfo"`
@@ -172,26 +199,89 @@ func (c Client) ManagedTickets(ctx context.Context, label string, teams []string
 		if !contains(teams, n.Team.Key) {
 			continue
 		}
-		t := Ticket{
-			ID:              n.ID,
-			Identifier:      n.Identifier,
-			Title:           n.Title,
-			Branch:          n.BranchName,
-			Status:          n.State.Name,
-			Team:            n.Team.Key,
-			HasChildren:     len(n.Children.Nodes) > 0,
-			LabelsTruncated: n.Labels.PageInfo.HasNextPage,
-		}
-		for _, l := range n.Labels.Nodes {
-			label := Label{Name: l.Name}
-			if l.Parent != nil {
-				label.Group = l.Parent.Name
-			}
-			t.Labels = append(t.Labels, label)
-		}
-		tickets = append(tickets, t)
+		tickets = append(tickets, n.ticket())
 	}
 	return tickets, nil
+}
+
+const leasedTickets = `query LeasedTickets($filter: IssueFilter!, $first: Int!) {
+  viewer { id }
+  issues(first: $first, includeArchived: true, filter: $filter) {
+    nodes {
+      id identifier title branchName
+      state { name }
+      team { key }
+      assignee { id }
+      labels(first: 25) { nodes { name parent { name } } pageInfo { hasNextPage } }
+      children(first: 1) { nodes { id } }
+    }
+    pageInfo { hasNextPage }
+  }
+}`
+
+// LeasedTickets returns the tickets named by identifiers, whatever their
+// status and including archived ones, so a finished or paused ticket that
+// still holds a tree can be found. Only tickets assigned to the key's owner
+// come back, and of those the ones that carry label, plus any whose labels were
+// cut short, because the caller can't tell whether they do. Identifiers outside
+// teams, or not shaped like a ticket id, are ignored.
+func (c Client) LeasedTickets(ctx context.Context, label string, teams, identifiers []string) ([]Ticket, error) {
+	var filters []map[string]any
+	for _, id := range identifiers {
+		team, number, ok := splitIdentifier(id)
+		if !ok || !contains(teams, team) {
+			continue
+		}
+		filters = append(filters, map[string]any{
+			"team":   map[string]any{"key": map[string]any{"eq": team}},
+			"number": map[string]any{"eq": number},
+		})
+	}
+	if len(filters) == 0 {
+		return nil, nil
+	}
+	var resp struct {
+		Viewer struct {
+			ID string `json:"id"`
+		} `json:"viewer"`
+		Issues struct {
+			Nodes    []issueNode `json:"nodes"`
+			PageInfo struct {
+				HasNextPage bool `json:"hasNextPage"`
+			} `json:"pageInfo"`
+		} `json:"issues"`
+	}
+	vars := map[string]any{"filter": map[string]any{"or": filters}, "first": maxManaged}
+	if err := c.do(ctx, "LeasedTickets", leasedTickets, vars, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Issues.PageInfo.HasNextPage {
+		return nil, fmt.Errorf("more than %d tickets hold treehouse leases; dispatch reads one page and would miss the rest", maxManaged)
+	}
+	var tickets []Ticket
+	for _, n := range resp.Issues.Nodes {
+		if n.Assignee == nil || n.Assignee.ID != resp.Viewer.ID {
+			continue
+		}
+		t := n.ticket()
+		if t.LabelsTruncated || t.HasLabel(label) {
+			tickets = append(tickets, t)
+		}
+	}
+	return tickets, nil
+}
+
+// splitIdentifier splits "ENG-123" into its team key and number.
+func splitIdentifier(id string) (team string, number int, ok bool) {
+	i := strings.LastIndex(id, "-")
+	if i <= 0 {
+		return "", 0, false
+	}
+	n, err := strconv.Atoi(id[i+1:])
+	if err != nil || n <= 0 {
+		return "", 0, false
+	}
+	return id[:i], n, true
 }
 
 const teamStates = `query TeamStates {

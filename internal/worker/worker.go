@@ -25,31 +25,41 @@ const (
 type Worker struct {
 	State       State
 	TreePath    string
+	RepoDir     string
 	WorkspaceID string
 	PaneID      string
 }
 
-// Find looks up the worker for ticket in the pool trees and herdr snapshot.
+// Find looks up the worker on the ticket's first tree. FindAll returns one for
+// every tree.
 func Find(ticket string, trees []treehouse.Tree, snap herdr.Snapshot) Worker {
-	var w Worker
+	if all := FindAll(ticket, trees, snap); len(all) > 0 {
+		return all[0]
+	}
+	return Worker{State: None}
+}
+
+// FindAll looks up one worker for each tree the ticket holds a lease on. A
+// ticket has several when its design includes a library in another repo.
+func FindAll(ticket string, trees []treehouse.Tree, snap herdr.Snapshot) []Worker {
+	var all []Worker
 	for _, t := range trees {
 		if t.LeaseHolder == ticket {
-			w.TreePath = t.Path
-			break
+			all = append(all, onTree(t, snap))
 		}
 	}
-	if w.TreePath == "" {
-		w.State = None
-		return w
-	}
+	return all
+}
+
+func onTree(t treehouse.Tree, snap herdr.Snapshot) Worker {
+	w := Worker{State: None, TreePath: t.Path, RepoDir: t.RepoDir}
 	for _, ws := range snap.Workspaces {
-		if ws.CheckoutPath == w.TreePath {
+		if ws.CheckoutPath == t.Path {
 			w.WorkspaceID = ws.ID
 			break
 		}
 	}
 	if w.WorkspaceID == "" {
-		w.State = None
 		return w
 	}
 	for _, a := range snap.Agents {
@@ -59,7 +69,6 @@ func Find(ticket string, trees []treehouse.Tree, snap herdr.Snapshot) Worker {
 			return w
 		}
 	}
-	w.State = None
 	return w
 }
 

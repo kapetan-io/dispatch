@@ -61,7 +61,8 @@ const usage = `usage: dispatch tick [--dry-run]
        dispatch run [--interval DURATION]
        dispatch tell <ticket> "<text>"
 
-  tick         run one pass: launch a worker for each approved ticket that has none
+  tick         run one pass: launch a worker for each approved ticket that has none,
+               and clean up after finished and paused tickets
   --dry-run    print the actions a tick would take, one per line, without acting
   run          tick now and then once per interval until interrupted (Ctrl-C)
   --interval   time between ticks; defaults to the config's interval_minutes
@@ -269,6 +270,12 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		return sum, err
 	}
 
+	// A failed lease lookup skips teardown only; launches and nudges still run.
+	holders, err := leaseHolders(ctx, lin, cfg, trees, tickets)
+	lookupFailed := err != nil
+	if lookupFailed {
+		_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the tickets that hold trees: %v\n", err)
+	}
 	workers := map[string]worker.Worker{}
 	for _, t := range tickets {
 		workers[t.Identifier] = worker.Find(t.Identifier, trees, snap)
@@ -287,7 +294,12 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		RepoLabelGroup: cfg.Linear.RepoLabelGroup,
 		Repos:          cfg.Repos,
 		UnreadRepos:    unread,
+		Done:           cfg.Linear.Statuses.Done,
+		Paused:         cfg.Linear.Statuses.Paused,
+		LeaseHolders:   holders,
+		Leases:         leaseWorkers(holders, trees, snap),
 	}
+	input.Unfinished, input.CheckErrors = inspectTrees(ctx, input)
 	input.PRs = readPRs(ctx, opts, input)
 	actions := reconcile.Plan(input)
 
@@ -316,7 +328,13 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		c[id] = e
 	}
 
-	settle(c, tickets, workers, input.PRs, cfg.Linear.Statuses)
+	// Who still holds a lease is unknown when the lookup failed or a pool could
+	// not be read, and settle then keeps every warning.
+	held := heldFinished(input)
+	if lookupFailed || len(unread) > 0 {
+		held = nil
+	}
+	settle(c, tickets, workers, input.PRs, cfg.Linear.Statuses, held)
 
 	alert := func(message string) error {
 		return notify.Send(ctx, opts.Osascript, "dispatch", message)
@@ -349,6 +367,19 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			e.ResumePending = false
 			c[a.Ticket.Identifier] = e
 			_, _ = fmt.Fprintln(opts.Stdout, a)
+		// One tree's failure is reported, not returned, so the remaining trees still get their turn.
+		case reconcile.Teardown:
+			if err := teardown(ctx, opts, a); err != nil {
+				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while tearing down %s: %v\n", a.Ticket.Identifier, err)
+			}
+		case reconcile.Stop:
+			if err := stop(ctx, opts, a); err != nil {
+				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while stopping %s: %v\n", a.Ticket.Identifier, err)
+			}
+		case reconcile.Keep:
+			if err := keep(ctx, opts, lin, c, a); err != nil {
+				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while keeping the tree of %s: %v\n", a.Ticket.Identifier, err)
+			}
 		case reconcile.Notify:
 			if err := alert(a.Text); err != nil {
 				// Settle already advanced the counters, so reset them to make Plan
@@ -410,13 +441,17 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 // A ticket back in In Progress stays resume-pending until a resume nudge
 // lands, so a worker that was blocked or working when the answer arrived still
 // gets the resume text once it goes idle.
-func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Worker, prs map[string]pullrequest.PR, statuses config.Statuses) {
+//
+// held names the finished tickets that still hold a lease. A nil held means the
+// leases could not be read this tick, and no dirty-tree warning is dropped.
+func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Worker, prs map[string]pullrequest.PR, statuses config.Statuses, held map[string]bool) {
 	seen := map[string]bool{}
 	for _, t := range tickets {
 		e := c[t.Identifier]
 		if e.LastStatus != t.Status {
 			e.Nudges = 0
 			e.Relaunches = 0
+			e.TeardownWarned = false
 		}
 		if workers[t.Identifier].State == worker.Blocked {
 			e.BlockedTicks++
@@ -453,7 +488,10 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 		if seen[id] {
 			continue
 		}
-		c[id] = cache.Entry{LaunchFailures: e.LaunchFailures, PendingComment: e.PendingComment, TicketID: e.TicketID}
+		// A finished ticket keeps its dirty-tree warning while it holds a lease,
+		// and the warning goes once the tree is returned. A nil held means the
+		// leases could not be read this tick, so no warning is dropped.
+		c[id] = cache.Entry{LaunchFailures: e.LaunchFailures, PendingComment: e.PendingComment, TicketID: e.TicketID, TeardownWarned: e.TeardownWarned && (held == nil || held[id])}
 		if c[id] == (cache.Entry{}) {
 			delete(c, id)
 		}
