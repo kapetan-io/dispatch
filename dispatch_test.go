@@ -396,7 +396,9 @@ cat "`+h.dir+`/trees.json"`)
 		out, _, err = h.runContext(ctx, "run", "--interval", "20ms")
 		done <- err
 	}()
-	require.Eventually(t, func() bool { return len(h.launches()) >= 1 }, 5*time.Second, 10*time.Millisecond)
+	// A second launch proves the slow first tick already printed its line,
+	// which cancellation would otherwise drop.
+	require.Eventually(t, func() bool { return len(h.launches()) >= 2 }, 5*time.Second, 10*time.Millisecond)
 	cancel()
 
 	require.NoError(t, <-done)
