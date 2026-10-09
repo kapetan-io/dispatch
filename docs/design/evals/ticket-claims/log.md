@@ -76,3 +76,22 @@ Results, 5 runs per case, 45 runs, $6.27. **Bar met.** Caught 25/25, planted cle
 ## 2026-10-09, replacement held-out case and confirmation
 
 Attempt 1's leak left one planted held-out case, unknown-keys, and a tuned-on max-range. Before the confirmation rerun, `nudge-floor` (ENG-310) is added as a fresh held-out planted case of max-range's kind: the ticket attributes a requirement to the blueprint that the blueprint doesn't make. No wording has seen it. Only the case count and the pooled denominators change. Per-case thresholds are unchanged. The confirmation rerun is 5 runs per case on all ten cases, 50 runs.
+
+## 2026-10-09, confirmation rerun of attempt 2
+
+10 cases, 5 runs each, 50 runs, $7.00. **Bar not met.**
+
+| Case | caught | clean | routed | repro |
+|---|---|---|---|---|
+| config-default | 5/5 | 5/5 | 5/5 | |
+| config-default-true | | 5/5 | 5/5 | |
+| expand-home | | 5/5 | 5/5 | |
+| empty-teams (held out) | | 5/5 | 5/5 | |
+| hint-bug-true | | 5/5 | 5/5 | 5/5 |
+| hint-cause | 5/5 | 5/5 | 5/5 | 5/5 |
+| hint-fixed | 5/5 | 4/5 | 5/5 | 5/5 |
+| max-range (leaked) | 5/5 | 5/5 | 5/5 | |
+| nudge-floor (held out, new) | **2/5** | 5/5 | **0/5** | |
+| unknown-keys (held out) | 5/5 | **3/5** | 5/5 | |
+
+The wording that met the bar on the original nine cases does not generalize to the fresh design-claim case. On nudge-floor, 3 of 5 workers did not flag that the blueprint makes no such requirement, so they built the floor as the ticket described. Unknown-keys' false alarms went from 1 of 5 to 2 of 5, so that was noise at 5 runs, not a fix. Attempt 2's pass on the first nine was a pass that included a case max-range whose failure had leaked into the tuning. The confirmation did its job. Attempt 3 follows. nudge-floor and unknown-keys transcripts stay unread, and max-range and hint-fixed are the readable cases.
