@@ -367,7 +367,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			e.ResumePending = false
 			c[a.Ticket.Identifier] = e
 			_, _ = fmt.Fprintln(opts.Stdout, a)
-		// A failed Teardown, Stop or Keep is reported and the loop moves on.
+		// One tree's failure is reported, not returned, so the remaining trees still get their turn.
 		case reconcile.Teardown:
 			if err := teardown(ctx, opts, a); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while tearing down %s: %v\n", a.Ticket.Identifier, err)
@@ -441,6 +441,9 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 // A ticket back in In Progress stays resume-pending until a resume nudge
 // lands, so a worker that was blocked or working when the answer arrived still
 // gets the resume text once it goes idle.
+//
+// held names the finished tickets that still hold a lease. A nil held means the
+// leases could not be read this tick, and no dirty-tree warning is dropped.
 func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Worker, prs map[string]pullrequest.PR, statuses config.Statuses, held map[string]bool) {
 	seen := map[string]bool{}
 	for _, t := range tickets {

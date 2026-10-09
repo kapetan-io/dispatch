@@ -391,6 +391,50 @@ func TestTickLeavesAWorkspaceOpenedByHandOnAKeptTree(t *testing.T) {
 	assert.Len(t, h.linear.mutations(), 1)
 }
 
+func TestTickDoesNotRepeatTheCommentAfterALeaseLookupFails(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.dirty(path)
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	require.Len(t, h.linear.mutations(), 1)
+
+	// The failed tick can't tell who holds a lease, but the warning still stands.
+	h.linear.failLookups()
+	_, _, err = h.runContext(t.Context(), "tick")
+	require.NoError(t, err)
+	h.linear.allowLookups()
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Len(t, h.linear.mutations(), 1)
+}
+
+func TestTickDoesNotRepeatTheCommentAfterAPoolCannotBeRead(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.dirty(path)
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	require.Len(t, h.linear.mutations(), 1)
+
+	// A second repo whose pool fails hides no lease from the first, but a tick
+	// that can't read every pool can't tell which finished tickets are released.
+	h.addRepo("tiger", filepath.Join(h.dir, "moved"))
+	_, _, err = h.runContext(t.Context(), "tick")
+	require.NoError(t, err)
+	// Clearing the extra repo makes the next tick read every pool again.
+	h.repos = ""
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Len(t, h.linear.mutations(), 1)
+}
+
 func TestTickReturnsATreeWhileAnotherBranchOfTheRepoHoldsUnpushedWork(t *testing.T) {
 	h := newHarness(t)
 	path := h.gitTree("ENG-1")
@@ -441,6 +485,7 @@ func TestTickRelaunchesAPausedTicketOnItsKeptTree(t *testing.T) {
 	assert.Equal(t, "launch ENG-1: ok\n", out)
 	assert.Len(t, h.launches(), 1)
 	assert.Empty(t, h.returns())
+	assert.Contains(t, string(h.readFile("trees.json")), `"lease_holder":"ENG-1"`)
 }
 
 func TestTickDoesNotTouchTreesOfTicketsInReviewOrNeedsHuman(t *testing.T) {
@@ -798,47 +843,4 @@ func assignedTo(t fakeTicket, user string) fakeTicket {
 func withoutLabels(t fakeTicket) fakeTicket {
 	t["labels"] = map[string]any{"nodes": []map[string]any{}}
 	return t
-}
-
-func TestTickDoesNotRepeatTheCommentAfterALeaseLookupFails(t *testing.T) {
-	h := newHarness(t)
-	path := h.gitTree("ENG-1")
-	h.dirty(path)
-	h.worker("ENG-1", "idle")
-	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-	_, err := h.run("tick")
-	require.NoError(t, err)
-	require.Len(t, h.linear.mutations(), 1)
-
-	// The failed tick can't tell who holds a lease, but the warning still stands.
-	h.linear.failLookups()
-	_, _, err = h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
-	h.linear.allowLookups()
-	_, err = h.run("tick")
-	require.NoError(t, err)
-
-	assert.Len(t, h.linear.mutations(), 1)
-}
-
-func TestTickDoesNotRepeatTheCommentAfterAPoolCannotBeRead(t *testing.T) {
-	h := newHarness(t)
-	path := h.gitTree("ENG-1")
-	h.dirty(path)
-	h.worker("ENG-1", "idle")
-	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-	_, err := h.run("tick")
-	require.NoError(t, err)
-	require.Len(t, h.linear.mutations(), 1)
-
-	// A second repo whose pool fails hides no lease from the first, but a tick
-	// that can't read every pool can't tell which finished tickets are released.
-	h.addRepo("tiger", filepath.Join(h.dir, "moved"))
-	_, _, err = h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
-	h.repos = ""
-	_, err = h.run("tick")
-	require.NoError(t, err)
-
-	assert.Len(t, h.linear.mutations(), 1)
 }
