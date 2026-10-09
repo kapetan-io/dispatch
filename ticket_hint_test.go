@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -71,6 +72,18 @@ func TestTicketHintReadsTheTomlFormsTheDispatcherAccepts(t *testing.T) {
 			assert.Contains(t, runTicketHint(t, clone, writeHintConfig(t, test.config)), ticketHint)
 		})
 	}
+}
+
+func TestTicketHintReadsEscapesInQuotedPaths(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	clone := filepath.Join(base, `say "hi"`)
+	require.NoError(t, os.MkdirAll(clone, 0o755))
+	hintGit(t, clone, "init", "-q")
+	escaped := strings.ReplaceAll(clone, `"`, `\"`)
+	config := writeHintConfig(t, "[repos]\ndispatch = \""+escaped+"\"\n")
+
+	assert.Contains(t, runTicketHint(t, clone, config), ticketHint)
 }
 
 func TestTicketHintIgnoresACommentedOutRepo(t *testing.T) {
