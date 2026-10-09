@@ -196,7 +196,7 @@ func (in Input) watch(t linear.Ticket) (Action, bool) {
 		if nudges >= in.NudgeLimit {
 			return Action{Kind: Escalate, Ticket: t, Reason: fmt.Sprintf("its worker stayed idle through %d nudges without the ticket changing status. Look at its herdr workspace.", nudges)}, true
 		}
-		if prev.LastStatus == in.NeedsHuman {
+		if prev.ResumePending || prev.LastStatus == in.NeedsHuman {
 			return Action{Kind: Nudge, Ticket: t, Reason: ReasonResume, PaneID: w.PaneID, Text: fmt.Sprintf(ResumeNudge, t.Identifier)}, true
 		}
 		return Action{Kind: Nudge, Ticket: t, Reason: ReasonStall, PaneID: w.PaneID, Text: fmt.Sprintf(StallNudge, t.Identifier)}, true

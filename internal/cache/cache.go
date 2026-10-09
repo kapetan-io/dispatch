@@ -19,6 +19,9 @@ type Entry struct {
 	// Nudges counts nudges sent, the resume nudge included, since the ticket
 	// last changed status or was escalated.
 	Nudges int `json:"nudges"`
+	// ResumePending marks a ticket moved from Needs Human back to In Progress
+	// whose worker has not yet been sent the resume nudge.
+	ResumePending bool `json:"resume_pending,omitempty"`
 	// BlockedTicks counts consecutive ticks the ticket's worker sat blocked.
 	BlockedTicks int `json:"blocked_ticks"`
 	// PendingComment is an escalation comment Linear has not accepted yet.

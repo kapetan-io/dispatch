@@ -658,3 +658,23 @@ func TestTickRetriesAResumeNudgeHerdrRefused(t *testing.T) {
 	assert.Equal(t, "nudge ENG-1: resume\n", out)
 	assert.Equal(t, []string{"w-ENG-1:p1|" + resumeText1}, h.prompts())
 }
+
+func TestTickSendsTheResumeNudgeToAWorkerThatWasBlockedWhenTheTicketMovedBack(t *testing.T) {
+	h := newHarness(t)
+	h.worker("ENG-1", "working")
+	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.setWorkerStatus("ENG-1", "blocked")
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	assert.Empty(t, h.prompts())
+	h.setWorkerStatus("ENG-1", "idle")
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "nudge ENG-1: resume\n", out)
+	assert.Equal(t, []string{"w-ENG-1:p1|" + resumeText1}, h.prompts())
+}

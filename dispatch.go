@@ -302,7 +302,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		c[id] = e
 	}
 
-	settle(c, tickets, workers)
+	settle(c, tickets, workers, cfg.Linear.Statuses)
 
 	alert := func(message string) error {
 		return notify.Send(ctx, opts.Osascript, "dispatch", message)
@@ -328,16 +328,11 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			// Needs Human.
 			if err := herdr.Prompt(ctx, opts.Herdr, a.PaneID, a.Text); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while nudging %s: %v\n", a.Ticket.Identifier, err)
-				if a.Reason == reconcile.ReasonResume {
-					// Keep the Needs Human mark so the next tick tries the resume again.
-					e := c[a.Ticket.Identifier]
-					e.LastStatus = cfg.Linear.Statuses.NeedsHuman
-					c[a.Ticket.Identifier] = e
-				}
 				continue
 			}
 			e := c[a.Ticket.Identifier]
 			e.Nudges++
+			e.ResumePending = false
 			c[a.Ticket.Identifier] = e
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Notify:
@@ -393,7 +388,11 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 // read last tick's counters, and the actions that follow add to these ones
 // (Nudges++) or undo them when a nudge or notification fails, so settling
 // after the actions would lose those changes.
-func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Worker) {
+//
+// A ticket back in In Progress stays resume-pending until a resume nudge
+// lands, so a worker that was blocked or working when the answer arrived still
+// gets the resume text once it goes idle.
+func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Worker, statuses config.Statuses) {
 	for _, t := range tickets {
 		e := c[t.Identifier]
 		if e.LastStatus != t.Status {
@@ -403,6 +402,11 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 			e.BlockedTicks++
 		} else {
 			e.BlockedTicks = 0
+		}
+		if t.Status != statuses.InProgress {
+			e.ResumePending = false
+		} else if e.LastStatus == statuses.NeedsHuman {
+			e.ResumePending = true
 		}
 		e.LastStatus = t.Status
 		c[t.Identifier] = e
