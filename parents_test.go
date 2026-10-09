@@ -1,6 +1,7 @@
 package dispatch_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -550,4 +551,45 @@ func TestTickPromotesAChildWithNoRepoLabelAndTheNextTickEscalatesIt(t *testing.T
 	require.Len(t, mutations, 3)
 	assert.Equal(t, needsHumanID, mutations[1].variables["state"])
 	assert.Contains(t, mutations[2].variables["body"], `has no "repo" label`)
+}
+
+func TestTickReleasesAChildWhenItsBlockerIsDoneWhateverCloseParentIs(t *testing.T) {
+	h := newHarness(t)
+	h.config("[linear.statuses]\nclose_parent = \"Closed\"\n")
+	h.tickets(parent("ENG-1", "In Progress"))
+	h.linear.setChildren(
+		child("ENG-2", "ENG-1", "Done"),
+		child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Done"}),
+	)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "promote ENG-3: child of ENG-1")
+}
+
+func TestTickReleasesAChildOnTheConfiguredBlockerStatus(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		blocker string
+		want    bool
+	}{
+		{name: "ConfiguredStatus", blocker: "Released", want: true},
+		{name: "DefaultStatus", blocker: "Done", want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.config("[linear.statuses]\nblocker_done = \"Released\"\n")
+			h.tickets(parent("ENG-1", "In Progress"))
+			h.linear.setChildren(
+				child("ENG-2", "ENG-1", test.blocker),
+				child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", test.blocker}),
+			)
+
+			out, err := h.run("tick")
+			require.NoError(t, err)
+
+			assert.Equal(t, test.want, strings.Contains(out, "promote ENG-3"))
+		})
+	}
 }

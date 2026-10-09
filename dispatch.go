@@ -313,7 +313,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		Todo:           cfg.Linear.Statuses.Todo,
 		AILabel:        cfg.Linear.AILabel,
 		Teams:          cfg.Linear.Teams,
-		BlockerDone:    cfg.Linear.Statuses.CloseParent,
+		BlockerDone:    cfg.Linear.Statuses.BlockerDone,
 		Leased:         leased,
 	}
 	// Only promotion and closing wait on the children, so a failed read holds

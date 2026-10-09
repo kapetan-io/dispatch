@@ -279,6 +279,7 @@ in_review = "In Review"
 done = ["Done", "Canceled", "Duplicate"]
 paused = ["Backlog", "Todo"]
 close_parent = "Done"            # what a parent becomes when its children finish
+blocker_done = "Done"            # what a blocker must reach before its child starts
 
 [linear.needs_human]
 status = "Needs Human"           # at work: label = "needs-human"
