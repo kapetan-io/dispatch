@@ -1,12 +1,15 @@
 package dispatch_test
 
 import (
+	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/kapetan-io/dispatch"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -99,6 +102,13 @@ func TestTicketHintStaysSilentWithoutAConfig(t *testing.T) {
 	assert.Empty(t, runTicketHint(t, clone, filepath.Join(t.TempDir(), "missing.toml")))
 }
 
+func TestTicketHintStaysSilentWithABrokenConfig(t *testing.T) {
+	clone := newHintRepo(t)
+	config := writeHintConfig(t, "[repos]\ndispatch = 5\n")
+
+	assert.Empty(t, runTicketHint(t, clone, config))
+}
+
 func newHintRepo(t *testing.T) string {
 	t.Helper()
 	// Resolved so a /var versus /private/var symlink cannot hide a match.
@@ -124,14 +134,11 @@ func hintGit(t *testing.T, dir string, args ...string) {
 	require.NoError(t, err, string(out))
 }
 
-func runTicketHint(t *testing.T, dir, config string) string {
+func runTicketHint(t *testing.T, dir, configPath string) string {
 	t.Helper()
-	script, err := filepath.Abs("bin/dispatch-ticket-hint")
-	require.NoError(t, err)
-	cmd := exec.Command(script)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "DISPATCH_CONFIG="+config)
-	out, err := cmd.Output()
-	require.NoError(t, err)
-	return string(out)
+	t.Chdir(dir)
+	var out bytes.Buffer
+	require.NoError(t, dispatch.Run(context.Background(), []string{"ticket-hint"},
+		dispatch.Options{ConfigPath: configPath, Stdout: &out}))
+	return out.String()
 }

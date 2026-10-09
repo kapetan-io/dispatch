@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/dispatch-ticket-hint"
+            "command": "command -v dispatch >/dev/null 2>&1 || exit 0; exec dispatch ticket-hint"
           }
         ]
       }
