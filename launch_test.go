@@ -174,3 +174,28 @@ func (l *launchHarness) writeJSON(name string, v any) {
 	require.NoError(l.t, err)
 	l.writeFile(name, string(b))
 }
+
+func TestClaudeShimRestoresWorkerFlagsWithoutAName(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
+		[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
+	shims, err := filepath.Abs("scripts/shims")
+	require.NoError(t, err)
+
+	// herdr restarts a worker with a bare `claude --resume` and replays its
+	// env, which for workers launched before --name was dropped still holds
+	// DISPATCH_WORKER_NAME.
+	cmd := exec.Command(filepath.Join(shims, "claude"), "--resume")
+	cmd.Env = append(os.Environ(),
+		"PATH="+shims+":"+dir+":"+os.Getenv("PATH"),
+		"AUTONOMOUS_WORKER=1",
+		"DISPATCH_PLUGIN_ROOT=/plugin",
+		"DISPATCH_WORKER_NAME=eng-1",
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	argv, err := os.ReadFile(filepath.Join(dir, "argv"))
+	require.NoError(t, err)
+	assert.Equal(t, "--resume --plugin-dir /plugin --disallowedTools EnterPlanMode,ExitPlanMode --dangerously-skip-permissions\n", string(argv))
+}

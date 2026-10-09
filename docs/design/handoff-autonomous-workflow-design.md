@@ -37,7 +37,7 @@ The autonomous build workflow now lives in its own Claude Code plugin repo, `kap
   - Starts Claude with `--plugin-dir <plugin_root>`, `--disallowedTools "EnterPlanMode,ExitPlanMode"` and `--dangerously-skip-permissions`, and types `/dispatch:build <ticket>`.
   - Returns `already_running` when the workspace already has a Claude pane.
   - Passes shellcheck. **Never run against real herdr yet.**
-- `scripts/shims/claude`. Re-adds the worker's name, the plugin and its flags when herdr restarts a worker with a bare `claude --resume`.
+- `scripts/shims/claude`. Re-adds the plugin and the worker flags when herdr restarts a worker with a bare `claude --resume`.
 - `skills/build/SKILL.md`. The build-worker skill: the seven build steps, "decide how, never what", and stopping when the design proves wrong. **Never run yet.**
 - `docs/design/blueprint.md`. The owed edits for piece 1 are applied, and the decision log marks them "(applied, ENG-226)".
 

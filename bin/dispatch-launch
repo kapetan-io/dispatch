@@ -69,7 +69,7 @@ fi
 # reclaims the same name. Claude itself is never given --name: it draws the
 # name in a rule below an open question, and herdr then misses the question
 # and reports the worker done instead of blocked.
-session_name=$(tr '[:upper:]' '[:lower:]' <<<"$ticket")
+worker_name=$(tr '[:upper:]' '[:lower:]' <<<"$ticket")
 label="$ticket"
 kickoff="/dispatch:build $ticket"
 
@@ -211,10 +211,10 @@ done < <(herdr pane list 2>/dev/null \
          | sort -u)
 
 # --- agent -------------------------------------------------------------------
-agent_name=$session_name
+agent_name=$worker_name
 start_agent() {
   if herdr agent list 2>/dev/null | jq -e --arg n "$agent_name" '.result.agents[] | select(.name==$n)' >/dev/null 2>&1; then
-    agent_name="$session_name-r$RANDOM"
+    agent_name="$worker_name-r$RANDOM"
   fi
   # A fresh pane rejects agent start until its shell has drawn a prompt.
   local try
