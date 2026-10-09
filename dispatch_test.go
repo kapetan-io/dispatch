@@ -804,23 +804,30 @@ func (f *fakeLinear) serve(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "lookup refused", http.StatusInternalServerError)
 			return
 		}
-		// Answer like Linear: only the tickets the filter names.
+		// Answer like Linear: an "or" element that is not a lone "and" of
+		// two filters is ignored and matches every ticket.
 		var asked []string
+		ignored := false
 		filter, _ := req.Variables["filter"].(map[string]any)
 		for _, c := range filter["or"].([]any) {
 			c := c.(map[string]any)
-			key := c["team"].(map[string]any)["key"].(map[string]any)["eq"].(string)
-			asked = append(asked, fmt.Sprintf("%s-%v", key, c["number"].(map[string]any)["eq"]))
+			clauses, ok := c["and"].([]any)
+			if len(c) != 1 || !ok || len(clauses) != 2 {
+				ignored = true
+				continue
+			}
+			key := clauses[0].(map[string]any)["team"].(map[string]any)["key"].(map[string]any)["eq"].(string)
+			asked = append(asked, fmt.Sprintf("%s-%v", key, clauses[1].(map[string]any)["number"].(map[string]any)["eq"]))
 		}
 		found := []fakeTicket{}
 		for _, n := range f.elsewhere {
-			if slices.Contains(asked, n["identifier"].(string)) {
+			if ignored || slices.Contains(asked, n["identifier"].(string)) {
 				found = append(found, n)
 			}
 		}
 		data = map[string]any{
 			"viewer": map[string]string{"id": viewerID},
-			"issues": map[string]any{"nodes": found, "pageInfo": map[string]bool{"hasNextPage": false}},
+			"issues": map[string]any{"nodes": found, "pageInfo": map[string]bool{"hasNextPage": ignored}},
 		}
 	case "TeamStates":
 		data = map[string]any{"teams": map[string]any{"nodes": []any{map[string]any{

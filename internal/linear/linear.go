@@ -232,10 +232,12 @@ func (c Client) LeasedTickets(ctx context.Context, label string, teams, identifi
 		if !ok || !contains(teams, team) {
 			continue
 		}
-		filters = append(filters, map[string]any{
-			"team":   map[string]any{"key": map[string]any{"eq": team}},
-			"number": map[string]any{"eq": number},
-		})
+		// Linear ignores an "or" element that holds two field filters, so each
+		// pair is wrapped in "and".
+		filters = append(filters, map[string]any{"and": []map[string]any{
+			{"team": map[string]any{"key": map[string]any{"eq": team}}},
+			{"number": map[string]any{"eq": number}},
+		}})
 	}
 	if len(filters) == 0 {
 		return nil, nil
