@@ -702,6 +702,12 @@ type fakeLinear struct {
 	noLookups         bool
 }
 
+func (f *fakeLinear) allowLookups() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.noLookups = false
+}
+
 // failLookups makes Linear refuse the lookup of tickets by identifier.
 func (f *fakeLinear) failLookups() {
 	f.mu.Lock()

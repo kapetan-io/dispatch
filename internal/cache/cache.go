@@ -41,7 +41,8 @@ type Entry struct {
 	// TicketID is Linear's internal id for the ticket a pending comment goes on.
 	TicketID string `json:"ticket_id,omitempty"`
 	// TeardownWarned marks a finished ticket whose dirty tree already got its
-	// one comment. It is dropped once the ticket holds no lease.
+	// one comment. It is dropped when the ticket stops being a finished ticket
+	// that holds a lease.
 	TeardownWarned bool `json:"teardown_warned,omitempty"`
 }
 

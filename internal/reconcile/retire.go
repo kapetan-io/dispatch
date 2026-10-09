@@ -55,6 +55,9 @@ func (in Input) retire() []Action {
 	return actions
 }
 
+// retireFinished plans each tree of a finished ticket. Kept trees share one
+// comment, carried on the first Keep, and a Keep with no live worker and no
+// comment to post is dropped.
 func (in Input) retireFinished(t linear.Ticket) []Action {
 	var actions, keeps []Action
 	var why []string
@@ -83,7 +86,7 @@ func (in Input) retireFinished(t linear.Ticket) []Action {
 		return actions
 	}
 	if !in.Cache[t.Identifier].TeardownWarned {
-		keeps[0].Text = "The dispatcher stopped this ticket's worker but kept its tree leased, because " + strings.Join(why, " and ") +
+		keeps[0].Text = "The dispatcher kept this ticket's tree leased, because " + strings.Join(why, " and ") +
 			". Returning the tree would discard that work. Push or discard it, and the next tick returns the tree."
 	}
 	for _, k := range keeps {

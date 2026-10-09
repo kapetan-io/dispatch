@@ -119,7 +119,7 @@ func TestTickKeepsTheTreeOfAFinishedTicketThatHoldsWork(t *testing.T) {
 			assert.Equal(t, "CommentTicket", mutations[0].operation)
 			assert.Equal(t, "uuid-ENG-1", mutations[0].variables["id"])
 			assert.Contains(t, mutations[0].variables["body"], "`"+path+"` has "+test.work+".")
-			assert.Contains(t, mutations[0].variables["body"], "stopped this ticket's worker but kept its tree leased")
+			assert.Contains(t, mutations[0].variables["body"], "kept this ticket's tree leased")
 
 			// Later ticks neither comment again nor close anything else.
 			for range 2 {
@@ -391,12 +391,14 @@ func TestTickLeavesAWorkspaceOpenedByHandOnAKeptTree(t *testing.T) {
 	assert.Len(t, h.linear.mutations(), 1)
 }
 
-func TestTickKeepsATreeWhoseUnpushedCommitsAreOnAnotherBranch(t *testing.T) {
+func TestTickReturnsATreeWhileAnotherBranchOfTheRepoHoldsUnpushedWork(t *testing.T) {
 	h := newHarness(t)
 	path := h.gitTree("ENG-1")
-	h.git(path, "checkout", "-b", "feature")
+	// Pool trees share one repository, so a branch another ticket is still
+	// working on is no reason to keep this ticket's tree.
+	h.git(path, "branch", "other")
+	h.git(path, "checkout", "other")
 	h.commit(path)
-	// HEAD is back on pushed commits, so only the branch list shows the work.
 	h.git(path, "checkout", "--detach", "main")
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
@@ -404,8 +406,7 @@ func TestTickKeepsATreeWhoseUnpushedCommitsAreOnAnotherBranch(t *testing.T) {
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "keep ENG-1: Done, but its tree has 1 commit that no remote has\n", out)
-	assert.Empty(t, h.returns())
+	assert.Equal(t, "teardown ENG-1: Done, clean and pushed\n", out)
 }
 
 func TestTickKeepsTickingWhenLinearCannotListTheTicketsHoldingTrees(t *testing.T) {
@@ -482,6 +483,7 @@ func TestTickReadsDoneAndPausedStatusesFromConfig(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.worker("ENG-2", "idle")
 	h.worker("ENG-3", "idle")
+	// ENG-3 is Done, a default status the config replaced, so it is left alone.
 	h.linear.setElsewhere(
 		ticket("ENG-1", "Shipped", "dispatch"),
 		ticket("ENG-2", "Parked", "dispatch"),
@@ -748,7 +750,8 @@ func TestTickCommentsAgainWhenAReopenedTicketFinishesWithWorkInItsTree(t *testin
 }
 
 // gitTree makes a pool tree that is clean and pushed: a clone of a bare
-// remote on main, at the path h.worker gives the ticket.
+// remote on main, at <dir>/trees/<name>, the path h.worker uses for a ticket
+// named <name>.
 func (h *harness) gitTree(ticket string) string {
 	path := filepath.Join(h.dir, "trees", ticket)
 	remote := filepath.Join(h.dir, "remotes", ticket+".git")
@@ -795,4 +798,47 @@ func assignedTo(t fakeTicket, user string) fakeTicket {
 func withoutLabels(t fakeTicket) fakeTicket {
 	t["labels"] = map[string]any{"nodes": []map[string]any{}}
 	return t
+}
+
+func TestTickDoesNotRepeatTheCommentAfterALeaseLookupFails(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.dirty(path)
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	require.Len(t, h.linear.mutations(), 1)
+
+	// The failed tick can't tell who holds a lease, but the warning still stands.
+	h.linear.failLookups()
+	_, _, err = h.runContext(t.Context(), "tick")
+	require.NoError(t, err)
+	h.linear.allowLookups()
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Len(t, h.linear.mutations(), 1)
+}
+
+func TestTickDoesNotRepeatTheCommentAfterAPoolCannotBeRead(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.dirty(path)
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	require.Len(t, h.linear.mutations(), 1)
+
+	// A second repo whose pool fails hides no lease from the first, but a tick
+	// that can't read every pool can't tell which finished tickets are released.
+	h.addRepo("tiger", filepath.Join(h.dir, "moved"))
+	_, _, err = h.runContext(t.Context(), "tick")
+	require.NoError(t, err)
+	h.repos = ""
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Len(t, h.linear.mutations(), 1)
 }

@@ -30,7 +30,8 @@ type Worker struct {
 	PaneID      string
 }
 
-// Find looks up the worker for ticket in the pool trees and herdr snapshot.
+// Find looks up the worker on the ticket's first tree. FindAll returns one for
+// every tree.
 func Find(ticket string, trees []treehouse.Tree, snap herdr.Snapshot) Worker {
 	if all := FindAll(ticket, trees, snap); len(all) > 0 {
 		return all[0]

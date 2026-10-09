@@ -31,11 +31,12 @@ const (
 	// Teardown closes the workspace on a finished ticket's tree and returns the
 	// tree to the pool.
 	Teardown Kind = "teardown"
-	// Keep is Stop for a finished ticket whose tree holds work that returning
-	// it would destroy. A non-empty Text is the one comment that says why.
-	Keep Kind = "keep"
-	// Stop closes the workspace of a ticket's live worker and keeps its tree.
+	// Stop closes the workspace of a paused ticket's live worker and keeps its tree.
 	Stop Kind = "stop"
+	// Keep closes the workspace of a finished ticket's live worker and leaves
+	// its tree leased, because returning it would destroy work. A non-empty Text
+	// is the one comment that says why.
+	Keep Kind = "keep"
 )
 
 // Reasons are the labels `dispatch tick --dry-run` prints. The executor

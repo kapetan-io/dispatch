@@ -270,10 +270,10 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		return sum, err
 	}
 
-	// Teardown is an addition to the tick, so a lookup that fails holds back
-	// only the teardown and leaves launches and nudges running.
+	// A failed lease lookup skips teardown only; launches and nudges still run.
 	holders, err := leaseHolders(ctx, lin, cfg, trees, tickets)
-	if err != nil {
+	lookupFailed := err != nil
+	if lookupFailed {
 		_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the tickets that hold trees: %v\n", err)
 	}
 	workers := map[string]worker.Worker{}
@@ -328,7 +328,13 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		c[id] = e
 	}
 
-	settle(c, tickets, workers, input.PRs, cfg.Linear.Statuses, heldFinished(input))
+	// Who still holds a lease is unknown when the lookup failed or a pool could
+	// not be read, and settle then keeps every warning.
+	held := heldFinished(input)
+	if lookupFailed || len(unread) > 0 {
+		held = nil
+	}
+	settle(c, tickets, workers, input.PRs, cfg.Linear.Statuses, held)
 
 	alert := func(message string) error {
 		return notify.Send(ctx, opts.Osascript, "dispatch", message)
@@ -361,7 +367,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			e.ResumePending = false
 			c[a.Ticket.Identifier] = e
 			_, _ = fmt.Fprintln(opts.Stdout, a)
-		// One tree's failure must not hold up the other trees.
+		// A failed Teardown, Stop or Keep is reported and the loop moves on.
 		case reconcile.Teardown:
 			if err := teardown(ctx, opts, a); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while tearing down %s: %v\n", a.Ticket.Identifier, err)
@@ -480,8 +486,9 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 			continue
 		}
 		// A finished ticket keeps its dirty-tree warning while it holds a lease,
-		// and the warning goes once the tree is returned.
-		c[id] = cache.Entry{LaunchFailures: e.LaunchFailures, PendingComment: e.PendingComment, TicketID: e.TicketID, TeardownWarned: e.TeardownWarned && held[id]}
+		// and the warning goes once the tree is returned. A nil held means the
+		// leases could not be read this tick, so no warning is dropped.
+		c[id] = cache.Entry{LaunchFailures: e.LaunchFailures, PendingComment: e.PendingComment, TicketID: e.TicketID, TeardownWarned: e.TeardownWarned && (held == nil || held[id])}
 		if c[id] == (cache.Entry{}) {
 			delete(c, id)
 		}

@@ -52,16 +52,17 @@ func Return(ctx context.Context, bin, repoDir, path, holder string) error {
 }
 
 // Unfinished says what returning the tree at path would destroy: uncommitted
-// changes, or commits on any branch or on a detached HEAD that no remote has.
-// It is empty when the tree is clean and every commit is pushed. A squash-merged
-// branch whose remote copy was pruned counts as unpushed, since the tree can't
-// tell its commits from lost ones.
+// changes, or commits reachable from HEAD that no remote has. Other local
+// branches are not counted, since the pool's trees share one repository and
+// treehouse returns a tree by detaching HEAD, which leaves every branch in
+// place. The result is empty when the tree is clean and its HEAD is pushed. A
+// squash-merged branch whose remote copy was pruned counts as unpushed.
 func Unfinished(ctx context.Context, path string) (string, error) {
 	status, err := git(ctx, path, "status", "--porcelain")
 	if err != nil {
 		return "", err
 	}
-	count, err := git(ctx, path, "rev-list", "--count", "--branches", "HEAD", "--not", "--remotes")
+	count, err := git(ctx, path, "rev-list", "--count", "HEAD", "--not", "--remotes")
 	if err != nil {
 		return "", err
 	}

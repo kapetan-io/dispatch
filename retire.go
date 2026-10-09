@@ -19,12 +19,12 @@ import (
 // no call when every lease belongs to a managed ticket.
 func leaseHolders(ctx context.Context, lin linear.Client, cfg config.Config, trees []treehouse.Tree, managed []linear.Ticket) ([]linear.Ticket, error) {
 	var holders []string
-	for _, tr := range trees {
-		if tr.LeaseHolder == "" || slices.Contains(holders, tr.LeaseHolder) {
+	for _, tree := range trees {
+		if tree.LeaseHolder == "" || slices.Contains(holders, tree.LeaseHolder) {
 			continue
 		}
-		if !slices.ContainsFunc(managed, func(t linear.Ticket) bool { return t.Identifier == tr.LeaseHolder }) {
-			holders = append(holders, tr.LeaseHolder)
+		if !slices.ContainsFunc(managed, func(t linear.Ticket) bool { return t.Identifier == tree.LeaseHolder }) {
+			holders = append(holders, tree.LeaseHolder)
 		}
 	}
 	if len(holders) == 0 {
