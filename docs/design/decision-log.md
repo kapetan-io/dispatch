@@ -124,7 +124,7 @@ The dispatcher launched a build worker for its own piece 2 (ENG-228), which buil
 - **CI arrived mid-pilot.** PR #3 added the `test` check after ENG-228's branch was cut, so PR #4 ran CI only after its rebase. Branch protection requiring that check is not set up yet.
 - **herdr and `--name`.** Recorded under decision 9.
 - **Pilot fixes go through the dispatcher once piece 3 merges.** Until then, a fix found in a pilot got its own ticket without the `ai` label and was made in the session that found it, because no running dispatcher could follow its PR. After piece 3 (ENG-232) merges, a fix is an `ai` ticket in Todo. You approve it by moving it to In Progress, a worker builds it, and the dispatcher follows its PR to merge. (Settled 2026-10-08.)
-- **An agent that moves a ticket must run a tick.** Decision 10 says so, but no skill an agent loads carries it yet, so ENG-232 waited on the timer until you asked. One `dispatch tick` launched it in seconds. The shared skill for advancing a phase (decision 10) carries this rule, and is built when the grill and review need it.
+- **An agent that moves a ticket must run a tick.** Decision 10 says so, but no skill an agent loaded carried it, so ENG-232 waited on the timer until you asked. One `dispatch tick` launched it in seconds. `dispatch:ticket` (ENG-239) now carries the rule for any ticket an agent moves, and the shared skill for advancing a phase (decision 10) will carry it for phases once the grill and review need it.
 
 ## Breakdown step (in progress)
 
@@ -163,6 +163,7 @@ These come from draft 2 of the proposal. The decisions above remove its set chec
 
 - **Order inside the review.** The formal spec and `duh lint` first, so the API-consumer persona reviews the real spec. Then the review rounds with lint in each, the ADR audit, the breakdown, one save of the blueprint and spec, ticket creation and the hand-off.
 - **Ticket creation.** A script creates each ticket in Backlog, links it to its blockers, then moves it to Todo, so no tick promotes it before its blockers are attached. This amends decision 3's single `save_issue` call.
+- **One ticket format for every writer.** The review worker writes build tickets in the format of the `dispatch:ticket` skill (`skills/ticket/SKILL.md`), the same one any agent loads when it files a ticket on its own. The skill's Governing design section is where the body cites the blueprint and says what the ticket touches and how it ships.
 - **The ticket body cites the blueprint and never copies it.** The worker reads the criteria from the blueprint, so a later design change reaches every unmerged ticket. The body has one repo label, links to the governing sections, what it touches, how it ships (additive or flagged) and a "not decided here" list.
 - **No acceptance criterion ids.** blueprint-create's format has none, and one build ticket per design leaves nothing that needs them. Expand, migrate and contract tickets name the criteria they deliver. This drops the earlier proposal to add `AC-n` ids.
 - **One decision log in the blueprint.** It holds the grill's ledger, the review's "decided without you" list and breakdown calls. ADR drafts live in the blueprint as their own section until the build ticket that implements them commits them.
