@@ -371,7 +371,8 @@ func TestRunTicksOnEachIntervalUntilCanceled(t *testing.T) {
 		done <- err
 	}()
 	// The fake herdr never shows a worker, so every tick launches ENG-1 again.
-	require.Eventually(t, func() bool { return len(h.launches()) >= 3 }, 5*time.Second, 10*time.Millisecond)
+	// A 4th launch proves the 3rd tick printed before cancellation could drop it.
+	require.Eventually(t, func() bool { return len(h.launches()) >= 4 }, 15*time.Second, 10*time.Millisecond)
 	cancel()
 
 	require.NoError(t, <-done)
@@ -398,7 +399,7 @@ cat "`+h.dir+`/trees.json"`)
 	}()
 	// A second launch proves the slow first tick already printed its line,
 	// which cancellation would otherwise drop.
-	require.Eventually(t, func() bool { return len(h.launches()) >= 2 }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return len(h.launches()) >= 2 }, 15*time.Second, 10*time.Millisecond)
 	cancel()
 
 	require.NoError(t, <-done)
