@@ -3,11 +3,13 @@ package dispatch_test
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kapetan-io/dispatch"
 	"github.com/stretchr/testify/assert"
@@ -107,6 +109,23 @@ func TestTicketHintStaysSilentWithABrokenConfig(t *testing.T) {
 	config := writeHintConfig(t, "[repos]\ndispatch = 5\n")
 
 	assert.Empty(t, runTicketHint(t, clone, config))
+}
+
+func TestTicketHintGivesUpWhenGitHangsPastTheContext(t *testing.T) {
+	clone := newHintRepo(t)
+	configPath := writeHintConfig(t, "[repos]\ndispatch = \""+clone+"\"\n")
+	bin := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nexec sleep 30\n"), 0o755))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Chdir(clone)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err := dispatch.Run(ctx, []string{"ticket-hint"}, dispatch.Options{ConfigPath: configPath, Stdout: io.Discard})
+
+	require.NoError(t, err)
+	assert.Less(t, time.Since(start), 5*time.Second)
 }
 
 func newHintRepo(t *testing.T) string {

@@ -18,7 +18,7 @@ const ticketHintText = "This repo is managed by dispatch. Before you create or r
 // shows some skills by name only, so the dispatch:ticket description alone
 // cannot make it fire. It prints nothing and succeeds everywhere else, even with
 // a missing or broken config, because the hook runs in every session on the machine.
-func ticketHint(_ context.Context, opts Options) error {
+func ticketHint(ctx context.Context, opts Options) error {
 	cfg, err := config.Load(opts.ConfigPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -28,7 +28,7 @@ func ticketHint(_ context.Context, opts Options) error {
 		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
 		return nil
 	}
-	clone, ok := cloneRoot()
+	clone, ok := cloneRoot(ctx)
 	if !ok {
 		return nil
 	}
@@ -45,8 +45,8 @@ func ticketHint(_ context.Context, opts Options) error {
 // cloneRoot returns the directory holding the .git of the repo containing the
 // working directory. A worktree shares its clone's git common dir, so both
 // resolve to the clone. A bare repo has no such directory and never matches.
-func cloneRoot() (string, bool) {
-	out, err := exec.Command("git", "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+func cloneRoot(ctx context.Context) (string, bool) {
+	out, err := exec.CommandContext(ctx, "git", "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
 	if err != nil {
 		return "", false
 	}
