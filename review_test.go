@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kapetan-io/dispatch"
 )
 
 const prURL1 = "https://github.com/kapetan-io/dispatch/pull/7"
@@ -493,4 +496,55 @@ func TestTickIgnoresInReviewParentTickets(t *testing.T) {
 
 	assert.Empty(t, out)
 	assert.Empty(t, h.prReads())
+}
+
+func TestTickGivesARelaunchedWorkerTwoPRNudgesBeforeEscalating(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "")
+	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	h.setWorkerAgent("ENG-1", "idle")
+
+	for range 2 {
+		out, err := h.run("tick")
+		require.NoError(t, err)
+		assert.Equal(t, "nudge ENG-1: PR needs work: a failed check\n", out)
+	}
+	assert.Empty(t, h.linear.mutations())
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "escalate ENG-1: its worker stayed idle through 2 nudges")
+	assert.Len(t, h.prompts(), 2)
+}
+
+func TestTickStopsWaitingOnAGHCallThatHangs(t *testing.T) {
+	h := newHarness(t)
+	h.config("")
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.script("gh", `exec sleep 20`)
+
+	start := time.Now()
+	out, stderr, err := h.runWith(context.Background(), dispatch.Options{PRTimeout: 300 * time.Millisecond}, "tick")
+	require.NoError(t, err)
+
+	assert.Less(t, time.Since(start), 5*time.Second)
+	assert.Contains(t, stderr, "while reading the PR for ENG-1")
+	assert.Equal(t, "launch ENG-2: ok\n", out)
+}
+
+func TestTickReportsWhatGHSaidWhenItFails(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.script("gh", `echo "HTTP 401: Bad credentials" >&2; exit 1`)
+
+	_, stderr, err := h.runContext(context.Background(), "tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "HTTP 401: Bad credentials")
 }

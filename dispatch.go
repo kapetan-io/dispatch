@@ -46,6 +46,9 @@ type Options struct {
 	Treehouse string
 	// GH is the command that reads pull requests. Defaults to "gh".
 	GH string
+	// PRTimeout bounds each gh call, so a stalled network can't hold the tick
+	// lock. Defaults to 30 seconds.
+	PRTimeout time.Duration
 	// Osascript is the command that shows notifications. Defaults to "osascript".
 	Osascript string
 	// Launcher defaults to bin/dispatch-launch under the config's plugin_root.
@@ -119,6 +122,9 @@ func withDefaults(o Options) Options {
 	}
 	if o.GH == "" {
 		o.GH = "gh"
+	}
+	if o.PRTimeout == 0 {
+		o.PRTimeout = 30 * time.Second
 	}
 	if o.Osascript == "" {
 		o.Osascript = "osascript"
@@ -364,7 +370,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			if !r.Failed() {
 				e.LaunchFailures = 0
 				if r.Status == launcher.StatusOK && a.Ticket.Status == cfg.Linear.Statuses.InReview {
-					e.Nudges++
+					e.Relaunches++
 				}
 				c[a.Ticket.Identifier] = e
 				// A full pool is a silent wait in Linear, so the window says who
@@ -410,6 +416,7 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 		e := c[t.Identifier]
 		if e.LastStatus != t.Status {
 			e.Nudges = 0
+			e.Relaunches = 0
 		}
 		if workers[t.Identifier].State == worker.Blocked {
 			e.BlockedTicks++
@@ -428,6 +435,7 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 		// so the push is still seen once the PR is read again.
 		if pr, ok := prs[t.Identifier]; ok {
 			e.Nudges = e.NudgesAt(t.Status, pr.Head)
+			e.Relaunches = e.RelaunchesAt(t.Status, pr.Head)
 			e.PRHead = pr.Head
 		} else if t.Status != statuses.InReview {
 			// The head means nothing outside In Review, and a stale one would hide a push later.
@@ -466,7 +474,7 @@ func readPRs(ctx context.Context, opts Options, in reconcile.Input) map[string]p
 		if !ok || dir == "" {
 			continue
 		}
-		pr, found, err := pullrequest.Read(ctx, opts.GH, dir, t.Branch)
+		pr, found, err := pullrequest.Read(ctx, opts.GH, dir, t.Branch, opts.PRTimeout)
 		if err != nil {
 			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, err)
 			continue
@@ -495,6 +503,7 @@ func escalate(ctx context.Context, lin linear.Client, cfg config.Config, c cache
 	e := c[t.Identifier]
 	e.LastStatus = cfg.Linear.Statuses.NeedsHuman
 	e.Nudges = 0
+	e.Relaunches = 0
 	e.NotifyPending = alert(reconcile.NeedsHumanText(t)) != nil
 	c[t.Identifier] = e
 	body := "The dispatcher moved this ticket to Needs Human because " + reason

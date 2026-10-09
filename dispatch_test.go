@@ -478,21 +478,25 @@ func (h *harness) run(args ...string) (string, error) {
 }
 
 func (h *harness) runContext(ctx context.Context, args ...string) (string, string, error) {
+	return h.runWith(ctx, dispatch.Options{}, args...)
+}
+
+// runWith runs a command with the harness's fakes, over the Options given.
+func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...string) (string, string, error) {
 	h.writeFile("config.toml", h.extra+fmt.Sprintf("\n[repos]\ndispatch = %q\n", h.repo)+h.repos)
 	var stdout, stderr bytes.Buffer
-	err := dispatch.Run(ctx, args, dispatch.Options{
-		ConfigPath: filepath.Join(h.dir, "config.toml"),
-		StateDir:   h.state,
-		LinearURL:  h.linear.server.URL,
-		LinearKey:  "test-key",
-		Herdr:      filepath.Join(h.dir, "herdr"),
-		Treehouse:  filepath.Join(h.dir, "treehouse"),
-		GH:         filepath.Join(h.dir, "gh"),
-		Osascript:  filepath.Join(h.dir, "osascript"),
-		Launcher:   filepath.Join(h.dir, "launcher"),
-		Stdout:     &stdout,
-		Stderr:     &stderr,
-	})
+	extra.ConfigPath = filepath.Join(h.dir, "config.toml")
+	extra.StateDir = h.state
+	extra.LinearURL = h.linear.server.URL
+	extra.LinearKey = "test-key"
+	extra.Herdr = filepath.Join(h.dir, "herdr")
+	extra.Treehouse = filepath.Join(h.dir, "treehouse")
+	extra.GH = filepath.Join(h.dir, "gh")
+	extra.Osascript = filepath.Join(h.dir, "osascript")
+	extra.Launcher = filepath.Join(h.dir, "launcher")
+	extra.Stdout = &stdout
+	extra.Stderr = &stderr
+	err := dispatch.Run(ctx, args, extra)
 	return stdout.String(), stderr.String(), err
 }
 

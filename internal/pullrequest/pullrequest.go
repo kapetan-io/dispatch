@@ -5,9 +5,11 @@ package pullrequest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // PR is an open pull request and what is wrong with it.
@@ -57,14 +59,23 @@ const query = `query PullRequest($owner: String!, $repo: String!, $branch: Strin
 
 // Read finds the open PR whose head branch is branch in the repo cloned at
 // repoDir, with one `gh api graphql` call. It returns false when the branch
-// has no open PR, and an error when the PR has more than maxThreads review threads.
-func Read(ctx context.Context, bin, repoDir, branch string) (PR, bool, error) {
+// has no open PR, and an error when the PR has more than maxThreads review threads. Each call is cut off after timeout.
+func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duration) (PR, bool, error) {
+	// The tick holds its lock while it waits, and gh sets no timeout of its own.
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "api", "graphql",
 		"-F", "owner={owner}", "-F", "repo={repo}", "-f", "branch="+branch,
 		"-F", fmt.Sprintf("threads=%d", maxThreads), "-f", "query="+query)
 	cmd.Dir = repoDir
+	// A child that inherits gh's pipes must not keep Output waiting after the kill.
+	cmd.WaitDelay = time.Second
 	b, err := cmd.Output()
 	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return PR{}, false, fmt.Errorf("while running gh in %s: %w: %s", repoDir, err, strings.TrimSpace(string(exit.Stderr)))
+		}
 		return PR{}, false, fmt.Errorf("while running gh in %s: %w", repoDir, err)
 	}
 	var resp struct {

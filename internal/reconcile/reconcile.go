@@ -128,9 +128,9 @@ func Plan(in Input) []Action {
 			continue
 		}
 		// A relaunched worker that never pushes would be relaunched every tick,
-		// so each relaunch counts like a PR nudge.
+		// so relaunches are counted against the same limit as PR nudges.
 		if relaunch {
-			if n := in.Cache[t.Identifier].NudgesAt(t.Status, pr.Head); n >= in.NudgeLimit {
+			if n := in.Cache[t.Identifier].RelaunchesAt(t.Status, pr.Head); n >= in.NudgeLimit {
 				actions = append(actions, Action{Kind: Escalate, Ticket: t, Reason: fmt.Sprintf("its worker was relaunched %d times for %s without pushing. Look at its herdr workspace.", n, pr.URL)})
 				continue
 			}

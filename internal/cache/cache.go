@@ -22,6 +22,10 @@ type Entry struct {
 	// PRHead is the SHA of the In Review ticket's PR head when last read. A
 	// different head means the worker pushed, which resets Nudges.
 	PRHead string `json:"pr_head,omitempty"`
+	// Relaunches counts workers relaunched for an In Review PR since the ticket
+	// last changed status or the PR was pushed. It is separate from Nudges so a
+	// relaunch does not use up one of the PR nudges.
+	Relaunches int `json:"relaunches,omitempty"`
 	// ResumePending marks a ticket moved from Needs Human back to In Progress
 	// whose worker has not yet been sent the resume nudge.
 	ResumePending bool `json:"resume_pending,omitempty"`
@@ -46,6 +50,14 @@ func (e Entry) NudgesAt(status, head string) int {
 		return 0
 	}
 	return e.Nudges
+}
+
+// RelaunchesAt is NudgesAt for the relaunch count.
+func (e Entry) RelaunchesAt(status, head string) int {
+	if e.LastStatus != status || e.PRHead != head {
+		return 0
+	}
+	return e.Relaunches
 }
 
 // Cache maps a ticket identifier such as ENG-123 to its entry.
