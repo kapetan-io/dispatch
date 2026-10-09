@@ -44,6 +44,8 @@ It ticks now and every `interval_minutes` after. Each tick prints one line per a
 
 While `dispatch run` ticks, an In Progress ticket whose worker is idle or finished gets the stall nudge typed into its session. After `nudge_limit` nudges (default 2) with no status change, the ticket goes to Needs Human with one comment. A ticket you move from Needs Human back to In Progress gets the resume nudge, with no comment.
 
+An In Review ticket whose worker is idle gets the PR nudge when its PR has a failed check, changes requested, an unresolved review thread or a merge conflict. The nudge names the problem and tells the worker to handle it as its build skill's step 7 says. A worker that is gone is relaunched on its existing tree, then nudged on the tick after it goes idle. After `nudge_limit` PR nudges with no push, the ticket goes to Needs Human with one comment, and a push that moves the PR head resets the count. The dispatcher reads PRs through `gh`, so it must be authenticated.
+
 A worker blocked on a question (AskUserQuestion), on an In Progress or In Review ticket, fires a macOS notification (through `osascript`) on its first blocked tick and again every `blocked_renotify_ticks` ticks (default 3) while it stays blocked. The dispatcher never answers the question and never sets Needs Human for it. A ticket entering Needs Human fires one notification.
 
 To type into a worker yourself:

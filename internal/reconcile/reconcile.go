@@ -8,6 +8,7 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/cache"
 	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/worker"
 )
 
@@ -37,6 +38,7 @@ const (
 	ReasonBlocked           = "worker is blocked on a question"
 	ReasonStall             = "stall"
 	ReasonResume            = "resume"
+	ReasonPR                = "PR needs work"
 )
 
 // NeedsHumanText is the notification message for a ticket in Needs Human.
@@ -49,6 +51,7 @@ func NeedsHumanText(t linear.Ticket) string {
 const (
 	StallNudge  = "%s is still In Progress. Re-read the ticket and its latest comments, then keep going. If the PR is ready, move it to In Review. If you need a decision from me, move it to Needs Human and comment what you need."
 	ResumeNudge = "I answered on %s. Read the latest comments and continue."
+	PRNudge     = "PR %s for %s has %s. Handle it as your build skill's step 7 says, and push."
 )
 
 // Action is one decision about one ticket.
@@ -84,6 +87,9 @@ type Input struct {
 	// RenotifyTicks is how many ticks pass between notifications for a worker
 	// that stays blocked.
 	RenotifyTicks int
+	// PRs maps an In Review ticket identifier to its open PR. Tickets whose PR
+	// was not read, or that have none, are absent.
+	PRs map[string]pullrequest.PR
 	// Cache is last tick's state. Plan only reads it.
 	Cache          cache.Cache
 	RepoLabelGroup string
@@ -114,11 +120,20 @@ func Plan(in Input) []Action {
 			actions = append(actions, a)
 			continue
 		}
-		if t.Status != in.InProgress {
+		pr, relaunch := in.prRelaunch(t)
+		if t.Status != in.InProgress && !relaunch {
 			continue
 		}
 		if in.Workers[t.Identifier].State != worker.None {
 			continue
+		}
+		// A relaunched worker that never pushes would be relaunched every tick,
+		// so relaunches are counted against the same limit as PR nudges.
+		if relaunch {
+			if n := in.Cache[t.Identifier].RelaunchesAt(t.Status, pr.Head); n >= in.NudgeLimit {
+				actions = append(actions, Action{Kind: Escalate, Ticket: t, Reason: fmt.Sprintf("its worker was relaunched %d times for %s without pushing. Look at its herdr workspace.", n, pr.URL)})
+				continue
+			}
 		}
 		if t.HasChildren {
 			actions = append(actions, Action{Kind: Skip, Ticket: t, Reason: "has sub-issues, and a parent never gets a worker"})
@@ -146,6 +161,12 @@ func Plan(in Input) []Action {
 		dir, ok := in.Repos[repo]
 		if !ok {
 			actions = append(actions, Action{Kind: Escalate, Ticket: t, Reason: fmt.Sprintf("its repo %q is not in the dispatcher's config. Add it under [repos] and move the ticket back to In Progress.", repo)})
+			continue
+		}
+		// In Review workers don't count against the cap, so a relaunch to
+		// handle a PR is never held back by it.
+		if relaunch {
+			launches = append(launches, Action{Kind: Launch, Ticket: t, RepoDir: dir, Reason: ReasonPR + ": " + pr.Problem()})
 			continue
 		}
 		if running >= in.MaxInProgress {
@@ -187,8 +208,11 @@ func (in Input) watch(t linear.Ticket) (Action, bool) {
 		}
 		return Action{Kind: Notify, Ticket: t, Reason: ReasonBlocked, Text: fmt.Sprintf("%s is waiting on your answer in its herdr workspace", t.Identifier)}, true
 	case worker.Idle:
-		// The review worker's nudges have their own text, which a later piece adds.
-		if t.Status != in.InProgress || t.HasLabel("design-review") {
+		if t.Status == in.InReview {
+			return in.prNudge(t, w, prev)
+		}
+		// A design-review ticket's worker is never nudged.
+		if t.HasLabel("design-review") {
 			return Action{}, false
 		}
 		nudges := prev.Nudges
@@ -204,6 +228,42 @@ func (in Input) watch(t linear.Ticket) (Action, bool) {
 		return Action{Kind: Nudge, Ticket: t, Reason: ReasonStall, PaneID: w.PaneID, Text: fmt.Sprintf(StallNudge, t.Identifier)}, true
 	}
 	return Action{}, false
+}
+
+// ReadsPR reports whether Plan will use this In Review ticket's PR. Working and
+// blocked workers are skipped so their PRs cost no call, and so are tickets
+// whose labels or children make Plan unsure they are build tickets. PRs holds
+// only tickets for which this is true.
+func (in Input) ReadsPR(t linear.Ticket) bool {
+	if t.Status != in.InReview || t.LabelsTruncated || t.HasChildren || t.HasLabel("design") || t.HasLabel("design-review") {
+		return false
+	}
+	state := in.Workers[t.Identifier].State
+	return state == worker.None || state == worker.Idle
+}
+
+// prRelaunch returns the PR of an In Review ticket that has no worker and whose
+// PR needs work, which Plan relaunches a worker for.
+func (in Input) prRelaunch(t linear.Ticket) (pullrequest.PR, bool) {
+	pr, ok := in.PRs[t.Identifier]
+	if !ok || !pr.NeedsWork() {
+		return pullrequest.PR{}, false
+	}
+	return pr, in.Workers[t.Identifier].State == worker.None
+}
+
+// prNudge handles an idle worker on an In Review ticket. A push resets the
+// count, so a review that arrives days later starts a fresh one.
+func (in Input) prNudge(t linear.Ticket, w worker.Worker, prev cache.Entry) (Action, bool) {
+	pr, ok := in.PRs[t.Identifier]
+	if !ok || !pr.NeedsWork() {
+		return Action{}, false
+	}
+	nudges := prev.NudgesAt(t.Status, pr.Head)
+	if nudges >= in.NudgeLimit {
+		return Action{Kind: Escalate, Ticket: t, Reason: fmt.Sprintf("its worker stayed idle through %d nudges about %s without pushing. Look at its herdr workspace.", nudges, pr.URL)}, true
+	}
+	return Action{Kind: Nudge, Ticket: t, Reason: ReasonPR + ": " + pr.Problem(), PaneID: w.PaneID, Text: fmt.Sprintf(PRNudge, pr.URL, t.Identifier, pr.Problem())}, true
 }
 
 func (in Input) unread(t linear.Ticket) bool {

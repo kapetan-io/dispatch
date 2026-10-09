@@ -141,13 +141,13 @@ Out of scope.
 
 #### Nudges
 
-Fixed text, no source tag. `<ticket>`, `<pr>` and `<problem>` are filled in.
+Fixed text, no source tag. `<ticket>`, `<pr>` (the PR's URL) and `<problem>` (such as "a failed check and a merge conflict") are filled in.
 
 | Situation | Text |
 |---|---|
 | Stall (In Progress, worker idle) | `<ticket> is still In Progress. Re-read the ticket and its latest comments, then keep going. If the PR is ready, move it to In Review. If you need a decision from me, move it to Needs Human and comment what you need.` |
 | Resume (Needs Human back to In Progress) | `I answered on <ticket>. Read the latest comments and continue.` |
-| PR (In Review, PR needs work) | `PR <pr> for <ticket> has <problem>. Fix it and push.` |
+| PR (In Review, PR needs work) | `PR <pr> for <ticket> has <problem>. Handle it as your build skill's step 7 says, and push.` |
 
 #### Worker contract
 
@@ -226,7 +226,7 @@ Cheap actions run before launches, because one launch can take over 5 minutes.
 | In Progress | working | Nothing |
 | In Progress | idle | Send the stall nudge, or the resume nudge if the cache's last-seen status was Needs Human. After 2 nudges with no status change, set Needs Human. |
 | In Progress or In Review | blocked | The worker is asking you a question. Notify you, and notify again if it stays unanswered. Never dismiss the dialog. |
-| In Review | none | If the PR needs work, launch to resume, then send the PR nudge. Otherwise nothing, and the tree stays leased. |
+| In Review | none | If the PR needs work, launch to resume, then send the PR nudge once the relaunched worker is idle (the next tick). Otherwise nothing, and the tree stays leased. |
 | In Review | idle | If the PR needs work, send the PR nudge. After 2 PR nudges with no push, set Needs Human. |
 | In Review | working | Nothing |
 | Needs Human | any | Nothing |
@@ -316,7 +316,7 @@ With the label form of `needs_human`, an In Progress ticket carrying the label c
 
 ### Scale
 
-One machine runs everything. A tick costs one Linear query, one herdr snapshot, one `treehouse status` per repo and one `gh pr view` per In Review ticket. In Review workers sit idle and cost nothing between nudges, and they do not count against `max_in_progress`. Tree count per repo is capped by treehouse `max_trees`.
+One machine runs everything. A tick costs one Linear query, one herdr snapshot, one `treehouse status` per repo and one `gh api graphql` call per In Review ticket whose worker is idle or gone. `gh pr view` has no review thread field, so a single GraphQL query reads the PR's head, checks, review decision, mergeability and threads together. In Review workers that are working or blocked cost no call. In Review workers sit idle and cost nothing between nudges, and they do not count against `max_in_progress`. Tree count per repo is capped by treehouse `max_trees`.
 
 ### Limitations & Future Work
 

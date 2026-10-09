@@ -24,6 +24,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/lock"
 	"github.com/kapetan-io/dispatch/internal/notify"
+	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/reconcile"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/worker"
@@ -43,6 +44,11 @@ type Options struct {
 	// Herdr and Treehouse are the commands to run. Default "herdr" and "treehouse".
 	Herdr     string
 	Treehouse string
+	// GH is the command that reads pull requests. Defaults to "gh".
+	GH string
+	// PRTimeout bounds each gh call, so a stalled network can't hold the tick
+	// lock. Defaults to 30 seconds.
+	PRTimeout time.Duration
 	// Osascript is the command that shows notifications. Defaults to "osascript".
 	Osascript string
 	// Launcher defaults to bin/dispatch-launch under the config's plugin_root.
@@ -113,6 +119,12 @@ func withDefaults(o Options) Options {
 	}
 	if o.Treehouse == "" {
 		o.Treehouse = "treehouse"
+	}
+	if o.GH == "" {
+		o.GH = "gh"
+	}
+	if o.PRTimeout == 0 {
+		o.PRTimeout = 30 * time.Second
 	}
 	if o.Osascript == "" {
 		o.Osascript = "osascript"
@@ -262,7 +274,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		workers[t.Identifier] = worker.Find(t.Identifier, trees, snap)
 	}
 	sum.tickets = len(tickets)
-	actions := reconcile.Plan(reconcile.Input{
+	input := reconcile.Input{
 		Tickets:        tickets,
 		Workers:        workers,
 		InProgress:     cfg.Linear.Statuses.InProgress,
@@ -275,7 +287,9 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		RepoLabelGroup: cfg.Linear.RepoLabelGroup,
 		Repos:          cfg.Repos,
 		UnreadRepos:    unread,
-	})
+	}
+	input.PRs = readPRs(ctx, opts, input)
+	actions := reconcile.Plan(input)
 
 	sum.actions = len(actions)
 	if dryRun {
@@ -302,7 +316,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		c[id] = e
 	}
 
-	settle(c, tickets, workers, cfg.Linear.Statuses)
+	settle(c, tickets, workers, input.PRs, cfg.Linear.Statuses)
 
 	alert := func(message string) error {
 		return notify.Send(ctx, opts.Osascript, "dispatch", message)
@@ -355,6 +369,9 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			e := c[a.Ticket.Identifier]
 			if !r.Failed() {
 				e.LaunchFailures = 0
+				if r.Status == launcher.StatusOK && a.Ticket.Status == cfg.Linear.Statuses.InReview {
+					e.Relaunches++
+				}
 				c[a.Ticket.Identifier] = e
 				// A full pool is a silent wait in Linear, so the window says who
 				// holds every tree.
@@ -393,12 +410,13 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 // A ticket back in In Progress stays resume-pending until a resume nudge
 // lands, so a worker that was blocked or working when the answer arrived still
 // gets the resume text once it goes idle.
-func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Worker, statuses config.Statuses) {
+func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Worker, prs map[string]pullrequest.PR, statuses config.Statuses) {
 	seen := map[string]bool{}
 	for _, t := range tickets {
 		e := c[t.Identifier]
 		if e.LastStatus != t.Status {
 			e.Nudges = 0
+			e.Relaunches = 0
 		}
 		if workers[t.Identifier].State == worker.Blocked {
 			e.BlockedTicks++
@@ -412,6 +430,16 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 		}
 		if t.Status != statuses.NeedsHuman {
 			e.NotifyPending = false
+		}
+		// A moved head means a push. An unread PR leaves the last head in place,
+		// so the push is still seen once the PR is read again.
+		if pr, ok := prs[t.Identifier]; ok {
+			e.Nudges = e.NudgesAt(t.Status, pr.Head)
+			e.Relaunches = e.RelaunchesAt(t.Status, pr.Head)
+			e.PRHead = pr.Head
+		} else if t.Status != statuses.InReview {
+			// The head means nothing outside In Review, and a stale one would hide a push later.
+			e.PRHead = ""
 		}
 		e.LastStatus = t.Status
 		c[t.Identifier] = e
@@ -432,6 +460,32 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 	}
 }
 
+// readPRs reads the open PR of each ticket for which in.ReadsPR is true. A PR
+// that can't be read is reported and left out, so it holds back only its own
+// ticket.
+func readPRs(ctx context.Context, opts Options, in reconcile.Input) map[string]pullrequest.PR {
+	prs := map[string]pullrequest.PR{}
+	for _, t := range in.Tickets {
+		if !in.ReadsPR(t) {
+			continue
+		}
+		repo, ok := t.LabelIn(in.RepoLabelGroup)
+		dir := in.Repos[repo]
+		if !ok || dir == "" {
+			continue
+		}
+		pr, found, err := pullrequest.Read(ctx, opts.GH, dir, t.Branch, opts.PRTimeout)
+		if err != nil {
+			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, err)
+			continue
+		}
+		if found {
+			prs[t.Identifier] = pr
+		}
+	}
+	return prs
+}
+
 // escalate moves a ticket to Needs Human with one comment saying why.
 func escalate(ctx context.Context, lin linear.Client, cfg config.Config, c cache.Cache, alert func(string) error, t linear.Ticket, reason string) error {
 	state, err := lin.StateID(ctx, t.Team, cfg.Linear.Statuses.NeedsHuman)
@@ -449,6 +503,7 @@ func escalate(ctx context.Context, lin linear.Client, cfg config.Config, c cache
 	e := c[t.Identifier]
 	e.LastStatus = cfg.Linear.Statuses.NeedsHuman
 	e.Nudges = 0
+	e.Relaunches = 0
 	e.NotifyPending = alert(reconcile.NeedsHumanText(t)) != nil
 	c[t.Identifier] = e
 	body := "The dispatcher moved this ticket to Needs Human because " + reason
