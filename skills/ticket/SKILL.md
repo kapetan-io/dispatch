@@ -29,9 +29,12 @@ Use these sections in this order.
 4. **Not decided here (ask, don't assume).** The product behavior, public contract, security default or ADR questions the worker must put to the user. Write "Nothing open" when there are none. Do not write down a guess as if it were settled.
 5. **Notes for the worker.** Anything that saves a worker time, such as an example ticket in the same format, a trap you hit, or a binary it must not touch.
 
+When the ticket's purpose is to create, change or evaluate a skill, this section must also carry two instructions, because workers left alone invent eval loops of 40 to 270 runs and never review the skill itself. First, before any eval run, a sub-agent loads `anthropic-skills:skill-creator` with the Skill tool, reads the changed skill and reviews it against that guidance, and the worker addresses the review before running anything. Second, the eval budget is 5 runs per case and at most 3 attempts. If the pass bar isn't met by then, the worker stops and posts a Needs Human comment with the results so far instead of trying again.
+
 ## Check before you save (managed repos)
 
 - Write each ticket you mention by its identifier (ENG-123) so Linear links it.
 - Count the title's characters. Over 50, shorten it.
 - Re-read the In plain English section as the user would. If it needs the code open to make sense, rewrite it.
+- On a ticket that creates, changes or evaluates a skill, confirm Notes for the worker carries the skill-creator review before any eval and the budget of 5 runs per case and 3 attempts.
 - Confirm the ticket has the team, the AI label, the repo label, the assignee and the paused status. A missing one means the dispatcher never sees it or sees it too soon. A `design` ticket is the exception, since it carries `design` in Backlog and no AI label on purpose.
