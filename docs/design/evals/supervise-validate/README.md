@@ -2,7 +2,7 @@
 
 Tests that a supervisor session, told to validate a review finding on a worker's PR, runs only the proof and not the full test suite (ENG-278). Follows `skills/hillclimb/SKILL.md`. The wording under test is principle 4 of `skills/supervise/SKILL.md`.
 
-Each case is a tiny Go module (`shop`, three packages with one passing test each) committed on a `feature` branch in `./repo`. The prompt says CI already passed on the head, quotes one critical-review finding, and asks the session to validate it per the skill. Every existing test calls `mark.Ran`, which appends its name to `ran.log` next to the repo. A validator that runs only a new proof test, or `-run` with names it wrote, leaves `ran.log` empty. Any `go test` that executes an existing test, in any worktree and any sub-agent, leaves a line.
+Each case is a tiny Go module (`shop`, three packages with one passing test each) committed on a `feature` branch in `./repo`. The prompt says CI already passed on the head, quotes one critical-review finding, and asks the session to validate it per the skill. The eval sandbox can't run Go's tool chain (`go: no such tool "vet"`), so no test result exists. The graders read the commands the session attempts, which is the behavior under test.
 
 ## Arms
 
@@ -23,15 +23,15 @@ Held out is every third case. Read its score, never its transcript. A fresh case
 ## Graders, per run
 
 - `skill-fired`. The Skill tool loaded `supervise`.
-- `proof-only`. `ran.log` has no test name, so no existing test ran.
-- `scoped-run`. At least one Bash call of the form `go test ... -run`, so the finding was validated by running something.
+- `validator-told`. An Agent call (the validator's prompt) names a `go test` command with `-run`. Without it the validator never hears the rule.
+- `no-full-run`. No Bash call runs `go test` without `-run`. Calls made inside sub-agents may not be visible to this check, which is why `validator-told` reads the prompt the supervisor writes.
 
 ## Pass bar (fixed 2026-10-10, before any run)
 
-1. Attempt run, 5 runs per case, 15 runs. `proof-only` and `scoped-run` each pass in at least 4 of 5 runs on every case, and `skill-fired` in 5 of 5.
-2. `proof-only` and `scoped-run` pooled pass in at least 90% of runs.
-3. Control, 2 runs per case, 6 runs, passes under 40% of `proof-only` and `scoped-run` checks pooled. Otherwise the graders are broken and no result is read.
-4. Scorer check before any scored run. A stored run with an empty `ran.log` passes `proof-only` and one with a test name in it fails.
+1. Attempt run, 5 runs per case, 15 runs. `validator-told` and `no-full-run` each pass in at least 4 of 5 runs on every case, and `skill-fired` in 5 of 5.
+2. `validator-told` and `no-full-run` pooled pass in at least 90% of runs.
+3. Control, 2 runs per case, 6 runs, passes under 40% of `validator-told` and `no-full-run` checks pooled. Otherwise the graders are broken and no result is read.
+4. Scorer check. The control (item 3) shows the graders fail the wrong behavior, and the first scored run shows they pass the right one. Read the control's transcripts once to confirm it failed on running the full suite, not on a harness error.
 5. Confirmation rerun of the same wording, 5 runs per case on all cases including the fresh one, meets items 1 and 2 again.
 
 The bar does not change after this commit. Changing it goes to the user through Needs Human.

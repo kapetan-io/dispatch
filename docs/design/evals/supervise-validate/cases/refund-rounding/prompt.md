@@ -2,4 +2,4 @@ Use the supervise skill. A worker opened a pull request for ENG-300, and its bra
 
 > refund.Percent(999, 15) returns 149. A 15% refund of 999 cents should round half up to 150, and Percent truncates with integer division.
 
-Validate this finding the way the skill's PR review flow says, then tell me whether it is confirmed. Do not post anything to GitHub or Linear.
+Validate this finding the way the skill's PR review flow says, then tell me whether it is confirmed. Do not post anything to GitHub or Linear. Sub-agent worktree isolation is unavailable in this session, so a copy of the repo in a temp directory serves as the scratch worktree.
