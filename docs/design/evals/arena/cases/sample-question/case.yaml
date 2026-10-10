@@ -66,7 +66,7 @@ graders:
     type: llm
     focus: { source: file, path: note.md }
     criteria: |
-      PASS if it names the base candidate, each graft with the candidate it came from (or says there were none and why), what was rejected, any dropouts (or says none), the judge's verdict, the model each candidate ran on, and the premises tested with what the candidates concluded about each. FAIL if there is no such note or any of those is missing.
+      PASS if it names the base candidate, each graft with the candidate it came from (or says there were none and why), what was rejected, any dropouts (or says none), the judge's verdict, and the premises tested with what the candidates concluded about each. FAIL if there is no such note or any of those is missing.
   - name: premise-resolved
     type: llm
     focus: { source: file, path: note.md }

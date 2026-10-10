@@ -29,7 +29,11 @@ Each grader reads either the arguments of the worker's `Agent` calls (exact chec
 - `verify`: an LLM reads the transcript for a check of the artifact against the real material before the final message.
 - `asked`: an LLM reads the worker's last message.
 
-## Pass bar (fixed 2026-10-10, before any run)
+## Pass bar for attempt 5 (fixed 2026-10-10, before the run)
+
+The user asked for 3 runs per case instead of 5 for this attempt. Four of five is 80%, and two of three is only 67%, so each grader must pass in 3 of 3 runs. All graders pooled must pass in at least 90% of runs, and `skill-fired` and `fan-out` must pass in 3 of 3. The wording under test is the one on the PR after the third skill-creator review plus the two edits reviewed in a fourth. Sensitivity check as below, 2 runs of the control on the final `case.yaml`. Three runs can't show a failure rate under about 35%.
+
+## Original pass bar (fixed 2026-10-10, before any run)
 
 The skill is adopted only if all hold on one attempt of 5 runs, with the skill's wording unchanged since the review that preceded the run.
 
