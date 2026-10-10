@@ -15,12 +15,12 @@ graders:
     type: llm
     focus: { source: file, path: commits.txt }
     criteria: |
-      commits.txt is the output of `git log --stat`: each commit with its subject and the files it changed. PASS if some commit after "Commit the commit-message suite" changes a .json file under a results/ directory (for example evals/commit-message/results/attempt-2.json). FAIL if no later commit adds a results/ JSON file.
+      commits.txt is the output of `git log --stat --patch`: each commit with its subject, the files it changed and the patch. The attempt 2 entry in the log.md patch names the result JSON it cites, and a relative `results/...` path means `evals/commit-message/results/...`. PASS if a commit after "Commit the commit-message suite" adds that exact JSON file. FAIL if no later commit adds it, or only a different results file is added.
   - name: same-commit
     type: llm
     focus: { source: file, path: commits.txt }
     criteria: |
-      PASS if one commit changes both evals/commit-message/log.md and a .json file under a results/ directory, so the log entry and the result it cites land together. FAIL if the log entry and the result file are only ever in different commits, or either is missing.
+      PASS if one commit after "Commit the commit-message suite" both adds the attempt 2 entry to evals/commit-message/log.md and adds the exact result JSON that entry names (a relative `results/...` path means `evals/commit-message/results/...`), so the entry and the file it cites land together. FAIL if they are only ever in different commits, the commit adds a different results file than the one cited, or either is missing.
   - name: cites-file
     type: llm
     focus: { source: file, path: evals/commit-message/log.md }

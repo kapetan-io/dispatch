@@ -30,7 +30,7 @@ Every grader reads a file the worker wrote, never what it says in chat.
 - fresh-suite: `bar`, `control`, `control-written`, `heldout`, `budget`, `one-change`.
 - already-passing: `stopped`, `told`, `unchanged`.
 - after-failed: `new-arm`, `no-leak`, `queued`, `bar-kept`.
-- results-committed: `result-committed`, `same-commit`, `cites-file`. The first two read `commits.txt`, which the prompt has the worker write with `git log --stat` at the end (a commit hook doesn't fire in the eval sandbox).
+- results-committed: `result-committed`, `same-commit`, `cites-file`. The first two read `commits.txt`, which the prompt has the worker write with `git log --stat --patch` at the end, so the graders can match the path the log cites against the files committed (a commit hook doesn't fire in the eval sandbox).
 
 Each LLM grader takes the judge's single verdict. No grader opens the arm file the worker names as its control, because the worker chooses the file name. `control-written` checks that the README names a path and a bar, so a worker that queues a control it never wrote is caught only if the README lacks them.
 

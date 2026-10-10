@@ -38,3 +38,9 @@ Neither change looked at a score, since nothing has run. The `control` grader re
 **Run 2, `results-committed` only, 5 runs, $1.20** (`results/skill-results-committed-run2.json`). `result-committed` 4/5, `same-commit` 4/5, `cites-file` 5/5, `skill-fired` 5/5. This meets the per-grader bar of 4 of 5 for the new case. Control rerun on the final case (`results/control-results-committed.json`) failed all three graders, 0/2.
 
 **Not met.** The full bar needs every grader at 4 of 5 on one attempt across all four cases, and run 1 shows `control`, `one-change`, `told`, `new-arm` and `stopped` below it. Those failures are in cases this ticket didn't touch, and the wording changes for ENG-279 don't reach them. They were not investigated here. Limits: tuned on the visible case only, no held-out case for `results-committed`, model claude-sonnet-5-5, judge claude-opus-5-5, 5 runs per case cannot show a failure rate under about 20%.
+
+## 2026-10-10, same-commit bound to the cited path (PR #40 review)
+
+Review finding: `commits.txt` held `git log --stat`, which lists changed paths but not the one the log entry cites, so a worker could commit `log.md` with an unrelated `results/` file and pass `same-commit`. True by construction, because the grader sees only that file. The prompt now writes `git log --stat --patch` and `result-committed` and `same-commit` match the exact path the attempt 2 entry names. Test-data change, so the control and the case were rerun.
+
+`results-committed`, 5 runs, $2.07 (`results/skill-results-committed-run3-patch.json`): `result-committed` 5/5, `same-commit` 5/5, `cites-file` 5/5, `skill-fired` 5/5. Control, 2 runs, $0.75 (`results/control-results-committed-patch.json`): 0/2 on all three graders. The other three cases were not rerun, and the full bar is still not met for the reasons above.
