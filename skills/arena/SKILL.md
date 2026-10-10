@@ -17,7 +17,8 @@ Open a todolist with one entry per phase before launching anything.
 4. Pick
 5. Graft
 6. Verify
-7. Ask the user
+7. Re-read the artifact
+8. Ask the user
 
 ## Phase A: Frame
 

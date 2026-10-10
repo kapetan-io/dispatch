@@ -29,6 +29,10 @@ Each grader reads either the arguments of the worker's `Agent` calls (exact chec
 - `verify`: an LLM reads the transcript for a check of the artifact against the real material before the final message.
 - `asked`: an LLM reads the worker's last message.
 
+## Pass bar for attempt 6 (fixed 2026-10-10, before the run)
+
+The same as for attempt 5 below: 3 runs, every grader 3 of 3, pooled at least 90%, `skill-fired` and `fan-out` 3 of 3, and the control rerun first. The user chose this attempt after attempt 5 failed `verify` 0 of 3. The wording under test adds "7. Re-read the artifact" to the todo list, before "8. Ask the user".
+
 ## Pass bar for attempt 5 (fixed 2026-10-10, before the run)
 
 The user asked for 3 runs per case instead of 5 for this attempt. Four of five is 80%, and two of three is only 67%, so each grader must pass in 3 of 3 runs. All graders pooled must pass in at least 90% of runs, and `skill-fired` and `fan-out` must pass in 3 of 3. The wording under test is the one on the PR after the third skill-creator review plus the two edits reviewed in a fourth. Sensitivity check as below, 2 runs of the control on the final `case.yaml`. Three runs can't show a failure rate under about 35%.
