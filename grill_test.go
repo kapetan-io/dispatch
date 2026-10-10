@@ -204,3 +204,17 @@ func TestTickDoesNotHoldAPromotionForADesignReviewTicket(t *testing.T) {
 
 	assert.Contains(t, out, "promote ENG-2: child of ENG-1\n")
 }
+
+func TestTickHoldsAPromotionForADesignParentInAnUnreadRepo(t *testing.T) {
+	h := newHarness(t)
+	h.config("max_in_progress = 1\n")
+	h.addRepo("tiger", filepath.Join(h.dir, "moved"))
+	h.tickets(parent("ENG-1", "In Progress"), withChildren(withLabel(ticket("ENG-3", "In Progress", "tiger"), "design")))
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+
+	out, _, err := h.runContext(t.Context(), "tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "wait ENG-2: 1 of 1 In Progress tickets already\n")
+	assert.Empty(t, h.linear.mutations())
+}
