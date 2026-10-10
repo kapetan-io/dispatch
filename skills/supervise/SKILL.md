@@ -32,10 +32,10 @@ You are working with the user on a session that steers work rather than doing it
 - Writing a test recipe into a ticket without checking it could work.
 - Name a worker's PR by its ticket, not its number: "the ENG-256 review", with the PR number in parentheses only if needed.
 - Creating or rewriting a ticket without loading `dispatch:ticket` first.
-- Posting review findings only in the review body. Post each as an inline comment on a line the PR changed, so the dispatcher sees an open thread and nudges an idle worker. A finding with no changed line to anchor to goes in the body, and you tell the worker with `dispatch tell`. A blocked worker gets neither, so answer its question in herdr first. An absent one is relaunched by the dispatcher, so tell it after the next tick.
+- Posting review findings only in the review body. Post each as an inline comment on a line the PR changed, so the dispatcher sees the open thread and nudges an idle worker once per new comment. A finding with no changed line to anchor to goes in the body, and you tell the worker with `dispatch tell`. A blocked worker gets neither, so answer its question in herdr first. An absent one is relaunched by the dispatcher, so tell it after the next tick.
 
 ## Driving dispatch
 
 - After a ticket moves, whether you or the user moved it, run `dispatch tick`.
-- After posting review findings on a worker's PR, run `dispatch tick` so the PR nudge reaches the worker now instead of at the next timer tick.
+- After posting review findings on a worker's PR, run `dispatch tick` so the nudge reaches the worker now instead of at the next timer tick.
 - To type into a worker by hand, run `dispatch tell <ticket> "<text>"`. It fails when the worker is blocked on a question or absent.

@@ -317,3 +317,229 @@ func TestTickRetriesAPRActivityNudgeHerdrRefused(t *testing.T) {
 	assert.Equal(t, "nudge ENG-1: new PR activity: a review by alice\n", out)
 	assert.Equal(t, []string{activityPrompt("a review by alice")}, h.prompts())
 }
+
+func TestTickNudgesOnceForEachNewCommentOnAnOpenReviewThread(t *testing.T) {
+	before := cleanPR("a1")
+	h := watched(t, before)
+	before.threads = []activity{{"", time2, "alice", "", ""}}
+	h.pr("ENG-1", before)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "nudge ENG-1: new PR activity: a review thread comment by alice\n", out)
+	assert.Equal(t, []string{activityPrompt("a review thread comment by alice")}, h.prompts())
+
+	// The thread stays open, and later ticks and a dry run stay quiet.
+	for _, args := range [][]string{{"tick"}, {"tick"}, {"tick", "--dry-run"}} {
+		out, err = h.run(args...)
+		require.NoError(t, err)
+		assert.Empty(t, out)
+	}
+	assert.Len(t, h.prompts(), 1)
+
+	// A reply on the same thread is a new comment.
+	before.threads = []activity{{"", time3, "bob", "", ""}}
+	h.pr("ENG-1", before)
+	out, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "nudge ENG-1: new PR activity: a review thread comment by bob\n", out)
+	assert.Len(t, h.prompts(), 2)
+}
+
+func TestTickDryRunNamesTheThreadNudgeUntilItIsSent(t *testing.T) {
+	before := cleanPR("a1")
+	h := watched(t, before)
+	before.threads = []activity{{"", time2, "alice", "", ""}}
+	h.pr("ENG-1", before)
+
+	for range 2 {
+		out, err := h.run("tick", "--dry-run")
+		require.NoError(t, err)
+		assert.Equal(t, "nudge ENG-1: new PR activity: a review thread comment by alice\n", out)
+	}
+	assert.Empty(t, h.prompts())
+}
+
+func TestTickIgnoresCommentsOnResolvedReviewThreads(t *testing.T) {
+	before := cleanPR("a1")
+	h := watched(t, before)
+	before.resolved = 1
+	h.pr("ENG-1", before)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, out)
+	assert.Empty(t, h.prompts())
+}
+
+func TestTickRelaunchesAGoneWorkerForANewReviewThreadComment(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "")
+	require.NoError(t, os.MkdirAll(h.state, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "cache.json"), []byte(`{"ENG-1":{"last_status":"In Review","pr_activity_seen":"`+time1+`"}}`), 0o600))
+	p := cleanPR("a1")
+	p.threads = []activity{{"", time2, "alice", "", ""}}
+	h.pr("ENG-1", p)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "launch ENG-1: new PR activity: a review thread comment by alice: ok\n", out)
+	assert.Len(t, h.launches(), 1)
+}
+
+func TestTickHoldsTheReadyNoticeWhileAThreadStaysOpenAfterItsNudge(t *testing.T) {
+	before := cleanPR("a1")
+	h := watched(t, before)
+	notified := len(h.notifications())
+	before.threads = []activity{{"", time2, "alice", "", ""}}
+	h.pr("ENG-1", before)
+	out, err := h.run("tick")
+	require.NoError(t, err)
+	assert.Equal(t, "nudge ENG-1: new PR activity: a review thread comment by alice\n", out)
+
+	for range 2 {
+		out, err = h.run("tick")
+		require.NoError(t, err)
+		assert.Empty(t, out)
+	}
+	assert.Len(t, h.notifications(), notified)
+
+	// The reviewer resolves the thread and the worker pushes, so the new head is ready.
+	before.threads = nil
+	before.resolved = 1
+	before.head = "a2"
+	h.pr("ENG-1", before)
+	out, err = h.run("tick")
+	require.NoError(t, err)
+	assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
+}
+
+func TestTickDoesNotAutoMergeWhileAThreadStaysOpenAfterItsNudge(t *testing.T) {
+	h := newHarness(t)
+	h.config(autoMergeConfig)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	p := approvedPR("a1")
+	p.threads = []activity{{"", time2, "alice", "", ""}}
+	h.pr("ENG-1", p)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+	assert.Equal(t, "nudge ENG-1: new PR activity: a review thread comment by alice\n", out)
+
+	for range 2 {
+		out, err = h.run("tick")
+		require.NoError(t, err)
+		assert.Empty(t, out)
+	}
+	assert.Empty(t, h.lines("merges.log"))
+
+	p.threads = nil
+	p.resolved = 1
+	h.pr("ENG-1", p)
+	out, err = h.run("tick")
+	require.NoError(t, err)
+	assert.Equal(t, "merge ENG-1: PR approved\n", out)
+}
+
+func TestTickNudgesAThreadCommentAfterAnotherPRProblemClears(t *testing.T) {
+	before := cleanPR("a1")
+	h := watched(t, before)
+	before.checks = "FAILURE"
+	before.threads = []activity{{"", time2, "alice", "", ""}}
+	h.pr("ENG-1", before)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+	assert.Equal(t, "nudge ENG-1: PR needs work: a failed check\n", out)
+
+	before.checks = "SUCCESS"
+	h.pr("ENG-1", before)
+	out, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "nudge ENG-1: new PR activity: a review thread comment by alice\n", out)
+	assert.Len(t, h.prompts(), 2)
+}
+
+func TestTickRelaunchesAGoneWorkerOnceForAThreadComment(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "")
+	require.NoError(t, os.MkdirAll(h.state, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "cache.json"), []byte(`{"ENG-1":{"last_status":"In Review","pr_activity_seen":"`+time1+`"}}`), 0o600))
+	p := cleanPR("a1")
+	p.threads = []activity{{"", time2, "alice", "", ""}}
+	h.pr("ENG-1", p)
+
+	for range 2 {
+		_, err := h.run("tick")
+		require.NoError(t, err)
+	}
+
+	assert.Len(t, h.launches(), 1)
+}
+
+func TestTickDoesNotRelaunchAGoneWorkerForAThreadCommentAlreadySeen(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "")
+	require.NoError(t, os.MkdirAll(h.state, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "cache.json"), []byte(`{"ENG-1":{"last_status":"In Review","pr_activity_seen":"`+time2+`"}}`), 0o600))
+	p := cleanPR("a1")
+	p.threads = []activity{{"", time2, "alice", "", ""}}
+	h.pr("ENG-1", p)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, h.launches())
+	assert.NotContains(t, out, "launch")
+}
+
+func TestTickDoesNotRelaunchAGoneWorkerForAPlainCommentWhileAThreadIsOpen(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "")
+	require.NoError(t, os.MkdirAll(h.state, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "cache.json"), []byte(`{"ENG-1":{"last_status":"In Review","pr_activity_seen":"`+time2+`"}}`), 0o600))
+	p := cleanPR("a1")
+	p.threads = []activity{{"", time1, "alice", "", ""}}
+	p.comments = []activity{{"", time3, "bob", "", ""}}
+	h.pr("ENG-1", p)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, out)
+	assert.Empty(t, h.launches())
+}
+
+func TestTickRecordsAThreadCommentWhenAProblemRelaunchesAGoneWorker(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "")
+	require.NoError(t, os.MkdirAll(h.state, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "cache.json"), []byte(`{"ENG-1":{"last_status":"In Review","pr_activity_seen":"`+time1+`"}}`), 0o600))
+	p := cleanPR("a1")
+	p.checks = "FAILURE"
+	p.threads = []activity{{"", time2, "alice", "", ""}}
+	h.pr("ENG-1", p)
+	out, err := h.run("tick")
+	require.NoError(t, err)
+	assert.Equal(t, "launch ENG-1: PR needs work: a failed check: ok\n", out)
+
+	// The failed check clears while the worker is still gone.
+	p.checks = "SUCCESS"
+	h.pr("ENG-1", p)
+	out, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, out)
+	assert.Len(t, h.launches(), 1)
+}

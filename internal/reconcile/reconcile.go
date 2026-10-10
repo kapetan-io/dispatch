@@ -121,14 +121,17 @@ type Action struct {
 	// PRURL the PR a Merge merges.
 	Head  string
 	PRURL string
-	// ActivityAt is the PR activity time an activity Nudge puts to the worker,
-	// which the executor records as seen.
+	// ActivityAt is the PR activity time an activity Nudge or a Launch puts to
+	// the worker, which the executor records as seen.
 	ActivityAt string
 	// AnsweredStop is the Stop-hook time a stall or resume Nudge answers.
 	AnsweredStop time.Time
 	// AfterNudge marks a Notify that only makes sense once the Nudge before it
 	// landed.
 	AfterNudge bool
+	// ThreadOnly marks a Launch made only for a new review thread comment, which
+	// does not count toward the relaunch limit.
+	ThreadOnly bool
 	// WorkspaceID and TreePath name what a Teardown, Keep or Stop acts on.
 	// WorkspaceID is empty when a Keep or Stop has no live worker to stop, so a
 	// workspace someone opened by hand is left open. A Teardown always closes
@@ -244,7 +247,9 @@ func Plan(in Input) []Action {
 		}
 		// A relaunched worker that never pushes would be relaunched every tick,
 		// so relaunches are counted against the same limit as PR nudges.
-		if relaunch {
+		// A relaunch for a thread comment is not counted: the worker answers a
+		// comment without pushing, so no push would ever reset the count.
+		if relaunch && pr.NeedsWork() {
 			if n := in.Cache[t.Identifier].RelaunchesAt(t.Status, pr.Head); n >= in.NudgeLimit {
 				actions = append(actions, Action{Kind: Escalate, Ticket: t, Reason: fmt.Sprintf("its worker was relaunched %d times for %s without pushing. Look at its herdr workspace.", n, pr.URL)})
 				continue
@@ -281,7 +286,16 @@ func Plan(in Input) []Action {
 		// In Review workers don't count against the cap, so a relaunch to
 		// handle a PR is never held back by it.
 		if relaunch {
-			launches = append(launches, Action{Kind: Launch, Ticket: t, RepoDir: dir, Reason: ReasonPR + ": " + pr.Problem()})
+			launch := Action{Kind: Launch, Ticket: t, RepoDir: dir, Reason: ReasonPR + ": " + pr.Problem()}
+			// The kickoff reads the whole PR, so a thread comment owed to the
+			// worker is handled once it is up, whatever else prompted the launch.
+			if in.threadOwed(t, pr) {
+				launch.ActivityAt = pr.ActivityAt
+			}
+			if !pr.NeedsWork() {
+				launch.Reason, launch.ThreadOnly = ReasonActivity+": "+pr.ActivitySummary, true
+			}
+			launches = append(launches, launch)
 			continue
 		}
 		if running >= in.MaxInProgress {
@@ -446,13 +460,22 @@ func (in Input) ReadsPR(t linear.Ticket) bool {
 }
 
 // prRelaunch returns the PR of an In Review ticket that has no worker and whose
-// PR needs work, which Plan relaunches a worker for.
+// PR needs work or has an open review thread with an unseen comment, which Plan
+// relaunches a worker for.
 func (in Input) prRelaunch(t linear.Ticket) (pullrequest.PR, bool) {
 	pr, ok := in.PRs[t.Identifier]
-	if !ok || !pr.NeedsWork() {
+	if !ok || !pr.NeedsWork() && !in.threadOwed(t, pr) {
 		return pullrequest.PR{}, false
 	}
 	return pr, in.Workers[t.Identifier].State == worker.None
+}
+
+// threadOwed reports whether an open review thread has a comment dispatch has
+// not yet put to the worker. A thread is not a PR problem, so without this a
+// PR whose worker is gone would never get one back to read it.
+func (in Input) threadOwed(t linear.Ticket, pr pullrequest.PR) bool {
+	seen := in.Cache[t.Identifier].ActivityBaseline(t.Status, in.InReview)
+	return seen != "" && pr.ThreadAt > seen
 }
 
 // inReviewIdle handles an idle worker on an In Review ticket. New PR activity

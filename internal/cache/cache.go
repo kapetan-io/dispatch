@@ -71,7 +71,7 @@ type Entry struct {
 	// never seen, so its first sighting records a time without nudging. It
 	// stays put while a nudge is owed or the worker can't take one yet.
 	CommentSeen string `json:"comment_seen,omitempty"`
-	// PRActivitySeen is the time of the newest PR review or comment already put
+	// PRActivitySeen is the time of the newest PR review, conversation comment or open review thread comment already put
 	// to the worker, or "0" for a ticket that entered In Review owing it all of
 	// the PR's activity. Empty means no baseline yet, and ActivityBaseline says
 	// what that means. It survives a trip out of In Review, so the worker is not

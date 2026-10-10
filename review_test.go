@@ -34,6 +34,8 @@ type prState struct {
 	approved []string
 	// fork marks a PR opened from a fork.
 	fork bool
+	// threads are the newest comments of unresolved review threads.
+	threads []activity
 	// reviews and comments are the PR's activity, oldest first.
 	reviews  []activity
 	comments []activity
@@ -69,12 +71,15 @@ func cleanPR(head string) prState {
 
 // pr makes the ticket's branch have an open PR in this state.
 func (h *harness) pr(ticket string, p prState) {
-	threads := []map[string]bool{}
+	threads := []map[string]any{}
 	for range p.unresolved {
-		threads = append(threads, map[string]bool{"isResolved": false})
+		threads = append(threads, map[string]any{"isResolved": false})
+	}
+	for _, a := range p.threads {
+		threads = append(threads, map[string]any{"isResolved": false, "comments": activityNodes([]activity{a})})
 	}
 	for range p.resolved {
-		threads = append(threads, map[string]bool{"isResolved": true})
+		threads = append(threads, map[string]any{"isResolved": true})
 	}
 	reviews := []map[string]any{}
 	for _, oid := range p.approved {
@@ -126,7 +131,6 @@ func TestTickNudgesAnIdleInReviewWorkerNamingTheProblem(t *testing.T) {
 		{name: "FailedCheck", pr: prState{head: "a1", checks: "FAILURE", decision: "APPROVED", mergeable: "MERGEABLE"}, problem: "a failed check"},
 		{name: "ErroredCheck", pr: prState{head: "a1", checks: "ERROR", mergeable: "MERGEABLE"}, problem: "a failed check"},
 		{name: "ChangesRequested", pr: prState{head: "a1", checks: "SUCCESS", decision: "CHANGES_REQUESTED", mergeable: "MERGEABLE"}, problem: "changes requested"},
-		{name: "UnresolvedThread", pr: prState{head: "a1", checks: "SUCCESS", mergeable: "MERGEABLE", unresolved: 1, resolved: 2}, problem: "an unresolved review thread"},
 		{name: "MergeConflict", pr: prState{head: "a1", checks: "SUCCESS", mergeable: "CONFLICTING"}, problem: "a merge conflict"},
 		{name: "TwoProblems", pr: prState{head: "a1", checks: "FAILURE", mergeable: "CONFLICTING"}, problem: "a failed check and a merge conflict"},
 		{name: "ThreeProblems", pr: prState{head: "a1", checks: "FAILURE", decision: "CHANGES_REQUESTED", mergeable: "CONFLICTING"}, problem: "a failed check, changes requested and a merge conflict"},
