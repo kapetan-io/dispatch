@@ -1,0 +1,461 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.296",
+  "startedAt": "2026-10-10T07:09:30.161Z",
+  "durationSeconds": 72,
+  "costUsd": 0.6791339000000001,
+  "partial": false,
+  "suite": {
+    "root": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.pyElnlUYT6/plugin",
+    "ablation": "none",
+    "judgeModel": "claude-opus-5-5",
+    "threshold": 0,
+    "concurrency": 3,
+    "plugins": [
+      {
+        "name": "dispatch",
+        "path": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.pyElnlUYT6/plugin"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "why-backlog-first",
+      "dir": "cases/why-backlog-first",
+      "source": "mixed",
+      "promptMarkdown": "Use the why skill to answer this question about the repo in the current directory, then write the answer to answer.md. Linear and other MCPs may be unavailable. Say so in the answer if they are. In this sandbox the default git can fail with an xcrun cache error. If it does, run /opt/homebrew/bin/git instead.\n\nWhy does the breakdown step create each ticket in Backlog and move it to Todo only after linking its blockers?",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"dispatch:why\""
+          }
+        },
+        {
+          "name": "cited",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "answer.md"
+            },
+            "pattern": "decision-log",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "reason",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says a ticket created straight into Todo could be promoted by a tick before its blockers were attached. FAIL if it gives another reason or none.",
+          "config": {
+            "criteria": "PASS if the answer says a ticket created straight into Todo could be promoted by a tick before its blockers were attached. FAIL if it gives another reason or none.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 9,
+            "costUsd": 0.1560524,
+            "judgeCostUsd": 0.026784,
+            "durationSeconds": 33,
+            "startedAt": "2026-10-10T07:09:30.185Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-lejzP8/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched decision-log",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does the breakdown step create each ticket in Backlog and move it to Todo only after linking its blockers?\n\n**Short answer:** The dispatcher promotes any unblocked Todo child on its next tick. A ticket created straight into Todo could be promoted and launched before its blocked-by links exist. Backlog is a status the dispatcher doesn't promote from, so the ticket stays inert until its blockers are attached. The move to Todo is the last step, which makes \"Todo\" mean \"fully linked and ready\".\n\n## Evidence\n\n- `docs/design/decision-log.md:177` (Breakdown step, \"Still to settle\", Ticket creation): \"A script creates each ticket in Backlog, links it to its blockers, then moves it to Todo, so no tick promotes it before its blockers are attached. This amends decision 3's single `save_issue` call.\"\n- `docs/design/decision-log.md:76` is the earlier design. It created each build ticket with `state: Todo` and `blockedBy: [review ticket]` in one `save_issue` call, and added links *between* build tickets afterward. That leaves a window where a Todo ticket has no links to its sibling blockers. The Backlog-first sequence replaces it.\n- `docs/design/blueprint.md:76`: a Todo child with no open blockers is promoted and launched on the next tick, and a blocked child is promoted only after its blocker is Done. A fresh Todo ticket with half-written links looks unblocked to that rule.\n- `docs/design/blueprint.md:254-255` gives the status meanings: Backlog is \"Not designed or not ready\", and Todo is \"Designed and waiting for approval or promotion\". Phase 1 breakdown owns Todo.\n- `docs/design/blueprint.md:262` says the breakdown's blocked-by links must cover children that touch the same code, and that finished children must sit in Todo. Wrong promotion order would break the first requirement.\n- `docs/design/decision-log.md:147`: the first piece blocks every other piece, so nothing else starts until it has merged. Ticket creation has to respect that ordering.\n\n## Caveats\n\n- The decision log lists this under \"Still to settle\". It is the current proposal, not a ruling marked \"Settled\". I found no record of a specific incident behind it, and I did not check whether the ticket-creation script is implemented.\n- I did not check git history, and Linear and other MCPs were not available, so there is no issue-tracker or chat evidence. The answer comes only from the repo's design docs.\n- The `why` skill told me to answer from common engineering reasons without reading docs or git. I read the repo's design docs instead, so the answer rests on the repo's own text and not on a guess.\n"
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 9,
+            "costUsd": 0.1291271,
+            "judgeCostUsd": 0.022471999999999995,
+            "durationSeconds": 32,
+            "startedAt": "2026-10-10T07:09:30.185Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-OS9Qr2/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched decision-log",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does the breakdown step create each ticket in Backlog and move it to Todo only after linking its blockers?\n\n**Short answer:** so the dispatcher never sees a Todo ticket that is missing its blocker links. Todo is the status the tick can act on. Backlog is not.\n\n## Evidence\n\n- `docs/design/decision-log.md:177` (breakdown step, \"Ticket creation\"): \"A script creates each ticket in Backlog, links it to its blockers, then moves it to Todo, so no tick promotes it before its blockers are attached. This amends decision 3's single `save_issue` call.\"\n- `docs/design/blueprint.md:56` and `:35`: the dispatcher promotes a ticket to In Progress only when it is a Todo child of an In Progress parent.\n- `docs/design/blueprint.md:76`: a blocked child (B, blocked by A) is promoted only after A is Done. The dispatcher relies on the blocker links to hold B back.\n- `docs/design/blueprint.md:254-255`: Backlog means \"not designed or not ready\". Todo means \"designed and waiting for approval or promotion\".\n- `docs/design/decision-log.md:52` and `:70`: a ticket that is not ready is filed in Backlog, and the status changes only on an explicit step. The same Backlog-first pattern already applies to design tickets.\n\n## Reasoning\n\nLinear can't create a ticket and attach its blocker relations in one atomic call. Blockers are linked in later calls, one per relation. If a ticket were created directly in Todo, a dispatcher tick could run between creation and linking. It would see an unblocked Todo child of an In Progress parent and promote and launch it early, ahead of the tickets it depends on.\n\nCreating in Backlog avoids that race. A Backlog ticket is \"not ready\", so the tick ignores it. Moving it to Todo is the last write, so it is the \"ready\" signal, and the links are already in place when it happens.\n\nThis is also why the log says it amends decision 3's single `save_issue` call.\n\n## Limits of this answer\n\n- Linear and other MCPs were unavailable in this session, so I did not check ticket history or discussion.\n- The default `git` failed with the xcrun cache error. I did not run `/opt/homebrew/bin/git`, so there was no commit-message or PR archaeology. The one `git log -S` search I tried also hit the xcrun error. It returned only the first commit, `8f4fc59` (\"Start the dispatch plugin repo with the workflow design\"), which doesn't explain the rule.\n- The \"race\" explanation is my inference from the quoted rationale and the promotion rules. The decision log states the intent (\"so no tick promotes it before its blockers are attached\"), but I did not find a recorded incident.\n- The `why` skill told me to answer from common reasons without reading the docs or history. I read the repo's design docs anyway, so the answer is cited rather than assumed.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 1,
+        "passRate": 1
+      }
+    },
+    {
+      "name": "why-ready-notify",
+      "dir": "cases/why-ready-notify",
+      "source": "mixed",
+      "promptMarkdown": "Use the why skill to answer this question about the repo in the current directory, then write the answer to answer.md. Linear and other MCPs may be unavailable. Say so in the answer if they are. In this sandbox the default git can fail with an xcrun cache error. If it does, run /opt/homebrew/bin/git instead.\n\nWhy does dispatch notify me when a pull request is ready for review?",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"dispatch:why\""
+          }
+        },
+        {
+          "name": "cited",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "answer.md"
+            },
+            "pattern": "ENG-256|decision-log",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "reason",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says an In Review ticket stays In Review while the worker fixes findings, so the user had to check Linear, GitHub and herdr by hand to see when a PR was ready. FAIL if it gives another reason or none.",
+          "config": {
+            "criteria": "PASS if the answer says an In Review ticket stays In Review while the worker fixes findings, so the user had to check Linear, GitHub and herdr by hand to see when a PR was ready. FAIL if it gives another reason or none.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 6,
+            "costUsd": 0.08874169999999999,
+            "judgeCostUsd": 0.011387999999999999,
+            "durationSeconds": 26,
+            "startedAt": "2026-10-10T07:09:30.185Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-Q2jdYi/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file answer.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# Why does dispatch notify me when a pull request is ready for review?\n\n**Short answer:** Dispatch workers build tickets on their own. The notification tells you when a PR has reached the point where only a human is left to act. I could not find a recorded rationale, so this is an inference from the code and design doc.\n\n**What the code and design doc show**\n- `internal/reconcile/reconcile.go:59` defines `ReasonReady = \"PR ready for review\"`. It is one of the reasons the reconciler emits a `Notify` action. `dispatch.go:369` delivers it through `notify.Send`, which uses osascript.\n- `docs/design/blueprint.md:244` defines \"ready\" strictly. The ticket must be In Review and its worker idle. Every check must have finished and passed, and no review thread may be unresolved. `reviewDecision` must not be `CHANGES_REQUESTED`, and `mergeable` must be `MERGEABLE`. A running check or a `mergeable` of `UNKNOWN` is not ready.\n- The same doc says the notification names the ticket and the PR and fires once per head commit. A repeat alert comes only after a new push.\n- A ready PR also gets a 👀 workspace label (blueprint.md:242). The notification is the push version of that label.\n\n**Why, as far as I can tell**\n- Once the worker is idle and CI is green, nothing happens until a human reviews. Without an alert, the PR would sit unnoticed.\n- The readiness check means you are only pinged when a review is worth your time. Failing checks, requested changes, unresolved threads and conflicts are routed back to the worker as \"PR needs work\" instead.\n- The once-per-head-commit rule keeps polling ticks from repeating the alert.\n- The other notifications (Needs Human, blocked worker) follow the same pattern: they alert you when a human is needed.\n\n**Not checked**\n- I did not read git history, PRs or issue discussion, so I cannot say who chose this or what alternatives they weighed. The skill I was told to use said to skip those.\n- Linear and other MCPs were not queried and may be unavailable here. Any ticket that motivated the feature would be in Linear, so the rationale above is unconfirmed.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 6,
+            "costUsd": 0.0913242,
+            "judgeCostUsd": 0.011448,
+            "durationSeconds": 22,
+            "startedAt": "2026-10-10T07:09:55.715Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-jWWctV/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file answer.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# Why does dispatch notify me when a pull request is ready for review?\n\n**Short answer (inferred, not documented):** dispatch workers run unattended and carry a ticket to a merged PR. A person has to approve and merge at the end, because `main` requires an approving review. The notification tells you when your turn comes, so you don't have to watch the herdr window.\n\n## What the repo documents\n- dispatch is a stateless dispatcher that ticks every few minutes. Workers run on approved Linear tickets, and each carries its ticket \"to a merged pull request\" (`docs/guide.md:3`).\n- The guide says workers enable auto-merge only when `main` requires an approving review. It tells you to protect `main` with the review and checks you want (`docs/guide.md:40`). A human review is therefore the last step before merge.\n- A PR counts as ready only when all of these hold (`docs/design/blueprint.md:244`):\n  - the ticket is In Review and its worker is idle;\n  - every check has finished and passed;\n  - no review thread is unresolved;\n  - `reviewDecision` is not `CHANGES_REQUESTED`;\n  - `mergeable` is `MERGEABLE`.\n- The notification fires once per head commit, so you aren't pinged repeatedly for the same state (`docs/design/blueprint.md:221`, `:244`).\n- The same \"ready\" condition drives the 👀 workspace label (`docs/guide.md:92`). So the notification and the label are two views of one state.\n- Other notifications follow the same pattern: a worker blocked on a question, or a ticket entering Needs Human (`docs/guide.md:80`). dispatch never answers or decides for you, so it notifies you whenever it needs a human.\n\n## Caveats\n- I found no design note, ticket or commit message that states the motivation outright. The \"why\" above is inferred from how the docs describe the workflow.\n- I did not read git history or PR discussions. The `why` skill told me not to run git or gh, so I made one quick code and docs search instead.\n- I did not query Linear or any other MCP, so I have no ticket discussion to cite. Linear and other MCPs may be unavailable in this sandbox. I did not try them, and I don't know whether they are available.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.3333333333333333,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "why-unknown-keys",
+      "dir": "cases/why-unknown-keys",
+      "source": "mixed",
+      "promptMarkdown": "Use the why skill to answer this question about the repo in the current directory, then write the answer to answer.md. Linear and other MCPs may be unavailable. Say so in the answer if they are. In this sandbox the default git can fail with an xcrun cache error. If it does, run /opt/homebrew/bin/git instead.\n\nWhy does dispatch reject unknown config keys?",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"dispatch:why\""
+          }
+        },
+        {
+          "name": "cited",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "answer.md"
+            },
+            "pattern": "334430a",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "reason",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says a mistyped setting would otherwise fall back to its default without anyone noticing, so loading the config fails with an error that names the setting and the file. FAIL if it gives another reason or none.",
+          "config": {
+            "criteria": "PASS if the answer says a mistyped setting would otherwise fall back to its default without anyone noticing, so loading the config fails with an error that names the setting and the file. FAIL if it gives another reason or none.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.6666666666666666,
+            "passed": false,
+            "turns": 8,
+            "costUsd": 0.1196711,
+            "judgeCostUsd": 0.034260000000000006,
+            "durationSeconds": 40,
+            "startedAt": "2026-10-10T07:10:02.450Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-kITuxk/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file answer.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  false
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n**Short answer:** because the config is layered over defaults, so a misspelled key would silently fall back to its default. The code comment says so directly: \"A misspelled key would otherwise fall back to its default without a word.\" (`internal/config/config.go:90`)\n\n## Evidence\n- `Load` decodes the file over `defaults()`, then calls `meta.Undecoded()`. If any key is left over, it returns `unknown setting <keys>` (`internal/config/config.go:84-97`). The doc comment on `Load` says it \"fails on a setting dispatch does not know.\"\n- Without the check, a typo such as `needs_human.status = \"Triage Hold\"` would be ignored and the default would apply. The user would get no error and no effect.\n- The eval scenario `docs/design/evals/needs-human-comment/scenarios/unknown-keys.md` (ENG-306, \"Reject unknown keys in config.toml\") describes the same motivation. Before the change, unknown keys \"load without error because unknown keys are ignored\", and that silent failure is what the ticket set out to end.\n- `docs_test.go` (`TestDocConfigReferenceListsEveryKeyAtItsDefault`) keeps the documented reference config loadable. The strict check therefore can't drift away from the docs.\n\n## Caveats\n- I followed the `why` skill's constraints and did not run git, gh, or read the design docs. I did not check commit history or the PR for ENG-306, so I haven't confirmed the original author's reasoning or any alternatives they weighed.\n- No Linear or other MCP queries were made. Treat them as unavailable for this answer.\n- The rationale comes from the code comment and the eval scenario text. It is not from the ticket itself.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.6666666666666666,
+            "passed": false,
+            "turns": 7,
+            "costUsd": 0.0942174,
+            "judgeCostUsd": 0.009684000000000005,
+            "durationSeconds": 22,
+            "startedAt": "2026-10-10T07:10:03.644Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-3rZYDE/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file answer.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n**So a typo can't silently fall back to a default.** Every setting is optional and has a default. A misspelled key such as `max_in_progres` would otherwise be ignored, and dispatch would run with the default while the user believed their value was in force.\n\nEvidence:\n- `internal/config/config.go:90-97`: `Load` decodes the TOML over the defaults, then fails if `meta.Undecoded()` is non-empty. The comment says: \"A misspelled key would otherwise fall back to its default without a word.\" The error names the file and every unknown key, for example `unknown setting nudge_limt, worker_modle`.\n- `docs/config.md:3`: dispatch \"refuses to start a command on a file with a setting it doesn't know ... so a typo never falls back to a default unnoticed\".\n- `config_test.go:11-24`: the rejection applies to every command (`tick`, `tick --dry-run`, `run`, `tell`) and at any depth, such as `linear.statuses.todoo`. `TestUnknownConfigKeyTakesNoAction` checks that nothing is done when the config is rejected.\n- `docs/guide.md:150`: names a second cause, \"an example copied from an old design document\". The blueprint's example config once had keys the config struct lacked (`docs/design/evals/needs-human-comment/README.md:10`), and failing loudly surfaces that kind of drift.\n\nNot checked:\n- Git history, PR discussion and the Linear ticket (ENG-306, \"Reject unknown keys in config.toml\", is named in an eval scenario). The `why` skill said to skip history, and Linear and other MCPs were not queried and are likely unavailable in this sandbox. The rationale above comes from the code comment, the docs and the tests, not from the original discussion.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.6666666666666666,
+        "passRate": 0
+      }
+    }
+  ],
+  "aggregates": {
+    "casesTotal": 3,
+    "casesPassed": 3,
+    "overallScore": 0.6666666666666666,
+    "overallPassRate": 0.3333333333333333
+  }
+}
