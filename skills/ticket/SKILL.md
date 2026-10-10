@@ -36,5 +36,5 @@ When the ticket's purpose is to create, change or evaluate a skill, this section
 - Write each ticket you mention by its identifier (ENG-123) so Linear links it.
 - Count the title's characters. Over 50, shorten it.
 - Re-read the In plain English section as the user would. If it needs the code open to make sense, rewrite it.
-- On a ticket that creates, changes or evaluates a skill, confirm Notes for the worker carries the skill-creator review before any eval and the budget of 5 runs per case and 3 attempts.
+- On a ticket that creates, changes or evaluates a skill, confirm Notes for the worker carries both instructions. The skill-creator review comes before any eval and the worker addresses it before running anything. The budget is 5 runs per case and at most 3 attempts, after which the worker stops and posts a Needs Human comment with the results so far.
 - Confirm the ticket has the team, the AI label, the repo label, the assignee and the paused status. A missing one means the dispatcher never sees it or sees it too soon. A `design` ticket is the exception, since it carries `design` in Backlog and no AI label on purpose.
