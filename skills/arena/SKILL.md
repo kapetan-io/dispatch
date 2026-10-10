@@ -1,58 +1,76 @@
 ---
 name: arena
-description: Run several independent attempts at the same question, have a judge score them against a rubric, pick the strongest and fold in the best parts of the others. Use whenever the user or a ticket says "arena this", "throw it in the arena" or "run the arena", or asks for a few independent takes, a bake-off, best of three, or several agents to try the same thing and compare. Also use when a decision is hard to undo or one attempt would lock in its shape, such as a design sketch, a contested technical choice or a wording with no obvious best form. Skip it for reversible or obvious choices.
+description: "Spawn N parallel candidates at the same task, pick a base, graft the strongest parts of the losers into it. Use for /arena, 'arena this', 'throw it in the arena', or when one attempt at a non-trivial artifact would lock in the wrong shape."
 ---
 
 # Arena
 
-Fan out independent attempts at one question, read them all, pick a base and graft the best of the rest into it. One agent's first answer sets the shape, and the arena finds out whether the shape holds when others start from scratch.
+Fan out N parallel attempts at the same task. Read every candidate end to end. Pick the strongest as the base. Graft the best ideas from the others into it. Verify the synthesized result.
 
-Open a todo list with one entry per phase before launching anything: frame, fan out, cross-judge, pick, graft, verify. Add an entry for a re-run if one is triggered.
+## Start
 
-## 1. Frame
+Open a todolist with one entry per phase before launching anything.
 
-Every candidate gets the same prompt, so the prompt is the contract.
+1. Frame
+2. Fan out
+3. Cross-judge
+4. Pick
+5. Graft
+6. Verify
 
-1. **Artifact.** State what each candidate produces, such as a design sketch, a recommendation or a rewrite.
-2. **Premises.** List what the question assumes: existing mechanisms, timers, polling, config keys, workarounds. For each, ask whether a signal now available (an event, a hook, a callback) makes it unnecessary. Answer from the grounding material. If you can't tell, treat the premise as inherited. A premise that is a true constraint (a public contract, a decided item) stays in the prompt as a constraint. A premise that is only inherited from how things work today stays out of the prompt as a requirement, so candidates meet it as something to question.
-3. **Rubric.** Write 3-6 gradeable criteria for this question before any candidate starts, including one for whether the candidate questioned a premise and justified its answer. Put extensibility in the rubric if it matters. Candidates never see the rubric. It is for the picker and the judge.
-4. **Candidate prompt.** Include the task, where to read the grounding material, the candidate's own output path, and a request for the artifact plus a short rationale naming the alternatives it rejected. Tell each candidate to:
-   - name at least one premise of the question, and
-   - answer "if we built this from scratch with every signal now available, would this mechanism exist?" before answering the question as asked. If the answer is no, say so first.
-5. **Runners.** Three candidates by default, one each on the Agent tool's `model` values `opus`, `fable` and `sonnet`. Use more when the question has several design directions, and the same model repeatedly when the work is generation-bound and not judgment-sensitive. The judge is a new `opus` Agent call. Avoid `haiku` for judging, because it mis-attributes quoted lines.
-6. **Isolation.** Each candidate writes only to its own path, `<scratchpad>/arena-<slug>/candidate-<n>/`, or a worktree (Agent `isolation: "worktree"`) when the artifact is code. Candidates never read or write each other's paths or edit the repo. A candidate that needs Linear loads the Linear tools with ToolSearch and only reads.
+## Phase A: Frame
 
-## 2. Fan out
+The N candidates will receive the same prompt, so the prompt is the contract.
 
-Launch every candidate as its own Agent call in one message. They run in the background and you are notified as each finishes. Read no output until all have finished.
+1. State the artifact each candidate is producing.
+2. Derive the rubric. State what success looks like for *this* task, then turn it into 3-6 concrete gradeable criteria. The rubric is the picker's tool in Phase D. Candidates only see the task.
+3. List the premises the question assumes (existing mechanisms, timers, config keys). For each, ask whether a signal now available (an event, hook or callback) makes it unnecessary. A premise that is a true constraint stays in the candidate prompt as a constraint. A premise that is not a true constraint stays out of the candidate prompt as a requirement.
+4. Write the candidate prompt to tell each candidate to name at least one premise of the question and answer "if we built this from scratch with every signal now available, would this mechanism exist?" before answering the question as asked. If the answer is no, the candidate says so first.
+5. Pick the runners. Default to three candidates, one each on the Agent tool's `model` values `opus`, `fable` and `sonnet`. Spawn more when the arena covers multiple design directions. Same model N times when the work is generation-bound rather than judgment-sensitive.
+6. Assign output paths. Each candidate writes to its own location (a git worktree where possible, otherwise `<scratchpad>/arena-<slug>/candidate-<n>/`). Separate before serializing shared state: when concurrent actors might share mutable state, first ask whether they need the same mutable object. If not, eliminate the sharing by giving each actor its own owned file, key, branch, or state directory, and merge only at the read/reporting boundary.
 
-A candidate that errors out gets one retry. A candidate that returns off-task output or ignores its output path is a Frame problem. Go on with the rest and record the dropout. Two such dropouts mean the prompt was unclear, so fix it and run again.
+## Phase B: Fan out
 
-## 3. Cross-judge
+Spawn all N subagents in one message (they run in the background), each with the task, the path to the shared grounding, its own output path, and instructions to produce both the artifact and a short rationale.
 
-Start the judge only after every candidate has finished. Use a new Agent call, not a fork, with `subagent_type: "Plan"` (it has no Edit or Write) and `model: "opus"`. Give it the rubric, the premise list and the candidates by path label with no model names. It scores each criterion with a line of reason, quotes the text each score rests on, and returns its recommended base as its final message. It runs while you do Phase 4.
+Each rationale names the alternatives the candidate considered and what it rejected.
 
-## 4. Pick
+A candidate that needs Linear must load the Linear tools with ToolSearch and only read.
 
-First check the shape.
+If a candidate fails to produce output, proceed with N-1 and note the dropout in the synthesis record.
 
-- **Convergence.** Candidates that reach the same shape confirm it only if at least one candidate tested a premise, meaning it named the premise and concluded, with a reason, that it should stay or go. If none did, the agreement may come from a shared assumption. If the premise was in the prompt as a constraint, drop it. If it was left out and every candidate still adopted it, state it in the prompt as a question. Then run again, once. If it still fails, report that to the user.
-- **Divergence.** If candidates answer different questions, or no criterion separates them and the base is contested, Frame was under-specified. Reframe and run again instead of averaging.
+## Phase C: Cross-judge
 
-Then read every candidate end to end and write your scores against the rubric, criterion by criterion and never on overall feel, before opening the judge's. Agreement confirms the pick. Disagreement means one of you is biased or the rubric is ambiguous, so read both rationales and check each quoted line against its source before deciding. When two candidates tie, take the smaller.
+After all Phase B candidates complete, spawn one readonly judge subagent (`subagent_type: "Plan"`) on a fresh `opus` session, not a fork. It sees the rubric, the premises and the candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with the candidates themselves. Don't spawn the judge while candidates are still writing.
 
-## 5. Graft
+## Phase D: Pick a base
 
-Walk each losing candidate again for the one or two ideas worth porting. Fold each in by hand and re-derive it for the base, so the result holds together under one mental model. Do not paste.
+Read every candidate end to end before picking.
 
-Record what was grafted and from whom, and what was rejected and why.
+Score each candidate against the rubric criterion by criterion, not on holistic feel. Compare against the cross-judge. Agreement on the base confirms the pick. Disagreement means one of you is biased or the rubric was ambiguous. Read both rationales before deciding.
 
-## 6. Verify
+Pick the base on which candidate a future maintainer can extend most easily without breaking invariants. Prefer the cleaner boundary or smaller API when two feel tied, per the Laziness Protocol: aim for the most result with the least code and complexity, and make the smallest change that solves the problem.
 
-Check the synthesized artifact the way you would check any other output. For code, run or test it. For a design or wording, check each factual claim against the grounding material and each rubric criterion against the final text. If that turns up something the arena missed, either Frame was wrong (reframe and run again) or a candidate caught it and you missed the graft (go back to Graft).
+Record the pick and the reason in a short synthesis note alongside the base artifact, including the cross-judge's verdict.
 
-## Output
+## Phase E: Graft
 
-One artifact and a short synthesis note beside it, both in `<scratchpad>/arena-<slug>/` unless the caller names a path. The note names the base and why it won (with the judge's verdict), each graft and its source, each rejection, any dropouts, the models each candidate ran on, and the premises tested and what each candidate concluded.
+Walk each losing candidate once more and identify what is worth porting into the base. The signal is usually one or two things per candidate, not most of it.
 
-Last, show the user the result and ask before anything is filed, merged or changed. When a grill or review calls the arena, hand the result back to it. That caller decides what changes.
+Fold each graft in by hand, by redesigning from first principles: ask "if we were writing this from scratch with this graft, what would we build?" and propagate the change through every reference. Don't paste mechanically. The result has to remain coherent under one mental model.
+
+Record what was grafted, from which candidate, and what was rejected and why.
+
+When N candidates converge on the same shape, that is a strong agreement signal. Note the convergence in the record. Convergence confirms the shape only if at least one candidate tested a premise. Otherwise re-run with the untested premise removed from the prompt. No graft is needed when the shape is confirmed. When N candidates wildly diverge, Phase A was under-specified. Reframe and re-run rather than averaging the divergence.
+
+## Phase F: Verify
+
+The synthesized artifact has to hold up under the same scrutiny as any other output, by checking the real thing directly. Do not infer from proxies, self-reports, or "it compiles." When verification fails, suspect the observation method before suspecting the system.
+
+If verification surfaces a problem the arena did not catch, either Phase A was wrong (re-frame and re-run) or one candidate caught it and you missed the graft (go back to Phase E). Don't paper over.
+
+## Outputs
+
+One synthesized artifact. One short synthesis note alongside, naming the base, the grafts (with source candidate), the rejections, the dropouts if any, the premises tested, and the verification result.
+
+The last step is to show the user the result and ask before anything is filed or changed. Do not file, edit or merge anything until the user answers.
