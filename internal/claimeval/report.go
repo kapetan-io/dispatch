@@ -275,7 +275,10 @@ var (
 	scriptWrite = regexp.MustCompile(`open\(\s*['"]([^'"]+)['"]\s*,\s*['"][wa]|Path\(\s*['"]([^'"]+)['"]\s*\)\.write`)
 	// open(p, 'w') where p is a name. Only quoted literals assigned to the name
 	// are seen, so a path built at runtime is missed.
-	varWrite = regexp.MustCompile(`open\(\s*([A-Za-z_]\w*)\s*,\s*['"][wa]`)
+	varWrite      = regexp.MustCompile(`open\(\s*([A-Za-z_]\w*)\s*,\s*['"][wa]`)
+	scriptComment = regexp.MustCompile(`(?m)(?:^|\s)#.*$`)
+	// The -c or -lc option that hands a shell its program as the next argument.
+	shellProgram = regexp.MustCompile(`\s-[a-zA-Z]*c$`)
 	// A quoted string, with no handling of escaped quotes.
 	quoted = regexp.MustCompile(`'[^']*'|"[^"]*"`)
 )
@@ -323,7 +326,7 @@ func isSourcePath(p string) bool {
 // self.name = 'x' is not an assignment to name.
 func assignedPath(before, name string) string {
 	assign := regexp.MustCompile(`(?m)(?:^|[^.\w])` + regexp.QuoteMeta(name) + `\s*=\s*(?:['"]([^'"]+)['"]\s*(?:[;#]|$)|[^=\s])`)
-	all := assign.FindAllStringSubmatch(before, -1)
+	all := assign.FindAllStringSubmatch(scriptComment.ReplaceAllString(before, ""), -1)
 	if len(all) == 0 {
 		return ""
 	}
@@ -344,7 +347,7 @@ func unquotePrograms(command string) string {
 		switch {
 		case strings.HasSuffix(prefix, ">"):
 			b.WriteString(command[loc[0]:loc[1]])
-		case strings.HasSuffix(prefix, " -c"):
+		case shellProgram.MatchString(prefix):
 			b.WriteString(command[loc[0] : loc[0]+1])
 			b.WriteString(unquotePrograms(command[loc[0]+1 : loc[1]-1]))
 			b.WriteString(command[loc[1]-1 : loc[1]])

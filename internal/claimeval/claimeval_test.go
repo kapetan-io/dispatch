@@ -393,6 +393,8 @@ func TestReportSeparatesScriptEditsFromScriptReads(t *testing.T) {
 		{"awk comparison inside shell program", "sh -c \"awk 'NR>5' bin/tool\"", false},
 		{"quoted tmp redirect target", "cat > \"/tmp/x\" <<'E'\nx\nE", false},
 		{"quoted test redirect target", "cat > 'a_test.go' <<'E'\nx\nE", false},
+		{"commented-out reassignment", "python3 - <<'E'\np='bin/tool'\n# p='/tmp/x'\nopen(p,'w').write('a')\nE", true},
+		{"login shell program redirect", "bash -lc 'echo x > bin/tool'", true},
 		{"quoted redirect target", "cat > \"bin/tool\" <<'E'\nx\nE", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
