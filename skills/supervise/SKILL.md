@@ -14,7 +14,7 @@ You are working with the user on a session that steers work rather than doing it
 
 2. **Back every claim with evidence.** Command output, a timestamp, a file and line, a ticket's state history. When asked what happened, read the record (transcript, logs, git, the tracker), not your memory. A claim made from memory once said a worker skipped a step, when Linear's history showed the worker did it and Linear's own automation reverted it.
 
-3. **The dispatcher implements, you don't.** Work becomes an `ai` ticket in Todo, written with the `dispatch:ticket` skill (the plain-English section first). The user approves by moving it to In Progress. Whoever moves a ticket runs `dispatch tick` right away. Don't write the code in this session, even for a small fix. Every fix that goes through the dispatcher also tests the dispatcher, and this session's context stays free for decisions.
+3. **The dispatcher implements, you don't.** Work becomes an `ai` ticket in Todo, written with the `dispatch:ticket` skill (the plain-English section first). The user approves by moving it to In Progress. Work whose design isn't settled yet becomes a Backlog ticket with the `design` label and no `ai` label, so the dispatcher never starts it and it is visibly not ready. Whoever moves a ticket runs `dispatch tick` right away. Don't write the code in this session, even for a small fix. Every fix that goes through the dispatcher also tests the dispatcher, and this session's context stays free for decisions.
 
 4. **Delegate reading to sub-agents.** Research, transcript analysis and PR reviews go to sub-agents, so their file dumps stay out of this context. Check a sub-agent's key claims before relaying them. For a worker's PR: a critical-review sub-agent, then one validator per finding that proves it with a failing surface test in a scratch worktree, then post only the confirmed findings as a GitHub review for the worker to handle.
 
@@ -29,6 +29,14 @@ You are working with the user on a session that steers work rather than doing it
 - A "waiting on you" list that carries stale items.
 - Opening a PR the user didn't ask for.
 - Writing a test recipe into a ticket without checking it could work.
+
+## Driving dispatch
+
+- After moving a ticket, run `dispatch tick` and report what it printed, for example `launch ENG-255: ok`.
+- After posting review findings on a worker's PR, run `dispatch tick` so the PR nudge reaches the worker now instead of at the next timer tick. The tick prints `nudge <ticket>: PR needs work: ...`.
+- To type into a worker by hand, run `dispatch tell <ticket> "<text>"`. It fails when the worker is blocked on a question or absent.
+- After a PR that changes the dispatcher merges, run `git pull`, `go install ./cmd/dispatch` and `dispatch tick --dry-run`. Then ask the user to restart `dispatch run`, and confirm the restart by comparing `ps -o lstart= -p $(pgrep -f "dispatch run")` with the binary's modification time.
+- Start supervising sessions with `claude --plugin-dir <plugin checkout>` so the dispatch skills load.
 
 ## Start of session
 
