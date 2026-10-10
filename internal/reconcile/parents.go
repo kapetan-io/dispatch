@@ -9,8 +9,8 @@ import (
 )
 
 // Parents returns the tickets whose children Plan acts on: In Progress parents
-// that are known not to be design tickets, whose close rule waits for the
-// grill and review skills. The tick reads the children of these only.
+// that are known not to be design tickets, since the grill and the review own
+// the children and close of those. The tick reads the children of these only.
 func (in Input) Parents() []linear.Ticket {
 	var parents []linear.Ticket
 	for _, t := range in.Tickets {
@@ -100,16 +100,23 @@ func (in Input) startable(c linear.Ticket) bool {
 }
 
 // activeCount is the In Progress tickets that hold or will take a worker slot.
-// A parent never has a worker, and a design ticket with no live worker takes
-// no slot because the dispatcher skips it. A ticket in an unread repo counts,
-// since it may have a worker nobody could see.
+// A ticket the dispatcher launches counts before it has a worker, and a ticket
+// in an unread repo counts since it may have a worker nobody could see. A
+// parent takes no slot, except a design parent whose grill is alive or may be,
+// which holds its tree.
 func (in Input) activeCount() int {
 	n := 0
 	for _, t := range in.Tickets {
-		if t.Status != in.InProgress || t.HasChildren {
+		if t.Status != in.InProgress {
 			continue
 		}
-		if in.Workers[t.Identifier].State != worker.None || in.unread(t) || in.notDesign(t) {
+		live := in.Workers[t.Identifier].State != worker.None
+		switch {
+		case t.HasChildren:
+			if live || (t.HasLabel("design") && in.unread(t)) {
+				n++
+			}
+		case live || in.unread(t) || (!t.LabelsTruncated && !t.HasLabel("design-review")):
 			n++
 		}
 	}

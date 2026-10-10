@@ -43,10 +43,15 @@ func (r Result) Failed() bool {
 	return !r.Succeeded() && r.Status != StatusPoolExhausted
 }
 
-// Launch runs `<bin> <ticket> <branch> --model <model> --no-focus` from repoDir.
-// It drives an external launcher program in place of Run.
-func Launch(ctx context.Context, bin, repoDir, ticket, branch, model string) Result {
-	cmd := exec.CommandContext(ctx, bin, ticket, branch, "--model", model, "--no-focus")
+// Launch runs `<bin> <ticket> <branch> --model <model> [--kickoff <kickoff>]
+// --no-focus` from repoDir. It drives an external launcher program in place of
+// Run.
+func Launch(ctx context.Context, bin, repoDir, ticket, branch, model, kickoff string) Result {
+	args := []string{ticket, branch, "--model", model}
+	if kickoff != "" {
+		args = append(args, "--kickoff", kickoff)
+	}
+	cmd := exec.CommandContext(ctx, bin, append(args, "--no-focus")...)
 	cmd.Dir = repoDir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

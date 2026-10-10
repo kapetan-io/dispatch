@@ -439,13 +439,17 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 		}
 	}
 	nudgeFailed := map[string]bool{}
-	launch := func(repoDir, ticket, branch string) launcher.Result {
+	launch := func(a reconcile.Action) launcher.Result {
+		model, kickoff := cfg.WorkerModel, ""
+		if a.Design {
+			model, kickoff = cfg.GrillModel, "/dispatch:grill "+a.Ticket.Identifier
+		}
 		if opts.Launcher != "" {
-			return launcher.Launch(ctx, opts.Launcher, repoDir, ticket, branch, cfg.WorkerModel)
+			return launcher.Launch(ctx, opts.Launcher, a.RepoDir, a.Ticket.Identifier, a.Ticket.Branch, model, kickoff)
 		}
 		lo := launcherOptions(opts, cfg.PluginRoot)
-		lo.RepoDir = repoDir
-		return launcher.Run(ctx, launcher.Request{Ticket: ticket, Branch: branch, Model: cfg.WorkerModel}, lo)
+		lo.RepoDir = a.RepoDir
+		return launcher.Run(ctx, launcher.Request{Ticket: a.Ticket.Identifier, Branch: a.Ticket.Branch, Model: model, Kickoff: kickoff}, lo)
 	}
 	for _, a := range actions {
 		switch a.Kind {
@@ -590,7 +594,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 			c[a.Ticket.Identifier] = e
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Launch:
-			r := launch(a.RepoDir, a.Ticket.Identifier, a.Ticket.Branch)
+			r := launch(a)
 			e := c[a.Ticket.Identifier]
 			if !r.Failed() {
 				e.LaunchFailures = 0
