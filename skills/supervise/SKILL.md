@@ -28,7 +28,7 @@ You are working with the user on a session that steers work rather than doing it
 - A "waiting on you" list that carries stale items.
 - Opening a PR the user didn't ask for.
 - Writing a test recipe into a ticket without checking it could work.
-- Calling a worker's PR, review or branch "PR #22". The user tracks work by ticket, so write "the ENG-256 review" and add the PR number in parentheses only where a command or link needs it.
+- Naming a worker's PR, review or branch by PR number alone ("PR #22"). The user tracks work by ticket, and a bare number makes them look up which ticket it belongs to. Write "the ENG-256 review" and put the PR number in parentheses, or in a command or link, when it helps.
 
 ## Driving dispatch
 
