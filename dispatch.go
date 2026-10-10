@@ -368,6 +368,16 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 	alert := func(message string) error {
 		return notify.Send(ctx, opts.Osascript, "dispatch", message)
 	}
+	current := map[string]string{}
+	for _, ws := range snap.Workspaces {
+		current[ws.ID] = ws.Label
+	}
+	// A failed rename is retried next tick, because the label still differs.
+	for _, r := range input.Renames(current) {
+		if err := herdr.RenameWorkspace(ctx, opts.Herdr, r.WorkspaceID, r.Label); err != nil {
+			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: %v\n", err)
+		}
+	}
 	launch := opts.Launcher
 	if launch == "" {
 		launch = filepath.Join(cfg.PluginRoot, "bin", "dispatch-launch")
@@ -426,6 +436,18 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			}
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Notify:
+			if a.Reason == reconcile.ReasonReady {
+				// A failed alert leaves the head unrecorded, so the next tick sends it again.
+				if err := alert(a.Text); err != nil {
+					_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
+					continue
+				}
+				e := c[a.Ticket.Identifier]
+				e.ReadyHead = a.Head
+				c[a.Ticket.Identifier] = e
+				_, _ = fmt.Fprintln(opts.Stdout, a)
+				continue
+			}
 			if err := alert(a.Text); err != nil {
 				// Settle already advanced the counters, so reset them to make Plan
 				// find this notification due again.
@@ -522,6 +544,9 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 		}
 		if t.Status != statuses.NeedsHuman {
 			e.NotifyPending = false
+		}
+		if t.Status != statuses.InReview {
+			e.ReadyHead = ""
 		}
 		// A moved head means a push. An unread PR leaves the last head in place,
 		// so the push is still seen once the PR is read again.

@@ -79,6 +79,22 @@ Any In Progress or In Review ticket whose worker is working or idle gets the com
 
 A worker blocked on a question (AskUserQuestion), on an In Progress or In Review ticket, fires a macOS notification (through `osascript`) on its first blocked tick and again every `blocked_renotify_ticks` ticks (default 3) while it stays blocked. The dispatcher never answers the question and never sets Needs Human for it. A ticket entering Needs Human fires one notification, a parent included.
 
+A PR is ready for review when its ticket is In Review, its worker is idle, every check has finished and passed (a PR with no checks counts as passed), no review thread is unresolved, `reviewDecision` is not `CHANGES_REQUESTED`, and GitHub reports the PR as mergeable. A check still running, such as CodeRabbit's while its review is in progress, or a merge state GitHub has not computed yet, keeps the PR from being ready. The dispatcher fires one notification naming the ticket and its PR, once per PR head commit. A push that leaves the PR ready again notifies again, and no tick in between repeats it.
+
+## Workspace labels
+
+After every tick, each worker's herdr workspace is labeled `<emoji> <ticket> <title>`, cut to 40 characters.
+
+| Emoji | Meaning |
+|---|---|
+| 🟢 | In Progress |
+| 🟡 | In Review, PR not ready |
+| 👀 | In Review, ready for review (the same condition as the notification) |
+| 🔴 | Needs Human |
+| ⏸️ | Paused (Backlog or Todo) with the tree kept and a workspace still open |
+
+A workspace is renamed only when its label differs from the one its ticket's status calls for. The dispatcher finds a worker by its tree path, so a renamed workspace is still found.
+
 ## Parent tickets
 
 Move a parent ticket to In Progress and the dispatcher starts its children for you. Each tick it reads every child of an In Progress parent and acts in this order.

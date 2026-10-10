@@ -134,6 +134,10 @@ The dispatcher launched a build worker for its own piece 2 (ENG-228), which buil
 - **Pilot fixes go through the dispatcher once piece 3 merges.** Until then, a fix found in a pilot got its own ticket without the `ai` label and was made in the session that found it, because no running dispatcher could follow its PR. After piece 3 (ENG-232) merges, a fix is an `ai` ticket in Todo. You approve it by moving it to In Progress, a worker builds it, and the dispatcher follows its PR to merge. (Settled 2026-10-08.)
 - **An agent that moves a ticket must run a tick.** Decision 10 says so, but no skill an agent loaded carried it, so ENG-232 waited on the timer until you asked. One `dispatch tick` launched it in seconds. `dispatch:ticket` (ENG-239) now carries the rule for any ticket an agent moves, and the shared skill for advancing a phase (decision 10) will carry it for phases once the grill and review need it.
 
+## Ready-for-review notification and 👀 label (ENG-256, 2026-10-09)
+
+You asked for a notification when a PR is ready for review and a 👀 workspace label for the same state, because an In Review ticket stays In Review while the worker fixes findings and you had to check Linear, GitHub and herdr by hand. Ready means In Review, worker idle, every check finished and passed, no unresolved thread, no changes requested, no merge conflict. The notification fires once per PR head commit. The build worker settled three details. `mergeable` must read `MERGEABLE`, so `UNKNOWN` waits a tick. A PR with no checks counts as passed. Labels are cut to 40 characters.
+
 ## Breakdown step (in progress)
 
 The breakdown runs inside the review worker, after the review rounds and before your approval (decisions 2 and 3). It turns the reviewed blueprint into build tickets.
@@ -251,5 +255,5 @@ The dispatcher blueprint plus extra blueprint constructs were saved to a documen
 - **Agent review of the ticket set.** Moot while one design makes one build ticket (breakdown step, settled 1). Unproven. Research it or run an experiment before adopting it. The experiment reruns the breakdown on past features where the split is known, such as the tiger set the reset canceled, once with a set review and once without, and counts real problems against noise. Scripted set checks are separate and stay.
 - **Sharing the explainer.** Artifacts start private. Decide how the link gets shared before a PR reviewer other than you needs it.
 - **Byte-exact round-trip test.** Once the dispatcher's Linear API key exists, rerun the test as a script that saves a real blueprint and spec, re-saves the read-back text in full, and byte-diffs every step.
-- **Dispatcher blueprint TODOs.** Confirm herdr's workspace list shows emoji labels. The managed-ticket scope TODO is settled by the AI label.
+- **Dispatcher blueprint TODOs.** The managed-ticket scope TODO is settled by the AI label. herdr's workspace list stores emoji labels (ENG-256). How the herdr UI draws them is unchecked.
 - **Setup, not yet authorized.** treehouse v3.1.2 is already installed at `~/go/bin/treehouse`. Still to do: `treehouse.toml` in mono-repo, tiger and gubernator. Auto-merge and branch protection on personal repos. A Needs Human status in personal Linear. A Linear API key for the dispatcher.

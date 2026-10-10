@@ -112,7 +112,6 @@ func TestTickLeavesAnInReviewTicketAloneWhenThePRNeedsNothing(t *testing.T) {
 		name  string
 		setup func(h *harness)
 	}{
-		{name: "CleanPRIdleWorker", setup: func(h *harness) { h.worker("ENG-1", "idle"); h.pr("ENG-1", cleanPR("a1")) }},
 		{name: "CleanPRNoWorker", setup: func(h *harness) { h.worker("ENG-1", ""); h.pr("ENG-1", cleanPR("a1")) }},
 		{name: "PendingChecksResolvedThreads", setup: func(h *harness) {
 			h.worker("ENG-1", "idle")

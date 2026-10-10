@@ -20,6 +20,12 @@ type PR struct {
 	Head string
 	// Problems are the reasons the PR needs work, phrased to follow "has".
 	Problems []string
+	// Ready means nothing is left for the worker or for GitHub to finish. Every
+	// check has finished and passed (a PR with no checks counts as passed), no
+	// review thread is open, changes are not requested, and GitHub says the PR
+	// merges cleanly. A check still running, as CodeRabbit's does until its
+	// review lands, or a merge state GitHub has not computed yet, is not ready.
+	Ready bool
 }
 
 // NeedsWork reports whether the PR has a failed check, changes requested, an
@@ -121,11 +127,15 @@ func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duratio
 	if n.ReviewThreads.PageInfo.HasNextPage {
 		return PR{}, false, fmt.Errorf("PR %s has more than %d review threads; dispatch reads one page and would miss unresolved ones", n.URL, maxThreads)
 	}
+	checksPassed := true
 	pr := PR{Number: n.Number, URL: n.URL, Head: n.HeadRefOid}
 	// PENDING and EXPECTED are not failures, because the worker has nothing to fix yet.
 	for _, c := range n.Commits.Nodes {
 		if r := c.Commit.StatusCheckRollup; r != nil && (r.State == "FAILURE" || r.State == "ERROR") {
 			pr.Problems = append(pr.Problems, "a failed check")
+		}
+		if r := c.Commit.StatusCheckRollup; r != nil && r.State != "SUCCESS" {
+			checksPassed = false
 		}
 	}
 	if n.ReviewDecision == "CHANGES_REQUESTED" {
@@ -140,5 +150,6 @@ func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duratio
 	if n.Mergeable == "CONFLICTING" {
 		pr.Problems = append(pr.Problems, "a merge conflict")
 	}
+	pr.Ready = !pr.NeedsWork() && checksPassed && n.Mergeable == "MERGEABLE"
 	return pr, true, nil
 }

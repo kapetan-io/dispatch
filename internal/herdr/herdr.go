@@ -84,6 +84,15 @@ func Prompt(ctx context.Context, bin, pane, text string) error {
 	return nil
 }
 
+// RenameWorkspace sets a workspace's label.
+func RenameWorkspace(ctx context.Context, bin, workspace, label string) error {
+	out, err := exec.CommandContext(ctx, bin, "workspace", "rename", workspace, label).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("while renaming herdr workspace %s: %w: %s", workspace, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // CloseWorkspace closes a workspace and the panes in it, which ends any worker
 // running there.
 func CloseWorkspace(ctx context.Context, bin, workspace string) error {

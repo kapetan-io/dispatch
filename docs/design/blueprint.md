@@ -217,7 +217,7 @@ Cheap actions run before launches, because one launch can take over 5 minutes.
 7. Promote Todo children of In Progress parents whose blockers are all Done, while the In Progress count, parents excluded, stays under the cap. A child that still holds a lease is never promoted, so a child you just paused stays paused.
 8. Apply the reconcile table to every In Progress and In Review ticket, except launches. Send the comment nudge to a working or idle worker whose ticket has a comment newer than the cache's `comment_seen`.
 9. Rename each worker's workspace with its status emoji.
-10. Fire a macOS notification for each ticket that entered Needs Human since the cache's last-seen status.
+10. Fire a macOS notification for each ticket that entered Needs Human since the cache's last-seen status, and one for each In Review ticket whose PR became ready for review at a head commit the cache has not notified about.
 11. Run the launches the table asked for, one at a time, while under the cap.
 12. Write the cache and release the lock.
 
@@ -238,9 +238,11 @@ A PR needs work when any check has failed, `reviewDecision` is `CHANGES_REQUESTE
 
 #### Workspace labels
 
-The label format is `<emoji> <ticket> <title>`, truncated to fit. 🟢 means In Progress, 🟡 In Review, 🔴 Needs Human, ⏸️ paused (Backlog or Todo with a kept tree).
+The label format is `<emoji> <ticket> <title>`, cut to 40 characters with an ellipsis. 🟢 means In Progress, 🟡 In Review with the PR not ready, 👀 In Review with the PR ready for review, 🔴 Needs Human, ⏸️ paused (Backlog or Todo with a kept tree and a workspace still open). A workspace is renamed only when its current label differs from the wanted one.
 
-TODO: Confirm that herdr's workspace list shows the label with the emoji. Test with `herdr workspace rename` on one workspace before building on it.
+A PR is ready for review when the ticket is In Review, its worker is idle, every check has finished and passed, no review thread is unresolved, `reviewDecision` is not `CHANGES_REQUESTED`, and `mergeable` is `MERGEABLE`. A running check or a `mergeable` of `UNKNOWN` is not ready. The notification names the ticket and the PR and fires once per head commit.
+
+`herdr workspace rename` stores the emoji label and `workspace list` returns it unchanged (checked on 2026-10-09 with ENG-256). How the herdr UI draws 👀 and ⏸️ was not checked from the command line.
 
 ### Data Design
 

@@ -33,6 +33,9 @@ type Entry struct {
 	// NotifyPending marks a Needs Human notification that failed to show and
 	// is retried each tick until it does.
 	NotifyPending bool `json:"notify_pending,omitempty"`
+	// ReadyHead is the PR head the user was last told was ready for review. A
+	// push moves the head, so a PR that is ready again notifies again.
+	ReadyHead string `json:"ready_head,omitempty"`
 	// BlockedTicks counts consecutive ticks the ticket's worker sat blocked.
 	BlockedTicks int `json:"blocked_ticks"`
 	// PendingComment is an escalation comment Linear has not accepted yet.
