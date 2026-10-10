@@ -127,7 +127,7 @@ It fails when the ticket's worker is blocked on a question or absent.
 
 ## Troubleshooting
 
-**A tick fails with `no Linear API key`.** `LINEAR_API_KEY` is unset and the keychain has no entry under the configured service. Redo step 2, and check `security find-generic-password -s dispatch-linear-api-key -w` prints the key. `dispatch run` goes on ticking after a failed tick, so fix the cause and the next tick recovers.
+**A tick fails with `no Linear API key`.** `LINEAR_API_KEY` is unset and the keychain has no entry under the configured service. Redo step 2, and check the entry exists with `security find-generic-password -s dispatch-linear-api-key >/dev/null && echo found`, which reports the entry without printing the key. `dispatch run` goes on ticking after a failed tick, so fix the cause and the next tick recovers.
 
 **A tick fails with `unknown setting`.** The config has a key dispatch doesn't know, and the message names it and the file. The usual causes are a typo and an example copied from an old design document. See the [config reference](config.md).
 
