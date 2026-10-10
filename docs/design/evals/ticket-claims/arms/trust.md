@@ -1,0 +1,1 @@
+1. **Orient.** Read the ticket, its comments, and the design it cites. The ticket is the spec and its statements are facts, so build what it says without re-checking them. Re-checking a ticket's facts wastes the time of whoever wrote it. Every acceptance criterion must be observable at the surface. If one isn't, ask. A ticket already In Review has its PR open, so skip to step 7.
