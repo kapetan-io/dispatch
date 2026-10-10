@@ -13,7 +13,7 @@ The ticket you were started on is the feature ticket. The session that created i
 
 ## Start
 
-Load `dispatch:converse` with the Skill tool, then open a todolist with one entry per step.
+Load `dispatch:converse` with the Skill tool. Open a todolist with one entry per step before starting.
 
 1. Orient
 2. Discuss the product half and get the Objective approved
@@ -35,6 +35,8 @@ Load `dispatch:converse` with the Skill tool, then open a todolist with one entr
 ## The discussion
 
 Ask in plain chat, one question at a time, not through AskUserQuestion. The user steps away during a long design and wants each question to carry its own context and a recommendation, which a multiple-choice picker squeezes out. A build worker uses AskUserQuestion so the dispatcher can see it is blocked, but the dispatcher never nudges a design session, so that signal has no use here.
+
+In each question, say what is being decided and why you need it, then give your recommendation.
 
 Work the product half first, then the technical half, because the technical design exists to satisfy the product intent. When an answer in one half settles a question in the other, record it and move on.
 
