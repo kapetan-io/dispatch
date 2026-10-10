@@ -3,6 +3,8 @@ package dispatch_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -762,7 +764,41 @@ func (h *harness) launches() []string {
 }
 
 func (h *harness) script(name, body string) {
-	require.NoError(h.t, os.WriteFile(filepath.Join(h.dir, name), []byte("#!/usr/bin/env bash\n"+body+"\n"), 0o755))
+	writeFake(h.t, filepath.Join(h.dir, name), h.dir, body)
+}
+
+// fakeDirEnv names the variable that tells a shared fake which test's files to use.
+const fakeDirEnv = "DISPATCH_TEST_DIR"
+
+// sharedFakes holds one copy of each distinct fake script for the whole run.
+var sharedFakes string
+
+func TestMain(m *testing.M) {
+	var err error
+	if sharedFakes, err = os.MkdirTemp("", "dispatch-fakes"); err != nil {
+		panic(err)
+	}
+	code := m.Run()
+	_ = os.RemoveAll(sharedFakes)
+	os.Exit(code)
+}
+
+// writeFake installs a fake command at dest. macOS pays about a second for the
+// first run of every new executable file, so identical scripts are shared across
+// tests and find the test's own files through fakeDirEnv instead of a baked-in path.
+func writeFake(t *testing.T, dest, dir, body string) {
+	t.Helper()
+	body = "#!/usr/bin/env bash\n" + strings.ReplaceAll(body, dir, "$"+fakeDirEnv) + "\n"
+	sum := sha256.Sum256([]byte(body))
+	shared := filepath.Join(sharedFakes, hex.EncodeToString(sum[:8]))
+	if _, err := os.Stat(shared); err != nil {
+		tmp := shared + ".tmp"
+		require.NoError(t, os.WriteFile(tmp, []byte(body), 0o755))
+		require.NoError(t, os.Rename(tmp, shared))
+	}
+	_ = os.Remove(dest)
+	require.NoError(t, os.Symlink(shared, dest))
+	t.Setenv(fakeDirEnv, dir)
 }
 
 func (h *harness) removeFile(name string) {
