@@ -12,7 +12,7 @@ You need a Mac with these on your PATH. dispatch shells out to all of them.
 | `treehouse` v3.1.2 or later (`go install github.com/kunchenguid/treehouse/v3@latest`) | Leases a pooled git worktree to each worker. |
 | `gh`, signed in with `gh auth login` | The dispatcher reads PR checks, reviews and conflicts. Workers open and merge PRs with it. |
 | `claude` | The worker itself. |
-| `git`, `jq` | Used by `bin/dispatch-launch`. |
+| `git` | Used by `dispatch launch` to create the ticket's branch in its tree. |
 | `go` | Builds the `dispatch` CLI. |
 
 **1. Install the CLI** from your checkout of this repo, which is also the plugin workers load:
@@ -20,6 +20,8 @@ You need a Mac with these on your PATH. dispatch shells out to all of them.
 ```sh
 cd ~/Development/dispatch && go install ./cmd/dispatch
 ```
+
+Put `$GOBIN` (default `~/go/bin`) on your PATH. `bin/dispatch-launch` runs `dispatch launch`, so it needs the binary there.
 
 **2. Put your Linear API key in the keychain.** Create a personal API key in Linear under Settings, then Security & access. Store it under the service name `dispatch-linear-api-key`:
 
@@ -60,7 +62,7 @@ It ticks now and every `interval_minutes` after, until you press Ctrl-C. It does
 
 1. **Todo.** You or the `dispatch:ticket` skill write the ticket with the `ai` label, a repo label, and yourself as assignee. It waits in Todo. dispatch ignores it.
 2. **Approval.** You move it to In Progress. This is the only approval step. Nothing but you, or the promotion of a child below, moves a ticket there.
-3. **Launch.** On the next tick, `dispatch-launch` leases a treehouse tree held by the ticket id, creates the ticket's branch in it, opens a herdr workspace, and starts Claude with `/dispatch:build <ticket>`.
+3. **Launch.** On the next tick, `dispatch launch` leases a treehouse tree held by the ticket id, creates the ticket's branch in it, opens a herdr workspace, and starts Claude with `/dispatch:build <ticket>`.
 4. **Build.** The worker follows the `dispatch:build` skill. It reads the ticket and its comments, implements with surface tests, has fresh sub-agents review the tests and the code, rebases onto `main`, runs the tests and the app, and opens a PR that ends with `Fixes <ticket>`. It reports only through the ticket's status and comments.
 5. **In Review.** The worker moves the ticket to In Review once the PR is linked. It then waits. Each tick, the dispatcher checks an In Review ticket with an idle worker, and nudges it when the PR has a failed check, requested changes, an unresolved thread or a conflict.
 6. **Needs Human.** A worker that needs a decision outside its terminal moves the ticket to Needs Human with a comment saying what it needs. dispatch fires a macOS notification. Answer on the ticket and move it back to In Progress, and the worker gets the resume nudge. The dispatcher also sets Needs Human itself, with one comment, after `nudge_limit` fruitless nudges, `nudge_limit` relaunches of an In Review worker that never pushed, or `launch_failure_limit` failed launches. It does the same at once for a ticket with no repo label, a repo label missing from `[repos]`, or more labels than it reads.
@@ -157,4 +159,4 @@ It fails when the ticket's worker is blocked on a question or absent.
 
 **A tree is kept after the ticket finished.** The ticket got a comment saying what the tree holds, either modified or staged tracked files or commits no remote has. Untracked scratch files never keep a tree, since the tick deletes them. Push or discard the work and the next tick returns the tree. A branch that was squash-merged and then deleted from the remote counts as unpushed, so discard it yourself.
 
-**A change to dispatch doesn't take effect after merging.** `dispatch run` is the binary you installed, not your checkout. Run `go install ./cmd/dispatch` in the checkout, then stop `dispatch run` with Ctrl-C and start it again. Workers pick up skill and launcher changes from `plugin_root` without a reinstall.
+**A change to dispatch doesn't take effect after merging.** `dispatch run` is the binary you installed, not your checkout. Run `go install ./cmd/dispatch` in the checkout, then stop `dispatch run` with Ctrl-C and start it again. Workers pick up skill changes from `plugin_root` without a reinstall. The launcher is part of the binary, so a launcher change needs the reinstall too.

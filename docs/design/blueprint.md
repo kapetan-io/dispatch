@@ -169,7 +169,7 @@ The build-worker skill (`skills/build/SKILL.md`, invoked as `/dispatch:build <ti
 
 #### Launcher
 
-`bin/dispatch-launch`, rewritten from `captain-launch`, is the worker launcher. It runs from the repo's local clone, and its inputs are the ticket id and Linear's branch name. It prints one JSON object whose statuses are `ok`, `already_running`, `pool_exhausted`, `pool_error`, `herdr_unavailable`, `checkout_failed`, `not_pooled` and the failures it kept from `captain-launch`. Changes from `captain-launch`:
+`dispatch launch <ticket> <branch> [--base REF] [--model NAME] [--kickoff TEXT]` is the worker launcher, descended from `captain-launch`. `bin/dispatch-launch` is a one-line wrapper that execs it. `--kickoff` defaults to `/dispatch:build <ticket>`. It runs from the repo's local clone, and its inputs are the ticket id and Linear's branch name. It prints one JSON object whose statuses are `ok`, `already_running`, `pool_exhausted`, `pool_error`, `herdr_unavailable`, `checkout_failed`, `not_pooled` and the failures it kept from `captain-launch`. Changes from `captain-launch`:
 
 - No `--captain` flag. It sets `AUTONOMOUS_WORKER=1` in the worker's environment.
 - It always leases through treehouse with the ticket id as lease holder. A repo without `treehouse.toml` returns `not_pooled`. The `herdr worktree create` path is removed.

@@ -1,6 +1,6 @@
 ---
 name: build
-description: Build one approved Linear ticket into a pull request as an autonomous dispatch worker. Use when started as `/dispatch:build <ticket>` by dispatch-launch, or when asked to build or resume a dispatch build ticket.
+description: Build one approved Linear ticket into a pull request as an autonomous dispatch worker. Use when started as `/dispatch:build <ticket>` by `dispatch launch`, or when asked to build or resume a dispatch build ticket.
 ---
 
 # Build a ticket

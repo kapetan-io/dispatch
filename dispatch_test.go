@@ -352,9 +352,9 @@ func TestTickExitsWhenAnotherTickHoldsTheLock(t *testing.T) {
 func TestRunRejectsUnknownCommand(t *testing.T) {
 	h := newHarness(t)
 
-	_, err := h.run("launch")
+	_, err := h.run("deploy")
 
-	require.ErrorContains(t, err, `unknown command "launch"`)
+	require.ErrorContains(t, err, `unknown command "deploy"`)
 }
 
 func TestRunTicksOnEachIntervalUntilCanceled(t *testing.T) {
@@ -459,6 +459,9 @@ type harness struct {
 	extra  string
 	repos  string
 	linear *fakeLinear
+	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
+	// with the launcher built into dispatch.
+	builtinLauncher bool
 }
 
 func newHarness(t *testing.T) *harness {
@@ -550,7 +553,10 @@ func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...s
 	extra.Treehouse = filepath.Join(h.dir, "treehouse")
 	extra.GH = filepath.Join(h.dir, "gh")
 	extra.Osascript = filepath.Join(h.dir, "osascript")
-	extra.Launcher = filepath.Join(h.dir, "launcher")
+	if !h.builtinLauncher {
+		extra.Launcher = filepath.Join(h.dir, "launcher")
+	}
+	extra.LaunchPace = time.Millisecond
 	extra.Stdout = &stdout
 	extra.Stderr = &stderr
 	err := dispatch.Run(ctx, args, extra)

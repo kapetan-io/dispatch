@@ -53,7 +53,7 @@ dispatch = "~/Development/dispatch"
 | `launch_failure_limit` | `2` | Failed launches in a row before the ticket goes to Needs Human with the launcher's error. A full treehouse pool (`pool_exhausted`) never counts. |
 | `nudge_limit` | `2` | Nudges to an idle worker with no progress before the ticket goes to Needs Human. In Review, the count resets when a push moves the PR head, and it also caps relaunches of a gone worker that never pushes. |
 | `blocked_renotify_ticks` | `3` | Ticks between macOS notifications for a worker that stays blocked on a question. The first notification comes on the first blocked tick. `0` notifies on every blocked tick. |
-| `plugin_root` | `~/Development/dispatch` | Your checkout of this repo. The dispatcher runs `bin/dispatch-launch` from it, and workers load the plugin from it. |
+| `plugin_root` | `~/Development/dispatch` | Your checkout of this repo. Workers get `scripts/shims` first on their PATH and load the plugin with `--plugin-dir`, both from it. |
 | `worker_model` | `sonnet` | The model name passed to `claude --model` for every worker. |
 
 ## `[linear]`

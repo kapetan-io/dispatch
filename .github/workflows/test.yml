@@ -23,8 +23,8 @@ jobs:
       - name: vet
         run: go vet ./...
       - name: test
-        # The surface tests drive bin/dispatch-launch and fake herdr and
-        # treehouse with bash, git and jq, which the runner image provides.
+        # The surface tests drive `dispatch launch` against fake herdr and
+        # treehouse scripts and a real git, which the runner image provides.
         run: go test -race ./...
       - name: shellcheck
         run: shellcheck -S warning bin/dispatch-launch scripts/shims/claude
