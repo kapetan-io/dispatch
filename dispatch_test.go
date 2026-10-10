@@ -634,6 +634,22 @@ func (h *harness) lines(name string) []string {
 	return strings.Split(strings.TrimSpace(string(b)), "\n")
 }
 
+// labelWorkspace sets the label herdr reports for a workspace.
+func (h *harness) labelWorkspace(id, label string) {
+	var ws struct {
+		Result struct {
+			Workspaces []map[string]any `json:"workspaces"`
+		} `json:"result"`
+	}
+	require.NoError(h.t, json.Unmarshal(h.readFile("workspaces.json"), &ws))
+	for _, w := range ws.Result.Workspaces {
+		if w["workspace_id"] == id {
+			w["label"] = label
+		}
+	}
+	h.writeJSON("workspaces.json", ws)
+}
+
 // renames lists the workspace renames, as "<workspace>|<label>".
 func (h *harness) renames() []string {
 	return h.lines("renames.log")

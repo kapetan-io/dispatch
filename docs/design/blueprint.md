@@ -238,7 +238,7 @@ A PR needs work when any check has failed, `reviewDecision` is `CHANGES_REQUESTE
 
 #### Workspace labels
 
-The label format is `<emoji> <ticket> <title>`, cut to 40 characters with an ellipsis. 🟢 means In Progress, 🟡 In Review with the PR not ready, 👀 In Review with the PR ready for review, 🔴 Needs Human, ⏸️ paused (Backlog or Todo with a kept tree and a workspace still open). A workspace is renamed only when its current label differs from the wanted one.
+The label format is `<emoji> <ticket>`, with no title. 🟢 means In Progress, 🟡 In Review with the PR not ready, 👀 In Review with the PR ready for review, 🔴 Needs Human, ⏸️ paused (Backlog or Todo with a kept tree and a workspace still open). A workspace is renamed only when its current label differs from the wanted one.
 
 A PR is ready for review when the ticket is In Review, its worker is idle, every check has finished and passed, no review thread is unresolved, `reviewDecision` is not `CHANGES_REQUESTED`, and `mergeable` is `MERGEABLE`. A running check or a `mergeable` of `UNKNOWN` is not ready. The notification names the ticket and the PR and fires once per head commit.
 

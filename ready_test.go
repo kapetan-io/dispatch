@@ -130,11 +130,11 @@ func TestTickLabelsEachWorkspaceWithItsStatusEmoji(t *testing.T) {
 		pr     *prState
 		label  string
 	}{
-		{name: "InProgress", status: "In Progress", agent: "working", label: "🟢 ENG-1 ticket ENG-1"},
-		{name: "InReviewPRNotReady", status: "In Review", agent: "idle", pr: &prState{head: "a1", checks: "PENDING", mergeable: "MERGEABLE"}, label: "🟡 ENG-1 ticket ENG-1"},
-		{name: "InReviewWorkerBusy", status: "In Review", agent: "working", label: "🟡 ENG-1 ticket ENG-1"},
-		{name: "InReviewReady", status: "In Review", agent: "idle", pr: new(cleanPR("a1")), label: "👀 ENG-1 ticket ENG-1"},
-		{name: "NeedsHuman", status: "Needs Human", agent: "idle", label: "🔴 ENG-1 ticket ENG-1"},
+		{name: "InProgress", status: "In Progress", agent: "working", label: "🟢 ENG-1"},
+		{name: "InReviewPRNotReady", status: "In Review", agent: "idle", pr: &prState{head: "a1", checks: "PENDING", mergeable: "MERGEABLE"}, label: "🟡 ENG-1"},
+		{name: "InReviewWorkerBusy", status: "In Review", agent: "working", label: "🟡 ENG-1"},
+		{name: "InReviewReady", status: "In Review", agent: "idle", pr: new(cleanPR("a1")), label: "👀 ENG-1"},
+		{name: "NeedsHuman", status: "Needs Human", agent: "idle", label: "🔴 ENG-1"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
@@ -166,7 +166,7 @@ func TestTickLabelsAPausedTicketsWorkspace(t *testing.T) {
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"w-ENG-1|⏸️ ENG-1 ticket ENG-1"}, h.renames())
+	assert.Equal(t, []string{"w-ENG-1|⏸️ ENG-1"}, h.renames())
 }
 
 func TestTickRelabelsWhenTheStatusChanges(t *testing.T) {
@@ -180,10 +180,10 @@ func TestTickRelabelsWhenTheStatusChanges(t *testing.T) {
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1 ticket ENG-1", "w-ENG-1|🟡 ENG-1 ticket ENG-1"}, h.renames())
+	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1", "w-ENG-1|🟡 ENG-1"}, h.renames())
 }
 
-func TestTickTruncatesALongTitleInTheLabel(t *testing.T) {
+func TestTickLeavesTheTitleOutOfTheLabel(t *testing.T) {
 	h := newHarness(t)
 	long := ticket("ENG-1", "In Progress", "dispatch")
 	long["title"] = strings.Repeat("word ", 30)
@@ -193,12 +193,31 @@ func TestTickTruncatesALongTitleInTheLabel(t *testing.T) {
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	renames := h.renames()
-	require.Len(t, renames, 1)
-	label := strings.TrimPrefix(renames[0], "w-ENG-1|")
-	assert.True(t, strings.HasPrefix(label, "🟢 ENG-1 word word"))
-	assert.True(t, strings.HasSuffix(label, "…"))
-	assert.LessOrEqual(t, len([]rune(label)), 40)
+	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, h.renames())
+}
+
+func TestTickRenamesAWorkspaceThatHasTheOldTitledLabel(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "working")
+	h.labelWorkspace("w-ENG-1", "🟢 ENG-1 ticket ENG-1")
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, h.renames())
+}
+
+func TestTickKeepsAWorkspaceThatHasTheShortLabel(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "working")
+	h.labelWorkspace("w-ENG-1", "🟢 ENG-1")
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, h.renames())
 }
 
 func TestTickStillFindsAWorkerWhoseLabelChanged(t *testing.T) {
@@ -412,7 +431,7 @@ func TestTickLabelsABacklogTicketsKeptWorkspace(t *testing.T) {
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"w-ENG-1|⏸️ ENG-1 ticket ENG-1"}, h.renames())
+	assert.Equal(t, []string{"w-ENG-1|⏸️ ENG-1"}, h.renames())
 }
 
 func TestTickDoesNotRenameATicketWithoutAWorkspace(t *testing.T) {
@@ -444,7 +463,7 @@ exec "`+real+`" "$@"`)
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1 ticket ENG-1"}, h.renames())
+	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, h.renames())
 }
 
 func TestTickDoesNotRenameOnADryRun(t *testing.T) {
@@ -456,33 +475,6 @@ func TestTickDoesNotRenameOnADryRun(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Empty(t, h.renames())
-}
-
-func TestTickTruncatesTheLabelAtFortyCharacters(t *testing.T) {
-	// "🟢 ENG-1 " is 8 characters, so 32 more fit and 33 do not.
-	for _, test := range []struct {
-		name  string
-		title string
-		want  string
-	}{
-		{name: "ExactlyFits", title: strings.Repeat("a", 32), want: "🟢 ENG-1 " + strings.Repeat("a", 32)},
-		{name: "OneOver", title: strings.Repeat("a", 33), want: "🟢 ENG-1 " + strings.Repeat("a", 31) + "…"},
-		{name: "MultiByteTitle", title: strings.Repeat("é", 40), want: "🟢 ENG-1 " + strings.Repeat("é", 31) + "…"},
-		{name: "ShortTitle", title: "fix", want: "🟢 ENG-1 fix"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			h := newHarness(t)
-			tk := ticket("ENG-1", "In Progress", "dispatch")
-			tk["title"] = test.title
-			h.tickets(tk)
-			h.worker("ENG-1", "working")
-
-			_, err := h.run("tick")
-			require.NoError(t, err)
-
-			assert.Equal(t, []string{"w-ENG-1|" + test.want}, h.renames())
-		})
-	}
 }
 
 func TestTickLabelsEveryWorkerAfterOneTick(t *testing.T) {
@@ -501,9 +493,9 @@ func TestTickLabelsEveryWorkerAfterOneTick(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.ElementsMatch(t, []string{
-		"w-ENG-1|🟢 ENG-1 ticket ENG-1",
-		"w-ENG-2|👀 ENG-2 ticket ENG-2",
-		"w-ENG-3|🔴 ENG-3 ticket ENG-3",
+		"w-ENG-1|🟢 ENG-1",
+		"w-ENG-2|👀 ENG-2",
+		"w-ENG-3|🔴 ENG-3",
 	}, h.renames())
 }
 
@@ -519,7 +511,7 @@ func TestTickRelabelsAReviewTicketWhenItsPRBecomesReady(t *testing.T) {
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"w-ENG-1|🟡 ENG-1 ticket ENG-1", "w-ENG-1|👀 ENG-1 ticket ENG-1"}, h.renames())
+	assert.Equal(t, []string{"w-ENG-1|🟡 ENG-1", "w-ENG-1|👀 ENG-1"}, h.renames())
 }
 
 func TestTickLabelsAnEscalatedTicketNeedsHumanOnTheSameTick(t *testing.T) {
@@ -535,7 +527,7 @@ func TestTickLabelsAnEscalatedTicketNeedsHumanOnTheSameTick(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "escalate ENG-1")
 
-	assert.Equal(t, "w-ENG-1|🔴 ENG-1 ticket ENG-1", h.renames()[len(h.renames())-1])
+	assert.Equal(t, "w-ENG-1|🔴 ENG-1", h.renames()[len(h.renames())-1])
 }
 
 func TestTickFindsAWorkerWhoseLabelChangedWhenPromptingAReviewNudge(t *testing.T) {
@@ -579,7 +571,7 @@ func TestTickKeepsTheReadyLabelWhenThePRCannotBeRead(t *testing.T) {
 	_, _, err = h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1 ticket ENG-1"}, h.renames())
+	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1"}, h.renames())
 }
 
 func TestTickDoesNotRepeatTheReadyNotificationAfterTheTicketLeavesAndReturnsToInReview(t *testing.T) {
@@ -657,5 +649,5 @@ func TestTickDropsTheReadyLabelWhenThePRIsClosed(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1 ticket ENG-1", "w-ENG-1|🟡 ENG-1 ticket ENG-1"}, h.renames())
+	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1", "w-ENG-1|🟡 ENG-1"}, h.renames())
 }

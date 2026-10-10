@@ -8,15 +8,13 @@ import (
 	"github.com/kapetan-io/dispatch/internal/worker"
 )
 
-// Status emoji at the front of a worker's workspace label, and the label length cap.
+// Status emoji at the front of a worker's workspace label.
 const (
-	EmojiInProgress  = "🟢"
-	EmojiInReview    = "🟡"
-	EmojiReady       = "👀"
-	EmojiNeedsHuman  = "🔴"
-	EmojiPaused      = "⏸️"
-	maxLabelRunes    = 40
-	truncationMarker = "…"
+	EmojiInProgress = "🟢"
+	EmojiInReview   = "🟡"
+	EmojiReady      = "👀"
+	EmojiNeedsHuman = "🔴"
+	EmojiPaused     = "⏸️"
 )
 
 // Rename asks for a herdr workspace to take a new label.
@@ -25,13 +23,9 @@ type Rename struct {
 	Label       string
 }
 
-// Label is `<emoji> <ticket> <title>`, cut to maxLabelRunes with an ellipsis.
+// Label is `<emoji> <ticket>`.
 func Label(emoji string, t linear.Ticket) string {
-	label := []rune(emoji + " " + t.Identifier + " " + t.Title)
-	if len(label) > maxLabelRunes {
-		label = append(label[:maxLabelRunes-1], []rune(truncationMarker)...)
-	}
-	return string(label)
+	return emoji + " " + t.Identifier
 }
 
 // Renames lists the workspaces whose label differs from the one their ticket's

@@ -136,7 +136,7 @@ The dispatcher launched a build worker for its own piece 2 (ENG-228), which buil
 
 ## Ready-for-review notification and 👀 label (ENG-256, 2026-10-09)
 
-You asked for a notification when a PR is ready for review and a 👀 workspace label for the same state, because an In Review ticket stays In Review while the worker fixes findings and you had to check Linear, GitHub and herdr by hand. Ready means In Review, worker idle, every check finished and passed, no unresolved thread, no changes requested, no merge conflict. The notification fires once per PR head commit. The build worker settled three details. `mergeable` must read `MERGEABLE`, so `UNKNOWN` waits a tick. A PR with no checks counts as passed. Labels are cut to 40 characters.
+You asked for a notification when a PR is ready for review and a 👀 workspace label for the same state, because an In Review ticket stays In Review while the worker fixes findings and you had to check Linear, GitHub and herdr by hand. Ready means In Review, worker idle, every check finished and passed, no unresolved thread, no changes requested, no merge conflict. The notification fires once per PR head commit. The build worker settled three details. `mergeable` must read `MERGEABLE`, so `UNKNOWN` waits a tick. A PR with no checks counts as passed. Labels are cut to 40 characters (ENG-263 later dropped the title and the cap).
 
 ## Breakdown step (in progress)
 

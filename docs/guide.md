@@ -83,7 +83,7 @@ A PR is ready for review when its ticket is In Review, its worker is idle, every
 
 ## Workspace labels
 
-After every tick, each worker's herdr workspace is labeled `<emoji> <ticket> <title>`, cut to 40 characters.
+After every tick, each worker's herdr workspace is labeled `<emoji> <ticket>`.
 
 | Emoji | Meaning |
 |---|---|
