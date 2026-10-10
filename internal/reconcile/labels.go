@@ -61,7 +61,7 @@ func (in Input) Renames(current map[string]string) []Rename {
 				emoji = EmojiReady
 			}
 			// An unreadable PR must not flip a 👀 label to 🟡 for a tick.
-			if !ok && in.ReadsPR(t) && strings.HasPrefix(current[w.WorkspaceID], EmojiReady) {
+			if !ok && in.PRReadFailed[t.Identifier] && strings.HasPrefix(current[w.WorkspaceID], EmojiReady) {
 				continue
 			}
 			add(t, w, emoji)

@@ -124,6 +124,9 @@ type Input struct {
 	// PRs maps an In Review ticket identifier to its open PR. Tickets whose PR
 	// was not read, or that have none, are absent.
 	PRs map[string]pullrequest.PR
+	// PRReadFailed holds the In Review tickets whose PR read errored, as opposed
+	// to finding no open PR.
+	PRReadFailed map[string]bool
 	// Cache is last tick's state. Plan only reads it.
 	Cache          cache.Cache
 	RepoLabelGroup string

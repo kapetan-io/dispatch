@@ -329,7 +329,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		}
 	}
 	input.Unfinished, input.CheckErrors = inspectTrees(ctx, input)
-	input.PRs = readPRs(ctx, opts, input)
+	input.PRs, input.PRReadFailed = readPRs(ctx, opts, input)
 	actions := reconcile.Plan(input)
 
 	sum.actions = len(actions)
@@ -581,6 +581,8 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 		// comment posted meanwhile, so the comment time stays while a tree is leased.
 		if leased[id] {
 			kept.CommentSeen = e.CommentSeen
+			// Without it, a worker relaunched on the kept tree would announce a PR head twice.
+			kept.ReadyHead = e.ReadyHead
 		}
 		c[id] = kept
 		if c[id] == (cache.Entry{}) {
@@ -591,9 +593,10 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 
 // readPRs reads the open PR of each ticket for which in.ReadsPR is true. A PR
 // that can't be read is reported and left out, so it holds back only its own
-// ticket.
-func readPRs(ctx context.Context, opts Options, in reconcile.Input) map[string]pullrequest.PR {
-	prs := map[string]pullrequest.PR{}
+// ticket, and its ticket is named in failed to tell it from a ticket with no
+// open PR.
+func readPRs(ctx context.Context, opts Options, in reconcile.Input) (prs map[string]pullrequest.PR, failed map[string]bool) {
+	prs, failed = map[string]pullrequest.PR{}, map[string]bool{}
 	for _, t := range in.Tickets {
 		if !in.ReadsPR(t) {
 			continue
@@ -606,13 +609,14 @@ func readPRs(ctx context.Context, opts Options, in reconcile.Input) map[string]p
 		pr, found, err := pullrequest.Read(ctx, opts.GH, dir, t.Branch, opts.PRTimeout)
 		if err != nil {
 			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, err)
+			failed[t.Identifier] = true
 			continue
 		}
 		if found {
 			prs[t.Identifier] = pr
 		}
 	}
-	return prs
+	return prs, failed
 }
 
 // move sets a ticket's status by name.

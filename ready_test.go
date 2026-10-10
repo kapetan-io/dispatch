@@ -609,3 +609,53 @@ func TestTickDoesNotRepeatTheReadyNotificationAfterTheTicketLeavesAndReturnsToIn
 		})
 	}
 }
+
+func TestTickDoesNotRepeatTheReadyNotificationAfterTheTicketDropsOutOfTheManagedRead(t *testing.T) {
+	for _, between := range []string{"In Review", "Todo"} {
+		t.Run(between, func(t *testing.T) {
+			h := newHarness(t)
+			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+			h.worker("ENG-1", "idle")
+			h.pr("ENG-1", cleanPR("a1"))
+			_, err := h.run("tick")
+			require.NoError(t, err)
+
+			// The ticket leaves the started, assigned read for one tick, such as
+			// when it is unassigned, and comes back at the same head.
+			h.tickets()
+			h.linear.setElsewhere(ticket("ENG-1", between, "dispatch"))
+			_, err = h.run("tick")
+			require.NoError(t, err)
+			h.linear.setElsewhere()
+			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+			_, err = h.run("tick")
+			require.NoError(t, err)
+
+			var ready int
+			for _, n := range h.notifications() {
+				if strings.Contains(n, "ready for review") {
+					ready++
+				}
+			}
+			assert.Equal(t, 1, ready)
+		})
+	}
+}
+
+func TestTickDropsTheReadyLabelWhenThePRIsClosed(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", cleanPR("a1"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	// The PR is closed without merging, so the branch has no open PR.
+	h.removeFile("pr-eng-1.json")
+	for range 2 {
+		_, err = h.run("tick")
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1 ticket ENG-1", "w-ENG-1|🟡 ENG-1 ticket ENG-1"}, h.renames())
+}
