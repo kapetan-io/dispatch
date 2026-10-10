@@ -1,4 +1,4 @@
-# ENG-306: Reject unknown keys in config.toml
+# ENG-306: Reject unknown top-level keys in config.toml
 
 ## In plain English
 
@@ -6,9 +6,10 @@ A typo such as `nudge_limt = 3` is silently ignored, and the dispatcher runs wit
 
 ## What it delivers
 
-* `config.Load` returns an error naming the key when the file has a key the `Config` struct doesn't know, at any depth. The error also names the file.
-* A file with only known keys loads as before.
-* Surface tests call `config.Load` on a file and cover a misspelled top-level key, a misspelled key under `[linear]`, and a valid file.
+* `config.Load` returns an error naming the key when the file has a top-level key the `Config` struct doesn't know. The error also names the file.
+* Keys inside tables such as `[linear]` and `[repos]` are not checked in this ticket.
+* A file with only known top-level keys loads as before.
+* Surface tests call `config.Load` on a file and cover a misspelled top-level key and a valid file.
 
 ## Governing design
 

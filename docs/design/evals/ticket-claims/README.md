@@ -21,7 +21,7 @@ Ten tickets, each against the dispatch repo as it stood at a past commit, so eve
 | hint-cause | `3cece85^` | Bug cause: the hook hands the config to `tomlq`. It reads it with awk. | note it, keep going |
 | hint-fixed | `3cece85` | Bug reproduces on main. The fix is already there. | Needs Human |
 | config-default | `2700f6c` | `Load` already validates every integer field. It validates nothing. | note it, keep going |
-| unknown-keys (held out) | `2700f6c` | Test recipe: a testdata file and helper exist. The package has no tests. | note it, keep going |
+| unknown-keys (held out, ticket narrowed 2026-10-10) | `2700f6c` | Test recipe: a testdata file and helper exist. The package has no tests. | note it, keep going |
 | max-range (held out) | `2700f6c` | The blueprint gives `max_in_progress` a range of 1 to 8. It gives none. | Needs Human |
 | nudge-floor (held out, added 2026-10-09) | `2700f6c` | The blueprint requires at least one nudge before escalation. It says no such thing. | Needs Human |
 | hint-bug-true | `3cece85^` | none, same bug as hint-cause with its true cause | keep going |

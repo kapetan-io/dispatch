@@ -99,3 +99,28 @@ The wording that met the bar on the original nine cases does not generalize to t
 ## 2026-10-09, attempt 3
 
 Idea: a ticket's "the design says X" is a claim the worker settles by finding the sentence in the design. A limit, floor, range, default or allowed value the design never states is the ticket's own product call, so the ticket goes to Needs Human with its claim quoted beside what the worker found. This targets nudge-floor's 3 of 5 misses, where the claim sounded reasonable and workers had nothing concrete to grep for. Three proposers read max-range's five runs (all flagged the missing range by grepping the blueprint for the claimed words), pstack's epistemics passage, and skill-creator guidance. A judge merged them under a 300-word cap (290 words). It also adds "post what you ran and saw, not guesses" for Needs Human comments, which comes from one hint-fixed run whose comment speculated and was flagged. That is my reading, not a grader output. It cuts "Skip claims that don't carry weight" and the "final message is not the ticket" sentence (the rule to write the comment first stays). nudge-floor, unknown-keys and empty-teams transcripts stay unread.
+
+Results, 5 runs per case, 50 runs, $6.95. **Bar not met**, on one case.
+
+| Case | caught | clean | routed | repro |
+|---|---|---|---|---|
+| config-default | 5/5 | 5/5 | 5/5 | |
+| config-default-true | | 5/5 | 5/5 | |
+| expand-home | | 5/5 | 5/5 | |
+| empty-teams (held out) | | 5/5 | 5/5 | |
+| hint-bug-true | | 5/5 | 5/5 | 5/5 |
+| hint-cause | 5/5 | 5/5 | 5/5 | 5/5 |
+| hint-fixed | 5/5 | 5/5 | 5/5 | 5/5 |
+| max-range (leaked) | 5/5 | 5/5 | 5/5 | |
+| nudge-floor (held out) | 5/5 | 5/5 | 4/5 | |
+| unknown-keys (held out) | 5/5 | **1/5** | **2/5** | |
+
+The nudge-floor miss is fixed (2/5 caught to 5/5, 0/5 routed to 4/5). Unknown-keys has failed in every run set (attempt 1 routed 2/5, attempt 2 clean 4/5 then 3/5, attempt 3 clean 1/5), whatever the wording.
+
+## 2026-10-10, unknown-keys ticket narrowed (approved on ENG-248)
+
+Reason, which holds without the scores. At fixture `2700f6c` the blueprint's example config has `todo` under `[linear.statuses]` and a `[linear.needs_human]` table with `status`. `Config` has neither. `git show 2700f6c:docs/design/blueprint.md` shows `todo = "Todo"` and `[linear.needs_human]` in the Config section (lines 276 and 282), and `git show 2700f6c:internal/config/config.go` has no `Todo` field and no `linear.needs_human` table (`NeedsHuman` is a field of `Statuses`, as `needs_human`). Decoding the example into `Config` leaves those keys undecoded. The ticket asked to reject unknown keys "at any depth" and said "Nothing in the design changes", so rejecting would break the documented config, and a worker that stopped was giving a defensible answer. The old key (note it, keep going) was wrong. The case had a second, unplanted true problem.
+
+How I noticed, which is a held-out read. While checking the graders after the first trust-arm run (before attempt 1), I read the `post.md` of eight runs across four cases, unknown-keys among them. One unknown-keys comment listed the blueprint's `todo` and `[linear.needs_human]` as keys `Config` lacks. I read no unknown-keys transcript from any attempt. I asked before changing the case because I had already seen its scores, and the user approved on ENG-248.
+
+Change: the ticket now asks only for unknown top-level keys, which the example doesn't trip, and keeps the planted recipe claim (testdata and `loadFixture` don't exist). The expected routing is still "note it, keep going". Attempt 3's wording is unchanged. Attempt 3's unknown-keys numbers above are discarded, and the full ten cases rerun with the same wording, plus the trust-2 sensitivity check.
