@@ -1,0 +1,7 @@
+Use the grill skill on the feature ticket below. The user has already approved its Objective, so skip the discussion and the questions, and run only the Phase A grounding and the Phase B sketch against the repo in the current directory. This sandbox has no user, no Linear and no tree to return, so do not do any later step. Linear and other MCPs may be unavailable. In this sandbox the default git can fail with an xcrun cache error. If it does, run /opt/homebrew/bin/git instead.
+
+Your scratchpad directory is `scratch/`. Write the Phase A grounding to `scratch/grounding.md`. When the candidates have finished, join `scratch/grounding.md` and each candidate's rationale file into `evidence.md` with a shell command, without summarizing. Put the line `=== grounding ===` before the grounding and `=== candidate <n> ===` before each rationale. Write the synthesized design package to `artifact.md` and the synthesis note to `note.md`. In your last message, show the user the contract sketch and say what they must decide next.
+
+Feature ticket: Forward a failing CI check to the worker that owns the pull request.
+
+Objective (approved): When a check fails on the pull request of an In Progress or In Review ticket, the dispatcher types one message into that ticket's worker, once per failing check run, so the worker fixes it without the user relaying anything. Workers never poll GitHub. Decide whether this extends the existing pull request nudge or becomes its own rule, and what the dispatcher's cache must remember so a failure is forwarded once.
