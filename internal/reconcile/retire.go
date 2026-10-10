@@ -59,8 +59,8 @@ func (in Input) retire() []Action {
 }
 
 // retireFinished plans each tree of a finished ticket. Kept trees share one
-// comment, carried on the first Keep, and a Keep with no live worker and no
-// comment to post is dropped.
+// comment, carried on the first Keep. Every kept tree gets a Keep on every
+// tick, so the log says why the pool is short a tree.
 func (in Input) retireFinished(t linear.Ticket) []Action {
 	var actions, keeps []Action
 	var why []string
@@ -96,13 +96,7 @@ func (in Input) retireFinished(t linear.Ticket) []Action {
 		keeps[0].Text = "The dispatcher kept this ticket's tree leased, because " + strings.Join(why, " and ") +
 			". Returning the tree would discard that work. Push or discard it, and the next tick returns the tree."
 	}
-	for _, k := range keeps {
-		// A tree already warned about and with no live worker has nothing to do.
-		if k.WorkspaceID != "" || k.Text != "" {
-			actions = append(actions, k)
-		}
-	}
-	return actions
+	return append(actions, keeps...)
 }
 
 // NameList joins file names for a log line, quoting any name that holds

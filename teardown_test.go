@@ -136,11 +136,11 @@ func TestTickKeepsTheTreeOfAFinishedTicketThatHoldsWork(t *testing.T) {
 			assert.Contains(t, mutations[0].variables["body"], "`"+path+"` has "+test.work+".")
 			assert.Contains(t, mutations[0].variables["body"], "kept this ticket's tree leased")
 
-			// Later ticks neither comment again nor close anything else.
+			// Later ticks neither comment again nor close anything else, but still name the held tree.
 			for range 2 {
 				out, err = h.run("tick")
 				require.NoError(t, err)
-				assert.Empty(t, out)
+				assert.Equal(t, "keep ENG-1: Done, but its tree has "+test.work+"\n", out)
 			}
 			assert.Len(t, h.linear.mutations(), 1)
 			assert.Len(t, h.closes(), 1)
@@ -359,7 +359,8 @@ func TestTickRetriesADirtyTreeCommentThatLinearRefused(t *testing.T) {
 
 	out, err = h.run("tick")
 	require.NoError(t, err)
-	assert.Empty(t, out)
+	// The warning is posted once, but the held tree stays in the log.
+	assert.Equal(t, "keep ENG-1: Done, but its tree has uncommitted changes\n", out)
 	assert.Len(t, h.linear.mutations(), 1)
 }
 
@@ -795,6 +796,23 @@ func TestTickDryRunListsKeepAndStopWithoutActing(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(h.state, "cache.json"))
 }
 
+func TestTickDryRunListsAWarnedTreeOnEveryTick(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.commit(path)
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	require.Len(t, h.linear.mutations(), 1)
+
+	out, err := h.run("tick", "--dry-run")
+	require.NoError(t, err)
+
+	assert.Equal(t, "keep ENG-1: Done, but its tree has 1 commit that no remote has\n", out)
+	assert.Len(t, h.linear.mutations(), 1)
+}
+
 func TestTickCommentsOnADirtyTreeThatHasNoWorkspace(t *testing.T) {
 	h := newHarness(t)
 	path := h.gitTree("ENG-1")
@@ -812,7 +830,7 @@ func TestTickCommentsOnADirtyTreeThatHasNoWorkspace(t *testing.T) {
 
 	out, err = h.run("tick")
 	require.NoError(t, err)
-	assert.Empty(t, out)
+	assert.Equal(t, "keep ENG-1: Canceled, but its tree has uncommitted changes\n", out)
 	assert.Len(t, h.linear.mutations(), 1)
 }
 
