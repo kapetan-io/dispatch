@@ -1,5 +1,7 @@
 # how and why eval
 
+Status 2026-10-10: attempt 1 met the pass bar, 10 of 10 runs passed every grader. See `log.md`.
+
 Tests that `dispatch:how` and `dispatch:why`, copied from pstack, work in Claude Code against this repo. Each case is the repo cloned into a scratch directory with one question and an `answer.md` the worker writes. Graders read `answer.md`, never the chat.
 
 ## Cases
