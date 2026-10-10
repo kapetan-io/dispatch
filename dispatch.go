@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -73,7 +74,8 @@ const usage = `usage: dispatch tick [--dry-run]
        dispatch ticket-hint
        dispatch launch <ticket> <branch> [--base REF] [--model NAME] [--kickoff TEXT] [--title TEXT]
        dispatch record-stop
-       dispatch subscribe
+       dispatch watch <ticket>
+       dispatch unwatch <ticket>
 
   tick         run one pass: launch a worker for each approved ticket that has none,
                and clean up after finished and paused tickets
@@ -90,9 +92,11 @@ const usage = `usage: dispatch tick [--dry-run]
   record-stop  read a Stop hook's JSON on stdin and record when the worker in this tree last ended a
                turn and whether it still has background tasks running; does nothing outside a
                worktree of a repo listed under [repos]. The plugin's Stop hook runs it
-  subscribe    record this Claude Code session's inbox socket, so each event a tick notifies about
-               is also sent to it as a message. Fails outside a Claude Code session or when the
-               socket path is not absolute`
+  watch        make this Claude Code session follow the ticket, so each event a tick notifies about
+               for it is also sent to this session as a message. A session can follow several
+               tickets, and a ticket can have several followers. Fails outside a Claude Code
+               session or when the socket path is not absolute
+  unwatch      stop this session following the ticket`
 
 // Run executes one dispatch command. main is a thin wrapper around it.
 func Run(ctx context.Context, args []string, opts Options) error {
@@ -123,8 +127,12 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		return launchWorker(ctx, opts, args[1:])
 	case "record-stop":
 		return recordStop(ctx, opts)
-	case "subscribe":
-		return subscribe(opts)
+	case "watch", "unwatch":
+		if len(args) != 2 {
+			_, _ = fmt.Fprintln(opts.Stderr, usage)
+			return fmt.Errorf("%s takes a ticket", args[0])
+		}
+		return follow(opts, args[0] == "watch", strings.ToUpper(args[1]))
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ContinueOnError)
 		fs.SetOutput(opts.Stderr)
@@ -832,18 +840,31 @@ func eventOf(a reconcile.Action) (delivery.Event, bool) {
 	return delivery.Event{}, false
 }
 
-// subscribe records the calling Claude Code session as a supervisor.
-func subscribe(opts Options) error {
+// follow makes the calling Claude Code session start or stop following a ticket.
+func follow(opts Options, watch bool, ticket string) error {
+	if !ticketID.MatchString(ticket) {
+		return fmt.Errorf("%q is not a ticket identifier such as ENG-123", ticket)
+	}
 	socket := os.Getenv(messagingSocketEnv)
 	if socket == "" {
-		return fmt.Errorf("%s is not set, so this is not a Claude Code session; run subscribe from one", messagingSocketEnv)
+		return fmt.Errorf("%s is not set, so this is not a Claude Code session; run watch from one", messagingSocketEnv)
 	}
-	if err := delivery.Subscribe(opts.StateDir, socket); err != nil {
+	if !watch {
+		if err := delivery.Unwatch(opts.StateDir, ticket, socket); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(opts.Stdout, "unwatching %s\n", ticket)
+		return nil
+	}
+	if err := delivery.Watch(opts.StateDir, ticket, socket); err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(opts.Stdout, "subscribed %s\n", socket)
+	_, _ = fmt.Fprintf(opts.Stdout, "watching %s\n", ticket)
 	return nil
 }
+
+// ticketID is the shape of a Linear identifier.
+var ticketID = regexp.MustCompile(`^[A-Z][A-Z0-9]*-[0-9]+$`)
 
 // messagingSocketEnv names the variable Claude Code sets to a session's inbox socket.
 const messagingSocketEnv = "CLAUDE_CODE_MESSAGING_SOCKET"

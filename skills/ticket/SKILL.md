@@ -46,3 +46,7 @@ When the ticket's purpose is to create, change or evaluate a skill, Notes for th
 - Re-read In plain English as the user would. If it needs the code open to make sense, rewrite it.
 - On a ticket that touches a skill, confirm Notes for the worker carries each skill instruction listed above.
 - Confirm the ticket has the team, AI label, repo label, assignee and paused status. A missing one means the dispatcher never sees it or sees it too soon. A `design` ticket waits in Backlog on purpose, and the user moves it to In Progress to start the grill.
+
+## After saving
+
+Run `dispatch watch <ticket>` so this session hears the ticket's events. If it fails, say so and carry on.

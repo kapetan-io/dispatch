@@ -1,5 +1,5 @@
 // Package delivery carries the dispatcher's messages, a nudge to one worker or
-// a notification to the user and any supervisor session. Callers name who
+// a notification to the user and the sessions following a ticket. Callers name who
 // should hear it, and the Post picks the route.
 package delivery
 
@@ -18,8 +18,8 @@ import (
 var ErrBlocked = errors.New("worker is blocked on a question")
 
 // Post delivers messages. Herdr and Osascript are the commands to run.
-// StateDir holds the list of supervisor sockets that Notify also messages, and
-// Stderr is where a failed or dropped supervisor message is reported.
+// StateDir holds the list of sessions following each ticket that Notify also
+// messages, and Stderr is where a failed or dropped watcher message is reported.
 type Post struct {
 	Herdr     string
 	Osascript string
@@ -44,23 +44,24 @@ func (p Post) Nudge(ctx context.Context, w worker.Worker, text string) error {
 	return herdr.Prompt(ctx, p.Herdr, w.PaneID, text)
 }
 
-// Notify tells the user, then every subscribed supervisor session. The caller
-// retries a failed alert next tick, so supervisors hear only once it has shown,
-// or a broken alert would wake them on every retry. The error is the alert's
-// alone, and a supervisor that can't be reached never makes the caller retry.
+// Notify tells the user, then every session following the event's ticket. The
+// caller retries a failed alert next tick, so watchers hear only once it has
+// shown, or a broken alert would wake them on every retry. The error is the
+// alert's alone, and a watcher that can't be reached never makes the caller
+// retry.
 func (p Post) Notify(ctx context.Context, ev Event) error {
 	if err := alert(ctx, p.Osascript, ev.Text); err != nil {
 		return err
 	}
-	p.tellSupervisors(ctx, ev)
+	p.tellWatchers(ctx, ev)
 	return nil
 }
 
 // NotifyOnce is Notify for an event the caller never raises again, such as a
-// merge, which is already recorded when the alert goes out. Supervisors hear
-// it whether or not the alert showed, because no retry will carry it.
+// merge, which is already recorded when the alert goes out. Watchers hear it
+// whether or not the alert showed, because no retry will carry it.
 func (p Post) NotifyOnce(ctx context.Context, ev Event) error {
 	err := alert(ctx, p.Osascript, ev.Text)
-	p.tellSupervisors(ctx, ev)
+	p.tellWatchers(ctx, ev)
 	return err
 }
