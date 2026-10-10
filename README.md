@@ -10,7 +10,7 @@ Under construction. The design is in `docs/design/`. Start with `decision-log.md
 
 ## Layout
 
-- `.claude-plugin/plugin.json` is the plugin manifest. Skills live in `skills/` (`build` runs a ticket, `ticket` writes one), scripts on the session PATH in `bin/`, and the plugin's hooks in `hooks/`. `hooks/hooks.json` runs `dispatch ticket-hint` at session start (silently skipped when `dispatch` is not installed), which points an agent in a dispatch-managed repo at `dispatch:ticket` because a long skill list can show a skill by name only.
+- `.claude-plugin/plugin.json` is the plugin manifest. Skills live in `skills/` (`build` runs a ticket, `ticket` writes one, and `supervise` is a trial of working habits for the interactive session that steers workers, started only by the user with `/dispatch:supervise`), scripts on the session PATH in `bin/`, and the plugin's hooks in `hooks/`. `hooks/hooks.json` runs `dispatch ticket-hint` at session start (silently skipped when `dispatch` is not installed), which points an agent in a dispatch-managed repo at `dispatch:ticket` because a long skill list can show a skill by name only.
 - `cmd/` and `internal/` hold the `dispatch` Go CLI.
 - `docs/design/` holds the design: the decision log, the dispatcher blueprint, the handoff, and the size-check eval suite.
 
