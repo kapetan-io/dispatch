@@ -1,14 +1,14 @@
-# Grill eval
+# Design eval
 
-Tests that `dispatch:grill` grounds a real design before sketching it, and that the arena's candidates use the grounding. It follows `skills/hillclimb/SKILL.md`. The worker is told the Objective is already approved and to run only Phase A and Phase B, because the sandbox has no user, Linear or tree. The rest of the skill (discussion, blueprint, size check, child ticket, hand-off) needs a live user and is not tested here.
+Tests that `dispatch:design` grounds a real design before sketching it, and that the arena's candidates use the grounding. It follows `skills/hillclimb/SKILL.md`. The worker is told the Objective is already approved and to run only Phase A and Phase B, because the sandbox has no user, Linear or tree. The rest of the skill (discussion, blueprint, size check, child ticket, hand-off) needs a live user and is not tested here.
 
 ## Case
 
-`grill-ci-failure-forwarding` clones this repo at commit `21a94dc` (the base of PR #36) and asks for a design that forwards a failing CI check to the worker that owns the pull request. It touches the nudge code in `internal/reconcile` and rests on the decision log's "dispatch is the event broker" rule, so grounding needs both `dispatch:how` (the code) and `dispatch:why` (the rationale). The worker joins the grounding and each candidate's rationale into `evidence.md` so a grader can compare them.
+`design-ci-failure-forwarding` clones this repo at commit `21a94dc` (the base of PR #36) and asks for a design that forwards a failing CI check to the worker that owns the pull request. It touches the nudge code in `internal/reconcile` and rests on the decision log's "dispatch is the event broker" rule, so grounding needs both `dispatch:how` (the code) and `dispatch:why` (the rationale). The worker joins the grounding and each candidate's rationale into `evidence.md` so a grader can compare them.
 
 ## Arms
 
-- `skills/grill/SKILL.md` is the skill under test.
+- `skills/design/SKILL.md` is the skill under test.
 - `arms/careless.md` is a known-bad control. It skips grounding and gives the arena only the Objective. If it passes the graders, they are broken.
 
 ## Graders, per run
@@ -42,7 +42,7 @@ cp -R ../../.claude-plugin "$WORK/plugin/.claude-plugin"
 cp -R ../../skills "$WORK/plugin/skills"
 cp -R cases "$WORK/plugin/cases"
 # control only
-cp arms/careless.md "$WORK/plugin/skills/grill/SKILL.md"
+cp arms/careless.md "$WORK/plugin/skills/design/SKILL.md"
 sed -i.bak "s|@REPO@|$(git rev-parse --show-toplevel)|" "$WORK"/plugin/cases/*/scaffold.sh
 cd "$WORK/plugin"
 PATH=$HOME/.local/bin:$PATH claude plugin eval . --eval-dir cases --runs 5 --ablation none \

@@ -26,7 +26,7 @@ func TestTickDryRunLaunchesADesignTicket(t *testing.T) {
 	assert.Empty(t, h.launches())
 }
 
-func TestTickLaunchesADesignTicketWithTheGrillKickoff(t *testing.T) {
+func TestTickLaunchesADesignTicketWithTheDesignKickoff(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(designTicket("ENG-1", "In Progress"), ticket("ENG-2", "In Progress", "dispatch"))
 
@@ -35,23 +35,23 @@ func TestTickLaunchesADesignTicketWithTheGrillKickoff(t *testing.T) {
 
 	assert.Equal(t, "launch ENG-1: ok\nlaunch ENG-2: ok\n", out)
 	assert.Equal(t, []string{
-		h.repo + " ENG-1 thrawn01/eng-1 --model opus --kickoff /dispatch:grill ENG-1 --no-focus",
+		h.repo + " ENG-1 thrawn01/eng-1 --model opus --kickoff /dispatch:design ENG-1 --no-focus",
 		h.repo + " ENG-2 thrawn01/eng-2 --model sonnet --no-focus",
 	}, h.launches())
 }
 
-func TestTickRunsTheGrillOnTheConfiguredModel(t *testing.T) {
+func TestTickRunsTheDesignOnTheConfiguredModel(t *testing.T) {
 	h := newHarness(t)
-	h.config("grill_model = \"fable\"\n")
+	h.config("design_model = \"fable\"\n")
 	h.tickets(designTicket("ENG-1", "In Progress"))
 
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{h.repo + " ENG-1 thrawn01/eng-1 --model fable --kickoff /dispatch:grill ENG-1 --no-focus"}, h.launches())
+	assert.Equal(t, []string{h.repo + " ENG-1 thrawn01/eng-1 --model fable --kickoff /dispatch:design ENG-1 --no-focus"}, h.launches())
 }
 
-func TestTickTypesTheGrillKickoffWithTheBuiltInLauncher(t *testing.T) {
+func TestTickTypesTheDesignKickoffWithTheBuiltInLauncher(t *testing.T) {
 	h := newHarness(t)
 	h.builtinLauncher = true
 	h.tickets(designTicket("ENG-1", "In Progress"))
@@ -75,11 +75,11 @@ func TestTickTypesTheGrillKickoffWithTheBuiltInLauncher(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "launch ENG-1: ok\n", out)
-	assert.Equal(t, "w9:p1 /dispatch:grill ENG-1\n", string(h.readFile("runs.log")))
+	assert.Equal(t, "w9:p1 /dispatch:design ENG-1\n", string(h.readFile("runs.log")))
 	assert.Contains(t, string(h.readFile("starts.log")), "--model opus")
 }
 
-func TestTickNeverNudgesOrEscalatesAGrillWorker(t *testing.T) {
+func TestTickNeverNudgesOrEscalatesADesignWorker(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(designTicket("ENG-1", "In Progress"))
 	h.worker("ENG-1", "idle")
@@ -109,7 +109,7 @@ func TestTickNeverNudgesOrEscalatesAGrillWorker(t *testing.T) {
 	assert.Empty(t, h.closes())
 }
 
-func TestTickKeepsTheGrillWorkerOnceItHasChildren(t *testing.T) {
+func TestTickKeepsTheDesignWorkerOnceItHasChildren(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(withChildren(designTicket("ENG-1", "In Progress")))
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Backlog"))
@@ -219,7 +219,7 @@ func TestTickHoldsAPromotionForADesignParentInAnUnreadRepo(t *testing.T) {
 	assert.Empty(t, h.linear.mutations())
 }
 
-func TestTickStopsAGrillWhoseTicketIsPaused(t *testing.T) {
+func TestTickStopsADesignWhoseTicketIsPaused(t *testing.T) {
 	h := newHarness(t)
 	h.gitTree("ENG-1")
 	h.worker("ENG-1", "idle")

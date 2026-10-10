@@ -1,5 +1,5 @@
 schema_version: "1.1"
-name: grill-ci-failure-forwarding
+name: design-ci-failure-forwarding
 context:
   scaffold_script: scaffold.sh
 execution:
@@ -11,7 +11,7 @@ graders:
   - name: skill-fired
     type: tool_used
     tool: Skill
-    input_match: '"skill"\s*:\s*"dispatch:grill"'
+    input_match: '"skill"\s*:\s*"dispatch:design"'
   - name: how-fired
     type: tool_used
     tool: Skill
@@ -33,7 +33,7 @@ graders:
     type: llm
     focus: trace
     criteria: |
-      PASS if at least 3 design candidate Agent calls were given the grill skill's runner prompt (text such as "Caller's usage first", or the path `references/runner-prompt.md`), either in the Agent prompt or in a file the prompt points at that the worker wrote earlier. FAIL otherwise.
+      PASS if at least 3 design candidate Agent calls were given the design skill's runner prompt (text such as "Caller's usage first", or the path `references/runner-prompt.md`), either in the Agent prompt or in a file the prompt points at that the worker wrote earlier. FAIL otherwise.
   - name: candidates-get-objective
     type: llm
     focus: trace

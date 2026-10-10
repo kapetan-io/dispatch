@@ -226,9 +226,9 @@ Cheap actions run before launches, because one launch can take over 5 minutes.
 
 | Linear status | Worker | Action |
 |---|---|---|
-| In Progress | none | Launch, typing `/dispatch:build <ticket>`. A ticket labeled `design` launches the grill instead, typing `/dispatch:grill <ticket>` on the `grill_model`, and `design-review` is skipped until the review skill exists. On `pool_exhausted` or a full cap, wait for the next tick. After 2 failed launches in a row, set Needs Human with the launcher's error. |
+| In Progress | none | Launch, typing `/dispatch:build <ticket>`. A ticket labeled `design` launches the design skill instead, typing `/dispatch:design <ticket>` on the `design_model`, and `design-review` is skipped until the review skill exists. On `pool_exhausted` or a full cap, wait for the next tick. After 2 failed launches in a row, set Needs Human with the launcher's error. |
 | In Progress | working | Nothing, or the comment nudge if the ticket has a new comment. A `design` ticket never gets the comment nudge. |
-| In Progress | idle | Send the resume nudge if the cache's last-seen status was Needs Human. Otherwise do nothing while the worker's latest Stop is under 60 minutes old and lists running background tasks, and send one stall nudge per Stop. Notify you on the 6th stall nudge with no status change and every 6th after, and once when no newer Stop arrives 60 minutes after a nudge. Never set Needs Human. A `design` ticket's idle worker gets none of this, because a grill waiting on you is normal. |
+| In Progress | idle | Send the resume nudge if the cache's last-seen status was Needs Human. Otherwise do nothing while the worker's latest Stop is under 60 minutes old and lists running background tasks, and send one stall nudge per Stop. Notify you on the 6th stall nudge with no status change and every 6th after, and once when no newer Stop arrives 60 minutes after a nudge. Never set Needs Human. A `design` ticket's idle worker gets none of this, because a design waiting on you is normal. |
 | In Progress or In Review | blocked | The worker is asking you a question. Notify you, and notify again if it stays unanswered. Never dismiss the dialog. A new comment waits for the worker to be unblocked. |
 | In Review | none | If the PR needs work or an open review thread has an unseen comment, launch to resume, then send the PR nudge once the relaunched worker is idle (the next tick). A relaunch for an open thread's new comment sends no nudge, because the relaunched worker reads the PR itself. Otherwise nothing, and the tree stays leased. |
 | In Review | idle | If the PR needs work, send the PR nudge. After 2 PR nudges with no push, set Needs Human. If the PR is ready for review and the cache has not notified about its head, notify you. |
@@ -253,7 +253,7 @@ A PR is ready for review when the ticket is In Review, its worker is idle, every
 |---|---|---|
 | Backlog | Not designed or not ready | You, phase 1 |
 | Todo | Designed and waiting for approval or promotion | Phase 1 breakdown |
-| In Progress | A worker should be running. A `design` ticket stays here for the whole design, with its grill worker, and counts toward `max_in_progress` because it holds a tree. | You, or the dispatcher promoting a child |
+| In Progress | A worker should be running. A `design` ticket stays here for the whole design, with its design worker, and counts toward `max_in_progress` because it holds a tree. | You, or the dispatcher promoting a child |
 | In Review | PR open, worker waiting on the PR | Worker |
 | Needs Human | Worker needs you, or the dispatcher gave up on it | Worker, dispatcher in the cases above |
 | Done | Merged | GitHub integration, dispatcher for parents |

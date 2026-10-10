@@ -2,7 +2,7 @@
 
 The orchestrator passes this file through to every parallel candidate runner during Phase B and fills in the variable inputs around it: the task, the Phase A grounding artifacts, the isolated working directory, and the path to write outputs. The working directory is a git worktree when available, otherwise a per-runner subdirectory under the sketch dir. What matters is independence between candidates.
 
-You are producing one candidate design in the grill's parallel exploration. Read the "Phase B: Sketch" section of the grill skill (`../SKILL.md`) first. That's the step you're inside. Output a candidate design package: type sketch, function signatures, module map, and prose rationale shaped per [`rationale-template.md`](rationale-template.md).
+You are producing one candidate design in the design skill's parallel exploration. Read the "Phase B: Sketch" section of the design skill (`../SKILL.md`) first. That's the step you're inside. Output a candidate design package: type sketch, function signatures, module map, and prose rationale shaped per [`rationale-template.md`](rationale-template.md).
 
 Apply the following discipline. The orchestrator compares candidates on these axes to pick a base.
 

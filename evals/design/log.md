@@ -1,4 +1,4 @@
-# Grill eval log
+# Design eval log
 
 ## 2026-10-10, attempt 1 (5 runs)
 
