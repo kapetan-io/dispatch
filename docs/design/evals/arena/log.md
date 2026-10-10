@@ -54,3 +54,7 @@ The user chose to add a required todo item. The todo list gained "7. Re-read the
 Result (`results/attempt6-skill.json`), passes of 3: everything 3 except `verify` 0. Cost about $6.6. Bar not met.
 
 What the traces show. One run ended with a `Read` of `artifact.md` after writing it, so the item changed behavior once, and that run still failed `verify`, so the grader's reading of that run is not understood (no judge reasons are recorded). The other two ran a shell check before writing and went from the two writes to the final message. The eval harness gives the worker no todo tool, so an item on the todo list can't act as a forcing function here. It may work in a real session that has one, and this eval can't show that.
+
+## 2026-10-10, bar change: `verify` dropped from the gate
+
+The user dropped `verify` from the pass bar after attempt 6 (a product call, not mine). Nothing was rerun. Under the changed bar attempt 6 passes: the 14 other graders each pass 3 of 3 (42 of 42, 100% pooled), and `skill-fired` and `fan-out` pass 3 of 3. The bar was changed after seeing the result, and the reason is stated above: the check measures a gap the eval cannot fix, and its wording fix has no way to be tested in a harness without a todo tool. `verify` is 0 of 3 for the adopted wording and 0 of 3, 1 of 5 and 0 of 5 for the earlier wordings, which this PR ships with.

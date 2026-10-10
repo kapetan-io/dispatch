@@ -1,6 +1,6 @@
 # Arena eval
 
-Status 2026-10-10: the pass bar is not met. Attempt 6 (3 runs, with a re-read todo item) passes every grader 3 of 3 except `verify`, which is 0 of 3. See `log.md`; raw results are in `results/` (each grader's evidence trimmed to 600 characters).
+Status 2026-10-10: the pass bar is met without `verify`. The user dropped `verify` from the bar after attempt 6, so the 14 gating graders pass 3 of 3 in each of the 3 runs (42 of 42). `verify` still runs and is reported (0 of 3) but does not gate. See `log.md`; raw results are in `results/` (each grader's evidence trimmed to 600 characters).
 
 Tests whether a session told "arena this" on a sample question follows `skills/arena/SKILL.md`: a rubric before fan-out, three candidates on different models, a candidate prompt that makes them question the question's premises, a synthesis note, and a closing message that asks before anything changes.
 
@@ -28,6 +28,10 @@ Each grader reads either the arguments of the worker's `Agent` calls (exact chec
 - `note`, `premise-resolved`: an LLM reads `note.md`.
 - `verify`: an LLM reads the transcript for a check of the artifact against the real material before the final message.
 - `asked`: an LLM reads the worker's last message.
+
+## Bar change after attempt 6 (user decision, 2026-10-10)
+
+`verify` no longer gates. It stays in `case.yaml` and is reported, because it measures a real gap: in the eval, sessions mostly do not re-read the artifact before replying, and the eval worker has no todo tool, so the wording meant to fix it can't be tested here. The remaining thresholds are the attempt 6 thresholds below, applied to the other 14 graders.
 
 ## Pass bar for attempt 6 (fixed 2026-10-10, before the run)
 
