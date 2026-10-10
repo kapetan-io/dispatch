@@ -136,6 +136,8 @@ type Action struct {
 	// its workspace, since a worker whose Claude exited leaves one behind.
 	WorkspaceID string
 	TreePath    string
+	// Note is the comment a Wait posts once on a ticket held for its blockers.
+	Note string
 	// Untracked lists the files a Teardown deletes from its tree first.
 	Untracked []string
 	// Design marks a Launch of the design skill for a design ticket, which runs a
@@ -299,6 +301,10 @@ func Plan(in Input) []Action {
 				launch.Reason, launch.ThreadOnly = ReasonActivity+": "+pr.ActivitySummary, true
 			}
 			launches = append(launches, launch)
+			continue
+		}
+		if a, held := in.blockerHold(t); held {
+			actions = append(actions, a)
 			continue
 		}
 		if running >= in.MaxInProgress {

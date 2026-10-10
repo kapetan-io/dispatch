@@ -3,6 +3,7 @@ package reconcile
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/worker"
@@ -74,7 +75,7 @@ func (in Input) promotable(c linear.Ticket) bool {
 	if !in.startable(c) || c.BlockersTruncated {
 		return false
 	}
-	return !slices.ContainsFunc(c.Blockers, func(b linear.Blocker) bool { return b.Status != in.BlockerDone })
+	return !slices.ContainsFunc(c.Blockers, in.blockerOpen)
 }
 
 // abandonedBlocker returns the first blocker of a startable child that was
@@ -116,7 +117,7 @@ func (in Input) activeCount() int {
 			if live || (t.HasLabel("design") && in.unread(t)) {
 				n++
 			}
-		case live || in.unread(t) || (!t.LabelsTruncated && !t.HasLabel("design-review")):
+		case live || in.unread(t) || (!t.LabelsTruncated && !t.HasLabel("design-review") && !in.WaitsOnBlockers(t)):
 			n++
 		}
 	}
@@ -126,4 +127,40 @@ func (in Input) activeCount() int {
 func (in Input) repoOf(t linear.Ticket) string {
 	repo, _ := t.LabelIn(in.RepoLabelGroup)
 	return repo
+}
+
+// WaitsOnBlockers reports whether a ticket has a blocker that is not yet at the
+// blocker-done status, or more blockers than were read.
+func (in Input) WaitsOnBlockers(t linear.Ticket) bool {
+	return t.BlockersTruncated || slices.ContainsFunc(t.Blockers, in.blockerOpen)
+}
+
+func (in Input) blockerOpen(b linear.Blocker) bool { return b.Status != in.BlockerDone }
+
+// blockerHold decides what a workerless In Progress ticket does while a blocker
+// is unfinished. A ticket whose blocker was canceled would wait forever, so it
+// goes to Needs Human. Otherwise it waits, and the Note says why on the ticket.
+func (in Input) blockerHold(t linear.Ticket) (Action, bool) {
+	if i := slices.IndexFunc(t.Blockers, func(b linear.Blocker) bool { return b.Abandoned }); i >= 0 {
+		b := t.Blockers[i]
+		return Action{Kind: Escalate, Ticket: t, Reason: fmt.Sprintf("its blocker %s is %s and will never be Done, so it will not start. Remove the blocker relation, then move this ticket back to In Progress.", b.Identifier, b.Status)}, true
+	}
+	if !in.WaitsOnBlockers(t) {
+		return Action{}, false
+	}
+	var open, ids []string
+	for _, b := range t.Blockers {
+		if in.blockerOpen(b) {
+			open = append(open, fmt.Sprintf("%s (%s)", b.Identifier, b.Status))
+			ids = append(ids, b.Identifier)
+		}
+	}
+	if t.BlockersTruncated {
+		open = append(open, "relations past the first 50")
+		ids = append(ids, "relations the dispatcher did not read")
+	}
+	reason := "blocked by " + strings.Join(open, ", ")
+	note := "No worker is running because this ticket is blocked by " + strings.Join(ids, ", ")
+	note += ". The dispatcher starts one on the first tick after every blocker is Done."
+	return Action{Kind: Wait, Ticket: t, Reason: reason, Note: note}, true
 }

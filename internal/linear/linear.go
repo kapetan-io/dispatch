@@ -46,11 +46,11 @@ type Ticket struct {
 	// CreatedAt is Linear's RFC 3339 creation time, which sorts as text. Only
 	// ParentChildren fills it in.
 	CreatedAt string
-	// Blockers are the tickets that block this one. Only ParentChildren fills
-	// them in.
+	// Blockers are the tickets that block this one. ManagedTickets and
+	// ParentChildren fill them in.
 	Blockers []Blocker
-	// BlockersTruncated means Blockers is only the first page, so an unfinished
-	// blocker may be missing from it.
+	// BlockersTruncated means the ticket has more than 50 relations of any kind,
+	// so an unfinished blocker may be missing from Blockers.
 	BlockersTruncated bool
 }
 
@@ -143,6 +143,7 @@ const managedTickets = `query ManagedTickets($label: String!, $teams: [String!],
         labels(first: 25) { nodes { name parent { name } } pageInfo { hasNextPage } }
         children(first: 1) { nodes { id } }
         comments(first: 1) { nodes { createdAt } }
+        inverseRelations(first: 50) { nodes { type issue { identifier state { name type } } } pageInfo { hasNextPage } }
       }
       pageInfo { hasNextPage }
     }
@@ -209,15 +210,21 @@ type issueNode struct {
 
 func (n issueNode) ticket() Ticket {
 	t := Ticket{
-		ID:              n.ID,
-		Identifier:      n.Identifier,
-		Title:           n.Title,
-		URL:             n.URL,
-		Branch:          n.BranchName,
-		Status:          n.State.Name,
-		Team:            n.Team.Key,
-		HasChildren:     len(n.Children.Nodes) > 0,
-		LabelsTruncated: n.Labels.PageInfo.HasNextPage,
+		ID:                n.ID,
+		Identifier:        n.Identifier,
+		Title:             n.Title,
+		URL:               n.URL,
+		Branch:            n.BranchName,
+		Status:            n.State.Name,
+		Team:              n.Team.Key,
+		HasChildren:       len(n.Children.Nodes) > 0,
+		LabelsTruncated:   n.Labels.PageInfo.HasNextPage,
+		BlockersTruncated: n.InverseRelations.PageInfo.HasNextPage,
+	}
+	for _, r := range n.InverseRelations.Nodes {
+		if r.Type == "blocks" {
+			t.Blockers = append(t.Blockers, Blocker{Identifier: r.Issue.Identifier, Status: r.Issue.State.Name, Abandoned: r.Issue.State.Type == "canceled"})
+		}
 	}
 	if len(n.Comments.Nodes) > 0 {
 		t.LastComment = n.Comments.Nodes[0].CreatedAt
@@ -342,7 +349,7 @@ const parentChildren = `query ParentChildren($parents: [ID!], $first: Int!) {
       parent { identifier }
       labels(first: 25) { nodes { name parent { name } } pageInfo { hasNextPage } }
       children(first: 1) { nodes { id } }
-      inverseRelations(first: 10) { nodes { type issue { identifier state { name type } } } pageInfo { hasNextPage } }
+      inverseRelations(first: 50) { nodes { type issue { identifier state { name type } } } pageInfo { hasNextPage } }
     }
     pageInfo { hasNextPage }
   }
@@ -381,12 +388,6 @@ func (c Client) ParentChildren(ctx context.Context, parents []string) (map[strin
 		t := n.ticket()
 		t.Mine = n.Assignee != nil && n.Assignee.ID == resp.Viewer.ID
 		t.CreatedAt = n.CreatedAt
-		t.BlockersTruncated = n.InverseRelations.PageInfo.HasNextPage
-		for _, r := range n.InverseRelations.Nodes {
-			if r.Type == "blocks" {
-				t.Blockers = append(t.Blockers, Blocker{Identifier: r.Issue.Identifier, Status: r.Issue.State.Name, Abandoned: r.Issue.State.Type == "canceled"})
-			}
-		}
 		children[n.Parent.Identifier] = append(children[n.Parent.Identifier], t)
 	}
 	// Linear's order is not documented, and promotion under a full cap goes to
