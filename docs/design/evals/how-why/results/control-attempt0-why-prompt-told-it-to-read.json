@@ -1,0 +1,952 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.296",
+  "startedAt": "2026-10-10T06:52:10.150Z",
+  "durationSeconds": 83,
+  "costUsd": 2.5926511000000003,
+  "partial": false,
+  "suite": {
+    "root": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.XuoVSrCBhi/plugin",
+    "ablation": "none",
+    "judgeModel": "claude-opus-5-5",
+    "threshold": 0,
+    "concurrency": 4,
+    "plugins": [
+      {
+        "name": "dispatch",
+        "path": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.XuoVSrCBhi/plugin"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "how-nudge",
+      "dir": "cases/how-nudge",
+      "source": "mixed",
+      "promptMarkdown": "Use the how skill to answer this question about the repo in the current directory, then write the answer to answer.md.\n\nHow does a dispatch tick decide whether to nudge an idle worker?",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"dispatch:how\""
+          }
+        },
+        {
+          "name": "paths",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if every file path the answer names is in this list of the repo's files, and the answer names at least one of them. FAIL if any path it names is not in the list (a directory prefix of a listed file is fine). The list: .claude-plugin/plugin.json .github/workflows/test.yml .gitignore CLAUDE.md README.md bin/dispatch-launch cmd/claimeval/main.go cmd/commenteval/main.go cmd/dispatch/main.go comment_test.go commenteval_test.go config_test.go dispatch.go dispatch_test.go docs/config.md docs/design/blueprint.md docs/design/decision-log.md docs/design/evals/hillclimb/README.md docs/design/evals/hillclimb/arms/careless.md docs/design/evals/hillclimb/cases/after-failed/case.yaml docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/always-body.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/attempt-1.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/log.md docs/design/evals/hillclimb/cases/after-failed/fixture/post.md docs/design/evals/hillclimb/cases/after-failed/fixture/queue.md docs/design/evals/hillclimb/cases/after-failed/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/after-failed/prompt.md docs/design/evals/hillclimb/cases/after-failed/scaffold.sh docs/design/evals/hillclimb/cases/already-passing/case.yaml docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/arms/always-body.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/log.md docs/design/evals/hillclimb/cases/already-passing/fixture/post.md docs/design/evals/hillclimb/cases/already-passing/fixture/queue.md docs/design/evals/hillclimb/cases/already-passing/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/already-passing/prompt.md docs/design/evals/hillclimb/cases/already-passing/scaffold.sh docs/design/evals/hillclimb/cases/fresh-suite/case.yaml docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/fresh-suite/fixture/post.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/queue.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/fresh-suite/prompt.md docs/design/evals/hillclimb/cases/fresh-suite/scaffold.sh docs/design/evals/hillclimb/log.md docs/design/evals/needs-human-comment/README.md docs/design/evals/needs-human-comment/arms/current.md docs/design/evals/needs-human-comment/results/current/max-range-1.md docs/design/evals/needs-human-comment/results/current/max-range-2.md docs/design/evals/needs-human-comment/results/current/max-range-3.md docs/design/evals/needs-human-comment/results/current/max-range-4.md docs/design/evals/needs-human-comment/results/current/max-range-5.md docs/design/evals/needs-human-comment/results/current/person-review-1.md docs/design/evals/needs-human-comment/results/current/person-review-2.md docs/design/evals/needs-human-comment/results/current/person-review-3.md docs/design/evals/needs-human-comment/results/current/person-review-4.md docs/design/evals/needs-human-comment/results/current/person-review-5.md docs/design/evals/needs-human-comment/results/current/stop-patching-1.md docs/design/evals/needs-human-comment/results/current/stop-patching-2.md docs/design/evals/needs-human-comment/results/current/stop-patching-3.md docs/design/evals/needs-human-comment/results/current/stop-patching-4.md docs/design/evals/needs-human-comment/results/current/stop-patching-5.md docs/design/evals/needs-human-comment/results/current/unknown-keys-1.md docs/design/evals/needs-human-comment/results/current/unknown-keys-2.md docs/design/evals/needs-human-comment/results/current/unknown-keys-3.md docs/design/evals/needs-human-comment/results/current/unknown-keys-4.md docs/design/evals/needs-human-comment/results/current/unknown-keys-5.md docs/design/evals/needs-human-comment/results/final/max-range-1.md docs/design/evals/needs-human-comment/results/final/max-range-2.md docs/design/evals/needs-human-comment/results/final/max-range-3.md docs/design/evals/needs-human-comment/results/final/max-range-4.md docs/design/evals/needs-human-comment/results/final/max-range-5.md docs/design/evals/needs-human-comment/results/final/person-review-1.md docs/design/evals/needs-human-comment/results/final/person-review-2.md docs/design/evals/needs-human-comment/results/final/person-review-3.md docs/design/evals/needs-human-comment/results/final/person-review-4.md docs/design/evals/needs-human-comment/results/final/person-review-5.md docs/design/evals/needs-human-comment/results/final/stop-patching-1.md docs/design/evals/needs-human-comment/results/final/stop-patching-2.md docs/design/evals/needs-human-comment/results/final/stop-patching-3.md docs/design/evals/needs-human-comment/results/final/stop-patching-4.md docs/design/evals/needs-human-comment/results/final/stop-patching-5.md docs/design/evals/needs-human-comment/results/final/unknown-keys-1.md docs/design/evals/needs-human-comment/results/final/unknown-keys-2.md docs/design/evals/needs-human-comment/results/final/unknown-keys-3.md docs/design/evals/needs-human-comment/results/final/unknown-keys-4.md docs/design/evals/needs-human-comment/results/final/unknown-keys-5.md docs/design/evals/needs-human-comment/scenarios/max-range.md docs/design/evals/needs-human-comment/scenarios/person-review.md docs/design/evals/needs-human-comment/scenarios/stop-patching.md docs/design/evals/needs-human-comment/scenarios/unknown-keys.md docs/design/evals/size-check/README.md docs/design/evals/size-check/arms/by-layer.md docs/design/evals/size-check/arms/complete-pieces-2.md docs/design/evals/size-check/arms/complete-pieces-3.md docs/design/evals/size-check/arms/complete-pieces-4.md docs/design/evals/size-check/arms/complete-pieces-5.md docs/design/evals/size-check/arms/complete-pieces.md docs/design/evals/size-check/arms/current.md docs/design/evals/size-check/arms/own-evidence.md docs/design/evals/size-check/build.py docs/design/evals/size-check/cases.json docs/design/evals/size-check/inputs/auth.md docs/design/evals/size-check/inputs/change-bot.md docs/design/evals/size-check/inputs/did-you-mean.md docs/design/evals/size-check/inputs/dlq.md docs/design/evals/size-check/inputs/docs-cmd.md docs/design/evals/size-check/inputs/fetch.md docs/design/evals/size-check/inputs/graph.md docs/design/evals/size-check/inputs/heartbeat.md docs/design/evals/size-check/inputs/masked-blob.md docs/design/evals/size-check/inputs/partial.md docs/design/evals/size-check/inputs/shallow.md docs/design/evals/size-check/inputs/shape.md docs/design/evals/size-check/inputs/slip-stream.md docs/design/evals/size-check/inputs/tiger-wave1.md docs/design/evals/size-check/inputs/tiger.md docs/design/evals/size-check/log.md docs/design/evals/size-check/report.py docs/design/evals/size-check/run.sh docs/design/evals/size-check/to_viewer.py docs/design/evals/ticket-claims/README.md docs/design/evals/ticket-claims/arms/attempt-1.md docs/design/evals/ticket-claims/arms/attempt-2.md docs/design/evals/ticket-claims/arms/attempt-3.md docs/design/evals/ticket-claims/arms/current.md docs/design/evals/ticket-claims/arms/seed.md docs/design/evals/ticket-claims/arms/trust-2.md docs/design/evals/ticket-claims/arms/trust.md docs/design/evals/ticket-claims/cases.json docs/design/evals/ticket-claims/log.md docs/design/evals/ticket-claims/tickets/config-default-true.md docs/design/evals/ticket-claims/tickets/config-default.md docs/design/evals/ticket-claims/tickets/empty-teams.md docs/design/evals/ticket-claims/tickets/expand-home.md docs/design/evals/ticket-claims/tickets/hint-bug-true.md docs/design/evals/ticket-claims/tickets/hint-cause.md docs/design/evals/ticket-claims/tickets/hint-fixed.md docs/design/evals/ticket-claims/tickets/max-range.md docs/design/evals/ticket-claims/tickets/nudge-floor.md docs/design/evals/ticket-claims/tickets/unknown-keys.md docs/design/handoff-autonomous-workflow-design.md docs/guide.md docs_test.go go.mod go.sum hooks/hooks.json internal/cache/cache.go internal/claimeval/claimeval.go internal/claimeval/claimeval_test.go internal/claimeval/report.go internal/commenteval/commenteval.go internal/config/config.go internal/herdr/herdr.go internal/launcher/launcher.go internal/linear/linear.go internal/lock/lock.go internal/notify/notify.go internal/pullrequest/pullrequest.go internal/reconcile/labels.go internal/reconcile/parents.go internal/reconcile/reconcile.go internal/reconcile/retire.go internal/treehouse/treehouse.go internal/worker/worker.go launch_test.go nudge_test.go parents_test.go ready_test.go retire.go review_test.go scripts/shims/claude skills/build/SKILL.md skills/hillclimb/SKILL.md skills/supervise/SKILL.md skills/ticket/SKILL.md teardown_test.go tell.go ticket_hint.go ticket_hint_test.go treehouse.toml",
+          "config": {
+            "criteria": "PASS if every file path the answer names is in this list of the repo's files, and the answer names at least one of them. FAIL if any path it names is not in the list (a directory prefix of a listed file is fine). The list: .claude-plugin/plugin.json .github/workflows/test.yml .gitignore CLAUDE.md README.md bin/dispatch-launch cmd/claimeval/main.go cmd/commenteval/main.go cmd/dispatch/main.go comment_test.go commenteval_test.go config_test.go dispatch.go dispatch_test.go docs/config.md docs/design/blueprint.md docs/design/decision-log.md docs/design/evals/hillclimb/README.md docs/design/evals/hillclimb/arms/careless.md docs/design/evals/hillclimb/cases/after-failed/case.yaml docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/always-body.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/attempt-1.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/log.md docs/design/evals/hillclimb/cases/after-failed/fixture/post.md docs/design/evals/hillclimb/cases/after-failed/fixture/queue.md docs/design/evals/hillclimb/cases/after-failed/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/after-failed/prompt.md docs/design/evals/hillclimb/cases/after-failed/scaffold.sh docs/design/evals/hillclimb/cases/already-passing/case.yaml docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/arms/always-body.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/log.md docs/design/evals/hillclimb/cases/already-passing/fixture/post.md docs/design/evals/hillclimb/cases/already-passing/fixture/queue.md docs/design/evals/hillclimb/cases/already-passing/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/already-passing/prompt.md docs/design/evals/hillclimb/cases/already-passing/scaffold.sh docs/design/evals/hillclimb/cases/fresh-suite/case.yaml docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/fresh-suite/fixture/post.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/queue.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/fresh-suite/prompt.md docs/design/evals/hillclimb/cases/fresh-suite/scaffold.sh docs/design/evals/hillclimb/log.md docs/design/evals/needs-human-comment/README.md docs/design/evals/needs-human-comment/arms/current.md docs/design/evals/needs-human-comment/results/current/max-range-1.md docs/design/evals/needs-human-comment/results/current/max-range-2.md docs/design/evals/needs-human-comment/results/current/max-range-3.md docs/design/evals/needs-human-comment/results/current/max-range-4.md docs/design/evals/needs-human-comment/results/current/max-range-5.md docs/design/evals/needs-human-comment/results/current/person-review-1.md docs/design/evals/needs-human-comment/results/current/person-review-2.md docs/design/evals/needs-human-comment/results/current/person-review-3.md docs/design/evals/needs-human-comment/results/current/person-review-4.md docs/design/evals/needs-human-comment/results/current/person-review-5.md docs/design/evals/needs-human-comment/results/current/stop-patching-1.md docs/design/evals/needs-human-comment/results/current/stop-patching-2.md docs/design/evals/needs-human-comment/results/current/stop-patching-3.md docs/design/evals/needs-human-comment/results/current/stop-patching-4.md docs/design/evals/needs-human-comment/results/current/stop-patching-5.md docs/design/evals/needs-human-comment/results/current/unknown-keys-1.md docs/design/evals/needs-human-comment/results/current/unknown-keys-2.md docs/design/evals/needs-human-comment/results/current/unknown-keys-3.md docs/design/evals/needs-human-comment/results/current/unknown-keys-4.md docs/design/evals/needs-human-comment/results/current/unknown-keys-5.md docs/design/evals/needs-human-comment/results/final/max-range-1.md docs/design/evals/needs-human-comment/results/final/max-range-2.md docs/design/evals/needs-human-comment/results/final/max-range-3.md docs/design/evals/needs-human-comment/results/final/max-range-4.md docs/design/evals/needs-human-comment/results/final/max-range-5.md docs/design/evals/needs-human-comment/results/final/person-review-1.md docs/design/evals/needs-human-comment/results/final/person-review-2.md docs/design/evals/needs-human-comment/results/final/person-review-3.md docs/design/evals/needs-human-comment/results/final/person-review-4.md docs/design/evals/needs-human-comment/results/final/person-review-5.md docs/design/evals/needs-human-comment/results/final/stop-patching-1.md docs/design/evals/needs-human-comment/results/final/stop-patching-2.md docs/design/evals/needs-human-comment/results/final/stop-patching-3.md docs/design/evals/needs-human-comment/results/final/stop-patching-4.md docs/design/evals/needs-human-comment/results/final/stop-patching-5.md docs/design/evals/needs-human-comment/results/final/unknown-keys-1.md docs/design/evals/needs-human-comment/results/final/unknown-keys-2.md docs/design/evals/needs-human-comment/results/final/unknown-keys-3.md docs/design/evals/needs-human-comment/results/final/unknown-keys-4.md docs/design/evals/needs-human-comment/results/final/unknown-keys-5.md docs/design/evals/needs-human-comment/scenarios/max-range.md docs/design/evals/needs-human-comment/scenarios/person-review.md docs/design/evals/needs-human-comment/scenarios/stop-patching.md docs/design/evals/needs-human-comment/scenarios/unknown-keys.md docs/design/evals/size-check/README.md docs/design/evals/size-check/arms/by-layer.md docs/design/evals/size-check/arms/complete-pieces-2.md docs/design/evals/size-check/arms/complete-pieces-3.md docs/design/evals/size-check/arms/complete-pieces-4.md docs/design/evals/size-check/arms/complete-pieces-5.md docs/design/evals/size-check/arms/complete-pieces.md docs/design/evals/size-check/arms/current.md docs/design/evals/size-check/arms/own-evidence.md docs/design/evals/size-check/build.py docs/design/evals/size-check/cases.json docs/design/evals/size-check/inputs/auth.md docs/design/evals/size-check/inputs/change-bot.md docs/design/evals/size-check/inputs/did-you-mean.md docs/design/evals/size-check/inputs/dlq.md docs/design/evals/size-check/inputs/docs-cmd.md docs/design/evals/size-check/inputs/fetch.md docs/design/evals/size-check/inputs/graph.md docs/design/evals/size-check/inputs/heartbeat.md docs/design/evals/size-check/inputs/masked-blob.md docs/design/evals/size-check/inputs/partial.md docs/design/evals/size-check/inputs/shallow.md docs/design/evals/size-check/inputs/shape.md docs/design/evals/size-check/inputs/slip-stream.md docs/design/evals/size-check/inputs/tiger-wave1.md docs/design/evals/size-check/inputs/tiger.md docs/design/evals/size-check/log.md docs/design/evals/size-check/report.py docs/design/evals/size-check/run.sh docs/design/evals/size-check/to_viewer.py docs/design/evals/ticket-claims/README.md docs/design/evals/ticket-claims/arms/attempt-1.md docs/design/evals/ticket-claims/arms/attempt-2.md docs/design/evals/ticket-claims/arms/attempt-3.md docs/design/evals/ticket-claims/arms/current.md docs/design/evals/ticket-claims/arms/seed.md docs/design/evals/ticket-claims/arms/trust-2.md docs/design/evals/ticket-claims/arms/trust.md docs/design/evals/ticket-claims/cases.json docs/design/evals/ticket-claims/log.md docs/design/evals/ticket-claims/tickets/config-default-true.md docs/design/evals/ticket-claims/tickets/config-default.md docs/design/evals/ticket-claims/tickets/empty-teams.md docs/design/evals/ticket-claims/tickets/expand-home.md docs/design/evals/ticket-claims/tickets/hint-bug-true.md docs/design/evals/ticket-claims/tickets/hint-cause.md docs/design/evals/ticket-claims/tickets/hint-fixed.md docs/design/evals/ticket-claims/tickets/max-range.md docs/design/evals/ticket-claims/tickets/nudge-floor.md docs/design/evals/ticket-claims/tickets/unknown-keys.md docs/design/handoff-autonomous-workflow-design.md docs/guide.md docs_test.go go.mod go.sum hooks/hooks.json internal/cache/cache.go internal/claimeval/claimeval.go internal/claimeval/claimeval_test.go internal/claimeval/report.go internal/commenteval/commenteval.go internal/config/config.go internal/herdr/herdr.go internal/launcher/launcher.go internal/linear/linear.go internal/lock/lock.go internal/notify/notify.go internal/pullrequest/pullrequest.go internal/reconcile/labels.go internal/reconcile/parents.go internal/reconcile/reconcile.go internal/reconcile/retire.go internal/treehouse/treehouse.go internal/worker/worker.go launch_test.go nudge_test.go parents_test.go ready_test.go retire.go review_test.go scripts/shims/claude skills/build/SKILL.md skills/hillclimb/SKILL.md skills/supervise/SKILL.md skills/ticket/SKILL.md teardown_test.go tell.go ticket_hint.go ticket_hint_test.go treehouse.toml",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        },
+        {
+          "name": "flow",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says an idle In Progress worker gets a stall nudge, that the count of earlier nudges is compared with a limit (NudgeLimit), and that the ticket is escalated instead of nudged once the limit is reached. FAIL if any of the three is missing or wrong.",
+          "config": {
+            "criteria": "PASS if the answer says an idle In Progress worker gets a stall nudge, that the count of earlier nudges is compared with a limit (NudgeLimit), and that the ticket is escalated instead of nudged once the limit is reached. FAIL if any of the three is missing or wrong.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.36703539999999996,
+            "judgeCostUsd": 0.31535599999999997,
+            "durationSeconds": 26,
+            "startedAt": "2026-10-10T06:52:10.175Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-auxya0/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "paths",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# How does a dispatch tick decide whether to nudge an idle worker?\n\n> **Not verified against this repo.** The `how` skill says to answer from common patterns and not read the code. The file and function names below are what I'd expect, not what exists. Check them before relying on this.\n\nSystems like this usually follow this pattern:\n\n1. **Tick loop.** A periodic tick (probably in a `tick`/`orchestrator` module) lists the active workers and evaluates each one.\n2. **Idle detection.** A worker counts as idle when it has produced no output or activity for longer than a threshold. The signal is usually the last-activity timestamp of its terminal tab or session.\n3. **Eligibility checks.** The tick skips the worker if any of these hold:\n   - It is already finished or torn down.\n   - It is waiting on a blocker, such as a child ticket, or the blocker was canceled.\n   - It was nudged recently, so a cooldown or backoff applies.\n   - It has hit a maximum nudge count.\n4. **Action.** If the checks pass, the tick sends a short prompt to the worker's tab asking it to continue. It records the nudge time and count. If the worker is still stuck after the limit, it escalates to a human instead.\n5. **State.** The last-nudge timestamp and nudge count are kept per worker, so the next tick can apply the cooldown.\n"
+              },
+              {
+                "name": "flow",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# How does a dispatch tick decide whether to nudge an idle worker?\n\n> **Not verified against this repo.** The `how` skill says to answer from common patterns and not read the code. The file and function names below are what I'd expect, not what exists. Check them before relying on this.\n\nSystems like this usually follow this pattern:\n\n1. **Tick loop.** A periodic tick (probably in a `tick`/`orchestrator` module) lists the active workers and evaluates each one.\n2. **Idle detection.** A worker counts as idle when it has produced no output or activity for longer than a threshold. The signal is usually the last-activity timestamp of its terminal tab or session.\n3. **Eligibility checks.** The tick skips the worker if any of these hold:\n   - It is already finished or torn down.\n   - It is waiting on a blocker, such as a child ticket, or the blocker was canceled.\n   - It was nudged recently, so a cooldown or backoff applies.\n   - It has hit a maximum nudge count.\n4. **Action.** If the checks pass, the tick sends a short prompt to the worker's tab asking it to continue. It records the nudge time and count. If the worker is still stuck after the limit, it escalates to a human instead.\n5. **State.** The last-nudge timestamp and nudge count are kept per worker, so the next tick can apply the cooldown.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.3425084,
+            "judgeCostUsd": 0.288632,
+            "durationSeconds": 26,
+            "startedAt": "2026-10-10T06:52:10.175Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-VnCuRr/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "paths",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# How does a dispatch tick decide whether to nudge an idle worker?\n\n> **Unverified.** This answer comes from how orchestrators like this are usually built. I didn't read the repo's code. The `how` skill says not to. File and function names below are what I'd expect, not confirmed.\n\n1. Each tick lists the active workers, probably in a tick or reconcile function in the orchestrator loop.\n2. For each worker it reads the last-activity time. That is likely the last output from the worker's terminal tab, or the last tool call or commit.\n3. A worker counts as idle if `now - lastActivity` is over an idle threshold.\n4. It skips workers that are legitimately waiting. Examples are a worker blocked on a child ticket, a finished or canceled one, or one that is waiting for user input and should be escalated instead.\n5. It rate-limits nudges. It compares the time of the last nudge against a cooldown and probably caps the number of nudges per worker.\n6. If the checks pass, it sends a nudge message into the worker's session (a tab or pane send-keys call) and records the nudge time.\n7. After the cap is hit, it escalates, for example by flagging the ticket for a human, instead of nudging again.\n\nTo confirm any of this, search the tick code for `idle`, `nudge` and `cooldown`.\n"
+              },
+              {
+                "name": "flow",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# How does a dispatch tick decide whether to nudge an idle worker?\n\n> **Unverified.** This answer comes from how orchestrators like this are usually built. I didn't read the repo's code. The `how` skill says not to. File and function names below are what I'd expect, not confirmed.\n\n1. Each tick lists the active workers, probably in a tick or reconcile function in the orchestrator loop.\n2. For each worker it reads the last-activity time. That is likely the last output from the worker's terminal tab, or the last tool call or commit.\n3. A worker counts as idle if `now - lastActivity` is over an idle threshold.\n4. It skips workers that are legitimately waiting. Examples are a worker blocked on a child ticket, a finished or canceled one, or one that is waiting for user input and should be escalated instead.\n5. It rate-limits nudges. It compares the time of the last nudge against a cooldown and probably caps the number of nudges per worker.\n6. If the checks pass, it sends a nudge message into the worker's session (a tab or pane send-keys call) and records the nudge time.\n7. After the cap is hit, it escalates, for example by flagging the ticket for a human, instead of nudging again.\n\nTo confirm any of this, search the tick code for `idle`, `nudge` and `cooldown`.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.3333333333333333,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "how-ready",
+      "dir": "cases/how-ready",
+      "source": "mixed",
+      "promptMarkdown": "Use the how skill to answer this question about the repo in the current directory, then write the answer to answer.md.\n\nHow does dispatch decide that a pull request is ready for review?",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"dispatch:how\""
+          }
+        },
+        {
+          "name": "paths",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if every file path the answer names is in this list of the repo's files, and the answer names at least one of them. FAIL if any path it names is not in the list (a directory prefix of a listed file is fine). The list: .claude-plugin/plugin.json .github/workflows/test.yml .gitignore CLAUDE.md README.md bin/dispatch-launch cmd/claimeval/main.go cmd/commenteval/main.go cmd/dispatch/main.go comment_test.go commenteval_test.go config_test.go dispatch.go dispatch_test.go docs/config.md docs/design/blueprint.md docs/design/decision-log.md docs/design/evals/hillclimb/README.md docs/design/evals/hillclimb/arms/careless.md docs/design/evals/hillclimb/cases/after-failed/case.yaml docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/always-body.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/attempt-1.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/log.md docs/design/evals/hillclimb/cases/after-failed/fixture/post.md docs/design/evals/hillclimb/cases/after-failed/fixture/queue.md docs/design/evals/hillclimb/cases/after-failed/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/after-failed/prompt.md docs/design/evals/hillclimb/cases/after-failed/scaffold.sh docs/design/evals/hillclimb/cases/already-passing/case.yaml docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/arms/always-body.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/log.md docs/design/evals/hillclimb/cases/already-passing/fixture/post.md docs/design/evals/hillclimb/cases/already-passing/fixture/queue.md docs/design/evals/hillclimb/cases/already-passing/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/already-passing/prompt.md docs/design/evals/hillclimb/cases/already-passing/scaffold.sh docs/design/evals/hillclimb/cases/fresh-suite/case.yaml docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/fresh-suite/fixture/post.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/queue.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/fresh-suite/prompt.md docs/design/evals/hillclimb/cases/fresh-suite/scaffold.sh docs/design/evals/hillclimb/log.md docs/design/evals/needs-human-comment/README.md docs/design/evals/needs-human-comment/arms/current.md docs/design/evals/needs-human-comment/results/current/max-range-1.md docs/design/evals/needs-human-comment/results/current/max-range-2.md docs/design/evals/needs-human-comment/results/current/max-range-3.md docs/design/evals/needs-human-comment/results/current/max-range-4.md docs/design/evals/needs-human-comment/results/current/max-range-5.md docs/design/evals/needs-human-comment/results/current/person-review-1.md docs/design/evals/needs-human-comment/results/current/person-review-2.md docs/design/evals/needs-human-comment/results/current/person-review-3.md docs/design/evals/needs-human-comment/results/current/person-review-4.md docs/design/evals/needs-human-comment/results/current/person-review-5.md docs/design/evals/needs-human-comment/results/current/stop-patching-1.md docs/design/evals/needs-human-comment/results/current/stop-patching-2.md docs/design/evals/needs-human-comment/results/current/stop-patching-3.md docs/design/evals/needs-human-comment/results/current/stop-patching-4.md docs/design/evals/needs-human-comment/results/current/stop-patching-5.md docs/design/evals/needs-human-comment/results/current/unknown-keys-1.md docs/design/evals/needs-human-comment/results/current/unknown-keys-2.md docs/design/evals/needs-human-comment/results/current/unknown-keys-3.md docs/design/evals/needs-human-comment/results/current/unknown-keys-4.md docs/design/evals/needs-human-comment/results/current/unknown-keys-5.md docs/design/evals/needs-human-comment/results/final/max-range-1.md docs/design/evals/needs-human-comment/results/final/max-range-2.md docs/design/evals/needs-human-comment/results/final/max-range-3.md docs/design/evals/needs-human-comment/results/final/max-range-4.md docs/design/evals/needs-human-comment/results/final/max-range-5.md docs/design/evals/needs-human-comment/results/final/person-review-1.md docs/design/evals/needs-human-comment/results/final/person-review-2.md docs/design/evals/needs-human-comment/results/final/person-review-3.md docs/design/evals/needs-human-comment/results/final/person-review-4.md docs/design/evals/needs-human-comment/results/final/person-review-5.md docs/design/evals/needs-human-comment/results/final/stop-patching-1.md docs/design/evals/needs-human-comment/results/final/stop-patching-2.md docs/design/evals/needs-human-comment/results/final/stop-patching-3.md docs/design/evals/needs-human-comment/results/final/stop-patching-4.md docs/design/evals/needs-human-comment/results/final/stop-patching-5.md docs/design/evals/needs-human-comment/results/final/unknown-keys-1.md docs/design/evals/needs-human-comment/results/final/unknown-keys-2.md docs/design/evals/needs-human-comment/results/final/unknown-keys-3.md docs/design/evals/needs-human-comment/results/final/unknown-keys-4.md docs/design/evals/needs-human-comment/results/final/unknown-keys-5.md docs/design/evals/needs-human-comment/scenarios/max-range.md docs/design/evals/needs-human-comment/scenarios/person-review.md docs/design/evals/needs-human-comment/scenarios/stop-patching.md docs/design/evals/needs-human-comment/scenarios/unknown-keys.md docs/design/evals/size-check/README.md docs/design/evals/size-check/arms/by-layer.md docs/design/evals/size-check/arms/complete-pieces-2.md docs/design/evals/size-check/arms/complete-pieces-3.md docs/design/evals/size-check/arms/complete-pieces-4.md docs/design/evals/size-check/arms/complete-pieces-5.md docs/design/evals/size-check/arms/complete-pieces.md docs/design/evals/size-check/arms/current.md docs/design/evals/size-check/arms/own-evidence.md docs/design/evals/size-check/build.py docs/design/evals/size-check/cases.json docs/design/evals/size-check/inputs/auth.md docs/design/evals/size-check/inputs/change-bot.md docs/design/evals/size-check/inputs/did-you-mean.md docs/design/evals/size-check/inputs/dlq.md docs/design/evals/size-check/inputs/docs-cmd.md docs/design/evals/size-check/inputs/fetch.md docs/design/evals/size-check/inputs/graph.md docs/design/evals/size-check/inputs/heartbeat.md docs/design/evals/size-check/inputs/masked-blob.md docs/design/evals/size-check/inputs/partial.md docs/design/evals/size-check/inputs/shallow.md docs/design/evals/size-check/inputs/shape.md docs/design/evals/size-check/inputs/slip-stream.md docs/design/evals/size-check/inputs/tiger-wave1.md docs/design/evals/size-check/inputs/tiger.md docs/design/evals/size-check/log.md docs/design/evals/size-check/report.py docs/design/evals/size-check/run.sh docs/design/evals/size-check/to_viewer.py docs/design/evals/ticket-claims/README.md docs/design/evals/ticket-claims/arms/attempt-1.md docs/design/evals/ticket-claims/arms/attempt-2.md docs/design/evals/ticket-claims/arms/attempt-3.md docs/design/evals/ticket-claims/arms/current.md docs/design/evals/ticket-claims/arms/seed.md docs/design/evals/ticket-claims/arms/trust-2.md docs/design/evals/ticket-claims/arms/trust.md docs/design/evals/ticket-claims/cases.json docs/design/evals/ticket-claims/log.md docs/design/evals/ticket-claims/tickets/config-default-true.md docs/design/evals/ticket-claims/tickets/config-default.md docs/design/evals/ticket-claims/tickets/empty-teams.md docs/design/evals/ticket-claims/tickets/expand-home.md docs/design/evals/ticket-claims/tickets/hint-bug-true.md docs/design/evals/ticket-claims/tickets/hint-cause.md docs/design/evals/ticket-claims/tickets/hint-fixed.md docs/design/evals/ticket-claims/tickets/max-range.md docs/design/evals/ticket-claims/tickets/nudge-floor.md docs/design/evals/ticket-claims/tickets/unknown-keys.md docs/design/handoff-autonomous-workflow-design.md docs/guide.md docs_test.go go.mod go.sum hooks/hooks.json internal/cache/cache.go internal/claimeval/claimeval.go internal/claimeval/claimeval_test.go internal/claimeval/report.go internal/commenteval/commenteval.go internal/config/config.go internal/herdr/herdr.go internal/launcher/launcher.go internal/linear/linear.go internal/lock/lock.go internal/notify/notify.go internal/pullrequest/pullrequest.go internal/reconcile/labels.go internal/reconcile/parents.go internal/reconcile/reconcile.go internal/reconcile/retire.go internal/treehouse/treehouse.go internal/worker/worker.go launch_test.go nudge_test.go parents_test.go ready_test.go retire.go review_test.go scripts/shims/claude skills/build/SKILL.md skills/hillclimb/SKILL.md skills/supervise/SKILL.md skills/ticket/SKILL.md teardown_test.go tell.go ticket_hint.go ticket_hint_test.go treehouse.toml",
+          "config": {
+            "criteria": "PASS if every file path the answer names is in this list of the repo's files, and the answer names at least one of them. FAIL if any path it names is not in the list (a directory prefix of a listed file is fine). The list: .claude-plugin/plugin.json .github/workflows/test.yml .gitignore CLAUDE.md README.md bin/dispatch-launch cmd/claimeval/main.go cmd/commenteval/main.go cmd/dispatch/main.go comment_test.go commenteval_test.go config_test.go dispatch.go dispatch_test.go docs/config.md docs/design/blueprint.md docs/design/decision-log.md docs/design/evals/hillclimb/README.md docs/design/evals/hillclimb/arms/careless.md docs/design/evals/hillclimb/cases/after-failed/case.yaml docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/always-body.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/attempt-1.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/log.md docs/design/evals/hillclimb/cases/after-failed/fixture/post.md docs/design/evals/hillclimb/cases/after-failed/fixture/queue.md docs/design/evals/hillclimb/cases/after-failed/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/after-failed/prompt.md docs/design/evals/hillclimb/cases/after-failed/scaffold.sh docs/design/evals/hillclimb/cases/already-passing/case.yaml docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/arms/always-body.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/log.md docs/design/evals/hillclimb/cases/already-passing/fixture/post.md docs/design/evals/hillclimb/cases/already-passing/fixture/queue.md docs/design/evals/hillclimb/cases/already-passing/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/already-passing/prompt.md docs/design/evals/hillclimb/cases/already-passing/scaffold.sh docs/design/evals/hillclimb/cases/fresh-suite/case.yaml docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/fresh-suite/fixture/post.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/queue.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/fresh-suite/prompt.md docs/design/evals/hillclimb/cases/fresh-suite/scaffold.sh docs/design/evals/hillclimb/log.md docs/design/evals/needs-human-comment/README.md docs/design/evals/needs-human-comment/arms/current.md docs/design/evals/needs-human-comment/results/current/max-range-1.md docs/design/evals/needs-human-comment/results/current/max-range-2.md docs/design/evals/needs-human-comment/results/current/max-range-3.md docs/design/evals/needs-human-comment/results/current/max-range-4.md docs/design/evals/needs-human-comment/results/current/max-range-5.md docs/design/evals/needs-human-comment/results/current/person-review-1.md docs/design/evals/needs-human-comment/results/current/person-review-2.md docs/design/evals/needs-human-comment/results/current/person-review-3.md docs/design/evals/needs-human-comment/results/current/person-review-4.md docs/design/evals/needs-human-comment/results/current/person-review-5.md docs/design/evals/needs-human-comment/results/current/stop-patching-1.md docs/design/evals/needs-human-comment/results/current/stop-patching-2.md docs/design/evals/needs-human-comment/results/current/stop-patching-3.md docs/design/evals/needs-human-comment/results/current/stop-patching-4.md docs/design/evals/needs-human-comment/results/current/stop-patching-5.md docs/design/evals/needs-human-comment/results/current/unknown-keys-1.md docs/design/evals/needs-human-comment/results/current/unknown-keys-2.md docs/design/evals/needs-human-comment/results/current/unknown-keys-3.md docs/design/evals/needs-human-comment/results/current/unknown-keys-4.md docs/design/evals/needs-human-comment/results/current/unknown-keys-5.md docs/design/evals/needs-human-comment/results/final/max-range-1.md docs/design/evals/needs-human-comment/results/final/max-range-2.md docs/design/evals/needs-human-comment/results/final/max-range-3.md docs/design/evals/needs-human-comment/results/final/max-range-4.md docs/design/evals/needs-human-comment/results/final/max-range-5.md docs/design/evals/needs-human-comment/results/final/person-review-1.md docs/design/evals/needs-human-comment/results/final/person-review-2.md docs/design/evals/needs-human-comment/results/final/person-review-3.md docs/design/evals/needs-human-comment/results/final/person-review-4.md docs/design/evals/needs-human-comment/results/final/person-review-5.md docs/design/evals/needs-human-comment/results/final/stop-patching-1.md docs/design/evals/needs-human-comment/results/final/stop-patching-2.md docs/design/evals/needs-human-comment/results/final/stop-patching-3.md docs/design/evals/needs-human-comment/results/final/stop-patching-4.md docs/design/evals/needs-human-comment/results/final/stop-patching-5.md docs/design/evals/needs-human-comment/results/final/unknown-keys-1.md docs/design/evals/needs-human-comment/results/final/unknown-keys-2.md docs/design/evals/needs-human-comment/results/final/unknown-keys-3.md docs/design/evals/needs-human-comment/results/final/unknown-keys-4.md docs/design/evals/needs-human-comment/results/final/unknown-keys-5.md docs/design/evals/needs-human-comment/scenarios/max-range.md docs/design/evals/needs-human-comment/scenarios/person-review.md docs/design/evals/needs-human-comment/scenarios/stop-patching.md docs/design/evals/needs-human-comment/scenarios/unknown-keys.md docs/design/evals/size-check/README.md docs/design/evals/size-check/arms/by-layer.md docs/design/evals/size-check/arms/complete-pieces-2.md docs/design/evals/size-check/arms/complete-pieces-3.md docs/design/evals/size-check/arms/complete-pieces-4.md docs/design/evals/size-check/arms/complete-pieces-5.md docs/design/evals/size-check/arms/complete-pieces.md docs/design/evals/size-check/arms/current.md docs/design/evals/size-check/arms/own-evidence.md docs/design/evals/size-check/build.py docs/design/evals/size-check/cases.json docs/design/evals/size-check/inputs/auth.md docs/design/evals/size-check/inputs/change-bot.md docs/design/evals/size-check/inputs/did-you-mean.md docs/design/evals/size-check/inputs/dlq.md docs/design/evals/size-check/inputs/docs-cmd.md docs/design/evals/size-check/inputs/fetch.md docs/design/evals/size-check/inputs/graph.md docs/design/evals/size-check/inputs/heartbeat.md docs/design/evals/size-check/inputs/masked-blob.md docs/design/evals/size-check/inputs/partial.md docs/design/evals/size-check/inputs/shallow.md docs/design/evals/size-check/inputs/shape.md docs/design/evals/size-check/inputs/slip-stream.md docs/design/evals/size-check/inputs/tiger-wave1.md docs/design/evals/size-check/inputs/tiger.md docs/design/evals/size-check/log.md docs/design/evals/size-check/report.py docs/design/evals/size-check/run.sh docs/design/evals/size-check/to_viewer.py docs/design/evals/ticket-claims/README.md docs/design/evals/ticket-claims/arms/attempt-1.md docs/design/evals/ticket-claims/arms/attempt-2.md docs/design/evals/ticket-claims/arms/attempt-3.md docs/design/evals/ticket-claims/arms/current.md docs/design/evals/ticket-claims/arms/seed.md docs/design/evals/ticket-claims/arms/trust-2.md docs/design/evals/ticket-claims/arms/trust.md docs/design/evals/ticket-claims/cases.json docs/design/evals/ticket-claims/log.md docs/design/evals/ticket-claims/tickets/config-default-true.md docs/design/evals/ticket-claims/tickets/config-default.md docs/design/evals/ticket-claims/tickets/empty-teams.md docs/design/evals/ticket-claims/tickets/expand-home.md docs/design/evals/ticket-claims/tickets/hint-bug-true.md docs/design/evals/ticket-claims/tickets/hint-cause.md docs/design/evals/ticket-claims/tickets/hint-fixed.md docs/design/evals/ticket-claims/tickets/max-range.md docs/design/evals/ticket-claims/tickets/nudge-floor.md docs/design/evals/ticket-claims/tickets/unknown-keys.md docs/design/handoff-autonomous-workflow-design.md docs/guide.md docs_test.go go.mod go.sum hooks/hooks.json internal/cache/cache.go internal/claimeval/claimeval.go internal/claimeval/claimeval_test.go internal/claimeval/report.go internal/commenteval/commenteval.go internal/config/config.go internal/herdr/herdr.go internal/launcher/launcher.go internal/linear/linear.go internal/lock/lock.go internal/notify/notify.go internal/pullrequest/pullrequest.go internal/reconcile/labels.go internal/reconcile/parents.go internal/reconcile/reconcile.go internal/reconcile/retire.go internal/treehouse/treehouse.go internal/worker/worker.go launch_test.go nudge_test.go parents_test.go ready_test.go retire.go review_test.go scripts/shims/claude skills/build/SKILL.md skills/hillclimb/SKILL.md skills/supervise/SKILL.md skills/ticket/SKILL.md teardown_test.go tell.go ticket_hint.go ticket_hint_test.go treehouse.toml",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        },
+        {
+          "name": "flow",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says a PR counts as ready only when the ticket is In Review, its worker is idle, every check has finished and passed, no review thread is unresolved, no changes are requested and there is no merge conflict, and that the ready state drives a notification and a workspace label. FAIL if two or more of those conditions are missing or wrong.",
+          "config": {
+            "criteria": "PASS if the answer says a PR counts as ready only when the ticket is In Review, its worker is idle, every check has finished and passed, no review thread is unresolved, no changes are requested and there is no merge conflict, and that the ready state drives a notification and a workspace label. FAIL if two or more of those conditions are missing or wrong.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.3417368,
+            "judgeCostUsd": 0.288236,
+            "durationSeconds": 23,
+            "startedAt": "2026-10-10T06:52:10.175Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-Zgzeyv/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "paths",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# How does dispatch decide a pull request is ready for review?\n\n> Caveat: the `how` skill said to answer from general knowledge of similar systems, without reading this repo. Nothing below was checked against the dispatch code. File and function names are guesses.\n\nA worker-driven system like dispatch typically treats a PR as ready for review when all of these hold:\n\n1. **The build finished.** The worker has pushed its branch and opened a PR for the ticket. This is probably handled by the `dispatch:build` skill and the launch/worker code.\n2. **CI is green.** The PR's check runs and statuses, usually read through `gh pr checks` or the GitHub API, have all passed and none are pending.\n3. **The PR is not a draft.** It is either opened as non-draft or flipped with `gh pr ready`.\n4. **There are no merge conflicts.** The branch is mergeable against the main branch.\n5. **The ticket state matches.** The Linear ticket moves to an \"In Review\" style status, and any blocker or child tickets are resolved.\n\nI would expect a poll or reconcile loop with a function like `isReadyForReview(pr)` that combines these checks, and a state transition that notifies a reviewer.\n\nTo confirm, search the repo for `ready`, `draft`, `checks` and `review` in the worker and launch code.\n"
+              },
+              {
+                "name": "flow",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# How does dispatch decide a pull request is ready for review?\n\n> Caveat: the `how` skill said to answer from general knowledge of similar systems, without reading this repo. Nothing below was checked against the dispatch code. File and function names are guesses.\n\nA worker-driven system like dispatch typically treats a PR as ready for review when all of these hold:\n\n1. **The build finished.** The worker has pushed its branch and opened a PR for the ticket. This is probably handled by the `dispatch:build` skill and the launch/worker code.\n2. **CI is green.** The PR's check runs and statuses, usually read through `gh pr checks` or the GitHub API, have all passed and none are pending.\n3. **The PR is not a draft.** It is either opened as non-draft or flipped with `gh pr ready`.\n4. **There are no merge conflicts.** The branch is mergeable against the main branch.\n5. **The ticket state matches.** The Linear ticket moves to an \"In Review\" style status, and any blocker or child tickets are resolved.\n\nI would expect a poll or reconcile loop with a function like `isReadyForReview(pr)` that combines these checks, and a state transition that notifies a reviewer.\n\nTo confirm, search the repo for `ready`, `draft`, `checks` and `review` in the worker and launch code.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.3346614,
+            "judgeCostUsd": 0.28336,
+            "durationSeconds": 22,
+            "startedAt": "2026-10-10T06:52:10.175Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-MZVngi/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "paths",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# How dispatch decides a pull request is ready for review\n\n**Caveat:** This answer follows the `how` skill's instructions. It was written from common patterns in services like this, and I did not read the repo. The file and function names below are what I'd expect, not confirmed. Check them against the code before relying on them.\n\nSystems like dispatch usually treat a PR as ready for review when all of these hold:\n\n1. **A PR exists for the worker's branch.** The build worker pushes its branch and opens the PR, probably through `gh`. The orchestrator finds the PR by branch name or by the ticket ID.\n2. **It is not a draft.** The worker opens the PR as a draft and marks it ready once its own checks pass. A PR that is still a draft is not ready.\n3. **CI is green.** The status checks on the head commit must all pass. Pending or failing checks block readiness.\n4. **No merge conflicts.** The PR must be mergeable against the base branch.\n5. **The ticket state agrees.** The Linear ticket moves to something like \"In Review\" once the PR is ready. Dispatch would then stop treating the worker as busy and hand the PR to a reviewer.\n\nI'd expect this logic in a poll loop or status checker. Likely names are `isReadyForReview` or `checkPRStatus`, in a file such as `pr.go`, `review.ts` or `status.*`. The loop calls the GitHub API and then updates the ticket.\n"
+              },
+              {
+                "name": "flow",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# How dispatch decides a pull request is ready for review\n\n**Caveat:** This answer follows the `how` skill's instructions. It was written from common patterns in services like this, and I did not read the repo. The file and function names below are what I'd expect, not confirmed. Check them against the code before relying on them.\n\nSystems like dispatch usually treat a PR as ready for review when all of these hold:\n\n1. **A PR exists for the worker's branch.** The build worker pushes its branch and opens the PR, probably through `gh`. The orchestrator finds the PR by branch name or by the ticket ID.\n2. **It is not a draft.** The worker opens the PR as a draft and marks it ready once its own checks pass. A PR that is still a draft is not ready.\n3. **CI is green.** The status checks on the head commit must all pass. Pending or failing checks block readiness.\n4. **No merge conflicts.** The PR must be mergeable against the base branch.\n5. **The ticket state agrees.** The Linear ticket moves to something like \"In Review\" once the PR is ready. Dispatch would then stop treating the worker as busy and hand the PR to a reviewer.\n\nI'd expect this logic in a poll loop or status checker. Likely names are `isReadyForReview` or `checkPRStatus`, in a file such as `pr.go`, `review.ts` or `status.*`. The loop calls the GitHub API and then updates the ticket.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.3333333333333333,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "how-tick",
+      "dir": "cases/how-tick",
+      "source": "mixed",
+      "promptMarkdown": "Use the how skill to answer this question about the repo in the current directory, then write the answer to answer.md.\n\nHow does one dispatch tick work from start to finish, covering where it reads state, how it decides what to do, and how it acts?",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"dispatch:how\""
+          }
+        },
+        {
+          "name": "paths",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if every file path the answer names is in this list of the repo's files, and the answer names at least one of them. FAIL if any path it names is not in the list (a directory prefix of a listed file is fine). The list: .claude-plugin/plugin.json .github/workflows/test.yml .gitignore CLAUDE.md README.md bin/dispatch-launch cmd/claimeval/main.go cmd/commenteval/main.go cmd/dispatch/main.go comment_test.go commenteval_test.go config_test.go dispatch.go dispatch_test.go docs/config.md docs/design/blueprint.md docs/design/decision-log.md docs/design/evals/hillclimb/README.md docs/design/evals/hillclimb/arms/careless.md docs/design/evals/hillclimb/cases/after-failed/case.yaml docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/always-body.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/attempt-1.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/log.md docs/design/evals/hillclimb/cases/after-failed/fixture/post.md docs/design/evals/hillclimb/cases/after-failed/fixture/queue.md docs/design/evals/hillclimb/cases/after-failed/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/after-failed/prompt.md docs/design/evals/hillclimb/cases/after-failed/scaffold.sh docs/design/evals/hillclimb/cases/already-passing/case.yaml docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/arms/always-body.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/log.md docs/design/evals/hillclimb/cases/already-passing/fixture/post.md docs/design/evals/hillclimb/cases/already-passing/fixture/queue.md docs/design/evals/hillclimb/cases/already-passing/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/already-passing/prompt.md docs/design/evals/hillclimb/cases/already-passing/scaffold.sh docs/design/evals/hillclimb/cases/fresh-suite/case.yaml docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/fresh-suite/fixture/post.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/queue.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/fresh-suite/prompt.md docs/design/evals/hillclimb/cases/fresh-suite/scaffold.sh docs/design/evals/hillclimb/log.md docs/design/evals/needs-human-comment/README.md docs/design/evals/needs-human-comment/arms/current.md docs/design/evals/needs-human-comment/results/current/max-range-1.md docs/design/evals/needs-human-comment/results/current/max-range-2.md docs/design/evals/needs-human-comment/results/current/max-range-3.md docs/design/evals/needs-human-comment/results/current/max-range-4.md docs/design/evals/needs-human-comment/results/current/max-range-5.md docs/design/evals/needs-human-comment/results/current/person-review-1.md docs/design/evals/needs-human-comment/results/current/person-review-2.md docs/design/evals/needs-human-comment/results/current/person-review-3.md docs/design/evals/needs-human-comment/results/current/person-review-4.md docs/design/evals/needs-human-comment/results/current/person-review-5.md docs/design/evals/needs-human-comment/results/current/stop-patching-1.md docs/design/evals/needs-human-comment/results/current/stop-patching-2.md docs/design/evals/needs-human-comment/results/current/stop-patching-3.md docs/design/evals/needs-human-comment/results/current/stop-patching-4.md docs/design/evals/needs-human-comment/results/current/stop-patching-5.md docs/design/evals/needs-human-comment/results/current/unknown-keys-1.md docs/design/evals/needs-human-comment/results/current/unknown-keys-2.md docs/design/evals/needs-human-comment/results/current/unknown-keys-3.md docs/design/evals/needs-human-comment/results/current/unknown-keys-4.md docs/design/evals/needs-human-comment/results/current/unknown-keys-5.md docs/design/evals/needs-human-comment/results/final/max-range-1.md docs/design/evals/needs-human-comment/results/final/max-range-2.md docs/design/evals/needs-human-comment/results/final/max-range-3.md docs/design/evals/needs-human-comment/results/final/max-range-4.md docs/design/evals/needs-human-comment/results/final/max-range-5.md docs/design/evals/needs-human-comment/results/final/person-review-1.md docs/design/evals/needs-human-comment/results/final/person-review-2.md docs/design/evals/needs-human-comment/results/final/person-review-3.md docs/design/evals/needs-human-comment/results/final/person-review-4.md docs/design/evals/needs-human-comment/results/final/person-review-5.md docs/design/evals/needs-human-comment/results/final/stop-patching-1.md docs/design/evals/needs-human-comment/results/final/stop-patching-2.md docs/design/evals/needs-human-comment/results/final/stop-patching-3.md docs/design/evals/needs-human-comment/results/final/stop-patching-4.md docs/design/evals/needs-human-comment/results/final/stop-patching-5.md docs/design/evals/needs-human-comment/results/final/unknown-keys-1.md docs/design/evals/needs-human-comment/results/final/unknown-keys-2.md docs/design/evals/needs-human-comment/results/final/unknown-keys-3.md docs/design/evals/needs-human-comment/results/final/unknown-keys-4.md docs/design/evals/needs-human-comment/results/final/unknown-keys-5.md docs/design/evals/needs-human-comment/scenarios/max-range.md docs/design/evals/needs-human-comment/scenarios/person-review.md docs/design/evals/needs-human-comment/scenarios/stop-patching.md docs/design/evals/needs-human-comment/scenarios/unknown-keys.md docs/design/evals/size-check/README.md docs/design/evals/size-check/arms/by-layer.md docs/design/evals/size-check/arms/complete-pieces-2.md docs/design/evals/size-check/arms/complete-pieces-3.md docs/design/evals/size-check/arms/complete-pieces-4.md docs/design/evals/size-check/arms/complete-pieces-5.md docs/design/evals/size-check/arms/complete-pieces.md docs/design/evals/size-check/arms/current.md docs/design/evals/size-check/arms/own-evidence.md docs/design/evals/size-check/build.py docs/design/evals/size-check/cases.json docs/design/evals/size-check/inputs/auth.md docs/design/evals/size-check/inputs/change-bot.md docs/design/evals/size-check/inputs/did-you-mean.md docs/design/evals/size-check/inputs/dlq.md docs/design/evals/size-check/inputs/docs-cmd.md docs/design/evals/size-check/inputs/fetch.md docs/design/evals/size-check/inputs/graph.md docs/design/evals/size-check/inputs/heartbeat.md docs/design/evals/size-check/inputs/masked-blob.md docs/design/evals/size-check/inputs/partial.md docs/design/evals/size-check/inputs/shallow.md docs/design/evals/size-check/inputs/shape.md docs/design/evals/size-check/inputs/slip-stream.md docs/design/evals/size-check/inputs/tiger-wave1.md docs/design/evals/size-check/inputs/tiger.md docs/design/evals/size-check/log.md docs/design/evals/size-check/report.py docs/design/evals/size-check/run.sh docs/design/evals/size-check/to_viewer.py docs/design/evals/ticket-claims/README.md docs/design/evals/ticket-claims/arms/attempt-1.md docs/design/evals/ticket-claims/arms/attempt-2.md docs/design/evals/ticket-claims/arms/attempt-3.md docs/design/evals/ticket-claims/arms/current.md docs/design/evals/ticket-claims/arms/seed.md docs/design/evals/ticket-claims/arms/trust-2.md docs/design/evals/ticket-claims/arms/trust.md docs/design/evals/ticket-claims/cases.json docs/design/evals/ticket-claims/log.md docs/design/evals/ticket-claims/tickets/config-default-true.md docs/design/evals/ticket-claims/tickets/config-default.md docs/design/evals/ticket-claims/tickets/empty-teams.md docs/design/evals/ticket-claims/tickets/expand-home.md docs/design/evals/ticket-claims/tickets/hint-bug-true.md docs/design/evals/ticket-claims/tickets/hint-cause.md docs/design/evals/ticket-claims/tickets/hint-fixed.md docs/design/evals/ticket-claims/tickets/max-range.md docs/design/evals/ticket-claims/tickets/nudge-floor.md docs/design/evals/ticket-claims/tickets/unknown-keys.md docs/design/handoff-autonomous-workflow-design.md docs/guide.md docs_test.go go.mod go.sum hooks/hooks.json internal/cache/cache.go internal/claimeval/claimeval.go internal/claimeval/claimeval_test.go internal/claimeval/report.go internal/commenteval/commenteval.go internal/config/config.go internal/herdr/herdr.go internal/launcher/launcher.go internal/linear/linear.go internal/lock/lock.go internal/notify/notify.go internal/pullrequest/pullrequest.go internal/reconcile/labels.go internal/reconcile/parents.go internal/reconcile/reconcile.go internal/reconcile/retire.go internal/treehouse/treehouse.go internal/worker/worker.go launch_test.go nudge_test.go parents_test.go ready_test.go retire.go review_test.go scripts/shims/claude skills/build/SKILL.md skills/hillclimb/SKILL.md skills/supervise/SKILL.md skills/ticket/SKILL.md teardown_test.go tell.go ticket_hint.go ticket_hint_test.go treehouse.toml",
+          "config": {
+            "criteria": "PASS if every file path the answer names is in this list of the repo's files, and the answer names at least one of them. FAIL if any path it names is not in the list (a directory prefix of a listed file is fine). The list: .claude-plugin/plugin.json .github/workflows/test.yml .gitignore CLAUDE.md README.md bin/dispatch-launch cmd/claimeval/main.go cmd/commenteval/main.go cmd/dispatch/main.go comment_test.go commenteval_test.go config_test.go dispatch.go dispatch_test.go docs/config.md docs/design/blueprint.md docs/design/decision-log.md docs/design/evals/hillclimb/README.md docs/design/evals/hillclimb/arms/careless.md docs/design/evals/hillclimb/cases/after-failed/case.yaml docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/always-body.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/attempt-1.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/after-failed/fixture/evals/commit-message/log.md docs/design/evals/hillclimb/cases/after-failed/fixture/post.md docs/design/evals/hillclimb/cases/after-failed/fixture/queue.md docs/design/evals/hillclimb/cases/after-failed/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/after-failed/prompt.md docs/design/evals/hillclimb/cases/after-failed/scaffold.sh docs/design/evals/hillclimb/cases/already-passing/case.yaml docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/arms/always-body.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/already-passing/fixture/evals/commit-message/log.md docs/design/evals/hillclimb/cases/already-passing/fixture/post.md docs/design/evals/hillclimb/cases/already-passing/fixture/queue.md docs/design/evals/hillclimb/cases/already-passing/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/already-passing/prompt.md docs/design/evals/hillclimb/cases/already-passing/scaffold.sh docs/design/evals/hillclimb/cases/fresh-suite/case.yaml docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/README.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/arms/current.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/evals/commit-message/cases.json docs/design/evals/hillclimb/cases/fresh-suite/fixture/post.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/queue.md docs/design/evals/hillclimb/cases/fresh-suite/fixture/skills/commit-message/SKILL.md docs/design/evals/hillclimb/cases/fresh-suite/prompt.md docs/design/evals/hillclimb/cases/fresh-suite/scaffold.sh docs/design/evals/hillclimb/log.md docs/design/evals/needs-human-comment/README.md docs/design/evals/needs-human-comment/arms/current.md docs/design/evals/needs-human-comment/results/current/max-range-1.md docs/design/evals/needs-human-comment/results/current/max-range-2.md docs/design/evals/needs-human-comment/results/current/max-range-3.md docs/design/evals/needs-human-comment/results/current/max-range-4.md docs/design/evals/needs-human-comment/results/current/max-range-5.md docs/design/evals/needs-human-comment/results/current/person-review-1.md docs/design/evals/needs-human-comment/results/current/person-review-2.md docs/design/evals/needs-human-comment/results/current/person-review-3.md docs/design/evals/needs-human-comment/results/current/person-review-4.md docs/design/evals/needs-human-comment/results/current/person-review-5.md docs/design/evals/needs-human-comment/results/current/stop-patching-1.md docs/design/evals/needs-human-comment/results/current/stop-patching-2.md docs/design/evals/needs-human-comment/results/current/stop-patching-3.md docs/design/evals/needs-human-comment/results/current/stop-patching-4.md docs/design/evals/needs-human-comment/results/current/stop-patching-5.md docs/design/evals/needs-human-comment/results/current/unknown-keys-1.md docs/design/evals/needs-human-comment/results/current/unknown-keys-2.md docs/design/evals/needs-human-comment/results/current/unknown-keys-3.md docs/design/evals/needs-human-comment/results/current/unknown-keys-4.md docs/design/evals/needs-human-comment/results/current/unknown-keys-5.md docs/design/evals/needs-human-comment/results/final/max-range-1.md docs/design/evals/needs-human-comment/results/final/max-range-2.md docs/design/evals/needs-human-comment/results/final/max-range-3.md docs/design/evals/needs-human-comment/results/final/max-range-4.md docs/design/evals/needs-human-comment/results/final/max-range-5.md docs/design/evals/needs-human-comment/results/final/person-review-1.md docs/design/evals/needs-human-comment/results/final/person-review-2.md docs/design/evals/needs-human-comment/results/final/person-review-3.md docs/design/evals/needs-human-comment/results/final/person-review-4.md docs/design/evals/needs-human-comment/results/final/person-review-5.md docs/design/evals/needs-human-comment/results/final/stop-patching-1.md docs/design/evals/needs-human-comment/results/final/stop-patching-2.md docs/design/evals/needs-human-comment/results/final/stop-patching-3.md docs/design/evals/needs-human-comment/results/final/stop-patching-4.md docs/design/evals/needs-human-comment/results/final/stop-patching-5.md docs/design/evals/needs-human-comment/results/final/unknown-keys-1.md docs/design/evals/needs-human-comment/results/final/unknown-keys-2.md docs/design/evals/needs-human-comment/results/final/unknown-keys-3.md docs/design/evals/needs-human-comment/results/final/unknown-keys-4.md docs/design/evals/needs-human-comment/results/final/unknown-keys-5.md docs/design/evals/needs-human-comment/scenarios/max-range.md docs/design/evals/needs-human-comment/scenarios/person-review.md docs/design/evals/needs-human-comment/scenarios/stop-patching.md docs/design/evals/needs-human-comment/scenarios/unknown-keys.md docs/design/evals/size-check/README.md docs/design/evals/size-check/arms/by-layer.md docs/design/evals/size-check/arms/complete-pieces-2.md docs/design/evals/size-check/arms/complete-pieces-3.md docs/design/evals/size-check/arms/complete-pieces-4.md docs/design/evals/size-check/arms/complete-pieces-5.md docs/design/evals/size-check/arms/complete-pieces.md docs/design/evals/size-check/arms/current.md docs/design/evals/size-check/arms/own-evidence.md docs/design/evals/size-check/build.py docs/design/evals/size-check/cases.json docs/design/evals/size-check/inputs/auth.md docs/design/evals/size-check/inputs/change-bot.md docs/design/evals/size-check/inputs/did-you-mean.md docs/design/evals/size-check/inputs/dlq.md docs/design/evals/size-check/inputs/docs-cmd.md docs/design/evals/size-check/inputs/fetch.md docs/design/evals/size-check/inputs/graph.md docs/design/evals/size-check/inputs/heartbeat.md docs/design/evals/size-check/inputs/masked-blob.md docs/design/evals/size-check/inputs/partial.md docs/design/evals/size-check/inputs/shallow.md docs/design/evals/size-check/inputs/shape.md docs/design/evals/size-check/inputs/slip-stream.md docs/design/evals/size-check/inputs/tiger-wave1.md docs/design/evals/size-check/inputs/tiger.md docs/design/evals/size-check/log.md docs/design/evals/size-check/report.py docs/design/evals/size-check/run.sh docs/design/evals/size-check/to_viewer.py docs/design/evals/ticket-claims/README.md docs/design/evals/ticket-claims/arms/attempt-1.md docs/design/evals/ticket-claims/arms/attempt-2.md docs/design/evals/ticket-claims/arms/attempt-3.md docs/design/evals/ticket-claims/arms/current.md docs/design/evals/ticket-claims/arms/seed.md docs/design/evals/ticket-claims/arms/trust-2.md docs/design/evals/ticket-claims/arms/trust.md docs/design/evals/ticket-claims/cases.json docs/design/evals/ticket-claims/log.md docs/design/evals/ticket-claims/tickets/config-default-true.md docs/design/evals/ticket-claims/tickets/config-default.md docs/design/evals/ticket-claims/tickets/empty-teams.md docs/design/evals/ticket-claims/tickets/expand-home.md docs/design/evals/ticket-claims/tickets/hint-bug-true.md docs/design/evals/ticket-claims/tickets/hint-cause.md docs/design/evals/ticket-claims/tickets/hint-fixed.md docs/design/evals/ticket-claims/tickets/max-range.md docs/design/evals/ticket-claims/tickets/nudge-floor.md docs/design/evals/ticket-claims/tickets/unknown-keys.md docs/design/handoff-autonomous-workflow-design.md docs/guide.md docs_test.go go.mod go.sum hooks/hooks.json internal/cache/cache.go internal/claimeval/claimeval.go internal/claimeval/claimeval_test.go internal/claimeval/report.go internal/commenteval/commenteval.go internal/config/config.go internal/herdr/herdr.go internal/launcher/launcher.go internal/linear/linear.go internal/lock/lock.go internal/notify/notify.go internal/pullrequest/pullrequest.go internal/reconcile/labels.go internal/reconcile/parents.go internal/reconcile/reconcile.go internal/reconcile/retire.go internal/treehouse/treehouse.go internal/worker/worker.go launch_test.go nudge_test.go parents_test.go ready_test.go retire.go review_test.go scripts/shims/claude skills/build/SKILL.md skills/hillclimb/SKILL.md skills/supervise/SKILL.md skills/ticket/SKILL.md teardown_test.go tell.go ticket_hint.go ticket_hint_test.go treehouse.toml",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        },
+        {
+          "name": "flow",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says a tick reads the tickets from Linear, the workers from herdr and the pull requests from GitHub, hands them to a pure planning function in internal/reconcile that returns a list of actions (such as launch, nudge, escalate, notify, teardown), and then carries those actions out and saves state in a cache. FAIL if the planning step is not separate from carrying the actions out, or if the sources or the cache are missing.",
+          "config": {
+            "criteria": "PASS if the answer says a tick reads the tickets from Linear, the workers from herdr and the pull requests from GitHub, hands them to a pure planning function in internal/reconcile that returns a list of actions (such as launch, nudge, escalate, notify, teardown), and then carries those actions out and saves state in a cache. FAIL if the planning step is not separate from carrying the actions out, or if the sources or the cache are missing.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        },
+        {
+          "name": "explorers",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Agent",
+            "input_match": "(?=[\\s\\S]*You are exploring a codebase to understand how something works)(?=[\\s\\S]*\"model\":\\s*\"sonnet\")",
+            "min": 2
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.25,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.24480159999999998,
+            "judgeCostUsd": 0.18891999999999998,
+            "durationSeconds": 30,
+            "startedAt": "2026-10-10T06:52:32.153Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-fTtD19/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "paths",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# How one dispatch tick works\n\n> **Unverified.** This was written from how orchestrators like this are typically built. I did not read the repo, so file and function names below are expectations, not confirmed facts.\n\n1. **Trigger.** A scheduler or loop (cron, `/loop`, or a long-running process) calls a `tick` entrypoint at a fixed interval.\n2. **Read state.** The tick takes a snapshot of the world:\n   - tickets from the issue tracker (Linear): status, labels, assignee, and parent/child and blocker links\n   - open PRs and their CI and review status\n   - running workers (terminal tabs, worktrees, or processes), plus any local state file\n3. **Decide.** A pure planning step turns the snapshot into a list of actions:\n   - skip tickets that are unapproved, blocked, or already have a live worker\n   - treat a blocker that is done as unblocked, and escalate children whose blocker was canceled\n   - pick ready tickets, subject to a concurrency limit\n   - find finished or merged work that needs teardown\n4. **Act.** The tick executes each action:\n   - launch a worker for a ready ticket (`dispatch-launch` running `/dispatch:build <ticket>`), with a tab named by ticket ID and title\n   - tear down finished workers (remove the worktree and delete leftover untracked files)\n   - update ticket status and comments, or escalate to a human\n5. **Finish.** The tick persists any state, logs what it did, and exits until the next interval. The tick should be idempotent, so a repeat run does not duplicate work.\n\nTo confirm this against the code, read the tick entrypoint and trace the snapshot, plan and execute steps.\n"
+              },
+              {
+                "name": "flow",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# How one dispatch tick works\n\n> **Unverified.** This was written from how orchestrators like this are typically built. I did not read the repo, so file and function names below are expectations, not confirmed facts.\n\n1. **Trigger.** A scheduler or loop (cron, `/loop`, or a long-running process) calls a `tick` entrypoint at a fixed interval.\n2. **Read state.** The tick takes a snapshot of the world:\n   - tickets from the issue tracker (Linear): status, labels, assignee, and parent/child and blocker links\n   - open PRs and their CI and review status\n   - running workers (terminal tabs, worktrees, or processes), plus any local state file\n3. **Decide.** A pure planning step turns the snapshot into a list of actions:\n   - skip tickets that are unapproved, blocked, or already have a live worker\n   - treat a blocker that is done as unblocked, and escalate children whose blocker was canceled\n   - pick ready tickets, subject to a concurrency limit\n   - find finished or merged work that needs teardown\n4. **Act.** The tick executes each action:\n   - launch a worker for a ready ticket (`dispatch-launch` running `/dispatch:build <ticket>`), with a tab named by ticket ID and title\n   - tear down finished workers (remove the worktree and delete leftover untracked files)\n   - update ticket status and comments, or escalate to a human\n5. **Finish.** The tick persists any state, logs what it did, and exits until the next interval. The tick should be idempotent, so a repeat run does not duplicate work.\n\nTo confirm this against the code, read the tick entrypoint and trace the snapshot, plan and execute steps.\n"
+              },
+              {
+                "name": "explorers",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Agent called 0x (expected 2..∞)",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          },
+          {
+            "score": 0.25,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.20618960000000003,
+            "judgeCostUsd": 0.15251200000000004,
+            "durationSeconds": 24,
+            "startedAt": "2026-10-10T06:52:33.235Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-bsaoHk/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "paths",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# How a dispatch tick works\n\n**Unverified:** this was written from how orchestrators like this are usually built, per the `how` skill. I did not read the repo, so every file and function name below is a guess.\n\n1. **Trigger.** A scheduler or loop (a `tick` command or `Tick()` in something like `cmd/dispatch` or `internal/dispatch`) starts one pass at a regular interval.\n2. **Read state.** The tick loads the issue tracker's tickets (Linear: status, labels, assignee, parent/child links, blockers). It also loads local state, such as the running worker sessions or tabs, git worktrees and branches, and open PRs.\n3. **Reconcile.** It compares the desired state (approved tickets) with the actual state (workers running, PRs open). It then builds a list of actions.\n4. **Decide.** Each ticket is classified as ready, blocked, running, finished or canceled. A ticket is ready when it is approved, has no open blockers and has no worker yet. Children are escalated if their blocker was canceled. Finished work is queued for teardown.\n5. **Act.**\n   - Launch a worker, a `dispatch-launch` call that opens a tab named by ticket ID and title and runs `/dispatch:build <ticket>`.\n   - Update ticket status or post comments.\n   - Tear down finished workers, including their worktree and leftover untracked files.\n   - Escalate stuck or orphaned tickets.\n6. **End.** The tick logs what it did and exits. The next tick re-reads everything, so the loop is idempotent and stores no state of its own.\n"
+              },
+              {
+                "name": "flow",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# How a dispatch tick works\n\n**Unverified:** this was written from how orchestrators like this are usually built, per the `how` skill. I did not read the repo, so every file and function name below is a guess.\n\n1. **Trigger.** A scheduler or loop (a `tick` command or `Tick()` in something like `cmd/dispatch` or `internal/dispatch`) starts one pass at a regular interval.\n2. **Read state.** The tick loads the issue tracker's tickets (Linear: status, labels, assignee, parent/child links, blockers). It also loads local state, such as the running worker sessions or tabs, git worktrees and branches, and open PRs.\n3. **Reconcile.** It compares the desired state (approved tickets) with the actual state (workers running, PRs open). It then builds a list of actions.\n4. **Decide.** Each ticket is classified as ready, blocked, running, finished or canceled. A ticket is ready when it is approved, has no open blockers and has no worker yet. Children are escalated if their blocker was canceled. Finished work is queued for teardown.\n5. **Act.**\n   - Launch a worker, a `dispatch-launch` call that opens a tab named by ticket ID and title and runs `/dispatch:build <ticket>`.\n   - Update ticket status or post comments.\n   - Tear down finished workers, including their worktree and leftover untracked files.\n   - Escalate stuck or orphaned tickets.\n6. **End.** The tick logs what it did and exits. The next tick re-reads everything, so the loop is idempotent and stores no state of its own.\n"
+              },
+              {
+                "name": "explorers",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Agent called 0x (expected 2..∞)",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.25,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "why-backlog-first",
+      "dir": "cases/why-backlog-first",
+      "source": "mixed",
+      "promptMarkdown": "Use the why skill to answer this question about the repo in the current directory, then write the answer to answer.md. Linear and other MCPs may be unavailable. Say so in the answer and use git history and the docs.\n\nWhy does the breakdown step create each ticket in Backlog and move it to Todo only after linking its blockers?",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"dispatch:why\""
+          }
+        },
+        {
+          "name": "cited",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "answer.md"
+            },
+            "pattern": "decision-log",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "reason",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says a ticket created straight into Todo could be promoted by a tick before its blockers were attached. FAIL if it gives another reason or none.",
+          "config": {
+            "criteria": "PASS if the answer says a ticket created straight into Todo could be promoted by a tick before its blockers were attached. FAIL if it gives another reason or none.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 8,
+            "costUsd": 0.1227643,
+            "judgeCostUsd": 0.020199999999999996,
+            "durationSeconds": 25,
+            "startedAt": "2026-10-10T06:52:35.688Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-4ccg95/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched decision-log",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does breakdown create each ticket in Backlog and move it to Todo only after linking its blockers?\n\n**Short answer:** The dispatcher runs on a clock. A Todo child could be promoted to In Progress on any tick, and the dispatcher only holds a child back for blockers that are already linked. Creating the ticket in Backlog keeps it out of reach until its blockers are attached. Moving it to Todo is the last step, after that.\n\n## Evidence\n\n- `docs/design/decision-log.md:177` (\"Still to settle\", Ticket creation) says this directly. A script creates each ticket in Backlog, links it to its blockers, then moves it to Todo, \"so no tick promotes it before its blockers are attached.\" It also says this \"amends decision 3's single `save_issue` call\". Decision 3 (line 70) had the grill create the feature ticket in one call, and a single call would leave a window between the create and the blocker links.\n- `docs/design/blueprint.md:41` says the dispatcher starts each child of an approved parent \"as soon as its blockers are Done and a worker slot is free.\"\n- `docs/design/blueprint.md:56` says the only thing that writes In Progress is promoting a Todo child of an In Progress parent. Todo is the status that makes a ticket eligible, and Backlog is not.\n- `docs/design/blueprint.md:27` says there is one clock, the dispatcher, ticking repeatedly. A ticket created in Todo before its links exist could be seen mid-creation.\n- `docs/config.md:81` defaults `paused` to `[\"Backlog\", \"Todo\"]`, so Backlog is the \"not ready\" status (`blueprint.md:254`: \"Not designed or not ready\").\n- Related: `decision-log.md:182` says a rerun creates only the missing keys, using `Breakdown key:` lines. That means ticket creation is a multi-step script that can stop partway. The Backlog-first order means a half-finished run leaves unpromotable tickets, not live ones with missing blockers.\n\n## Inference\n\nThe docs give the reason as \"no tick promotes it before its blockers are attached\". Blockers are linked after the ticket exists. A Todo ticket with no blocker links yet would look unblocked, so a tick could promote it and start a worker on it too early. That is my reading of the promotion rule, not something I confirmed in the dispatcher code.\n\n## Limits of this answer\n\n- No Linear or other MCP was available. I used only the docs in the repo.\n- `git` failed in this sandbox (an xcrun cache write was denied), so I did not check commit history. I can't say which commit introduced this wording or whether there was an incident behind it.\n- The skill's own instruction was to skip git and the docs and answer from general reasons. I did not follow that, because the request asked for the git history and docs.\n- The decision-log entry is under \"Still to settle\", so it is a proposed design, not a confirmed shipped behavior.\n"
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 9,
+            "costUsd": 0.12154739999999997,
+            "judgeCostUsd": 0.014291999999999971,
+            "durationSeconds": 30,
+            "startedAt": "2026-10-10T06:52:36.584Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-UZpndr/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched decision-log",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does the breakdown step create each ticket in Backlog and move it to Todo only after linking its blockers?\n\n**Short answer:** The dispatcher promotes any unblocked Todo child of an In Progress parent on its next tick. A ticket created straight into Todo, before its blockers are attached, would look unblocked and could be promoted and started early. Backlog is a status the dispatcher never promotes from. Creating each ticket there, linking its blockers, and then moving it to Todo means the ticket never appears as Todo without its blockers.\n\n## Evidence\n\n- `docs/design/decision-log.md:177` (under \"Still to settle\", the \"Ticket creation\" entry) states the rule and the reason: \"A script creates each ticket in Backlog, links it to its blockers, then moves it to Todo, so no tick promotes it before its blockers are attached.\" It adds that this \"amends decision 3's single `save_issue` call.\"\n- `decision-log.md:76` (decision 3) is the earlier design being amended. Each build ticket was created with `parentId`, `state: Todo` and `blockedBy: [review ticket]` in one `save_issue` call. Links *between* build tickets were added afterward. That left a window where a build ticket was Todo, with only the review-ticket blocker, and had no sibling blockers yet.\n- `docs/design/blueprint.md:76` and `docs/guide.md:104-114` describe the promotion rule. A parent in In Progress with a Todo child that is unblocked gets that child promoted on the next tick. A blocked child waits until its blockers reach `blocker_done` (`docs/config.md:79`).\n- `docs/config.md:81` and `docs/guide.md:110` list Backlog and Todo as the default `paused` statuses. `blueprint.md:254-255` defines Backlog as \"Not designed or not ready\" and Todo as \"Designed and waiting for approval or promotion\". Backlog therefore means \"not ready\" and Todo means \"ready to promote\", so the order of the two moves matters.\n- The same Backlog-first idea appears in `decision-log.md:52` and `:70`. A feature ticket whose design isn't settled is filed in Backlog so the dispatcher never starts it.\n\n## Limits of this answer\n\n- Linear and other MCPs were unavailable, so I did not check the issue tracker, tickets or comments. The answer rests on the repo docs only.\n- `git` failed inside the sandbox (it could not create its cache file under `/var/folders`), so I did not read commit history or PR discussions. I did not find a commit or ticket that records this decision directly.\n- The reasoning above is taken from the decision log's own stated reason. It was not checked against a script implementation.\n- The decision log lists this under \"Still to settle\", so it may still change.\n- `decision-log.md:199` mentions a related race. Moving a child to Todo to pause it got it promoted again in the same tick, and the fix was to skip promotion of leased Todo children (applied in ENG-247). That is a separate case, but the same kind of race.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 1,
+        "passRate": 1
+      }
+    },
+    {
+      "name": "why-ready-notify",
+      "dir": "cases/why-ready-notify",
+      "source": "mixed",
+      "promptMarkdown": "Use the why skill to answer this question about the repo in the current directory, then write the answer to answer.md. Linear and other MCPs may be unavailable. Say so in the answer and use git history and the docs.\n\nWhy does dispatch notify me when a pull request is ready for review?",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"dispatch:why\""
+          }
+        },
+        {
+          "name": "cited",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "answer.md"
+            },
+            "pattern": "ENG-256|decision-log",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "reason",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says an In Review ticket stays In Review while the worker fixes findings, so the user had to check Linear, GitHub and herdr by hand to see when a PR was ready. FAIL if it gives another reason or none.",
+          "config": {
+            "criteria": "PASS if the answer says an In Review ticket stays In Review while the worker fixes findings, so the user had to check Linear, GitHub and herdr by hand to see when a PR was ready. FAIL if it gives another reason or none.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 9,
+            "costUsd": 0.12160639999999998,
+            "judgeCostUsd": 0.014627999999999974,
+            "durationSeconds": 24,
+            "startedAt": "2026-10-10T06:52:56.894Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-x43erv/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ENG-256|decision-log",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does dispatch notify me when a pull request is ready for review?\n\n**Short answer:** A ticket stays In Review the whole time its worker is fixing review findings. Nothing in Linear, GitHub or herdr told you when the PR had actually become ready, so you had to check all three by hand. You asked for the notification (ENG-256, 2026-10-09). It also follows from a design rule: dispatch forwards outside events to the people and workers who need them, and workers don't poll.\n\n## Evidence\n\n- **The request.** `docs/design/decision-log.md`, \"Ready-for-review notification and 👀 label (ENG-256, 2026-10-09)\": you asked for a notification and a 👀 workspace label for the same state, \"because an In Review ticket stays In Review while the worker fixes findings and you had to check Linear, GitHub and herdr by hand.\"\n- **The principle.** Decision 11 in the same file (\"Dispatch is the event broker\", ENG-257). Dispatch polls GitHub and Linear each tick, compares what it finds with its cache, and forwards anything new as a nudge to a worker or a notification to you. The decision log says \"the ready-for-review notification (ENG-256, planned) is the same idea pointed at you\", the counterpart of the comment and PR nudges that go to workers.\n- **What \"ready\" means.** The ticket is In Review and the worker is idle. Every check has finished and passed, and a PR with no checks counts as passed. No review thread is unresolved, `reviewDecision` is not `CHANGES_REQUESTED`, and `mergeable` is `MERGEABLE`. This is in `docs/design/blueprint.md` and `docs/guide.md`.\n  - The build worker settled that `UNKNOWN` mergeability waits a tick. A still-running check, such as CodeRabbit's review, also blocks \"ready\". Both keep the notification from firing early.\n- **Once per head commit.** The notification fires once per PR head commit, so repeated ticks don't spam you. A push that leaves the PR ready again notifies again. The cache records the last head it notified about (`blueprint.md`, reconcile step 10).\n- **Same condition as the label.** The 👀 workspace label uses exactly the same readiness test (`docs/guide.md`, \"Workspace labels\").\n- **The channel.** It is a macOS notification sent through `osascript` (`internal/notify/notify.go`). `blueprint.md` calls this the dispatcher's way to reach you and says Slack delivery may replace it later.\n\n## Gaps in the evidence\n\n- **Linear and other MCPs were unavailable.** I did not query them, so I did not read the ENG-256 and ENG-257 ticket threads. The ticket numbers and the \"you asked for it\" rationale come from `decision-log.md`, not from the tickets themselves.\n- **Git history was not read.** `git` failed in the sandbox (`xcrun` couldn't write its cache), so I did not read commits or PR descriptions. Everything above comes from the docs and the source.\n"
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 11,
+            "costUsd": 0.12908089999999994,
+            "judgeCostUsd": 0.012923999999999936,
+            "durationSeconds": 28,
+            "startedAt": "2026-10-10T06:53:00.651Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-VX4jgA/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ENG-256|decision-log",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does dispatch notify me when a pull request is ready for review?\n\n**Sources:** git history and the docs. The Linear MCP and other MCPs were unavailable, so I did not read the ENG-256 ticket or any chat. Everything below comes from the repo.\n\n## Short answer\n\nAn In Review ticket stays In Review the whole time the worker fixes review findings. Before this feature, the ticket's status gave no sign that the PR had settled. You had to check Linear, GitHub and herdr by hand to find out. The notification tells you the moment your review is worth doing.\n\n## Evidence\n\n- `docs/design/decision-log.md`, \"Ready-for-review notification and 👀 label (ENG-256, 2026-10-09)\": you asked for the notification, and for a 👀 workspace label for the same state. The reason given is that an In Review ticket stays In Review while the worker fixes findings, and you had to check Linear, GitHub and herdr yourself.\n- Decision 11 in the same file, \"Dispatch is the event broker\" (ENG-257): dispatch polls GitHub and Linear each tick, compares what it finds with its cache, and forwards what the receiver doesn't know yet. It sends a nudge to a worker or a notification to you. The decision log says the ready-for-review notification \"is the same idea pointed at you\". Workers never poll for events themselves.\n- Commit `8c75b63` (\"Notify when a PR is ready for review and label workspaces by status\") was merged as PR #22, with follow-up fixes `5c1ca21`, `1b5aa08` and `903637b`.\n\n## Why \"ready\" is defined the way it is\n\n- Ready means the ticket is In Review, the worker is idle, every check has finished and passed, no review thread is unresolved, there are no requested changes, and there is no merge conflict. These are the same conditions that would otherwise trigger a PR nudge to the worker. The notification fires when none of them apply.\n- `mergeable` must read `MERGEABLE`. `UNKNOWN` waits a tick, and a still-running check such as CodeRabbit's keeps the PR from counting as ready. This stops a premature ping.\n- A PR with no checks counts as passed.\n- It fires once per PR head commit, which keeps it from repeating every tick. A push that leaves the PR ready again notifies again. A failed notification is retried.\n- The 👀 workspace label uses the same condition as the notification, so the two cannot disagree.\n\n## Caveat\n\nThe decision log records the motivation as your request, so I found no further rationale or discarded alternatives. The ticket itself (ENG-256) might say more.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 1,
+        "passRate": 1
+      }
+    },
+    {
+      "name": "why-unknown-keys",
+      "dir": "cases/why-unknown-keys",
+      "source": "mixed",
+      "promptMarkdown": "Use the why skill to answer this question about the repo in the current directory, then write the answer to answer.md. Linear and other MCPs may be unavailable. Say so in the answer and use git history and the docs.\n\nWhy does dispatch reject unknown config keys?",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"dispatch:why\""
+          }
+        },
+        {
+          "name": "cited",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "answer.md"
+            },
+            "pattern": "334430a",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "reason",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says a mistyped setting would otherwise fall back to its default without anyone noticing, so loading the config fails with an error that names the setting and the file. FAIL if it gives another reason or none.",
+          "config": {
+            "criteria": "PASS if the answer says a mistyped setting would otherwise fall back to its default without anyone noticing, so loading the config fails with an error that names the setting and the file. FAIL if it gives another reason or none.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 11,
+            "costUsd": 0.13786149999999997,
+            "judgeCostUsd": 0.01663199999999998,
+            "durationSeconds": 29,
+            "startedAt": "2026-10-10T06:53:01.789Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-DBs2jH/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched 334430a",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n**Short answer:** so that a typo in `config.toml` can't silently fall back to a default. Before the change, a misspelled key was ignored and dispatch ran with a setting the user didn't intend.\n\n## Evidence\n\n- **Code comment** (`internal/config/config.go`, commit `334430a`, \"Reject unknown config keys and add a user guide and config reference\"): \"A misspelled key would otherwise fall back to its default without a word.\" `Load` now uses the TOML decoder's `meta.Undecoded()` and fails with `while reading config <path>: unknown setting <keys>`. The message names both the setting and the file.\n- **User docs** (`docs/config.md`): dispatch \"refuses to start a command on a file with a setting it doesn't know... so a typo never falls back to a default unnoticed.\" The example error is `unknown setting max_in_progres`.\n- **Troubleshooting** (`docs/guide.md`): the usual causes are a typo and \"an example copied from an old design document.\"\n- **Ticket** (ENG-306, recorded in `docs/design/evals/ticket-claims/tickets/unknown-keys.md`): \"A typo such as `nudge_limt = 3` is silently ignored, and the dispatcher runs with\" the default. This is the motivating example.\n\n## Related change in the same commit\n\nThe blueprint's example config contained keys the loader never read: `todo` under `[linear.statuses]`, and a `[linear.needs_human]` table. Strict loading would have rejected the documented example. Commit `334430a` therefore moved the full config documentation to `docs/config.md`. It added `docs_test.go`, which loads every TOML example in the docs through `config.Load`, so the docs can't drift from what the loader accepts. It also fixed the Needs Human status to `needs_human` under `[linear.statuses]`.\n\n## Caveats\n\n- ENG-306 is described in this repo only as an eval fixture (an earlier, narrower version of the ticket, at commit `2700f6c`). I couldn't read the real Linear ticket. Linear and other MCPs were unavailable, so this answer rests on git history and the docs.\n- `/usr/bin/git` failed in the sandbox (the Xcode shim couldn't write its cache). I used `/opt/homebrew/bin/git` instead.\n- Strictness is about silent misconfiguration. I found no recorded discussion of alternatives, such as warning instead of failing.\n"
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 9,
+            "costUsd": 0.12285739999999991,
+            "judgeCostUsd": 0.016335999999999906,
+            "durationSeconds": 27,
+            "startedAt": "2026-10-10T06:53:06.281Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-d1P6Bw/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched 334430a",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n**Evidence limits.** Linear and other MCPs were unavailable, so this uses git history and the repo docs only. I did not follow the `why` skill's instruction to skip git and the docs. You asked for them, and the skill's \"usual reason\" would have been a guess.\n\n## Answer\n\nA misspelled key used to fall back to its default without any message. `config.Load` now fails on any setting it doesn't know, so a typo is caught instead of being ignored.\n\n- The commit that added the check is `334430a`, \"Reject unknown config keys and add a user guide and config reference\". The comment in `internal/config/config.go` gives the reason: \"A misspelled key would otherwise fall back to its default without a word.\"\n- It uses the TOML decoder's `meta.Undecoded()`. The error names the setting and the file, for example `unknown setting max_in_progres`.\n- `docs/config.md` says the same thing: \"a typo never falls back to a default unnoticed\". It lists every setting as optional with a default, so a mistyped key silently reverts to the default.\n- `docs/guide.md` lists the usual causes of an `unknown setting` error: \"a typo and an example copied from an old design document.\"\n\n## Related decisions\n\n- **Docs can't drift.** The same commit added `docs_test.go`, which loads every `toml` block in the docs through `config.Load`. It also removed the blueprint's example config and pointed to `docs/config.md` instead. The old example contained keys the loader never read: `todo` under `[linear.statuses]` and a `[linear.needs_human]` table. Under the strict loader those would have failed to load.\n- **`ticket-hint` doesn't fail hard.** `docs/config.md` says `dispatch ticket-hint` runs in every Claude Code session. It prints the config error to stderr and exits 0, so a bad config doesn't break unrelated sessions.\n- **Eval fixture.** Commit `a64f626` narrowed an eval ticket, ENG-306, from \"unknown keys at any depth\" to \"unknown top-level keys\". At the older fixture commit `2700f6c`, a strict check would have broken the blueprint's own example config.\n\n## Not found\n\nI found no written record in the repo of why the strict-loader approach was chosen over alternatives such as warning only. The reason above comes from the commit's code comment and the docs. The original Linear ticket, ENG-250, may have more detail, but I couldn't reach it.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 1,
+        "passRate": 1
+      }
+    }
+  ],
+  "aggregates": {
+    "casesTotal": 6,
+    "casesPassed": 6,
+    "overallScore": 0.6527777777777778,
+    "overallPassRate": 0.5
+  }
+}
