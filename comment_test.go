@@ -334,3 +334,28 @@ func TestTickCommentNudgeAbsorbsACommentOnABlockedDesignReviewTicket(t *testing.
 	require.NoError(t, err)
 	assert.Contains(t, string(raw), comment2)
 }
+
+func TestTickCommentNudgeFiresForACommentPostedWhileTheTicketWasAway(t *testing.T) {
+	for _, status := range []string{"working", "idle"} {
+		t.Run(status, func(t *testing.T) {
+			h := newHarness(t)
+			h.config("nudge_limit = 9\n")
+			h.worker("ENG-1", "working")
+			h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
+			_, err := h.run("tick")
+			require.NoError(t, err)
+			// The ticket drops out of the read while comment2 is posted.
+			h.tickets()
+			_, err = h.run("tick")
+			require.NoError(t, err)
+			h.setWorkerStatus("ENG-1", status)
+			h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment2))
+
+			out, err := h.run("tick")
+			require.NoError(t, err)
+
+			assert.Equal(t, "nudge ENG-1: new comment\n", out)
+			assert.Equal(t, []string{commentPrompt1}, h.prompts())
+		})
+	}
+}
