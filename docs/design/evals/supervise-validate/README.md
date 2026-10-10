@@ -1,6 +1,6 @@
 # Supervise validator eval
 
-Status 2026-10-10: attempt 2 (`arms/attempt-2.md`, the wording now in the skill) met the bar and the confirmation rerun met it again. After review the graders were tightened three times. The final graders were checked on hand-written bad inputs and the stored final runs were rescored on them, 38 of 40 checks (`results/scorer-check.json`, `results/rescore.json`). See `log.md`.
+Status 2026-10-10: attempt 2 (`arms/attempt-2.md`, the wording now in the skill) met the bar and the confirmation rerun met it again. After review the graders were tightened several times. The final graders were checked on hand-written bad inputs and the stored final runs were rescored on them, 39 of 40 checks (`results/scorer-check.json`, `results/rescore.json`). See `log.md`.
 
 Tests that a supervisor session, told to validate a review finding on a worker's PR, runs only the proof and not the full test suite (ENG-278). Follows `skills/hillclimb/SKILL.md`. The wording under test is principle 4 of `skills/supervise/SKILL.md`.
 
