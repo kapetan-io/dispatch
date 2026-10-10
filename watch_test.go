@@ -54,46 +54,46 @@ func next(t *testing.T, lines <-chan string) string {
 	}
 }
 
-func TestSubscribeFailsOutsideAClaudeSession(t *testing.T) {
+func TestWatchFailsOutsideAClaudeSession(t *testing.T) {
 	h := newHarness(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "")
 
-	_, err := h.run("subscribe")
+	_, err := h.run("watch", "ENG-1")
 
 	require.ErrorContains(t, err, "CLAUDE_CODE_MESSAGING_SOCKET is not set")
-	assert.NoFileExists(t, filepath.Join(h.state, "supervisors"))
+	assert.NoFileExists(t, filepath.Join(h.state, "watchers"))
 }
 
-func TestSubscribeRecordsTheSessionsSocket(t *testing.T) {
+func TestWatchRecordsTheSessionsSocket(t *testing.T) {
 	h := newHarness(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/cc-socks/42.sock")
 
-	out, err := h.run("subscribe")
+	out, err := h.run("watch", "ENG-1")
 
 	require.NoError(t, err)
-	assert.Equal(t, "subscribed /tmp/cc-socks/42.sock\n", out)
-	b, err := os.ReadFile(filepath.Join(h.state, "supervisors"))
+	assert.Equal(t, "watching ENG-1\n", out)
+	b, err := os.ReadFile(filepath.Join(h.state, "watchers"))
 	require.NoError(t, err)
-	assert.Equal(t, "/tmp/cc-socks/42.sock\n", string(b))
+	assert.Equal(t, "ENG-1 /tmp/cc-socks/42.sock\n", string(b))
 }
 
-func TestSubscribeRefusesARelativeSocket(t *testing.T) {
+func TestWatchRefusesARelativeSocket(t *testing.T) {
 	h := newHarness(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "cc-socks/42.sock")
 
-	_, err := h.run("subscribe")
+	_, err := h.run("watch", "ENG-1")
 
 	require.ErrorContains(t, err, "not absolute")
 }
 
-func TestTickMessagesSubscribersAboutAReadyPR(t *testing.T) {
+func TestTickMessagesFollowersAboutAReadyPR(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", cleanPR("a1"))
 	socket, lines := sessionSocket(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
-	_, err := h.run("subscribe")
+	_, err := h.run("watch", "ENG-1")
 	require.NoError(t, err)
 
 	_, err = h.run("tick")
@@ -112,7 +112,7 @@ func TestTickMessagesSubscribersAboutAReadyPR(t *testing.T) {
 	assert.Empty(t, lines)
 }
 
-func TestTickMessagesSubscribersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
+func TestTickMessagesFollowersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		status string
@@ -128,7 +128,7 @@ func TestTickMessagesSubscribersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
 			h.worker("ENG-1", test.worker)
 			socket, lines := sessionSocket(t)
 			t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
-			_, err := h.run("subscribe")
+			_, err := h.run("watch", "ENG-1")
 			require.NoError(t, err)
 
 			_, err = h.run("tick")
@@ -141,14 +141,14 @@ func TestTickMessagesSubscribersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
 	}
 }
 
-func TestTickDropsASubscriberWhoseSessionExited(t *testing.T) {
+func TestTickDropsAFollowerWhoseSessionExited(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", cleanPR("a1"))
 	socket, _ := sessionSocket(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
-	_, err := h.run("subscribe")
+	_, err := h.run("watch", "ENG-1")
 	require.NoError(t, err)
 	// A crashed session leaves its socket file behind with nothing listening.
 	dead := filepath.Join(filepath.Dir(socket), "dead.sock")
@@ -157,17 +157,17 @@ func TestTickDropsASubscriberWhoseSessionExited(t *testing.T) {
 	ln.(*net.UnixListener).SetUnlinkOnClose(false)
 	require.NoError(t, ln.Close())
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", dead)
-	_, err = h.run("subscribe")
+	_, err = h.run("watch", "ENG-1")
 	require.NoError(t, err)
 
 	out, stderr, err := h.runContext(t.Context(), "tick")
 
 	require.NoError(t, err)
 	assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
-	assert.Contains(t, stderr, "dropped supervisor socket "+dead)
-	b, err := os.ReadFile(filepath.Join(h.state, "supervisors"))
+	assert.Contains(t, stderr, "dropped watcher socket "+dead)
+	b, err := os.ReadFile(filepath.Join(h.state, "watchers"))
 	require.NoError(t, err)
-	assert.Equal(t, socket+"\n", string(b))
+	assert.Equal(t, "ENG-1 "+socket+"\n", string(b))
 }
 
 func TestTickDryRunPrintsTheMessagesWithoutSending(t *testing.T) {
@@ -177,7 +177,7 @@ func TestTickDryRunPrintsTheMessagesWithoutSending(t *testing.T) {
 	h.pr("ENG-1", cleanPR("a1"))
 	socket, lines := sessionSocket(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
-	_, err := h.run("subscribe")
+	_, err := h.run("watch", "ENG-1")
 	require.NoError(t, err)
 
 	out, err := h.run("tick", "--dry-run")
@@ -189,7 +189,7 @@ func TestTickDryRunPrintsTheMessagesWithoutSending(t *testing.T) {
 	assert.Empty(t, h.notifications())
 }
 
-func TestTickMessagesEverySubscribedSession(t *testing.T) {
+func TestTickMessagesEveryFollowerOfATicket(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
@@ -198,7 +198,7 @@ func TestTickMessagesEverySubscribedSession(t *testing.T) {
 	socket2, lines2 := sessionSocket(t)
 	for _, socket := range []string{socket1, socket2} {
 		t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
-		_, err := h.run("subscribe")
+		_, err := h.run("watch", "ENG-1")
 		require.NoError(t, err)
 	}
 
@@ -209,7 +209,7 @@ func TestTickMessagesEverySubscribedSession(t *testing.T) {
 	assert.Contains(t, next(t, lines2), "ENG-1 is ready for review")
 }
 
-func TestTickMessagesSubscribersAboutAMerge(t *testing.T) {
+func TestTickMessagesFollowersAboutAMerge(t *testing.T) {
 	h := newHarness(t)
 	h.config(autoMergeConfig)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
@@ -217,7 +217,7 @@ func TestTickMessagesSubscribersAboutAMerge(t *testing.T) {
 	h.pr("ENG-1", approvedPR("a1"))
 	socket, lines := sessionSocket(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
-	_, err := h.run("subscribe")
+	_, err := h.run("watch", "ENG-1")
 	require.NoError(t, err)
 
 	_, err = h.run("tick")
@@ -229,7 +229,7 @@ func TestTickMessagesSubscribersAboutAMerge(t *testing.T) {
 	assert.Equal(t, []string{mergedText1 + "|dispatch"}, h.notifications())
 }
 
-func TestTickMessagesSubscribersAboutAnUnresponsiveWorker(t *testing.T) {
+func TestTickMessagesFollowersAboutAnUnresponsiveWorker(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.worker("ENG-1", "idle")
@@ -237,7 +237,7 @@ func TestTickMessagesSubscribersAboutAnUnresponsiveWorker(t *testing.T) {
 	h.tick()
 	socket, lines := sessionSocket(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
-	_, err := h.run("subscribe")
+	_, err := h.run("watch", "ENG-1")
 	require.NoError(t, err)
 
 	h.advance(61 * time.Minute)
@@ -248,13 +248,13 @@ func TestTickMessagesSubscribersAboutAnUnresponsiveWorker(t *testing.T) {
 	assert.Contains(t, got, "https://linear.app/team/issue/ENG-1")
 }
 
-func TestTickMessagesSubscribersAboutStallNudgeCounts(t *testing.T) {
+func TestTickMessagesFollowersAboutStallNudgeCounts(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.worker("ENG-1", "idle")
 	socket, lines := sessionSocket(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
-	_, err := h.run("subscribe")
+	_, err := h.run("watch", "ENG-1")
 	require.NoError(t, err)
 
 	for range 6 {
@@ -268,13 +268,13 @@ func TestTickMessagesSubscribersAboutStallNudgeCounts(t *testing.T) {
 	assert.Contains(t, got, "https://linear.app/team/issue/ENG-1")
 }
 
-func TestTickMessagesSubscribersAboutAnEscalation(t *testing.T) {
+func TestTickMessagesFollowersAboutAnEscalation(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.launchResult(`{"status":"pool_error","detail":"treehouse lease failed"}`)
 	socket, lines := sessionSocket(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
-	_, err := h.run("subscribe")
+	_, err := h.run("watch", "ENG-1")
 	require.NoError(t, err)
 
 	_, err = h.run("tick")
@@ -318,7 +318,7 @@ func TestTickDryRunPrintsEscalationAndMergeMessages(t *testing.T) {
 			test.setup(h)
 			socket, lines := sessionSocket(t)
 			t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
-			_, err := h.run("subscribe")
+			_, err := h.run("watch", "ENG-1")
 			require.NoError(t, err)
 
 			out, err := h.run("tick", "--dry-run")
@@ -331,7 +331,7 @@ func TestTickDryRunPrintsEscalationAndMergeMessages(t *testing.T) {
 	}
 }
 
-func TestTickTellsSupervisorsAboutAMergeWhenTheAlertFails(t *testing.T) {
+func TestTickTellsFollowersAboutAMergeWhenTheAlertFails(t *testing.T) {
 	for _, test := range []struct {
 		name  string
 		fails string
@@ -348,7 +348,7 @@ func TestTickTellsSupervisorsAboutAMergeWhenTheAlertFails(t *testing.T) {
 			h.pr("ENG-1", approvedPR("a1"))
 			socket, lines := sessionSocket(t)
 			t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
-			_, err := h.run("subscribe")
+			_, err := h.run("watch", "ENG-1")
 			require.NoError(t, err)
 			h.writeFile("notify-fails", "")
 			if test.fails != "" {
@@ -362,4 +362,231 @@ func TestTickTellsSupervisorsAboutAMergeWhenTheAlertFails(t *testing.T) {
 			assert.Contains(t, next(t, lines), test.want)
 		})
 	}
+}
+
+func TestWatchRefusesAMissingTicket(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/cc-socks/42.sock")
+
+	_, err := h.run("watch")
+
+	require.ErrorContains(t, err, "watch takes a ticket")
+	assert.NoFileExists(t, filepath.Join(h.state, "watchers"))
+}
+
+func TestWatchUppercasesTheTicket(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/cc-socks/42.sock")
+
+	out, err := h.run("watch", "eng-1")
+
+	require.NoError(t, err)
+	assert.Equal(t, "watching ENG-1\n", out)
+}
+
+func TestTickMessagesOnlyTheSessionFollowingTheTicket(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.worker("ENG-2", "idle")
+	h.pr("ENG-1", cleanPR("a1"))
+	h.pr("ENG-2", cleanPR("a2"))
+	socket1, lines1 := sessionSocket(t)
+	socket2, lines2 := sessionSocket(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket1)
+	_, err := h.run("watch", "ENG-1")
+	require.NoError(t, err)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket2)
+	_, err = h.run("watch", "ENG-2")
+	require.NoError(t, err)
+
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, next(t, lines1), "ENG-1 is ready for review")
+	assert.Contains(t, next(t, lines2), "ENG-2 is ready for review")
+	assert.Empty(t, lines1)
+	assert.Empty(t, lines2)
+	assert.Len(t, h.notifications(), 2)
+}
+
+func TestTickMessagesASessionFollowingSeveralTickets(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.worker("ENG-2", "idle")
+	h.pr("ENG-1", cleanPR("a1"))
+	h.pr("ENG-2", cleanPR("a2"))
+	socket, lines := sessionSocket(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
+	for _, id := range []string{"ENG-1", "ENG-2"} {
+		_, err := h.run("watch", id)
+		require.NoError(t, err)
+	}
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	got := next(t, lines) + next(t, lines)
+	assert.Contains(t, got, "ENG-1 is ready for review")
+	assert.Contains(t, got, "ENG-2 is ready for review")
+}
+
+func TestTickRaisesTheAlertForATicketNobodyFollows(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", cleanPR("a1"))
+	socket, lines := sessionSocket(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
+	_, err := h.run("watch", "ENG-2")
+	require.NoError(t, err)
+
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+	assert.Empty(t, lines)
+}
+
+func TestUnwatchStopsMessagesForThatTicketOnly(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.worker("ENG-2", "idle")
+	h.pr("ENG-1", cleanPR("a1"))
+	h.pr("ENG-2", cleanPR("a2"))
+	socket, lines := sessionSocket(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
+	for _, id := range []string{"ENG-1", "ENG-2"} {
+		_, err := h.run("watch", id)
+		require.NoError(t, err)
+	}
+
+	out, err := h.run("unwatch", "ENG-1")
+	require.NoError(t, err)
+	assert.Equal(t, "unwatching ENG-1\n", out)
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, next(t, lines), "ENG-2 is ready for review")
+	assert.Empty(t, lines)
+}
+
+func TestUnwatchATicketNeverWatchedSucceeds(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/cc-socks/42.sock")
+
+	_, err := h.run("unwatch", "ENG-1")
+
+	require.NoError(t, err)
+}
+
+func TestUnwatchFailsOutsideAClaudeSession(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "")
+
+	_, err := h.run("unwatch", "ENG-1")
+
+	require.ErrorContains(t, err, "CLAUDE_CODE_MESSAGING_SOCKET is not set")
+}
+
+func TestTickDryRunListsOnlyTheFollowersOfEachEvent(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.worker("ENG-2", "idle")
+	h.pr("ENG-1", cleanPR("a1"))
+	h.pr("ENG-2", cleanPR("a2"))
+	socket1, _ := sessionSocket(t)
+	socket2, _ := sessionSocket(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket1)
+	_, err := h.run("watch", "ENG-1")
+	require.NoError(t, err)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket2)
+	_, err = h.run("watch", "ENG-2")
+	require.NoError(t, err)
+
+	out, err := h.run("tick", "--dry-run")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "would message "+socket1+": dispatch event (PR ready for review): ENG-1 is ready")
+	assert.Contains(t, out, "would message "+socket2+": dispatch event (PR ready for review): ENG-2 is ready")
+	assert.NotContains(t, out, "would message "+socket1+": dispatch event (PR ready for review): ENG-2")
+	assert.NotContains(t, out, "would message "+socket2+": dispatch event (PR ready for review): ENG-1")
+}
+
+func TestTickDroppingADeadSessionStopsItFollowingEveryTicket(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", cleanPR("a1"))
+	socket, _ := sessionSocket(t)
+	dead := filepath.Join(filepath.Dir(socket), "dead.sock")
+	ln, err := net.Listen("unix", dead)
+	require.NoError(t, err)
+	ln.(*net.UnixListener).SetUnlinkOnClose(false)
+	require.NoError(t, ln.Close())
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", dead)
+	for _, id := range []string{"ENG-1", "ENG-2"} {
+		_, err = h.run("watch", id)
+		require.NoError(t, err)
+	}
+
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	b, err := os.ReadFile(filepath.Join(h.state, "watchers"))
+	require.NoError(t, err)
+	assert.Equal(t, "\n", string(b))
+}
+
+func TestWatchRefusesAnythingButATicketIdentifier(t *testing.T) {
+	for _, arg := range []string{"banana", "ENG286", "ENG-", "ENG-1x"} {
+		h := newHarness(t)
+		t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/cc-socks/42.sock")
+
+		_, err := h.run("watch", arg)
+
+		require.ErrorContains(t, err, "not a ticket identifier")
+		assert.NoFileExists(t, filepath.Join(h.state, "watchers"))
+	}
+}
+
+func TestUnwatchAcceptsALowercaseTicket(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/cc-socks/42.sock")
+	_, err := h.run("watch", "ENG-1")
+	require.NoError(t, err)
+
+	_, err = h.run("unwatch", "eng-1")
+	require.NoError(t, err)
+
+	b, err := os.ReadFile(filepath.Join(h.state, "watchers"))
+	require.NoError(t, err)
+	assert.Equal(t, "\n", string(b))
+}
+
+func TestWatchingATicketTwiceRecordsItOnce(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/cc-socks/42.sock")
+
+	for range 2 {
+		_, err := h.run("watch", "ENG-1")
+		require.NoError(t, err)
+	}
+
+	b, err := os.ReadFile(filepath.Join(h.state, "watchers"))
+	require.NoError(t, err)
+	assert.Equal(t, "ENG-1 /tmp/cc-socks/42.sock\n", string(b))
+}
+
+func TestSubscribeIsGone(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/cc-socks/42.sock")
+
+	_, err := h.run("subscribe")
+
+	require.Error(t, err)
+	assert.NoFileExists(t, filepath.Join(h.state, "supervisors"))
 }

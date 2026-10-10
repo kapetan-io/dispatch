@@ -105,11 +105,11 @@ var ready = delivery.Event{
 	Text:   "ENG-1 is ready for review: https://github.com/o/r/pull/9",
 }
 
-func TestNotifyMessagesEverySubscriber(t *testing.T) {
+func TestNotifyMessagesEveryWatcher(t *testing.T) {
 	state := t.TempDir()
 	one, two := newInbox(t, "one.sock"), newInbox(t, "two.sock")
-	require.NoError(t, delivery.Subscribe(state, one.path))
-	require.NoError(t, delivery.Subscribe(state, two.path))
+	require.NoError(t, delivery.Watch(state, "ENG-1", one.path))
+	require.NoError(t, delivery.Watch(state, "ENG-1", two.path))
 	post := delivery.Post{Osascript: okAlert(t), StateDir: state}
 
 	require.NoError(t, post.Notify(context.Background(), ready))
@@ -123,7 +123,7 @@ func TestNotifyMessagesEverySubscriber(t *testing.T) {
 	}
 }
 
-func TestNotifyShowsTheAlertWithNoSubscribers(t *testing.T) {
+func TestNotifyShowsTheAlertWithNoWatchers(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "log")
 	post := delivery.Post{Osascript: script(t, "osascript", `echo shown >> `+log), StateDir: t.TempDir()}
 
@@ -136,16 +136,16 @@ func TestNotifyDropsASocketThatRefuses(t *testing.T) {
 	state := t.TempDir()
 	live := newInbox(t, "live.sock")
 	dead := deadSocket(t)
-	require.NoError(t, delivery.Subscribe(state, dead))
-	require.NoError(t, delivery.Subscribe(state, live.path))
+	require.NoError(t, delivery.Watch(state, "ENG-1", dead))
+	require.NoError(t, delivery.Watch(state, "ENG-1", live.path))
 	var stderr bytes.Buffer
 	post := delivery.Post{Osascript: okAlert(t), StateDir: state, Stderr: &stderr}
 
 	require.NoError(t, post.Notify(context.Background(), ready))
 
 	live.content(t)
-	assert.Contains(t, stderr.String(), "dropped supervisor socket "+dead)
-	list, err := delivery.Subscribers(state)
+	assert.Contains(t, stderr.String(), "dropped watcher socket "+dead)
+	list, err := delivery.Watchers(state, "ENG-1")
 	require.NoError(t, err)
 	assert.Equal(t, []string{live.path}, list)
 }
@@ -153,28 +153,28 @@ func TestNotifyDropsASocketThatRefuses(t *testing.T) {
 func TestNotifyDropsASocketWhoseFileIsGone(t *testing.T) {
 	state := t.TempDir()
 	missing := filepath.Join(shortDir(t), "gone.sock")
-	require.NoError(t, delivery.Subscribe(state, missing))
+	require.NoError(t, delivery.Watch(state, "ENG-1", missing))
 	post := delivery.Post{Osascript: okAlert(t), StateDir: state, Stderr: &bytes.Buffer{}}
 
 	require.NoError(t, post.Notify(context.Background(), ready))
 
-	list, err := delivery.Subscribers(state)
+	list, err := delivery.Watchers(state, "ENG-1")
 	require.NoError(t, err)
 	assert.Empty(t, list)
 }
 
 func TestNotifyErrorIsTheAlertsAlone(t *testing.T) {
 	state := t.TempDir()
-	require.NoError(t, delivery.Subscribe(state, deadSocket(t)))
+	require.NoError(t, delivery.Watch(state, "ENG-1", deadSocket(t)))
 	post := delivery.Post{Osascript: okAlert(t), StateDir: state, Stderr: &bytes.Buffer{}}
 
 	require.NoError(t, post.Notify(context.Background(), ready))
 }
 
-func TestNotifyMessagesSupervisorsOnlyOnceTheAlertShowed(t *testing.T) {
+func TestNotifyMessagesWatchersOnlyOnceTheAlertShowed(t *testing.T) {
 	state := t.TempDir()
 	live := newInbox(t, "live.sock")
-	require.NoError(t, delivery.Subscribe(state, live.path))
+	require.NoError(t, delivery.Watch(state, "ENG-1", live.path))
 	post := delivery.Post{Osascript: script(t, "osascript", `echo denied >&2; exit 1`), StateDir: state}
 
 	for range 3 {
@@ -185,39 +185,39 @@ func TestNotifyMessagesSupervisorsOnlyOnceTheAlertShowed(t *testing.T) {
 	assert.Empty(t, live.lines)
 }
 
-func TestSubscribeRecordsEachSocketOnce(t *testing.T) {
+func TestWatchRecordsEachSocketOnce(t *testing.T) {
 	state := t.TempDir()
 
-	require.NoError(t, delivery.Subscribe(state, "/tmp/a.sock"))
-	require.NoError(t, delivery.Subscribe(state, "/tmp/b.sock"))
-	require.NoError(t, delivery.Subscribe(state, "/tmp/a.sock"))
+	require.NoError(t, delivery.Watch(state, "ENG-1", "/tmp/a.sock"))
+	require.NoError(t, delivery.Watch(state, "ENG-1", "/tmp/b.sock"))
+	require.NoError(t, delivery.Watch(state, "ENG-1", "/tmp/a.sock"))
 
-	list, err := delivery.Subscribers(state)
+	list, err := delivery.Watchers(state, "ENG-1")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"/tmp/a.sock", "/tmp/b.sock"}, list)
 }
 
-func TestSubscribeRefusesARelativePath(t *testing.T) {
+func TestWatchRefusesARelativePath(t *testing.T) {
 	state := t.TempDir()
 
-	err := delivery.Subscribe(state, "cc-socks/1.sock")
+	err := delivery.Watch(state, "ENG-1", "cc-socks/1.sock")
 
 	require.ErrorContains(t, err, "not absolute")
-	list, err := delivery.Subscribers(state)
+	list, err := delivery.Watchers(state, "ENG-1")
 	require.NoError(t, err)
 	assert.Empty(t, list)
 }
 
-func TestSubscribeRefusesAPathTheListCannotHold(t *testing.T) {
+func TestWatchRefusesAPathTheListCannotHold(t *testing.T) {
 	for _, path := range []string{"/tmp/a\nb/sock", "/tmp/a/sock "} {
-		require.ErrorContains(t, delivery.Subscribe(t.TempDir(), path), "whitespace")
+		require.ErrorContains(t, delivery.Watch(t.TempDir(), "ENG-1", path), "whitespace")
 	}
 }
 
-func TestNotifyOnceMessagesSupervisorsWhenTheAlertFails(t *testing.T) {
+func TestNotifyOnceMessagesWatchersWhenTheAlertFails(t *testing.T) {
 	state := t.TempDir()
 	live := newInbox(t, "live.sock")
-	require.NoError(t, delivery.Subscribe(state, live.path))
+	require.NoError(t, delivery.Watch(state, "ENG-1", live.path))
 	post := delivery.Post{Osascript: script(t, "osascript", `echo denied >&2; exit 1`), StateDir: state}
 
 	err := post.NotifyOnce(context.Background(), ready)

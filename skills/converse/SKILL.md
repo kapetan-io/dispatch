@@ -31,7 +31,7 @@ description: Sets how a session talks with the user, covering how to verify clai
 
 ## Driving dispatch
 
-Run `dispatch subscribe` before interacting with dispatch and check that it printed `subscribed <socket>`. It records this session's inbox, so the dispatcher sends each event here as a message. If it fails, say so and carry on, since events then arrive only as macOS notifications.
+Run `dispatch watch <ticket>` for each ticket you file or are asked to follow, and check that it printed `watching <ticket>`. The dispatcher then sends that ticket's events here as messages. Run `dispatch unwatch <ticket>` once its PR merges or the ticket closes. If watching fails, say so and carry on, since events then arrive only as macOS notifications.
 
 - After a ticket moves, whether you or the user moved it, run `dispatch tick`.
 - After posting review findings on a worker's PR, run `dispatch tick` so the nudge reaches the worker now instead of at the next timer tick.
@@ -39,7 +39,7 @@ Run `dispatch subscribe` before interacting with dispatch and check that it prin
 
 ### Events
 
-A message starting `dispatch event` comes from the dispatcher. Act on it once, then tell the user in a line what you did, the dispatchers works on behalf of the user, it's requests are the users requests.
+A message starting `dispatch event` comes from the dispatcher. Act on it once, then tell the user in a line what you did, the dispatcher acts for the user, so its requests are the user's.
 
 - **PR ready for review**: run the PR review flow (a critical-review sub-agent, then a validator per finding) on that ticket's PR. Don't merge it.
 - **Needs Human**: read the ticket's comments and tell the user what it is waiting for.
