@@ -18,7 +18,8 @@ type Kind string
 const (
 	// Launch starts a worker for a ticket with none.
 	Launch Kind = "launch"
-	// Wait leaves a ticket for a later tick, because the worker cap is full.
+	// Wait leaves a ticket for a later tick, because the worker cap is full or
+	// its repo's pool could not be read.
 	Wait Kind = "wait"
 	// Skip leaves a ticket that this dispatcher never launches.
 	Skip Kind = "skip"
@@ -37,6 +38,12 @@ const (
 	// its tree leased, because returning it would destroy work. A non-empty Text
 	// is the one comment that says why.
 	Keep Kind = "keep"
+	// Promote moves a Todo child of an In Progress parent to In Progress, which
+	// is what starts it.
+	Promote Kind = "promote"
+	// Close moves a parent ticket to its close_parent status, because every one
+	// of its children is finished. It never touches a workspace.
+	Close Kind = "close"
 )
 
 // Reasons are the labels `dispatch tick --dry-run` prints. The executor
@@ -116,6 +123,19 @@ type Input struct {
 	// Done and Paused are the statuses of a finished and a paused ticket.
 	Done   []string
 	Paused []string
+	// Todo is the status of a child waiting for promotion, and AILabel the label
+	// a child needs to be promoted.
+	Todo    string
+	AILabel string
+	// BlockerDone is the status a blocker must reach before its child starts.
+	BlockerDone string
+	// Teams are the team keys the dispatcher manages.
+	Teams []string
+	// Children maps an In Progress parent's identifier to all its children, in
+	// every status. A parent absent from the map had its children unread.
+	Children map[string][]linear.Ticket
+	// Leased holds every ticket identifier that holds a treehouse lease.
+	Leased map[string]bool
 	// LeaseHolders holds the managed tickets that hold a lease and are not in
 	// Tickets, which is how finished and paused tickets are found.
 	LeaseHolders []linear.Ticket
@@ -143,7 +163,7 @@ func Plan(in Input) []Action {
 			running++
 		}
 	}
-	actions := in.retire()
+	actions := append(in.retire(), in.planParents()...)
 	var launches []Action
 	for _, t := range in.Tickets {
 		if a, ok := in.watch(t); ok {
@@ -212,12 +232,12 @@ func Plan(in Input) []Action {
 // watch decides what a ticket needs from the user or its live worker: a
 // notification for a ticket entering Needs Human or a worker asking a question,
 // and a nudge for an idle In Progress worker. It skips the grill's feature
-// ticket, which carries "design", and tickets whose labels were cut short or
-// that have children, because it can't tell whether they are design tickets.
-// A review ticket still notifies, since its hand-off is a move to Needs Human,
-// but it is never nudged.
+// ticket, which carries "design", and tickets whose labels were cut short,
+// because it can't tell whether they are design tickets. A review ticket still
+// notifies, since its hand-off is a move to Needs Human, but it is never nudged.
+// A parent notifies on Needs Human like any ticket, and never gets a worker.
 func (in Input) watch(t linear.Ticket) (Action, bool) {
-	if t.LabelsTruncated || t.HasChildren || t.HasLabel("design") {
+	if t.LabelsTruncated || t.HasLabel("design") {
 		return Action{}, false
 	}
 	prev := in.Cache[t.Identifier]
@@ -227,7 +247,7 @@ func (in Input) watch(t linear.Ticket) (Action, bool) {
 		}
 		return Action{Kind: Notify, Ticket: t, Reason: ReasonEnteredNeedsHuman, Text: NeedsHumanText(t)}, true
 	}
-	if t.Status != in.InProgress && t.Status != in.InReview {
+	if t.HasChildren || (t.Status != in.InProgress && t.Status != in.InReview) {
 		return Action{}, false
 	}
 	w := in.Workers[t.Identifier]

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,24 @@ type Ticket struct {
 	// LabelsTruncated means Labels is only the first page, so a repo or design
 	// label may be missing from it.
 	LabelsTruncated bool
+	// Mine means the ticket is assigned to the key's owner. Only ParentChildren
+	// sets it, because ManagedTickets returns nothing else.
+	Mine bool
+	// CreatedAt is Linear's RFC 3339 creation time, which sorts as text. Only
+	// ParentChildren fills it in.
+	CreatedAt string
+	// Blockers are the tickets that block this one. Only ParentChildren fills
+	// them in.
+	Blockers []Blocker
+	// BlockersTruncated means Blockers is only the first page, so an unfinished
+	// blocker may be missing from it.
+	BlockersTruncated bool
+}
+
+// Blocker is a ticket that blocks another and the status it is in.
+type Blocker struct {
+	Identifier string
+	Status     string
 }
 
 // Label is a Linear label and the label group it belongs to, if any.
@@ -151,6 +170,24 @@ type issueNode struct {
 			ID string `json:"id"`
 		} `json:"nodes"`
 	} `json:"children"`
+	CreatedAt string `json:"createdAt"`
+	Parent    *struct {
+		Identifier string `json:"identifier"`
+	} `json:"parent"`
+	InverseRelations struct {
+		Nodes []struct {
+			Type  string `json:"type"`
+			Issue struct {
+				Identifier string `json:"identifier"`
+				State      struct {
+					Name string `json:"name"`
+				} `json:"state"`
+			} `json:"issue"`
+		} `json:"nodes"`
+		PageInfo struct {
+			HasNextPage bool `json:"hasNextPage"`
+		} `json:"pageInfo"`
+	} `json:"inverseRelations"`
 }
 
 func (n issueNode) ticket() Ticket {
@@ -271,6 +308,72 @@ func (c Client) LeasedTickets(ctx context.Context, label string, teams, identifi
 		}
 	}
 	return tickets, nil
+}
+
+const parentChildren = `query ParentChildren($parents: [ID!], $first: Int!) {
+  viewer { id }
+  issues(first: $first, filter: {parent: {id: {in: $parents}}}) {
+    nodes {
+      id identifier title branchName createdAt
+      state { name }
+      team { key }
+      assignee { id }
+      parent { identifier }
+      labels(first: 25) { nodes { name parent { name } } pageInfo { hasNextPage } }
+      children(first: 1) { nodes { id } }
+      inverseRelations(first: 10) { nodes { type issue { identifier state { name } } } pageInfo { hasNextPage } }
+    }
+    pageInfo { hasNextPage }
+  }
+}`
+
+// ParentChildren returns every child of the parents with these Linear ids, in
+// every status, keyed by the parent's identifier. A parent closes only when all
+// its children are finished, so the finished ones come back too. A second page
+// is an error, because a child left off it could be the unfinished one.
+func (c Client) ParentChildren(ctx context.Context, parents []string) (map[string][]Ticket, error) {
+	if len(parents) == 0 {
+		return nil, nil
+	}
+	var resp struct {
+		Viewer struct {
+			ID string `json:"id"`
+		} `json:"viewer"`
+		Issues struct {
+			Nodes    []issueNode `json:"nodes"`
+			PageInfo struct {
+				HasNextPage bool `json:"hasNextPage"`
+			} `json:"pageInfo"`
+		} `json:"issues"`
+	}
+	if err := c.do(ctx, "ParentChildren", parentChildren, map[string]any{"parents": parents, "first": maxManaged}, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Issues.PageInfo.HasNextPage {
+		return nil, fmt.Errorf("the open parents have more than %d children between them; dispatch reads one page and could close a parent that still has unfinished children", maxManaged)
+	}
+	children := map[string][]Ticket{}
+	for _, n := range resp.Issues.Nodes {
+		if n.Parent == nil {
+			continue
+		}
+		t := n.ticket()
+		t.Mine = n.Assignee != nil && n.Assignee.ID == resp.Viewer.ID
+		t.CreatedAt = n.CreatedAt
+		t.BlockersTruncated = n.InverseRelations.PageInfo.HasNextPage
+		for _, r := range n.InverseRelations.Nodes {
+			if r.Type == "blocks" {
+				t.Blockers = append(t.Blockers, Blocker{Identifier: r.Issue.Identifier, Status: r.Issue.State.Name})
+			}
+		}
+		children[n.Parent.Identifier] = append(children[n.Parent.Identifier], t)
+	}
+	// Linear's order is not documented, and promotion under a full cap goes to
+	// the oldest child first.
+	for _, kids := range children {
+		slices.SortStableFunc(kids, func(a, b Ticket) int { return strings.Compare(a.CreatedAt, b.CreatedAt) })
+	}
+	return children, nil
 }
 
 // splitIdentifier splits "ENG-123" into its team key and number.

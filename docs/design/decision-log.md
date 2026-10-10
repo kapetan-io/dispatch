@@ -184,7 +184,8 @@ The decisions above contradict or extend `blueprint.md` in these places.
 - "A parent ticket never gets a worker" becomes "never gets a dispatched worker". (applied, ENG-226) The dispatcher skips `design` tickets in every step except promoting their children and closing them.
 - Step 6 closes a feature ticket only when it is In Progress, its build tickets have all finished, and at least one build ticket is Done. A canceled review ticket, or a review with zero build tickets, never closes the feature.
 - Step 5 treats the children of a Canceled or Backlog feature ticket as paused.
-- Step 7 never promotes a `design` ticket, and never promotes a Todo child that still holds a lease. Today, pausing a child by moving it to Todo gets it promoted again in the same tick.
+- Step 7 never promotes a `design` ticket, and never promotes a Todo child that still holds a lease. Today, pausing a child by moving it to Todo gets it promoted again in the same tick. (The lease half is applied, ENG-247. The `design` half waits for the grill and review skills.)
+- Parents notify on Needs Human like any other ticket, where `blueprint.md` skipped them. You decided this on 2026-10-09. (applied, ENG-247)
 - The label picks the kickoff and the nudge text. The review worker's stall nudge never mentions In Review or a PR.
 - Notify you when a launch has waited on `pool_exhausted` for several ticks. Today that wait is silent.
 - The party and statuses tables gain the new writers. You approve a design by moving the review ticket to Done, the review worker creates build tickets, and an agent moves tickets when you tell it to. Done no longer means only "Merged".
