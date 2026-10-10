@@ -18,7 +18,7 @@ Load `dispatch:converse` with the Skill tool. Open a todolist with one entry per
 1. Orient
 2. Discuss the product half and get the Objective approved
 3. Ground (Phase A): load `dispatch:how` with the Skill tool over the subsystems the design touches, and `dispatch:why` over any existing shape it extends or replaces
-4. Sketch (Phase B): load `dispatch:arena` with the Skill tool
+4. Sketch (Phase B): load `dispatch:arena` with the Skill tool. It always runs without asking you first, and you skip its last step ("Ask the user"), because the user approves the contract sketch in step 5
 5. Agree on the contract sketch
 6. Discuss the rest of the technical half, then run the correctness and testability passes
 7. Write the blueprint
@@ -37,7 +37,7 @@ Load `dispatch:converse` with the Skill tool. Open a todolist with one entry per
 
 ## The discussion
 
-Ask in plain chat, one question at a time, not through AskUserQuestion. The user steps away during a long design and wants each question to carry its own context and a recommendation, which a multiple-choice picker squeezes out. A build worker uses AskUserQuestion so the dispatcher can see it is blocked, but the dispatcher never nudges a design session, so that signal has no use here.
+Ask in plain chat, one question at a time, not through AskUserQuestion. The dispatcher never nudges a design session, and a picker squeezes out the context and recommendation the user needs after stepping away.
 
 In each question, say what is being decided and why you need it, then give your recommendation.
 
@@ -51,7 +51,7 @@ For each question:
 - **Interrupt on vague or overloaded terms.** "You said 'user'. Do you mean the account owner or anyone with access?" Resolve the term from the glossary before continuing, and track resolved terms for the glossary writeback.
 - **Test every scope boundary with one concrete scenario**, framed as confirmation: "So if a customer cancels mid-billing-cycle, that's out of scope?"
 
-Keep a running decision log, marking each entry "you decided" or "agent assumed". Show it on request and after each domain (problem, users, scope; then data, API, failure handling), with the settled technical answers and their reasons. The user overrides any of them in real time.
+Keep a running decision log, marking each entry "you decided" or "agent assumed". Save it in the blueprint draft, and show it on request and after each domain (problem, users, scope; then data, API, failure handling), with the settled technical answers and their reasons. The user overrides any of them in real time.
 
 ### What the product half covers
 
@@ -94,7 +94,7 @@ Compare viable candidates on interface depth. Prefer the design that hides more 
 
 Arena returns one synthesized design package. The synthesis decision populates the rationale's "Synthesis decision" section.
 
-Two things differ from running the arena by hand. The arena always runs, because starting a design means the work deserves design, and you do not ask first. Take the result directly and skip the arena's last step ("Ask the user"), because the user approves the contract sketch below and should not be asked twice.
+Starting a design means the work deserves one, so the arena always runs. Take its result directly, because the user approves the contract sketch below and should not be asked twice.
 
 ## Agree on the contract sketch
 
@@ -111,7 +111,7 @@ Settle what an engineer needs before writing code, not a checklist: data, depend
 - **Testing.** Name the surface a test enters through, the substitute for each external dependency, an observability API for any async effect the surface doesn't show, an injectable clock for time-dependent behavior, and a parity plan for any in-memory store beside a real one. Testing follows the `surface-testing` skill.
 - **Level of detail.** Pin a signature only where a consumer or test binds to it. Describe an internal surface's responsibility, inputs and outputs, invariants and error categories, and leave its signature to the implementor, who sees the real types. A schema is pinned in full, and the interface that wraps it is not.
 
-When a question can't be settled now, insert `[NEEDS CLARIFICATION: <question>]` and continue with the best assumption. Three or more flags mean the blueprint isn't ready to build from.
+When a question can't be settled now, insert `[NEEDS CLARIFICATION: <question>]` and continue with the best assumption. Three or more flags mean the blueprint isn't ready to build from, so stop and ask the user to settle them.
 
 Before writing, run two passes. **Correctness:** every invariant has a preservation argument for each operation touching it, and no enforcement relies on a property of one implementation. **Testability:** every surface is reachable from a test, every external dependency has a substitute, and every async behavior can be observed. Gaps here are design findings. Resolve them before writing.
 
