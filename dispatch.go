@@ -27,6 +27,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/reconcile"
+	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/worker"
 )
@@ -36,7 +37,7 @@ import (
 type Options struct {
 	// ConfigPath defaults to ~/.config/dispatch/config.toml.
 	ConfigPath string
-	// StateDir holds cache.json and tick.lock. Defaults to ~/.local/state/dispatch.
+	// StateDir holds cache.json, tick.lock and the Stop records. Defaults to ~/.local/state/dispatch.
 	StateDir string
 	// LinearURL defaults to Linear's GraphQL endpoint.
 	LinearURL string
@@ -59,8 +60,11 @@ type Options struct {
 	Dir string
 	// LaunchPace is the pause between launcher polls of herdr. Defaults to 1 second.
 	LaunchPace time.Duration
-	Stdout     io.Writer
-	Stderr     io.Writer
+	// Now is the clock. Defaults to time.Now.
+	Now    func() time.Time
+	Stdin  io.Reader
+	Stdout io.Writer
+	Stderr io.Writer
 }
 
 const usage = `usage: dispatch tick [--dry-run]
@@ -68,6 +72,7 @@ const usage = `usage: dispatch tick [--dry-run]
        dispatch tell <ticket> "<text>"
        dispatch ticket-hint
        dispatch launch <ticket> <branch> [--base REF] [--model NAME] [--kickoff TEXT]
+       dispatch record-stop
 
   tick         run one pass: launch a worker for each approved ticket that has none,
                and clean up after finished and paused tickets
@@ -80,7 +85,10 @@ const usage = `usage: dispatch tick [--dry-run]
                The plugin's SessionStart hook runs it
   launch       lease a tree, open a herdr workspace and start a worker typed --kickoff, which
                defaults to "/dispatch:build <ticket>". Run it from inside the repo. Prints one
-               JSON result and exits 0 only when a worker is running`
+               JSON result and exits 0 only when a worker is running
+  record-stop  read a Stop hook's JSON on stdin and record when the worker in this tree last ended a
+               turn and whether it still has background tasks running; does nothing outside a
+               worktree of a repo listed under [repos]. The plugin's Stop hook runs it`
 
 // Run executes one dispatch command. main is a thin wrapper around it.
 func Run(ctx context.Context, args []string, opts Options) error {
@@ -109,6 +117,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		return ticketHint(ctx, opts)
 	case "launch":
 		return launchWorker(ctx, opts, args[1:])
+	case "record-stop":
+		return recordStop(ctx, opts)
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ContinueOnError)
 		fs.SetOutput(opts.Stderr)
@@ -147,6 +157,12 @@ func withDefaults(o Options) Options {
 	}
 	if o.Osascript == "" {
 		o.Osascript = "osascript"
+	}
+	if o.Now == nil {
+		o.Now = time.Now
+	}
+	if o.Stdin == nil {
+		o.Stdin = os.Stdin
 	}
 	if o.Stdout == nil {
 		o.Stdout = os.Stdout
@@ -302,9 +318,17 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 			leased[tree.LeaseHolder] = true
 		}
 	}
+	now := opts.Now()
 	workers := map[string]worker.Worker{}
+	lastStops := map[string]stops.Record{}
 	for _, t := range tickets {
-		workers[t.Identifier] = worker.Find(t.Identifier, trees, snap)
+		w := worker.Find(t.Identifier, trees, snap)
+		workers[t.Identifier] = w
+		if w.State == worker.Idle && t.Status == cfg.Linear.Statuses.InProgress {
+			if rec, ok := stops.Read(opts.StateDir, w.TreePath); ok {
+				lastStops[t.Identifier] = rec
+			}
+		}
 	}
 	sum.tickets = len(tickets)
 	input := reconcile.Input{
@@ -315,6 +339,8 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 		NeedsHuman:     cfg.Linear.Statuses.NeedsHuman,
 		MaxInProgress:  cfg.MaxInProgress,
 		NudgeLimit:     cfg.NudgeLimit,
+		Now:            now,
+		Stops:          lastStops,
 		RenotifyTicks:  cfg.BlockedRenotifyTicks,
 		Cache:          c,
 		RepoLabelGroup: cfg.Linear.RepoLabelGroup,
@@ -378,7 +404,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 	if lookupFailed || len(unread) > 0 {
 		held = nil
 	}
-	settle(c, tickets, workers, input.PRs, cfg.Linear.Statuses, held, input.PendingComments(), leased)
+	settle(c, now, tickets, workers, input.PRs, cfg.Linear.Statuses, held, input.PendingComments(), leased)
 
 	alert := func(message string) error {
 		return notify.Send(ctx, opts.Osascript, "dispatch", message)
@@ -402,6 +428,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: %v\n", err)
 		}
 	}
+	nudgeFailed := map[string]bool{}
 	launch := func(repoDir, ticket, branch string) launcher.Result {
 		if opts.Launcher != "" {
 			return launcher.Launch(ctx, opts.Launcher, repoDir, ticket, branch, cfg.WorkerModel)
@@ -429,10 +456,11 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Nudge:
 			// herdr refuses a worker that turned blocked after the snapshot. A
-			// refused nudge is not counted, so it can't push the ticket toward
-			// Needs Human.
+			// refused nudge is not recorded, so the Stop stays un-nudged and the
+			// stall count stays true.
 			if err := herdr.Prompt(ctx, opts.Herdr, a.PaneID, a.Text); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while nudging %s: %v\n", a.Ticket.Identifier, err)
+				nudgeFailed[a.Ticket.Identifier] = true
 				continue
 			}
 			e := c[a.Ticket.Identifier]
@@ -441,7 +469,16 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 				e.CommentSeen = a.Ticket.LastComment
 			case a.ActivityAt != "":
 				e.PRActivitySeen = a.ActivityAt
+			case a.Reason == reconcile.ReasonStall:
+				e.Nudges++
+				e.StallNudges++
+				e.NudgedStop, e.NudgedAt, e.NudgeNotified = a.AnsweredStop, now, false
+			case a.Reason == reconcile.ReasonResume:
+				e.Nudges++
+				e.ResumePending = false
+				e.NudgedStop, e.NudgedAt, e.NudgeNotified = a.AnsweredStop, time.Time{}, false
 			default:
+				// A PR nudge, whose reason carries the problem text.
 				e.Nudges++
 				e.ResumePending = false
 			}
@@ -493,6 +530,24 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
 			}
 		case reconcile.Notify:
+			if a.AfterNudge && nudgeFailed[a.Ticket.Identifier] {
+				continue
+			}
+			if a.AfterNudge || a.Reason == reconcile.ReasonUnresponsive {
+				// A failed alert is lost for a nudge count, and retried next tick
+				// for an unresponsive worker because NudgeNotified stays unset.
+				if err := alert(a.Text); err != nil {
+					_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
+					continue
+				}
+				if a.Reason == reconcile.ReasonUnresponsive {
+					e := c[a.Ticket.Identifier]
+					e.NudgeNotified = true
+					c[a.Ticket.Identifier] = e
+				}
+				_, _ = fmt.Fprintln(opts.Stdout, a)
+				continue
+			}
 			if a.Reason == reconcile.ReasonReady {
 				// A failed alert leaves the head unrecorded, so the next tick sends it again.
 				if err := alert(a.Text); err != nil {
@@ -573,7 +628,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 //
 // pending holds back a ticket's comment time (see Input.PendingComments), so
 // its nudge is retried instead of lost. A successful nudge advances it.
-func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Worker, prs map[string]pullrequest.PR, statuses config.Statuses, held, pending, leased map[string]bool) {
+func settle(c cache.Cache, now time.Time, tickets []linear.Ticket, workers map[string]worker.Worker, prs map[string]pullrequest.PR, statuses config.Statuses, held, pending, leased map[string]bool) {
 	seen := map[string]bool{}
 	for _, t := range tickets {
 		e := c[t.Identifier]
@@ -586,6 +641,17 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 			e.Nudges = 0
 			e.Relaunches = 0
 			e.TeardownWarned = false
+			e.StallNudges = 0
+			e.NudgedStop, e.NudgedAt, e.NudgeNotified = time.Time{}, time.Time{}, false
+		}
+		// IdleSince is when this stretch of idling began. A worker that works
+		// and goes idle again, or a ticket that changed status, starts a new one.
+		if t.Status == statuses.InProgress && workers[t.Identifier].State == worker.Idle {
+			if e.IdleSince.IsZero() || e.LastStatus != t.Status {
+				e.IdleSince = now
+			}
+		} else {
+			e.IdleSince = time.Time{}
 		}
 		if e.CommentSeen == "" || !pending[t.Identifier] {
 			// "0" sorts before any RFC 3339 time and, unlike "", marks the ticket seen.
@@ -622,8 +688,8 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 		seen[t.Identifier] = true
 	}
 	// A ticket missing from the read was paused or finished, and its worker may
-	// have been torn down and relaunched since. Counters from before would
-	// escalate it on a nudge it never received, so only what must outlive the
+	// have been torn down and relaunched since. Nudge counters from before would
+	// escalate it on a PR nudge it never received, so only what must outlive the
 	// ticket's absence is kept.
 	for id, e := range c {
 		if seen[id] {

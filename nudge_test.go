@@ -1,7 +1,9 @@
 package dispatch_test
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -72,58 +74,6 @@ func TestTickLeavesWorkingAndDesignWorkersAlone(t *testing.T) {
 	}
 }
 
-func TestTickEscalatesAfterTwoNudgesWithOneComment(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-
-	for range 2 {
-		_, err := h.run("tick")
-		require.NoError(t, err)
-	}
-	assert.Equal(t, []string{stallPrompt, stallPrompt}, h.prompts())
-	assert.Empty(t, h.linear.mutations())
-
-	out, err := h.run("tick")
-	require.NoError(t, err)
-
-	assert.Contains(t, out, "escalate ENG-1: its worker stayed idle through 2 nudges")
-	assert.Len(t, h.prompts(), 2)
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 2)
-	assert.Equal(t, "MoveTicket", mutations[0].operation)
-	assert.Equal(t, needsHumanID, mutations[0].variables["state"])
-	assert.Equal(t, "CommentTicket", mutations[1].operation)
-	assert.Contains(t, mutations[1].variables["body"], "stayed idle through 2 nudges")
-
-	// The ticket now reads Needs Human: no more comments, nudges or notifications.
-	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))
-	for range 2 {
-		_, err = h.run("tick")
-		require.NoError(t, err)
-	}
-	assert.Len(t, h.linear.mutations(), 2)
-	assert.Len(t, h.prompts(), 2)
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1|dispatch"}, h.notifications())
-}
-
-func TestTickNudgeLimitComesFromConfig(t *testing.T) {
-	h := newHarness(t)
-	h.config("nudge_limit = 1\n")
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-
-	_, err := h.run("tick")
-	require.NoError(t, err)
-	assert.Empty(t, h.linear.mutations())
-
-	_, err = h.run("tick")
-	require.NoError(t, err)
-
-	assert.Len(t, h.prompts(), 1)
-	assert.Len(t, h.linear.mutations(), 2)
-}
-
 func TestTickDoesNotCountANudgeHerdrRefused(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -145,24 +95,19 @@ func TestTickSendsTheResumeNudgeWhenAnswerMovesTicketBack(t *testing.T) {
 	h := newHarness(t)
 	h.worker("ENG-1", "idle")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	for range 2 {
-		_, err := h.run("tick")
-		require.NoError(t, err)
-	}
-	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))
 	_, err := h.run("tick")
+	require.NoError(t, err)
+	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))
+	_, err = h.run("tick")
 	require.NoError(t, err)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	// Two stall nudges had already been spent, so a resume instead of an
-	// escalation shows the count restarted when the status changed.
+	// The Stop the stall nudge answered is still the latest, and the resume goes out anyway.
 	assert.Equal(t, "nudge ENG-1: resume\n", out)
-	prompts := h.prompts()
-	require.Len(t, prompts, 3)
-	assert.Equal(t, "w-ENG-1:p1|"+resumeText1, prompts[2])
+	assert.Equal(t, []string{stallPrompt, "w-ENG-1:p1|" + resumeText1}, h.prompts())
 	assert.Empty(t, h.linear.mutations())
 }
 
@@ -365,59 +310,6 @@ func TestTickDryRunNamesNotificationsWithoutShowingThem(t *testing.T) {
 	}
 }
 
-func TestTickRestartsTheNudgeCountWhenStatusChangesWithoutNeedsHuman(t *testing.T) {
-	h := newHarness(t)
-	h.worker("ENG-1", "idle")
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	_, err := h.run("tick")
-	require.NoError(t, err)
-
-	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
-	out, err := h.run("tick")
-	require.NoError(t, err)
-	assert.Empty(t, out)
-
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	for range 2 {
-		out, err = h.run("tick")
-		require.NoError(t, err)
-		assert.Equal(t, "nudge ENG-1: stall\n", out)
-	}
-
-	// One nudge before the detour and two after: the detour restarted the count.
-	assert.Len(t, h.prompts(), 3)
-	assert.Empty(t, h.linear.mutations())
-
-	out, err = h.run("tick")
-	require.NoError(t, err)
-
-	assert.Contains(t, out, "escalate ENG-1")
-	assert.Len(t, h.linear.mutations(), 2)
-}
-
-func TestTickCountsTheResumeNudgeTowardEscalation(t *testing.T) {
-	h := newHarness(t)
-	h.worker("ENG-1", "idle")
-	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))
-	_, err := h.run("tick")
-	require.NoError(t, err)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-
-	for _, want := range []string{"nudge ENG-1: resume\n", "nudge ENG-1: stall\n"} {
-		out, err := h.run("tick")
-		require.NoError(t, err)
-		assert.Equal(t, want, out)
-	}
-	assert.Empty(t, h.linear.mutations())
-
-	out, err := h.run("tick")
-	require.NoError(t, err)
-
-	assert.Contains(t, out, "escalate ENG-1")
-	assert.Equal(t, []string{"w-ENG-1:p1|" + resumeText1, stallPrompt}, h.prompts())
-	assert.Len(t, h.linear.mutations(), 2)
-}
-
 func TestTickSendsOnlyOneResumeNudge(t *testing.T) {
 	h := newHarness(t)
 	h.worker("ENG-1", "working")
@@ -427,12 +319,13 @@ func TestTickSendsOnlyOneResumeNudge(t *testing.T) {
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.setWorkerStatus("ENG-1", "idle")
 
-	_, err = h.run("tick")
-	require.NoError(t, err)
 	out, err := h.run("tick")
 	require.NoError(t, err)
+	assert.Equal(t, "nudge ENG-1: resume\n", out)
+	out, err = h.run("tick")
+	require.NoError(t, err)
 
-	assert.Equal(t, "nudge ENG-1: stall\n", out)
+	assert.Empty(t, out)
 }
 
 func TestTickNotifiesForNeedsHumanWhateverTheWorkerIs(t *testing.T) {
@@ -481,8 +374,9 @@ func TestTickNotifiesEachTimeATicketReentersNeedsHuman(t *testing.T) {
 
 func TestTickNotifiesAfterAnEscalationWhoseAlertFailed(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	for range 2 {
 		_, err := h.run("tick")
 		require.NoError(t, err)
@@ -508,8 +402,9 @@ func TestTickNotifiesAfterAnEscalationWhoseAlertFailed(t *testing.T) {
 
 func TestTickDoesNotNotifyForAnEscalationLinearRefused(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	for range 2 {
 		_, err := h.run("tick")
 		require.NoError(t, err)
@@ -581,21 +476,18 @@ func TestTickNudgesAfterABlockedWorkerGoesIdle(t *testing.T) {
 	assert.Empty(t, h.linear.mutations())
 }
 
-func TestTickRestartsNudgesWhenTheCacheIsDeleted(t *testing.T) {
+func TestTickNudgesAgainWhenTheCacheIsDeleted(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.worker("ENG-1", "idle")
-	for range 2 {
-		_, err := h.run("tick")
-		require.NoError(t, err)
-	}
+	h.tick()
 	h.removeFile("state/cache.json")
+	h.advance(5 * time.Minute)
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	out := h.tick()
 
 	assert.Equal(t, "nudge ENG-1: stall\n", out)
-	assert.Len(t, h.prompts(), 3)
+	assert.Len(t, h.prompts(), 2)
 	assert.Empty(t, h.linear.mutations())
 }
 
@@ -604,20 +496,14 @@ func TestTickNudgesEachIdleTicketIndependently(t *testing.T) {
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.worker("ENG-2", "working")
-	_, err := h.run("tick")
-	require.NoError(t, err)
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
+	h.tick()
 	h.setWorkerStatus("ENG-2", "idle")
 
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	// ENG-1 is out of nudges; ENG-2 has had none.
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 2)
-	assert.Equal(t, "uuid-ENG-1", mutations[0].variables["id"])
-	assert.Contains(t, h.prompts(), "w-ENG-2:p1|ENG-2 is still In Progress. Re-read the ticket and its latest comments, then keep going. If the PR is ready, move it to In Review. If you need a decision from me, move it to Needs Human and comment what you need.")
+	assert.Equal(t, []string{stallPrompt, "w-ENG-2:p1|" + strings.ReplaceAll(stallText1, "ENG-1", "ENG-2")}, h.prompts())
+	assert.Empty(t, h.linear.mutations())
 }
 
 func TestTellTypesTheTextVerbatim(t *testing.T) {
@@ -688,26 +574,6 @@ func TestTickSendsTheResumeNudgeAfterANeedsHumanNotificationFailed(t *testing.T)
 	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))
 	h.writeFile("notify-fails", "")
 	_, err = h.run("tick")
-	require.NoError(t, err)
-	h.removeFile("notify-fails")
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-
-	out, err := h.run("tick")
-	require.NoError(t, err)
-
-	assert.Equal(t, "nudge ENG-1: resume\n", out)
-}
-
-func TestTickSendsTheResumeNudgeAfterAnEscalationAlertFailed(t *testing.T) {
-	h := newHarness(t)
-	h.worker("ENG-1", "idle")
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	for range 2 {
-		_, err := h.run("tick")
-		require.NoError(t, err)
-	}
-	h.writeFile("notify-fails", "")
-	_, err := h.run("tick")
 	require.NoError(t, err)
 	h.removeFile("notify-fails")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))

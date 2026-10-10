@@ -142,6 +142,15 @@ You asked for a notification when a PR is ready for review and a 👀 workspace 
 
 Nothing auto-merged. The blueprint planned GitHub-side auto-merge, which the build skill enables only on a branch that requires an approving review. This repo's `main` has no such rule, so GitHub would have merged before CodeRabbit weighed in. You chose a per-repo switch on 2026-10-09. The config key `auto_merge` lists repos as `owner/name`. In a listed repo the dispatcher merges a ready PR itself once a review approves its head commit, and notifies you. This replaces the GitHub-side auto-merge text in `blueprint.md` (behavioral constraints, invariant 17, the security note). The build worker settled four details. The PR's repo comes from the PR's own URL, because `gh` picks the wrong repo in a clone with two remotes. The merge names the PR by URL and passes `--match-head-commit`, so a push after the approval was read is not merged. A failed merge is recorded per PR head and not retried until a push. The build skill still tells workers to enable GitHub auto-merge on a protected branch, which this decision leaves alone.
 
+## Idle workers are never escalated (ENG-259, 2026-10-09)
+
+herdr reports `done` for a worker waiting on Monitors or background shells, and the dispatcher counted two nudges as a stall, so it moved ENG-248's ticket to Needs Human twice while its worker waited on eval runs.
+
+- **An idle In Progress worker is never moved to Needs Human for stalling.** Workers may run for hours. `nudge_limit` keeps its name and default and now caps only In Review PR nudges and relaunches of a gone In Review worker.
+- **The Stop hook is the busy signal.** Claude Code passes `background_tasks` to a Stop hook, and a worker only goes idle right after a Stop. `dispatch record-stop` stores the latest Stop per worker tree under the state directory, and does nothing outside a worktree of a configured repo. The record is keyed by the tree's resolved path, which is what the treehouse lease and herdr workspace already name.
+- **Nudges follow Stops, not ticks.** Each Stop gets at most one stall nudge. A Stop listing running tasks gets none for 60 minutes, after which it counts as a Stop with no running tasks. A missing record, or one without `background_tasks`, counts as a Stop at the time the dispatcher first saw the worker idle. The resume nudge ignores the record.
+- **The user hears about it instead.** A macOS notification on the 6th stall nudge with no status change and every 6th after, and once when no newer Stop arrives 60 minutes after a stall nudge. Neither touches Linear.
+
 ## Breakdown step (in progress)
 
 The breakdown runs inside the review worker, after the review rounds and before your approval (decisions 2 and 3). It turns the reviewed blueprint into build tickets.

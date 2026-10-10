@@ -6,10 +6,12 @@ package reconcile
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/kapetan-io/dispatch/internal/cache"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
+	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/worker"
 )
 
@@ -51,8 +53,8 @@ const (
 )
 
 // Reasons are the labels `dispatch tick --dry-run` prints. The executor
-// switches on ReasonEnteredNeedsHuman and ReasonResume to decide how to retry
-// a failed notification or nudge.
+// switches on them to decide what a landed nudge or notification records and
+// how to retry a failed one.
 const (
 	ReasonEnteredNeedsHuman = "entered Needs Human"
 	ReasonBlocked           = "worker is blocked on a question"
@@ -63,7 +65,16 @@ const (
 	ReasonActivity          = "new PR activity"
 	ReasonReady             = "PR ready for review"
 	ReasonMerge             = "PR approved"
+	ReasonUnresponsive      = "worker hasn't responded to its nudge in an hour"
 )
+
+// UnresponsiveAfter is how long a worker may ignore a stall nudge, without
+// stopping again, before the user is told.
+const UnresponsiveAfter = time.Hour
+
+// StallNotifyEvery is how many stall nudges without a status change pass
+// between notifications to the user.
+const StallNotifyEvery = 6
 
 // NeedsHumanText is the notification message for a ticket in Needs Human.
 func NeedsHumanText(t linear.Ticket) string {
@@ -112,6 +123,11 @@ type Action struct {
 	// ActivityAt is the PR activity time an activity Nudge puts to the worker,
 	// which the executor records as seen.
 	ActivityAt string
+	// AnsweredStop is the Stop-hook time a stall or resume Nudge answers.
+	AnsweredStop time.Time
+	// AfterNudge marks a Notify that only makes sense once the Nudge before it
+	// landed.
+	AfterNudge bool
 	// WorkspaceID and TreePath name what a Teardown, Keep or Stop acts on.
 	// WorkspaceID is empty when a Keep or Stop has no live worker to stop, so a
 	// workspace someone opened by hand is left open. A Teardown always closes
@@ -140,6 +156,11 @@ type Input struct {
 	NeedsHuman    string
 	MaxInProgress int
 	NudgeLimit    int
+	// Now is the time of this tick.
+	Now time.Time
+	// Stops maps an In Progress ticket identifier to its worker's latest Stop.
+	// Tickets without a record are absent.
+	Stops map[string]stops.Record
 	// RenotifyTicks is how many ticks pass between notifications for a worker
 	// that stays blocked.
 	RenotifyTicks int
@@ -209,8 +230,8 @@ func Plan(in Input) []Action {
 	actions := append(in.retire(), in.planParents()...)
 	var launches []Action
 	for _, t := range in.Tickets {
-		if a, ok := in.watch(t); ok {
-			actions = append(actions, a)
+		if as := in.watch(t); len(as) > 0 {
+			actions = append(actions, as...)
 			continue
 		}
 		pr, relaunch := in.prRelaunch(t)
@@ -279,51 +300,85 @@ func Plan(in Input) []Action {
 // because it can't tell whether they are design tickets. A review ticket still
 // notifies, since its hand-off is a move to Needs Human, but it is never nudged.
 // A parent notifies on Needs Human like any ticket, and never gets a worker.
-func (in Input) watch(t linear.Ticket) (Action, bool) {
+func (in Input) watch(t linear.Ticket) []Action {
 	if t.LabelsTruncated || t.HasLabel("design") {
-		return Action{}, false
+		return nil
 	}
 	prev := in.Cache[t.Identifier]
 	if t.Status == in.NeedsHuman {
 		if prev.LastStatus == in.NeedsHuman && !prev.NotifyPending {
-			return Action{}, false
+			return nil
 		}
-		return Action{Kind: Notify, Ticket: t, Reason: ReasonEnteredNeedsHuman, Text: NeedsHumanText(t)}, true
+		return []Action{{Kind: Notify, Ticket: t, Reason: ReasonEnteredNeedsHuman, Text: NeedsHumanText(t)}}
 	}
 	if t.HasChildren || (t.Status != in.InProgress && t.Status != in.InReview) {
-		return Action{}, false
+		return nil
 	}
 	w := in.Workers[t.Identifier]
 	if a, ok := in.commentNudge(t, w, prev); ok {
-		return a, true
+		return []Action{a}
 	}
 	switch w.State {
 	case worker.Blocked:
 		if in.RenotifyTicks > 0 && prev.BlockedTicks%in.RenotifyTicks != 0 {
-			return Action{}, false
+			return nil
 		}
-		return Action{Kind: Notify, Ticket: t, Reason: ReasonBlocked, Text: fmt.Sprintf("%s is waiting on your answer in its herdr workspace", t.Identifier)}, true
+		return []Action{{Kind: Notify, Ticket: t, Reason: ReasonBlocked, Text: fmt.Sprintf("%s is waiting on your answer in its herdr workspace", t.Identifier)}}
 	case worker.Idle:
 		if t.Status == in.InReview {
-			return in.inReviewIdle(t, w, prev)
+			if a, ok := in.inReviewIdle(t, w, prev); ok {
+				return []Action{a}
+			}
+			return nil
 		}
 		// A design-review ticket's worker is never nudged.
 		if t.HasLabel("design-review") {
-			return Action{}, false
+			return nil
 		}
-		nudges := prev.Nudges
-		if prev.LastStatus != t.Status {
-			nudges = 0
-		}
-		if nudges >= in.NudgeLimit {
-			return Action{Kind: Escalate, Ticket: t, Reason: fmt.Sprintf("its worker stayed idle through %d nudges without the ticket changing status. Look at its herdr workspace.", nudges)}, true
-		}
-		if prev.ResumePending || prev.LastStatus == in.NeedsHuman {
-			return Action{Kind: Nudge, Ticket: t, Reason: ReasonResume, PaneID: w.PaneID, Text: fmt.Sprintf(ResumeNudge, t.Identifier)}, true
-		}
-		return Action{Kind: Nudge, Ticket: t, Reason: ReasonStall, PaneID: w.PaneID, Text: fmt.Sprintf(StallNudge, t.Identifier)}, true
+		return in.stalled(t, w, prev)
 	}
-	return Action{}, false
+	return nil
+}
+
+// stalled decides what an idle In Progress worker needs. It is never
+// escalated, because a worker may run for hours. Its latest Stop says whether
+// it is waiting on its own background work, and each Stop gets at most one
+// nudge, so a worker that keeps stopping is reminded once per stop.
+func (in Input) stalled(t linear.Ticket, w worker.Worker, prev cache.Entry) []Action {
+	stop, busy := in.lastStop(t, prev)
+	nudged := prev.LastStatus == t.Status && prev.NudgedStop.Equal(stop)
+	if prev.ResumePending || prev.LastStatus == in.NeedsHuman {
+		return []Action{{Kind: Nudge, Ticket: t, Reason: ReasonResume, PaneID: w.PaneID, Text: fmt.Sprintf(ResumeNudge, t.Identifier), AnsweredStop: stop}}
+	}
+	if busy {
+		return nil
+	}
+	if nudged {
+		if !prev.NudgedAt.IsZero() && !prev.NudgeNotified && in.Now.Sub(prev.NudgedAt) >= UnresponsiveAfter {
+			return []Action{{Kind: Notify, Ticket: t, Reason: ReasonUnresponsive, Text: fmt.Sprintf("%s: the worker hasn't responded to its nudge in an hour", t.Identifier)}}
+		}
+		return nil
+	}
+	as := []Action{{Kind: Nudge, Ticket: t, Reason: ReasonStall, PaneID: w.PaneID, Text: fmt.Sprintf(StallNudge, t.Identifier), AnsweredStop: stop}}
+	if n := prev.StallNudges + 1; n%StallNotifyEvery == 0 {
+		as = append(as, Action{Kind: Notify, Ticket: t, AfterNudge: true,
+			Reason: fmt.Sprintf("%d stall nudges with no status change", n),
+			Text:   fmt.Sprintf("%s has had %d stall nudges with no status change", t.Identifier, n)})
+	}
+	return as
+}
+
+// lastStop returns when the worker last ended a turn, and whether that Stop
+// still counts as waiting on running tasks. A worker with no usable Stop
+// record is treated as stopped when the dispatcher first saw it idle.
+func (in Input) lastStop(t linear.Ticket, prev cache.Entry) (time.Time, bool) {
+	if rec, ok := in.Stops[t.Identifier]; ok && rec.Reported {
+		return rec.At, rec.Busy(in.Now)
+	}
+	if prev.LastStatus == t.Status && !prev.IdleSince.IsZero() {
+		return prev.IdleSince, false
+	}
+	return in.Now, false
 }
 
 // CommentDue reports whether t has a comment newer than the newest one the

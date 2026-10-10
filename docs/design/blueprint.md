@@ -49,7 +49,7 @@ State invariants, each with its enforcement.
 
 | Invariant | Enforced by |
 |---|---|
-| A worker never goes idle while its ticket is In Progress and not marked Needs Human. | Worker contract. The dispatcher nudges an idle worker and escalates after two nudges. |
+| A worker never goes idle while its ticket is In Progress and not marked Needs Human. | Worker contract. The dispatcher nudges an idle worker once per Stop, leaves a worker waiting on background tasks alone, and never escalates a stalled worker. |
 | A ticket has at most one live worker. | Dispatcher lock. Liveness lookup through the ticket's treehouse lease before launch. The launcher refuses when a live Claude pane already sits in the ticket's workspace. |
 | A parent ticket never gets a dispatched worker. | The dispatcher skips any ticket that has sub-issues. A parent still notifies on Needs Human. |
 | The dispatcher touches only tickets assigned to you that carry the `ai` label. | The Linear query filters on both. Tickets you work by hand lack the label. |
@@ -75,7 +75,7 @@ Each criterion is checked through the dispatcher's surface (`dispatch tick`, `di
 1. A standalone Todo ticket moved to In Progress gets, within one tick, a treehouse lease held by the ticket id, a herdr workspace on that tree, and a Claude worker running the ticket kickoff.
 2. A parent in In Progress with child A (Todo, unblocked) and child B (Todo, blocked by A) gets A promoted and launched on the next tick. B is promoted on the first tick after A is Done.
 3. A parent whose children are all Done, Canceled or Duplicate is set to Done on the next tick.
-4. An In Progress ticket with an idle worker receives the stall nudge. After two nudges with no status change, the ticket is Needs Human with exactly one dispatcher comment.
+4. An In Progress ticket with an idle worker receives one stall nudge per Stop, unless its latest Stop under 60 minutes ago listed running background tasks. The ticket is never moved to Needs Human for stalling. The user gets a notification on the 6th stall nudge with no status change and every 6th after, and when a worker has not stopped again an hour after a nudge.
 5. A ticket moved from Needs Human back to In Progress receives the resume nudge on the next tick, and the dispatcher posts no comment.
 6. For an In Review ticket, a push that moves the PR head resets the nudge count, so a review that arrives days later starts a fresh count.
 7. A blocked worker, one asking you a question through AskUserQuestion, triggers a macOS notification on the first tick it is blocked and again on later ticks while it stays blocked. The dispatcher never dismisses the dialog and never sets Needs Human for it (decision 9).
@@ -228,7 +228,7 @@ Cheap actions run before launches, because one launch can take over 5 minutes.
 |---|---|---|
 | In Progress | none | Launch. On `pool_exhausted` or a full cap, wait for the next tick. After 2 failed launches in a row, set Needs Human with the launcher's error. |
 | In Progress | working | Nothing, or the comment nudge if the ticket has a new comment |
-| In Progress | idle | Send the stall nudge, or the resume nudge if the cache's last-seen status was Needs Human. After 2 nudges with no status change, set Needs Human. |
+| In Progress | idle | Send the resume nudge if the cache's last-seen status was Needs Human. Otherwise do nothing while the worker's latest Stop is under 60 minutes old and lists running background tasks, and send one stall nudge per Stop. Notify you on the 6th stall nudge with no status change and every 6th after, and once when no newer Stop arrives 60 minutes after a nudge. Never set Needs Human. |
 | In Progress or In Review | blocked | The worker is asking you a question. Notify you, and notify again if it stays unanswered. Never dismiss the dialog. A new comment waits for the worker to be unblocked. |
 | In Review | none | If the PR needs work, launch to resume, then send the PR nudge once the relaunched worker is idle (the next tick). Otherwise nothing, and the tree stays leased. |
 | In Review | idle | If the PR needs work, send the PR nudge. After 2 PR nudges with no push, set Needs Human. If the PR is ready for review and the cache has not notified about its head, notify you. |
@@ -274,6 +274,11 @@ At work, where there is no admin right to add a Needs Human status, the design i
   "ENG-123": {
     "last_status": "In Progress",
     "nudges": 1,
+    "stall_nudges": 1,
+    "idle_since": "2026-10-09T01:20:00Z",
+    "nudged_stop": "2026-10-09T01:20:00Z",
+    "nudged_at": "2026-10-09T01:25:00Z",
+    "nudge_notified": false,
     "pr_head": "9f2c1e0",
     "ready_head": "9f2c1e0",
     "launch_failures": 0,
@@ -286,7 +291,7 @@ At work, where there is no admin right to add a Needs Human status, the design i
 }
 ```
 
-`nudges` resets when the status changes, and for In Review tickets also when `pr_head` moves. Workers are not required to commit as they go, so commits are never a progress signal while In Progress. `launch_failures` resets on a successful launch. `blocked_ticks` resets when the worker is not blocked. `resume_pending` is set when a ticket moves from Needs Human back to In Progress and cleared once the resume nudge lands, so a worker that was blocked or working at that moment still gets it. `notify_pending` marks a Needs Human notification that failed to show, retried each tick. A ticket missing from the Linear read (paused or finished) keeps only `launch_failures`, a pending comment and its teardown warning, plus `comment_seen` while it holds a lease, so a ticket that returns starts its nudge count fresh, and a surviving worker still hears about a comment posted meanwhile. Without a lease, the return is a first sighting for comments. `comment_seen` is the creation time of the newest comment the dispatcher has accounted for, `"0"` for a ticket with none. A ticket's first sighting records it without nudging, so restarting `dispatch run` nudges nobody for old comments, and it stays behind while a comment nudge is owed or the worker is blocked. `ready_head` is the PR head the ready-for-review notification last fired for. A failed notification leaves it unset so the next tick retries. A ticket that leaves In Review and returns at the same head is not notified again, and the entry keeps `ready_head` while the ticket holds a lease. `teardown_warned` keeps the dirty-tree comment to one per ticket. Entries for tickets with no lease and a terminal status are dropped.
+`nudges` resets when the status changes, and for In Review tickets also when `pr_head` moves. In Progress tickets never read it. `stall_nudges` counts stall nudges since the status last changed and drives the notification on every 6th. `idle_since` is when the worker's current stretch of idling began as the dispatcher saw it, and stands in for the Stop time when the worker left no usable Stop record. `nudged_stop` is the Stop the last stall or resume nudge answered, so each Stop is nudged once. `nudged_at` is when the stall nudge went out, and `nudge_notified` marks that the user was told the worker ignored it for an hour. The Stop records themselves live apart from the cache, one file per worker tree under `~/.local/state/dispatch/stops/`, written by the Stop hook. Workers are not required to commit as they go, so commits are never a progress signal while In Progress. `launch_failures` resets on a successful launch. `blocked_ticks` resets when the worker is not blocked. `resume_pending` is set when a ticket moves from Needs Human back to In Progress and cleared once the resume nudge lands, so a worker that was blocked or working at that moment still gets it. `notify_pending` marks a Needs Human notification that failed to show, retried each tick. A ticket missing from the Linear read (paused or finished) keeps only `launch_failures`, a pending comment and its teardown warning, plus `comment_seen` while it holds a lease, so a ticket that returns starts its nudge count fresh, and a surviving worker still hears about a comment posted meanwhile. Without a lease, the return is a first sighting for comments. `comment_seen` is the creation time of the newest comment the dispatcher has accounted for, `"0"` for a ticket with none. A ticket's first sighting records it without nudging, so restarting `dispatch run` nudges nobody for old comments, and it stays behind while a comment nudge is owed or the worker is blocked. `ready_head` is the PR head the ready-for-review notification last fired for. A failed notification leaves it unset so the next tick retries. A ticket that leaves In Review and returns at the same head is not notified again, and the entry keeps `ready_head` while the ticket holds a lease. `teardown_warned` keeps the dirty-tree comment to one per ticket. Entries for tickets with no lease and a terminal status are dropped.
 
 ### Security
 

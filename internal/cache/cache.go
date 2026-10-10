@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Entry is one ticket's state between ticks.
@@ -18,8 +19,23 @@ type Entry struct {
 	LastStatus     string `json:"last_status"`
 	LaunchFailures int    `json:"launch_failures"`
 	// Nudges counts nudges sent, the resume nudge included, since the ticket
-	// last changed status or was escalated.
+	// last changed status or was escalated. Only In Review PR nudges read it;
+	// stall nudges are counted in StallNudges.
 	Nudges int `json:"nudges"`
+	// StallNudges counts stall nudges since the ticket last changed status.
+	StallNudges int `json:"stall_nudges,omitempty"`
+	// IdleSince is when the dispatcher first saw the In Progress worker idle,
+	// and stands in for the Stop time when the worker has no usable Stop record.
+	IdleSince time.Time `json:"idle_since,omitzero"`
+	// NudgedStop is the Stop the last stall or resume nudge answered, so each
+	// Stop is nudged once.
+	NudgedStop time.Time `json:"nudged_stop,omitzero"`
+	// NudgedAt is when a stall nudge for NudgedStop went out. It is zero after
+	// a resume nudge, which never raises the unresponsive-worker notification.
+	NudgedAt time.Time `json:"nudged_at,omitzero"`
+	// NudgeNotified marks that the user was told the worker ignored the nudge
+	// for NudgedStop.
+	NudgeNotified bool `json:"nudge_notified,omitempty"`
 	// PRHead is the SHA of the In Review ticket's PR head when last read. A
 	// different head means the worker pushed, which resets Nudges.
 	PRHead string `json:"pr_head,omitempty"`
