@@ -106,21 +106,39 @@ func Untracked(ctx context.Context, path string) ([]string, error) {
 func RemoveUntracked(ctx context.Context, path string) error {
 	cmd := exec.CommandContext(ctx, "git", "clean", "-f", "-d")
 	cmd.Dir = path
+	cmd.Env = gitEnv()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("while removing untracked files in %s: %w: %s", path, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
-// git runs a read-only git command in dir. It takes no optional locks, so
-// checking a tree can't collide with a worker's own git commands.
+// git runs a read-only git command in dir.
 func git(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
+	cmd.Env = gitEnv()
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("while running git %s in %s: %w", strings.Join(args, " "), dir, err)
 	}
 	return string(out), nil
+}
+
+// gitEnv is the environment for git commands that act on one tree. It drops
+// the variables that tell git where a repository is, because a dispatcher
+// started from a git hook inherits them and they would point git, and the
+// delete in RemoveUntracked, at another repository. It also takes no optional
+// locks, so checking a tree can't collide with a worker's own git commands.
+func gitEnv() []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		switch name, _, _ := strings.Cut(kv, "="); name {
+		case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+			"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_PREFIX":
+		default:
+			env = append(env, kv)
+		}
+	}
+	return append(env, "GIT_OPTIONAL_LOCKS=0")
 }

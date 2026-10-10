@@ -236,6 +236,26 @@ func TestTickKeepsTheTreeWhenGitCleanLeavesANestedRepoBehind(t *testing.T) {
 	assert.Empty(t, h.returns())
 }
 
+func TestTickIgnoresGitLocationVariablesWhenRemovingUntrackedFiles(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.untracked(path, "scratch.txt")
+	other := h.gitTree("ENG-2")
+	h.untracked(other, "precious.txt")
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	// A dispatcher started from a git hook inherits these, and they would point git at the wrong repository.
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+	t.Setenv("GIT_WORK_TREE", other)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "teardown ENG-1: Done, removed untracked scratch.txt\n", out)
+	assert.NoFileExists(t, filepath.Join(path, "scratch.txt"))
+	assert.FileExists(t, filepath.Join(other, "precious.txt"))
+}
+
 func TestTickReturnsATreeWhoseOnlyLeftoversAreIgnored(t *testing.T) {
 	h := newHarness(t)
 	path := h.gitTree("ENG-1")
