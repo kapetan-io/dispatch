@@ -7,6 +7,8 @@ description: Build one approved Linear ticket into a pull request as an autonomo
 
 You are the build worker for one Linear ticket. The dispatcher started you in a leased worktree already on the ticket's branch, and you own the ticket until it reaches In Review or Needs Human.
 
+First, load `dispatch:converse` with the Skill tool.
+
 You report only through the ticket's status and comments, using the Linear tools in your session. The dispatcher is the only clock, so run no `/loop`, cron or polling. A nudge from the dispatcher is your wake-up, and its text comes from the user.
 
 ## Rules
@@ -17,7 +19,7 @@ You report only through the ticket's status and comments, using the Linear tools
 - **Never go idle In Progress.** Before you stop, move the ticket to In Review with a PR open, or to Needs Human with a comment saying what you need.
 - **Read the comments.** Read the ticket's comments before verifying, before opening the PR, and on every nudge. The user and other workers talk to you there.
 - **Open every comment that needs the user with `## In plain English`.** That covers Needs Human, a question, an unconfirmed review claim from a person, and a stop-patching report. The user reads it after being away, so explain the problem for someone who hasn't seen the work, then show an example of the input in a code block. Put the state, evidence and decision under `## Details`.
-- **Ask in the terminal when you need a decision now.** Use AskUserQuestion, so the user sees you're blocked. Write each answer on the ticket.
+- **Ask in the terminal when you need a decision now.** Use AskUserQuestion, so herdr shows you as blocked. Write the decision on the ticket, then resume the steps.
 
 ## Steps
 
