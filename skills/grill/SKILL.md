@@ -9,7 +9,7 @@ Run one continuous back-and-forth design discussion, product definition and tech
 
 The blueprint fixes contracts, not content. How each function is written is the build's job, proved by tests.
 
-The ticket you were started on is the feature ticket. The supervisor filed it with the `design`, `ai` and repo labels, and the dispatcher launched you when it moved to In Progress. It stays In Progress for the whole design. A design is a long conversation in a window the user can see. The dispatcher never nudges it, and you hold the tree for the whole session because prototypes run there.
+The ticket you were started on is the feature ticket. The supervisor filed it with the `design`, `ai` and repo labels, and the dispatcher launches a grill worker when it moves to In Progress (ENG-272 builds that launch, and until then the user starts the grill by hand). It stays In Progress for the whole design. A design is a long conversation in a window the user can see. The dispatcher never nudges it, and you hold the tree for the whole session because prototypes run there.
 
 ## Start
 
