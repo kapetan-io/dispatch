@@ -28,7 +28,7 @@ const (
 	Skip Kind = "skip"
 	// Escalate moves a ticket to Needs Human with Reason as the comment.
 	Escalate Kind = "escalate"
-	// Nudge types Text into the idle worker in PaneID. Reason names which nudge.
+	// Nudge types Text into the ticket's idle worker. Reason names which nudge.
 	Nudge Kind = "nudge"
 	// Notify raises a macOS notification with Text as the message.
 	Notify Kind = "notify"
@@ -112,10 +112,8 @@ type Action struct {
 	Ticket  linear.Ticket
 	RepoDir string
 	Reason  string
-	// PaneID is set for a Nudge only. Text is what a Nudge types, or what a
-	// Notify shows.
-	PaneID string
-	Text   string
+	// Text is what a Nudge types, or what a Notify shows.
+	Text string
 	// Head is the PR head a ready-for-review Notify or a Merge is about, and
 	// PRURL the PR a Merge merges.
 	Head  string
@@ -348,7 +346,7 @@ func (in Input) stalled(t linear.Ticket, w worker.Worker, prev cache.Entry) []Ac
 	stop, busy := in.lastStop(t, prev)
 	nudged := prev.LastStatus == t.Status && prev.NudgedStop.Equal(stop)
 	if prev.ResumePending || prev.LastStatus == in.NeedsHuman {
-		return []Action{{Kind: Nudge, Ticket: t, Reason: ReasonResume, PaneID: w.PaneID, Text: fmt.Sprintf(ResumeNudge, t.Identifier), AnsweredStop: stop}}
+		return []Action{{Kind: Nudge, Ticket: t, Reason: ReasonResume, Text: fmt.Sprintf(ResumeNudge, t.Identifier), AnsweredStop: stop}}
 	}
 	var as []Action
 	if prev.LastStatus == t.Status && prev.StallNotifyPending {
@@ -363,7 +361,7 @@ func (in Input) stalled(t linear.Ticket, w worker.Worker, prev cache.Entry) []Ac
 		}
 		return as
 	}
-	as = append(as, Action{Kind: Nudge, Ticket: t, Reason: ReasonStall, PaneID: w.PaneID, Text: fmt.Sprintf(StallNudge, t.Identifier), AnsweredStop: stop})
+	as = append(as, Action{Kind: Nudge, Ticket: t, Reason: ReasonStall, Text: fmt.Sprintf(StallNudge, t.Identifier), AnsweredStop: stop})
 	if n := prev.StallNudges + 1; n%StallNotifyEvery == 0 {
 		as = append(as, stallCount(t, n))
 	}
@@ -429,7 +427,7 @@ func (in Input) commentNudge(t linear.Ticket, w worker.Worker, prev cache.Entry)
 	if t.Status == in.InProgress && w.State == worker.Idle && (prev.ResumePending || prev.LastStatus == in.NeedsHuman) {
 		return Action{}, false
 	}
-	return Action{Kind: Nudge, Ticket: t, Reason: ReasonComment, PaneID: w.PaneID, Text: fmt.Sprintf(CommentNudge, t.Identifier)}, true
+	return Action{Kind: Nudge, Ticket: t, Reason: ReasonComment, Text: fmt.Sprintf(CommentNudge, t.Identifier)}, true
 }
 
 // ReadsPR reports whether Plan will use this In Review ticket's PR. Working and
@@ -466,7 +464,7 @@ func (in Input) inReviewIdle(t linear.Ticket, w worker.Worker, prev cache.Entry)
 	// that is cleared so the worker is never told it was handled when it wasn't.
 	if seen := prev.ActivityBaseline(t.Status, in.InReview); ok && seen != "" && pr.ActivityAt > seen && !pr.NeedsWork() {
 		return Action{
-			Kind: Nudge, Ticket: t, Reason: ReasonActivity + ": " + pr.ActivitySummary, PaneID: w.PaneID,
+			Kind: Nudge, Ticket: t, Reason: ReasonActivity + ": " + pr.ActivitySummary,
 			Text: fmt.Sprintf(ActivityNudge, pr.URL, t.Identifier, pr.ActivitySummary), ActivityAt: pr.ActivityAt,
 		}, true
 	}
@@ -488,7 +486,7 @@ func (in Input) inReviewIdle(t linear.Ticket, w worker.Worker, prev cache.Entry)
 	if nudges >= in.NudgeLimit {
 		return Action{Kind: Escalate, Ticket: t, Reason: fmt.Sprintf("its worker stayed idle through %d nudges about %s without pushing. Look at its herdr workspace.", nudges, pr.URL)}, true
 	}
-	return Action{Kind: Nudge, Ticket: t, Reason: ReasonPR + ": " + pr.Problem(), PaneID: w.PaneID, Text: fmt.Sprintf(PRNudge, pr.URL, t.Identifier, pr.Problem())}, true
+	return Action{Kind: Nudge, Ticket: t, Reason: ReasonPR + ": " + pr.Problem(), Text: fmt.Sprintf(PRNudge, pr.URL, t.Identifier, pr.Problem())}, true
 }
 
 func (in Input) unread(t linear.Ticket) bool {

@@ -2,11 +2,13 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/delivery"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/worker"
@@ -42,10 +44,12 @@ func tell(ctx context.Context, opts Options, ticket, text string) error {
 			msg += "; could not read the pool of " + strings.Join(unread, ", ")
 		}
 		return fmt.Errorf("%s", msg)
-	case worker.Blocked:
+	}
+	err = delivery.Post{Herdr: opts.Herdr}.Nudge(ctx, w, text)
+	if errors.Is(err, delivery.ErrBlocked) {
 		return fmt.Errorf("%s's worker is blocked on a question; answer it in its herdr workspace", ticket)
 	}
-	if err := herdr.Prompt(ctx, opts.Herdr, w.PaneID, text); err != nil {
+	if err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(opts.Stdout, "told %s\n", ticket)

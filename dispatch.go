@@ -20,11 +20,11 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/cache"
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/delivery"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/launcher"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/lock"
-	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/reconcile"
 	"github.com/kapetan-io/dispatch/internal/stops"
@@ -406,9 +406,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 	}
 	settle(c, now, tickets, workers, input.PRs, cfg.Linear.Statuses, held, input.PendingComments(), leased)
 
-	alert := func(message string) error {
-		return notify.Send(ctx, opts.Osascript, "dispatch", message)
-	}
+	post := delivery.Post{Herdr: opts.Herdr, Osascript: opts.Osascript}
 	current := map[string]string{}
 	for _, ws := range snap.Workspaces {
 		current[ws.ID] = ws.Label
@@ -443,7 +441,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Escalate:
 			// One ticket's failed escalation must not hold up the others.
-			if err := escalate(ctx, lin, cfg, c, alert, a.Ticket, a.Reason); err != nil {
+			if err := escalate(ctx, lin, cfg, c, post, a.Ticket, a.Reason); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while escalating %s: %v\n", a.Ticket.Identifier, err)
 				continue
 			}
@@ -455,10 +453,9 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 			}
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Nudge:
-			// herdr refuses a worker that turned blocked after the snapshot. A
-			// refused nudge is not recorded, so the Stop stays un-nudged and the
+			// A refused nudge is not recorded, so the Stop stays un-nudged and the
 			// stall count stays true.
-			if err := herdr.Prompt(ctx, opts.Herdr, a.PaneID, a.Text); err != nil {
+			if err := post.Nudge(ctx, workers[a.Ticket.Identifier], a.Text); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while nudging %s: %v\n", a.Ticket.Identifier, err)
 				nudgeFailed[a.Ticket.Identifier] = true
 				continue
@@ -517,7 +514,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 				e.MergeFailedHead = a.Head
 				c[a.Ticket.Identifier] = e
 				msg, _, _ := strings.Cut(err.Error(), "\n")
-				if err := alert(fmt.Sprintf("%s: merging %s failed: %s", a.Ticket.Identifier, a.PRURL, msg)); err != nil {
+				if err := post.Notify(ctx, delivery.Event{Ticket: a.Ticket, Reason: a.Reason, Text: fmt.Sprintf("%s: merging %s failed: %s", a.Ticket.Identifier, a.PRURL, msg)}); err != nil {
 					_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
 				}
 				continue
@@ -526,7 +523,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 			e.ReadyHead = a.Head
 			c[a.Ticket.Identifier] = e
 			_, _ = fmt.Fprintln(opts.Stdout, a)
-			if err := alert(a.Text); err != nil {
+			if err := post.Notify(ctx, delivery.Event{Ticket: a.Ticket, Reason: a.Reason, Text: a.Text}); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
 			}
 		case reconcile.Notify:
@@ -538,7 +535,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 				// StallNotifyPending and for an unresponsive worker because
 				// NudgeNotified stays unset.
 				e := c[a.Ticket.Identifier]
-				if err := alert(a.Text); err != nil {
+				if err := post.Notify(ctx, delivery.Event{Ticket: a.Ticket, Reason: a.Reason, Text: a.Text}); err != nil {
 					_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
 					e.StallNotifyPending = e.StallNotifyPending || a.AfterNudge
 					c[a.Ticket.Identifier] = e
@@ -556,7 +553,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 			}
 			if a.Reason == reconcile.ReasonReady {
 				// A failed alert leaves the head unrecorded, so the next tick sends it again.
-				if err := alert(a.Text); err != nil {
+				if err := post.Notify(ctx, delivery.Event{Ticket: a.Ticket, Reason: a.Reason, Text: a.Text}); err != nil {
 					_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
 					continue
 				}
@@ -566,7 +563,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 				_, _ = fmt.Fprintln(opts.Stdout, a)
 				continue
 			}
-			if err := alert(a.Text); err != nil {
+			if err := post.Notify(ctx, delivery.Event{Ticket: a.Ticket, Reason: a.Reason, Text: a.Text}); err != nil {
 				// Settle already advanced the counters, so reset them to make Plan
 				// find this notification due again.
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
@@ -605,7 +602,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 				continue
 			}
 			reason := fmt.Sprintf("its worker failed to launch %d times in a row. The launcher said `%s`: %s", e.LaunchFailures, r.Status, r.Detail)
-			if err := escalate(ctx, lin, cfg, c, alert, a.Ticket, reason); err != nil {
+			if err := escalate(ctx, lin, cfg, c, post, a.Ticket, reason); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while escalating %s: %v\n", a.Ticket.Identifier, err)
 				continue
 			}
@@ -760,7 +757,7 @@ func move(ctx context.Context, lin linear.Client, t linear.Ticket, status string
 }
 
 // escalate moves a ticket to Needs Human with one comment saying why.
-func escalate(ctx context.Context, lin linear.Client, cfg config.Config, c cache.Cache, alert func(string) error, t linear.Ticket, reason string) error {
+func escalate(ctx context.Context, lin linear.Client, cfg config.Config, c cache.Cache, post delivery.Post, t linear.Ticket, reason string) error {
 	state, err := lin.StateID(ctx, t.Team, cfg.Linear.Statuses.NeedsHuman)
 	if err != nil {
 		return err
@@ -777,7 +774,7 @@ func escalate(ctx context.Context, lin linear.Client, cfg config.Config, c cache
 	e.LastStatus = cfg.Linear.Statuses.NeedsHuman
 	e.Nudges = 0
 	e.Relaunches = 0
-	e.NotifyPending = alert(reconcile.NeedsHumanText(t)) != nil
+	e.NotifyPending = post.Notify(ctx, delivery.Event{Ticket: t, Text: reconcile.NeedsHumanText(t)}) != nil
 	c[t.Identifier] = e
 	body := "The dispatcher moved this ticket to Needs Human because " + reason
 	if err := lin.Comment(ctx, t.ID, body); err != nil {
