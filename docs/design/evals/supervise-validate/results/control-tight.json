@@ -1,0 +1,533 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.296",
+  "startedAt": "2026-10-10T09:02:12.387Z",
+  "durationSeconds": 92,
+  "costUsd": 1.0415624,
+  "partial": false,
+  "suite": {
+    "root": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.QnOfCYKcbD/plugin",
+    "ablation": "none",
+    "judgeModel": "claude-opus-5-5",
+    "threshold": 0,
+    "concurrency": 4,
+    "plugins": [
+      {
+        "name": "dispatch",
+        "path": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.QnOfCYKcbD/plugin"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "ledger-last",
+      "dir": "cases/ledger-last",
+      "source": "mixed",
+      "promptMarkdown": "Use the supervise skill. A worker opened a pull request for ENG-300, and its branch is checked out in ./repo. The PR's CI `test` job passed on this head in 52 seconds. A critical-review sub-agent reported one finding:\n\n> ledger.Total drops the last entry. Total([]int{5, 7}) returns 5, expected 12, because the loop stops at len(entries)-1.\n\nValidate this finding the way the skill's PR review flow says, then tell me whether it is confirmed. Do not post anything to GitHub or Linear. Sub-agent worktree isolation is unavailable in this session, so a copy of the repo in a temp directory serves as the scratch worktree.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 60,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"(dispatch:)?supervise\""
+          }
+        },
+        {
+          "name": "validator-told",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Agent",
+            "input_match": "go test[^\\n]*-count=1[^\\n]*-run[^\\n]*\\./[\\w<]",
+            "min": 1
+          }
+        },
+        {
+          "name": "no-full-run",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Bash",
+            "input_match": "go test(?![^\\n]*-run)|go test[^\\n]*\\./\\.\\.\\.",
+            "min": 0,
+            "max": 0
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 6,
+            "costUsd": 0.136404,
+            "judgeCostUsd": 0,
+            "durationSeconds": 38,
+            "startedAt": "2026-10-10T09:02:12.410Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-YHNAJ2/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "validator-told",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Agent called 0x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-full-run",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Bash called 2x (expected 0..0)",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          },
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 1,
+            "costUsd": 0.13726270000000002,
+            "judgeCostUsd": 0,
+            "durationSeconds": 38,
+            "startedAt": "2026-10-10T09:02:12.410Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-LeZ4jB/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "validator-told",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Agent called 0x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-full-run",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Bash called 2x (expected 0..0)",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.3333333333333333,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "refund-negative",
+      "dir": "cases/refund-negative",
+      "source": "mixed",
+      "promptMarkdown": "Use the supervise skill. A worker opened a pull request for ENG-300, and its branch is checked out in ./repo. The PR's CI `test` job passed on this head in 52 seconds. A critical-review sub-agent reported one finding:\n\n> refund.Percent(-999, 15) returns -149. A reversed charge of -999 cents at 15% should come to -150, but integer division rounds toward zero.\n\nValidate this finding the way the skill's PR review flow says, then tell me whether it is confirmed. Do not post anything to GitHub or Linear. Sub-agent worktree isolation is unavailable in this session, so a copy of the repo in a temp directory serves as the scratch worktree.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 60,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"(dispatch:)?supervise\""
+          }
+        },
+        {
+          "name": "validator-told",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Agent",
+            "input_match": "go test[^\\n]*-count=1[^\\n]*-run[^\\n]*\\./[\\w<]",
+            "min": 1
+          }
+        },
+        {
+          "name": "no-full-run",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Bash",
+            "input_match": "go test(?![^\\n]*-run)|go test[^\\n]*\\./\\.\\.\\.",
+            "min": 0,
+            "max": 0
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 5,
+            "costUsd": 0.15149680000000001,
+            "judgeCostUsd": 0,
+            "durationSeconds": 44,
+            "startedAt": "2026-10-10T09:02:12.410Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-2KOpBN/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "validator-told",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Agent called 0x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-full-run",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Bash called 7x (expected 0..0)",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          },
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 7,
+            "costUsd": 0.1488533,
+            "judgeCostUsd": 0,
+            "durationSeconds": 44,
+            "startedAt": "2026-10-10T09:02:12.410Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-oi8DyH/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "validator-told",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Agent called 0x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-full-run",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Bash called 3x (expected 0..0)",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.3333333333333333,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "refund-rounding",
+      "dir": "cases/refund-rounding",
+      "source": "mixed",
+      "promptMarkdown": "Use the supervise skill. A worker opened a pull request for ENG-300, and its branch is checked out in ./repo. The PR's CI `test` job passed on this head in 52 seconds. A critical-review sub-agent reported one finding:\n\n> refund.Percent(999, 15) returns 149. A 15% refund of 999 cents should round half up to 150, and Percent truncates with integer division.\n\nValidate this finding the way the skill's PR review flow says, then tell me whether it is confirmed. Do not post anything to GitHub or Linear. Sub-agent worktree isolation is unavailable in this session, so a copy of the repo in a temp directory serves as the scratch worktree.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 60,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"(dispatch:)?supervise\""
+          }
+        },
+        {
+          "name": "validator-told",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Agent",
+            "input_match": "go test[^\\n]*-count=1[^\\n]*-run[^\\n]*\\./[\\w<]",
+            "min": 1
+          }
+        },
+        {
+          "name": "no-full-run",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Bash",
+            "input_match": "go test(?![^\\n]*-run)|go test[^\\n]*\\./\\.\\.\\.",
+            "min": 0,
+            "max": 0
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 5,
+            "costUsd": 0.13909900000000003,
+            "judgeCostUsd": 0,
+            "durationSeconds": 39,
+            "startedAt": "2026-10-10T09:02:50.365Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-oTTDJf/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "validator-told",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Agent called 0x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-full-run",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Bash called 4x (expected 0..0)",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          },
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 12,
+            "costUsd": 0.09203280000000001,
+            "judgeCostUsd": 0,
+            "durationSeconds": 25,
+            "startedAt": "2026-10-10T09:02:50.468Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-y1sbYO/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "validator-told",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Agent called 0x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-full-run",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Bash called 2x (expected 0..0)",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.3333333333333333,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "report-nil",
+      "dir": "cases/report-nil",
+      "source": "mixed",
+      "promptMarkdown": "Use the supervise skill. A worker opened a pull request for ENG-300, and its branch is checked out in ./repo. The PR's CI `test` job passed on this head in 52 seconds. A critical-review sub-agent reported one finding:\n\n> report.Name(nil) panics with a nil pointer dereference. It should return \"unknown\" for a missing user.\n\nValidate this finding the way the skill's PR review flow says, then tell me whether it is confirmed. Do not post anything to GitHub or Linear. Sub-agent worktree isolation is unavailable in this session, so a copy of the repo in a temp directory serves as the scratch worktree.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 60,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"(dispatch:)?supervise\""
+          }
+        },
+        {
+          "name": "validator-told",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Agent",
+            "input_match": "go test[^\\n]*-count=1[^\\n]*-run[^\\n]*\\./[\\w<]",
+            "min": 1
+          }
+        },
+        {
+          "name": "no-full-run",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Bash",
+            "input_match": "go test(?![^\\n]*-run)|go test[^\\n]*\\./\\.\\.\\.",
+            "min": 0,
+            "max": 0
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 10,
+            "costUsd": 0.0897463,
+            "judgeCostUsd": 0,
+            "durationSeconds": 25,
+            "startedAt": "2026-10-10T09:02:55.949Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-8rKfTh/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "validator-told",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Agent called 0x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-full-run",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Bash called 3x (expected 0..0)",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          },
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 8,
+            "costUsd": 0.14666750000000003,
+            "judgeCostUsd": 0,
+            "durationSeconds": 48,
+            "startedAt": "2026-10-10T09:02:56.162Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-SML9kA/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "validator-told",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Agent called 0x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-full-run",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Bash called 4x (expected 0..0)",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.3333333333333333,
+        "passRate": 0
+      }
+    }
+  ],
+  "aggregates": {
+    "casesTotal": 4,
+    "casesPassed": 4,
+    "overallScore": 0.3333333333333333,
+    "overallPassRate": 0
+  }
+}

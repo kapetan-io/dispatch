@@ -1,0 +1,139 @@
+{
+  "method": "Replayed the Agent and Bash tool inputs from each stored run trace through the new grader patterns. No model was run.",
+  "replayMismatchesOfOldPatterns": 0,
+  "summary": {
+    "control-final/ledger-last": {
+      "runs": 2,
+      "validator-told": {
+        "stored": 0,
+        "rescored": 0
+      },
+      "no-full-run": {
+        "stored": 0,
+        "rescored": 0
+      }
+    },
+    "control-final/refund-negative": {
+      "runs": 2,
+      "validator-told": {
+        "stored": 0,
+        "rescored": 0
+      },
+      "no-full-run": {
+        "stored": 0,
+        "rescored": 0
+      }
+    },
+    "control-final/refund-rounding": {
+      "runs": 2,
+      "validator-told": {
+        "stored": 0,
+        "rescored": 0
+      },
+      "no-full-run": {
+        "stored": 0,
+        "rescored": 0
+      }
+    },
+    "control-final/report-nil": {
+      "runs": 2,
+      "validator-told": {
+        "stored": 0,
+        "rescored": 0
+      },
+      "no-full-run": {
+        "stored": 0,
+        "rescored": 0
+      }
+    },
+    "baseline-final/ledger-last": {
+      "runs": 5,
+      "validator-told": {
+        "stored": 0,
+        "rescored": 0
+      },
+      "no-full-run": {
+        "stored": 0,
+        "rescored": 0
+      }
+    },
+    "baseline-final/refund-negative": {
+      "runs": 5,
+      "validator-told": {
+        "stored": 0,
+        "rescored": 0
+      },
+      "no-full-run": {
+        "stored": 0,
+        "rescored": 0
+      }
+    },
+    "baseline-final/refund-rounding": {
+      "runs": 5,
+      "validator-told": {
+        "stored": 0,
+        "rescored": 0
+      },
+      "no-full-run": {
+        "stored": 0,
+        "rescored": 0
+      }
+    },
+    "baseline-final/report-nil": {
+      "runs": 5,
+      "validator-told": {
+        "stored": 0,
+        "rescored": 0
+      },
+      "no-full-run": {
+        "stored": 0,
+        "rescored": 0
+      }
+    },
+    "confirmation-final/ledger-last": {
+      "runs": 5,
+      "validator-told": {
+        "stored": 5,
+        "rescored": 5
+      },
+      "no-full-run": {
+        "stored": 5,
+        "rescored": 5
+      }
+    },
+    "confirmation-final/refund-negative": {
+      "runs": 5,
+      "validator-told": {
+        "stored": 5,
+        "rescored": 5
+      },
+      "no-full-run": {
+        "stored": 5,
+        "rescored": 5
+      }
+    },
+    "confirmation-final/refund-rounding": {
+      "runs": 5,
+      "validator-told": {
+        "stored": 5,
+        "rescored": 5
+      },
+      "no-full-run": {
+        "stored": 5,
+        "rescored": 5
+      }
+    },
+    "confirmation-final/report-nil": {
+      "runs": 5,
+      "validator-told": {
+        "stored": 5,
+        "rescored": 5
+      },
+      "no-full-run": {
+        "stored": 4,
+        "rescored": 4
+      }
+    }
+  },
+  "changedRuns": []
+}
