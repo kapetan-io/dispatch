@@ -10,8 +10,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Config mirrors ~/.config/dispatch/config.toml. The blueprint's "Config"
-// section documents every field.
+// Config mirrors ~/.config/dispatch/config.toml. docs/config.md documents every field.
 type Config struct {
 	IntervalMinutes    int `toml:"interval_minutes"`
 	MaxInProgress      int `toml:"max_in_progress"`
@@ -80,11 +79,21 @@ func defaults() Config {
 	}
 }
 
-// Load reads path over the defaults and expands a leading ~ in every path.
+// Load reads path over the defaults and expands a leading ~ in every path. It
+// fails on a setting dispatch does not know.
 func Load(path string) (Config, error) {
 	c := defaults()
-	if _, err := toml.DecodeFile(path, &c); err != nil {
+	meta, err := toml.DecodeFile(path, &c)
+	if err != nil {
 		return Config{}, fmt.Errorf("while reading config %s: %w", path, err)
+	}
+	// A misspelled key would otherwise fall back to its default without a word.
+	if unknown := meta.Undecoded(); len(unknown) > 0 {
+		keys := make([]string, len(unknown))
+		for i, key := range unknown {
+			keys[i] = key.String()
+		}
+		return Config{}, fmt.Errorf("while reading config %s: unknown setting %s", path, strings.Join(keys, ", "))
 	}
 	c.PluginRoot = ExpandHome(c.PluginRoot)
 	for label, dir := range c.Repos {
