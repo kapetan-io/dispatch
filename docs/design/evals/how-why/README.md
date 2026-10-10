@@ -2,7 +2,7 @@
 
 Tests that `dispatch:how` and `dispatch:why`, copied from pstack, work in Claude Code against this repo. It follows `skills/hillclimb/SKILL.md`. Each case clones the repo at commit `21a94dc` (the base of PR #36, so answers don't move as the repo grows), asks one question and has the worker write `answer.md`. Graders read `answer.md` and the tool calls, never the chat.
 
-Status 2026-10-10: attempt 1 (the wording in the PR, unchanged) met the bar's attempt run and the control, scorer and fresh-case checks. The confirmation rerun of `how-nudge` and `how-ready` was not run, because the $60 ceiling had $4.85 left, so the bar is not fully met. See `log.md`. The earlier informal run (10 runs, no control, no held-out cases) is kept in `results/informal/` and does not count toward the bar.
+Status 2026-10-10: the wording in the PR, unchanged, met the bar. Attempt 1 passed every grader 5 of 5 on the six main cases, and the confirmation rerun passed on all 8 cases (6 main, 2 fresh) with `how-tick` `paths` at 4 of 5. The control and scorer checks came out as required. The $60 ceiling was raised once by the user for the last run, and total spend was $61.34. See `log.md`. The earlier informal run (10 runs, no control, no held-out cases) is kept in `results/informal/` and does not count toward the bar.
 
 ## Cases
 

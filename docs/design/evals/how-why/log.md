@@ -68,3 +68,9 @@ The one `how-tick` `paths` failure is a false positive. The answer says "there i
 Not run. `how-nudge` and `how-ready` were not rerun for confirmation. They cost about $12.50 and the ceiling had $4.85 left. Spend so far is $55.15 against the $60 ceiling (every result file is in `results/`). The bar needs the confirmation on every case, so it is not fully met.
 
 Limits. The cases that tuned the graders and prompts were the visible ones, `how-nudge`, `how-tick`, `why-unknown-keys` and `why-ready-notify`. Held out: `how-ready`, `why-backlog-first`. Five runs per case cannot show a failure rate under about 20%. Workers were sonnet-5-5 and the judge opus-5-5. No Linear MCP was available, so `why` could not cite tickets.
+
+## 2026-10-10, confirmation rerun finished
+
+The user answered on the ticket "if this looks like the right answer, then lets continue with one more eval", which raises the $60 ceiling for this one run. `how-nudge` and `how-ready` (held out) were rerun at 5 runs each (`results/confirmation-how-nudge-how-ready.json`, $6.19). Every grader passed 5 of 5 on both: `skill-fired`, `names-path`, `paths` and `flow`.
+
+That completes the confirmation rerun on all 8 cases (6 main, 2 fresh), and the bar's items 1 to 4 hold. Total spend was $61.34, which is $1.34 over the original $60 ceiling and inside the raise. The wording adopted is the PR's `skills/how` and `skills/why` as pushed. Limits are as logged above.
