@@ -36,6 +36,9 @@ type Agent struct {
 	PaneID      string
 	TabID       string
 	WorkspaceID string
+	// Session is the id of the Claude session in the pane, which Claude Code
+	// also puts in its hook input.
+	Session string
 }
 
 // Read takes a snapshot by running `<bin> workspace list`, `<bin> tab list` and
@@ -63,6 +66,9 @@ func Read(ctx context.Context, bin string) (Snapshot, error) {
 				PaneID      string `json:"pane_id"`
 				TabID       string `json:"tab_id"`
 				WorkspaceID string `json:"workspace_id"`
+				Session     struct {
+					Value string `json:"value"`
+				} `json:"agent_session"`
 			} `json:"agents"`
 		} `json:"result"`
 	}
@@ -91,7 +97,7 @@ func Read(ctx context.Context, bin string) (Snapshot, error) {
 		s.Workspaces = append(s.Workspaces, ws)
 	}
 	for _, a := range agents.Result.Agents {
-		s.Agents = append(s.Agents, Agent{Kind: a.Agent, Status: a.Status, PaneID: a.PaneID, TabID: a.TabID, WorkspaceID: a.WorkspaceID})
+		s.Agents = append(s.Agents, Agent{Kind: a.Agent, Status: a.Status, PaneID: a.PaneID, TabID: a.TabID, WorkspaceID: a.WorkspaceID, Session: a.Session.Value})
 	}
 	return s, nil
 }

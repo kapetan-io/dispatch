@@ -462,6 +462,8 @@ type harness struct {
 	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
 	// with the launcher built into dispatch.
 	builtinLauncher bool
+	// clock is the time every command sees, and moves only through advance.
+	clock time.Time
 }
 
 func newHarness(t *testing.T) *harness {
@@ -472,6 +474,7 @@ func newHarness(t *testing.T) *harness {
 		repo:   filepath.Join(dir, "repo"),
 		state:  filepath.Join(dir, "state"),
 		linear: newFakeLinear(t),
+		clock:  time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC),
 	}
 	require.NoError(t, os.MkdirAll(h.repo, 0o755))
 	h.writeFile("workspaces.json", `{"result":{"workspaces":[]}}`)
@@ -558,6 +561,7 @@ func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...s
 	var stdout, stderr bytes.Buffer
 	extra.ConfigPath = filepath.Join(h.dir, "config.toml")
 	extra.StateDir = h.state
+	extra.Now = func() time.Time { return h.clock }
 	extra.LinearURL = h.linear.server.URL
 	extra.LinearKey = "test-key"
 	extra.Herdr = filepath.Join(h.dir, "herdr")
@@ -572,6 +576,18 @@ func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...s
 	extra.Stderr = &stderr
 	err := dispatch.Run(ctx, args, extra)
 	return stdout.String(), stderr.String(), err
+}
+
+func (h *harness) tick() string {
+	h.t.Helper()
+	out, err := h.run("tick")
+	require.NoError(h.t, err)
+	return out
+}
+
+// advance moves the clock forward.
+func (h *harness) advance(d time.Duration) {
+	h.clock = h.clock.Add(d)
 }
 
 func (h *harness) tickets(tickets ...fakeTicket) {
@@ -609,16 +625,17 @@ func (h *harness) workerOn(ticket, tree, id, status string) {
 	}
 	var agents struct {
 		Result struct {
-			Agents []map[string]string `json:"agents"`
+			Agents []map[string]any `json:"agents"`
 		} `json:"result"`
 	}
 	require.NoError(h.t, json.Unmarshal(h.readFile("agents.json"), &agents))
-	agents.Result.Agents = append(agents.Result.Agents, map[string]string{
-		"agent":        "claude",
-		"agent_status": status,
-		"pane_id":      id + ":p1",
-		"tab_id":       id + ":t1",
-		"workspace_id": id,
+	agents.Result.Agents = append(agents.Result.Agents, map[string]any{
+		"agent":         "claude",
+		"agent_status":  status,
+		"agent_session": map[string]string{"value": "worker"},
+		"pane_id":       id + ":p1",
+		"tab_id":        id + ":t1",
+		"workspace_id":  id,
 	})
 	h.writeJSON("agents.json", agents)
 
@@ -636,13 +653,30 @@ func (h *harness) workerOn(ticket, tree, id, status string) {
 func (h *harness) setWorkerStatus(ticket, status string) {
 	var agents struct {
 		Result struct {
-			Agents []map[string]string `json:"agents"`
+			Agents []map[string]any `json:"agents"`
 		} `json:"result"`
 	}
 	require.NoError(h.t, json.Unmarshal(h.readFile("agents.json"), &agents))
 	for _, a := range agents.Result.Agents {
 		if a["workspace_id"] == "w-"+ticket {
 			a["agent_status"] = status
+		}
+	}
+	h.writeJSON("agents.json", agents)
+}
+
+// setWorkerSession changes the Claude session id herdr reports for a worker
+// added with worker, as a relaunch does.
+func (h *harness) setWorkerSession(ticket, session string) {
+	var agents struct {
+		Result struct {
+			Agents []map[string]any `json:"agents"`
+		} `json:"result"`
+	}
+	require.NoError(h.t, json.Unmarshal(h.readFile("agents.json"), &agents))
+	for _, a := range agents.Result.Agents {
+		if a["workspace_id"] == "w-"+ticket {
+			a["agent_session"] = map[string]string{"value": session}
 		}
 	}
 	h.writeJSON("agents.json", agents)

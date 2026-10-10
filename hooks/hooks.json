@@ -9,6 +9,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v dispatch >/dev/null 2>&1 || exit 0; exec dispatch record-stop"
+          }
+        ]
+      }
     ]
   }
 }

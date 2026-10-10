@@ -29,6 +29,8 @@ type Worker struct {
 	WorkspaceID string
 	PaneID      string
 	TabID       string
+	// Session is the Claude session id herdr reports for the agent, or empty.
+	Session string
 }
 
 // Find looks up the worker on the ticket's first tree. FindAll returns one for
@@ -67,6 +69,7 @@ func onTree(t treehouse.Tree, snap herdr.Snapshot) Worker {
 		if a.WorkspaceID == w.WorkspaceID && a.Kind == "claude" {
 			w.PaneID = a.PaneID
 			w.TabID = a.TabID
+			w.Session = a.Session
 			w.State = stateOf(a.Status)
 			return w
 		}

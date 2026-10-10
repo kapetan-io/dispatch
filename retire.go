@@ -10,6 +10,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/reconcile"
+	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/worker"
 )
@@ -110,6 +111,7 @@ func teardown(ctx context.Context, opts Options, a reconcile.Action) error {
 	if err := treehouse.Return(ctx, opts.Treehouse, a.RepoDir, a.TreePath, a.Ticket.Identifier); err != nil {
 		return err
 	}
+	stops.Remove(opts.StateDir, a.TreePath)
 	_, _ = fmt.Fprintln(opts.Stdout, a)
 	return nil
 }

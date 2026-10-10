@@ -3,6 +3,7 @@ package dispatch_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -228,6 +229,8 @@ func TestTickStillFindsAWorkerWhoseLabelChanged(t *testing.T) {
 	// The first tick renames the workspace and nudges the worker in it.
 	_, err := h.run("tick")
 	require.NoError(t, err)
+	h.advance(5 * time.Minute)
+	h.recordStop("ENG-1", noTasks)
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
@@ -516,8 +519,9 @@ func TestTickRelabelsAReviewTicketWhenItsPRBecomesReady(t *testing.T) {
 
 func TestTickLabelsAnEscalatedTicketNeedsHumanOnTheSameTick(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	for range 2 {
 		_, err := h.run("tick")
 		require.NoError(t, err)

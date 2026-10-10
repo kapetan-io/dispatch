@@ -6,7 +6,7 @@ dispatch reads `~/.config/dispatch/config.toml`. Every setting is optional, and 
 dispatch: while reading config /Users/you/.config/dispatch/config.toml: unknown setting max_in_progres
 ```
 
-`dispatch tick`, `dispatch run` and `dispatch tell` all load the file this way. `dispatch ticket-hint` runs in every Claude Code session, so it prints the error to stderr and exits 0 instead.
+`dispatch tick`, `dispatch run` and `dispatch tell` all load the file this way. `dispatch ticket-hint` and `dispatch record-stop` run in every Claude Code session, so they print the error to stderr and exit 0 instead.
 
 Every `toml` block in the docs is loaded by a test through the same loader, so these examples cannot drift from the code.
 
@@ -52,7 +52,7 @@ dispatch = "~/Development/dispatch"
 | `interval_minutes` | `5` | Minutes between ticks of `dispatch run`. `dispatch run --interval 30s` overrides it. It must be above zero. |
 | `max_in_progress` | `4` | The most workers running at once. Caps running workers, and In Review and Needs Human tickets don't count. A launch counts In Progress tickets that have a worker, plus those in a repo whose pool couldn't be read this tick, and waits with `wait <ticket>: N of M workers already running`. Promoting a parent's children counts every In Progress ticket that isn't a parent or a `design` ticket, with or without a worker, and waits with `wait <ticket>: N of M In Progress tickets already`. |
 | `launch_failure_limit` | `2` | Failed launches in a row before the ticket goes to Needs Human with the launcher's error. A full treehouse pool (`pool_exhausted`) never counts. |
-| `nudge_limit` | `2` | Nudges to an idle worker with no progress before the ticket goes to Needs Human. In Review, the count resets when a push moves the PR head, and it also caps relaunches of a gone worker that never pushes. |
+| `nudge_limit` | `2` | PR nudges to an idle In Review worker with no push before the ticket goes to Needs Human. The count resets when a push moves the PR head, and it also caps relaunches of a gone worker that never pushes. In Progress tickets never read it, since an idle In Progress worker is nudged once per Stop and never escalated. |
 | `blocked_renotify_ticks` | `3` | Ticks between macOS notifications for a worker that stays blocked on a question. The first notification comes on the first blocked tick. `0` notifies on every blocked tick. |
 | `plugin_root` | `~/Development/dispatch` | Your checkout of this repo. Workers get `scripts/shims` first on their PATH and load the plugin with `--plugin-dir`, both from it. |
 | `worker_model` | `sonnet` | The model name passed to `claude --model` for every worker. |

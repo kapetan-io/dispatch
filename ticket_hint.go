@@ -28,7 +28,7 @@ func ticketHint(ctx context.Context, opts Options) error {
 		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
 		return nil
 	}
-	clone, ok := cloneRoot(ctx)
+	clone, ok := cloneRoot(ctx, "")
 	if !ok {
 		return nil
 	}
@@ -42,11 +42,14 @@ func ticketHint(ctx context.Context, opts Options) error {
 	return nil
 }
 
-// cloneRoot returns the directory holding the .git of the repo containing the
-// working directory. A worktree shares its clone's git common dir, so both
-// resolve to the clone. A bare repo has no such directory and never matches.
-func cloneRoot(ctx context.Context) (string, bool) {
-	out, err := exec.CommandContext(ctx, "git", "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+// cloneRoot returns the directory holding the .git of the repo containing dir,
+// or of the working directory when dir is empty. A worktree shares its clone's
+// git common dir, so both resolve to the clone. A bare repo has no such
+// directory and never matches.
+func cloneRoot(ctx context.Context, dir string) (string, bool) {
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	cmd.Dir = dir
+	out, err := cmd.Output()
 	if err != nil {
 		return "", false
 	}
