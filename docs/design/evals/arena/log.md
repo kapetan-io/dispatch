@@ -21,3 +21,20 @@ Attempt 3 adds one sentence to Phase A step 2, "Do not put the criteria in the c
 5 runs, cost about $7.66. Passes of 5: `skill-fired` 5, `fan-out` 5, `rubric` 5, `candidates` 4, `prompt-premise` 5, `prompt-clean` 5, `note` 5, `premise-resolved` 5, `asked` 5. Pooled 44 of 45 (98%). The bar is met: every grader is at 4 of 5 or better, and `skill-fired` and `fan-out` are 5 of 5. The one `candidates` miss was not read.
 
 Limits. One case, so this shows the phases followed on one question and does not show the arena beats a single attempt. Five runs can't show a failure rate under about 20%. The worker ran on claude-sonnet-5-5 and the judge on claude-opus-5-5. There is no held-out case. The attempt 3 change followed reading the two failing prompts of attempt 2, which is the same case that scored it.
+
+## 2026-10-10, review of the PR and the grader rebuild
+
+A review of the PR found five problems. Four are fixed and the fifth is below. (1) The premise rule let a non-constraint premise into the candidate prompt "as background", which the ticket forbids, so that clause was removed. (2) The redesign-from-first-principles line said "this graft" where pstack's principle says "this new requirement", so every inlined principle sentence now copies its source exactly. A third skill-creator review confirmed all of them match. (3) The wording had changed after the second skill-creator review, so a third review ran before any further run and its two small changes were applied (the judge gets the full premise list marked constraint or not, and the ask-first rule covers pushes and comments). (4) No results were committed, so `results/` holds every run's JSON. (5) The eval did not test phase order, and its prompt named the rubric, the prompt file and tickets, which primed three graders. The prompt now names only a scratchpad and the paths of `artifact.md` and `note.md`, and graders check the `Agent` calls directly.
+
+The attempt 3 numbers above came from the weaker grader set. Under the rebuilt set the same skill was run four times ("attempt 4"), and the first three runs measured the graders and not the skill.
+
+| Run | File | Cause of the change |
+|---|---|---|
+| 4a | `attempt4a-*.json` | Graders read the transcript with an LLM. `rubric-first`, `prompt-premise`, `verify` and the file graders scored 0 of 5, and the judges gave no reasons. |
+| 4b | `attempt4b-*.json` | Eight graders threw "Invalid regular expression", because JavaScript has no `(?i)`. My mistake, fixed with character classes. |
+| 4c | `attempt4c-*.json` | The `files` focus gives the judge only the list of changed paths, not contents, so `note` and `premise-resolved` could not pass. They now read `note.md`, and the prompt names it. |
+| 4d | `attempt4d-*.json` | Final grader set. |
+
+Final result (4d), passes of 5: `skill-fired` 5, `fan-out` 5, `model-fable` 5, `model-sonnet` 5, `model-opus` 5, `judge-readonly` 5, `rubric-judge-only` 5, `judge-after` 5, `prompt-scratch` 5, `prompt-premise` 5, `prompt-clean` 5, `note` 2, `premise-resolved` 5, `verify` 0, `asked` 5. Control 2 of 28 (7%). Cost of 4d about $10.5.
+
+The bar is not met. `verify` is 0 of 5, and the traces show it is a real skipped phase, since in every run the last tool calls write the artifact and note and no read or command follows before the final message. `note` is 2 of 5 mainly because the grader asks for the models each candidate ran on, which the skill does not ask for. That grader was not changed after seeing the scores. Two things stop me here. The attempt budget (3 attempts) is spent, and the next step is a wording choice, whether to add a verify line to a skill the ticket wants kept verbatim from pstack. Both go to the user.
