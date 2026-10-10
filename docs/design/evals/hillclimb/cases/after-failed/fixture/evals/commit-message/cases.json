@@ -1,0 +1,8 @@
+[
+  {"name": "typo-fix", "input": "README.md: 'recieve' becomes 'receive'", "expect": "subject only, no body"},
+  {"name": "rename", "input": "renames Client.Do to Client.Send in 14 files, no behavior change", "expect": "subject only, no body"},
+  {"name": "bugfix-cause", "input": "retry loop in fetch.go slept before the first attempt, so every request waited 2s; the sleep moves after the failure", "expect": "subject plus a body that gives the cause"},
+  {"heldout": true, "name": "revert", "input": "reverts commit 4f2a9c1 'Cache config reads', which broke reloads", "expect": "subject starts with Revert and a body names the reverted commit and why"},
+  {"name": "migration", "input": "adds migrations/0007 that drops users.legacy_id after backfill", "expect": "subject plus a body that says the backfill must have run"},
+  {"heldout": true, "name": "dep-bump", "input": "go.mod: golang.org/x/net v0.20.0 to v0.21.0", "expect": "subject only, no body"}
+]
