@@ -270,6 +270,26 @@ func TestTickKeepsTheTreeAndItsUntrackedFilesWhenTrackedWorkIsAlsoThere(t *testi
 	assert.Empty(t, h.returns())
 }
 
+func TestTickKeepsTheTreeWhenATrackedFileIsModifiedButNotStaged(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.untracked(path, "tracked.txt")
+	h.git(path, "add", "tracked.txt")
+	h.git(path, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "track")
+	h.push(path)
+	require.NoError(t, os.WriteFile(filepath.Join(path, "tracked.txt"), []byte("edited"), 0o644))
+	h.untracked(path, "scratch.txt")
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "keep ENG-1: Done, but its tree has uncommitted changes\n", out)
+	assert.FileExists(t, filepath.Join(path, "scratch.txt"))
+	assert.Empty(t, h.returns())
+}
+
 func TestTickReturnsTheTreeOnceItsWorkIsPushed(t *testing.T) {
 	h := newHarness(t)
 	path := h.gitTree("ENG-1")

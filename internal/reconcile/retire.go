@@ -27,8 +27,8 @@ func (in Input) notDesign(t linear.Ticket) bool {
 
 // retire plans the cleanup of lease holders that are finished or paused. A
 // finished ticket's pushed tree with no tracked changes is returned, after its
-// untracked files are deleted. One with work in it keeps
-// its tree, loses its worker, and gets one comment. A paused ticket loses its
+// untracked files are deleted. One with work in it keeps its tree, loses its
+// worker, and gets one comment. A paused ticket loses its
 // worker and keeps its tree. Plan puts these first, so a returned tree is free
 // for a launch in the same tick.
 func (in Input) retire() []Action {

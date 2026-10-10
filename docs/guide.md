@@ -65,7 +65,7 @@ It ticks now and every `interval_minutes` after, until you press Ctrl-C. It does
 5. **In Review.** The worker moves the ticket to In Review once the PR is linked. It then waits. Each tick, the dispatcher checks an In Review ticket with an idle worker, and nudges it when the PR has a failed check, requested changes, an unresolved thread or a conflict.
 6. **Needs Human.** A worker that needs a decision outside its terminal moves the ticket to Needs Human with a comment saying what it needs. dispatch fires a macOS notification. Answer on the ticket and move it back to In Progress, and the worker gets the resume nudge. The dispatcher also sets Needs Human itself, with one comment, after `nudge_limit` fruitless nudges, `nudge_limit` relaunches of an In Review worker that never pushed, or `launch_failure_limit` failed launches. It does the same at once for a ticket with no repo label, a repo label missing from `[repos]`, or more labels than it reads.
 7. **Merge.** The PR merges (auto-merge, or you), Linear moves the ticket to Done.
-8. **Teardown.** The next tick closes the worker's workspace and returns the tree to the pool, unless the tree holds uncommitted or unpushed work.
+8. **Teardown.** The next tick closes the worker's workspace and returns the tree to the pool, unless the tree holds modified or staged tracked files, or unpushed commits. Untracked files are deleted first.
 
 A question the worker asks in its terminal shows in herdr as blocked. dispatch notifies you, never answers for you, and never sets Needs Human for it.
 
@@ -109,11 +109,11 @@ A parent never gets a worker, whatever its status. Parents labeled `design` or `
 
 Each tick also looks at every tree held by a ticket assigned to you with the `ai` label, whatever the ticket's status. Statuses come from `[linear.statuses]`: `done` (default Done, Canceled, Duplicate) and `paused` (default Backlog, Todo).
 
-- A finished ticket whose tree is clean and fully pushed has its herdr workspace closed and its tree returned with `treehouse return --force`, so `treehouse status` shows the slot available.
-- A finished ticket whose tree has uncommitted changes, or commits that no remote has, keeps its tree. Its worker's workspace is closed, and the ticket gets one comment saying what the tree holds. Push or discard the work and the next tick returns the tree.
+- A finished ticket whose tree has no tracked changes and is fully pushed has its herdr workspace closed, its untracked files deleted (`git clean -f -d`, which leaves ignored files alone), and its tree returned with `treehouse return --force`, so `treehouse status` shows the slot available.
+- A finished ticket whose tree has modified or staged tracked files, or commits that no remote has, keeps its tree. Its worker's workspace is closed, and the ticket gets one comment saying what the tree holds. Push or discard the work and the next tick returns the tree.
 - A ticket moved back to Backlog or Todo has its worker's workspace closed and keeps its tree. Moving it to In Progress again relaunches a worker on that tree.
 
-"Pushed" means every commit reachable from the tree's HEAD is also reachable from a remote-tracking ref. A branch squash-merged and then pruned from the remote counts as unpushed, so its tree stays leased with the comment until you discard it. A pause or a kept tree closes only a workspace with a Claude agent in it, so a workspace you opened by hand there stays open. A clean tree is returned whatever workspace is open on it, because a worker whose Claude exited leaves an agentless workspace behind and the slot has to come back.
+"Pushed" means every commit reachable from the tree's HEAD is also reachable from a remote-tracking ref. A branch squash-merged and then pruned from the remote counts as unpushed, so its tree stays leased with the comment until you discard it. A pause or a kept tree closes only a workspace with a Claude agent in it, so a workspace you opened by hand there stays open. A tree with nothing to keep is returned whatever workspace is open on it, because a worker whose Claude exited leaves an agentless workspace behind and the slot has to come back.
 
 Trees of `design` and `design-review` tickets are left alone until the grill and review skills exist. A tree whose git state can't be read, or whose ticket has more labels than the dispatcher reads, stays leased, and the tick prints why. If the lookup of tickets holding trees fails, the tick prints the error and skips teardown but still launches and nudges.
 
@@ -155,6 +155,6 @@ It fails when the ticket's worker is blocked on a question or absent.
 
 **A worker sits in a state of working.** dispatch nudges a working worker only about a new ticket comment, so a worker that keeps working is never nudged for stalling. Open its herdr workspace and look. To redirect it, run `dispatch tell <ticket> "<text>"`. To restart it, move the ticket to Backlog and back to In Progress. Its tree and branch stay. Wait for a tick to see Backlog before moving it back, because a round trip inside one interval changes nothing.
 
-**A tree is kept after the ticket finished.** The ticket got a comment saying what the tree holds, either uncommitted changes or commits no remote has. Push or discard the work and the next tick returns the tree. A branch that was squash-merged and then deleted from the remote counts as unpushed, so discard it yourself.
+**A tree is kept after the ticket finished.** The ticket got a comment saying what the tree holds, either modified or staged tracked files or commits no remote has. Untracked scratch files never keep a tree, since the tick deletes them. Push or discard the work and the next tick returns the tree. A branch that was squash-merged and then deleted from the remote counts as unpushed, so discard it yourself.
 
 **A change to dispatch doesn't take effect after merging.** `dispatch run` is the binary you installed, not your checkout. Run `go install ./cmd/dispatch` in the checkout, then stop `dispatch run` with Ctrl-C and start it again. Workers pick up skill and launcher changes from `plugin_root` without a reinstall.

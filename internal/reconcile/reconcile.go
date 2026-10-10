@@ -159,7 +159,7 @@ type Input struct {
 	// Leases maps a lease holder to a worker for each tree it holds.
 	Leases map[string][]worker.Worker
 	// Unfinished maps a tree path to what returning it would destroy, empty for
-	// a clean, pushed tree. A path in neither map was not inspected and is never
+	// a pushed tree with no tracked changes. A path in neither map was not inspected and is never
 	// returned. CheckErrors holds the trees that could not be read. Both cover
 	// only the trees of tickets for which Retires is true.
 	Unfinished  map[string]string
