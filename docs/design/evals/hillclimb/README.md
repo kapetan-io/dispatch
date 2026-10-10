@@ -1,5 +1,7 @@
 # Hillclimb eval
 
+Status 2026-10-10: not run. Claude Code denied the `claude plugin eval` command (the cause is unknown), so no result exists, the sensitivity check on `arms/careless.md` has not been done and the cases have not been loaded by the harness once. The skill was reviewed against skill-creator's guidance instead (see `log.md`). Run the steps under "How to run" before relying on the skill.
+
 Tests whether a worker given only "hillclimb this wording against that suite" follows `skills/hillclimb/SKILL.md`. The worker can't run `claude`, so the eval covers what the skill asks for before and between runs: the pass bar, the known-bad control, held-out cases, the budget, one idea per attempt, and stopping when the wording already passes. It does not test whether a full climb reaches its bar. That was shown by the size-check and ticket-claims climbs the skill comes from (`../size-check/log.md`, `../ticket-claims/log.md`).
 
 ## Arms
