@@ -26,6 +26,7 @@ type Ticket struct {
 	// Identifier is the human id, such as ENG-123. It is also the treehouse lease holder.
 	Identifier string
 	Title      string
+	URL        string
 	Branch     string
 	Status     string
 	Team       string
@@ -136,7 +137,7 @@ const managedTickets = `query ManagedTickets($label: String!, $teams: [String!],
   viewer {
     assignedIssues(first: $first, filter: {labels: {name: {eq: $label}}, state: {type: {eq: "started"}}, team: {key: {in: $teams}}}) {
       nodes {
-        id identifier title branchName
+        id identifier title url branchName
         state { name }
         team { key }
         labels(first: 25) { nodes { name parent { name } } pageInfo { hasNextPage } }
@@ -153,6 +154,7 @@ type issueNode struct {
 	ID         string `json:"id"`
 	Identifier string `json:"identifier"`
 	Title      string `json:"title"`
+	URL        string `json:"url"`
 	BranchName string `json:"branchName"`
 	State      struct {
 		Name string `json:"name"`
@@ -210,6 +212,7 @@ func (n issueNode) ticket() Ticket {
 		ID:              n.ID,
 		Identifier:      n.Identifier,
 		Title:           n.Title,
+		URL:             n.URL,
 		Branch:          n.BranchName,
 		Status:          n.State.Name,
 		Team:            n.Team.Key,
@@ -263,7 +266,7 @@ const leasedTickets = `query LeasedTickets($filter: IssueFilter!, $first: Int!) 
   viewer { id }
   issues(first: $first, includeArchived: true, filter: $filter) {
     nodes {
-      id identifier title branchName
+      id identifier title url branchName
       state { name }
       team { key }
       assignee { id }

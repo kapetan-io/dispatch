@@ -804,6 +804,7 @@ func ticket(id, status, repo string) fakeTicket {
 		"id":         "uuid-" + id,
 		"identifier": id,
 		"title":      "ticket " + id,
+		"url":        "https://linear.app/team/issue/" + id,
 		"branchName": "thrawn01/" + strings.ToLower(id),
 		"state":      map[string]string{"name": status},
 		"assignee":   map[string]string{"id": viewerID},

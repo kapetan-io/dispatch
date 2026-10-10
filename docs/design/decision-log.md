@@ -100,6 +100,10 @@ Three kinds of ticket appear below. The **feature ticket** holds the blueprint a
     - Workers post as your Linear account, so the dispatcher can't tell your comment from the worker's own and doesn't try. A worker nudged about its own comment, or one dispatch posted, rereads it and carries on.
     - It counts toward neither the stall nor the PR limit, and never escalates.
     - The ready-for-review notification (ENG-256, planned) is the same idea pointed at you.
+12. **The supervisor session is a receiver of dispatch's events.** (Settled 2026-10-10, ENG-274.) Decision 11 makes dispatch the broker to workers and the user, and the user steers from a supervising Claude Code session that only hears about an event when it looks. Every notification a tick raises (ready, merged, Needs Human, blocked, stalled) is also sent as a message to each session that ran `dispatch subscribe`, through the session's inbox socket (`CLAUDE_CODE_MESSAGING_SOCKET`). A message wakes an idle session, so a ready PR starts the review flow without a file watcher or a cron job.
+    - The macOS alert still fires first, and a failed message never fails or retries the alert. A socket that refuses connections or is gone is dropped and the tick prints one line. A failed alert holds the messages back until its retry shows, except for merge notices, which nothing retries.
+    - Worker nudges still type into panes. Moving them to messages waits until this path has held up.
+    - The frame is undocumented, so it lives in one function in `internal/delivery`. Delivery receipts (`held`, `denied`, `expired`) never reached a sender's socket when tried on Claude Code 2.1.296, so a held message is invisible to dispatch. The user avoids that by setting `crossSessionInbound` to `accept`, as the guide says.
 
 ## Build stage (settled before 2026-10-07)
 
