@@ -17,7 +17,7 @@ Open a todolist with one entry per phase before launching anything.
 4. Pick
 5. Graft
 6. Verify
-7. Re-read the artifact
+7. Re-read the artifact with Read against the grounding material, then record what you checked in the note's verification result (if it fails, reopen Graft)
 8. Ask the user
 
 ## Phase A: Frame

@@ -31,7 +31,7 @@ Each grader reads either the arguments of the worker's `Agent` calls (exact chec
 
 ## Pass bar for attempt 6 (fixed 2026-10-10, before the run)
 
-The same as for attempt 5 below: 3 runs, every grader 3 of 3, pooled at least 90%, `skill-fired` and `fan-out` 3 of 3, and the control rerun first. The user chose this attempt after attempt 5 failed `verify` 0 of 3. The wording under test adds "7. Re-read the artifact" to the todo list, before "8. Ask the user".
+The same as for attempt 5 below: 3 runs, every grader 3 of 3, pooled at least 90%, `skill-fired` and `fan-out` 3 of 3, and the control rerun first. The user chose this attempt after attempt 5 failed `verify` 0 of 3. The wording under test adds a todo item 7, a Read of the artifact against the grounding material with the result recorded in the note, before "8. Ask the user".
 
 ## Pass bar for attempt 5 (fixed 2026-10-10, before the run)
 
