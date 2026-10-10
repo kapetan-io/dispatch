@@ -48,6 +48,8 @@ Three kinds of ticket appear below. The **feature ticket** holds the blueprint a
 - Each design step runs the same way. It is discussed in chat as a proposal with a recommendation. Sub-agents check major recommendations. You decide. Only then is it recorded here as settled. A design step produces decisions, not skill text.
 - Skills stay light. A rule gets a short reason and leaves the rest to the agent's judgment, and proven text such as poteto's (the pstack author's) skills is borrowed before new rules are written. You adapt the skills as they run rather than settling every detail up front (2026-10-08).
 - Wording that a skill depends on is tested with an eval before it goes in (see `evals/`). Keep one eval attempt to about 45 runs. 90 was too many (2026-10-08).
+- `supervise` shipped on 2026-10-09 as a trial without an eval, by your decision. Only you can start it (`disable-model-invocation: true`), you judge it live in the sessions it's written for, and those sessions will provide the cases for an eval later. It is an exception to the eval rule above, not a change to it.
+- The ENG team got a `design` label on 2026-10-10 (00:14 UTC), the workflow's feature-ticket label from the design stage below. A session files a ticket whose design isn't settled in Backlog with `design` and without `ai`, so the dispatcher never starts it. ENG-235 is the first.
 
 ## Design stage (settled 2026-10-07)
 
