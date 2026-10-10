@@ -36,7 +36,7 @@ mkdir -p $WORK/plugin
 cp -R ../../../../.claude-plugin $WORK/plugin/.claude-plugin
 cp -R ../../../../skills $WORK/plugin/skills
 cp -R cases $WORK/plugin/cases
-sed -i '' "s|@REPO@|$(git rev-parse --show-toplevel)|" $WORK/plugin/cases/*/scaffold.sh
+sed -i.bak "s|@REPO@|$(git rev-parse --show-toplevel)|" $WORK/plugin/cases/*/scaffold.sh
 cd $WORK/plugin
 PATH=$HOME/.local/bin:$PATH claude plugin eval . --eval-dir cases --runs 5 --ablation none \
   --allow-tools Write Bash --scaffold --judge-model claude-opus-5-5 --keep-temp --no-publish \
