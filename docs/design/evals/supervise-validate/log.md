@@ -22,7 +22,7 @@ Idea. Tell the supervisor to put the `-run` command in each validator's prompt, 
 | ledger-last | 5/5 | 4/5 | 5/5 |
 | report-nil (held out) | 5/5 | 3/5 | 5/5 |
 
-Pooled 26/30 on `validator-told`, 87%, under the 90% bar, and one case under 4 of 5. Reverted. Of the visible failures, one run validated inline and spawned no validator at all, so the rule had no sub-agent to reach. That is a delegation miss and not a bad `-run` command. The held-out transcripts were not read.
+`validator-told` alone was 11/15, and `no-full-run` 15/15. The two pooled are 26/30, 87%, under the 90% bar, and one case under 4 of 5. Reverted. Of the visible failures, one run validated inline and spawned no validator at all, so the rule had no sub-agent to reach. That is a delegation miss and not a bad `-run` command. The held-out transcripts were not read.
 
 ## Attempt 2, results/attempt2.json ($2.09)
 
@@ -34,6 +34,16 @@ All three cases 5/5 on every grader. Bar met (`arms/attempt-2.md`).
 
 The same wording, 5 runs per case, plus a fresh case `refund-negative` written from the design's rule (validators prove with a failing test) and not from the wording. 20 of 20 runs passed every grader. Bar met again.
 
+## Grader tightening after review (results/control-tight.json, baseline-tight.json, confirmation-tight.json)
+
+CodeRabbit pointed out that `go test -run TestProof ./...` passed both graders, since `-run` alone satisfied them. The reason holds without any score. The skill bans `./...` and asks for `-count=1` and an explicit package. `validator-told` now needs `-count=1`, `-run` and a `./<package>` path in the Agent prompt, and `no-full-run` also fails any `go test` that names `./...`. The 4 cases, prompts and bar are unchanged. Control and baseline were rerun first, as the hillclimb rules require, and the adopted wording was rerun on all four cases.
+
+- Control, 2 runs per case, $1.04. 0 of 16 checks passed on both graders.
+- Baseline, 5 runs per case, $1.84. 0 of 40 checks passed on both graders.
+- Adopted wording, 5 runs per case, $2.83. `validator-told` 20/20. `no-full-run` 19/20, with `refund-negative` at 4/5. The one miss ran a `go test` without `-run` or with `./...`, which the old grader might have passed. The bar (4 of 5 per case, 90% pooled, here 39/40) still holds.
+
+The earlier results above used the looser graders and stay in `results/` for the record. The tightened rerun is the one that counts. Total spend about $15.3 of the $40 ceiling.
+
 ## Limits
 
-Total spend about $9.6 of the $40 ceiling. Cases that tuned the wording: `refund-rounding`, `ledger-last`. Held out: `report-nil`. Fresh: `refund-negative`. 5 runs per case, workers on `claude-sonnet-5-5`, judge model unused (no LLM graders). Five runs per case can't show a failure rate under about 20%. The graders read attempted commands, so a validator running inside a sub-agent is judged by the prompt the supervisor wrote and not by what the sub-agent ran. The eval cannot run Go, so it does not show that the proof file stays out of the PR, the second sentence of the wording.
+Total spend about $15.3 of the $40 ceiling. Cases that tuned the wording: `refund-rounding`, `ledger-last`. Held out: `report-nil`. Fresh: `refund-negative`. 5 runs per case, workers on `claude-sonnet-5-5`, judge model unused (no LLM graders). Five runs per case can't show a failure rate under about 20%. The graders read attempted commands, so a validator running inside a sub-agent is judged by the prompt the supervisor wrote and not by what the sub-agent ran. The eval cannot run Go, so it does not show that the proof file stays out of the PR, the second sentence of the wording.
