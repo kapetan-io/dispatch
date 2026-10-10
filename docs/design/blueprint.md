@@ -60,12 +60,12 @@ State invariants, each with its enforcement.
 
 Behavioral constraints.
 
-- The dispatcher never answers a question for a worker, approves a PR or merges. It only nudges with fixed text, dismisses dialogs, launches, tears down and escalates.
+- The dispatcher never answers a question for a worker or approves a PR. It merges a PR only in a repo listed in `auto_merge`, once a review has approved the PR's head commit and the PR is ready. Otherwise it nudges with fixed text, dismisses dialogs, launches, tears down and escalates.
 - Two dispatcher runs never act at the same time.
 - Nudges carry no source tag. Workers treat them as coming from you.
 - The dispatcher comments on a ticket only when it sets Needs Human, or when it refuses to tear down a dirty tree. It never comments to record a nudge.
 - A worker never stops on a failing check. A flake gets its own ticket and a re-run. A real failure gets fixed.
-- A worker enables auto-merge only when the base branch requires at least one approving review. On a branch with no protection, auto-merge would merge the moment checks pass.
+- The dispatcher decides when a PR merges, not GitHub. GitHub-side auto-merge on a branch with no required review would merge the moment checks pass, before CodeRabbit weighs in. In a repo listed in `auto_merge`, the dispatcher merges once a review approves the head commit.
 - A worker may ask you a question in its terminal through AskUserQuestion, which herdr shows as blocked. Needs Human is for things you do outside the window, such as approving a design or settling a disputed review.
 
 ### Acceptance Criteria
@@ -88,7 +88,7 @@ Each criterion is checked through the dispatcher's surface (`dispatch tick`, `di
 14. After every tick, each worker's herdr workspace label starts with the emoji for its Linear status.
 15. Two ticks started together result in one doing work and the other exiting without side effects.
 16. Every launched worker runs with `--disallowedTools EnterPlanMode,ExitPlanMode`.
-17. Every PR a worker opens on a protected branch has auto-merge enabled.
+17. In a repo listed in `auto_merge`, a ready PR with a review approving its head commit is merged by the dispatcher. A PR without one, an approval of an earlier commit, or a repo not listed is never merged.
 18. After every tick, the herdr tab holding each worker's Claude pane is labeled `<ticket> <title>` in full, and a tab that already matches is not renamed.
 
 ### Scope
@@ -120,7 +120,7 @@ Out of scope.
 | Linear API key | The dispatcher is a script and cannot use the MCP connector |
 | Linear GitHub integration | Moves a ticket to Done on merge. ENG-216 moved 2 seconds after its merge on 2026-10-06. |
 | `gh`, authenticated | PR state for In Review tickets |
-| GitHub repo settings | "Allow auto-merge" on, and branch protection on main requiring the CodeRabbit review and CI checks. CodeRabbit's approval already counts, since PR #68 shows `reviewDecision: APPROVED` with coderabbitai as its only reviewer. |
+| GitHub repo settings | "Allow auto-merge" on (not needed in a repo listed in `auto_merge`, where the dispatcher merges), and branch protection on main requiring the CodeRabbit review and CI checks. CodeRabbit's approval already counts, since PR #68 shows `reviewDecision: APPROVED` with coderabbitai as its only reviewer. |
 | Linear workflow | A Needs Human status on personal teams. At work, a `needs-human` label instead, and no parent auto-close setting. |
 | A herdr window you keep open | Runs `dispatch run`, which ticks on an interval. You start and stop it, and it does not survive a reboot or a herdr restart. |
 | Claude Code CLI | `--dangerously-skip-permissions` (already used by the launcher) and `--disallowedTools` |
@@ -293,7 +293,7 @@ At work, where there is no admin right to add a Needs Human status, the design i
 - Workers already run with `--dangerously-skip-permissions` on your workstation. The dispatcher widens this only by starting workers without you typing the command.
 - The Linear API key lives in the environment or the macOS keychain, never in the repo or the config file.
 - Anyone who can drive herdr can already type into any pane, so untagged nudges add no new exposure.
-- Auto-merge relies on branch protection. The worker checks for a required review before enabling it (`gh api repos/{owner}/{repo}/branches/main/protection`), so an unprotected repo never merges unreviewed code.
+- Merging is opt-in per repo through `auto_merge`. The dispatcher checks for an approving review on the head commit itself, so an unprotected repo never merges unreviewed code, and it passes `--match-head-commit` so a push after the check is not merged.
 
 ### Scale
 

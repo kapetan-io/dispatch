@@ -138,6 +138,10 @@ The dispatcher launched a build worker for its own piece 2 (ENG-228), which buil
 
 You asked for a notification when a PR is ready for review and a 👀 workspace label for the same state, because an In Review ticket stays In Review while the worker fixes findings and you had to check Linear, GitHub and herdr by hand. Ready means In Review, worker idle, every check finished and passed, no unresolved thread, no changes requested, no merge conflict. The notification fires once per PR head commit. The build worker settled three details. `mergeable` must read `MERGEABLE`, so `UNKNOWN` waits a tick. A PR with no checks counts as passed. Labels are cut to 40 characters (ENG-263 later dropped the title and the cap).
 
+## Dispatcher merges approved PRs in chosen repos (ENG-273, 2026-10-09)
+
+Nothing auto-merged. The blueprint planned GitHub-side auto-merge, which the build skill enables only on a branch that requires an approving review. This repo's `main` has no such rule, so GitHub would have merged before CodeRabbit weighed in. You chose a per-repo switch on 2026-10-09. The config key `auto_merge` lists repos as `owner/name`. In a listed repo the dispatcher merges a ready PR itself once a review approves its head commit, and notifies you. This replaces the GitHub-side auto-merge text in `blueprint.md` (behavioral constraints, invariant 17, the security note). The build worker settled four details. The PR's repo comes from the PR's own URL, because `gh` picks the wrong repo in a clone with two remotes. The merge names the PR by URL and passes `--match-head-commit`, so a push after the approval was read is not merged. A failed merge is recorded per PR head and not retried until a push. The build skill still tells workers to enable GitHub auto-merge on a protected branch, which this decision leaves alone.
+
 ## Breakdown step (in progress)
 
 The breakdown runs inside the review worker, after the review rounds and before your approval (decisions 2 and 3). It turns the reviewed blueprint into build tickets.

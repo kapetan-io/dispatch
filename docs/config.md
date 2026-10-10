@@ -21,6 +21,7 @@ nudge_limit = 2
 blocked_renotify_ticks = 3
 plugin_root = "~/Development/dispatch"
 worker_model = "sonnet"
+auto_merge = []
 
 [linear]
 api_key_keychain = "dispatch-linear-api-key"
@@ -55,6 +56,26 @@ dispatch = "~/Development/dispatch"
 | `blocked_renotify_ticks` | `3` | Ticks between macOS notifications for a worker that stays blocked on a question. The first notification comes on the first blocked tick. `0` notifies on every blocked tick. |
 | `plugin_root` | `~/Development/dispatch` | Your checkout of this repo. The dispatcher runs `bin/dispatch-launch` from it, and workers load the plugin from it. |
 | `worker_model` | `sonnet` | The model name passed to `claude --model` for every worker. |
+| `auto_merge` | `[]` | GitHub repos, as `owner/name`, where dispatch merges a ready PR itself once a review approves its head commit. See [Auto-merge](#auto-merge). An entry that isn't `owner/name` fails the config load. |
+
+## Auto-merge
+
+`auto_merge` names repos by their GitHub `owner/name`, not by a `[repos]` label or a path on disk, because the same repo can be cloned anywhere. Matching ignores case.
+
+```toml
+auto_merge = ["kapetan-io/dispatch"]
+```
+
+In a listed repo, a tick that finds an In Review ticket's PR ready (the same test as the ready-for-review notification, with the worker idle) and approved by a review on its head commit runs `gh pr merge <PR URL> --merge --match-head-commit <head>`. It prints `merge ENG-1: PR approved` and sends a macOS notification, `ENG-1 was approved and merged: <PR URL>`, in place of the ready-for-review one. Any reviewer's approval counts, which today means CodeRabbit's. The merge only goes through for the commit that was approved.
+
+- An approval of an earlier commit doesn't count, so a push after approval waits for a new one.
+- A ready PR with no approval on its head gets the ready-for-review notification as before. If the approval arrives later, the next tick merges it.
+- A failed merge, such as branch protection refusing it, prints the error to stderr and sends one notification. The next ticks skip that head, and a push makes the PR eligible again.
+- `dispatch tick --dry-run` prints the `merge` line without merging.
+- dispatch reads the file on every tick, so adding or removing a repo takes effect on the next tick of a running `dispatch run`.
+- An entry that matches no repo under `[repos]` is reported once per `dispatch run` as a warning on stderr. It is not an error.
+
+The PR's repo is read from the PR's own URL, but the PR is found through the repo `gh` resolves for the clone. A clone with two remotes (`origin` plus a fork as `upstream`) can resolve to the wrong one, and `gh repo view` then names the fork. Run `gh repo set-default owner/name` in that clone.
 
 ## `[linear]`
 

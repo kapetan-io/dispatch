@@ -87,7 +87,7 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		_, err := tick(ctx, opts, *dryRun)
+		_, err := tick(ctx, opts, *dryRun, &autoMergeCheck{})
 		return err
 	case "tell":
 		if len(args) != 3 {
@@ -161,9 +161,10 @@ func run(ctx context.Context, opts Options, interval time.Duration) error {
 		return fmt.Errorf("interval must be positive, got %s", interval)
 	}
 	_, _ = fmt.Fprintf(opts.Stdout, "dispatch: ticking every %s, Ctrl-C to stop\n", interval)
+	check := &autoMergeCheck{}
 	for {
 		start := time.Now()
-		sum, err := tick(ctx, opts, false)
+		sum, err := tick(ctx, opts, false, check)
 		took := time.Since(start).Round(time.Millisecond)
 		switch {
 		case ctx.Err() != nil:
@@ -206,7 +207,7 @@ func count(n int, noun string) string {
 	return fmt.Sprintf("%d %ss", n, noun)
 }
 
-func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err error) {
+func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck) (sum tickSummary, err error) {
 	if err := os.MkdirAll(opts.StateDir, 0o755); err != nil {
 		return sum, fmt.Errorf("while creating state dir: %w", err)
 	}
@@ -224,6 +225,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 	if err != nil {
 		return sum, err
 	}
+	check.warn(ctx, opts, cfg)
 	cachePath := filepath.Join(opts.StateDir, "cache.json")
 	c, err := cache.Load(cachePath)
 	if err != nil {
@@ -315,6 +317,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		Teams:          cfg.Linear.Teams,
 		BlockerDone:    cfg.Linear.Statuses.BlockerDone,
 		Leased:         leased,
+		AutoMerge:      autoMergeSet(cfg.AutoMerge),
 	}
 	// Only promotion and closing wait on the children, so a failed read holds
 	// back those two and nothing else.
@@ -450,6 +453,26 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 				continue
 			}
 			_, _ = fmt.Fprintln(opts.Stdout, a)
+		case reconcile.Merge:
+			e := c[a.Ticket.Identifier]
+			if err := pullrequest.Merge(ctx, opts.GH, a.PRURL, a.Head, opts.PRTimeout); err != nil {
+				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while merging %s: %v\n", a.Ticket.Identifier, err)
+				// Recorded before the alert, so a failed alert can't make the next tick retry the merge.
+				e.MergeFailedHead = a.Head
+				c[a.Ticket.Identifier] = e
+				msg, _, _ := strings.Cut(err.Error(), "\n")
+				if err := alert(fmt.Sprintf("%s: merging %s failed: %s", a.Ticket.Identifier, a.PRURL, msg)); err != nil {
+					_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
+				}
+				continue
+			}
+			// Keeps the ready notification from firing for a head that was merged.
+			e.ReadyHead = a.Head
+			c[a.Ticket.Identifier] = e
+			_, _ = fmt.Fprintln(opts.Stdout, a)
+			if err := alert(a.Text); err != nil {
+				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
+			}
 		case reconcile.Notify:
 			if a.Reason == reconcile.ReasonReady {
 				// A failed alert leaves the head unrecorded, so the next tick sends it again.
@@ -592,6 +615,7 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 			kept.CommentSeen = e.CommentSeen
 			// Without it, a worker relaunched on the kept tree would announce a PR head twice.
 			kept.ReadyHead = e.ReadyHead
+			kept.MergeFailedHead = e.MergeFailedHead
 		}
 		c[id] = kept
 		if c[id] == (cache.Entry{}) {

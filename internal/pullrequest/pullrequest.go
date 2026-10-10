@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"strings"
 	"time"
@@ -18,6 +19,12 @@ type PR struct {
 	URL    string
 	// Head is the SHA of the PR's head commit. A push moves it.
 	Head string
+	// Repo is the GitHub repo the PR belongs to, as owner/name, read from the
+	// PR's own URL so it is right whichever remote gh resolved.
+	Repo string
+	// Approved means a reviewer's latest review approves the head commit. An
+	// approval of an earlier commit does not count, so a push clears it.
+	Approved bool
 	// Problems are the reasons the PR needs work, phrased to follow "has".
 	Problems []string
 	// Ready means the PR needs no work and nothing is still running: every check
@@ -57,6 +64,7 @@ const query = `query PullRequest($owner: String!, $repo: String!, $branch: Strin
         number url headRefOid mergeable reviewDecision
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
         reviewThreads(first: $threads) { nodes { isResolved } pageInfo { hasNextPage } }
+        latestOpinionatedReviews(first: 100) { nodes { state commit { oid } } }
       }
     }
   }
@@ -102,6 +110,14 @@ func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duratio
 								} `json:"commit"`
 							} `json:"nodes"`
 						} `json:"commits"`
+						LatestOpinionatedReviews struct {
+							Nodes []struct {
+								State  string `json:"state"`
+								Commit struct {
+									Oid string `json:"oid"`
+								} `json:"commit"`
+							} `json:"nodes"`
+						} `json:"latestOpinionatedReviews"`
 						ReviewThreads struct {
 							Nodes []struct {
 								IsResolved bool `json:"isResolved"`
@@ -127,7 +143,12 @@ func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duratio
 		return PR{}, false, fmt.Errorf("PR %s has more than %d review threads; dispatch reads one page and would miss unresolved ones", n.URL, maxThreads)
 	}
 	checksPassed := true
-	pr := PR{Number: n.Number, URL: n.URL, Head: n.HeadRefOid}
+	pr := PR{Number: n.Number, URL: n.URL, Head: n.HeadRefOid, Repo: RepoOf(n.URL)}
+	for _, r := range n.LatestOpinionatedReviews.Nodes {
+		if r.State == "APPROVED" && r.Commit.Oid == n.HeadRefOid {
+			pr.Approved = true
+		}
+	}
 	// PENDING and EXPECTED are not failures, because the worker has nothing to
 	// fix yet, but they are not passed either, so the PR is not ready.
 	for _, c := range n.Commits.Nodes {
@@ -152,4 +173,52 @@ func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duratio
 	}
 	pr.Ready = !pr.NeedsWork() && checksPassed && n.Mergeable == "MERGEABLE"
 	return pr, true, nil
+}
+
+// RepoOf returns the owner/name in a PR URL such as
+// https://github.com/owner/name/pull/7, or "" when the URL is not one.
+func RepoOf(prURL string) string {
+	u, err := url.Parse(prURL)
+	if err != nil {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 4 || parts[2] != "pull" {
+		return ""
+	}
+	return parts[0] + "/" + parts[1]
+}
+
+// Merge merges the PR with a merge commit. It names the PR by URL, so gh needs
+// no remote to resolve, and it passes the head so a push after the approval
+// was read makes gh refuse instead of merging unreviewed code.
+func Merge(ctx context.Context, bin, prURL, head string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "pr", "merge", prURL, "--merge", "--match-head-commit", head)
+	cmd.WaitDelay = time.Second
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("while running gh pr merge %s: %w: %s", prURL, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// RepoName returns the owner/name that gh resolves for the repo cloned at
+// repoDir, which is the repo Read looks for PRs in.
+func RepoName(ctx context.Context, bin, repoDir string, timeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner")
+	cmd.Dir = repoDir
+	cmd.WaitDelay = time.Second
+	b, err := cmd.Output()
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return "", fmt.Errorf("while running gh repo view in %s: %w: %s", repoDir, err, strings.TrimSpace(string(exit.Stderr)))
+		}
+		return "", fmt.Errorf("while running gh repo view in %s: %w", repoDir, err)
+	}
+	return strings.TrimSpace(string(b)), nil
 }

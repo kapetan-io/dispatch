@@ -36,6 +36,9 @@ type Entry struct {
 	// ReadyHead is the PR head the user was last told was ready for review. A
 	// push moves the head, so a PR that is ready again notifies again.
 	ReadyHead string `json:"ready_head,omitempty"`
+	// MergeFailedHead is the PR head whose auto-merge failed. The user was told
+	// once, and inReviewIdle does not retry that head. A push moves it.
+	MergeFailedHead string `json:"merge_failed_head,omitempty"`
 	// BlockedTicks counts consecutive ticks the ticket's worker sat blocked.
 	BlockedTicks int `json:"blocked_ticks"`
 	// PendingComment is an escalation comment Linear has not accepted yet.

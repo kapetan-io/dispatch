@@ -29,6 +29,8 @@ type prState struct {
 	unresolved  int
 	resolved    int
 	moreThreads bool
+	// approved lists the commits a review approves.
+	approved []string
 }
 
 func cleanPR(head string) prState {
@@ -44,14 +46,19 @@ func (h *harness) pr(ticket string, p prState) {
 	for range p.resolved {
 		threads = append(threads, map[string]bool{"isResolved": true})
 	}
+	reviews := []map[string]any{}
+	for _, oid := range p.approved {
+		reviews = append(reviews, map[string]any{"state": "APPROVED", "commit": map[string]string{"oid": oid}})
+	}
 	h.writeJSON("pr-"+strings.ToLower(ticket)+".json", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
-		"number":         7,
-		"url":            prURL1,
-		"headRefOid":     p.head,
-		"mergeable":      p.mergeable,
-		"reviewDecision": p.decision,
-		"commits":        map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]string{"state": p.checks}}}}},
-		"reviewThreads":  map[string]any{"nodes": threads, "pageInfo": map[string]bool{"hasNextPage": p.moreThreads}},
+		"number":                   7,
+		"url":                      prURL1,
+		"headRefOid":               p.head,
+		"mergeable":                p.mergeable,
+		"reviewDecision":           p.decision,
+		"commits":                  map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]string{"state": p.checks}}}}},
+		"latestOpinionatedReviews": map[string]any{"nodes": reviews},
+		"reviewThreads":            map[string]any{"nodes": threads, "pageInfo": map[string]bool{"hasNextPage": p.moreThreads}},
 	}}}}}})
 }
 

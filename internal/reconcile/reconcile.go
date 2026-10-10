@@ -5,6 +5,7 @@ package reconcile
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/kapetan-io/dispatch/internal/cache"
 	"github.com/kapetan-io/dispatch/internal/linear"
@@ -41,6 +42,9 @@ const (
 	// Promote moves a Todo child of an In Progress parent to In Progress, which
 	// is what starts it.
 	Promote Kind = "promote"
+	// Merge merges the PR at PRURL, because its repo is in auto_merge and a
+	// review approves its head. Text is the notification sent once it merges.
+	Merge Kind = "merge"
 	// Close moves a parent ticket to its close_parent status, because every one
 	// of its children is finished. It never touches a workspace.
 	Close Kind = "close"
@@ -57,6 +61,7 @@ const (
 	ReasonPR                = "PR needs work"
 	ReasonComment           = "new comment"
 	ReasonReady             = "PR ready for review"
+	ReasonMerge             = "PR approved"
 )
 
 // NeedsHumanText is the notification message for a ticket in Needs Human.
@@ -67,6 +72,11 @@ func NeedsHumanText(t linear.Ticket) string {
 // ReadyText is the notification message for a ticket whose PR is ready for review.
 func ReadyText(t linear.Ticket, pr pullrequest.PR) string {
 	return fmt.Sprintf("%s is ready for review: %s", t.Identifier, pr.URL)
+}
+
+// MergedText is the notification message for a PR dispatch merged.
+func MergedText(t linear.Ticket, pr pullrequest.PR) string {
+	return fmt.Sprintf("%s was approved and merged: %s", t.Identifier, pr.URL)
 }
 
 // Nudge texts are fixed because the build-worker skill and the tests rely on
@@ -90,8 +100,10 @@ type Action struct {
 	// Notify shows.
 	PaneID string
 	Text   string
-	// Head is the PR head a ready-for-review Notify is about.
-	Head string
+	// Head is the PR head a ready-for-review Notify or a Merge is about, and
+	// PRURL the PR a Merge merges.
+	Head  string
+	PRURL string
 	// WorkspaceID and TreePath name what a Teardown, Keep or Stop acts on.
 	// WorkspaceID is empty when a Keep or Stop has no live worker to stop, so a
 	// workspace someone opened by hand is left open. A Teardown always closes
@@ -123,6 +135,9 @@ type Input struct {
 	// RenotifyTicks is how many ticks pass between notifications for a worker
 	// that stays blocked.
 	RenotifyTicks int
+	// AutoMerge holds the lowercased owner/name of each repo where an approved,
+	// ready PR is merged.
+	AutoMerge map[string]bool
 	// PRs maps an In Review ticket identifier to its open PR. Tickets whose PR
 	// was not read, or that have none, are absent.
 	PRs map[string]pullrequest.PR
@@ -368,11 +383,20 @@ func (in Input) prRelaunch(t linear.Ticket) (pullrequest.PR, bool) {
 	return pr, in.Workers[t.Identifier].State == worker.None
 }
 
-// inReviewIdle handles an idle worker on an In Review ticket: a ready PR notifies
-// once per head, and a PR that needs work gets a nudge. A push resets the
+// inReviewIdle handles an idle worker on an In Review ticket. A ready PR
+// notifies once per head, or merges when its repo is in auto_merge and a review
+// approves its head. A PR that needs work gets a nudge. A push resets the
 // count, so a review that arrives days later starts a fresh one.
 func (in Input) inReviewIdle(t linear.Ticket, w worker.Worker, prev cache.Entry) (Action, bool) {
 	pr, ok := in.PRs[t.Identifier]
+	// An approval can land after the ready notification, so this runs before
+	// the once-per-head check. A head whose merge failed waits for a push.
+	if ok && pr.Ready && pr.Approved && in.AutoMerge[strings.ToLower(pr.Repo)] {
+		if prev.MergeFailedHead == pr.Head {
+			return Action{}, false
+		}
+		return Action{Kind: Merge, Ticket: t, Reason: ReasonMerge, Text: MergedText(t, pr), Head: pr.Head, PRURL: pr.URL}, true
+	}
 	if ok && pr.Ready && prev.ReadyHead != pr.Head {
 		return Action{Kind: Notify, Ticket: t, Reason: ReasonReady, Text: ReadyText(t, pr), Head: pr.Head}, true
 	}
