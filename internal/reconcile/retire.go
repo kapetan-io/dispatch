@@ -83,7 +83,7 @@ func (in Input) retireFinished(t linear.Ticket) []Action {
 			continue
 		}
 		why = append(why, fmt.Sprintf("`%s` has %s", w.TreePath, unfinished))
-		keep := Action{Kind: Keep, Ticket: t, Reason: t.Status + ", but its tree has " + unfinished, TreePath: w.TreePath}
+		keep := Action{Kind: Keep, Ticket: t, Reason: t.Status + ", but its tree " + w.TreePath + " has " + unfinished, TreePath: w.TreePath}
 		if w.State != worker.None {
 			keep.WorkspaceID = w.WorkspaceID
 		}
