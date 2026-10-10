@@ -330,3 +330,36 @@ func TestTickDryRunPrintsEscalationAndMergeMessages(t *testing.T) {
 		})
 	}
 }
+
+func TestTickTellsSupervisorsAboutAMergeWhenTheAlertFails(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		fails string
+		want  string
+	}{
+		{name: "Merged", want: "ENG-1 was approved and merged"},
+		{name: "MergeFailed", fails: "merge-fails", want: "merging"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.config(autoMergeConfig)
+			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+			h.worker("ENG-1", "idle")
+			h.pr("ENG-1", approvedPR("a1"))
+			socket, lines := sessionSocket(t)
+			t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
+			_, err := h.run("subscribe")
+			require.NoError(t, err)
+			h.writeFile("notify-fails", "")
+			if test.fails != "" {
+				h.writeFile(test.fails, "")
+			}
+
+			_, err = h.run("tick")
+			require.NoError(t, err)
+
+			// No later tick sends it again, so this tick's message is the only one.
+			assert.Contains(t, next(t, lines), test.want)
+		})
+	}
+}

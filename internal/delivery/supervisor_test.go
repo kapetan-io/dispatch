@@ -213,3 +213,15 @@ func TestSubscribeRefusesAPathTheListCannotHold(t *testing.T) {
 		require.ErrorContains(t, delivery.Subscribe(t.TempDir(), path), "whitespace")
 	}
 }
+
+func TestNotifyOnceMessagesSupervisorsWhenTheAlertFails(t *testing.T) {
+	state := t.TempDir()
+	live := newInbox(t, "live.sock")
+	require.NoError(t, delivery.Subscribe(state, live.path))
+	post := delivery.Post{Osascript: script(t, "osascript", `echo denied >&2; exit 1`), StateDir: state}
+
+	err := post.NotifyOnce(context.Background(), ready)
+
+	require.ErrorContains(t, err, "while notifying")
+	assert.Contains(t, live.content(t), "ENG-1")
+}

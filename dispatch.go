@@ -526,7 +526,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 				e.MergeFailedHead = a.Head
 				c[a.Ticket.Identifier] = e
 				msg, _, _ := strings.Cut(err.Error(), "\n")
-				if err := post.Notify(ctx, delivery.Event{Ticket: a.Ticket, Reason: a.Reason, Text: fmt.Sprintf("%s: merging %s failed: %s", a.Ticket.Identifier, a.PRURL, msg)}); err != nil {
+				if err := post.NotifyOnce(ctx, delivery.Event{Ticket: a.Ticket, Reason: a.Reason, Text: fmt.Sprintf("%s: merging %s failed: %s", a.Ticket.Identifier, a.PRURL, msg)}); err != nil {
 					_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
 				}
 				continue
@@ -535,7 +535,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 			e.ReadyHead = a.Head
 			c[a.Ticket.Identifier] = e
 			_, _ = fmt.Fprintln(opts.Stdout, a)
-			if err := post.Notify(ctx, delivery.Event{Ticket: a.Ticket, Reason: a.Reason, Text: a.Text}); err != nil {
+			if err := post.NotifyOnce(ctx, delivery.Event{Ticket: a.Ticket, Reason: a.Reason, Text: a.Text}); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
 			}
 		case reconcile.Notify:
