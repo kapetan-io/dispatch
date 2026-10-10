@@ -117,7 +117,7 @@ A workspace is renamed only when its label differs from the one its ticket's sta
 
 ## Design tickets
 
-A ticket labeled `design` (with the `ai` and repo labels) waits in Backlog until you design it. Move it to In Progress and the next tick launches a worker typed `/dispatch:grill <ticket>` on `grill_model` (default `opus`), where builds use `worker_model`. `dispatch tick --dry-run` shows `launch ENG-N` for it.
+A ticket labeled `design` (with the `ai` and repo labels) waits in Backlog until you design it. Move it to In Progress and the next tick launches a worker typed `/dispatch:grill <ticket>` on `grill_model` (default `opus`), where builds use `worker_model`. `dispatch tick --dry-run` shows `launch ENG-N` for it. A `design` ticket that already has sub-issues and no live worker is skipped instead, so a grill that exits after creating sub-issues is not relaunched.
 
 The grill's worker is never nudged about a stall, a comment or a PR, never escalated, and stopped only when you move the ticket out of In Progress, because a design waiting on you is normal. It keeps running after the grill creates a child ticket under it. A Backlog or Todo child is left alone, because a `design` parent's children are never promoted. A child you move to In Progress yourself launches as a build. A `design` ticket in In Progress holds a tree, so it counts toward `max_in_progress`.
 
