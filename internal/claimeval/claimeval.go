@@ -64,16 +64,17 @@ func Run(ctx context.Context, args []string, opts Options) int {
 	return 0
 }
 
-func loadCases(path string) ([]Case, error) {
+// loadCases returns the parsed cases and the file's bytes.
+func loadCases(path string) ([]Case, []byte, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("while reading cases: %w", err)
+		return nil, nil, fmt.Errorf("while reading cases: %w", err)
 	}
 	var cases []Case
 	if err := json.Unmarshal(b, &cases); err != nil {
-		return nil, fmt.Errorf("while parsing %s: %w", path, err)
+		return nil, nil, fmt.Errorf("while parsing %s: %w", path, err)
 	}
-	return cases, nil
+	return cases, b, nil
 }
 
 const kickoff = `/worktools:build {id}
@@ -171,7 +172,7 @@ func runBuild(ctx context.Context, args []string, opts Options) error {
 	if f.arm == "" || f.out == "" || f.goroot == "" {
 		return fmt.Errorf("build needs -arm, -out and -goroot")
 	}
-	cases, err := loadCases(f.cases)
+	cases, raw, err := loadCases(f.cases)
 	if err != nil {
 		return err
 	}
@@ -191,6 +192,10 @@ func runBuild(ctx context.Context, args []string, opts Options) error {
 		return err
 	}
 	if err := writeFile(filepath.Join(out, "skills", "build", "SKILL.md"), skill, 0o644); err != nil {
+		return err
+	}
+	// Copied verbatim so report can run from the plugin directory.
+	if err := writeFile(filepath.Join(out, "cases.json"), string(raw), 0o644); err != nil {
 		return err
 	}
 	for _, c := range cases {

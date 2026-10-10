@@ -73,6 +73,8 @@ Each attempt changes one idea. Two or three fresh sub-agents propose wording, on
 
 ## How to run
 
+`build` copies the cases file to `$WORK/plugin/cases.json` under that name, whatever `-cases` was, so `report` run from the plugin directory finds it.
+
 ```sh
 go build -o /tmp/claimeval ./cmd/claimeval
 cd docs/design/evals/ticket-claims

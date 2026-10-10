@@ -79,7 +79,7 @@ func runReport(args []string, opts Options) error {
 	if fs.NArg() != 1 {
 		return fmt.Errorf("report needs one result.json")
 	}
-	cases, err := loadCases(*casesPath)
+	cases, _, err := loadCases(*casesPath)
 	if err != nil {
 		return err
 	}
@@ -273,6 +273,14 @@ var (
 	inPlace     = regexp.MustCompile(`\b(?:sed|perl)\s+[^;&|\n]*-\w*i\b[^;&|\n]*`)
 	pathLike    = regexp.MustCompile(`[\w./~-]*[\w-]+\.(?:go|sh|toml|md|json|yaml|yml|awk)\b|\bbin/[\w-]+|\bscripts/[\w/-]+`)
 	scriptWrite = regexp.MustCompile(`open\(\s*['"]([^'"]+)['"]\s*,\s*['"][wa]|Path\(\s*['"]([^'"]+)['"]\s*\)\.write`)
+	// open(p, 'w') where p is a name. Only quoted literals assigned to the name
+	// are seen, so a path built at runtime is missed.
+	varWrite      = regexp.MustCompile(`open\(\s*([A-Za-z_]\w*)\s*,\s*['"][wa]`)
+	scriptComment = regexp.MustCompile(`(?m)(?:^|\s)#.*$`)
+	// The -c or -lc option that hands a shell its program as the next argument.
+	shellProgram = regexp.MustCompile(`\s-[a-zA-Z]*c$`)
+	// A quoted string, with no handling of escaped quotes.
+	quoted = regexp.MustCompile(`'[^']*'|"[^"]*"`)
 )
 
 // splitHeredocs separates a shell command's own text from the bodies of its
@@ -312,6 +320,46 @@ func isSourcePath(p string) bool {
 	return true
 }
 
+// assignedPath returns the quoted literal most recently assigned to name in the
+// script text before an open() call, or "" when there is none or when the latest
+// assignment is not a complete quoted literal. An attribute such as
+// self.name = 'x' is not an assignment to name.
+func assignedPath(before, name string) string {
+	assign := regexp.MustCompile(`(?m)(?:^|[^.\w])` + regexp.QuoteMeta(name) + `\s*=\s*(?:['"]([^'"]+)['"]\s*(?:[;#]|$)|[^=\s])`)
+	all := assign.FindAllStringSubmatch(scriptComment.ReplaceAllString(before, ""), -1)
+	if len(all) == 0 {
+		return ""
+	}
+	return all[len(all)-1][1]
+}
+
+// unquotePrograms replaces quoted strings with ” so a ">" inside an awk or grep
+// program is not read as a redirect. A quoted string right after ">" is a quoted
+// file name, as in cat > "bin/tool", and stays. The program of sh -c is a shell
+// command line of its own, so its quotes are scanned the same way. Only redirects use this, because
+// tee and sed -i take their file names unquoted in practice.
+func unquotePrograms(command string) string {
+	var b strings.Builder
+	last := 0
+	for _, loc := range quoted.FindAllStringIndex(command, -1) {
+		b.WriteString(command[last:loc[0]])
+		prefix := strings.TrimRight(command[:loc[0]], " \t")
+		switch {
+		case strings.HasSuffix(prefix, ">"):
+			b.WriteString(command[loc[0]:loc[1]])
+		case shellProgram.MatchString(prefix):
+			b.WriteString(command[loc[0] : loc[0]+1])
+			b.WriteString(unquotePrograms(command[loc[0]+1 : loc[1]-1]))
+			b.WriteString(command[loc[1]-1 : loc[1]])
+		default:
+			b.WriteString("''")
+		}
+		last = loc[1]
+	}
+	b.WriteString(command[last:])
+	return b.String()
+}
+
 // bashWritesSource reports whether a shell command writes a file that is
 // neither a test file nor under ticket/, which is how workers edit with sed,
 // perl, redirects or an inline script instead of the Edit tool. It looks at the
@@ -319,7 +367,7 @@ func isSourcePath(p string) bool {
 func bashWritesSource(command string) bool {
 	head, bodies := splitHeredocs(command)
 	var targets []string
-	for _, m := range redirect.FindAllStringSubmatch(head, -1) {
+	for _, m := range redirect.FindAllStringSubmatch(unquotePrograms(head), -1) {
 		targets = append(targets, m[1])
 	}
 	for _, m := range teeTarget.FindAllStringSubmatch(head, -1) {
@@ -332,9 +380,14 @@ func bashWritesSource(command string) bool {
 		for _, m := range scriptWrite.FindAllStringSubmatch(text, -1) {
 			targets = append(targets, m[1]+m[2])
 		}
+		for _, m := range varWrite.FindAllStringSubmatchIndex(text, -1) {
+			if path := assignedPath(text[:m[0]], text[m[2]:m[3]]); path != "" {
+				targets = append(targets, path)
+			}
+		}
 	}
 	for _, t := range targets {
-		if isSourcePath(t) {
+		if isSourcePath(strings.Trim(t, `'"`)) {
 			return true
 		}
 	}
