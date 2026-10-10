@@ -1,6 +1,6 @@
 # Arena eval
 
-Status 2026-10-10: the pass bar is not met. With the phase-order graders added after review, attempt 4 of the skill (the wording on the PR) scores `note` 2 of 5 and `verify` 0 of 5. Attempt 3 met the bar only against the first, weaker grader set. See `log.md`; raw results are in `results/` (each grader's evidence trimmed to 600 characters).
+Status 2026-10-10: the pass bar is not met. Attempt 5 (3 runs, with a Phase F line telling the session to re-read the artifact before its final message) passes every grader 3 of 3 except `verify`, which is 0 of 3. See `log.md`; raw results are in `results/` (each grader's evidence trimmed to 600 characters).
 
 Tests whether a session told "arena this" on a sample question follows `skills/arena/SKILL.md`: a rubric before fan-out, three candidates on different models, a candidate prompt that makes them question the question's premises, a synthesis note, and a closing message that asks before anything changes.
 
