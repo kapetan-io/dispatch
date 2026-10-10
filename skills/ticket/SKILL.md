@@ -31,10 +31,10 @@ Use these sections in this order.
 4. **Not decided here (ask, don't assume).** The product behavior, public contract, security default or ADR questions the worker must put to the user, or "Nothing open". Don't write a guess as if it were settled.
 5. **Notes for the worker.** Anything that saves time, such as an example ticket in the same format, a trap you hit, or a binary it must not touch.
 
-When the ticket's purpose is to create, change or evaluate a skill, Notes for the worker also carries these three instructions. Left alone, workers invent eval loops of 40 to 270 runs, skip reviewing the skill itself, and write long, prescriptive prose.
+When the ticket's purpose is to create, change or evaluate a skill, Notes for the worker also carries these three instructions. Left alone, workers invent eval loops of 40 to 270 runs, which is why the no-evals line must be written out. They also skip reviewing the skill itself, and write long, prescriptive prose.
 
-- Before any eval run, a sub-agent loads `anthropic-skills:skill-creator` with the Skill tool, reads the changed skill and reviews it. The worker addresses the review before running anything.
-- The eval budget is 5 runs per case and at most 3 attempts. If the pass bar isn't met by then, the worker stops and posts a Needs Human comment with the results so far.
+- Run no evals. The user has paused evals until they decide whether they're useful.
+- Before opening the PR, a sub-agent loads `anthropic-skills:skill-creator` with the Skill tool, reads the changed skill and reviews it without running any test prompts. The worker addresses the review.
 - Keep the skill brief. Cut detail and rules the reader would follow without being told.
 
 ## Check before you save (managed repos)
@@ -42,5 +42,5 @@ When the ticket's purpose is to create, change or evaluate a skill, Notes for th
 - Write each ticket you mention by its identifier (ENG-123) so Linear links it.
 - Count the title's characters. Over 50, shorten it.
 - Re-read In plain English as the user would. If it needs the code open to make sense, rewrite it.
-- On a ticket that touches a skill, confirm Notes for the worker carries all three skill instructions.
+- On a ticket that touches a skill, confirm Notes for the worker carries each skill instruction listed above.
 - Confirm the ticket has the team, AI label, repo label, assignee and paused status. A missing one means the dispatcher never sees it or sees it too soon. A `design` ticket waits in Backlog on purpose, and the user moves it to In Progress to start the grill.
