@@ -51,16 +51,22 @@ type Options struct {
 	PRTimeout time.Duration
 	// Osascript is the command that shows notifications. Defaults to "osascript".
 	Osascript string
-	// Launcher defaults to bin/dispatch-launch under the config's plugin_root.
+	// Launcher, when set, is an external program run in place of the built-in launcher. Tests use it to fake launches.
 	Launcher string
-	Stdout   io.Writer
-	Stderr   io.Writer
+	// Dir is where `dispatch launch` looks for the target repo. Defaults to the
+	// working directory.
+	Dir string
+	// LaunchPace is the pause between launcher polls of herdr. Defaults to 1 second.
+	LaunchPace time.Duration
+	Stdout     io.Writer
+	Stderr     io.Writer
 }
 
 const usage = `usage: dispatch tick [--dry-run]
        dispatch run [--interval DURATION]
        dispatch tell <ticket> "<text>"
        dispatch ticket-hint
+       dispatch launch <ticket> <branch> [--base REF] [--model NAME] [--kickoff TEXT]
 
   tick         run one pass: launch a worker for each approved ticket that has none,
                and clean up after finished and paused tickets
@@ -70,7 +76,10 @@ const usage = `usage: dispatch tick [--dry-run]
   tell         type text into the ticket's worker; fails when the worker is blocked or absent
   ticket-hint  print a reminder to use the dispatch:ticket skill when run in a repo listed under
                [repos] in the config, or a worktree of one; prints nothing elsewhere.
-               The plugin's SessionStart hook runs it`
+               The plugin's SessionStart hook runs it
+  launch       lease a tree, open a herdr workspace and start a worker typed --kickoff, which
+               defaults to "/dispatch:build <ticket>". Run it from inside the repo. Prints one
+               JSON result and exits 0 only when a worker is running`
 
 // Run executes one dispatch command. main is a thin wrapper around it.
 func Run(ctx context.Context, args []string, opts Options) error {
@@ -97,6 +106,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		return tell(ctx, opts, args[1], args[2])
 	case "ticket-hint":
 		return ticketHint(ctx, opts)
+	case "launch":
+		return launchWorker(ctx, opts, args[1:])
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ContinueOnError)
 		fs.SetOutput(opts.Stderr)
@@ -390,9 +401,13 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: %v\n", err)
 		}
 	}
-	launch := opts.Launcher
-	if launch == "" {
-		launch = filepath.Join(cfg.PluginRoot, "bin", "dispatch-launch")
+	launch := func(repoDir, ticket, branch string) launcher.Result {
+		if opts.Launcher != "" {
+			return launcher.Launch(ctx, opts.Launcher, repoDir, ticket, branch, cfg.WorkerModel)
+		}
+		lo := launcherOptions(opts, cfg.PluginRoot)
+		lo.RepoDir = repoDir
+		return launcher.Run(ctx, launcher.Request{Ticket: ticket, Branch: branch, Model: cfg.WorkerModel}, lo)
 	}
 	for _, a := range actions {
 		switch a.Kind {
@@ -501,7 +516,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 			c[a.Ticket.Identifier] = e
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Launch:
-			r := launcher.Launch(ctx, launch, a.RepoDir, a.Ticket.Identifier, a.Ticket.Branch, cfg.WorkerModel)
+			r := launch(a.RepoDir, a.Ticket.Identifier, a.Ticket.Branch)
 			e := c[a.Ticket.Identifier]
 			if !r.Failed() {
 				e.LaunchFailures = 0

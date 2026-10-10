@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# claude shim for dispatch workers. dispatch-launch puts this dir first on the
+# claude shim for dispatch workers. `dispatch launch` puts this dir first on the
 # worker's PATH and sets DISPATCH_PLUGIN_ROOT in its env, which herdr replays
 # on restart. herdr restarts a worker with a bare `claude --resume` and does
 # not replay argv, so this shim re-adds this plugin and the worker flags.
