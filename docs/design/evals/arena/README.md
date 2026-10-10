@@ -1,5 +1,7 @@
 # Arena eval
 
+Status 2026-10-10: attempt 3 of the skill met the pass bar (see `log.md`). The sensitivity check on `arms/careless.md` passed at 25%.
+
 Tests whether a session told "arena this" on a sample question follows `skills/arena/SKILL.md`: a rubric before fan-out, three candidates on different models, a candidate prompt that makes them question the question's premises, a synthesis note, and a closing message that asks before anything changes.
 
 ## Arms
