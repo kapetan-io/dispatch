@@ -65,6 +65,9 @@ func runAll(ctx context.Context, args []string, opts Options) error {
 	if *arm == "" || *scenarios == "" || *out == "" {
 		return fmt.Errorf("run needs -arm, -scenarios and -out")
 	}
+	if *par <= 0 {
+		return fmt.Errorf("-parallel must be positive")
+	}
 	skill, err := os.ReadFile(*arm)
 	if err != nil {
 		return fmt.Errorf("while reading arm: %w", err)

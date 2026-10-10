@@ -87,3 +87,12 @@ func TestCommentEvalReportSkipsFilesWithoutRunSuffix(t *testing.T) {
 	require.Equal(t, 0, commenteval.Run(t.Context(), []string{"report", dir}, commenteval.Options{Stdout: &stdout, Stderr: &bytes.Buffer{}}))
 	assert.Regexp(t, `all\s+1\s+1\s+1\s+1`, stdout.String())
 }
+
+func TestCommentEvalRunRejectsNonPositiveParallel(t *testing.T) {
+	for _, par := range []string{"0", "-1"} {
+		var stderr bytes.Buffer
+		code := commenteval.Run(t.Context(), []string{"run", "-arm", "a", "-scenarios", "s", "-out", "o", "-parallel", par}, commenteval.Options{Stdout: &bytes.Buffer{}, Stderr: &stderr})
+		assert.Equal(t, 1, code)
+		assert.Contains(t, stderr.String(), "-parallel must be positive")
+	}
+}
