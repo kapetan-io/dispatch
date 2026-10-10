@@ -534,17 +534,23 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 				continue
 			}
 			if a.AfterNudge || a.Reason == reconcile.ReasonUnresponsive {
-				// A failed alert is lost for a nudge count, and retried next tick
-				// for an unresponsive worker because NudgeNotified stays unset.
+				// A failed alert is retried next tick, for a nudge count through
+				// StallNotifyPending and for an unresponsive worker because
+				// NudgeNotified stays unset.
+				e := c[a.Ticket.Identifier]
 				if err := alert(a.Text); err != nil {
 					_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
+					e.StallNotifyPending = e.StallNotifyPending || a.AfterNudge
+					c[a.Ticket.Identifier] = e
 					continue
 				}
-				if a.Reason == reconcile.ReasonUnresponsive {
-					e := c[a.Ticket.Identifier]
-					e.NudgeNotified = true
-					c[a.Ticket.Identifier] = e
+				if a.AfterNudge {
+					e.StallNotifyPending = false
 				}
+				if a.Reason == reconcile.ReasonUnresponsive {
+					e.NudgeNotified = true
+				}
+				c[a.Ticket.Identifier] = e
 				_, _ = fmt.Fprintln(opts.Stdout, a)
 				continue
 			}
@@ -642,6 +648,7 @@ func settle(c cache.Cache, now time.Time, tickets []linear.Ticket, workers map[s
 			e.Relaunches = 0
 			e.TeardownWarned = false
 			e.StallNudges = 0
+			e.StallNotifyPending = false
 			e.NudgedStop, e.NudgedAt, e.NudgeNotified = time.Time{}, time.Time{}, false
 		}
 		// IdleSince is when this stretch of idling began. A worker that works

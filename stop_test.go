@@ -255,6 +255,34 @@ func TestTickNotifiesOnceWhenAWorkerIgnoresItsNudgeForAnHour(t *testing.T) {
 	assert.Len(t, h.notifications(), 2)
 }
 
+func TestTickRetriesTheSixthStallNotificationThatFailed(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "idle")
+	for range 5 {
+		h.advance(5 * time.Minute)
+		h.recordStop("ENG-1", noTasks)
+		h.tick()
+	}
+	h.advance(5 * time.Minute)
+	h.recordStop("ENG-1", noTasks)
+	h.writeFile("notify-fails", "")
+
+	_, stderr, err := h.runContext(t.Context(), "tick")
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "while notifying about ENG-1")
+	assert.Empty(t, h.notifications())
+
+	h.removeFile("notify-fails")
+	h.advance(5 * time.Minute)
+	assert.Equal(t, "notify ENG-1: 6 stall nudges with no status change\n", h.tick())
+	assert.Equal(t, []string{"ENG-1 has had 6 stall nudges with no status change|dispatch"}, h.notifications())
+
+	h.advance(5 * time.Minute)
+	assert.Empty(t, h.tick())
+	assert.Len(t, h.notifications(), 1)
+}
+
 func TestTickRetriesTheUnresponsiveWorkerNotificationThatFailed(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))

@@ -350,22 +350,30 @@ func (in Input) stalled(t linear.Ticket, w worker.Worker, prev cache.Entry) []Ac
 	if prev.ResumePending || prev.LastStatus == in.NeedsHuman {
 		return []Action{{Kind: Nudge, Ticket: t, Reason: ReasonResume, PaneID: w.PaneID, Text: fmt.Sprintf(ResumeNudge, t.Identifier), AnsweredStop: stop}}
 	}
+	var as []Action
+	if prev.LastStatus == t.Status && prev.StallNotifyPending {
+		as = append(as, stallCount(t, prev.StallNudges))
+	}
 	if busy {
-		return nil
+		return as
 	}
 	if nudged {
 		if !prev.NudgedAt.IsZero() && !prev.NudgeNotified && in.Now.Sub(prev.NudgedAt) >= UnresponsiveAfter {
-			return []Action{{Kind: Notify, Ticket: t, Reason: ReasonUnresponsive, Text: fmt.Sprintf("%s: the worker hasn't responded to its nudge in an hour", t.Identifier)}}
+			as = append(as, Action{Kind: Notify, Ticket: t, Reason: ReasonUnresponsive, Text: fmt.Sprintf("%s: the worker hasn't responded to its nudge in an hour", t.Identifier)})
 		}
-		return nil
+		return as
 	}
-	as := []Action{{Kind: Nudge, Ticket: t, Reason: ReasonStall, PaneID: w.PaneID, Text: fmt.Sprintf(StallNudge, t.Identifier), AnsweredStop: stop}}
+	as = append(as, Action{Kind: Nudge, Ticket: t, Reason: ReasonStall, PaneID: w.PaneID, Text: fmt.Sprintf(StallNudge, t.Identifier), AnsweredStop: stop})
 	if n := prev.StallNudges + 1; n%StallNotifyEvery == 0 {
-		as = append(as, Action{Kind: Notify, Ticket: t, AfterNudge: true,
-			Reason: fmt.Sprintf("%d stall nudges with no status change", n),
-			Text:   fmt.Sprintf("%s has had %d stall nudges with no status change", t.Identifier, n)})
+		as = append(as, stallCount(t, n))
 	}
 	return as
+}
+
+func stallCount(t linear.Ticket, n int) Action {
+	return Action{Kind: Notify, Ticket: t, AfterNudge: true,
+		Reason: fmt.Sprintf("%d stall nudges with no status change", n),
+		Text:   fmt.Sprintf("%s has had %d stall nudges with no status change", t.Identifier, n)}
 }
 
 // lastStop returns when the worker last ended a turn, and whether that Stop

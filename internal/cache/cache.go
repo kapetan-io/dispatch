@@ -33,6 +33,9 @@ type Entry struct {
 	// NudgedAt is when a stall nudge for NudgedStop went out. It is zero after
 	// a resume nudge, which never raises the unresponsive-worker notification.
 	NudgedAt time.Time `json:"nudged_at,omitzero"`
+	// StallNotifyPending marks a stall-count notification that failed to show,
+	// so the next tick sends it again.
+	StallNotifyPending bool `json:"stall_notify_pending,omitempty"`
 	// NudgeNotified marks that the user was told the worker ignored the nudge
 	// for NudgedStop.
 	NudgeNotified bool `json:"nudge_notified,omitempty"`
