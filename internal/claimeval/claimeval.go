@@ -4,6 +4,7 @@
 package claimeval
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -228,21 +229,14 @@ func buildCase(ctx context.Context, f buildFlags, out string, c Case) error {
 	if err := os.MkdirAll(fixture, 0o755); err != nil {
 		return err
 	}
-	archive := exec.CommandContext(ctx, "git", "-C", f.repo, "archive", c.Fixture, "--", ".", ":(exclude)docs/design/evals")
-	extract := exec.CommandContext(ctx, "tar", "-x", "-C", fixture)
-	pipe, err := archive.StdoutPipe()
+	tarball, err := exec.CommandContext(ctx, "git", "-C", f.repo, "archive", c.Fixture, "--", ".", ":(exclude)docs/design/evals").Output()
 	if err != nil {
-		return err
-	}
-	extract.Stdin = pipe
-	if err := extract.Start(); err != nil {
-		return err
-	}
-	if err := archive.Run(); err != nil {
 		return fmt.Errorf("while archiving %s: %w", c.Fixture, err)
 	}
-	if err := extract.Wait(); err != nil {
-		return err
+	extract := exec.CommandContext(ctx, "tar", "-x", "-C", fixture)
+	extract.Stdin = bytes.NewReader(tarball)
+	if b, err := extract.CombinedOutput(); err != nil {
+		return fmt.Errorf("while extracting %s: %w: %s", c.Fixture, err, b)
 	}
 	if _, err := os.Stat(filepath.Join(fixture, "go.mod")); err == nil {
 		vendor := exec.CommandContext(ctx, "go", "mod", "vendor")

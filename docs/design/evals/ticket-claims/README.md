@@ -81,7 +81,7 @@ cd $WORK/plugin
 PATH=$HOME/.local/bin:$PATH claude plugin eval . --eval-dir cases --runs 5 --ablation none \
   --allow-tools Write Edit Bash --scaffold --judge-model claude-opus-5-5 --keep-temp --no-publish \
   --trust-plugin --threshold 0 -j 4 --json $WORK/result.json
-/tmp/claimeval report -cases cases.json $WORK/result.json    # add -known-bad for the trust arm
+/tmp/claimeval report -cases cases.json $WORK/result.json    # for the trust arm: -known-bad -runs 2
 ```
 
 Put the real `claude` ahead of dispatch's `scripts/shims/claude` on PATH, because the shim rejects the flags the eval passes.

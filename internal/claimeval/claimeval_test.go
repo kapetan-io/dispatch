@@ -327,3 +327,20 @@ func TestReportIgnoresPathsAComentOnlyMentions(t *testing.T) {
 	assert.Contains(t, good, "BAR MET")
 	assert.Contains(t, bad, "0/5")
 }
+
+func TestBuildNamesTheFixtureCommitItCannotArchive(t *testing.T) {
+	repo, work := gitRepo(t), t.TempDir()
+	write(t, filepath.Join(work, "skill.md"), skillText)
+	write(t, filepath.Join(work, "arm.md"), "1. **Orient.** New wording.\n")
+	write(t, filepath.Join(work, "tickets", "a.md"), "# ENG-1\n")
+	cases, err := json.Marshal([]claimeval.Case{{Name: "gone", Ticket: "ENG-1", File: "a.md", Fixture: "no-such-commit", Kind: "control"}})
+	require.NoError(t, err)
+	write(t, filepath.Join(work, "cases.json"), string(cases))
+
+	_, stderr, code := run(t, "build", "-arm", filepath.Join(work, "arm.md"), "-out", filepath.Join(work, "plugin"),
+		"-cases", filepath.Join(work, "cases.json"), "-tickets", filepath.Join(work, "tickets"),
+		"-repo", repo, "-goroot", "/opt/go", "-skill", filepath.Join(work, "skill.md"))
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "while building case gone: while archiving no-such-commit")
+}
