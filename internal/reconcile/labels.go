@@ -83,8 +83,11 @@ type TabRename struct {
 	Label string
 }
 
-// TabLabel is `<ticket> <title>`.
+// TabLabel is `<ticket> <title>`, or the ticket alone when it has no title.
 func TabLabel(t linear.Ticket) string {
+	if t.Title == "" {
+		return t.Identifier
+	}
 	return t.Identifier + " " + t.Title
 }
 

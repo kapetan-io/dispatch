@@ -23,6 +23,7 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 	base := fs.String("base", "", "ref a new branch starts from (default main)")
 	model := fs.String("model", "", "Claude model the worker runs (default sonnet)")
 	kickoff := fs.String("kickoff", "", "first command typed into the worker (default /dispatch:build <TICKET>)")
+	title := fs.String("title", "", "ticket title; the worker's tab is labeled \"<TICKET> <title>\" (default the ticket alone)")
 	fs.Bool("no-focus", true, "accepted for compatibility; launches never take focus")
 
 	// flag stops at the first argument that is not a flag, so keep parsing
@@ -45,7 +46,7 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 	case len(positional) > 2:
 		res = launcher.Result{Status: launcher.StatusUsageError, Detail: "unknown argument: " + positional[2]}
 	default:
-		req := launcher.Request{Base: *base, Model: *model, Kickoff: *kickoff}
+		req := launcher.Request{Base: *base, Title: *title, Model: *model, Kickoff: *kickoff}
 		if len(positional) > 0 {
 			req.Ticket = positional[0]
 		}

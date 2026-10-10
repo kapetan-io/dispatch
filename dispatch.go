@@ -71,7 +71,7 @@ const usage = `usage: dispatch tick [--dry-run]
        dispatch run [--interval DURATION]
        dispatch tell <ticket> "<text>"
        dispatch ticket-hint
-       dispatch launch <ticket> <branch> [--base REF] [--model NAME] [--kickoff TEXT]
+       dispatch launch <ticket> <branch> [--base REF] [--model NAME] [--kickoff TEXT] [--title TEXT]
        dispatch record-stop
        dispatch subscribe
 
@@ -449,7 +449,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 		}
 		lo := launcherOptions(opts, cfg.PluginRoot)
 		lo.RepoDir = a.RepoDir
-		return launcher.Run(ctx, launcher.Request{Ticket: a.Ticket.Identifier, Branch: a.Ticket.Branch, Model: model, Kickoff: kickoff}, lo)
+		return launcher.Run(ctx, launcher.Request{Ticket: a.Ticket.Identifier, Title: a.Ticket.Title, Branch: a.Ticket.Branch, Model: model, Kickoff: kickoff}, lo)
 	}
 	for _, a := range actions {
 		switch a.Kind {
