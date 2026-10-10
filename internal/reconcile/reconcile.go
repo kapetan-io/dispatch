@@ -60,6 +60,7 @@ const (
 	ReasonResume            = "resume"
 	ReasonPR                = "PR needs work"
 	ReasonComment           = "new comment"
+	ReasonActivity          = "new PR activity"
 	ReasonReady             = "PR ready for review"
 	ReasonMerge             = "PR approved"
 )
@@ -85,6 +86,10 @@ const (
 	StallNudge  = "%s is still In Progress. Re-read the ticket and its latest comments, then keep going. If the PR is ready, move it to In Review. If you need a decision from me, move it to Needs Human and comment what you need."
 	ResumeNudge = "I answered on %s. Read the latest comments and continue."
 	PRNudge     = "PR %s for %s has %s. Handle it as your build skill's step 7 says, and push."
+	// ActivityNudge never counts toward the stall or PR limits. Workers post as
+	// the user, so a worker's own reply draws one too, and the last sentence
+	// ends that chain.
+	ActivityNudge = "PR %s for %s has new activity, %s. Read it and handle it as your build skill's step 7 says. If it asks for nothing, say nothing."
 	// CommentNudge goes to a working or idle worker alike, and never counts
 	// toward the stall or PR limits.
 	CommentNudge = "%s has a new comment. Read the ticket's comments and act on them as your build skill says."
@@ -104,6 +109,9 @@ type Action struct {
 	// PRURL the PR a Merge merges.
 	Head  string
 	PRURL string
+	// ActivityAt is the PR activity time an activity Nudge puts to the worker,
+	// which the executor records as seen.
+	ActivityAt string
 	// WorkspaceID and TreePath name what a Teardown, Keep or Stop acts on.
 	// WorkspaceID is empty when a Keep or Stop has no live worker to stop, so a
 	// workspace someone opened by hand is left open. A Teardown always closes
@@ -383,12 +391,22 @@ func (in Input) prRelaunch(t linear.Ticket) (pullrequest.PR, bool) {
 	return pr, in.Workers[t.Identifier].State == worker.None
 }
 
-// inReviewIdle handles an idle worker on an In Review ticket. A ready PR
+// inReviewIdle handles an idle worker on an In Review ticket. New PR activity
+// is nudged first, so a merge or ready notice never outruns a review nobody has
+// read. A ready PR
 // notifies once per head, or merges when its repo is in auto_merge and a review
 // approves its head. A PR that needs work gets a nudge. A push resets the
 // count, so a review that arrives days later starts a fresh one.
 func (in Input) inReviewIdle(t linear.Ticket, w worker.Worker, prev cache.Entry) (Action, bool) {
 	pr, ok := in.PRs[t.Identifier]
+	// A PR that needs work gets the PR nudge instead, and activity waits until
+	// that is cleared so the worker is never told it was handled when it wasn't.
+	if seen := prev.ActivityBaseline(t.Status, in.InReview); ok && seen != "" && pr.ActivityAt > seen && !pr.NeedsWork() {
+		return Action{
+			Kind: Nudge, Ticket: t, Reason: ReasonActivity + ": " + pr.ActivitySummary, PaneID: w.PaneID,
+			Text: fmt.Sprintf(ActivityNudge, pr.URL, t.Identifier, pr.ActivitySummary), ActivityAt: pr.ActivityAt,
+		}, true
+	}
 	// An approval can land after the ready notification, so this runs before
 	// the once-per-head check. A head whose merge failed waits for a push.
 	if ok && pr.Ready && pr.Approved && in.AutoMerge[strings.ToLower(pr.Repo)] {

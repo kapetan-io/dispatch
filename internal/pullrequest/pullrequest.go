@@ -3,6 +3,7 @@
 package pullrequest
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -26,6 +27,14 @@ type PR struct {
 	// reviewer's latest review requests changes. An approval of an earlier
 	// commit does not count, so a push clears it.
 	Approved bool
+	// ActivityAt is the RFC 3339 time of the newest review or conversation
+	// comment, "" when there is none. It skips approvals without a body,
+	// dismissals and drafts, which ask the worker for nothing. A review with
+	// only a body opens no thread and sets no reviewDecision, so this is the
+	// only way the dispatcher sees it.
+	ActivityAt string
+	// ActivitySummary describes the item at ActivityAt, such as "a review by alice".
+	ActivitySummary string
 	// Problems are the reasons the PR needs work, phrased to follow "has".
 	Problems []string
 	// Ready means the PR needs no work and nothing is still running: every check
@@ -72,6 +81,8 @@ const query = `query PullRequest($owner: String!, $repo: String!, $branch: Strin
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
         reviewThreads(first: $threads) { nodes { isResolved } pageInfo { hasNextPage } }
         latestOpinionatedReviews(first: 100) { nodes { state commit { oid } } }
+        reviews(last: 30) { nodes { state body createdAt submittedAt author { login } } }
+        comments(last: 30) { nodes { createdAt author { login } } }
       }
     }
   }
@@ -101,6 +112,21 @@ type prNode struct {
 			} `json:"commit"`
 		} `json:"nodes"`
 	} `json:"latestOpinionatedReviews"`
+	Reviews struct {
+		Nodes []struct {
+			State       string  `json:"state"`
+			Body        string  `json:"body"`
+			CreatedAt   string  `json:"createdAt"`
+			SubmittedAt string  `json:"submittedAt"`
+			Author      *author `json:"author"`
+		} `json:"nodes"`
+	} `json:"reviews"`
+	Comments struct {
+		Nodes []struct {
+			CreatedAt string  `json:"createdAt"`
+			Author    *author `json:"author"`
+		} `json:"nodes"`
+	} `json:"comments"`
 	ReviewThreads struct {
 		Nodes []struct {
 			IsResolved bool `json:"isResolved"`
@@ -185,6 +211,24 @@ func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duratio
 			checksPassed = false
 		}
 	}
+	// RFC 3339 UTC times sort as strings, and only the newest item matters, so
+	// the newest 30 of each are enough.
+	note := func(at, summary string) {
+		if at > pr.ActivityAt {
+			pr.ActivityAt, pr.ActivitySummary = at, summary
+		}
+	}
+	for _, r := range n.Reviews.Nodes {
+		// A draft review is the token owner's own, and createdAt is when it was
+		// started, not when it was submitted.
+		if r.State == "DISMISSED" || r.State == "PENDING" || (r.State == "APPROVED" && strings.TrimSpace(r.Body) == "") {
+			continue
+		}
+		note(cmp.Or(r.SubmittedAt, r.CreatedAt), "a review by "+r.Author.name())
+	}
+	for _, c := range n.Comments.Nodes {
+		note(c.CreatedAt, "a comment by "+c.Author.name())
+	}
 	if n.ReviewDecision == "CHANGES_REQUESTED" {
 		pr.Problems = append(pr.Problems, "changes requested")
 	}
@@ -199,6 +243,18 @@ func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duratio
 	}
 	pr.Ready = !pr.NeedsWork() && checksPassed && n.Mergeable == "MERGEABLE"
 	return pr, true, nil
+}
+
+// author is null for a deleted account.
+type author struct {
+	Login string `json:"login"`
+}
+
+func (a *author) name() string {
+	if a == nil {
+		return "a deleted account"
+	}
+	return a.Login
 }
 
 // RepoOf returns the owner/name in a PR URL such as
