@@ -35,3 +35,7 @@ Attempt 3 rescored: all three graders pass in 5 of 5 runs, so the skill's pooled
 Control rescored: `candidates-get-grounding` and `candidates-get-objective` now pass in both control runs, because the case prompt makes the control write a grounding file too and its candidates read it through the same pointer. Pooled the control passes 9 of 20 non-`skill-fired` checks (45%), over the 40% limit in item 3. The sensitivity check fails with the new graders. The likely fix is a stricter control arm that withholds the grounding file from the candidates, or a case prompt that doesn't demand the file from the control, and either needs model runs and a decision that was not given.
 
 Bar not met: `arena-fired` 4 of 5, and the control at 45%.
+
+## 2026-10-10, PR review (CodeRabbit)
+
+Five claims were checked against the code and all held. The shared case prompt ordered a grounding file from both arms, which is why the control scored 45%. The prompt now says to write the file "if your instructions have you write a grounding file", so the control stub no longer has to. Every result above predates that change, and the control has not been rerun, because the attempt budget is spent. The score tables in this log stand for the old prompt only. The next attempt reruns the control and the skill on the new prompt.

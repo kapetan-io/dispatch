@@ -37,17 +37,17 @@ From this directory. Run the `cp arms/careless.md` line only for the control, an
 
 ```sh
 WORK=$(mktemp -d)
-mkdir -p $WORK/plugin
-cp -R ../../../../.claude-plugin $WORK/plugin/.claude-plugin
-cp -R ../../../../skills $WORK/plugin/skills
-cp -R cases $WORK/plugin/cases
+mkdir -p "$WORK/plugin"
+cp -R ../../../../.claude-plugin "$WORK/plugin/.claude-plugin"
+cp -R ../../../../skills "$WORK/plugin/skills"
+cp -R cases "$WORK/plugin/cases"
 # control only
-cp arms/careless.md $WORK/plugin/skills/grill/SKILL.md
-sed -i.bak "s|@REPO@|$(git rev-parse --show-toplevel)|" $WORK/plugin/cases/*/scaffold.sh
-cd $WORK/plugin
+cp arms/careless.md "$WORK/plugin/skills/grill/SKILL.md"
+sed -i.bak "s|@REPO@|$(git rev-parse --show-toplevel)|" "$WORK"/plugin/cases/*/scaffold.sh
+cd "$WORK/plugin"
 PATH=$HOME/.local/bin:$PATH claude plugin eval . --eval-dir cases --runs 5 --ablation none \
   --allow-tools Write Edit Bash --scaffold --judge-model claude-opus-5-5 --keep-temp --no-publish \
-  --trust-plugin --threshold 0 -j 4 --max-cost-usd 25 --json $WORK/result.json
+  --trust-plugin --threshold 0 -j 4 --max-cost-usd 25 --json "$WORK/result.json"
 ```
 
 Put the real `claude` ahead of dispatch's `scripts/shims/claude` on PATH, because the shim rejects the flags the eval passes. Copy the result JSON into `results/`.

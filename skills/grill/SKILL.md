@@ -120,7 +120,7 @@ Objective, Mental Model, User Stories, Correctness Constraints (State Invariants
 
 Keep PII as its own section. Mark anything unresolved with `TODO:` and a line on what is missing. Keep it short, since a section that drives no decision is noise. Write for a reader who was not in the discussion, with no "the option we discussed". "We considered X but chose Y because Z" is useful. If the feature has an OpenAPI spec, the contract sketch becomes a second document on the ticket, as a fenced YAML block.
 
-If the discussion resolved domain terms, write them to the right `docs/CONTEXT.md` in one pass. Do not commit.
+If the discussion resolved domain terms, write them to the right `docs/CONTEXT.md` in one pass. Do not commit. The tree is returned at hand-off, which discards the change, so the hand-off uploads it.
 
 ## Size it and file the child
 
@@ -128,15 +128,15 @@ Judge size once, after the user approves the design, with this wording. Tell the
 
 > A **piece** is complete when, after it merges, a user or caller can do something they could not do before. Its acceptance criteria are observable at the surface and pass without any other unmerged piece. Group a piece by what a user does together, not by endpoint, flag or rule. Work with no surface of its own, such as a new seam, backend, package or refactor, is never a piece by itself. It ships inside the first piece a user can observe through it.
 >
-> A design is too big for one pull request when it holds more than one piece. Line count alone never makes a design too big. A design a reviewer can read in one sitting, about an hour, fits even when it touches more than one piece. Count only what the design commits to build. Work it defers, or lists as a limitation, open question or future work, is not part of any piece.
+> A design is too big for one pull request when it holds more than one piece. Line count alone never makes a design too big. A design a reviewer can read in one sitting, about an hour, fits even when it touches more than one piece. When the two tests disagree, the one-sitting test wins, because easy review sets the size in both directions. Count only what the design commits to build. Work it defers, or lists as a limitation, open question or future work, is not part of any piece.
 
 Create exactly one child of the feature ticket, in **Backlog** and not Todo, which overrides `dispatch:ticket`'s default. The dispatcher starts a Todo child of an In Progress parent at once, and the user's move to In Progress is the approval.
 
 - **The design fits one PR and changes no public contract.** The child is one build ticket, labeled `ai` and the repo label, written with the `dispatch:ticket` skill. Its Governing design section links the blueprint and the grounding file.
-- **Anything larger, or any change to a public contract.** The child is a review ticket, labeled `design-review` and the repo label, never `design`, and its body links the blueprint. Only the review writes the formal spec and lints it, so a public contract change takes this path even when it is small. Assume every repo lints OpenAPI specs with `duh` for now.
+- **Anything larger, or any change to a public contract.** The child is a review ticket, labeled `ai`, `design-review` and the repo label, never `design`, assigned to the owner of dispatch's Linear API key, and written with `dispatch:ticket` (with the Backlog override above). The dispatcher manages only tickets with the `ai` label that are assigned to that owner, so without both the review would never start after the user approves it. Its body links the blueprint. Only the review writes the formal spec and lints it, so a public contract change takes this path even when it is small. Assume every repo lints OpenAPI specs with `duh` for now.
 
 ## Hand off
 
-1. Upload the experiments worth keeping, and the Phase A grounding file, to the feature ticket as attachments, so build workers can get them.
+1. Upload the experiments worth keeping, the Phase A grounding file, and the glossary change (`git diff -- docs`), to the feature ticket as attachments, so build workers can get them.
 2. Tell the user which ticket to move to In Progress, and that the move is the approval. Do not move it yourself.
 3. Return the tree with `treehouse return <tree path> --if-lease-holder <feature ticket> --force`, where the tree path is `git rev-parse --show-toplevel`. Do this last. It discards anything uncommitted, including any experiment you did not upload, and it ends the session. A held tree blocks other launches.
