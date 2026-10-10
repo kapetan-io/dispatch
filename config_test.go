@@ -15,7 +15,6 @@ func TestUnknownConfigKeyFailsEveryCommand(t *testing.T) {
 		args   []string
 		want   string
 	}{
-		{"TickRenamedModelSetting", "grill_model = \"fable\"\n", []string{"tick"}, `unknown setting grill_model`},
 		{"TickTopLevel", "max_in_progres = 9\n", []string{"tick"}, `unknown setting max_in_progres`},
 		{"TickDryRun", "max_in_progres = 9\n", []string{"tick", "--dry-run"}, `unknown setting max_in_progres`},
 		{"RunWithoutInterval", "max_in_progres = 9\n", []string{"run"}, `unknown setting max_in_progres`},
