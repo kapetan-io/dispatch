@@ -15,11 +15,11 @@ graders:
   - name: validator-told
     type: tool_used
     tool: Agent
-    input_match: "go test[^\\n]*-count=1[^\\n]*-run[^\\n]*\\./[\\w<]"
+    input_match: "go test(?=[^\\n]*-count=1)(?=[^\\n]*-run)(?=[^\\n]*\\./[\\w<])"
     min: 1
   - name: no-full-run
     type: tool_used
     tool: Bash
-    input_match: "go test(?![^\\n]*-run)|go test[^\\n]*\\./\\.\\.\\."
+    input_match: "go test(?![^\\n;&|]*-run)|go test[^\\n;&|]*\\./\\.\\."
     min: 0
     max: 0
