@@ -274,7 +274,7 @@ func (in Input) watch(t linear.Ticket) (Action, bool) {
 		return Action{Kind: Notify, Ticket: t, Reason: ReasonBlocked, Text: fmt.Sprintf("%s is waiting on your answer in its herdr workspace", t.Identifier)}, true
 	case worker.Idle:
 		if t.Status == in.InReview {
-			return in.prNudge(t, w, prev)
+			return in.inReviewIdle(t, w, prev)
 		}
 		// A design-review ticket's worker is never nudged.
 		if t.HasLabel("design-review") {
@@ -360,10 +360,10 @@ func (in Input) prRelaunch(t linear.Ticket) (pullrequest.PR, bool) {
 	return pr, in.Workers[t.Identifier].State == worker.None
 }
 
-// prNudge handles an idle worker on an In Review ticket: a ready PR notifies
+// inReviewIdle handles an idle worker on an In Review ticket: a ready PR notifies
 // once per head, and a PR that needs work gets a nudge. A push resets the
 // count, so a review that arrives days later starts a fresh one.
-func (in Input) prNudge(t linear.Ticket, w worker.Worker, prev cache.Entry) (Action, bool) {
+func (in Input) inReviewIdle(t linear.Ticket, w worker.Worker, prev cache.Entry) (Action, bool) {
 	pr, ok := in.PRs[t.Identifier]
 	if ok && pr.Ready && prev.ReadyHead != pr.Head {
 		return Action{Kind: Notify, Ticket: t, Reason: ReasonReady, Text: ReadyText(t, pr), Head: pr.Head}, true

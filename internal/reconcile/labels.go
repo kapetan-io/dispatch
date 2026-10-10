@@ -2,12 +2,13 @@ package reconcile
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/worker"
 )
 
-// Status emoji at the front of a worker's workspace label.
+// Status emoji at the front of a worker's workspace label, and the label length cap.
 const (
 	EmojiInProgress  = "🟢"
 	EmojiInReview    = "🟡"
@@ -18,7 +19,7 @@ const (
 	truncationMarker = "…"
 )
 
-// Rename sets a herdr workspace's label.
+// Rename asks for a herdr workspace to take a new label.
 type Rename struct {
 	WorkspaceID string
 	Label       string
@@ -55,8 +56,13 @@ func (in Input) Renames(current map[string]string) []Rename {
 			add(t, w, EmojiInProgress)
 		case in.InReview:
 			emoji := EmojiInReview
-			if pr, ok := in.PRs[t.Identifier]; ok && pr.Ready && w.State == worker.Idle {
+			pr, ok := in.PRs[t.Identifier]
+			if ok && pr.Ready && w.State == worker.Idle {
 				emoji = EmojiReady
+			}
+			// An unreadable PR must not flip a 👀 label to 🟡 for a tick.
+			if !ok && in.ReadsPR(t) && strings.HasPrefix(current[w.WorkspaceID], EmojiReady) {
+				continue
 			}
 			add(t, w, emoji)
 		case in.NeedsHuman:

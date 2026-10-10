@@ -392,6 +392,12 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while escalating %s: %v\n", a.Ticket.Identifier, err)
 				continue
 			}
+			// The renames above ran before this move, and the label must match the new status by the end of the tick.
+			if id := workers[a.Ticket.Identifier].WorkspaceID; id != "" {
+				if err := herdr.RenameWorkspace(ctx, opts.Herdr, id, reconcile.Label(reconcile.EmojiNeedsHuman, a.Ticket)); err != nil {
+					_, _ = fmt.Fprintf(opts.Stderr, "dispatch: %v\n", err)
+				}
+			}
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Nudge:
 			// herdr refuses a worker that turned blocked after the snapshot. A

@@ -215,3 +215,369 @@ func TestTickStillFindsAWorkerWhoseLabelChanged(t *testing.T) {
 	assert.Equal(t, []string{stallPrompt, stallPrompt}, h.prompts())
 	assert.Empty(t, h.launches())
 }
+
+func TestTickNotifiesWhenAReadyPRHasNoChecks(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.writeJSON("pr-eng-1.json", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
+		"number":         7,
+		"url":            prURL1,
+		"headRefOid":     "a1",
+		"mergeable":      "MERGEABLE",
+		"reviewDecision": "",
+		"commits":        map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": nil}}}},
+		"reviewThreads":  map[string]any{"nodes": []any{}, "pageInfo": map[string]bool{"hasNextPage": false}},
+	}}}}}})
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+}
+
+func TestTickNotifiesForPRsThatAreStillReady(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		pr   prState
+	}{
+		{name: "NoReviewDecision", pr: prState{head: "a1", checks: "SUCCESS", mergeable: "MERGEABLE"}},
+		{name: "ReviewRequired", pr: prState{head: "a1", checks: "SUCCESS", decision: "REVIEW_REQUIRED", mergeable: "MERGEABLE"}},
+		{name: "OnlyResolvedThreads", pr: prState{head: "a1", checks: "SUCCESS", decision: "APPROVED", mergeable: "MERGEABLE", resolved: 3}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+			h.worker("ENG-1", "idle")
+			h.pr("ENG-1", test.pr)
+
+			_, err := h.run("tick")
+			require.NoError(t, err)
+
+			assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+		})
+	}
+}
+
+func TestTickDoesNotNotifyForMoreNotReadyPRs(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		pr   prState
+	}{
+		{name: "CheckErrored", pr: prState{head: "a1", checks: "ERROR", decision: "APPROVED", mergeable: "MERGEABLE"}},
+		{name: "ThreadsBeyondOnePage", pr: prState{head: "a1", checks: "SUCCESS", decision: "APPROVED", mergeable: "MERGEABLE", moreThreads: true}},
+		{name: "OneUnresolvedAmongResolved", pr: prState{head: "a1", checks: "SUCCESS", decision: "APPROVED", mergeable: "MERGEABLE", resolved: 2, unresolved: 1}},
+		{name: "NoMergeableState", pr: prState{head: "a1", checks: "SUCCESS", decision: "APPROVED"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+			h.worker("ENG-1", "idle")
+			h.pr("ENG-1", test.pr)
+
+			_, err := h.run("tick")
+			require.NoError(t, err)
+
+			assert.Empty(t, h.notifications())
+		})
+	}
+}
+
+func TestTickNotifiesOnlyForIdleWorkersOfInReviewTickets(t *testing.T) {
+	for _, status := range []string{"In Progress", "Needs Human", "Backlog", "Todo"} {
+		t.Run(status, func(t *testing.T) {
+			h := newHarness(t)
+			h.tickets(ticket("ENG-1", status, "dispatch"))
+			h.worker("ENG-1", "idle")
+			h.pr("ENG-1", cleanPR("a1"))
+
+			_, err := h.run("tick")
+			require.NoError(t, err)
+
+			for _, n := range h.notifications() {
+				assert.NotContains(t, n, "ready for review")
+			}
+		})
+	}
+}
+
+func TestTickNotifiesWhenAWorkingWorkerGoesIdleOnAReadyPR(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "working")
+	h.pr("ENG-1", cleanPR("a1"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	assert.Empty(t, h.notifications())
+
+	h.setWorkerStatus("ENG-1", "idle")
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+}
+
+func TestTickDoesNotRepeatTheNotificationWhenTheSameHeadIsReadyAgain(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", cleanPR("a1"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	// A check reruns on the same commit and passes again.
+	h.pr("ENG-1", prState{head: "a1", checks: "PENDING", decision: "APPROVED", mergeable: "MERGEABLE"})
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	h.pr("ENG-1", cleanPR("a1"))
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Len(t, h.notifications(), 1)
+}
+
+func TestTickDoesNotRepeatTheNotificationWhenThePRIsUnreadableForATick(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", cleanPR("a1"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	h.writeFile("gh-fails", "")
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	h.removeFile("gh-fails")
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Len(t, h.notifications(), 1)
+}
+
+func TestTickNotifiesForTheNewHeadWhenAFailedNotificationIsFollowedByAPush(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", cleanPR("a1"))
+	h.writeFile("notify-fails", "")
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	h.removeFile("notify-fails")
+	h.pr("ENG-1", cleanPR("a2"))
+	for range 2 {
+		_, err = h.run("tick")
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+}
+
+func TestTickNotifiesOncePerReadyTicket(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.worker("ENG-2", "idle")
+	h.pr("ENG-1", cleanPR("a1"))
+	h.pr("ENG-2", prState{head: "b1", checks: "PENDING", mergeable: "MERGEABLE"})
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+}
+
+func TestTickDoesNotNotifyForAReadyPRWhileTheTicketIsNotInReview(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", cleanPR("a1"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	// Review sends the ticket back to In Progress and the worker pushes again.
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Len(t, h.notifications(), 1)
+}
+
+func TestTickLabelsABacklogTicketsKeptWorkspace(t *testing.T) {
+	h := newHarness(t)
+	h.gitTree("ENG-1")
+	h.worker("ENG-1", "")
+	h.linear.setElsewhere(ticket("ENG-1", "Backlog", "dispatch"))
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"w-ENG-1|⏸️ ENG-1 ticket ENG-1"}, h.renames())
+}
+
+func TestTickDoesNotRenameATicketWithoutAWorkspace(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "Needs Human", "dispatch"))
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, h.renames())
+}
+
+func TestTickRetriesARenameHerdrRefused(t *testing.T) {
+	h := newHarness(t)
+	real := h.dir + "/herdr-real"
+	h.script("herdr-real", string(h.readFile("herdr")))
+	h.script("herdr", `[ -f "`+h.dir+`/rename-fails" ] && [ "$1 $2" = "workspace rename" ] && exit 1
+exec "`+real+`" "$@"`)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "working")
+	h.writeFile("rename-fails", "")
+
+	_, stderr, err := h.runContext(t.Context(), "tick")
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "while renaming herdr workspace w-ENG-1")
+	assert.Empty(t, h.renames())
+
+	h.removeFile("rename-fails")
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1 ticket ENG-1"}, h.renames())
+}
+
+func TestTickDoesNotRenameOnADryRun(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "working")
+
+	_, err := h.run("tick", "--dry-run")
+	require.NoError(t, err)
+
+	assert.Empty(t, h.renames())
+}
+
+func TestTickTruncatesTheLabelAtFortyCharacters(t *testing.T) {
+	// "🟢 ENG-1 " is 8 characters, so 32 more fit and 33 do not.
+	for _, test := range []struct {
+		name  string
+		title string
+		want  string
+	}{
+		{name: "ExactlyFits", title: strings.Repeat("a", 32), want: "🟢 ENG-1 " + strings.Repeat("a", 32)},
+		{name: "OneOver", title: strings.Repeat("a", 33), want: "🟢 ENG-1 " + strings.Repeat("a", 31) + "…"},
+		{name: "MultiByteTitle", title: strings.Repeat("é", 40), want: "🟢 ENG-1 " + strings.Repeat("é", 31) + "…"},
+		{name: "ShortTitle", title: "fix", want: "🟢 ENG-1 fix"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			tk := ticket("ENG-1", "In Progress", "dispatch")
+			tk["title"] = test.title
+			h.tickets(tk)
+			h.worker("ENG-1", "working")
+
+			_, err := h.run("tick")
+			require.NoError(t, err)
+
+			assert.Equal(t, []string{"w-ENG-1|" + test.want}, h.renames())
+		})
+	}
+}
+
+func TestTickLabelsEveryWorkerAfterOneTick(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(
+		ticket("ENG-1", "In Progress", "dispatch"),
+		ticket("ENG-2", "In Review", "dispatch"),
+		ticket("ENG-3", "Needs Human", "dispatch"),
+	)
+	h.worker("ENG-1", "working")
+	h.worker("ENG-2", "idle")
+	h.worker("ENG-3", "blocked")
+	h.pr("ENG-2", cleanPR("a1"))
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.ElementsMatch(t, []string{
+		"w-ENG-1|🟢 ENG-1 ticket ENG-1",
+		"w-ENG-2|👀 ENG-2 ticket ENG-2",
+		"w-ENG-3|🔴 ENG-3 ticket ENG-3",
+	}, h.renames())
+}
+
+func TestTickRelabelsAReviewTicketWhenItsPRBecomesReady(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", prState{head: "a1", checks: "PENDING", mergeable: "MERGEABLE"})
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	h.pr("ENG-1", cleanPR("a1"))
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"w-ENG-1|🟡 ENG-1 ticket ENG-1", "w-ENG-1|👀 ENG-1 ticket ENG-1"}, h.renames())
+}
+
+func TestTickLabelsAnEscalatedTicketNeedsHumanOnTheSameTick(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "idle")
+	for range 2 {
+		_, err := h.run("tick")
+		require.NoError(t, err)
+	}
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+	require.Contains(t, out, "escalate ENG-1")
+
+	assert.Equal(t, "w-ENG-1|🔴 ENG-1 ticket ENG-1", h.renames()[len(h.renames())-1])
+}
+
+func TestTickFindsAWorkerWhoseLabelChangedWhenPromptingAReviewNudge(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
+
+	for range 2 {
+		_, err := h.run("tick")
+		require.NoError(t, err)
+	}
+
+	assert.Len(t, h.prompts(), 2)
+	assert.Empty(t, h.launches())
+}
+
+func TestTickDoesNotLaunchASecondWorkerForARenamedWorkspace(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "working")
+
+	for range 3 {
+		_, err := h.run("tick")
+		require.NoError(t, err)
+	}
+
+	assert.Empty(t, h.launches())
+	assert.Empty(t, h.closes())
+}
+
+func TestTickKeepsTheReadyLabelWhenThePRCannotBeRead(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", cleanPR("a1"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	h.writeFile("gh-fails", "")
+	_, _, err = h.runContext(t.Context(), "tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1 ticket ENG-1"}, h.renames())
+}

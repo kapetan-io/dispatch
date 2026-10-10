@@ -20,11 +20,10 @@ type PR struct {
 	Head string
 	// Problems are the reasons the PR needs work, phrased to follow "has".
 	Problems []string
-	// Ready means nothing is left for the worker or for GitHub to finish. Every
-	// check has finished and passed (a PR with no checks counts as passed), no
-	// review thread is open, changes are not requested, and GitHub says the PR
-	// merges cleanly. A check still running, as CodeRabbit's does until its
-	// review lands, or a merge state GitHub has not computed yet, is not ready.
+	// Ready means the PR needs no work and nothing is still running: every check
+	// has passed (a PR with no checks counts as passed) and GitHub says it
+	// merges cleanly. A running check, such as a bot review still in progress,
+	// or a merge state GitHub has not computed yet, is not ready.
 	Ready bool
 }
 
@@ -129,7 +128,8 @@ func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duratio
 	}
 	checksPassed := true
 	pr := PR{Number: n.Number, URL: n.URL, Head: n.HeadRefOid}
-	// PENDING and EXPECTED are not failures, because the worker has nothing to fix yet.
+	// PENDING and EXPECTED are not failures, because the worker has nothing to
+	// fix yet, but they are not passed either, so the PR is not ready.
 	for _, c := range n.Commits.Nodes {
 		if r := c.Commit.StatusCheckRollup; r != nil && (r.State == "FAILURE" || r.State == "ERROR") {
 			pr.Problems = append(pr.Problems, "a failed check")
