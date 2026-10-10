@@ -30,6 +30,7 @@ You are working with the user on a session that steers work rather than doing it
 - A "waiting on you" list that carries stale items.
 - Opening a PR the user didn't ask for.
 - Writing a test recipe into a ticket without checking it could work.
+- Name a worker's PR by its ticket, not its number: "the ENG-256 review", with the PR number in parentheses only if needed.
 
 ## Driving dispatch
 
