@@ -66,7 +66,9 @@ When N candidates converge on the same shape, that is a strong agreement signal.
 
 ## Phase F: Verify
 
-The synthesized artifact has to hold up under the same scrutiny as any other output. Verify every task output by checking the real thing directly. Do not infer from proxies, self-reports, or "it compiles." When verification fails, suspect the observation method before suspecting the system. Before the final message, re-read the artifact against the grounding material and report what you checked.
+The synthesized artifact has to hold up under the same scrutiny as any other output. Verify every task output by checking the real thing directly. Do not infer from proxies, self-reports, or "it compiles." When verification fails, suspect the observation method before suspecting the system.
+
+Before the final message, re-read the artifact against the grounding material and report what you checked in the synthesis note's verification result.
 
 If verification surfaces a problem the arena did not catch, either Phase A was wrong (re-frame and re-run) or one candidate caught it and you missed the graft (go back to Phase E). Don't paper over.
 
