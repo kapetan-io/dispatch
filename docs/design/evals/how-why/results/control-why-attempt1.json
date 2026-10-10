@@ -1,0 +1,461 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.296",
+  "startedAt": "2026-10-10T06:53:48.189Z",
+  "durationSeconds": 46,
+  "costUsd": 0.5652705,
+  "partial": false,
+  "suite": {
+    "root": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.zL3jRHivbJ/plugin",
+    "ablation": "none",
+    "judgeModel": "claude-opus-5-5",
+    "threshold": 0,
+    "concurrency": 4,
+    "plugins": [
+      {
+        "name": "dispatch",
+        "path": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.zL3jRHivbJ/plugin"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "why-backlog-first",
+      "dir": "cases/why-backlog-first",
+      "source": "mixed",
+      "promptMarkdown": "Use the why skill to answer this question about the repo in the current directory, then write the answer to answer.md. Linear and other MCPs may be unavailable. Say so in the answer if they are.\n\nWhy does the breakdown step create each ticket in Backlog and move it to Todo only after linking its blockers?",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"dispatch:why\""
+          }
+        },
+        {
+          "name": "cited",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "answer.md"
+            },
+            "pattern": "decision-log",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "reason",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says a ticket created straight into Todo could be promoted by a tick before its blockers were attached. FAIL if it gives another reason or none.",
+          "config": {
+            "criteria": "PASS if the answer says a ticket created straight into Todo could be promoted by a tick before its blockers were attached. FAIL if it gives another reason or none.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.6666666666666666,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.0976255,
+            "judgeCostUsd": 0.042844,
+            "durationSeconds": 25,
+            "startedAt": "2026-10-10T06:53:48.211Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-BSzR3d/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file answer.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does breakdown create each ticket in Backlog and move it to Todo only after linking its blockers?\n\n**Short answer:** Todo is the state that tells the dispatcher a ticket is ready to be picked up. A ticket created straight into Todo could be started before its blocker relations exist, so the worker would run it without waiting on the tickets it depends on.\n\n- Creating a ticket and linking its blockers are separate calls, so a ticket has a window where it exists but has no blockers yet.\n- If the ticket were already in Todo during that window, the dispatcher could see it as unblocked and launch a worker on it.\n- Backlog is not picked up, so it is safe to hold a ticket there while the blockers are added.\n- Moving to Todo is the last step, so the ticket becomes visible to the dispatcher already carrying its full set of blockers.\n- This also makes a half-finished breakdown safe. If it fails partway, the leftover tickets sit in Backlog and nothing starts early.\n\n## Caveats\n\n- This is the usual engineering rationale for the pattern. I did not check it against this repo's breakdown skill, git history, PRs or tickets, so it is not confirmed as the authors' stated reason.\n- I did not query Linear or any other MCP, so no issue-tracker or chat evidence is included.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.6666666666666666,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.09201469999999999,
+            "judgeCostUsd": 0.037312,
+            "durationSeconds": 21,
+            "startedAt": "2026-10-10T06:53:48.211Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-ZPO5SL/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file answer.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does breakdown create each ticket in Backlog and move it to Todo only after linking its blockers?\n\n**Caveat:** I didn't check this against the repo. The `why` skill told me to answer in one pass without reading git history or docs, so this is the usual engineering reason, not something I confirmed. I also didn't query Linear or any other MCP. No evidence was gathered from them, so treat them as unavailable for this answer.\n\n## Likely reason\n\nBacklog is a holding state that a dispatcher doesn't act on. Todo is the state it picks work up from.\n\n- Creating the ticket and linking its blockers are separate API calls, so the ticket exists for a short time without its blockers.\n- If the ticket were created in Todo, a dispatcher polling in that window could see it as unblocked and start work on it before its dependencies were recorded.\n- Creating in Backlog and promoting to Todo last means a ticket only becomes eligible once its dependency graph is complete.\n- Creating all the tickets first and linking afterward also lets blockers point at sibling tickets that didn't exist yet when the earlier ones were created.\n\n## To confirm\n\nRead the breakdown skill's text and the history around it, for example the PR that introduced the Backlog-then-Todo ordering. Then check whether the repo gives a different reason.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.6666666666666666,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "why-ready-notify",
+      "dir": "cases/why-ready-notify",
+      "source": "mixed",
+      "promptMarkdown": "Use the why skill to answer this question about the repo in the current directory, then write the answer to answer.md. Linear and other MCPs may be unavailable. Say so in the answer if they are.\n\nWhy does dispatch notify me when a pull request is ready for review?",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"dispatch:why\""
+          }
+        },
+        {
+          "name": "cited",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "answer.md"
+            },
+            "pattern": "ENG-256|decision-log",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "reason",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says an In Review ticket stays In Review while the worker fixes findings, so the user had to check Linear, GitHub and herdr by hand to see when a PR was ready. FAIL if it gives another reason or none.",
+          "config": {
+            "criteria": "PASS if the answer says an In Review ticket stays In Review while the worker fixes findings, so the user had to check Linear, GitHub and herdr by hand to see when a PR was ready. FAIL if it gives another reason or none.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 5,
+            "costUsd": 0.0874756,
+            "judgeCostUsd": 0.024919999999999998,
+            "durationSeconds": 20,
+            "startedAt": "2026-10-10T06:53:48.211Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-7TszUT/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file answer.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# Why does dispatch notify me when a pull request is ready for review?\n\n**Short answer:** Dispatch workers run autonomously, so the human is the bottleneck at review time. The notification tells you the PR is waiting on you, so it doesn't sit unseen.\n\n**What the repo shows:** `ready_test.go` shows that a tick sends `notify ENG-1: PR ready for review` when a PR is ready.\n- It does not notify for PRs that aren't ready.\n- It does not notify while the ticket isn't in review.\n- If the notify command fails, it logs `while notifying about ENG-1` to stderr, and a later tick notifies again (`ready_test.go:97-120`).\n\nDispatch sends similar notifications when a worker is blocked or a ticket enters Needs Human (`nudge_test.go`, `parents_test.go`). Ready-for-review is one of several \"a human is needed\" signals.\n\n**Not verified:** I did not read git history, PRs, or design docs, so I can't cite the original decision. The motivation above is the usual rationale, inferred from the tests. Linear and other MCPs were not queried and may be unavailable, so no issue-tracker or chat evidence is included.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.0751317,
+            "judgeCostUsd": 0.0214,
+            "durationSeconds": 18,
+            "startedAt": "2026-10-10T06:53:48.211Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-mEEX53/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file answer.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# Why does dispatch notify me when a pull request is ready for review?\n\n**Caveat: this is an inference, not a verified finding.** The `why` skill told me to answer in one pass from common engineering reasons. It said not to run git or gh, read the docs, or spawn agents. I did none of that. I didn't read the repo's code, history, PRs or tickets. I didn't query Linear or any other MCP either, so none of them contributed evidence. The skill's instruction to state the common reason \"as fact\" is not something the evidence supports, so I haven't done that.\n\n## Most likely reason\n\nDispatch runs workers autonomously: a worker builds a ticket into a pull request without a person watching. A pull request that is ready for review is the point where the work needs a human decision (review and merge). Without a notification, the PR could sit unnoticed and the autonomous work would stall waiting on you. Notifying you at that handoff keeps the human in the loop only where one is needed.\n\n## What would confirm it\n\n- The code or skill text that sends the notification (`dispatch:build` and the launcher are the likely places).\n- The PR or Linear ticket that added the notification, which would state the intended reason.\n- Whether Linear or other MCPs are available. I did not check.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.3333333333333333,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "why-unknown-keys",
+      "dir": "cases/why-unknown-keys",
+      "source": "mixed",
+      "promptMarkdown": "Use the why skill to answer this question about the repo in the current directory, then write the answer to answer.md. Linear and other MCPs may be unavailable. Say so in the answer if they are.\n\nWhy does dispatch reject unknown config keys?",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"dispatch:why\""
+          }
+        },
+        {
+          "name": "cited",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "answer.md"
+            },
+            "pattern": "334430a",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "reason",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says a mistyped setting would otherwise fall back to its default without anyone noticing, so loading the config fails with an error that names the setting and the file. FAIL if it gives another reason or none.",
+          "config": {
+            "criteria": "PASS if the answer says a mistyped setting would otherwise fall back to its default without anyone noticing, so loading the config fails with an error that names the setting and the file. FAIL if it gives another reason or none.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 5,
+            "costUsd": 0.11261279999999999,
+            "judgeCostUsd": 0.043844,
+            "durationSeconds": 27,
+            "startedAt": "2026-10-10T06:54:06.616Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-DxLG7w/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file answer.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n**Short answer (inferred, not verified):** a misspelled or unsupported key in `config.toml` is otherwise silently ignored. For example, someone sets `needs_human.status = \"Triage Hold\"` and gets no error and no effect. Rejecting unknown keys at load time turns that silent failure into an immediate, visible one.\n\n**Evidence found:** one grep of the repo. It found only eval scenario material, not the real decision record:\n- `docs/design/evals/needs-human-comment/scenarios/unknown-keys.md` describes ticket ENG-306, \"Reject unknown keys in config.toml\". The ticket says to reject unknown keys at any depth.\n- The eval results (e.g. `results/final/unknown-keys-2.md`) say the loader currently ignores unknown keys. They call the silent failure \"what this ticket is meant to end\". They also note the blueprint's example config contains two keys the loader has never read, so strict rejection would break that example.\n\nThese are synthetic eval scenarios and their outputs. They are not the real ENG-306 ticket, PR or commit discussion, so they don't prove the motivation.\n\n**Not checked:**\n- Git history and PRs, the docs, and the loader source. The `why` skill told me to skip these.\n- Linear and other MCPs. I didn't query them, so I can't say whether they are available. The real ENG-306 ticket and its discussion were not consulted.\n\nFor a verified answer, check the ENG-306 ticket, `git log -S` on the config loader, and how the blueprint's example config was resolved.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 5,
+            "costUsd": 0.1004102,
+            "judgeCostUsd": 0.034999999999999996,
+            "durationSeconds": 26,
+            "startedAt": "2026-10-10T06:54:07.728Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-BNqx5W/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file answer.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n**Short answer:** so a misspelled or unsupported key in `config.toml` fails loudly instead of being silently ignored.\n\n**Evidence (from the repo only):**\n- The ticket is ENG-306, \"Reject unknown keys in config.toml\". It asks for rejection \"at any depth\" (`docs/design/evals/needs-human-comment/scenarios/unknown-keys.md:1`).\n- Before this change the loader ignored keys it didn't know. The eval results describe the failure: someone who sets `needs_human.status = \"Triage Hold\"` \"gets no error and no effect. That silent failure is what this ticket is meant to end\" (`docs/design/evals/needs-human-comment/results/final/unknown-keys-2.md:12`).\n- A related rule shows up elsewhere in the design docs. Unknown request fields get a teaching error that names the closest expected field (`docs/design/evals/size-check/inputs/graph.md:337`). That points to a general preference for errors that tell the user how to fix the input.\n\n**Known tension:** the blueprint's example config contains two keys the loader's struct doesn't read. A strict check makes that documented example fail to load. The eval scenarios treat resolving this as a product decision for the user (`scenarios/unknown-keys.md:12`).\n\n**Limits of this answer:**\n- I did not search git history, PRs or docs, and I did not query Linear or other MCPs. I was told to skip those, and Linear and other MCPs may be unavailable. The ticket's own discussion, and any PR rationale, are unchecked.\n- The strongest evidence is eval fixtures that describe ENG-306. I did not read the loader code, so I haven't confirmed how rejection is implemented or what the final behavior is.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.3333333333333333,
+        "passRate": 0
+      }
+    }
+  ],
+  "aggregates": {
+    "casesTotal": 3,
+    "casesPassed": 3,
+    "overallScore": 0.4444444444444444,
+    "overallPassRate": 0
+  }
+}

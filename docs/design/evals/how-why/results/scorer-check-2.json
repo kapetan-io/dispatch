@@ -1,0 +1,408 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.296",
+  "startedAt": "2026-10-10T07:08:55.340Z",
+  "durationSeconds": 8,
+  "costUsd": 0.2035491,
+  "partial": false,
+  "suite": {
+    "root": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.XNkSadhtT0/plugin",
+    "ablation": "none",
+    "judgeModel": "claude-opus-5-5",
+    "tagFilters": [
+      "scorer"
+    ],
+    "threshold": 0,
+    "concurrency": 4,
+    "plugins": [
+      {
+        "name": "dispatch",
+        "path": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.XNkSadhtT0/plugin"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "scorer-how-nudge-bad",
+      "dir": "cases/scorer-how-nudge-bad",
+      "source": "mixed",
+      "promptMarkdown": "Copy canned.md to answer.md without changing it.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "names-path",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "answer.md"
+            },
+            "pattern": "[\\w/-]+\\.go\\b",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "paths",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "answer.md"
+            },
+            "pattern": "(?<![\\w/.~-])(?:(?!(?:docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals/commit\\-message/arms/always\\-body\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message/arms/always\\-body\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals/commit\\-message/arms/current\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message/arms/attempt\\-1\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message/arms/current\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/evals/commit\\-message/arms/current\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals/commit\\-message/cases\\.json|docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals/commit\\-message/README\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/skills/commit\\-message/SKILL\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message/cases\\.json|docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals/commit\\-message/log\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/skills/commit\\-message/SKILL\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/evals/commit\\-message/cases\\.json|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message/README\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/skills/commit\\-message/SKILL\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/evals/commit\\-message/README\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals/commit\\-message/arms|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message/log\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message/arms|docs/design/evals/hillclimb/cases/already\\-passing/fixture/skills/commit\\-message|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/evals/commit\\-message/arms|docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals/commit\\-message|docs/design/evals/hillclimb/cases/after\\-failed/fixture/skills/commit\\-message|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/skills/commit\\-message|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/evals/commit\\-message|docs/design/evals/needs\\-human\\-comment/results/current/person\\-review\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/current/stop\\-patching\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/current/stop\\-patching\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/current/person\\-review\\-1\\.md|docs/design/evals/needs\\-human\\-comment/results/current/stop\\-patching\\-1\\.md|docs/design/evals/needs\\-human\\-comment/results/current/person\\-review\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/current/person\\-review\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/current/person\\-review\\-2\\.md|docs/design/evals/needs\\-human\\-comment/results/current/stop\\-patching\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/current/stop\\-patching\\-2\\.md|docs/design/evals/needs\\-human\\-comment/results/current/unknown\\-keys\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/current/unknown\\-keys\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/current/unknown\\-keys\\-2\\.md|docs/design/evals/needs\\-human\\-comment/results/current/unknown\\-keys\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/current/unknown\\-keys\\-1\\.md|docs/design/evals/needs\\-human\\-comment/results/final/stop\\-patching\\-2\\.md|docs/design/evals/needs\\-human\\-comment/results/final/stop\\-patching\\-1\\.md|docs/design/evals/needs\\-human\\-comment/results/final/stop\\-patching\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/final/person\\-review\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/final/person\\-review\\-1\\.md|docs/design/evals/needs\\-human\\-comment/results/final/stop\\-patching\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/final/stop\\-patching\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/final/person\\-review\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/final/person\\-review\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/final/person\\-review\\-2\\.md|docs/design/evals/needs\\-human\\-comment/results/final/unknown\\-keys\\-2\\.md|docs/design/evals/needs\\-human\\-comment/results/final/unknown\\-keys\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/final/unknown\\-keys\\-1\\.md|docs/design/evals/needs\\-human\\-comment/results/final/unknown\\-keys\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/final/unknown\\-keys\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/current/max\\-range\\-1\\.md|docs/design/evals/needs\\-human\\-comment/results/current/max\\-range\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/current/max\\-range\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/current/max\\-range\\-2\\.md|docs/design/evals/needs\\-human\\-comment/results/current/max\\-range\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/final/max\\-range\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/final/max\\-range\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/final/max\\-range\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/final/max\\-range\\-1\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/queue\\.md|docs/design/evals/needs\\-human\\-comment/results/final/max\\-range\\-2\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/post\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/skills|docs/design/evals/needs\\-human\\-comment/scenarios/stop\\-patching\\.md|docs/design/evals/needs\\-human\\-comment/scenarios/person\\-review\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/queue\\.md|docs/design/evals/needs\\-human\\-comment/scenarios/unknown\\-keys\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/queue\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/post\\.md|docs/design/evals/ticket\\-claims/tickets/config\\-default\\-true\\.md|docs/design/evals/hillclimb/cases/already\\-passing/scaffold\\.sh|docs/design/evals/hillclimb/cases/after\\-failed/fixture/skills|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/post\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/skills|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals|docs/design/evals/needs\\-human\\-comment/scenarios/max\\-range\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/evals|docs/design/evals/hillclimb/cases/already\\-passing/case\\.yaml|docs/design/evals/hillclimb/cases/already\\-passing/prompt\\.md|docs/design/evals/hillclimb/cases/after\\-failed/scaffold\\.sh|docs/design/evals/ticket\\-claims/tickets/config\\-default\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/scaffold\\.sh|docs/design/evals/hillclimb/cases/already\\-passing/fixture|docs/design/evals/ticket\\-claims/tickets/hint\\-bug\\-true\\.md|docs/design/evals/hillclimb/cases/after\\-failed/prompt\\.md|docs/design/evals/hillclimb/cases/after\\-failed/case\\.yaml|docs/design/evals/hillclimb/cases/fresh\\-suite/case\\.yaml|docs/design/evals/ticket\\-claims/tickets/unknown\\-keys\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/prompt\\.md|docs/design/evals/ticket\\-claims/tickets/expand\\-home\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture|docs/design/evals/size\\-check/arms/complete\\-pieces\\-4\\.md|docs/design/evals/size\\-check/arms/complete\\-pieces\\-2\\.md|docs/design/evals/size\\-check/arms/complete\\-pieces\\-3\\.md|docs/design/evals/ticket\\-claims/tickets/empty\\-teams\\.md|docs/design/evals/size\\-check/arms/complete\\-pieces\\-5\\.md|docs/design/evals/ticket\\-claims/tickets/nudge\\-floor\\.md|docs/design/evals/ticket\\-claims/tickets/hint\\-cause\\.md|docs/design/evals/needs\\-human\\-comment/arms/current\\.md|docs/design/evals/ticket\\-claims/tickets/hint\\-fixed\\.md|docs/design/evals/needs\\-human\\-comment/results/current|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture|docs/design/evals/size\\-check/arms/complete\\-pieces\\.md|docs/design/evals/ticket\\-claims/tickets/max\\-range\\.md|docs/design/evals/size\\-check/inputs/did\\-you\\-mean\\.md|docs/design/evals/needs\\-human\\-comment/results/final|docs/design/evals/size\\-check/inputs/slip\\-stream\\.md|docs/design/evals/size\\-check/inputs/masked\\-blob\\.md|docs/design/evals/size\\-check/inputs/tiger\\-wave1\\.md|docs/design/evals/size\\-check/arms/own\\-evidence\\.md|docs/design/evals/size\\-check/inputs/change\\-bot\\.md|docs/design/evals/ticket\\-claims/arms/attempt\\-1\\.md|docs/design/evals/ticket\\-claims/arms/attempt\\-3\\.md|docs/design/evals/ticket\\-claims/arms/attempt\\-2\\.md|docs/design/handoff\\-autonomous\\-workflow\\-design\\.md|docs/design/evals/hillclimb/cases/already\\-passing|docs/design/evals/size\\-check/inputs/heartbeat\\.md|docs/design/evals/size\\-check/inputs/docs\\-cmd\\.md|docs/design/evals/needs\\-human\\-comment/scenarios|docs/design/evals/needs\\-human\\-comment/README\\.md|docs/design/evals/ticket\\-claims/arms/trust\\-2\\.md|docs/design/evals/ticket\\-claims/arms/current\\.md|docs/design/evals/size\\-check/inputs/shallow\\.md|docs/design/evals/hillclimb/cases/after\\-failed|docs/design/evals/size\\-check/inputs/partial\\.md|docs/design/evals/ticket\\-claims/arms/trust\\.md|docs/design/evals/needs\\-human\\-comment/results|docs/design/evals/size\\-check/arms/by\\-layer\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite|docs/design/evals/ticket\\-claims/arms/seed\\.md|docs/design/evals/size\\-check/inputs/shape\\.md|docs/design/evals/size\\-check/arms/current\\.md|docs/design/evals/size\\-check/inputs/tiger\\.md|docs/design/evals/size\\-check/inputs/fetch\\.md|docs/design/evals/size\\-check/inputs/graph\\.md|docs/design/evals/hillclimb/arms/careless\\.md|docs/design/evals/size\\-check/inputs/auth\\.md|docs/design/evals/needs\\-human\\-comment/arms|docs/design/evals/size\\-check/inputs/dlq\\.md|docs/design/evals/ticket\\-claims/cases\\.json|docs/design/evals/size\\-check/to_viewer\\.py|docs/design/evals/ticket\\-claims/README\\.md|docs/design/evals/ticket\\-claims/tickets|docs/design/evals/size\\-check/cases\\.json|docs/design/evals/size\\-check/report\\.py|docs/design/evals/size\\-check/README\\.md|docs/design/evals/ticket\\-claims/log\\.md|docs/design/evals/size\\-check/build\\.py|docs/design/evals/hillclimb/README\\.md|docs/design/evals/needs\\-human\\-comment|internal/claimeval/claimeval_test\\.go|docs/design/evals/ticket\\-claims/arms|docs/design/evals/size\\-check/run\\.sh|internal/pullrequest/pullrequest\\.go|docs/design/evals/size\\-check/log\\.md|internal/commenteval/commenteval\\.go|docs/design/evals/size\\-check/inputs|docs/design/evals/hillclimb/log\\.md|docs/design/evals/hillclimb/cases|docs/design/evals/size\\-check/arms|docs/design/evals/hillclimb/arms|internal/claimeval/claimeval\\.go|internal/reconcile/reconcile\\.go|internal/treehouse/treehouse\\.go|docs/design/evals/ticket\\-claims|internal/reconcile/parents\\.go|internal/launcher/launcher\\.go|docs/design/evals/size\\-check|internal/reconcile/retire\\.go|internal/claimeval/report\\.go|internal/reconcile/labels\\.go|docs/design/decision\\-log\\.md|docs/design/evals/hillclimb|\\.github/workflows/test\\.yml|\\.claude\\-plugin/plugin\\.json|skills/hillclimb/SKILL\\.md|internal/worker/worker\\.go|internal/linear/linear\\.go|internal/notify/notify\\.go|internal/config/config\\.go|skills/supervise/SKILL\\.md|docs/design/blueprint\\.md|internal/herdr/herdr\\.go|internal/cache/cache\\.go|cmd/commenteval/main\\.go|skills/ticket/SKILL\\.md|skills/build/SKILL\\.md|cmd/claimeval/main\\.go|internal/lock/lock\\.go|cmd/dispatch/main\\.go|internal/pullrequest|internal/commenteval|scripts/shims/claude|bin/dispatch\\-launch|ticket_hint_test\\.go|commenteval_test\\.go|internal/treehouse|internal/reconcile|internal/claimeval|\\.github/workflows|internal/launcher|docs/design/evals|skills/supervise|hooks/hooks\\.json|teardown_test\\.go|dispatch_test\\.go|skills/hillclimb|parents_test\\.go|cmd/commenteval|internal/config|comment_test\\.go|internal/linear|internal/worker|internal/notify|internal/herdr|\\.claude\\-plugin|review_test\\.go|treehouse\\.toml|launch_test\\.go|config_test\\.go|internal/cache|ticket_hint\\.go|docs/config\\.md|nudge_test\\.go|internal/lock|skills/ticket|ready_test\\.go|cmd/claimeval|docs/guide\\.md|scripts/shims|skills/build|cmd/dispatch|docs_test\\.go|dispatch\\.go|docs/design|\\.gitignore|CLAUDE\\.md|README\\.md|retire\\.go|internal|scripts|\\.github|tell\\.go|go\\.mod|skills|go\\.sum|hooks|docs|cmd|bin)(?![\\w/-]))(?:\\.claude\\-plugin|\\.github|bin|cmd|docs|hooks|internal|scripts|skills)/[\\w./-]*\\w|(?!(?:ticket_hint_test\\.go|commenteval_test\\.go|claimeval_test\\.go|teardown_test\\.go|dispatch_test\\.go|parents_test\\.go|comment_test\\.go|commenteval\\.go|launch_test\\.go|ticket_hint\\.go|review_test\\.go|pullrequest\\.go|config_test\\.go|ready_test\\.go|nudge_test\\.go|claimeval\\.go|reconcile\\.go|treehouse\\.go|docs_test\\.go|dispatch\\.go|launcher\\.go|parents\\.go|report\\.go|retire\\.go|notify\\.go|worker\\.go|config\\.go|linear\\.go|labels\\.go|herdr\\.go|cache\\.go|tell\\.go|lock\\.go|main\\.go)(?![\\w-]))[A-Za-z_][\\w-]*\\.go\\b)",
+            "flags": "",
+            "match": "not_contains"
+          }
+        },
+        {
+          "name": "flow",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says an idle In Progress worker gets a stall nudge, that the count of earlier nudges is compared with a limit (NudgeLimit), and that the ticket is escalated instead of nudged once the limit is reached. FAIL if any of the three is missing or wrong.",
+          "config": {
+            "criteria": "PASS if the answer says an idle In Progress worker gets a stall nudge, that the count of earlier nudges is compared with a limit (NudgeLimit), and that the ticket is escalated instead of nudged once the limit is reached. FAIL if any of the three is missing or wrong.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.3333333333333333,
+            "passed": false,
+            "turns": 2,
+            "costUsd": 0.05225490000000001,
+            "judgeCostUsd": 0.016812,
+            "durationSeconds": 7,
+            "startedAt": "2026-10-10T07:08:55.361Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-1hDRFh/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "names-path",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched [\\w/-]+\\.go\\b",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "paths",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern found (expected absent)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "flow",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# Nudging an idle worker\n\nThe scheduler in internal/scheduler/nudger.go polls every worker on a timer and sends a nudge whenever a worker has been quiet for five minutes. It retries forever, with exponential backoff kept in internal/scheduler/backoff.go.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.3333333333333333,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "scorer-how-nudge-good",
+      "dir": "cases/scorer-how-nudge-good",
+      "source": "mixed",
+      "promptMarkdown": "Copy canned.md to answer.md without changing it.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "names-path",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "answer.md"
+            },
+            "pattern": "[\\w/-]+\\.go\\b",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "paths",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "answer.md"
+            },
+            "pattern": "(?<![\\w/.~-])(?:(?!(?:docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals/commit\\-message/arms/always\\-body\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message/arms/always\\-body\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals/commit\\-message/arms/current\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message/arms/attempt\\-1\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message/arms/current\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/evals/commit\\-message/arms/current\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals/commit\\-message/cases\\.json|docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals/commit\\-message/README\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/skills/commit\\-message/SKILL\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message/cases\\.json|docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals/commit\\-message/log\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/skills/commit\\-message/SKILL\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/evals/commit\\-message/cases\\.json|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message/README\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/skills/commit\\-message/SKILL\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/evals/commit\\-message/README\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals/commit\\-message/arms|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message/log\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message/arms|docs/design/evals/hillclimb/cases/already\\-passing/fixture/skills/commit\\-message|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/evals/commit\\-message/arms|docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals/commit\\-message|docs/design/evals/hillclimb/cases/after\\-failed/fixture/skills/commit\\-message|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals/commit\\-message|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/skills/commit\\-message|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/evals/commit\\-message|docs/design/evals/needs\\-human\\-comment/results/current/person\\-review\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/current/stop\\-patching\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/current/stop\\-patching\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/current/person\\-review\\-1\\.md|docs/design/evals/needs\\-human\\-comment/results/current/stop\\-patching\\-1\\.md|docs/design/evals/needs\\-human\\-comment/results/current/person\\-review\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/current/person\\-review\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/current/person\\-review\\-2\\.md|docs/design/evals/needs\\-human\\-comment/results/current/stop\\-patching\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/current/stop\\-patching\\-2\\.md|docs/design/evals/needs\\-human\\-comment/results/current/unknown\\-keys\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/current/unknown\\-keys\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/current/unknown\\-keys\\-2\\.md|docs/design/evals/needs\\-human\\-comment/results/current/unknown\\-keys\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/current/unknown\\-keys\\-1\\.md|docs/design/evals/needs\\-human\\-comment/results/final/stop\\-patching\\-2\\.md|docs/design/evals/needs\\-human\\-comment/results/final/stop\\-patching\\-1\\.md|docs/design/evals/needs\\-human\\-comment/results/final/stop\\-patching\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/final/person\\-review\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/final/person\\-review\\-1\\.md|docs/design/evals/needs\\-human\\-comment/results/final/stop\\-patching\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/final/stop\\-patching\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/final/person\\-review\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/final/person\\-review\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/final/person\\-review\\-2\\.md|docs/design/evals/needs\\-human\\-comment/results/final/unknown\\-keys\\-2\\.md|docs/design/evals/needs\\-human\\-comment/results/final/unknown\\-keys\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/final/unknown\\-keys\\-1\\.md|docs/design/evals/needs\\-human\\-comment/results/final/unknown\\-keys\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/final/unknown\\-keys\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/current/max\\-range\\-1\\.md|docs/design/evals/needs\\-human\\-comment/results/current/max\\-range\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/current/max\\-range\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/current/max\\-range\\-2\\.md|docs/design/evals/needs\\-human\\-comment/results/current/max\\-range\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/final/max\\-range\\-3\\.md|docs/design/evals/needs\\-human\\-comment/results/final/max\\-range\\-5\\.md|docs/design/evals/needs\\-human\\-comment/results/final/max\\-range\\-4\\.md|docs/design/evals/needs\\-human\\-comment/results/final/max\\-range\\-1\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/queue\\.md|docs/design/evals/needs\\-human\\-comment/results/final/max\\-range\\-2\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/post\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/skills|docs/design/evals/needs\\-human\\-comment/scenarios/stop\\-patching\\.md|docs/design/evals/needs\\-human\\-comment/scenarios/person\\-review\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/queue\\.md|docs/design/evals/needs\\-human\\-comment/scenarios/unknown\\-keys\\.md|docs/design/evals/hillclimb/cases/already\\-passing/fixture/evals|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/queue\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture/post\\.md|docs/design/evals/ticket\\-claims/tickets/config\\-default\\-true\\.md|docs/design/evals/hillclimb/cases/already\\-passing/scaffold\\.sh|docs/design/evals/hillclimb/cases/after\\-failed/fixture/skills|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/post\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/skills|docs/design/evals/hillclimb/cases/after\\-failed/fixture/evals|docs/design/evals/needs\\-human\\-comment/scenarios/max\\-range\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture/evals|docs/design/evals/hillclimb/cases/already\\-passing/case\\.yaml|docs/design/evals/hillclimb/cases/already\\-passing/prompt\\.md|docs/design/evals/hillclimb/cases/after\\-failed/scaffold\\.sh|docs/design/evals/ticket\\-claims/tickets/config\\-default\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/scaffold\\.sh|docs/design/evals/hillclimb/cases/already\\-passing/fixture|docs/design/evals/ticket\\-claims/tickets/hint\\-bug\\-true\\.md|docs/design/evals/hillclimb/cases/after\\-failed/prompt\\.md|docs/design/evals/hillclimb/cases/after\\-failed/case\\.yaml|docs/design/evals/hillclimb/cases/fresh\\-suite/case\\.yaml|docs/design/evals/ticket\\-claims/tickets/unknown\\-keys\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite/prompt\\.md|docs/design/evals/ticket\\-claims/tickets/expand\\-home\\.md|docs/design/evals/hillclimb/cases/after\\-failed/fixture|docs/design/evals/size\\-check/arms/complete\\-pieces\\-4\\.md|docs/design/evals/size\\-check/arms/complete\\-pieces\\-2\\.md|docs/design/evals/size\\-check/arms/complete\\-pieces\\-3\\.md|docs/design/evals/ticket\\-claims/tickets/empty\\-teams\\.md|docs/design/evals/size\\-check/arms/complete\\-pieces\\-5\\.md|docs/design/evals/ticket\\-claims/tickets/nudge\\-floor\\.md|docs/design/evals/ticket\\-claims/tickets/hint\\-cause\\.md|docs/design/evals/needs\\-human\\-comment/arms/current\\.md|docs/design/evals/ticket\\-claims/tickets/hint\\-fixed\\.md|docs/design/evals/needs\\-human\\-comment/results/current|docs/design/evals/hillclimb/cases/fresh\\-suite/fixture|docs/design/evals/size\\-check/arms/complete\\-pieces\\.md|docs/design/evals/ticket\\-claims/tickets/max\\-range\\.md|docs/design/evals/size\\-check/inputs/did\\-you\\-mean\\.md|docs/design/evals/needs\\-human\\-comment/results/final|docs/design/evals/size\\-check/inputs/slip\\-stream\\.md|docs/design/evals/size\\-check/inputs/masked\\-blob\\.md|docs/design/evals/size\\-check/inputs/tiger\\-wave1\\.md|docs/design/evals/size\\-check/arms/own\\-evidence\\.md|docs/design/evals/size\\-check/inputs/change\\-bot\\.md|docs/design/evals/ticket\\-claims/arms/attempt\\-1\\.md|docs/design/evals/ticket\\-claims/arms/attempt\\-3\\.md|docs/design/evals/ticket\\-claims/arms/attempt\\-2\\.md|docs/design/handoff\\-autonomous\\-workflow\\-design\\.md|docs/design/evals/hillclimb/cases/already\\-passing|docs/design/evals/size\\-check/inputs/heartbeat\\.md|docs/design/evals/size\\-check/inputs/docs\\-cmd\\.md|docs/design/evals/needs\\-human\\-comment/scenarios|docs/design/evals/needs\\-human\\-comment/README\\.md|docs/design/evals/ticket\\-claims/arms/trust\\-2\\.md|docs/design/evals/ticket\\-claims/arms/current\\.md|docs/design/evals/size\\-check/inputs/shallow\\.md|docs/design/evals/hillclimb/cases/after\\-failed|docs/design/evals/size\\-check/inputs/partial\\.md|docs/design/evals/ticket\\-claims/arms/trust\\.md|docs/design/evals/needs\\-human\\-comment/results|docs/design/evals/size\\-check/arms/by\\-layer\\.md|docs/design/evals/hillclimb/cases/fresh\\-suite|docs/design/evals/ticket\\-claims/arms/seed\\.md|docs/design/evals/size\\-check/inputs/shape\\.md|docs/design/evals/size\\-check/arms/current\\.md|docs/design/evals/size\\-check/inputs/tiger\\.md|docs/design/evals/size\\-check/inputs/fetch\\.md|docs/design/evals/size\\-check/inputs/graph\\.md|docs/design/evals/hillclimb/arms/careless\\.md|docs/design/evals/size\\-check/inputs/auth\\.md|docs/design/evals/needs\\-human\\-comment/arms|docs/design/evals/size\\-check/inputs/dlq\\.md|docs/design/evals/ticket\\-claims/cases\\.json|docs/design/evals/size\\-check/to_viewer\\.py|docs/design/evals/ticket\\-claims/README\\.md|docs/design/evals/ticket\\-claims/tickets|docs/design/evals/size\\-check/cases\\.json|docs/design/evals/size\\-check/report\\.py|docs/design/evals/size\\-check/README\\.md|docs/design/evals/ticket\\-claims/log\\.md|docs/design/evals/size\\-check/build\\.py|docs/design/evals/hillclimb/README\\.md|docs/design/evals/needs\\-human\\-comment|internal/claimeval/claimeval_test\\.go|docs/design/evals/ticket\\-claims/arms|docs/design/evals/size\\-check/run\\.sh|internal/pullrequest/pullrequest\\.go|docs/design/evals/size\\-check/log\\.md|internal/commenteval/commenteval\\.go|docs/design/evals/size\\-check/inputs|docs/design/evals/hillclimb/log\\.md|docs/design/evals/hillclimb/cases|docs/design/evals/size\\-check/arms|docs/design/evals/hillclimb/arms|internal/claimeval/claimeval\\.go|internal/reconcile/reconcile\\.go|internal/treehouse/treehouse\\.go|docs/design/evals/ticket\\-claims|internal/reconcile/parents\\.go|internal/launcher/launcher\\.go|docs/design/evals/size\\-check|internal/reconcile/retire\\.go|internal/claimeval/report\\.go|internal/reconcile/labels\\.go|docs/design/decision\\-log\\.md|docs/design/evals/hillclimb|\\.github/workflows/test\\.yml|\\.claude\\-plugin/plugin\\.json|skills/hillclimb/SKILL\\.md|internal/worker/worker\\.go|internal/linear/linear\\.go|internal/notify/notify\\.go|internal/config/config\\.go|skills/supervise/SKILL\\.md|docs/design/blueprint\\.md|internal/herdr/herdr\\.go|internal/cache/cache\\.go|cmd/commenteval/main\\.go|skills/ticket/SKILL\\.md|skills/build/SKILL\\.md|cmd/claimeval/main\\.go|internal/lock/lock\\.go|cmd/dispatch/main\\.go|internal/pullrequest|internal/commenteval|scripts/shims/claude|bin/dispatch\\-launch|ticket_hint_test\\.go|commenteval_test\\.go|internal/treehouse|internal/reconcile|internal/claimeval|\\.github/workflows|internal/launcher|docs/design/evals|skills/supervise|hooks/hooks\\.json|teardown_test\\.go|dispatch_test\\.go|skills/hillclimb|parents_test\\.go|cmd/commenteval|internal/config|comment_test\\.go|internal/linear|internal/worker|internal/notify|internal/herdr|\\.claude\\-plugin|review_test\\.go|treehouse\\.toml|launch_test\\.go|config_test\\.go|internal/cache|ticket_hint\\.go|docs/config\\.md|nudge_test\\.go|internal/lock|skills/ticket|ready_test\\.go|cmd/claimeval|docs/guide\\.md|scripts/shims|skills/build|cmd/dispatch|docs_test\\.go|dispatch\\.go|docs/design|\\.gitignore|CLAUDE\\.md|README\\.md|retire\\.go|internal|scripts|\\.github|tell\\.go|go\\.mod|skills|go\\.sum|hooks|docs|cmd|bin)(?![\\w/-]))(?:\\.claude\\-plugin|\\.github|bin|cmd|docs|hooks|internal|scripts|skills)/[\\w./-]*\\w|(?!(?:ticket_hint_test\\.go|commenteval_test\\.go|claimeval_test\\.go|teardown_test\\.go|dispatch_test\\.go|parents_test\\.go|comment_test\\.go|commenteval\\.go|launch_test\\.go|ticket_hint\\.go|review_test\\.go|pullrequest\\.go|config_test\\.go|ready_test\\.go|nudge_test\\.go|claimeval\\.go|reconcile\\.go|treehouse\\.go|docs_test\\.go|dispatch\\.go|launcher\\.go|parents\\.go|report\\.go|retire\\.go|notify\\.go|worker\\.go|config\\.go|linear\\.go|labels\\.go|herdr\\.go|cache\\.go|tell\\.go|lock\\.go|main\\.go)(?![\\w-]))[A-Za-z_][\\w-]*\\.go\\b)",
+            "flags": "",
+            "match": "not_contains"
+          }
+        },
+        {
+          "name": "flow",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says an idle In Progress worker gets a stall nudge, that the count of earlier nudges is compared with a limit (NudgeLimit), and that the ticket is escalated instead of nudged once the limit is reached. FAIL if any of the three is missing or wrong.",
+          "config": {
+            "criteria": "PASS if the answer says an idle In Progress worker gets a stall nudge, that the count of earlier nudges is compared with a limit (NudgeLimit), and that the ticket is escalated instead of nudged once the limit is reached. FAIL if any of the three is missing or wrong.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 2,
+            "costUsd": 0.054505300000000007,
+            "judgeCostUsd": 0.019536,
+            "durationSeconds": 8,
+            "startedAt": "2026-10-10T07:08:55.361Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-Ghzid0/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "names-path",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched [\\w/-]+\\.go\\b",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "paths",
+                "passed": true,
+                "weight": 1,
+                "explanation": "pattern absent as expected",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "flow",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Nudging an idle worker\n\nA tick builds a reconcile.Input and calls Plan in internal/reconcile/reconcile.go. For an In Progress ticket whose worker is idle, watch returns a Nudge action with StallNudge text. It first compares the ticket's earlier nudge count in the cache with Input.NudgeLimit. At the limit it returns an Escalate action instead, which moves the ticket to Needs Human. Worker state comes from internal/worker.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 1,
+        "passRate": 1
+      }
+    },
+    {
+      "name": "scorer-why-unknown-keys-bad",
+      "dir": "cases/scorer-why-unknown-keys-bad",
+      "source": "mixed",
+      "promptMarkdown": "Copy canned.md to answer.md without changing it.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "cited",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "answer.md"
+            },
+            "pattern": "334430a",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "reason",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says a mistyped setting would otherwise fall back to its default without anyone noticing, so loading the config fails with an error that names the setting and the file. FAIL if it gives another reason or none.",
+          "config": {
+            "criteria": "PASS if the answer says a mistyped setting would otherwise fall back to its default without anyone noticing, so loading the config fails with an error that names the setting and the file. FAIL if it gives another reason or none.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0,
+            "passed": false,
+            "turns": 2,
+            "costUsd": 0.0502934,
+            "judgeCostUsd": 0.015479999999999999,
+            "durationSeconds": 7,
+            "startedAt": "2026-10-10T07:08:55.361Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-1jvxJs/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "cited",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file answer.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# Why unknown config keys are rejected\n\nThe TOML library crashes on unknown keys, so the code in internal/config/config.go returns an error to avoid a panic. It keeps the parser fast.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "scorer-why-unknown-keys-good",
+      "dir": "cases/scorer-why-unknown-keys-good",
+      "source": "mixed",
+      "promptMarkdown": "Copy canned.md to answer.md without changing it.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "cited",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "answer.md"
+            },
+            "pattern": "334430a",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "reason",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says a mistyped setting would otherwise fall back to its default without anyone noticing, so loading the config fails with an error that names the setting and the file. FAIL if it gives another reason or none.",
+          "config": {
+            "criteria": "PASS if the answer says a mistyped setting would otherwise fall back to its default without anyone noticing, so loading the config fails with an error that names the setting and the file. FAIL if it gives another reason or none.",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 2,
+            "costUsd": 0.0464955,
+            "judgeCostUsd": 0.011647999999999999,
+            "durationSeconds": 7,
+            "startedAt": "2026-10-10T07:08:55.362Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-9xSnQT/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "cited",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched 334430a",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why unknown config keys are rejected\n\nCommit 334430a (Reject unknown config keys and add a user guide and config reference) made config.Load fail on any setting dispatch doesn't know. A typo such as max_in_progres used to fall back to the default without anyone noticing. The error now names the setting and the file. Linear was not available, so this comes from git history and docs/config.md.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 1,
+        "passRate": 1
+      }
+    }
+  ],
+  "aggregates": {
+    "casesTotal": 4,
+    "casesPassed": 4,
+    "overallScore": 0.5833333333333333,
+    "overallPassRate": 0.5
+  }
+}
