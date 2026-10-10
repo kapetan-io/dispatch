@@ -12,10 +12,18 @@ import (
 )
 
 // Retires reports whether Plan will tear down this lease holder's trees: its
-// status is a finished one and it is not a design ticket. The tick reads the
+// status is a finished one and it is not a review ticket. The tick reads the
 // git state of those trees only.
 func (in Input) Retires(t linear.Ticket) bool {
-	return slices.Contains(in.Done, t.Status) && in.notDesign(t)
+	return slices.Contains(in.Done, t.Status) && in.notReview(t)
+}
+
+// notReview reports whether the ticket is known not to be a design-review
+// ticket, whose trees belong to the review, which has no worker yet. A grill's
+// ticket is retired like a build's, since its worker holds a tree. A ticket
+// whose labels were cut short might be a review ticket.
+func (in Input) notReview(t linear.Ticket) bool {
+	return !t.LabelsTruncated && !t.HasLabel("design-review")
 }
 
 // notDesign reports whether the ticket is known not to be a design ticket,
@@ -39,10 +47,10 @@ func (in Input) retire() []Action {
 			continue
 		}
 		if t.LabelsTruncated {
-			actions = append(actions, Action{Kind: Skip, Ticket: t, Reason: "it has more labels than the dispatcher reads, so it can't tell whether the ticket is a design ticket that owns its trees"})
+			actions = append(actions, Action{Kind: Skip, Ticket: t, Reason: "it has more labels than the dispatcher reads, so it can't tell whether the ticket is a design-review ticket that owns its trees"})
 			continue
 		}
-		if !in.notDesign(t) {
+		if !in.notReview(t) {
 			continue
 		}
 		if done {

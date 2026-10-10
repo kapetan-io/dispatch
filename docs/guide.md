@@ -119,7 +119,7 @@ A workspace is renamed only when its label differs from the one its ticket's sta
 
 A ticket labeled `design` (with the `ai` and repo labels) waits in Backlog until you design it. Move it to In Progress and the next tick launches a worker typed `/dispatch:grill <ticket>` on `grill_model` (default `opus`), where builds use `worker_model`. `dispatch tick --dry-run` shows `launch ENG-N` for it.
 
-The grill's worker is never nudged about a stall, a comment or a PR, never stopped and never escalated, because a design waiting on you is normal. It keeps running after the grill creates a child ticket under it. A Backlog or Todo child is left alone, because a `design` parent's children are never promoted. A child you move to In Progress yourself launches as a build. A `design` ticket in In Progress holds a tree, so it counts toward `max_in_progress`.
+The grill's worker is never nudged about a stall, a comment or a PR, never escalated, and stopped only when you move the ticket out of In Progress, because a design waiting on you is normal. It keeps running after the grill creates a child ticket under it. A Backlog or Todo child is left alone, because a `design` parent's children are never promoted. A child you move to In Progress yourself launches as a build. A `design` ticket in In Progress holds a tree, so it counts toward `max_in_progress`.
 
 ## Parent tickets
 
@@ -129,7 +129,7 @@ Move a parent ticket to In Progress and the dispatcher starts its children for y
 - **Promote.** A child in `todo` (default Todo) that is assigned to you, carries the `ai` label, belongs to a team in `[linear].teams`, is not a `design` or `design-review` ticket and has no unfinished blocker moves to In Progress, and the next tick launches its worker. A child waits until every blocker reaches `blocker_done` (default Done), A blocker that is Canceled or Duplicate (any status of Linear's canceled type) never gets there, so the child moves to Needs Human with one comment naming the blocker. It is escalated again if you move it back to Todo with that blocker still attached. A child that holds a treehouse lease was paused with its tree kept, so it stays in Todo until you move it to In Progress yourself. A child whose blocker list ran past one page waits too.
 - **Cap.** Promotion stops when the In Progress tickets other than parents (a `design` parent with a live grill counts) reach `max_in_progress`. A child waiting for a slot is promoted on a later tick, and the tick prints `wait <child>` each time.
 
-A parent never gets a worker, whatever its status. A parent labeled `design` keeps the grill worker it already has, which is never nudged, stopped or escalated. A parent labeled `design-review` is left alone until the review skill exists, and neither kind has its children promoted or the parent closed. If the children can't be read, the tick prints the error and skips promotion and closing, and everything else runs as usual. Promotion is the only way the dispatcher moves a ticket to In Progress.
+A parent never gets a worker, whatever its status. A parent labeled `design` keeps the grill worker it already has, which is never nudged or escalated. A parent labeled `design-review` is left alone until the review skill exists, and neither kind has its children promoted or the parent closed. If the children can't be read, the tick prints the error and skips promotion and closing, and everything else runs as usual. Promotion is the only way the dispatcher moves a ticket to In Progress.
 
 ## Teardown and pausing
 
@@ -141,7 +141,7 @@ Each tick also looks at every tree held by a ticket assigned to you with the `ai
 
 "Pushed" means every commit reachable from the tree's HEAD is also reachable from a remote-tracking ref. A branch squash-merged and then pruned from the remote counts as unpushed, so its tree stays leased with the comment until you discard it. A pause or a kept tree closes only a workspace with a Claude agent in it, so a workspace you opened by hand there stays open. A tree with nothing to keep is returned whatever workspace is open on it, because a worker whose Claude exited leaves an agentless workspace behind and the slot has to come back.
 
-Trees of `design` and `design-review` tickets are left alone, because the grill and the review own them. A tree whose git state can't be read, or whose ticket has more labels than the dispatcher reads, stays leased, and the tick prints why. If the lookup of tickets holding trees fails, the tick prints the error and skips teardown but still launches and nudges.
+A `design` ticket is torn down and paused like a build, since its grill holds a tree. The tree of a `design-review` ticket is left alone until the review skill exists. A tree whose git state can't be read, or whose ticket has more labels than the dispatcher reads, stays leased, and the tick prints why. If the lookup of tickets holding trees fails, the tick prints the error and skips teardown but still launches and nudges.
 
 ## Running it
 

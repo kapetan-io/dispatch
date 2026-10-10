@@ -218,3 +218,27 @@ func TestTickHoldsAPromotionForADesignParentInAnUnreadRepo(t *testing.T) {
 	assert.Contains(t, out, "wait ENG-2: 1 of 1 In Progress tickets already\n")
 	assert.Empty(t, h.linear.mutations())
 }
+
+func TestTickStopsAGrillWhoseTicketIsPaused(t *testing.T) {
+	h := newHarness(t)
+	h.gitTree("ENG-1")
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(designTicket("ENG-1", "Backlog"))
+
+	out, err := h.run("tick", "--dry-run")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "stop ENG-1")
+}
+
+func TestTickReturnsTheTreeOfACanceledDesignTicket(t *testing.T) {
+	h := newHarness(t)
+	h.gitTree("ENG-1")
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(designTicket("ENG-1", "Canceled"))
+
+	out, err := h.run("tick", "--dry-run")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "teardown ENG-1")
+}

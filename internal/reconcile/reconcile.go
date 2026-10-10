@@ -218,9 +218,9 @@ type Input struct {
 	Untracked map[string][]string
 }
 
-// designLabels mark tickets whose trees belong to the grill and the review, so
-// the dispatcher never tears them down. It launches the grill for "design" and
-// nothing yet for "design-review", and never nudges either session.
+// designLabels mark tickets whose sessions the dispatcher never nudges. It
+// launches the grill for "design" and nothing yet for "design-review", whose
+// tree it leaves alone.
 var designLabels = []string{"design", "design-review"}
 
 // Plan returns the actions for one tick, launches last, in ticket order.

@@ -455,10 +455,6 @@ func TestTickLeavesTheTreesOfTicketsItDoesNotManage(t *testing.T) {
 		ticket fakeTicket
 	}{
 		{
-			name:   "DesignTicket",
-			ticket: withLabel(ticket("ENG-1", "Done", "dispatch"), "design"),
-		},
-		{
 			name:   "ReviewTicket",
 			ticket: withLabel(ticket("ENG-1", "Canceled", "dispatch"), "design-review"),
 		},
@@ -901,10 +897,6 @@ func TestTickLeavesPausedTicketsItDoesNotManage(t *testing.T) {
 		name   string
 		ticket fakeTicket
 	}{
-		{
-			name:   "DesignTicket",
-			ticket: withLabel(ticket("ENG-1", "Todo", "dispatch"), "design"),
-		},
 		{
 			name:   "ReviewTicketInBacklog",
 			ticket: withLabel(ticket("ENG-1", "Backlog", "dispatch"), "design-review"),
