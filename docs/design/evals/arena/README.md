@@ -29,11 +29,11 @@ The skill is adopted only if all hold on one attempt of 5 runs, with the skill's
 2. All graders pooled pass in at least 90% of runs.
 3. `skill-fired` and `fan-out` pass in 5 of 5 runs.
 
-Sensitivity check, before the first run of the skill: `arms/careless.md`, 2 runs, must pass fewer than 40% of the non-`skill-fired` graders, pooled. If it doesn't, the graders are broken and no result is read.
+Sensitivity check, before the first run of the skill: `arms/careless.md`, 2 runs, must pass fewer than 40% of the non-`skill-fired` graders, pooled. It passed 2 of 8 graders in each run (25%). The control passes `fan-out` by design because it starts one sub-agent, and that grader checks only that the `Agent` tool was used, so the 25% result does not validate three-candidate fan-out. If it doesn't, the graders are broken and no result is read.
 
 Budget: 5 runs per case, at most 3 attempts (an attempt is a change to the skill's wording followed by 5 runs), no cost ceiling beyond that. Five runs can't show a failure rate under about 20%. If the bar isn't met by attempt 3, the ticket goes to Needs Human with the results so far.
 
-Limit: one case, so the eval shows the phases followed on one question. It does not show the arena beats a single attempt.
+Limit: `candidates`, `note` and `premise-resolved` read claims in `note.md`, and `fan-out` is satisfied by one `Agent` call, so no grader proves three candidates ran. For attempt 3 this was checked by hand in the run traces. All 5 runs made 4 `Agent` calls (the models `opus`, `fable`, `sonnet`, then the `opus` judge). Limit: one case, so the eval shows the phases followed on one question. It does not show the arena beats a single attempt.
 
 The bar does not change after this commit. Changing it goes to the user through Needs Human.
 
