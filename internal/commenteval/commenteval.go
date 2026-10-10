@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 )
 
 // Options carries the process edges so tests can run Run in-process.
@@ -138,7 +139,7 @@ var heading = regexp.MustCompile(`(?m)^##\s+(.*?)\s*$`)
 // shows a code-fenced example before the next heading, and follows with a
 // Details section.
 func Score(comment string) (opens, example, details bool) {
-	comment = strings.TrimSpace(comment)
+	comment = strings.TrimRightFunc(comment, unicode.IsSpace)
 	heads := heading.FindAllStringSubmatchIndex(comment, -1)
 	if len(heads) == 0 || heads[0][0] != 0 || !strings.EqualFold(comment[heads[0][2]:heads[0][3]], "In plain English") {
 		return false, false, false

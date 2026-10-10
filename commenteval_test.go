@@ -48,6 +48,8 @@ func TestCommentEvalScore(t *testing.T) {
 		opens, example, details bool
 	}{
 		{"complete", good, true, true, true},
+		{"leadingBlankLine", "\n" + good, false, false, false},
+		{"leadingWhitespace", " \t" + good, false, false, false},
 		{"statusLineFirst", "Moving to Needs Human.\n\n" + good, false, false, false},
 		{"noExample", "## In plain English\n\nWords only.\n\n## Details\n\nx", true, false, true},
 		{"exampleAfterDetails", "## In plain English\n\nWords.\n\n## Details\n\n```\nx\n```", true, false, true},
