@@ -1,0 +1,23 @@
+schema_version: "1.1"
+name: how-nudge
+context:
+  scaffold_script: scaffold.sh
+execution:
+  model: claude-sonnet-5-5
+  max_turns: 80
+  timeout_seconds: 1500
+  allowed_tools: [Read, Glob, Grep, Write, Bash, Skill, Agent]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+  - name: paths
+    type: llm
+    focus: { source: file, path: answer.md }
+    criteria: |
+      PASS if the answer names internal/reconcile/reconcile.go and every file path it names is a real path in a Go repo whose reconciler lives in internal/reconcile (reconcile.go, labels.go, parents.go, retire.go, internal/worker, internal/cache, internal/config). FAIL if it names no file under internal/reconcile or invents a path.
+  - name: flow
+    type: llm
+    focus: { source: file, path: answer.md }
+    criteria: |
+      PASS if the answer says an idle In Progress worker gets a stall nudge, that the count of earlier nudges is compared with a limit (NudgeLimit), and that the ticket is escalated instead of nudged once the limit is reached. FAIL if any of the three is missing or wrong.
