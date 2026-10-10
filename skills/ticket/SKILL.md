@@ -23,15 +23,17 @@ If the file is missing or this repo is not in `[repos]`, dispatch does not manag
 
 ## Body
 
+Describe the problem and what is true afterwards. Leave out how to build it (flags to keep, wording to preserve, files to touch) and which tests to write, because the worker may treat every line as a requirement and your guesses become constraints nobody chose. State a decision only if the user made it, and say so ("the user wants X"). Otherwise drop it, or offer it in Notes for the worker as a labelled suggestion.
+
 Use these sections in this order.
 
 1. **In plain English.** Two to four sentences. Someone who has never seen the code should be able to repeat the problem back, so name no file, function or filter. Say what is wrong or missing for whoever uses the thing, and what happens because of it.
-2. **What it delivers.** A bullet list. Each item must be observable at the surface (a command's output, an API response, a file that appears), because the worker writes one passing surface test per item and can't test anything else. For a bug, put `## What happened` and `## Cause` sections, with your evidence, between In plain English and this section.
+2. **What it delivers.** A bullet list. Each item must be observable at the surface (a command's output, an API response, a file that appears). For a bug, put `## What happened` and `## Cause` sections, with your evidence, between In plain English and this section.
 3. **Governing design.** The documents the worker must read, by path or link, and the part of each that applies. Say what the change touches and whether it ships additively or behind a flag, or "none" if there is no design.
 4. **Not decided here (ask, don't assume).** The product behavior, public contract, security default or ADR questions the worker must put to the user, or "Nothing open". Don't write a guess as if it were settled.
-5. **Notes for the worker.** Anything that saves time, such as an example ticket in the same format, a trap you hit, or a binary it must not touch.
+5. **Notes for the worker.** Anything that saves time, such as an example ticket in the same format, a trap you hit, a binary it must not touch, or a suggested approach labelled as one.
 
-When the ticket's purpose is to create, change or evaluate a skill, Notes for the worker also carries these three instructions. Left alone, workers invent eval loops of 40 to 270 runs, which is why the no-evals line must be written out. They also skip reviewing the skill itself, and write long, prescriptive prose.
+When the ticket's purpose is to create, change or evaluate a skill, Notes for the worker also carries these three instructions, stated as the user's requirements. Left alone, workers invent eval loops of 40 to 270 runs, which is why the no-evals line must be written out. They also skip reviewing the skill itself, and write long, prescriptive prose.
 
 - Run no evals. The user has paused evals until they decide whether they're useful.
 - Before opening the PR, a sub-agent loads `anthropic-skills:skill-creator` with the Skill tool, reads the changed skill and reviews it without running any test prompts. The worker addresses the review.
