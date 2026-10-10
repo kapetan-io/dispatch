@@ -1,0 +1,25 @@
+schema_version: "1.1"
+name: report-nil
+context:
+  scaffold_script: scaffold.sh
+execution:
+  model: claude-sonnet-5-5
+  max_turns: 60
+  timeout_seconds: 1200
+  allowed_tools: [Read, Glob, Grep, Write, Edit, Bash, Skill, Agent]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: "\"skill\":\\s*\"(dispatch:)?supervise\""
+  - name: proof-only
+    type: regex
+    target: { source: "file", path: "ran.log" }
+    pattern: "Test"
+    flags: ""
+    match: "not_contains"
+  - name: scoped-run
+    type: tool_used
+    tool: Bash
+    input_match: "go test[^\\n]*-run"
+    min: 1
