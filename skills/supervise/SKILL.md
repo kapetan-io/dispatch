@@ -31,6 +31,6 @@ You are working with the user on a session that steers work rather than doing it
 
 ## Driving dispatch
 
-- After a ticket moves, whether you or the user moved it, run `dispatch tick`
+- After a ticket moves, whether you or the user moved it, run `dispatch tick`.
 - After posting review findings on a worker's PR, run `dispatch tick` so the PR nudge reaches the worker now instead of at the next timer tick.
 - To type into a worker by hand, run `dispatch tell <ticket> "<text>"`. It fails when the worker is blocked on a question or absent.
