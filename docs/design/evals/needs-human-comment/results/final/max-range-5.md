@@ -1,22 +1,31 @@
 ## In plain English
 
-I was building the cap on how many workers can run at the same time. The ticket says the setting must accept 1 to 8 and reject anything else, but the blueprint (the design document) and the config package only give the setting a name and a default of 4. Nothing outside this ticket mentions a range. The range sets what operators are allowed to configure, which is a public contract call, so it's yours to make.
+ENG-312 asks me to reject any `max_in_progress` outside 1 to 8, but the design never sets that range. Only this ticket does. The range decides what operators are allowed to configure, so I won't pick it for you.
+
+With the rule as written, this config would make dispatch refuse to start with an error:
 
 ```toml
 [dispatch]
-max_in_progress = 4   # blueprint and config package, no range given
+max_in_progress = 12
 ```
 
-```
-max_in_progress = 0   # ticket says reject
-max_in_progress = 8   # ticket says accept
-max_in_progress = 9   # ticket says reject
-```
+Without a range, dispatch would run up to 12 workers at once. The same applies to `0`, which would let no worker start.
+
+I recommend keeping 1 to 8 as the ticket says and adding the range to the blueprint, so the design and the code agree. Reply with "1 to 8 is right", or give me the range you want.
 
 ## Details
 
-**State.** I haven't written the validation. The ticket is in Needs Human.
+**State.** The ticket is in Needs Human. I have not written the validation. Nothing is pushed.
 
-**Evidence.** I searched the blueprint and the config package at commit `2700f6c`. Both define `max_in_progress` with a default of 4. Neither states a minimum or a maximum, and the ticket is the only place 1 to 8 appears.
+**Evidence.** I searched the blueprint and the config package at commit `2700f6c`. Both name `max_in_progress` and give it a default of 4. Neither mentions a minimum, a maximum, or a rejection rule.
 
-**Decision needed.** Is 1 to 8 inclusive the range you want operators to have? If it is, I'll reject values outside it when the config loads, with an error that names the key and the range. I'll also add the range to the blueprint so the design and the code agree. If you want a different range, or no upper bound, tell me the numbers.
+```toml
+[dispatch]
+max_in_progress = 4
+```
+
+**Decision needed.** Confirm or change the range. Once you do, I will:
+
+- reject values outside it when the config loads
+- record the range in the blueprint
+- cover both ends and one value past each end with surface tests

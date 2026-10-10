@@ -1,23 +1,32 @@
 ## In plain English
-I'm adding a check that makes dispatch refuse to start when its settings file, `config.toml`, contains a key it doesn't recognize, so typos fail loudly instead of being silently ignored. The example config in the design document has two settings the loader doesn't recognize, so with the check on, copying the documented example would fail to load. The ticket doesn't say whether the example, the loader, or the check should give way, and each choice changes what users may write in their config. I need you to pick one.
+
+ENG-306 says `config.toml` should refuse keys it doesn't recognize, so a typo like `statsuses` fails loudly instead of being ignored. The example config in the blueprint already contains keys the loader doesn't recognize. If I add the check as written, the documented example stops loading.
+
+The blueprint example at commit `2700f6c` has these two entries:
 
 ```toml
 [linear.statuses]
 todo = "Todo"            # the loader has no field for this
+
 [linear.needs_human]     # the loader has no table for this
 status = "Needs Human"
 ```
 
+The ticket doesn't say whether the config or the check should give way. That decides what users are allowed to write in their config, so I'm not picking for you. I've stopped work on this ticket until you answer.
+
+Which of these do you want?
+
+1. Keep the check strict at every depth and delete the two stale entries from the example. I recommend this. The loader has never read them, so nobody's config can depend on them.
+2. Keep the check strict and add `todo` and `needs_human` to the loader, so the example stays as written. This only makes sense if you meant them to be real settings.
+3. Check top-level keys only. Typos inside `[linear.statuses]` would still pass silently, which is the case the ticket is trying to catch.
+
 ## Details
-**State.** I've changed no code. The ticket is in Needs Human.
 
-**Evidence.** I read the blueprint's example config and the config loader at commit `2700f6c`. The example sets `todo` under `[linear.statuses]` and defines a `[linear.needs_human]` table. The loader's statuses struct has no `todo` field, and `Config` has no `needs_human` table. The example loads today only because unknown keys are ignored, so both settings do nothing.
+**State:** Nothing is implemented yet. The ticket is in Needs Human.
 
-**Options**
-1. Remove the two keys from the example config. The loader stays as is.
-2. Add `todo` and a `needs_human` table to the loader so the example stays valid.
-3. Check top-level keys only. This contradicts the ticket's "at any depth", and both offending keys are nested, so typos inside tables would still pass silently.
+**Evidence:**
+- I read the blueprint's example config and the config loader, both at `2700f6c`. The loader's `Config.Statuses` struct has no `todo` field, and `Config` has no `needs_human` table.
+- Today these keys load without error because unknown keys are ignored.
+- I haven't checked whether anything outside the loader reads `todo` or `needs_human`. If you pick option 1, I'll grep for that first and come back if I find a reader.
 
-**Recommendation.** Option 1. A key that loads and does nothing is the failure this ticket exists to stop, and option 2 would bless two settings that no code reads. If the design intends those settings to work, that is a separate ticket with real behavior behind it.
-
-**Decision needed.** Which option, and if it's 2, what `todo` and `needs_human.status` should control. I'll record your answer here and continue.
+**Decision needed:** option 1, 2 or 3. Reply on the ticket and I'll resume from the answer.

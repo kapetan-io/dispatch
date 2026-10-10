@@ -1,27 +1,33 @@
 ## In plain English
 
-A teammate reviewing the pull request for this ticket says tickets with no repo label should also be skipped, or they get launched into the wrong worktree. I checked, and an unlabeled ticket never gets that far. The dispatcher's filter drops it before the launcher (the part that starts a worker in a worktree) sees it. A person made the claim and I can't confirm it, so I need you or the reviewer to say whether my evidence settles it.
+A reviewer asked me to make the launcher skip tickets that have no repo label, because they think those tickets would start in the wrong worktree. I checked, and that path doesn't exist. The dispatcher drops an unlabeled ticket before the launcher ever sees it, so the PR as written already covers it.
 
-Here is the kind of ticket the reviewer is worried about (illustrative, not a real ticket).
+A ticket like this never reaches the launcher:
 
 ```
-title:  Fix retry backoff
-labels: [bug]        <- no repo label
+Ticket ENG-999
+Labels: (none)
 ```
+
+I'm not changing the code, since I can't reproduce the problem. I'm moving this to Needs Human so you or the reviewer can say whether the trace settles it. If the reviewer has a case where an unlabeled ticket does get launched, I'd like to see it.
 
 ## Details
 
-**Reviewer's claim.** "This should also skip tickets with no repo label at all. Otherwise they get launched into the wrong worktree."
+**Reviewer's claim**
+"This should also skip tickets with no repo label at all. Otherwise they get launched into the wrong worktree."
 
-**What I checked.** I wrote a test that feeds the dispatcher a ticket with no repo label and watches what happens to it. The test passes.
+**Evidence**
+I fed the dispatcher a ticket with no repo label in a test. It was filtered out before the launcher, and the test passes.
 
 ```
 $ go test ./... -run TestTickEscalatesTicketItCannotPlaceInARepo
 ok  	github.com/kapetan-io/dispatch	0.31s
 ```
 
-Because the filter drops the ticket first, a second skip rule in the launcher would never run. This ticket's change, skipping tickets whose repo label is unknown, covers the case the filter doesn't, which is a label that is present but matches no repo.
+**What I did**
+- Replied on the PR with this evidence.
+- Made no code change.
+- Moved the ticket to Needs Human because the claim came from a person and I couldn't confirm it.
 
-**What I did not change.** I made no code change for this comment, since I found no path where an unlabeled ticket reaches the launcher.
-
-**Decision needed.** Either the reviewer confirms the test covers the case they meant, or they point me to a path that bypasses the filter and I fix it. I'm holding the PR here until one of you replies.
+**Decision for you**
+Is the test enough to close the review thread, or does the reviewer have a case I haven't covered? I'd close it.

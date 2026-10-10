@@ -1,24 +1,32 @@
 ## In plain English
-ENG-306 asks me to make `config.toml` loading fail on any key the program doesn't recognize, so a typo like `statuss` becomes an error instead of being silently ignored. The example config in the design blueprint already contains two keys the loader doesn't recognize. If I make the loader strict, that documented example stops loading. The ticket doesn't say whether the example, the loader, or the strictness gives way, and that is a decision about what the config accepts, so it is yours.
+
+You asked for `config.toml` to be rejected when it contains a key the loader doesn't recognize. The example config in the design contains two such keys. With the check on, the config the design documents would fail to load. I need you to pick which side gives, because the ticket doesn't say.
+
+Here is the documented example, with the two keys the loader doesn't know:
 
 ```toml
 [linear.statuses]
-todo = "Todo"            # the loader has no field for this
+todo = "Todo"            # loader has no field for this
 
-[linear.needs_human]     # the loader has no table for this
+[linear.needs_human]     # loader has no table for this
 status = "Needs Human"
 ```
 
-## Details
-**State.** I wrote no code and moved the ticket to Needs Human. The ticket says to reject unknown keys at any depth and that nothing in the design changes. Both can't hold, because the design's own example has unknown keys.
-
-**Evidence.** I read the blueprint's example config and the config loader, both at commit `2700f6c`. `Config.Statuses` has no `todo` field, and `Config` has no `needs_human` table. Nothing in the loader reads either key today.
+Both keys would produce an unknown-key error today.
 
 **Options**
-1. **Fix the example.** Remove `todo` and the `[linear.needs_human]` table from the blueprint. The loader and ticket stay as written.
-2. **Widen the loader.** Add a `todo` field and a `needs_human` table to the structs so the example stays valid. This adds config surface that no code uses yet.
-3. **Check top-level keys only.** This keeps the example loading, but typos inside `[linear.statuses]` would still pass silently, which is the case the ticket exists to catch.
 
-**Recommendation.** Option 1. The loader is what runs, and nothing consumes those two keys. I'd rather not add accepted settings with no behavior behind them. If `todo` and `needs_human` are planned features, option 2 is the right call instead.
+- **A. Widen the loader to accept the documented keys.** The design stays as written and the check still applies at every depth. I recommend this one, since the ticket says nothing in the design changes.
+- **B. Edit the example config to drop the two keys.** This is the smallest code change, but it changes the design's documented config.
+- **C. Check top-level keys only.** The two keys would load, but this contradicts "at any depth" in the ticket, and a typo inside `[linear.statuses]` would still pass silently.
 
-Tell me which option you want and I'll build it. Strict rejection at any depth, with surface tests for a typo at the top level and in a nested table, goes in either way.
+I stopped before writing code because each option changes what the config accepts.
+
+## Details
+
+- **State:** Nothing is implemented yet. The ticket is in Needs Human.
+- **Evidence:** I compared the blueprint's example config with the config loader, both as of commit `2700f6c`.
+  - `Config.Statuses` has no `todo` field.
+  - `Config` has no `needs_human` table, so `status = "Needs Human"` has nowhere to land.
+- **Open question under A:** I haven't checked whether anything should read these two values. If nothing does, A adds fields that are accepted but unused. If something should read them, that is more scope than this ticket.
+- **Next step:** Reply with A, B or C. On A, I'll add the fields and the strict check, then add a surface test that loads the documented example unchanged and one that rejects a typo at depth 3.

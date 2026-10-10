@@ -1,23 +1,23 @@
 ## In plain English
-A reviewer asked me to make the launcher skip tickets that have no repo label, so they don't start in the wrong worktree. I checked, and that case is already covered. The dispatcher drops an unlabeled ticket before the launcher ever sees it, so I haven't changed the code. I need you or the reviewer to confirm that, or to tell me about a case where an unlabeled ticket did get launched.
+
+A reviewer asked that tickets with no repo label be skipped too, because they worry those tickets get launched into the wrong worktree. I couldn't reproduce that. An unlabeled ticket like this one never reaches the launcher.
 
 ```
-Ticket labels:  []            (no repo label)
-Dispatcher:     drops it before the launcher, so no worktree is chosen
+ENG-999  "Fix flaky retry"
+labels:  bug, backend        (no repo label)
 ```
+
+The dispatcher's filter drops it before the launcher sees it, so no worktree is chosen for it. The change in this PR only covers tickets whose repo label is present but unknown. I'm moving the ticket to Needs Human because the claim came from a person, and I don't want to dismiss it on my own say-so.
 
 ## Details
-**State:** ENG-290 is In Review with its PR open. I'm moving it to Needs Human because the review claim came from a person and I couldn't confirm it.
 
-**Review claim:** "This should also skip tickets with no repo label at all. Otherwise they get launched into the wrong worktree."
+**Status:** the PR is open and I haven't changed the code in response to this comment.
 
-**Evidence:** I wrote a test that feeds the dispatcher a ticket with no repo label. It shows the ticket never reaches the launcher, because the dispatcher's filter drops it first. The test passes.
+**Evidence:** `TestTickEscalatesTicketItCannotPlaceInARepo` feeds the dispatcher an unlabeled ticket and checks that it never reaches the launcher.
 
 ```
 $ go test ./... -run TestTickEscalatesTicketItCannotPlaceInARepo
 ok  	github.com/kapetan-io/dispatch	0.31s
 ```
 
-**What I did:** I added no skip for unlabeled tickets in the launcher. A second check there would duplicate the dispatcher's filter, and the two could drift apart.
-
-**Decision I need:** Is the dispatcher's filter enough for the reviewer? If they saw an unlabeled ticket launch, please send the ticket or the command so I can reproduce it. If they want the launcher to check as well, say so and I'll add it with a test.
+**Decision for the reviewer:** I can add a second skip for unlabeled tickets in the launcher. It would never fire today, and it would make the launcher depend on a filter rule that lives elsewhere. I'd leave it out. If you've seen an unlabeled ticket get launched, send me its ID and I'll trace that path. Otherwise, please resolve the thread and I'll move the ticket back to In Review.

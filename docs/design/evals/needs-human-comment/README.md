@@ -1,6 +1,6 @@
 # Needs-human comment eval
 
-Tests whether the build skill's wording makes a worker open every comment that needs the user with an `## In plain English` section and a concrete example, and put the state and evidence under `## Details`. Made for ENG-258 with the `anthropic-skills:skill-creator` method (frozen test prompts, an old-wording baseline, a pass check per run), but driven by `cmd/commenteval` because this repo writes its tooling in Go.
+Tests whether the build skill's wording makes a worker open every comment that needs the user with an `## In plain English` section and a concrete example, and put the state and evidence under `## Details`. Made for ENG-258 following the `anthropic-skills:skill-creator` method, but driven by `cmd/commenteval` because this repo writes its tooling in Go.
 
 ## Arms
 
@@ -44,4 +44,6 @@ Workers run on `claude-sonnet-5-5`, the model dispatch gives build workers. 4 sc
 | `results/current` (old wording) | 0 of 20 | 0 | 0 |
 | `results/final` (adopted) | 20 of 20 | 20 | 20 |
 
-An earlier draft said "start with" the heading, and one of its 20 replies put a status line above it. The adopted wording says the heading is the first line, ahead of any status line, and asks for the example in a fenced code block, which is what the `example` check looks for.
+An earlier, longer wording had one reply put a status line above the heading. Trimmed to the shorter rule now in the skill, all 20 replies still open with the section. The check requires the heading as the very first line.
+
+Method note. This follows skill-creator's method by hand (frozen prompts, a baseline arm, a pass check per run). It was not run through the skill-creator scripts.

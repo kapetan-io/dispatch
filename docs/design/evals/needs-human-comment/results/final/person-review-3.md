@@ -1,19 +1,28 @@
 ## In plain English
-A reviewer asked that the change in this PR also skip tickets that have no repo label, because they worried those tickets would be launched into the wrong worktree. I checked, and that can't happen. The dispatcher drops an unlabeled ticket before the launcher ever sees it, so adding the skip to the launcher would be dead code. I'm leaving the code as it is and need the reviewer to confirm or point me at a case I missed.
+
+A reviewer on the PR for ENG-290 thinks a ticket with no repo label at all could get launched into the wrong worktree, so the launcher should skip those tickets too. I checked and I don't think that can happen. The dispatcher drops an unlabeled ticket before the launcher ever sees it, so the PR doesn't need the extra skip.
+
+An example of the input in question:
 
 ```
-Ticket labels: Bug
-(no repo label)
+ENG-999  "Retry the webhook on timeout"
+labels:  bug
+repo:    (none)
 ```
+
+The dispatcher can't place this ticket in a repo, so it escalates it instead of passing it on. It never gets a worktree.
+
+I need you to settle this with the reviewer, because I'm not going to change their mind by arguing on the PR. I'd leave the code as it is. A second check inside the launcher would be dead code that no surface test can reach. If you'd still like it as a safety net, say so and I'll add it.
 
 ## Details
-**State:** PR is open and I'm moving the ticket to Needs Human. I haven't changed anything in response to the review comment.
 
-**Evidence:** I wrote a test that feeds the dispatcher a ticket with no repo label and checks what happens to it. The ticket is escalated instead of being placed in a repo, and it never reaches the launcher.
+**State.** The PR is open and the ticket is moving to Needs Human. The reviewer's claim is unconfirmed, and they are a person rather than a bot.
+
+**Evidence.** I wrote a test that feeds the dispatcher a ticket with no repo label. It passes, and the ticket is escalated rather than launched.
 
 ```
 $ go test ./... -run TestTickEscalatesTicketItCannotPlaceInARepo
 ok  	github.com/kapetan-io/dispatch	0.31s
 ```
 
-**Decision needed:** If you have a path where an unlabeled ticket still gets launched, such as a different entry point or a label that gets removed after the dispatcher's filter runs, tell me how it gets there and I'll add a failing test and the skip. Otherwise I'd resolve the review thread as is. Which one is it?
+**Decision for you.** Keep the PR as it is, or add a second no-label skip in the launcher. I recommend keeping it as it is. I haven't changed any code in response to the comment.

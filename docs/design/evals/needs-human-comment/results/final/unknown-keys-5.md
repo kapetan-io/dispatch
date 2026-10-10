@@ -1,24 +1,26 @@
 ## In plain English
 
-The ticket asks me to make the settings file (`config.toml`) reject any key the loader doesn't recognize, at every nesting depth. The example settings file in the design already contains two entries the loader doesn't recognize, so strict checking would make that documented example fail to load. The ticket doesn't say whether the example, the loader, or the strictness should give way, and the answer decides what settings the product accepts. I need you to pick one.
+ENG-306 asks the loader to refuse a `config.toml` that contains a key it doesn't recognise, so a typo like `stauts` fails loudly instead of being silently ignored. The example config in the blueprint already contains two keys the loader doesn't recognise. If I turn the check on as written, the documented example stops loading.
 
 ```toml
 [linear.statuses]
-todo = "Todo"            # loader's statuses section has no "todo" field
-[linear.needs_human]     # loader has no "needs_human" section at all
+todo = "Todo"            # the loader has no field for this
+
+[linear.needs_human]     # the loader has no table for this
 status = "Needs Human"
 ```
 
+The ticket doesn't say which side gives way, the documented config or the loader. That decides what users are allowed to put in their config, so I'm not choosing it for you.
+
+**Decision needed.** Which of these should I do?
+
+1. **Teach the loader the documented keys (my recommendation).** Add `todo` under `[linear.statuses]` and a `[linear.needs_human]` table, then reject everything else at any depth. The ticket says the design doesn't change, and the blueprint is the design, so the loader is what's out of date. Keys the loader lacks today are the ones I'd least want to find out about by having a user's config break.
+2. **Edit the example config.** Remove `todo` and `[linear.needs_human]` from the blueprint example. This keeps the loader as is, but it changes a documented contract that the ticket says is fixed.
+3. **Only check top-level keys.** The example would still load, but typos inside `[linear]` would pass unnoticed. That contradicts "at any depth" in the ticket, so I'd rule it out.
+
 ## Details
 
-**State.** I have written no code and no tests. The ticket is in Needs Human because every option below changes what `config.toml` accepts.
-
-**Evidence.** I read the design's example config and the config loader, both as of commit `2700f6c`. The loader's `Config.Statuses` struct has no `todo` field, and `Config` has no `needs_human` table. With unknown-key rejection on, loading the example config fails on both entries.
-
-**Decision needed.** Which of these should the code do?
-
-1. **Widen the loader** so it knows `todo` and `needs_human`. The ticket's "reject at any depth" and "nothing in the design changes" both stay true. This is my recommendation. I haven't checked whether any code reads those two settings, so they may be accepted and then ignored.
-2. **Change the documented example** by deleting both entries. The loader stays as is, but the design then changes, which the ticket says it doesn't.
-3. **Limit the check to top-level keys.** The example loads, but a typo like `[linear.statuss]` still passes silently, which is the bug the ticket exists to fix.
-
-Once you answer, I'll implement it with surface tests that run the CLI against a good config and a config with an unknown key at each depth.
+- **Status.** I've read the blueprint example config and the config loader at commit `2700f6c`. I have changed no code and run no tests.
+- **Evidence.** `Config.Statuses` has no `todo` field, and `Config` has no `needs_human` table. Both appear in the blueprint example above.
+- **Not yet checked.** If you pick option 1, I haven't confirmed whether anything reads `needs_human.status` today or whether the new fields would just be accepted and stored. I'll check that first and note what I find here.
+- **Next.** Once you answer, I'll write the surface tests for an unknown key at the top level and at depth, plus a test that loads the documented example. Then I'll implement and continue the build.

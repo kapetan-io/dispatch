@@ -1,29 +1,33 @@
 ## In plain English
 
-The design for ENG-301 says the Linear client should retry rate-limited calls in one place. That only works if the client reports a rate limit as a recognizable error type, and it doesn't. It returns plain text, so three unrelated callers (the nudge sender, the status mover and the comment poster) each had to search the message for the words "rate limited" and sleep. I'm stopping because the design's premise is wrong, and fixing it changes how the client reports every error.
+The plan was for the Linear client to retry rate-limited calls itself, so no caller has to think about it. That can't work as designed, because the client reports every failure as a plain text message. The only way to spot a rate limit is to read the wording, so I ended up writing that check in each caller that needs it.
+
+This is the check, and it now appears in the nudge sender, the status mover and the comment poster.
 
 ```go
-// the same check now sits in all three callers
 if strings.Contains(err.Error(), "rate limited") { time.Sleep(backoff) }
 ```
 
+If the client ever rewords that message, all three callers quietly stop retrying and nothing fails loudly. I stopped patching and moved this ticket to Needs Human, since a fourth copy would only deepen the problem.
+
+I need you to decide whether the design may change so the client returns a typed error for a rate limit. I recommend that, and moving the retry into the client so callers delete their copies.
+
 ## Details
 
-**State**
-- Three days in, I have the special case in three callers. I've stopped and added nothing further.
-- The ticket is moving to Needs Human.
+**State.** ENG-301 is in Needs Human. No more callers are being patched.
 
-**Evidence**
-- The client builds its errors as strings, so no caller can tell a rate limit from any other failure without matching on wording.
-- Each caller now depends on the exact phrase "rate limited". If the client rewords that message, retries stop and nothing fails loudly.
-- The same workaround appeared in three unrelated places, which is the sign the design is wrong and a patch won't fix it.
+**Why the design is wrong.** It assumed the Linear client returns typed errors. It returns strings. Callers therefore have to know how the client words its messages, which is the sign of a wrong abstraction and not a missed edge case.
 
-**What I tried**
-- I added the string check to each caller to keep the design's single backoff behavior working. That was the wrong call, and I'm not extending it to any other caller.
+**Evidence.**
+- The same `strings.Contains(err.Error(), "rate limited")` plus `time.Sleep(backoff)` workaround sits in three unrelated callers, the nudge sender, the status mover and the comment poster.
+- Each copy picks its own backoff, so the retry behavior is already drifting.
+- Three days of work went into this before the pattern was clear.
 
-**Decision I need**
-Should the client return a typed rate-limit error and run the retry itself?
+**Proposed change.**
+- The client returns a typed rate-limit error, which callers can check with `errors.As`.
+- The client does the retry, so the callers drop their sleeps and the string checks.
+- I delete the three copies and cover the retry with surface tests on the client.
 
-I think yes. Callers then never see a rate limit unless retries run out, and I would delete the three string checks. The catch is that the client's error contract changes for every caller, which is your call under the public-contract rule.
+I think this fits the design's intent, since the retry was always meant to live in one place. The error type is a new shape for the client's public contract, which is why I'm asking before building it.
 
-If you'd rather keep errors as strings, tell me. Then the design has to say the retry lives in the callers, and I'll pull it into one shared wrapper instead of three copies.
+Reply here with approval or a different direction and I'll pick it back up.

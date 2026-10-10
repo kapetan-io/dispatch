@@ -1,24 +1,27 @@
 ## In plain English
 
-A teammate reviewing the PR for ENG-290 asked that the launcher also skip tickets with no repo label, so they can't start in the wrong worktree (the checked-out copy of the repo a worker runs in). I traced it and found that an unlabeled ticket never gets that far, because the dispatcher's filter drops it before the launcher sees it. Since the reviewer is a person, I'm not resolving their comment myself. I need you or them to confirm the extra check isn't needed, or tell me which case they saw.
+ENG-290 makes the dispatcher skip a ticket whose repo label names a repo it doesn't know. The reviewer asked for the same skip when a ticket has no repo label at all, because it could otherwise be launched into the wrong worktree.
 
-A ticket like this one, with labels but none naming a repo, is the input I tested.
+That case can't happen today. The dispatcher drops an unlabeled ticket before the launcher is ever called, so a second skip in the launcher would never run. Here is the kind of ticket the reviewer is worried about.
+
+```
+ENG-999  "Fix flaky retry test"
+labels:  (none)
+```
+
+I'm not changing the PR. Since you raised a concern I can't confirm, I want you to decide whether it stands.
+
+## Details
+
+**Claim:** tickets with no repo label get launched into the wrong worktree and need the same skip.
+
+**Evidence:** I wrote a test that gives the dispatcher an unlabeled ticket. The dispatcher's filter drops it, and the launcher is never called. The test passes.
 
 ```
 $ go test ./... -run TestTickEscalatesTicketItCannotPlaceInARepo
 ok  	github.com/kapetan-io/dispatch	0.31s
 ```
 
-## Details
+**What I did not check:** whether any caller reaches the launcher without going through the dispatcher's filter. I found none in this PR.
 
-**State.** The PR is open and the ticket is in Needs Human.
-
-**Evidence.** The test feeds the dispatcher an unlabeled ticket and passes. The dispatcher's filter drops that ticket before launch, so the launcher's skip logic never runs for it. The PR's change only covers tickets whose repo label is present but unknown, which is what the ticket asks for.
-
-**Attempts.** I looked for a path that lets an unlabeled ticket reach the launcher and found none. I made no code change in response to the comment.
-
-**Decision needed.** Pick one.
-- If the dispatcher's filter is enough, say so and I'll reply on the PR with this evidence and resolve the comment.
-- If the reviewer saw an unlabeled ticket get launched, I need the ticket ID or the steps. That would mean my test misses a path, and I'd fix the code.
-
-I'd go with the first. I'll wait for your answer before touching the PR again.
+**Decision for you:** if you want a skip in the launcher anyway as a second guard, I'll add it with a test. Otherwise I'll reply on the PR with this evidence and leave the change as it is. I've moved the ticket to Needs Human until you pick.
