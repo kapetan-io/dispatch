@@ -328,7 +328,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the children of open parents: %v\n", readErr)
 		}
 	}
-	input.Unfinished, input.CheckErrors = inspectTrees(ctx, input)
+	input.Unfinished, input.CheckErrors, input.Untracked = inspectTrees(ctx, input)
 	input.PRs, input.PRReadFailed = readPRs(ctx, opts, input)
 	actions := reconcile.Plan(input)
 

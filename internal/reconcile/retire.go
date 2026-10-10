@@ -3,7 +3,9 @@ package reconcile
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/worker"
@@ -24,7 +26,8 @@ func (in Input) notDesign(t linear.Ticket) bool {
 }
 
 // retire plans the cleanup of lease holders that are finished or paused. A
-// finished ticket's clean, pushed tree is returned. One with work in it keeps
+// finished ticket's pushed tree with no tracked changes is returned, after its
+// untracked files are deleted. One with work in it keeps
 // its tree, loses its worker, and gets one comment. A paused ticket loses its
 // worker and keeps its tree. Plan puts these first, so a returned tree is free
 // for a launch in the same tick.
@@ -72,7 +75,11 @@ func (in Input) retireFinished(t linear.Ticket) []Action {
 			continue
 		}
 		if unfinished == "" {
-			actions = append(actions, Action{Kind: Teardown, Ticket: t, Reason: t.Status + ", clean and pushed", RepoDir: w.RepoDir, WorkspaceID: w.WorkspaceID, TreePath: w.TreePath})
+			reason, untracked := t.Status+", clean and pushed", in.Untracked[w.TreePath]
+			if len(untracked) > 0 {
+				reason = t.Status + ", would remove untracked " + NameList(untracked)
+			}
+			actions = append(actions, Action{Kind: Teardown, Ticket: t, Reason: reason, RepoDir: w.RepoDir, WorkspaceID: w.WorkspaceID, TreePath: w.TreePath, Untracked: untracked})
 			continue
 		}
 		why = append(why, fmt.Sprintf("`%s` has %s", w.TreePath, unfinished))
@@ -96,4 +103,17 @@ func (in Input) retireFinished(t linear.Ticket) []Action {
 		}
 	}
 	return actions
+}
+
+// NameList joins file names for a log line, quoting any name that holds
+// whitespace or a control character so it can't read as two files.
+func NameList(names []string) string {
+	quoted := make([]string, len(names))
+	for i, name := range names {
+		quoted[i] = name
+		if strings.ContainsFunc(name, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
+			quoted[i] = strconv.Quote(name)
+		}
+	}
+	return strings.Join(quoted, " ")
 }

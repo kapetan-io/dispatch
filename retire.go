@@ -35,8 +35,8 @@ func leaseHolders(ctx context.Context, lin linear.Client, cfg config.Config, tre
 
 // inspectTrees reads the git state of each tree Plan may return. An unreadable
 // tree is reported and kept leased.
-func inspectTrees(ctx context.Context, in reconcile.Input) (unfinished map[string]string, failed map[string]error) {
-	unfinished, failed = map[string]string{}, map[string]error{}
+func inspectTrees(ctx context.Context, in reconcile.Input) (unfinished map[string]string, failed map[string]error, untracked map[string][]string) {
+	unfinished, failed, untracked = map[string]string{}, map[string]error{}, map[string][]string{}
 	for _, t := range in.LeaseHolders {
 		if !in.Retires(t) {
 			continue
@@ -47,10 +47,15 @@ func inspectTrees(ctx context.Context, in reconcile.Input) (unfinished map[strin
 				failed[w.TreePath] = err
 				continue
 			}
-			unfinished[w.TreePath] = why
+			files, err := treehouse.Untracked(ctx, w.TreePath)
+			if err != nil {
+				failed[w.TreePath] = err
+				continue
+			}
+			unfinished[w.TreePath], untracked[w.TreePath] = why, files
 		}
 	}
-	return unfinished, failed
+	return unfinished, failed, untracked
 }
 
 // heldFinished lists the finished tickets that still hold a lease.
@@ -67,7 +72,8 @@ func heldFinished(in reconcile.Input) map[string]bool {
 // teardown closes a finished ticket's workspace and returns its tree. The
 // tree is read again once the workspace is closed, because the worker could
 // have written to it since the plan was made. Work found then keeps the tree,
-// and the next tick's plan comments on it.
+// and the next tick's plan comments on it. Untracked files are deleted just
+// before the return, so the log names what was actually removed.
 func teardown(ctx context.Context, opts Options, a reconcile.Action) error {
 	if a.WorkspaceID != "" {
 		if err := herdr.CloseWorkspace(ctx, opts.Herdr, a.WorkspaceID); err != nil {
@@ -81,6 +87,25 @@ func teardown(ctx context.Context, opts Options, a reconcile.Action) error {
 	if why != "" {
 		_, _ = fmt.Fprintln(opts.Stdout, reconcile.Action{Kind: reconcile.Keep, Ticket: a.Ticket, Reason: "the worker left " + why + " in " + a.TreePath})
 		return nil
+	}
+	files, err := treehouse.Untracked(ctx, a.TreePath)
+	if err != nil {
+		return err
+	}
+	if len(files) > 0 {
+		if err := treehouse.RemoveUntracked(ctx, a.TreePath); err != nil {
+			return err
+		}
+		left, err := treehouse.Untracked(ctx, a.TreePath)
+		if err != nil {
+			return err
+		}
+		// git clean skips a nested repository, and returning the tree would discard it.
+		if len(left) > 0 {
+			_, _ = fmt.Fprintln(opts.Stdout, reconcile.Action{Kind: reconcile.Keep, Ticket: a.Ticket, Reason: "untracked " + reconcile.NameList(left) + " in " + a.TreePath + " survived git clean"})
+			return nil
+		}
+		a.Reason = a.Ticket.Status + ", removed untracked " + reconcile.NameList(files)
 	}
 	if err := treehouse.Return(ctx, opts.Treehouse, a.RepoDir, a.TreePath, a.Ticket.Identifier); err != nil {
 		return err

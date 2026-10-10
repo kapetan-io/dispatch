@@ -98,6 +98,8 @@ type Action struct {
 	// its workspace, since a worker whose Claude exited leaves one behind.
 	WorkspaceID string
 	TreePath    string
+	// Untracked lists the files a Teardown deletes from its tree first.
+	Untracked []string
 }
 
 func (a Action) String() string {
@@ -162,6 +164,9 @@ type Input struct {
 	// only the trees of tickets for which Retires is true.
 	Unfinished  map[string]string
 	CheckErrors map[string]error
+	// Untracked maps a tree path to the untracked files in it. They are not
+	// work, so they never keep a finished ticket's tree.
+	Untracked map[string][]string
 }
 
 // designLabels mark tickets whose sessions this piece of the dispatcher does

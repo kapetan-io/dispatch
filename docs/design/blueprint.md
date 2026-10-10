@@ -54,7 +54,7 @@ State invariants, each with its enforcement.
 | A parent ticket never gets a dispatched worker. | The dispatcher skips any ticket that has sub-issues. A parent still notifies on Needs Human. |
 | The dispatcher touches only tickets assigned to you that carry the `ai` label. | The Linear query filters on both. Tickets you work by hand lack the label. |
 | The dispatcher moves a ticket into In Progress only when it is a Todo child of an In Progress parent. | Promotion rule, and nothing else in the dispatcher writes In Progress. |
-| A tree with uncommitted or unpushed work is never returned to the pool. | The dispatcher checks `git status` and the upstream before `treehouse return --force`. |
+| A tree with uncommitted tracked changes or unpushed commits is never returned to the pool. Untracked files in a finished ticket's tree are not work, and the dispatcher deletes them first. | The dispatcher checks `git status` (tracked files only) and the upstream before `treehouse return --force`. Teardown then runs `git clean -f -d`, which leaves ignored files alone. |
 | In Progress workers never exceed the configured cap. | The dispatcher counts before promoting or launching. treehouse `max_trees` caps trees per repo. |
 | Deleting the dispatcher cache loses little. | Counters reset and a last-seen value may repeat one notification. A comment posted while the cache is gone gets no nudge, because the first tick only records the newest comment time. |
 
