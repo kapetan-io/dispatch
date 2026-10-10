@@ -87,6 +87,20 @@ A worker blocked on a question (AskUserQuestion), on an In Progress or In Review
 
 A PR is ready for review when its ticket is In Review, its worker is idle, every check has finished and passed (a PR with no checks counts as passed), no review thread is unresolved, `reviewDecision` is not `CHANGES_REQUESTED`, and GitHub reports the PR as mergeable. A check still running, such as CodeRabbit's while its review is in progress, or a merge state GitHub has not computed yet, keeps the PR from being ready. The dispatcher fires one notification naming the ticket and its PR, once per PR head commit. A push that leaves the PR ready again notifies again, and no tick in between repeats it.
 
+## Events in your supervising session
+
+Every notification above, including merge and Needs Human ones, can also reach a Claude Code session you steer from, as a message that wakes it if it is idle. Run `/dispatch:supervise` in that session, which runs `dispatch subscribe`. The command records the session's inbox socket (from `CLAUDE_CODE_MESSAGING_SOCKET`) in the state directory, and several sessions can subscribe. It fails outside a Claude Code session.
+
+From then on each notification a tick raises is also sent to every subscribed session, after the macOS alert. The message names the ticket and the event, and carries the PR URL when the event has one and always the ticket URL. A socket that no longer accepts connections, because its session exited, is dropped from the list the first time a tick tries it, and the tick prints one line on stderr for each dropped socket. A failed macOS alert holds the messages back until its retry shows, so a broken alert never wakes your session repeatedly. `dispatch tick --dry-run` prints the messages it would send, one `would message` line per session. Worker nudges are unchanged and still type into the worker's pane.
+
+Add this to your Claude Code user settings (`~/.claude/settings.json`):
+
+```json
+{ "crossSessionInbound": "accept" }
+```
+
+Without it, a session that skips permission prompts holds each message behind an approval dialog ("the sender did not attest its permission mode"), and the event waits until you open that session and answer. dispatch cannot see a held message, because the socket sends no reply.
+
 ## Workspace labels
 
 After every tick, each worker's herdr workspace is labeled `<emoji> <ticket>`.

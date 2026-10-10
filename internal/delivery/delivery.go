@@ -1,11 +1,12 @@
 // Package delivery carries the dispatcher's messages, a nudge to one worker or
-// a notification to the user. Callers name who should hear it, and the Post
-// picks the route.
+// a notification to the user and any supervisor session. Callers name who
+// should hear it, and the Post picks the route.
 package delivery
 
 import (
 	"context"
 	"errors"
+	"io"
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/linear"
@@ -17,9 +18,13 @@ import (
 var ErrBlocked = errors.New("worker is blocked on a question")
 
 // Post delivers messages. Herdr and Osascript are the commands to run.
+// StateDir holds the list of supervisor sockets that Notify also messages, and
+// Stderr is where a failed or dropped supervisor message is reported.
 type Post struct {
 	Herdr     string
 	Osascript string
+	StateDir  string
+	Stderr    io.Writer
 }
 
 // Event is something the user should hear about.
@@ -39,7 +44,14 @@ func (p Post) Nudge(ctx context.Context, w worker.Worker, text string) error {
 	return herdr.Prompt(ctx, p.Herdr, w.PaneID, text)
 }
 
-// Notify tells the user. The error is the alert's.
+// Notify tells the user, then every subscribed supervisor session. Callers
+// retry a failed alert next tick, so supervisors hear only once it has shown,
+// or a broken alert would wake them on every retry. The error is the alert's
+// alone, and a supervisor that can't be reached never makes the caller retry.
 func (p Post) Notify(ctx context.Context, ev Event) error {
-	return alert(ctx, p.Osascript, ev.Text)
+	if err := alert(ctx, p.Osascript, ev.Text); err != nil {
+		return err
+	}
+	p.tellSupervisors(ctx, ev)
+	return nil
 }

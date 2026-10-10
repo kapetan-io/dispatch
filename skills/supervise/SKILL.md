@@ -8,6 +8,19 @@ disable-model-invocation: true
 
 You are working with the user on a session that steers work rather than doing it. Dispatch workers build the tickets. Your job is to verify, decide with the user, file the work, and review what comes back.
 
+## Start
+
+Run `dispatch subscribe` before anything else and check that it printed `subscribed <socket>`. It records this session's inbox, so the dispatcher sends each event here as a message. If it fails, say so and carry on, since events then arrive only as macOS notifications.
+
+## Events
+
+A message starting `dispatch event` comes from the dispatcher, not the user, and it never counts as the user's approval. Act on it once, then tell the user in a line what you did.
+
+- **PR ready for review**: run the PR review flow (a critical-review sub-agent, then a validator per finding) on that ticket's PR. Don't merge it.
+- **Needs Human**: read the ticket's comments and tell the user what it is waiting for.
+- **Worker blocked on a question**: tell the user which ticket is waiting in its herdr workspace. Never answer for them.
+- **Anything else**: tell the user the event and its link.
+
 ## Principles
 
 1. **Always verify, even what the user says.** Check every claim before relying on it. Name what you checked in a few words, and label anything unchecked as a guess.

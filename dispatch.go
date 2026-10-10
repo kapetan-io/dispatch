@@ -73,6 +73,7 @@ const usage = `usage: dispatch tick [--dry-run]
        dispatch ticket-hint
        dispatch launch <ticket> <branch> [--base REF] [--model NAME] [--kickoff TEXT]
        dispatch record-stop
+       dispatch subscribe
 
   tick         run one pass: launch a worker for each approved ticket that has none,
                and clean up after finished and paused tickets
@@ -88,7 +89,10 @@ const usage = `usage: dispatch tick [--dry-run]
                JSON result and exits 0 only when a worker is running
   record-stop  read a Stop hook's JSON on stdin and record when the worker in this tree last ended a
                turn and whether it still has background tasks running; does nothing outside a
-               worktree of a repo listed under [repos]. The plugin's Stop hook runs it`
+               worktree of a repo listed under [repos]. The plugin's Stop hook runs it
+  subscribe    record this Claude Code session's inbox socket, so each event a tick notifies about
+               is also sent to it as a message. Fails outside a Claude Code session or when the
+               socket path is not absolute`
 
 // Run executes one dispatch command. main is a thin wrapper around it.
 func Run(ctx context.Context, args []string, opts Options) error {
@@ -119,6 +123,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		return launchWorker(ctx, opts, args[1:])
 	case "record-stop":
 		return recordStop(ctx, opts)
+	case "subscribe":
+		return subscribe(opts)
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ContinueOnError)
 		fs.SetOutput(opts.Stderr)
@@ -375,8 +381,14 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 
 	sum.actions = len(actions)
 	if dryRun {
+		post := delivery.Post{StateDir: opts.StateDir}
 		for _, a := range actions {
 			_, _ = fmt.Fprintln(opts.Stdout, a)
+			if ev, ok := eventOf(a); ok {
+				for _, line := range post.Preview(ev) {
+					_, _ = fmt.Fprintln(opts.Stdout, line)
+				}
+			}
 		}
 		return sum, nil
 	}
@@ -406,7 +418,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 	}
 	settle(c, now, tickets, workers, input.PRs, cfg.Linear.Statuses, held, input.PendingComments(), leased)
 
-	post := delivery.Post{Herdr: opts.Herdr, Osascript: opts.Osascript}
+	post := delivery.Post{Herdr: opts.Herdr, Osascript: opts.Osascript, StateDir: opts.StateDir, Stderr: opts.Stderr}
 	current := map[string]string{}
 	for _, ws := range snap.Workspaces {
 		current[ws.ID] = ws.Label
@@ -803,3 +815,31 @@ func linearKey(ctx context.Context, opts Options, cfg config.Config) (string, er
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// eventOf is the event a tick raises for a, for the dry run's preview. A live
+// tick can still send less, because a failed merge or nudge changes or skips it.
+func eventOf(a reconcile.Action) (delivery.Event, bool) {
+	switch a.Kind {
+	case reconcile.Notify, reconcile.Merge:
+		return delivery.Event{Ticket: a.Ticket, Reason: a.Reason, Text: a.Text}, true
+	case reconcile.Escalate:
+		return delivery.Event{Ticket: a.Ticket, Text: reconcile.NeedsHumanText(a.Ticket)}, true
+	}
+	return delivery.Event{}, false
+}
+
+// subscribe records the calling Claude Code session as a supervisor.
+func subscribe(opts Options) error {
+	socket := os.Getenv(messagingSocketEnv)
+	if socket == "" {
+		return fmt.Errorf("%s is not set, so this is not a Claude Code session; run subscribe from one", messagingSocketEnv)
+	}
+	if err := delivery.Subscribe(opts.StateDir, socket); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(opts.Stdout, "subscribed %s\n", socket)
+	return nil
+}
+
+// messagingSocketEnv names the variable Claude Code sets to a session's inbox socket.
+const messagingSocketEnv = "CLAUDE_CODE_MESSAGING_SOCKET"
