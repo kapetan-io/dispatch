@@ -169,6 +169,33 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 			detail: "treehouse lease failed but the pool is not exhausted (1 of 1 available, max_trees=4; holders: ). treehouse stderr: no tree for you",
 		},
 		{
+			// A pool that can still grow is not exhausted, so the ticket must
+			// escalate instead of waiting for a slot.
+			name: "PoolErrorWhenEveryTreeIsTakenBelowMaxTrees",
+			setup: func(l *launchHarness) {
+				l.writeFile("get-fails", "")
+				l.writeJSON("trees.json", []map[string]string{
+					{"path": "/t/1", "status": "leased", "lease_holder": "ENG-7"},
+					{"path": "/t/2", "status": "leased", "lease_holder": "ENG-8"},
+					{"path": "/t/3", "status": "leased", "lease_holder": "ENG-9"},
+				})
+			},
+			args:   []string{"ENG-1", "b"},
+			status: "pool_error",
+			detail: "the pool is not exhausted (0 of 3 available, max_trees=4",
+		},
+		{
+			name: "PoolErrorWhenMaxTreesIsUnknown",
+			setup: func(l *launchHarness) {
+				require.NoError(t, os.WriteFile(filepath.Join(l.repo, "treehouse.toml"), nil, 0o644))
+				l.writeFile("get-fails", "")
+				l.writeJSON("trees.json", []map[string]string{{"path": "/t/1", "status": "leased", "lease_holder": "ENG-7"}})
+			},
+			args:   []string{"ENG-1", "b"},
+			status: "pool_error",
+			detail: "the pool is not exhausted (0 of 1 available, max_trees=-1",
+		},
+		{
 			name: "LeaseWithoutAPath",
 			setup: func(l *launchHarness) {
 				l.writeFile("get-pathless", "")
@@ -375,6 +402,19 @@ func TestLaunchPressesEnterOnAKickoffThatWasTypedButNotSubmitted(t *testing.T) {
 
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, "w9:p1 /dispatch:build ENG-1\n", l.readFile("runs.log"))
+}
+
+func TestLaunchPressesEnterOnAGivenKickoffTypedButNotSubmitted(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+	l.writeFile("wait-fails", "1")
+	l.writeFile("agents.json", `{"result":{"agents":[{"name":"x","pane_id":"w9:p1","agent":"claude","agent_status":"idle"}]}}`)
+	l.screens("❯", "❯ /dispatch:grill ENG-1")
+
+	out := l.launch("ENG-1", "thrawn01/eng-1", "--kickoff", "/dispatch:grill ENG-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Equal(t, "w9:p1 /dispatch:grill ENG-1\n", l.readFile("runs.log"))
 }
 
 func TestLaunchClosesTheWorkspaceWhenTheKickoffNeverRuns(t *testing.T) {
