@@ -54,7 +54,7 @@ State invariants, each with its enforcement.
 | A parent ticket never gets a dispatched worker. | The dispatcher skips any ticket that has sub-issues. A parent still notifies on Needs Human. |
 | The dispatcher touches only tickets assigned to you that carry the `ai` label. | The Linear query filters on both. Tickets you work by hand lack the label. |
 | The dispatcher moves a ticket into In Progress only when it is a Todo child of an In Progress parent. | Promotion rule, and nothing else in the dispatcher writes In Progress. |
-| A tree with uncommitted or unpushed work is never returned to the pool. | The dispatcher checks `git status` and the upstream before `treehouse return --force`. |
+| A tree with uncommitted tracked changes or unpushed commits is never returned to the pool. Untracked files in a finished ticket's tree are not work, and the dispatcher deletes them first. | The dispatcher checks `git status` (tracked files only) and the upstream before `treehouse return --force`. Teardown then runs `git clean -f -d`, which leaves ignored files alone. |
 | In Progress workers never exceed the configured cap. | The dispatcher counts before promoting or launching. treehouse `max_trees` caps trees per repo. |
 | Deleting the dispatcher cache loses little. | Counters reset and a last-seen value may repeat one notification. A comment posted while the cache is gone gets no nudge, because the first tick only records the newest comment time. |
 
@@ -82,7 +82,7 @@ Each criterion is checked through the dispatcher's surface (`dispatch tick`, `di
 8. Two consecutive failed launches set Needs Human with the launcher's error. `pool_exhausted` never counts as a failure.
 9. An In Review ticket whose PR has a failing check, changes requested, unresolved review threads or a merge conflict, and whose worker is idle or gone, receives the PR nudge naming the problem. A gone worker is resumed first.
 10. A Done, Canceled or Duplicate ticket with a clean, pushed tree has its workspace closed and its tree returned. `treehouse status` shows the slot available.
-11. The same ticket with a dirty or unpushed tree keeps its tree leased, its worker is stopped, and exactly one comment explains why.
+11. The same ticket with modified or staged tracked files, or an unpushed tree, keeps its tree leased, its worker is stopped, and exactly one comment explains why.
 12. A ticket moved back to Backlog or Todo has its worker stopped and its tree kept.
 13. A ticket entering Needs Human fires exactly one macOS notification.
 14. After every tick, each worker's herdr workspace label starts with the emoji for its Linear status.
@@ -211,7 +211,7 @@ Cheap actions run before launches, because one launch can take over 5 minutes.
 1. Take the lock, an exclusive `flock` on `tick.lock` in the state directory, which records the holder's pid for diagnosis. Exit 0 if another tick holds it. The OS releases the lock when a tick dies, so a crashed tick never blocks the ticks after it.
 2. Read the herdr snapshot, `treehouse status --json` for each configured repo, and the dispatcher cache.
 3. Read Linear in one query. Fetch every ticket holding a lease, every In Progress and In Review ticket assigned to you with the `ai` label, each one's newest comment time, and every child of an In Progress parent.
-4. Tear down trees whose tickets are Done, Canceled or Duplicate. Close the workspace, then `treehouse return --if-lease-holder <ticket> --force`. A dirty or unpushed tree only gets its workspace closed and one comment.
+4. Tear down trees whose tickets are Done, Canceled or Duplicate. Close the workspace, then `treehouse return --if-lease-holder <ticket> --force`. Delete the tree's untracked files first (`git clean -f -d`, never `-x`). A tree with modified or staged tracked files, or unpushed commits, only gets its workspace closed and one comment.
 5. Stop workers whose tickets went back to Backlog or Todo. Close the workspace and keep the lease.
 6. Set a parent to Done when every child is Done, Canceled or Duplicate.
 7. Promote Todo children of In Progress parents whose blockers are all Done, while the In Progress count, parents excluded, stays under the cap. A child that still holds a lease is never promoted, so a child you just paused stays paused.

@@ -149,6 +149,167 @@ func TestTickKeepsTheTreeOfAFinishedTicketThatHoldsWork(t *testing.T) {
 	}
 }
 
+func TestTickRemovesUntrackedFilesBeforeReturningTheTree(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.untracked(path, "zz_tmp_test.go")
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "teardown ENG-1: Done, removed untracked zz_tmp_test.go\n", out)
+	assert.NoFileExists(t, filepath.Join(path, "zz_tmp_test.go"))
+	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
+	assert.Equal(t, []string{h.repo + "|return " + path + " --if-lease-holder ENG-1 --force"}, h.returns())
+	assert.Empty(t, h.linear.mutations())
+}
+
+func TestTickDryRunListsUntrackedFilesWithoutDeletingThem(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.untracked(path, "a.txt")
+	h.untracked(path, "b.txt")
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	out, err := h.run("tick", "--dry-run")
+	require.NoError(t, err)
+
+	assert.Equal(t, "teardown ENG-1: Done, would remove untracked a.txt b.txt\n", out)
+	assert.FileExists(t, filepath.Join(path, "a.txt"))
+	assert.FileExists(t, filepath.Join(path, "b.txt"))
+	assert.Empty(t, h.closes())
+	assert.Empty(t, h.returns())
+}
+
+func TestTickLeavesIgnoredFilesAloneWhenRemovingUntrackedOnes(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	require.NoError(t, os.WriteFile(filepath.Join(path, ".gitignore"), []byte("build/\n"), 0o644))
+	h.git(path, "add", ".gitignore")
+	h.git(path, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "ignore")
+	h.push(path)
+	require.NoError(t, os.MkdirAll(filepath.Join(path, "build"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(path, "build", "out.bin"), []byte("x"), 0o644))
+	h.untracked(path, "scratch.txt")
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "teardown ENG-1: Done, removed untracked scratch.txt\n", out)
+	assert.FileExists(t, filepath.Join(path, "build", "out.bin"))
+	assert.Len(t, h.returns(), 1)
+}
+
+func TestTickQuotesUntrackedFileNamesThatHoldSpaces(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.untracked(path, "sp ace.txt")
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "teardown ENG-1: Done, removed untracked \"sp ace.txt\"\n", out)
+}
+
+func TestTickKeepsTheTreeWhenGitCleanLeavesANestedRepoBehind(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	require.NoError(t, os.MkdirAll(filepath.Join(path, "nested"), 0o755))
+	h.git(filepath.Join(path, "nested"), "init", "--initial-branch=main")
+	h.untracked(path, "scratch.txt")
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "keep ENG-1: untracked nested/ in "+path+" survived git clean\n", out)
+	assert.NoFileExists(t, filepath.Join(path, "scratch.txt"))
+	assert.DirExists(t, filepath.Join(path, "nested"))
+	assert.Empty(t, h.returns())
+}
+
+func TestTickIgnoresGitLocationVariablesWhenRemovingUntrackedFiles(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.untracked(path, "scratch.txt")
+	other := h.gitTree("ENG-2")
+	h.untracked(other, "precious.txt")
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	// A dispatcher started from a git hook inherits these, and they would point git at the wrong repository.
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+	t.Setenv("GIT_WORK_TREE", other)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "teardown ENG-1: Done, removed untracked scratch.txt\n", out)
+	assert.NoFileExists(t, filepath.Join(path, "scratch.txt"))
+	assert.FileExists(t, filepath.Join(other, "precious.txt"))
+}
+
+func TestTickReturnsATreeWhoseOnlyLeftoversAreIgnored(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	require.NoError(t, os.WriteFile(filepath.Join(path, ".gitignore"), []byte("*.log\n"), 0o644))
+	h.git(path, "add", ".gitignore")
+	h.git(path, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "ignore")
+	h.push(path)
+	require.NoError(t, os.WriteFile(filepath.Join(path, "run.log"), []byte("x"), 0o644))
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "teardown ENG-1: Done, clean and pushed\n", out)
+	assert.Len(t, h.returns(), 1)
+}
+
+func TestTickKeepsTheTreeAndItsUntrackedFilesWhenTrackedWorkIsAlsoThere(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.dirty(path)
+	h.untracked(path, "scratch.txt")
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "keep ENG-1: Done, but its tree has uncommitted changes\n", out)
+	assert.FileExists(t, filepath.Join(path, "scratch.txt"))
+	assert.Empty(t, h.returns())
+}
+
+func TestTickKeepsTheTreeWhenATrackedFileIsModifiedButNotStaged(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.untracked(path, "tracked.txt")
+	h.git(path, "add", "tracked.txt")
+	h.git(path, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "track")
+	h.push(path)
+	require.NoError(t, os.WriteFile(filepath.Join(path, "tracked.txt"), []byte("edited"), 0o644))
+	h.untracked(path, "scratch.txt")
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "keep ENG-1: Done, but its tree has uncommitted changes\n", out)
+	assert.FileExists(t, filepath.Join(path, "scratch.txt"))
+	assert.Empty(t, h.returns())
+}
+
 func TestTickReturnsTheTreeOnceItsWorkIsPushed(t *testing.T) {
 	h := newHarness(t)
 	path := h.gitTree("ENG-1")
@@ -587,6 +748,7 @@ func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
 "workspace close")
   echo "$3" >> "`+h.dir+`/closes.log"
   echo late > "`+path+`/late.txt"
+  git -C "`+path+`" add late.txt
   jq --arg id "$3" '.result.workspaces |= map(select(.workspace_id != $id))' "`+h.dir+`/workspaces.json" > "`+h.dir+`/workspaces.tmp"
   mv "`+h.dir+`/workspaces.tmp" "`+h.dir+`/workspaces.json" ;;
 "agent list") cat "`+h.dir+`/agents.json" ;;
@@ -830,9 +992,15 @@ func (h *harness) lease(ticket, path string) {
 	h.writeJSON("trees.json", []map[string]string{{"path": path, "status": "leased", "lease_holder": ticket}})
 }
 
-// dirty leaves an uncommitted file in the tree.
+// dirty stages a new file in the tree.
 func (h *harness) dirty(path string) {
-	require.NoError(h.t, os.WriteFile(filepath.Join(path, "wip.txt"), []byte("wip"), 0o644))
+	h.untracked(path, "wip.txt")
+	h.git(path, "add", "wip.txt")
+}
+
+// untracked leaves a file in the tree that git has never seen.
+func (h *harness) untracked(path, name string) {
+	require.NoError(h.t, os.WriteFile(filepath.Join(path, name), []byte("wip"), 0o644))
 }
 
 // commit adds a commit that no remote has.
