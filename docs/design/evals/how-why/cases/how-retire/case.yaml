@@ -19,5 +19,5 @@ graders:
     focus: { source: "file", path: "answer.md" }
   - name: flow
     type: llm
-    criteria: "PASS if the answer says a finished ticket's worker workspace is closed and its tree is returned to the pool (teardown), that untracked files are deleted first or a tree with work worth keeping stays leased (keep), and that internal/reconcile plans this as an action. FAIL if it describes none of teardown, keep or the tree pool."
+    criteria: "PASS only if the answer covers all three. (1) Teardown closes the worker's workspace and returns the tree to the pool. (2) A tree whose return would destroy work stays leased, which is the keep decision. (3) internal/reconcile plans this as an action. FAIL if any of the three is missing or wrong."
     focus: { source: "file", path: "answer.md" }
