@@ -2,7 +2,7 @@
 
 ## 2026-10-10, attempt 1 (5 runs)
 
-Control (`results/attempt1-control.json`, 2 runs): 7 of 20 non-`skill-fired` checks pass (35%), under the 40% limit. It fails `how-fired`, `why-fired` and `grounding-traced`. `candidates-cite-grounding` does not separate it from the skill, because the case prompt makes even the control write a grounding file.
+Control (`results/attempt1-control.json`, 2 runs): 7 of 18 non-`skill-fired` checks pass (39%), under the 40% limit. It fails `how-fired`, `why-fired` and `grounding-traced`. `candidates-cite-grounding` does not separate it from the skill, because the case prompt makes even the control write a grounding file.
 
 Skill (`results/attempt1-skill.json`), passes of 5: `skill-fired` 5, `how-fired` 1, `why-fired` 0, `arena-fired` 3, `candidates-get-grounding` 2, `candidates-get-runner-prompt` 2, `candidates-get-objective` 2, `grounding-traced` 3, `candidates-cite-grounding` 3, `last-message-asks-sketch` 3. Pooled 19 of 45. Cost about $25.6, at the invocation ceiling. Bar not met.
 
@@ -28,14 +28,16 @@ Decision for the user: the bar, fixed before the runs, is not met. Changing the 
 
 ## 2026-10-10, grader fix and rescore (no model run)
 
-The supervisor decided, for the user, that the three `candidates-get-*` graders read the wrong place, so they now also read the file the `Agent` prompt points at (`cases/ci-failure-forwarding/case.yaml`). They changed from exact checks to LLM trace graders. The stored traces hold the files the workers wrote, so the stored runs were rescored with a script instead of the judge model: for each `Agent` call made after `grounding.md` was written, the prompt plus any file the prompt names, written earlier by `Write` or a shell redirect, was searched with the old patterns. The script approximates the new LLM graders and is not the graders themselves. It is not kept in the repo.
+The supervisor decided, for the user, that the three `candidates-get-*` graders read the wrong place, so they now also read the file the `Agent` prompt points at (`cases/ci-failure-forwarding/case.yaml`). They changed from exact checks to LLM trace graders. The stored traces hold the files the workers wrote, so the stored runs were rescored with a script instead of the judge model: for each `Agent` call made after `grounding.md` was written, the prompt plus any file the prompt names, written earlier by `Write` or a shell redirect, was searched with the old patterns. The script approximates the new LLM graders and is not the graders themselves. It is `rescore.py` in this directory, and `results/rescore.json` holds its per-run verdicts for the attempt 3 skill runs and the control runs.
 
 Attempt 3 rescored: all three graders pass in 5 of 5 runs, so the skill's pooled score is 43 of 45 (96%). Under the bar's item 1 the skill still falls short on one count, `arena-fired` 4 of 5 where the bar asks 5 of 5 (run 2 never loaded the arena skill).
 
-Control rescored: `candidates-get-grounding` and `candidates-get-objective` now pass in both control runs, because the case prompt makes the control write a grounding file too and its candidates read it through the same pointer. Pooled the control passes 9 of 20 non-`skill-fired` checks (45%), over the 40% limit in item 3. The sensitivity check fails with the new graders. The likely fix is a stricter control arm that withholds the grounding file from the candidates, or a case prompt that doesn't demand the file from the control, and either needs model runs and a decision that was not given.
+Control rescored: `candidates-get-grounding` and `candidates-get-objective` now pass in both control runs, because the case prompt makes the control write a grounding file too and its candidates read it through the same pointer. Pooled the control passes 9 of 18 non-`skill-fired` checks (50%), over the 40% limit in item 3. The sensitivity check fails with the new graders. The likely fix is a stricter control arm that withholds the grounding file from the candidates, or a case prompt that doesn't demand the file from the control, and either needs model runs and a decision that was not given.
 
-Bar not met: `arena-fired` 4 of 5, and the control at 45%.
+Bar not met: `arena-fired` 4 of 5, and the control at 50% (9 of 18).
 
 ## 2026-10-10, PR review (CodeRabbit)
 
 Five claims were checked against the code and all held. The shared case prompt ordered a grounding file from both arms, which is why the control scored 45%. The prompt now says to write the file "if your instructions have you write a grounding file", so the control stub no longer has to. Every result above predates that change, and the control has not been rerun, because the attempt budget is spent. The score tables in this log stand for the old prompt only. The next attempt reruns the control and the skill on the new prompt.
+
+Correction from review: the control has 9 graders besides `skill-fired`, so two runs give a denominator of 18, not 20. The original control is 7 of 18 (39%) and the rescored control is 9 of 18 (50%). Both are still read against the 40% limit, and the original passes it by one check, so the conclusion is unchanged.
