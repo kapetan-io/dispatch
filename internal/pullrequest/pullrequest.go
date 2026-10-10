@@ -27,14 +27,23 @@ type PR struct {
 	// reviewer's latest review requests changes. An approval of an earlier
 	// commit does not count, so a push clears it.
 	Approved bool
-	// ActivityAt is the RFC 3339 time of the newest review or conversation
-	// comment, "" when there is none. It skips approvals without a body,
+	// ThreadAt is the RFC 3339 time of the newest comment on an unresolved
+	// review thread, "" when there is none.
+	ThreadAt string
+	// ActivityAt is the RFC 3339 time of the newest review, conversation
+	// comment or comment on an unresolved review thread, "" when there is none.
+	// It skips approvals without a body,
 	// dismissals and drafts, which ask the worker for nothing. A review with
 	// only a body opens no thread and sets no reviewDecision, so this is the
 	// only way the dispatcher sees it.
 	ActivityAt string
 	// ActivitySummary describes the item at ActivityAt, such as "a review by alice".
 	ActivitySummary string
+	// UnresolvedThreads means a review thread is still open. It keeps the PR from
+	// being ready but is not a Problem, because the reviewer closes the thread,
+	// and nudging every tick tells the worker about work it already did. The
+	// thread's newest comment reaches the worker through ActivityAt instead.
+	UnresolvedThreads bool
 	// Problems are the reasons the PR needs work, phrased to follow "has".
 	Problems []string
 	// Ready means the PR needs no work and nothing is still running: every check
@@ -44,8 +53,8 @@ type PR struct {
 	Ready bool
 }
 
-// NeedsWork reports whether the PR has a failed check, changes requested, an
-// unresolved review thread or a merge conflict.
+// NeedsWork reports whether the PR has a failed check, changes requested or a
+// merge conflict.
 func (p PR) NeedsWork() bool {
 	return len(p.Problems) > 0
 }
@@ -79,7 +88,7 @@ const query = `query PullRequest($owner: String!, $repo: String!, $branch: Strin
       nodes {
         number url isCrossRepository headRefOid mergeable reviewDecision
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-        reviewThreads(first: $threads) { nodes { isResolved } pageInfo { hasNextPage } }
+        reviewThreads(first: $threads) { nodes { isResolved comments(last: 1) { nodes { createdAt author { login } } } } pageInfo { hasNextPage } }
         latestOpinionatedReviews(first: 100) { nodes { state commit { oid } } }
         reviews(last: 30) { nodes { state body createdAt submittedAt author { login } } }
         comments(last: 30) { nodes { createdAt author { login } } }
@@ -130,6 +139,12 @@ type prNode struct {
 	ReviewThreads struct {
 		Nodes []struct {
 			IsResolved bool `json:"isResolved"`
+			Comments   struct {
+				Nodes []struct {
+					CreatedAt string  `json:"createdAt"`
+					Author    *author `json:"author"`
+				} `json:"nodes"`
+			} `json:"comments"`
 		} `json:"nodes"`
 		PageInfo struct {
 			HasNextPage bool `json:"hasNextPage"`
@@ -233,15 +248,19 @@ func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duratio
 		pr.Problems = append(pr.Problems, "changes requested")
 	}
 	for _, t := range n.ReviewThreads.Nodes {
-		if !t.IsResolved {
-			pr.Problems = append(pr.Problems, "an unresolved review thread")
-			break
+		if t.IsResolved {
+			continue
+		}
+		pr.UnresolvedThreads = true
+		for _, c := range t.Comments.Nodes {
+			pr.ThreadAt = max(pr.ThreadAt, c.CreatedAt)
+			note(c.CreatedAt, "a review thread comment by "+c.Author.name())
 		}
 	}
 	if n.Mergeable == "CONFLICTING" {
 		pr.Problems = append(pr.Problems, "a merge conflict")
 	}
-	pr.Ready = !pr.NeedsWork() && checksPassed && n.Mergeable == "MERGEABLE"
+	pr.Ready = !pr.NeedsWork() && !pr.UnresolvedThreads && checksPassed && n.Mergeable == "MERGEABLE"
 	return pr, true, nil
 }
 

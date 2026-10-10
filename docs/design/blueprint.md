@@ -80,7 +80,7 @@ Each criterion is checked through the dispatcher's surface (`dispatch tick`, `di
 6. For an In Review ticket, a push that moves the PR head resets the nudge count, so a review that arrives days later starts a fresh count.
 7. A blocked worker, one asking you a question through AskUserQuestion, triggers a macOS notification on the first tick it is blocked and again on later ticks while it stays blocked. The dispatcher never dismisses the dialog and never sets Needs Human for it (decision 9).
 8. Two consecutive failed launches set Needs Human with the launcher's error. `pool_exhausted` never counts as a failure.
-9. An In Review ticket whose PR has a failing check, changes requested, unresolved review threads or a merge conflict, and whose worker is idle or gone, receives the PR nudge naming the problem. A gone worker is resumed first.
+9. An In Review ticket whose PR has a failing check, changes requested or a merge conflict, and whose worker is idle or gone, receives the PR nudge naming the problem. A gone worker is resumed first.
 10. A Done, Canceled or Duplicate ticket with a clean, pushed tree has its workspace closed and its tree returned. `treehouse status` shows the slot available.
 11. The same ticket with modified or staged tracked files, or an unpushed tree, keeps its tree leased, its worker is stopped, and exactly one comment explains why.
 12. A ticket moved back to Backlog or Todo has its worker stopped and its tree kept.
@@ -230,12 +230,12 @@ Cheap actions run before launches, because one launch can take over 5 minutes.
 | In Progress | working | Nothing, or the comment nudge if the ticket has a new comment |
 | In Progress | idle | Send the resume nudge if the cache's last-seen status was Needs Human. Otherwise do nothing while the worker's latest Stop is under 60 minutes old and lists running background tasks, and send one stall nudge per Stop. Notify you on the 6th stall nudge with no status change and every 6th after, and once when no newer Stop arrives 60 minutes after a nudge. Never set Needs Human. |
 | In Progress or In Review | blocked | The worker is asking you a question. Notify you, and notify again if it stays unanswered. Never dismiss the dialog. A new comment waits for the worker to be unblocked. |
-| In Review | none | If the PR needs work, launch to resume, then send the PR nudge once the relaunched worker is idle (the next tick). Otherwise nothing, and the tree stays leased. |
+| In Review | none | If the PR needs work or an open review thread has an unseen comment, launch to resume, then send the PR nudge once the relaunched worker is idle (the next tick). Otherwise nothing, and the tree stays leased. |
 | In Review | idle | If the PR needs work, send the PR nudge. After 2 PR nudges with no push, set Needs Human. If the PR is ready for review and the cache has not notified about its head, notify you. |
 | In Review | working | Nothing, or the comment nudge if the ticket has a new comment |
 | Needs Human | any | Nothing |
 
-A PR needs work when any check has failed, `reviewDecision` is `CHANGES_REQUESTED`, a review thread is unresolved, or `mergeable` is `CONFLICTING`.
+A PR needs work when any check has failed, `reviewDecision` is `CHANGES_REQUESTED`, or `mergeable` is `CONFLICTING`. An unresolved review thread is nudged once per new comment through the activity rule, not as needs-work.
 
 #### Workspace labels
 

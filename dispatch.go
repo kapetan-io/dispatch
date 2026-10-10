@@ -585,7 +585,9 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 			e := c[a.Ticket.Identifier]
 			if !r.Failed() {
 				e.LaunchFailures = 0
-				if r.Status == launcher.StatusOK && a.Ticket.Status == cfg.Linear.Statuses.InReview {
+				if r.Status == launcher.StatusOK && a.ActivityAt != "" {
+					e.PRActivitySeen = a.ActivityAt
+				} else if r.Status == launcher.StatusOK && a.Ticket.Status == cfg.Linear.Statuses.InReview {
 					e.Relaunches++
 				}
 				c[a.Ticket.Identifier] = e
