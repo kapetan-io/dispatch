@@ -130,3 +130,23 @@ Change: the ticket now asks only for unknown top-level keys, which the example d
 Same wording, 10 cases, 5 runs each, 50 runs, $6.92. **Bar met.** Caught 30/30, planted clean 30/30, control clean 20/20, routed 50/50, repro 15/15. Every case is 5/5 on every measure it has. The trust-2 recheck on the narrowed suite caught 0 of 12 planted claims (2 runs per planted case, 6 cases), so the graders still fail a bad wording. Cost $2.33.
 
 The confirmation rerun of the final wording follows.
+
+## 2026-10-10, confirmation rerun of attempt 3
+
+Same wording, 10 cases, 5 runs each, 50 runs, $6.69. **Bar met again.** Caught 30/30, planted clean 30/30, control clean 20/20, routed 50/50, repro 15/15. Every case is 5/5 on every measure it has. `arms/attempt-3.md` is adopted as step 1 of `skills/build/SKILL.md`. Total spend across the sensitivity checks, the baseline, three attempts and their reruns was about $53.
+
+Limits of this result. Five runs per case cannot show a rate below about 20%, so a 5/5 case could still miss in one run of ten. The fixtures all come from one repo, and the bug cases that need a failing test live in the ticket-hint script. Workers are sonnet. The ticket texts are written in the real tickets' shape and are not the real tickets. Since `arms/current.md` is now what main holds before this change, `arms/current.md` stays as the pre-change reference.
+
+## 2026-10-10, review of the scorer, and the adopted results rescored
+
+A fresh sub-agent reviewed `cmd/claimeval` and `internal/claimeval` and found real defects in the scorer, each checked against the code. None of them touched the cases, the graders the eval runs, or the pass bar's numbers.
+
+1. Held-out cases were only checked one by one. Item 5 of the bar also needs the held-out subset to meet the pooled 90%. `report` now pools the held-out cases and fails on them.
+2. A case missing from the result, or a case with the wrong run count, scored as a pass. `report` now prints INCOMPLETE and exits non-zero. `-runs N` sets the expected count (5, or 2 for the trust check).
+3. The repro check ignored edits made through Bash (`sed -i`, redirects, an inline Python script), so a worker could edit first and still score as reproducing. It now looks at the targets a shell command writes, ignoring paths a comment only mentions, and a command that edits and runs the tests counts as editing first.
+4. A compile failure counted as a failing test. Only `--- FAIL: <name>` counts now, and only for `./gotest` runs.
+5. `report` always exited 0. It now exits 1 on BAR NOT MET, INCOMPLETE and BROKEN GRADERS.
+
+The first draft of fix 3 flagged every hint-fixed run, because it matched `bin/dispatch-ticket-hint` inside the heredoc of a ticket comment. That was caught by rescoring the stored results, and is covered by a test.
+
+Rescoring the stored results with the fixed scorer. Attempt 3's first pass: bar met, caught 30/30, planted clean 30/30, control clean 20/20, routed 50/50, repro 14/15 (hint-bug-true 4/5, which meets 4 of 5; pooled 93%). Its confirmation rerun: bar met, every measure 100%, repro 15/15. The trust-2 recheck still catches 0 of 12. Earlier attempts' stored results have 9 cases or a different run count, so the scorer calls them INCOMPLETE and gives no verdict. Their logged numbers above came from the first version of the scorer, and none of them is used to adopt a wording.

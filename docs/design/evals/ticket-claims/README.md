@@ -1,5 +1,7 @@
 # Ticket claims eval
 
+Status 2026-10-10: `arms/attempt-3.md` is the adopted wording and is step 1 of `skills/build/SKILL.md`. It met the pass bar on all 10 cases at 5 runs each, twice (the first pass and the confirmation rerun), and the `trust-2` control caught 0 of 12 planted claims. See `log.md`.
+
 Tests whether the build skill's step 1 wording makes a worker check a ticket's factual claims before relying on them, without making it doubt claims that are true. The wording under test replaces step 1 of `skills/build/SKILL.md`. Steps 2 to 7 are the skill's own.
 
 Tickets are often written by an agent from memory, so they can state the wrong cause of a bug, describe code that works differently, or give a recipe that can't work. The design decides what to build. The ticket's statements of fact are claims to check.

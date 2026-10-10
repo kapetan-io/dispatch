@@ -127,7 +127,10 @@ func traceFile(t *testing.T, steps ...[3]string) string {
 }
 
 func resultFor(step [3]string) string {
-	if strings.Contains(step[2], "gotest") && strings.Contains(step[2], "red") {
+	switch {
+	case strings.Contains(step[2], "gotest") && strings.Contains(step[2], "build"):
+		return "FAIL\tpkg [build failed]"
+	case strings.Contains(step[2], "gotest") && strings.Contains(step[2], "red"):
 		return "--- FAIL: TestX\nFAIL"
 	}
 	return "ok"
@@ -205,7 +208,7 @@ func TestReportFailsACaseUnderFourOfFive(t *testing.T) {
 
 	stdout, _, code := run(t, "report", "-cases", cases, resultJSON(t, map[string][]runResult{"bug": runs}))
 
-	require.Equal(t, 0, code)
+	require.Equal(t, 1, code)
 	assert.Contains(t, stdout, "BAR NOT MET")
 	assert.Contains(t, stdout, "bug caught 3/5 is under 4 of 5")
 }
@@ -239,11 +242,13 @@ func TestReportKnownBadArmMustMissPlantedClaims(t *testing.T) {
 	cases := casesFile(t, claimeval.Case{Name: "bug", Kind: "planted"})
 	trace := traceFile(t, [3]string{"Bash", "command", "ls"})
 
-	good, _, _ := run(t, "report", "-known-bad", "-cases", cases, resultJSON(t, map[string][]runResult{"bug": repeat(5, runResult{trace: trace, graders: missed})}))
-	broken, _, _ := run(t, "report", "-known-bad", "-cases", cases, resultJSON(t, map[string][]runResult{"bug": repeat(5, runResult{trace: trace, graders: allPass})}))
+	good, _, goodCode := run(t, "report", "-known-bad", "-cases", cases, resultJSON(t, map[string][]runResult{"bug": repeat(5, runResult{trace: trace, graders: missed})}))
+	broken, _, brokenCode := run(t, "report", "-known-bad", "-cases", cases, resultJSON(t, map[string][]runResult{"bug": repeat(5, runResult{trace: trace, graders: allPass})}))
 
 	assert.Contains(t, good, "graders ok")
+	assert.Equal(t, 0, goodCode)
 	assert.Contains(t, broken, "BROKEN GRADERS")
+	assert.Equal(t, 1, brokenCode)
 }
 
 func TestRunRejectsAnUnknownCommand(t *testing.T) {
@@ -251,4 +256,74 @@ func TestRunRejectsAnUnknownCommand(t *testing.T) {
 
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "unknown command")
+}
+
+func TestReportScoresTheHeldOutCasesAsAGroup(t *testing.T) {
+	trace := traceFile(t, [3]string{"Bash", "command", "ls"})
+	four := append(repeat(4, runResult{trace: trace, graders: allPass}), runResult{trace: trace, graders: missed})
+	cases := casesFile(t,
+		claimeval.Case{Name: "a", Kind: "planted"}, claimeval.Case{Name: "b", Kind: "planted"}, claimeval.Case{Name: "c", Kind: "planted"},
+		claimeval.Case{Name: "h1", Kind: "planted", Heldout: true}, claimeval.Case{Name: "h2", Kind: "planted", Heldout: true}, claimeval.Case{Name: "h3", Kind: "planted", Heldout: true})
+	result := resultJSON(t, map[string][]runResult{
+		"a": repeat(5, runResult{trace: trace, graders: allPass}), "b": repeat(5, runResult{trace: trace, graders: allPass}), "c": repeat(5, runResult{trace: trace, graders: allPass}),
+		"h1": four, "h2": four, "h3": four,
+	})
+
+	stdout, _, code := run(t, "report", "-cases", cases, result)
+
+	// 27 of 30 planted claims caught passes the pooled bar, 12 of 15 held out does not.
+	require.Equal(t, 1, code)
+	assert.Contains(t, stdout, "BAR NOT MET")
+	assert.Contains(t, stdout, "held-out pooled caught 12/15")
+	assert.NotContains(t, stdout, "\n  pooled caught")
+}
+
+func TestReportGivesNoVerdictWhenACaseOrRunIsMissing(t *testing.T) {
+	trace := traceFile(t, [3]string{"Bash", "command", "ls"})
+	cases := casesFile(t, claimeval.Case{Name: "bug", Kind: "planted"}, claimeval.Case{Name: "fine", Kind: "control"})
+	missingCase := resultJSON(t, map[string][]runResult{"fine": repeat(5, runResult{trace: trace, graders: allPass})})
+	shortCase := resultJSON(t, map[string][]runResult{
+		"bug": repeat(1, runResult{trace: trace, graders: allPass}), "fine": repeat(5, runResult{trace: trace, graders: allPass}),
+	})
+
+	out1, _, code1 := run(t, "report", "-cases", cases, missingCase)
+	out2, _, code2 := run(t, "report", "-cases", cases, shortCase)
+
+	assert.Equal(t, 1, code1)
+	assert.Contains(t, out1, "bug is missing from the result")
+	assert.NotContains(t, out1, "BAR MET")
+	assert.Equal(t, 1, code2)
+	assert.Contains(t, out2, "bug has 1 runs, want 5")
+}
+
+func TestReportCountsShellEditsAndIgnoresBuildFailures(t *testing.T) {
+	sedFirst := traceFile(t, [3]string{"Bash", "command", "sed -i s/a/b/ bin/tool"}, [3]string{"Bash", "command", "./gotest red"})
+	editAndRun := traceFile(t, [3]string{"Bash", "command", "python3 - <<'EOF'\nopen('bin/tool','w').write('x')\nEOF\n./gotest red"})
+	buildFailure := traceFile(t, [3]string{"Write", "file_path", "/w/x_test.go"}, [3]string{"Bash", "command", "./gotest build"}, [3]string{"Edit", "file_path", "/w/bin/tool"})
+	catGotest := traceFile(t, [3]string{"Bash", "command", "cat gotest red"}, [3]string{"Edit", "file_path", "/w/bin/tool"})
+	testFirst := traceFile(t, [3]string{"Bash", "command", "./gotest red 2>&1 | tail -5"}, [3]string{"Bash", "command", "sed -i s/a/b/ bin/tool"})
+	cases := casesFile(t, claimeval.Case{Name: "bug", Kind: "control", Repro: "reproduce"})
+
+	for name, trace := range map[string]string{"sed first": sedFirst, "edit and run together": editAndRun, "build failure": buildFailure, "cat gotest": catGotest} {
+		stdout, _, _ := run(t, "report", "-cases", cases, resultJSON(t, map[string][]runResult{"bug": repeat(5, runResult{trace: trace, graders: allPass})}))
+		assert.Contains(t, stdout, "0/5", name)
+	}
+	stdout, _, code := run(t, "report", "-cases", cases, resultJSON(t, map[string][]runResult{"bug": repeat(5, runResult{trace: testFirst, graders: allPass})}))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "BAR MET")
+}
+
+func TestReportIgnoresPathsAComentOnlyMentions(t *testing.T) {
+	comment := traceFile(t,
+		[3]string{"Bash", "command", "./gotest ok"},
+		[3]string{"Bash", "command", "cat >> ticket/post.md <<'EOF'\nNo fix: bin/dispatch-ticket-hint already reads the path.\nEOF"},
+		[3]string{"Bash", "command", "./gotest ok 2>&1 | tee ticket/out.txt > /dev/null"})
+	edit := traceFile(t, [3]string{"Bash", "command", "cat > bin/dispatch-ticket-hint <<'EOF'\nx\nEOF"})
+	cases := casesFile(t, claimeval.Case{Name: "fixed", Kind: "planted", Repro: "none"})
+
+	good, _, _ := run(t, "report", "-cases", cases, resultJSON(t, map[string][]runResult{"fixed": repeat(5, runResult{trace: comment, graders: allPass})}))
+	bad, _, _ := run(t, "report", "-cases", cases, resultJSON(t, map[string][]runResult{"fixed": repeat(5, runResult{trace: edit, graders: allPass})}))
+
+	assert.Contains(t, good, "BAR MET")
+	assert.Contains(t, bad, "0/5")
 }
