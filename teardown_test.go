@@ -751,6 +751,7 @@ func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
   git -C "`+path+`" add late.txt
   jq --arg id "$3" '.result.workspaces |= map(select(.workspace_id != $id))' "`+h.dir+`/workspaces.json" > "`+h.dir+`/workspaces.tmp"
   mv "`+h.dir+`/workspaces.tmp" "`+h.dir+`/workspaces.json" ;;
+"tab list") cat "`+h.dir+`/tabs.json" ;;
 "agent list") cat "`+h.dir+`/agents.json" ;;
 *) exit 2 ;;
 esac`)

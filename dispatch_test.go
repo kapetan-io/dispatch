@@ -473,6 +473,7 @@ func newHarness(t *testing.T) *harness {
 	require.NoError(t, os.MkdirAll(h.repo, 0o755))
 	h.writeFile("workspaces.json", `{"result":{"workspaces":[]}}`)
 	h.writeFile("agents.json", `{"result":{"agents":[]}}`)
+	h.writeFile("tabs.json", `{"result":{"tabs":[]}}`)
 	h.writeFile("trees.json", `[]`)
 	h.writeFile("launch.json", `{"status":"ok"}`)
 	h.script("herdr", `case "$1 $2" in
@@ -486,6 +487,11 @@ func newHarness(t *testing.T) *harness {
   echo "$3|$4" >> "`+dir+`/renames.log"
   jq --arg id "$3" --arg name "$4" '.result.workspaces |= map(if .workspace_id == $id then .label = $name else . end)' "`+dir+`/workspaces.json" > "`+dir+`/workspaces.tmp"
   mv "`+dir+`/workspaces.tmp" "`+dir+`/workspaces.json" ;;
+"tab list") cat "`+dir+`/tabs.json" ;;
+"tab rename")
+  echo "$3|$4" >> "`+dir+`/tab-renames.log"
+  jq --arg id "$3" --arg name "$4" '.result.tabs |= map(if .tab_id == $id then .label = $name else . end)' "`+dir+`/tabs.json" > "`+dir+`/tabs.tmp"
+  mv "`+dir+`/tabs.tmp" "`+dir+`/tabs.json" ;;
 "agent list") cat "`+dir+`/agents.json" ;;
 "agent prompt")
   [ -f "`+dir+`/prompt-fails" ] && { echo '{"error":{"code":"agent_blocked"}}'; exit 1; }
@@ -594,9 +600,19 @@ func (h *harness) workerOn(ticket, tree, id, status string) {
 		"agent":        "claude",
 		"agent_status": status,
 		"pane_id":      id + ":p1",
+		"tab_id":       id + ":t1",
 		"workspace_id": id,
 	})
 	h.writeJSON("agents.json", agents)
+
+	var tabs struct {
+		Result struct {
+			Tabs []map[string]string `json:"tabs"`
+		} `json:"result"`
+	}
+	require.NoError(h.t, json.Unmarshal(h.readFile("tabs.json"), &tabs))
+	tabs.Result.Tabs = append(tabs.Result.Tabs, map[string]string{"tab_id": id + ":t1", "label": ticket, "workspace_id": id})
+	h.writeJSON("tabs.json", tabs)
 }
 
 // setWorkerStatus changes the herdr status of a worker added with worker.
@@ -653,6 +669,27 @@ func (h *harness) labelWorkspace(id, label string) {
 // renames lists the workspace renames, as "<workspace>|<label>".
 func (h *harness) renames() []string {
 	return h.lines("renames.log")
+}
+
+// tabRenames lists the tab renames, as "<tab>|<label>".
+func (h *harness) tabRenames() []string {
+	return h.lines("tab-renames.log")
+}
+
+// labelTab sets the label herdr reports for a worker's tab.
+func (h *harness) labelTab(ticket, label string) {
+	var tabs struct {
+		Result struct {
+			Tabs []map[string]string `json:"tabs"`
+		} `json:"result"`
+	}
+	require.NoError(h.t, json.Unmarshal(h.readFile("tabs.json"), &tabs))
+	for _, tab := range tabs.Result.Tabs {
+		if tab["tab_id"] == "w-"+ticket+":t1" {
+			tab["label"] = label
+		}
+	}
+	h.writeJSON("tabs.json", tabs)
 }
 
 // closes lists the herdr workspaces that were closed.

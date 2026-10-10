@@ -651,3 +651,90 @@ func TestTickDropsTheReadyLabelWhenThePRIsClosed(t *testing.T) {
 
 	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1", "w-ENG-1|🟡 ENG-1"}, h.renames())
 }
+
+func TestTickNamesAWorkersTabByTicketAndTitle(t *testing.T) {
+	for _, status := range []string{"In Progress", "In Review", "Needs Human"} {
+		t.Run(status, func(t *testing.T) {
+			h := newHarness(t)
+			h.tickets(ticket("ENG-1", status, "dispatch"))
+			h.worker("ENG-1", "working")
+
+			_, err := h.run("tick")
+			require.NoError(t, err)
+
+			assert.Equal(t, []string{"w-ENG-1:t1|ENG-1 ticket ENG-1"}, h.tabRenames())
+
+			// A tab that already matches is not renamed again.
+			_, err = h.run("tick")
+			require.NoError(t, err)
+			assert.Len(t, h.tabRenames(), 1)
+		})
+	}
+}
+
+func TestTickKeepsTheFullTitleInATabName(t *testing.T) {
+	h := newHarness(t)
+	long := ticket("ENG-1", "In Progress", "dispatch")
+	long["title"] = strings.TrimSpace(strings.Repeat("word ", 21))
+	h.tickets(long)
+	h.worker("ENG-1", "working")
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"w-ENG-1:t1|ENG-1 " + long["title"].(string)}, h.tabRenames())
+}
+
+func TestTickRenamesATabWhenTheTitleChanges(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "working")
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	renamed := ticket("ENG-1", "In Progress", "dispatch")
+	renamed["title"] = "new title"
+	h.tickets(renamed)
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"w-ENG-1:t1|ENG-1 ticket ENG-1", "w-ENG-1:t1|ENG-1 new title"}, h.tabRenames())
+}
+
+func TestTickRenamesATabLeftBehindByTheLauncher(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "working")
+	h.labelTab("ENG-1", "ENG-1")
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"w-ENG-1:t1|ENG-1 ticket ENG-1"}, h.tabRenames())
+}
+
+func TestTickLeavesAWorkspaceLabelAloneWhenNamingTabs(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "working")
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, h.renames())
+}
+
+func TestTickStillWorksWhenTabListFails(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "working")
+	h.script("herdr-real", string(h.readFile("herdr")))
+	h.script("herdr", `[ "$1 $2" = "tab list" ] && exit 1
+exec "`+h.dir+`/herdr-real" "$@"`)
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, h.renames())
+	assert.Empty(t, h.tabRenames())
+}

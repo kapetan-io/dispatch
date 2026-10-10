@@ -378,6 +378,15 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: %v\n", err)
 		}
 	}
+	tabs := map[string]string{}
+	for _, tab := range snap.Tabs {
+		tabs[tab.ID] = tab.Label
+	}
+	for _, r := range input.TabRenames(tabs) {
+		if err := herdr.RenameTab(ctx, opts.Herdr, r.TabID, r.Label); err != nil {
+			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: %v\n", err)
+		}
+	}
 	launch := opts.Launcher
 	if launch == "" {
 		launch = filepath.Join(cfg.PluginRoot, "bin", "dispatch-launch")

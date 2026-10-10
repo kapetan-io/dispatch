@@ -28,6 +28,7 @@ type Worker struct {
 	RepoDir     string
 	WorkspaceID string
 	PaneID      string
+	TabID       string
 }
 
 // Find looks up the worker on the ticket's first tree. FindAll returns one for
@@ -65,6 +66,7 @@ func onTree(t treehouse.Tree, snap herdr.Snapshot) Worker {
 	for _, a := range snap.Agents {
 		if a.WorkspaceID == w.WorkspaceID && a.Kind == "claude" {
 			w.PaneID = a.PaneID
+			w.TabID = a.TabID
 			w.State = stateOf(a.Status)
 			return w
 		}
