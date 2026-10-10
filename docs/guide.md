@@ -119,7 +119,7 @@ A workspace is renamed only when its label differs from the one its ticket's sta
 
 A ticket labeled `design` (with the `ai` and repo labels) waits in Backlog until you design it. Move it to In Progress and the next tick launches a worker typed `/dispatch:grill <ticket>` on `grill_model` (default `opus`), where builds use `worker_model`. `dispatch tick --dry-run` shows `launch ENG-N` for it.
 
-The grill's worker is never nudged about a stall, a comment or a PR, never stopped and never escalated, because a design waiting on you is normal. It keeps running after the grill creates a child ticket under it. The child follows the usual rules. A Backlog child is left alone, and a child you move to In Progress launches as a build. A `design` ticket in In Progress holds a tree, so it counts toward `max_in_progress`.
+The grill's worker is never nudged about a stall, a comment or a PR, never stopped and never escalated, because a design waiting on you is normal. It keeps running after the grill creates a child ticket under it. A Backlog or Todo child is left alone, because a `design` parent's children are never promoted. A child you move to In Progress yourself launches as a build. A `design` ticket in In Progress holds a tree, so it counts toward `max_in_progress`.
 
 ## Parent tickets
 
@@ -127,7 +127,7 @@ Move a parent ticket to In Progress and the dispatcher starts its children for y
 
 - **Close.** A parent whose children are all Done, Canceled or Duplicate is moved to `close_parent` (default Done). A parent whose children couldn't be read is never closed.
 - **Promote.** A child in `todo` (default Todo) that is assigned to you, carries the `ai` label, belongs to a team in `[linear].teams`, is not a `design` or `design-review` ticket and has no unfinished blocker moves to In Progress, and the next tick launches its worker. A child waits until every blocker reaches `blocker_done` (default Done), A blocker that is Canceled or Duplicate (any status of Linear's canceled type) never gets there, so the child moves to Needs Human with one comment naming the blocker. It is escalated again if you move it back to Todo with that blocker still attached. A child that holds a treehouse lease was paused with its tree kept, so it stays in Todo until you move it to In Progress yourself. A child whose blocker list ran past one page waits too.
-- **Cap.** Promotion stops when the In Progress tickets other than parents reach `max_in_progress`. A child waiting for a slot is promoted on a later tick, and the tick prints `wait <child>` each time.
+- **Cap.** Promotion stops when the In Progress tickets other than parents (a `design` parent with a live grill counts) reach `max_in_progress`. A child waiting for a slot is promoted on a later tick, and the tick prints `wait <child>` each time.
 
 A parent never gets a worker, whatever its status. A parent labeled `design` keeps the grill worker it already has, which is never nudged, stopped or escalated. A parent labeled `design-review` is left alone until the review skill exists, and neither kind has its children promoted or the parent closed. If the children can't be read, the tick prints the error and skips promotion and closing, and everything else runs as usual. Promotion is the only way the dispatcher moves a ticket to In Progress.
 

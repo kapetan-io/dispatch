@@ -192,3 +192,15 @@ func TestTickStillSkipsADesignReviewTicketThatAlsoCarriesDesign(t *testing.T) {
 	assert.Equal(t, "skip ENG-1: carries \"design-review\", which this dispatcher does not launch yet\n", out)
 	assert.Empty(t, h.launches())
 }
+
+func TestTickDoesNotHoldAPromotionForADesignReviewTicket(t *testing.T) {
+	h := newHarness(t)
+	h.config("max_in_progress = 1\n")
+	h.tickets(parent("ENG-1", "In Progress"), withLabel(ticket("ENG-3", "In Progress", "dispatch"), "design-review"))
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "promote ENG-2: child of ENG-1\n")
+}

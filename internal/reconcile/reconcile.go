@@ -218,9 +218,9 @@ type Input struct {
 	Untracked map[string][]string
 }
 
-// designLabels mark tickets whose trees belong to the grill and the review, and
-// whose sessions the dispatcher never nudges, stops or escalates. It launches
-// the grill for "design" and nothing yet for "design-review".
+// designLabels mark tickets whose trees belong to the grill and the review, so
+// the dispatcher never tears them down. It launches the grill for "design" and
+// nothing yet for "design-review", and never nudges either session.
 var designLabels = []string{"design", "design-review"}
 
 // Plan returns the actions for one tick, launches last, in ticket order.
@@ -262,7 +262,7 @@ func Plan(in Input) []Action {
 			continue
 		}
 		// Every decision below reads labels, and a missing design label would
-		// launch a design ticket as a build.
+		// launch that ticket as a build.
 		if t.LabelsTruncated {
 			actions = append(actions, Action{Kind: Escalate, Ticket: t, Reason: "it has more labels than the dispatcher reads, so it can't reliably tell its repo or whether it is a design ticket. Remove some labels and move it back to In Progress."})
 			continue

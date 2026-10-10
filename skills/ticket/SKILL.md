@@ -1,6 +1,6 @@
 ---
 name: ticket
-description: Use when creating or rewriting a Linear ticket in a repo dispatch manages, whether asked or filing one yourself. Sets labels, assignee, status and body so dispatch picks the ticket up, or ignores it while its design is unsettled.
+description: Use when creating or rewriting a Linear ticket in a repo dispatch manages, whether asked or filing one yourself. Sets labels, assignee, status and body so dispatch picks the ticket up, and starts a grill instead of a build for a `design` ticket.
 ---
 
 # Write a dispatch ticket
