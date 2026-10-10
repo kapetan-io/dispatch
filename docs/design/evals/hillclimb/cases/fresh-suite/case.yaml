@@ -21,6 +21,11 @@ graders:
     focus: { source: file, path: evals/commit-message/queue.md }
     criteria: |
       queue.md lists commands the worker would run, in order. PASS if a known-bad control arm (an arm written to be wrong on purpose, such as one that always adds a body or never does) is queued to run before any arm that is a candidate improvement of the wording, and a baseline run of the current wording is queued as well. FAIL otherwise, including when the queue is empty.
+  - name: control-written
+    type: llm
+    focus: { source: file, path: evals/commit-message/README.md }
+    criteria: |
+      The README should list the known-bad control among the suite's arms, giving the path of its arm file under arms/ and the bar it must meet (for example that it passes under some share of checks). PASS if both are present and the control is described as wrong on purpose. FAIL if the README names no control arm file, or gives it no bar.
   - name: heldout
     type: llm
     focus: { source: file, path: evals/commit-message/cases.json }

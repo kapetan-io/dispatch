@@ -15,7 +15,7 @@ graders:
     type: llm
     focus: { source: file, path: evals/commit-message/log.md }
     criteria: |
-      The log held a baseline and an attempt 1, which failed because rename got a body. PASS if it now has an attempt 2 entry (or planned entry) that names exactly one idea aimed at the rename failure while keeping attempt 1's gain on cause, and the earlier entries are unchanged. FAIL if there is no attempt 2, it bundles several ideas, or earlier entries were rewritten.
+      The log held a baseline and an attempt 1, which failed because rename got a body. PASS if it now has an attempt 2 entry (or planned entry) that starts from the current wording and not from attempt 1, names exactly one idea aimed at the rename failure, and does not give up attempt 1's gain on cause, and the earlier entries are unchanged. FAIL if there is no attempt 2, it bundles several ideas, or earlier entries were rewritten.
   - name: no-leak
     type: llm
     focus: { source: file, path: evals/commit-message/log.md }

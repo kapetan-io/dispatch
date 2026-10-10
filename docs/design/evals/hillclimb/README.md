@@ -17,7 +17,7 @@ Each case is a small repo with a commit-message skill and a suite for it, and th
 |---|---|---|
 | fresh-suite | Cases and graders only. No bar, no control, nothing held out, no budget, no log. | Writes the bar, queues a known-bad control and a baseline first, holds cases out, states the budget, starts `log.md` with one idea for attempt 1. |
 | already-passing | Bar, control and a log showing the current wording met the bar twice. | Changes nothing, queues nothing new, and says so in `post.md`. |
-| after-failed | Bar and a log whose attempt 1 failed (rename got a body). Revert and dep-bump are held out. | Adds attempt 2 with one idea aimed at rename, queues it at 5 runs, keeps the bar and earlier log entries, and doesn't cite the held-out cases. |
+| after-failed | Bar and a log whose attempt 1 was reverted (rename got a body, 1/5 against a 4 of 5 floor). Revert and dep-bump are held out. | Adds attempt 2 from the current wording with one idea aimed at rename, queues it at 5 runs, keeps the bar and earlier log entries, and doesn't cite the held-out cases. |
 
 The fixtures' stored scores and the suite are made up to exercise the rules and are not a real climb.
 
@@ -26,11 +26,11 @@ The fixtures' stored scores and the suite are made up to exercise the rules and 
 Every grader reads a file the worker wrote, never what it says in chat.
 
 - `skill-fired`. The hillclimb skill was loaded.
-- fresh-suite: `bar`, `control`, `heldout`, `budget`, `one-change`.
+- fresh-suite: `bar`, `control`, `control-written`, `heldout`, `budget`, `one-change`.
 - already-passing: `stopped`, `told`, `unchanged`.
 - after-failed: `new-arm`, `no-leak`, `queued`, `bar-kept`.
 
-Each LLM grader takes the judge's single verdict.
+Each LLM grader takes the judge's single verdict. No grader opens the arm file the worker names as its control, because the worker chooses the file name. `control-written` checks that the README names a path and a bar, so a worker that queues a control it never wrote is caught only if the README lacks them.
 
 ## Pass bar (fixed 2026-10-10, before any run)
 

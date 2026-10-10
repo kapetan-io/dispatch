@@ -32,4 +32,4 @@ Idea: say the body gives the reason for the change and never restates the diff. 
 | migration | 5/5 | 5/5 | 4/5 |
 | dep-bump (held out) | 5/5 | 5/5 | |
 
-Kept as the best arm so far.
+Reverted in full, because `rename` fell below the per-case floor (1/5 against 4 of 5). `arms/attempt-1.md` stays as the record. The next attempt starts from `arms/current.md`, targets the rename failure and must not lose the gain on `cause` that attempt 1 showed.
