@@ -49,7 +49,7 @@ dispatch = "~/Development/dispatch"
 | Setting | Default | What it does |
 |---|---|---|
 | `interval_minutes` | `5` | Minutes between ticks of `dispatch run`. `dispatch run --interval 30s` overrides it. It must be above zero. |
-| `max_in_progress` | `4` | The most workers running at once. Counts In Progress tickets that aren't parents and have a worker. In Review and Needs Human tickets don't count. A launch or promotion over the cap waits for a later tick and prints `wait <ticket>`. |
+| `max_in_progress` | `4` | The most workers running at once. Caps running workers, and In Review and Needs Human tickets don't count. A launch counts In Progress tickets that have a worker, and waits with `wait <ticket>: N of M workers already running`. Promoting a parent's children counts every In Progress ticket that isn't a parent or a `design` ticket, with or without a worker, and waits with `wait <ticket>: N of M In Progress tickets already`. |
 | `launch_failure_limit` | `2` | Failed launches in a row before the ticket goes to Needs Human with the launcher's error. A full treehouse pool (`pool_exhausted`) never counts. |
 | `nudge_limit` | `2` | Nudges to an idle worker with no progress before the ticket goes to Needs Human. In Review, the count resets when a push moves the PR head, and it also caps relaunches of a gone worker that never pushes. |
 | `blocked_renotify_ticks` | `3` | Ticks between macOS notifications for a worker that stays blocked on a question. The first notification comes on the first blocked tick. `0` notifies on every blocked tick. |

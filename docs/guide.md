@@ -39,7 +39,7 @@ Linear's GitHub integration should move a ticket to Done when its PR merges. dis
 
 **4. Prepare each repo.** Workers run only on leased treehouse trees, so the repo's clone needs a `treehouse.toml` (`treehouse init` writes one). `max_trees` in it caps how many workers the repo runs at once. Turn on "Allow auto-merge" in the repo's GitHub settings. Workers enable auto-merge only when `main` requires an approving review, so protect `main` with the review and checks you want.
 
-**5. Write the config.** Create `~/.config/dispatch/config.toml` with one `[repos]` entry per repo label, pointing at that repo's clone. Without `[repos]`, every In Progress ticket escalates to Needs Human with "its repo is not in the dispatcher's config":
+**5. Write the config.** Create `~/.config/dispatch/config.toml` with one `[repos]` entry per repo label, pointing at that repo's clone. Without `[repos]`, every In Progress ticket escalates to Needs Human with "its repo \"dispatch\" is not in the dispatcher's config" (naming the ticket's repo label):
 
 ```toml
 [repos]
