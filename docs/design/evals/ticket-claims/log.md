@@ -124,3 +124,9 @@ Reason, which holds without the scores. At fixture `2700f6c` the blueprint's exa
 How I noticed, which is a held-out read. While checking the graders after the first trust-arm run (before attempt 1), I read the `post.md` of eight runs across four cases, unknown-keys among them. One unknown-keys comment listed the blueprint's `todo` and `[linear.needs_human]` as keys `Config` lacks. I read no unknown-keys transcript from any attempt. I asked before changing the case because I had already seen its scores, and the user approved on ENG-248.
 
 Change: the ticket now asks only for unknown top-level keys, which the example doesn't trip, and keeps the planted recipe claim (testdata and `loadFixture` don't exist). The expected routing is still "note it, keep going". Attempt 3's wording is unchanged. Attempt 3's unknown-keys numbers above are discarded, and the full ten cases rerun with the same wording, plus the trust-2 sensitivity check.
+
+## 2026-10-10, attempt 3 rerun on the narrowed suite
+
+Same wording, 10 cases, 5 runs each, 50 runs, $6.92. **Bar met.** Caught 30/30, planted clean 30/30, control clean 20/20, routed 50/50, repro 15/15. Every case is 5/5 on every measure it has. The trust-2 recheck on the narrowed suite caught 0 of 12 planted claims (2 runs per planted case, 6 cases), so the graders still fail a bad wording. Cost $2.33.
+
+The confirmation rerun of the final wording follows.
