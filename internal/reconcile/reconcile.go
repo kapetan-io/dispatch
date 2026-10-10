@@ -39,7 +39,8 @@ const (
 	Stop Kind = "stop"
 	// Keep closes the workspace of a finished ticket's live worker and leaves
 	// its tree leased, because returning it would destroy work. A non-empty Text
-	// is the one comment that says why.
+	// is the one comment that says why. A Keep with no Text and no
+	// WorkspaceID only reports the held tree.
 	Keep Kind = "keep"
 	// Promote moves a Todo child of an In Progress parent to In Progress, which
 	// is what starts it.

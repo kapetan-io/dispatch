@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -126,7 +127,7 @@ func TestTickKeepsTheTreeOfAFinishedTicketThatHoldsWork(t *testing.T) {
 			out, err := h.run("tick")
 			require.NoError(t, err)
 
-			assert.Equal(t, "keep ENG-1: Done, but its tree has "+test.work+"\n", out)
+			assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has "+test.work+"\n", out)
 			assert.Equal(t, []string{"w-ENG-1"}, h.closes())
 			assert.Empty(t, h.returns())
 			mutations := h.linear.mutations()
@@ -136,11 +137,11 @@ func TestTickKeepsTheTreeOfAFinishedTicketThatHoldsWork(t *testing.T) {
 			assert.Contains(t, mutations[0].variables["body"], "`"+path+"` has "+test.work+".")
 			assert.Contains(t, mutations[0].variables["body"], "kept this ticket's tree leased")
 
-			// Later ticks neither comment again nor close anything else.
+			// Later ticks neither comment again nor close anything else, but still name the held tree.
 			for range 2 {
 				out, err = h.run("tick")
 				require.NoError(t, err)
-				assert.Empty(t, out)
+				assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has "+test.work+"\n", out)
 			}
 			assert.Len(t, h.linear.mutations(), 1)
 			assert.Len(t, h.closes(), 1)
@@ -285,7 +286,7 @@ func TestTickKeepsTheTreeAndItsUntrackedFilesWhenTrackedWorkIsAlsoThere(t *testi
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "keep ENG-1: Done, but its tree has uncommitted changes\n", out)
+	assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has uncommitted changes\n", out)
 	assert.FileExists(t, filepath.Join(path, "scratch.txt"))
 	assert.Empty(t, h.returns())
 }
@@ -305,7 +306,7 @@ func TestTickKeepsTheTreeWhenATrackedFileIsModifiedButNotStaged(t *testing.T) {
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "keep ENG-1: Done, but its tree has uncommitted changes\n", out)
+	assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has uncommitted changes\n", out)
 	assert.FileExists(t, filepath.Join(path, "scratch.txt"))
 	assert.Empty(t, h.returns())
 }
@@ -353,13 +354,14 @@ func TestTickRetriesADirtyTreeCommentThatLinearRefused(t *testing.T) {
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "keep ENG-1: Done, but its tree has uncommitted changes\n", out)
+	assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has uncommitted changes\n", out)
 	assert.Len(t, h.closes(), 1)
 	assert.Len(t, h.linear.mutations(), 1)
 
 	out, err = h.run("tick")
 	require.NoError(t, err)
-	assert.Empty(t, out)
+	// The warning is posted once, but the held tree stays in the log.
+	assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has uncommitted changes\n", out)
 	assert.Len(t, h.linear.mutations(), 1)
 }
 
@@ -426,6 +428,25 @@ func TestTickTearsDownOneTreeAndKeepsAnotherOfTheSameTicket(t *testing.T) {
 	require.Len(t, mutations, 1)
 	assert.Contains(t, mutations[0].variables["body"], stranded)
 	assert.NotContains(t, mutations[0].variables["body"], clean)
+}
+
+func TestTickDryRunNamesEachHeldTreeOfOneTicket(t *testing.T) {
+	h := newHarness(t)
+	first := h.gitTree("ENG-1")
+	second := h.gitTree("library")
+	h.dirty(first)
+	h.dirty(second)
+	h.workerOn("ENG-1", first, "w-ENG-1", "idle")
+	h.workerOn("ENG-1", second, "w-library", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	out, err := h.run("tick", "--dry-run")
+	require.NoError(t, err)
+
+	assert.ElementsMatch(t, []string{
+		"keep ENG-1: Done, but its tree " + first + " has uncommitted changes",
+		"keep ENG-1: Done, but its tree " + second + " has uncommitted changes",
+	}, strings.Split(strings.TrimSpace(out), "\n"))
 }
 
 func TestTickLeavesTheTreesOfTicketsItDoesNotManage(t *testing.T) {
@@ -767,7 +788,7 @@ esac`)
 	// The next tick's plan sees the work and posts the one comment.
 	out, err = h.run("tick")
 	require.NoError(t, err)
-	assert.Equal(t, "keep ENG-1: Done, but its tree has uncommitted changes\n", out)
+	assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has uncommitted changes\n", out)
 	assert.Len(t, h.linear.mutations(), 1)
 	assert.Empty(t, h.returns())
 	assert.Len(t, h.closes(), 1)
@@ -788,11 +809,28 @@ func TestTickDryRunListsKeepAndStopWithoutActing(t *testing.T) {
 	out, err := h.run("tick", "--dry-run")
 	require.NoError(t, err)
 
-	assert.Equal(t, "keep ENG-1: Done, but its tree has uncommitted changes\nstop ENG-2: moved back to Todo\n", out)
+	assert.Equal(t, "keep ENG-1: Done, but its tree "+dirty+" has uncommitted changes\nstop ENG-2: moved back to Todo\n", out)
 	assert.Empty(t, h.closes())
 	assert.Empty(t, h.returns())
 	assert.Empty(t, h.linear.mutations())
 	assert.NoFileExists(t, filepath.Join(h.state, "cache.json"))
+}
+
+func TestTickDryRunListsAWarnedTreeOnEveryTick(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.commit(path)
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	require.Len(t, h.linear.mutations(), 1)
+
+	out, err := h.run("tick", "--dry-run")
+	require.NoError(t, err)
+
+	assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has 1 commit that no remote has\n", out)
+	assert.Len(t, h.linear.mutations(), 1)
 }
 
 func TestTickCommentsOnADirtyTreeThatHasNoWorkspace(t *testing.T) {
@@ -805,14 +843,14 @@ func TestTickCommentsOnADirtyTreeThatHasNoWorkspace(t *testing.T) {
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "keep ENG-1: Canceled, but its tree has uncommitted changes\n", out)
+	assert.Equal(t, "keep ENG-1: Canceled, but its tree "+path+" has uncommitted changes\n", out)
 	assert.Empty(t, h.closes())
 	assert.Empty(t, h.returns())
 	assert.Len(t, h.linear.mutations(), 1)
 
 	out, err = h.run("tick")
 	require.NoError(t, err)
-	assert.Empty(t, out)
+	assert.Equal(t, "keep ENG-1: Canceled, but its tree "+path+" has uncommitted changes\n", out)
 	assert.Len(t, h.linear.mutations(), 1)
 }
 
@@ -829,7 +867,7 @@ func TestTickKeepsATreeWhoseCommitsNoRemoteHas(t *testing.T) {
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "keep ENG-1: Done, but its tree has 1 commit that no remote has\n", out)
+	assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has 1 commit that no remote has\n", out)
 	assert.Empty(t, h.returns())
 }
 
