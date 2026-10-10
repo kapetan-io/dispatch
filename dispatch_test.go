@@ -371,13 +371,39 @@ func TestRunTicksOnEachIntervalUntilCanceled(t *testing.T) {
 		done <- err
 	}()
 	// The fake herdr never shows a worker, so every tick launches ENG-1 again.
-	require.Eventually(t, func() bool { return len(h.launches()) >= 3 }, 5*time.Second, 10*time.Millisecond)
+	// A 4th launch proves the 3rd tick printed before cancellation could drop it.
+	require.Eventually(t, func() bool { return len(h.launches()) >= 4 }, 15*time.Second, 10*time.Millisecond)
 	cancel()
 
 	require.NoError(t, <-done)
 	assert.Contains(t, out, "ticking every 20ms")
 	assert.GreaterOrEqual(t, strings.Count(out, "launch ENG-1: ok"), 3)
-	assert.Regexp(t, `(?m)^\d\d:\d\d:\d\d tick: 1 ticket, 1 action, Linear 1 call in \d+ms \(2400 of 2500 requests left this hour\), took \d+ms$`, out)
+	assert.Regexp(t, `(?m)^\d\d:\d\d:\d\d tick: 1 ticket, 1 action, Linear 1 call in `+duration+` \(2400 of 2500 requests left this hour\), took `+duration+`$`, out)
+}
+
+func TestRunPrintsASlowTickInSeconds(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.writeFile("treehouse-slow", "")
+	h.script("treehouse", `if [ -f "`+h.dir+`/treehouse-slow" ]; then rm "`+h.dir+`/treehouse-slow"; sleep 1.1; fi
+cat "`+h.dir+`/trees.json"`)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	var out string
+
+	go func() {
+		var err error
+		out, _, err = h.runContext(ctx, "run", "--interval", "20ms")
+		done <- err
+	}()
+	// A second launch proves the slow first tick already printed its line,
+	// which cancellation would otherwise drop.
+	require.Eventually(t, func() bool { return len(h.launches()) >= 2 }, 15*time.Second, 10*time.Millisecond)
+	cancel()
+
+	require.NoError(t, <-done)
+	assert.Regexp(t, `(?m)^\d\d:\d\d:\d\d tick: 1 ticket, 1 action, Linear 1 call in `+duration+` \(2400 of 2500 requests left this hour\), took \d+(?:\.\d+)?s$`, out)
 }
 
 func TestRunKeepsTickingAfterAFailedTick(t *testing.T) {
@@ -402,7 +428,7 @@ cat "`+h.dir+`/trees.json"`)
 	cancel()
 
 	require.NoError(t, <-done)
-	assert.Regexp(t, `^\d\d:\d\d:\d\d dispatch: tick failed after \d+ms: while running treehouse status`, stderr)
+	assert.Regexp(t, `^\d\d:\d\d:\d\d dispatch: tick failed after `+duration+`: while running treehouse status`, stderr)
 }
 
 func TestRunRejectsANonPositiveInterval(t *testing.T) {
@@ -413,6 +439,10 @@ func TestRunRejectsANonPositiveInterval(t *testing.T) {
 
 	require.ErrorContains(t, err, "interval must be positive")
 }
+
+// duration matches Go's duration formatting, which prints 0s under a
+// millisecond, 12ms under a second, and 3.477s from a second up.
+const duration = `(?:\d+h)?(?:\d+m)?\d+(?:\.\d+)?(?:ms|s)`
 
 const (
 	needsHumanID = "state-needs-human"
