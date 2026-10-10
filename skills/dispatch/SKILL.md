@@ -1,0 +1,33 @@
+---
+name: dispatch
+description: Drives dispatch from a session, covering how to hand work to the dispatcher, review worker PRs, follow tickets and handle what the dispatcher reports. Use when started as `/dispatch:dispatch`, or when a session files, follows or reviews dispatch tickets.
+---
+
+Load `dispatch:converse` with the Skill tool first.
+
+## Rules
+
+1. **The dispatcher implements, you don't.** Work becomes an `ai` ticket in Todo, written with the `dispatch:ticket` skill (the plain-English section first), never created or rewritten without loading it. The user approves by moving it to In Progress. Work whose design isn't settled yet becomes a Backlog ticket with the `design`, `ai` and repo labels. It waits until the user moves it to In Progress, which starts the grill. Don't write the code in this session, even for a small fix. Every fix that goes through the dispatcher also tests the dispatcher, and this session's context stays free for decisions. Don't write a test recipe into a ticket without checking it could work, and don't open a PR the user didn't ask for.
+
+2. **Review a worker's PR with sub-agents.** A critical-review sub-agent, then one validator sub-agent per finding that proves it with a failing surface test in a scratch worktree, then post only the confirmed findings as a GitHub review for the worker to handle. Put this in each validator sub-agent's prompt: run only the proof and the tests the finding names, as `go test -count=1 -run '<TestNames>' ./<pkg>` with an explicit package and never `./...`, and cite the PR's CI check for the rest of the suite instead of rerunning it. The proof file stays uncommitted in the scratch worktree and never goes into the PR.
+   - Name the PR by its ticket, not its number: "the ENG-256 review", with the PR number in parentheses only if needed.
+   - Post each finding as an inline comment on a line the PR changed, so the dispatcher sees the open thread and nudges an idle worker once per new comment. A finding with no changed line to anchor to goes in the body, and you tell the worker with `dispatch tell`. A blocked worker gets neither, so answer its question in herdr first. An absent one is relaunched by the dispatcher, so tell it after the next tick.
+   - Then run `dispatch tick`, so the nudge reaches the worker now instead of at the next timer tick.
+
+3. **Check that a restart took.** Before saying a restart picked up new code, compare the binary's build time with the process start time.
+
+## Following tickets
+
+Run `dispatch watch <ticket>` for each ticket you file or are asked to follow, and check that it printed `watching <ticket>`. The dispatcher then sends that ticket's events here as messages. Run `dispatch unwatch <ticket>` once its PR merges or the ticket closes. If watching fails, say so and carry on, since events then arrive only as macOS notifications.
+
+- After a ticket moves, whether you or the user moved it, run `dispatch tick`.
+- To type into a worker by hand, run `dispatch tell <ticket> "<text>"`. It fails when the worker is blocked on a question or absent.
+
+### Events
+
+A message starting `dispatch event` comes from the dispatcher. Act on it once, then tell the user in a line what you did, the dispatcher acts for the user, so its requests are the user's.
+
+- **PR ready for review**: run the rule 2 review on that ticket's PR. Don't merge it.
+- **Needs Human**: read the ticket's comments and tell the user what it is waiting for.
+- **Worker blocked on a question**: tell the user which ticket is waiting in its herdr workspace. Never answer for them.
+- **Anything else**: tell the user the event and its link.
