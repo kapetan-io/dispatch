@@ -57,6 +57,9 @@ type Ticket struct {
 type Blocker struct {
 	Identifier string
 	Status     string
+	// Abandoned means the blocker's status is of Linear's canceled type, which
+	// covers Canceled and Duplicate. It never becomes Done.
+	Abandoned bool
 }
 
 // Label is a Linear label and the label group it belongs to, if any.
@@ -192,6 +195,7 @@ type issueNode struct {
 				Identifier string `json:"identifier"`
 				State      struct {
 					Name string `json:"name"`
+					Type string `json:"type"`
 				} `json:"state"`
 			} `json:"issue"`
 		} `json:"nodes"`
@@ -335,7 +339,7 @@ const parentChildren = `query ParentChildren($parents: [ID!], $first: Int!) {
       parent { identifier }
       labels(first: 25) { nodes { name parent { name } } pageInfo { hasNextPage } }
       children(first: 1) { nodes { id } }
-      inverseRelations(first: 10) { nodes { type issue { identifier state { name } } } pageInfo { hasNextPage } }
+      inverseRelations(first: 10) { nodes { type issue { identifier state { name type } } } pageInfo { hasNextPage } }
     }
     pageInfo { hasNextPage }
   }
@@ -377,7 +381,7 @@ func (c Client) ParentChildren(ctx context.Context, parents []string) (map[strin
 		t.BlockersTruncated = n.InverseRelations.PageInfo.HasNextPage
 		for _, r := range n.InverseRelations.Nodes {
 			if r.Type == "blocks" {
-				t.Blockers = append(t.Blockers, Blocker{Identifier: r.Issue.Identifier, Status: r.Issue.State.Name})
+				t.Blockers = append(t.Blockers, Blocker{Identifier: r.Issue.Identifier, Status: r.Issue.State.Name, Abandoned: r.Issue.State.Type == "canceled"})
 			}
 		}
 		children[n.Parent.Identifier] = append(children[n.Parent.Identifier], t)

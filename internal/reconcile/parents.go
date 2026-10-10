@@ -23,9 +23,10 @@ func (in Input) Parents() []linear.Ticket {
 
 // planParents closes each parent whose children are all finished, then
 // promotes the Todo children that are ready, oldest first, while the In
-// Progress count stays under the cap. Only promotion writes In Progress.
+// Progress count stays under the cap. A Todo child whose blocker was abandoned
+// is escalated instead. Only promotion writes In Progress.
 func (in Input) planParents() []Action {
-	var closes, promotes []Action
+	var closes, starts []Action
 	active := in.activeCount()
 	for _, parent := range in.Parents() {
 		children := in.Children[parent.Identifier]
@@ -39,40 +40,63 @@ func (in Input) planParents() []Action {
 			continue
 		}
 		for _, c := range children {
+			// An unread pool hides which children hold a lease, and a paused child
+			// must stay paused.
+			if blocker, ok := in.abandonedBlocker(c); ok && !in.unread(c) {
+				starts = append(starts, Action{Kind: Escalate, Ticket: c, Reason: fmt.Sprintf("its blocker %s is %s and will never be Done, so it will not start. Remove the blocker relation, cancel this ticket, or move it back to Todo yourself.", blocker.Identifier, blocker.Status)})
+				continue
+			}
 			if !in.promotable(c) {
 				continue
 			}
 			if in.unread(c) {
-				promotes = append(promotes, Action{Kind: Wait, Ticket: c, Reason: fmt.Sprintf("the %s pool could not be read this tick", in.repoOf(c))})
+				starts = append(starts, Action{Kind: Wait, Ticket: c, Reason: fmt.Sprintf("the %s pool could not be read this tick", in.repoOf(c))})
 				continue
 			}
 			// A child that is itself a parent never gets a worker, so it takes no slot.
 			if !c.HasChildren {
 				if active >= in.MaxInProgress {
-					promotes = append(promotes, Action{Kind: Wait, Ticket: c, Reason: fmt.Sprintf("%d of %d In Progress tickets already", active, in.MaxInProgress)})
+					starts = append(starts, Action{Kind: Wait, Ticket: c, Reason: fmt.Sprintf("%d of %d In Progress tickets already", active, in.MaxInProgress)})
 					continue
 				}
 				active++
 			}
-			promotes = append(promotes, Action{Kind: Promote, Ticket: c, Reason: "child of " + parent.Identifier})
+			starts = append(starts, Action{Kind: Promote, Ticket: c, Reason: "child of " + parent.Identifier})
 		}
 	}
-	return append(closes, promotes...)
+	return append(closes, starts...)
 }
 
 // promotable reports whether a child is a Todo ticket of yours that is ready to
 // start. A child that holds a lease was paused with its tree kept, and stays
 // paused until you move it yourself.
 func (in Input) promotable(c linear.Ticket) bool {
-	if c.Status != in.Todo || !slices.Contains(in.Teams, c.Team) || !c.Mine || !c.HasLabel(in.AILabel) || !in.notDesign(c) {
+	if !in.startable(c) || c.BlockersTruncated {
 		return false
 	}
-	if in.Leased[c.Identifier] || c.BlockersTruncated {
-		return false
-	}
-	// A Canceled blocker never becomes Done, so its child waits, as the design
-	// has it today.
 	return !slices.ContainsFunc(c.Blockers, func(b linear.Blocker) bool { return b.Status != in.BlockerDone })
+}
+
+// abandonedBlocker returns the first blocker of a startable child that was
+// canceled or marked duplicate, so the child would wait for it forever. A
+// blocker that is merely Done is not abandoned, since blocker_done may name a
+// later status it still moves to. A truncated blocker list still escalates,
+// since one abandoned blocker on the first page is enough.
+func (in Input) abandonedBlocker(c linear.Ticket) (linear.Blocker, bool) {
+	if !in.startable(c) {
+		return linear.Blocker{}, false
+	}
+	i := slices.IndexFunc(c.Blockers, func(b linear.Blocker) bool { return b.Abandoned })
+	if i < 0 {
+		return linear.Blocker{}, false
+	}
+	return c.Blockers[i], true
+}
+
+// startable reports whether a child is a Todo ticket of yours that the
+// dispatcher may act on, whatever its blockers say.
+func (in Input) startable(c linear.Ticket) bool {
+	return c.Status == in.Todo && slices.Contains(in.Teams, c.Team) && c.Mine && c.HasLabel(in.AILabel) && in.notDesign(c) && !in.Leased[c.Identifier]
 }
 
 // activeCount is the In Progress tickets that hold or will take a worker slot.
