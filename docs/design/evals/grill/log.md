@@ -38,6 +38,6 @@ Bar not met: `arena-fired` 4 of 5, and the control at 50% (9 of 18).
 
 ## 2026-10-10, PR review (CodeRabbit)
 
-Five claims were checked against the code and all held. The shared case prompt ordered a grounding file from both arms, which is why the control scored 45%. The prompt now says to write the file "if your instructions have you write a grounding file", so the control stub no longer has to. Every result above predates that change, and the control has not been rerun, because the attempt budget is spent. The score tables in this log stand for the old prompt only. The next attempt reruns the control and the skill on the new prompt.
+Five claims were checked against the code and all held. The shared case prompt ordered a grounding file from both arms, which is why the control scored 50%. The prompt now says to write the file "if your instructions have you write a grounding file", so the control stub no longer has to. Every result above predates that change, and the control has not been rerun, because the attempt budget is spent. The score tables in this log stand for the old prompt only. The next attempt reruns the control and the skill on the new prompt.
 
 Correction from review: the control has 9 graders besides `skill-fired`, so two runs give a denominator of 18, not 20. The original control is 7 of 18 (39%) and the rescored control is 9 of 18 (50%). Both are still read against the 40% limit, and the original passes it by one check, so the conclusion is unchanged.
