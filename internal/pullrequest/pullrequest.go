@@ -22,8 +22,9 @@ type PR struct {
 	// Repo is the GitHub repo the PR belongs to, as owner/name, read from the
 	// PR's own URL so it is right whichever remote gh resolved.
 	Repo string
-	// Approved means a reviewer's latest review approves the head commit. An
-	// approval of an earlier commit does not count, so a push clears it.
+	// Approved means a reviewer's latest review approves the head commit and no
+	// reviewer's latest review requests changes. An approval of an earlier
+	// commit does not count, so a push clears it.
 	Approved bool
 	// Problems are the reasons the PR needs work, phrased to follow "has".
 	Problems []string
