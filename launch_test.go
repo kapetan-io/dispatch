@@ -44,6 +44,26 @@ func TestLaunchStartsAWorkerTypedTheBuildKickoff(t *testing.T) {
 	assert.Contains(t, tabs, "--env PATH=/plugin/scripts/shims:")
 }
 
+func TestLaunchLabelsTheTabWithTheTicketAndTitle(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+
+	out := l.launch("ENG-1", "thrawn01/eng-1", "--title", "Fix the thing")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Contains(t, l.readFile("tabs.log"), "--label ENG-1 Fix the thing --env")
+}
+
+func TestLaunchLabelsTheTabWithTheTicketWhenGivenNoTitle(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+
+	out := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Contains(t, l.readFile("tabs.log"), "--label ENG-1 --env")
+}
+
 func TestLaunchTypesTheKickoffItIsGiven(t *testing.T) {
 	l := newLaunchHarness(t)
 	l.workerStarts()
@@ -636,6 +656,7 @@ func TestTickLaunchesWithTheBuiltInLauncher(t *testing.T) {
 	assert.Equal(t, "launch ENG-1: ok\n", out)
 	assert.Equal(t, "w9:p1 /dispatch:build ENG-1\n", string(h.readFile("runs.log")))
 	assert.Contains(t, string(h.readFile("starts.log")), "--model sonnet")
+	assert.Contains(t, string(h.readFile("tabs.log")), "--label ENG-1 ticket ENG-1 --env")
 }
 
 func TestLaunchTakesFlagsBeforeAndBetweenTheTicketAndBranch(t *testing.T) {

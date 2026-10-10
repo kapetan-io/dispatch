@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/reconcile"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
@@ -34,6 +36,9 @@ const (
 // Request is one ticket to start a worker for.
 type Request struct {
 	Ticket string
+	// Title is the ticket's title. The worker's tab is labeled "<Ticket>
+	// <Title>", or just <Ticket> when it is empty.
+	Title  string
 	Branch string
 	// Base is the ref a new branch starts from. Defaults to main.
 	Base string
@@ -129,7 +134,7 @@ func (l *launch) log(format string, args ...any) {
 func (l *launch) run(ctx context.Context) Result {
 	req := &l.req
 	if req.Ticket == "" || req.Branch == "" {
-		l.log("usage: dispatch launch <TICKET> <BRANCH> [--base REF] [--model NAME] [--kickoff TEXT]")
+		l.log("usage: dispatch launch <TICKET> <BRANCH> [--base REF] [--model NAME] [--kickoff TEXT] [--title TEXT]")
 		return Result{Status: StatusUsageError, Detail: "TICKET and BRANCH are required"}
 	}
 	// Without it the worker starts with no dispatch plugin and no shims.
@@ -419,7 +424,7 @@ func (l *launch) openWorkspace(ctx context.Context) (Result, bool) {
 	// does, so the worker runs in a fresh stamped tab and the agent-less tabs
 	// the workspace opened with are closed.
 	shims := filepath.Join(l.opts.PluginRoot, "scripts", "shims")
-	out, _ := l.herdrCombined(ctx, "tab", "create", "--workspace", l.workspace, "--cwd", l.tree, "--label", l.req.Ticket,
+	out, _ := l.herdrCombined(ctx, "tab", "create", "--workspace", l.workspace, "--cwd", l.tree, "--label", l.tabLabel(),
 		"--env", "PATH="+shims+":"+os.Getenv("PATH"),
 		"--env", "AUTONOMOUS_WORKER=1",
 		"--env", "DISPATCH_PLUGIN_ROOT="+l.opts.PluginRoot,
@@ -675,4 +680,10 @@ func (l *launch) gitToStderr(ctx context.Context, dir string, args ...string) er
 	cmd := exec.CommandContext(ctx, l.opts.Git, append([]string{"-C", dir}, args...)...)
 	cmd.Stdout, cmd.Stderr = l.opts.Stderr, l.opts.Stderr
 	return cmd.Run()
+}
+
+// tabLabel is what the tick's tab rename sets, so the first tick leaves a
+// freshly launched tab alone.
+func (l *launch) tabLabel() string {
+	return reconcile.TabLabel(linear.Ticket{Identifier: l.req.Ticket, Title: l.req.Title})
 }
