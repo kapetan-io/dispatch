@@ -549,3 +549,67 @@ func TestTickUsesTheWorkersPRWhenAForkPRSharesItsBranchName(t *testing.T) {
 	assert.Equal(t, "merge ENG-1: PR approved\n", out)
 	assert.Equal(t, []string{mergeCall1}, h.lines("merges.log"))
 }
+
+// forkPage writes the first page of the ticket's PR query: 20 fork PRs and a
+// cursor to the next page, which holds the worker's own PR.
+func (h *harness) forkPage(next string) {
+	var file struct {
+		Data struct {
+			Repository struct {
+				PullRequests struct {
+					PageInfo map[string]any   `json:"pageInfo"`
+					Nodes    []map[string]any `json:"nodes"`
+				} `json:"pullRequests"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+	require.NoError(h.t, json.Unmarshal(h.readFile("pr-eng-1.json"), &file))
+	forks := []map[string]any{}
+	for range 20 {
+		fork := map[string]any{}
+		for k, v := range file.Data.Repository.PullRequests.Nodes[0] {
+			fork[k] = v
+		}
+		fork["isCrossRepository"], fork["headRefOid"], fork["url"] = true, "evil", "https://github.com/kapetan-io/dispatch/pull/99"
+		forks = append(forks, fork)
+	}
+	file.Data.Repository.PullRequests.Nodes = forks
+	file.Data.Repository.PullRequests.PageInfo = map[string]any{"hasNextPage": true, "endCursor": next}
+	h.writeJSON("pr-eng-1.json", file)
+}
+
+func TestTickFindsTheWorkersPRBehindAFullPageOfForkPRs(t *testing.T) {
+	h := newHarness(t)
+	h.config(autoMergeConfig)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", approvedPR("a1"))
+	h.writeFile("pr-eng-1.c1.json", string(h.readFile("pr-eng-1.json")))
+	h.forkPage("c1")
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "merge ENG-1: PR approved\n", out)
+	assert.Equal(t, []string{mergeCall1}, h.lines("merges.log"))
+	assert.Equal(t, []string{"thrawn01/eng-1", "thrawn01/eng-1.c1"}, h.prReads())
+}
+
+func TestTickReportsABranchWhoseForkPRsFillEveryPageItReads(t *testing.T) {
+	h := newHarness(t)
+	h.config(autoMergeConfig)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", approvedPR("a1"))
+	h.forkPage("c1")
+	// Every page points at the next one, so the worker's PR is never reached.
+	h.writeFile("pr-eng-1.c1.json", string(h.readFile("pr-eng-1.json")))
+
+	_, stderr, err := h.runContext(t.Context(), "tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "while reading the PR for ENG-1")
+	assert.Contains(t, stderr, "none from this repo")
+	assert.Empty(t, h.lines("merges.log"))
+	assert.Len(t, h.prReads(), 5)
+}

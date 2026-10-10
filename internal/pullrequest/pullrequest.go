@@ -58,9 +58,15 @@ func (p PR) Problem() string {
 // an unresolved thread beyond the first page would go unnoticed.
 const maxThreads = 100
 
-const query = `query PullRequest($owner: String!, $repo: String!, $branch: String!, $threads: Int!) {
+// prPages bounds how many pages of same-named PRs Read walks looking for one
+// from this repo. A branch with 20 fork PRs ahead of the worker's is the case
+// this exists for, and more than prPages of them is an error rather than a miss.
+const prPages = 5
+
+const query = `query PullRequest($owner: String!, $repo: String!, $branch: String!, $threads: Int!, $after: String) {
   repository(owner: $owner, name: $repo) {
-    pullRequests(headRefName: $branch, states: OPEN, first: 20, orderBy: {field: UPDATED_AT, direction: DESC}) {
+    pullRequests(headRefName: $branch, states: OPEN, first: 20, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      pageInfo { hasNextPage endCursor }
       nodes {
         number url isCrossRepository headRefOid mergeable reviewDecision
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
@@ -71,81 +77,87 @@ const query = `query PullRequest($owner: String!, $repo: String!, $branch: Strin
   }
 }`
 
+type prNode struct {
+	Number            int    `json:"number"`
+	IsCrossRepository bool   `json:"isCrossRepository"`
+	URL               string `json:"url"`
+	HeadRefOid        string `json:"headRefOid"`
+	Mergeable         string `json:"mergeable"`
+	ReviewDecision    string `json:"reviewDecision"`
+	Commits           struct {
+		Nodes []struct {
+			Commit struct {
+				StatusCheckRollup *struct {
+					State string `json:"state"`
+				} `json:"statusCheckRollup"`
+			} `json:"commit"`
+		} `json:"nodes"`
+	} `json:"commits"`
+	LatestOpinionatedReviews struct {
+		Nodes []struct {
+			State  string `json:"state"`
+			Commit struct {
+				Oid string `json:"oid"`
+			} `json:"commit"`
+		} `json:"nodes"`
+	} `json:"latestOpinionatedReviews"`
+	ReviewThreads struct {
+		Nodes []struct {
+			IsResolved bool `json:"isResolved"`
+		} `json:"nodes"`
+		PageInfo struct {
+			HasNextPage bool `json:"hasNextPage"`
+		} `json:"pageInfo"`
+	} `json:"reviewThreads"`
+}
+
+type prPage struct {
+	Data struct {
+		Repository struct {
+			PullRequests struct {
+				PageInfo struct {
+					HasNextPage bool   `json:"hasNextPage"`
+					EndCursor   string `json:"endCursor"`
+				} `json:"pageInfo"`
+				Nodes []prNode `json:"nodes"`
+			} `json:"pullRequests"`
+		} `json:"repository"`
+	} `json:"data"`
+}
+
 // Read finds the open PR whose head branch is branch in the repo cloned at
-// repoDir, with one `gh api graphql` call. It returns false when the branch
-// has no open PR, and an error when the PR has more than maxThreads review threads. Each call is cut off after timeout.
+// repoDir, with one `gh api graphql` call per page of same-named PRs. It
+// returns false when the branch has no open PR from this repo, and an error
+// when the PR has more than maxThreads review threads. Each call is cut off after timeout.
 func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duration) (PR, bool, error) {
-	// The tick holds its lock while it waits, and gh sets no timeout of its own.
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "api", "graphql",
-		"-F", "owner={owner}", "-F", "repo={repo}", "-f", "branch="+branch,
-		"-F", fmt.Sprintf("threads=%d", maxThreads), "-f", "query="+query)
-	cmd.Dir = repoDir
-	// A child that inherits gh's pipes must not keep Output waiting after the kill.
-	cmd.WaitDelay = time.Second
-	b, err := cmd.Output()
-	if err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			return PR{}, false, fmt.Errorf("while running gh in %s: %w: %s", repoDir, err, strings.TrimSpace(string(exit.Stderr)))
-		}
-		return PR{}, false, fmt.Errorf("while running gh in %s: %w", repoDir, err)
-	}
-	var resp struct {
-		Data struct {
-			Repository struct {
-				PullRequests struct {
-					Nodes []struct {
-						Number            int    `json:"number"`
-						IsCrossRepository bool   `json:"isCrossRepository"`
-						URL               string `json:"url"`
-						HeadRefOid        string `json:"headRefOid"`
-						Mergeable         string `json:"mergeable"`
-						ReviewDecision    string `json:"reviewDecision"`
-						Commits           struct {
-							Nodes []struct {
-								Commit struct {
-									StatusCheckRollup *struct {
-										State string `json:"state"`
-									} `json:"statusCheckRollup"`
-								} `json:"commit"`
-							} `json:"nodes"`
-						} `json:"commits"`
-						LatestOpinionatedReviews struct {
-							Nodes []struct {
-								State  string `json:"state"`
-								Commit struct {
-									Oid string `json:"oid"`
-								} `json:"commit"`
-							} `json:"nodes"`
-						} `json:"latestOpinionatedReviews"`
-						ReviewThreads struct {
-							Nodes []struct {
-								IsResolved bool `json:"isResolved"`
-							} `json:"nodes"`
-							PageInfo struct {
-								HasNextPage bool `json:"hasNextPage"`
-							} `json:"pageInfo"`
-						} `json:"reviewThreads"`
-					} `json:"nodes"`
-				} `json:"pullRequests"`
-			} `json:"repository"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(b, &resp); err != nil {
-		return PR{}, false, fmt.Errorf("while reading gh output for %s: %w", branch, err)
-	}
 	// headRefName matches fork PRs too, and anyone can open one on a branch
 	// name Linear makes predictable. Only a PR from this repo is the worker's.
-	nodes := resp.Data.Repository.PullRequests.Nodes
-	for len(nodes) > 0 && nodes[0].IsCrossRepository {
-		nodes = nodes[1:]
+	var n prNode
+	after := ""
+	for page := 0; ; page++ {
+		if page == prPages {
+			return PR{}, false, fmt.Errorf("branch %s has more than %d PRs and none from this repo in the first %d pages", branch, prPages*20, prPages)
+		}
+		resp, err := readPage(ctx, bin, repoDir, branch, after, timeout)
+		if err != nil {
+			return PR{}, false, err
+		}
+		prs := resp.Data.Repository.PullRequests
+		found := false
+		for _, node := range prs.Nodes {
+			if !node.IsCrossRepository {
+				n, found = node, true
+				break
+			}
+		}
+		if found {
+			break
+		}
+		if !prs.PageInfo.HasNextPage {
+			return PR{}, false, nil
+		}
+		after = prs.PageInfo.EndCursor
 	}
-	if len(nodes) == 0 {
-		return PR{}, false, nil
-	}
-	n := nodes[0]
 	if n.ReviewThreads.PageInfo.HasNextPage {
 		return PR{}, false, fmt.Errorf("PR %s has more than %d review threads; dispatch reads one page and would miss unresolved ones", n.URL, maxThreads)
 	}
@@ -235,4 +247,33 @@ func RepoName(ctx context.Context, bin, repoDir string, timeout time.Duration) (
 		return "", fmt.Errorf("while running gh repo view in %s: %w", repoDir, err)
 	}
 	return strings.TrimSpace(string(b)), nil
+}
+
+func readPage(ctx context.Context, bin, repoDir, branch, after string, timeout time.Duration) (prPage, error) {
+	// The tick holds its lock while it waits, and gh sets no timeout of its own.
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	args := []string{"api", "graphql",
+		"-F", "owner={owner}", "-F", "repo={repo}", "-f", "branch=" + branch,
+		"-F", fmt.Sprintf("threads=%d", maxThreads), "-f", "query=" + query}
+	if after != "" {
+		args = append(args, "-f", "after="+after)
+	}
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Dir = repoDir
+	// A child that inherits gh's pipes must not keep Output waiting after the kill.
+	cmd.WaitDelay = time.Second
+	b, err := cmd.Output()
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return prPage{}, fmt.Errorf("while running gh in %s: %w: %s", repoDir, err, strings.TrimSpace(string(exit.Stderr)))
+		}
+		return prPage{}, fmt.Errorf("while running gh in %s: %w", repoDir, err)
+	}
+	var resp prPage
+	if err := json.Unmarshal(b, &resp); err != nil {
+		return prPage{}, fmt.Errorf("while reading gh output for %s: %w", branch, err)
+	}
+	return resp, nil
 }

@@ -514,9 +514,9 @@ case "$1 $2" in
   rm -f "`+dir+`"/pr-*.json
   exit 0 ;;
 esac
-for arg; do case "$arg" in branch=*) branch="${arg#branch=}" ;; esac; done
-echo "$branch" >> "`+dir+`/gh.log"
-cat "`+dir+`/pr-${branch##*/}.json" 2>/dev/null || echo '{"data":{"repository":{"pullRequests":{"nodes":[]}}}}'`)
+for arg; do case "$arg" in branch=*) branch="${arg#branch=}" ;; after=*) after=".${arg#after=}" ;; esac; done
+echo "$branch$after" >> "`+dir+`/gh.log"
+cat "`+dir+`/pr-${branch##*/}$after.json" 2>/dev/null || echo '{"data":{"repository":{"pullRequests":{"nodes":[]}}}}'`)
 	// return marks the tree available, so later ticks see the slot free.
 	h.script("treehouse", `case "$1" in
 return)
