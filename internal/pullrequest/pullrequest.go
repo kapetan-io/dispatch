@@ -46,7 +46,7 @@ type PR struct {
 	UnresolvedThreads bool
 	// Problems are the reasons the PR needs work, phrased to follow "has".
 	Problems []string
-	// Ready means the PR needs no work and nothing is still running: every check
+	// Ready means the PR needs no work, has no open review thread and nothing is still running: every check
 	// has passed (a PR with no checks counts as passed) and GitHub says it
 	// merges cleanly. A running check, such as a bot review still in progress,
 	// or a merge state GitHub has not computed yet, is not ready.

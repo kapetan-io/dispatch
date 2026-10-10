@@ -230,7 +230,7 @@ Cheap actions run before launches, because one launch can take over 5 minutes.
 | In Progress | working | Nothing, or the comment nudge if the ticket has a new comment |
 | In Progress | idle | Send the resume nudge if the cache's last-seen status was Needs Human. Otherwise do nothing while the worker's latest Stop is under 60 minutes old and lists running background tasks, and send one stall nudge per Stop. Notify you on the 6th stall nudge with no status change and every 6th after, and once when no newer Stop arrives 60 minutes after a nudge. Never set Needs Human. |
 | In Progress or In Review | blocked | The worker is asking you a question. Notify you, and notify again if it stays unanswered. Never dismiss the dialog. A new comment waits for the worker to be unblocked. |
-| In Review | none | If the PR needs work or an open review thread has an unseen comment, launch to resume, then send the PR nudge once the relaunched worker is idle (the next tick). Otherwise nothing, and the tree stays leased. |
+| In Review | none | If the PR needs work or an open review thread has an unseen comment, launch to resume, then send the PR nudge once the relaunched worker is idle (the next tick). A relaunch for an open thread's new comment sends no nudge, because the relaunched worker reads the PR itself. Otherwise nothing, and the tree stays leased. |
 | In Review | idle | If the PR needs work, send the PR nudge. After 2 PR nudges with no push, set Needs Human. If the PR is ready for review and the cache has not notified about its head, notify you. |
 | In Review | working | Nothing, or the comment nudge if the ticket has a new comment |
 | Needs Human | any | Nothing |
