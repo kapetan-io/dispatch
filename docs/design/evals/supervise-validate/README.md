@@ -1,5 +1,7 @@
 # Supervise validator eval
 
+Status 2026-10-10: attempt 2 (`arms/attempt-2.md`, the wording now in the skill) met the bar and the confirmation rerun met it again, 20 of 20 runs on every grader. See `log.md`.
+
 Tests that a supervisor session, told to validate a review finding on a worker's PR, runs only the proof and not the full test suite (ENG-278). Follows `skills/hillclimb/SKILL.md`. The wording under test is principle 4 of `skills/supervise/SKILL.md`.
 
 Each case is a tiny Go module (`shop`, three packages with one passing test each) committed on a `feature` branch in `./repo`. The prompt says CI already passed on the head, quotes one critical-review finding, and asks the session to validate it per the skill. The eval sandbox can't run Go's tool chain (`go: no such tool "vet"`), so no test result exists. The graders read the commands the session attempts, which is the behavior under test.
