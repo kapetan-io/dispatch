@@ -1,0 +1,147 @@
+{
+ "results/attempt3-skill.json": {
+  "runs": [
+   {
+    "verdicts": {
+     "skill-fired": true,
+     "how-fired": true,
+     "why-fired": true,
+     "arena-fired": true,
+     "candidates-get-grounding": true,
+     "candidates-get-runner-prompt": true,
+     "candidates-get-objective": true,
+     "grounding-traced": true,
+     "candidates-cite-grounding": true,
+     "last-message-asks-sketch": true
+    },
+    "agent_calls_matching": {
+     "candidates-get-grounding": 4,
+     "candidates-get-runner-prompt": 3,
+     "candidates-get-objective": 4
+    }
+   },
+   {
+    "verdicts": {
+     "skill-fired": true,
+     "how-fired": true,
+     "why-fired": true,
+     "arena-fired": true,
+     "candidates-get-grounding": true,
+     "candidates-get-runner-prompt": true,
+     "candidates-get-objective": true,
+     "grounding-traced": true,
+     "candidates-cite-grounding": true,
+     "last-message-asks-sketch": true
+    },
+    "agent_calls_matching": {
+     "candidates-get-grounding": 4,
+     "candidates-get-runner-prompt": 3,
+     "candidates-get-objective": 4
+    }
+   },
+   {
+    "verdicts": {
+     "skill-fired": true,
+     "how-fired": true,
+     "why-fired": true,
+     "arena-fired": false,
+     "candidates-get-grounding": true,
+     "candidates-get-runner-prompt": true,
+     "candidates-get-objective": true,
+     "grounding-traced": true,
+     "candidates-cite-grounding": true,
+     "last-message-asks-sketch": true
+    },
+    "agent_calls_matching": {
+     "candidates-get-grounding": 4,
+     "candidates-get-runner-prompt": 4,
+     "candidates-get-objective": 4
+    }
+   },
+   {
+    "verdicts": {
+     "skill-fired": true,
+     "how-fired": true,
+     "why-fired": true,
+     "arena-fired": true,
+     "candidates-get-grounding": true,
+     "candidates-get-runner-prompt": true,
+     "candidates-get-objective": true,
+     "grounding-traced": true,
+     "candidates-cite-grounding": true,
+     "last-message-asks-sketch": false
+    },
+    "agent_calls_matching": {
+     "candidates-get-grounding": 4,
+     "candidates-get-runner-prompt": 3,
+     "candidates-get-objective": 4
+    }
+   },
+   {
+    "verdicts": {
+     "skill-fired": true,
+     "how-fired": true,
+     "why-fired": true,
+     "arena-fired": true,
+     "candidates-get-grounding": true,
+     "candidates-get-runner-prompt": true,
+     "candidates-get-objective": true,
+     "grounding-traced": true,
+     "candidates-cite-grounding": true,
+     "last-message-asks-sketch": true
+    },
+    "agent_calls_matching": {
+     "candidates-get-grounding": 4,
+     "candidates-get-runner-prompt": 3,
+     "candidates-get-objective": 4
+    }
+   }
+  ],
+  "passes": 43,
+  "total": 45
+ },
+ "results/attempt1-control.json": {
+  "runs": [
+   {
+    "verdicts": {
+     "skill-fired": true,
+     "how-fired": false,
+     "why-fired": false,
+     "arena-fired": true,
+     "candidates-get-grounding": true,
+     "candidates-get-runner-prompt": false,
+     "candidates-get-objective": true,
+     "grounding-traced": false,
+     "candidates-cite-grounding": true,
+     "last-message-asks-sketch": true
+    },
+    "agent_calls_matching": {
+     "candidates-get-grounding": 4,
+     "candidates-get-runner-prompt": 0,
+     "candidates-get-objective": 4
+    }
+   },
+   {
+    "verdicts": {
+     "skill-fired": true,
+     "how-fired": false,
+     "why-fired": false,
+     "arena-fired": true,
+     "candidates-get-grounding": true,
+     "candidates-get-runner-prompt": false,
+     "candidates-get-objective": true,
+     "grounding-traced": false,
+     "candidates-cite-grounding": true,
+     "last-message-asks-sketch": false
+    },
+    "agent_calls_matching": {
+     "candidates-get-grounding": 4,
+     "candidates-get-runner-prompt": 0,
+     "candidates-get-objective": 4
+    }
+   }
+  ],
+  "passes": 9,
+  "total": 18
+ }
+}

@@ -1,0 +1,375 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.296",
+  "startedAt": "2026-10-10T08:08:49.140Z",
+  "durationSeconds": 814,
+  "costUsd": 7.949930849999999,
+  "partial": false,
+  "suite": {
+    "root": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.36EJ29wvOo/plugin",
+    "ablation": "none",
+    "judgeModel": "claude-opus-5-5",
+    "threshold": 0,
+    "concurrency": 2,
+    "plugins": [
+      {
+        "name": "dispatch",
+        "path": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.36EJ29wvOo/plugin"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "ci-failure-forwarding",
+      "dir": "cases/ci-failure-forwarding",
+      "source": "mixed",
+      "promptMarkdown": "Use the grill skill on the feature ticket below. The user has already approved its Objective, so skip the discussion and the questions, and run only the Phase A grounding and the Phase B sketch against the repo in the current directory. This sandbox has no user, no Linear and no tree to return, so do not do any later step. Linear and other MCPs may be unavailable. In this sandbox the default git can fail with an xcrun cache error. If it does, run /opt/homebrew/bin/git instead.\n\nYour scratchpad directory is `scratch/`. Write the Phase A grounding to `scratch/grounding.md`. When the candidates have finished, join `scratch/grounding.md` and each candidate's rationale file into `evidence.md` with a shell command, without summarizing. Put the line `=== grounding ===` before the grounding and `=== candidate <n> ===` before each rationale. Write the synthesized design package to `artifact.md` and the synthesis note to `note.md`. In your last message, show the user the contract sketch and say what they must decide next.\n\nFeature ticket: Forward a failing CI check to the worker that owns the pull request.\n\nObjective (approved): When a check fails on the pull request of an In Progress or In Review ticket, the dispatcher types one message into that ticket's worker, once per failing check run, so the worker fixes it without the user relaying anything. Workers never poll GitHub. Decide whether this extends the existing pull request nudge or becomes its own rule, and what the dispatcher's cache must remember so a failure is forwarded once.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 3000,
+      "maxTurns": 150,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\"\\s*:\\s*\"dispatch:grill\""
+          }
+        },
+        {
+          "name": "how-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\"\\s*:\\s*\"dispatch:how\""
+          }
+        },
+        {
+          "name": "why-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\"\\s*:\\s*\"dispatch:why\""
+          }
+        },
+        {
+          "name": "arena-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\"\\s*:\\s*\"dispatch:arena\""
+          }
+        },
+        {
+          "name": "candidates-get-grounding",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Agent",
+            "input_match": "grounding\\.md",
+            "min": 3
+          }
+        },
+        {
+          "name": "candidates-get-runner-prompt",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Agent",
+            "input_match": "Caller.s usage first|runner-prompt",
+            "min": 3
+          }
+        },
+        {
+          "name": "candidates-get-objective",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Agent",
+            "input_match": "Objective|once per failing check",
+            "min": 3
+          }
+        },
+        {
+          "name": "grounding-traced",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the file traces how the dispatcher forwards pull request events today and holds both of these. First, at least three specific code locations (file paths in this repo, with a function or type name) each with what it does in the flow. Second, at least one reason taken from the repo's history or decision log for why the current shape exists (for example the dispatcher as event broker, or why workers never poll). FAIL if it is a list of file names without tracing, describes the code from general knowledge, or has no recorded reason.\n",
+          "config": {
+            "criteria": "PASS if the file traces how the dispatcher forwards pull request events today and holds both of these. First, at least three specific code locations (file paths in this repo, with a function or type name) each with what it does in the flow. Second, at least one reason taken from the repo's history or decision log for why the current shape exists (for example the dispatcher as event broker, or why workers never poll). FAIL if it is a list of file names without tracing, describes the code from general knowledge, or has no recorded reason.\n",
+            "focus": {
+              "source": "file",
+              "path": "scratch/grounding.md"
+            }
+          }
+        },
+        {
+          "name": "candidates-cite-grounding",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "The file holds a grounding section, then one section per candidate. PASS if every candidate section uses at least one specific code location (file path with a function or type name) or one recorded decision that appears in the grounding section and does not appear in the feature ticket's Objective, and the candidate relies on it in its design (for example it extends or avoids a named function because of what the grounding says it does). FAIL if any candidate section is missing, or cites only the Objective, or names no code or decision from the grounding.\n",
+          "config": {
+            "criteria": "The file holds a grounding section, then one section per candidate. PASS if every candidate section uses at least one specific code location (file path with a function or type name) or one recorded decision that appears in the grounding section and does not appear in the feature ticket's Objective, and the candidate relies on it in its design (for example it extends or avoids a named function because of what the grounding says it does). FAIL if any candidate section is missing, or cites only the Objective, or names no code or decision from the grounding.\n",
+            "focus": {
+              "source": "file",
+              "path": "evidence.md"
+            }
+          }
+        },
+        {
+          "name": "last-message-asks-sketch",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the message shows the contract sketch (what a caller or test sees) and asks the user to approve it or push back on the shape. FAIL if it asks the user to choose among the candidates, or reports that the arena awaits the user's answer, or shows no sketch.\n",
+          "config": {
+            "criteria": "PASS if the message shows the contract sketch (what a caller or test sees) and asks the user to approve it or push back on the shape. FAIL if it asks the user to choose among the candidates, or reports that the arena awaits the user's answer, or shows no sketch.\n",
+            "focus": "last_message"
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.4,
+            "passed": false,
+            "turns": 3,
+            "costUsd": 3.8261815,
+            "judgeCostUsd": 0.170036,
+            "durationSeconds": 539,
+            "startedAt": "2026-10-10T08:08:49.157Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-6Un0j2/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "how-fired",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Skill called 0x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "why-fired",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Skill called 0x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "arena-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "candidates-get-grounding",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Agent called 1x (expected 3..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "candidates-get-runner-prompt",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Agent called 0x (expected 3..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "candidates-get-objective",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Agent called 1x (expected 3..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "grounding-traced",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# Phase A grounding (read from the repo, no history, no how/why skills)\n\n## What exists today\n- `internal/pullrequest/pullrequest.go`: `Read` makes one `gh api graphql` call per ticket. It asks for `statusCheckRollup { state }` on the last commit only. A FAILURE or ERROR rollup becomes the string \"a failed check\" in `PR.Problems`. There is NO per-check data: no check run id, name, or conclusion. `PR.Head` (headRefOid) is the only identity.\n- `internal/reconcile/reconcile.go`:\n  - `ReadsPR` (l.353) is true only for tickets in In Review whose worker is None or Idle. In Progress tickets never have their PR read, and working or blocked workers are skipped to save calls.\n  - `inReviewIdle` (l.374) is the existing PR nudge. It notifies once per head when the PR is Ready. Otherwise, if `NeedsWork()`, it types `PRNudge` (\"PR %s for %s has %s. Handle it as your build skill's step 7 says, and push.\"). That nudge covers any problem (failed check, changes requested, unresolved thread, conflict) and is dedup'd only by a counter.\n  - When `nudges >= NudgeLimit` (default 2), Plan escalates to Needs Human. So the PR nudge is a bounded retry with escalation, not a once-only message.\n  - `prRelaunch` relaunches a worker for an In Review PR that needs work and has no worker, counted by `Relaunches` against the same limit.\n  - `commentNudge` is the precedent for a once-only forward. It is keyed by a watermark (`CommentSeen`, newest comment time), applies to In Progress and In Review, goes to working or idle workers, never counts toward limits, skips blocked workers, and is held back (`PendingComments`) when it could not be delivered.\n- `internal/cache/cache.go`: per-ticket `Entry` has `Nudges`, `PRHead`, `Relaunches`, `ReadyHead` (notify once per head), `CommentSeen`. `NudgesAt(status, head)` resets on status change or push. The cache may be deleted at any time, and the package doc accepts the consequences, e.g. a repeated notification.\n- `dispatch.go`:\n  - Nudge action (l.411): `herdr.Prompt`; on error `continue` and nothing is counted. On success a comment nudge advances `CommentSeen`, and any other nudge does `Nudges++`.\n  - `settle` (l.534) runs BEFORE the actions, so action handlers can undo or add to its changes. It sets `PRHead` only when the PR was read.\n  - `readPRs` only reads PRs for tickets where `ReadsPR` is true.\n- `skills/build/SKILL.md`: line 10 says the dispatcher is the only clock and workers run no loop, cron or polling. Step 7 \"Follow the PR to merge\" already says \"A real failure gets fixed\" and \"A flaky check gets its own Backlog ticket and a re-run\".\n- Nudge texts are fixed constants because the build skill and tests rely on exact wording; the worker treats them as coming from the user.\n\n## Gaps against the Objective\n1. An In Progress ticket with an open PR is never read, so no failure is seen there. The Objective names In Progress and In Review.\n2. A working worker is never read in In Review. A check failing while the worker is busy is skipped, and only a later idle tick sees it.\n3. The rollup gives a state and not per-check-run identity. \"Once per failing check run\" needs a stable id per run (check run databaseId or node id, plus name). Re-running a check creates a new run id on the same head, so a re-run that fails again must forward again; keying by head alone would miss it.\n4. The existing PR nudge text is generic and does not say which check failed or give a log pointer.\n5. Failure and nudge count interplay: if the CI forward also did `Nudges++`, it would burn the escalation budget on a worker that is doing its job.\n\n## Constraints to respect\n- No worker polling. All GitHub reads are in the dispatcher tick, bounded by `PRTimeout`, one gh call per ticket.\n- A nudge to a blocked worker would land in a question dialog, so skip blocked workers (as `commentNudge` does).\n- A failed `herdr.Prompt` must not record the forward, so the next tick retries.\n- Cache loss must stay cheap: worst case is a repeated forward, never a crash.\n- Go only for any code (CLAUDE.md).\n\n## Open choices for the sketches\n- Extend `PRNudge`/`inReviewIdle`, or add a separate rule modelled on `commentNudge`?\n- What the cache remembers: a set of forwarded check-run ids, a watermark, or head plus names.\n- How PR reads widen: In Progress tickets, and working workers.\n"
+              },
+              {
+                "name": "candidates-cite-grounding",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS — note: long file (20990 chars); llm judges are noisy on long inputs, prefer a regex grader for large artifacts",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "=== grounding ===\n# Phase A grounding (read from the repo, no history, no how/why skills)\n\n## What exists today\n- `internal/pullrequest/pullrequest.go`: `Read` makes one `gh api graphql` call per ticket. It asks for `statusCheckRollup { state }` on the last commit only. A FAILURE or ERROR rollup becomes the string \"a failed check\" in `PR.Problems`. There is NO per-check data: no check run id, name, or conclusion. `PR.Head` (headRefOid) is the only identity.\n- `internal/reconcile/reconcile.go`:\n  - `ReadsPR` (l.353) is true only for tickets in In Review whose worker is None or Idle. In Progress tickets never have their PR read, and working or blocked workers are skipped to save calls.\n  - `inReviewIdle` (l.374) is the existing PR nudge. It notifies once per head when the PR is Ready. Otherwise, if `NeedsWork()`, it types `PRNudge` (\"PR %s for %s has %s. Handle it as your build skill's step 7 says, and push.\"). That nudge covers any problem (failed check, changes requested, unresolved thread, conflict) and is dedup'd only by a counter.\n  - When `nudges >= NudgeLimit` (default 2), Plan escalates to Needs Human. So the PR nudge is a bounded retry with escalation, not a once-only message.\n  - `prRelaunch` relaunches a worker for an In Review PR that needs work and has no worker, counted by `Relaunches` against the same limit.\n  - `commentNudge` is the precedent for a once-only forward. It is keyed by a watermark (`CommentSeen`, newest comment time), applies to In Progress and In Review, goes to working or idle workers, never counts toward limits, skips blocked workers, and is held back (`PendingComments`) when it could not be delivered.\n- `internal/cache/cache.go`: per-ticket `Entry` has `Nudges`, `PRHead`, `Relaunches`, `ReadyHead` (notify once per head), `CommentSeen`. `NudgesAt(status, head)` resets on status change or push. The cache may be deleted at any time, and the package doc accepts the consequences, e.g. a repeated notification.\n- `dispatch.go`:\n  - Nudge action (l.411): `herdr.Prompt`; on error `continue` and nothing is counted. On success a comment nudge advances `CommentSeen`, and any other nudge does `Nudges++`.\n  - `settle` (l.534) runs BEFORE the actions, so action handlers can undo or add to its changes. It sets `PRHead` only when the PR was read.\n  - `readPRs` only reads PRs for tickets where `ReadsPR` is true.\n- `skills/build/SKILL.md`: line 10 says the dispatcher is the only clock and workers run no loop, cron or polling. Step 7 \"Follow the PR to merge\" already says \"A real failure gets fixed\" and \"A flaky check gets its own Backlog ticket and a re-run\".\n- Nudge texts are fixed constants because the build skill and tests rely on exact wording; the worker treats them as coming from the user.\n\n## Gaps against the Objective\n1. An In Progress ticket with an open PR is never read, so no failure is seen there. The Objective names In Progress and In Review.\n2. A working worker is never read in In Review. A check failing while the worker is busy is skipped, and only a later idle tick sees it.\n3. The rollup gives a state and not per-check-run identity. \"Once per failing check run\" needs a stable id per run (check run databaseId or node id, plus name). Re-running a check creates a new run id on the same head, so a re-run that fails again must forward again; keying by head alone would miss it.\n4. The existing PR nudge text is generic and does not say which check failed or give a log pointer.\n5. Failure and nudge count interplay: if the CI forward also did `Nudges++`, it would burn the escalation budget on a worker that is doing its job.\n\n## Constraints to respect\n- No worker polling. All GitHub reads are in the dispatcher tick, bounded by `PRTimeout`, one gh call per ticket.\n- A nudge to a blocked worker would land in a question dialog, so skip blocked workers (as `commentNudge` does).\n- A failed `herdr.Prompt` must not record the forward, so the next tick retries.\n- Cache loss must stay cheap: worst case is a repeated forward, never a crash.\n- Go only for any code (CLAUDE.md).\n\n## Open choices for the sketches\n- Extend `PRNudge`/`inReviewIdle`, or add a separate rule modelled on `commentNudge`?\n- What the cache remembers: a set of forwarded check-run ids, a watermark, or head plus names.\n- How PR reads widen: In Progress tickets, and working workers.\n\n=== candidate 1 ===\n# Rationale\n\n## Premises tested\n\n### 1. \"Working workers' PRs are not read, to save calls\" (`ReadsPR`, reconcile.go l.349-359)\nFrom scratch, with every signal available: would this gate exist? **No, not as a hard\nconstraint.** Evidence:\n- The cost it saves is one `gh api graphql` per ticket per tick. The default tick is\n  `interval_minutes = 5` and `max_in_progress = 4` (config.go `defaults()`), so widening\n  reads to Working and In Progress workers adds at most a few calls per 5 minutes, far\n  below GitHub's GraphQL budget. Each call is already bounded by `PRTimeout` (30 s).\n- The gate exists because the only consumers were an idle-only nudge and a no-worker\n  relaunch (`inReviewIdle`, `prRelaunch`): reading a busy worker's PR bought nothing.\n  The comment rule already shows the dispatcher types to Working workers\n  (`commentNudge`), so \"do not disturb a busy worker\" is not the principle behind it.\n- The Objective requires In Progress tickets and gives workers no polling, so the\n  dispatcher is the only party who can see a failure while a worker is busy.\nWhat *is* a true constraint: Blocked workers (typing lands in the question dialog, as\n`commentNudge` and `PendingComments` document) and None workers (nobody to type to).\nThose stay unread.\n\n### 2. \"The PR nudge counter is the dedup for a failed check\" (`Nudges`, `NudgesAt`)\nWould a counter exist for this from scratch? **Not for forwarding.** The counter measures\n\"how long has an idle worker ignored a problem\", reset by a push, and feeds escalation.\n\"Has this run been told to the worker\" is a set-membership fact. Folding it into the\ncounter would either burn the escalation budget on a worker doing its job (gap 5) or\nneed a second, uncounted path anyway. So the counter stays for what it does, and a\nseparate memory does the dedup.\n\n### 3. \"The rollup state is enough\" (`statusCheckRollup { state }`)\nFalse for this Objective. A rollup has no run identity, so \"once per failing check run\"\nand \"a re-run that fails again forwards again\" cannot be expressed. The rollup's\n`contexts` connection on the same commit node supplies it within the same single call,\nso the one-call-per-ticket constraint holds.\n\n## Alternatives considered\n\n- **Extend `PRNudge` / `inReviewIdle`.** Rejected. It is Idle-only and In Review-only, it\n  counts toward `NudgeLimit` and escalates, and its text is a generic problem list shared\n  with review threads and conflicts. Bending it to Working workers and In Progress would\n  change the behaviour of three other problem kinds and the counted escalation tests.\n  Keeping it as the idle follow-up after the forward gives the ignored-failure path an\n  escalation for free.\n- **Drop \"a failed check\" from `PR.Problems` now that it is forwarded.** Rejected: an idle\n  worker that ignores a forwarded failure would never escalate, and `Ready` and the relaunch\n  path depend on it.\n- **Watermark (newest failed run `completedAt`, like `CommentSeen`).** Simpler, one string,\n  but it trusts GitHub timestamps to arrive in completion order across separate runs, and\n  a run completing in the same second as the watermark is lost. A per-head set is exact and\n  bounded by the 100-context page, and is discarded on push.\n- **Key by head + check name.** Rejected: a re-run of the same check on the same head has\n  the same name, so a second failure after \"re-run\" would be silent, which is exactly\n  step 7's flaky-check path.\n- **Record \"first sighting without nudging\" after cache loss, as `CommentSeen` does.**\n  Rejected: a lost cache would then silently swallow a live failure the worker never\n  heard of. The cache doc already accepts repeated notifications; a repeat forward is the\n  cheaper failure.\n- **One message per failed run.** Rejected in favour of one message per tick naming every\n  newly failed run; each run is still forwarded at most once. Several prompts typed into a\n  Working worker in the same instant queue up as separate user turns for one fix.\n- **Reuse `PRHead` for the dedup head.** Rejected: `settle` resets `Nudges` on a `PRHead`\n  change, so setting it for In Progress tickets would let a push reset the stall count.\n- **Separate `Input.Checks` map instead of widening `Input.PRs`.** Considered; it isolates\n  In Progress PRs from `prRelaunch`. Rejected as a second map from the same read; one\n  explicit `InReview` guard in `prRelaunch` (with test 12) closes that hole.\n- **Forward from a GitHub webhook / `gh run watch` in the worker.** Rejected: workers never\n  poll, and the dispatcher has no listener; the tick is the only clock (build SKILL.md l.10).\n\n## Risks not settled\n\n- **StatusContext identity.** I assume a new commit-status post for the same context makes a\n  new `StatusContext` node id. If GitHub reuses the id, a re-posted failure on the same\n  head is not forwarded again. CheckRun node ids are per run, so Actions are unaffected.\n- **Superseded runs in `contexts`.** If the rollup lists both a failed run and its passing\n  re-run, a lost cache re-forwards the stale failure. Filtering \"a later run of the same\n  name passed\" was left out as unverified against real rollup output.\n- **CANCELLED not forwarded.** A cancelled run still turns the rollup to FAILURE, so the\n  idle PR nudge says \"a failed check\" with no forward naming it. Chosen because cancels are\n  usually a superseding push; may need revisiting.\n- **Typing into a Working worker** mid-turn interrupts or queues, the same as the comment\n  nudge; we inherit whatever herdr does there.\n- **Extra reads for In Progress tickets with no PR yet** cost a call that returns nothing,\n  every tick, until the PR opens. Bounded by `max_in_progress`; not gated further.\n- **The \"one message\" reading of the Objective.** If the user meant literally one prompt\n  per run, the batching in the contract is a deviation to confirm.\n- **`cache.Entry` with a slice** loses `==`; `settle`'s empty-entry delete must change, and\n  any test comparing entries by value must too.\n\n=== candidate 2 ===\n# Rationale\n\n## Premises tested\n\n### 1. The `ReadsPR` gate (In Review only, worker None or Idle)\nThe question assumes PR data arrives through `readPRs`, which only reads for `ReadsPR(t)`\n(reconcile.go l.353). Its comment says working and blocked workers are skipped \"so their PRs cost\nno call\". Is call cost a true constraint? Evidence against: there is no gh budget anywhere in the\ncode. `linear.Stats` tracks `RequestsRemaining` for Linear; nothing tracks gh. The only bound on gh\nis `PRTimeout` (30s default), whose comment says it exists so a stalled network \"can't hold the tick\nlock\", a latency concern, not a quota. The gate is really a consequence of who consumed the data:\n`inReviewIdle` needs an idle worker and `prRelaunch` needs none, so reading for anyone else was\nwaste. Verdict: not a constraint. Built from scratch with a CI-failure signal whose consumer is a\nworking worker, the gate would be \"read for every build ticket whose worker could act on the\nresult\", which is what the contract makes it. The real cost is wall clock: N active tickets x up to\n30s each under the tick lock. The contract accepts that and names it as the risk to watch.\n\n### 2. The `Nudges` counter as the dedup mechanism\n`PRNudge` dedups \"by a counter\" (grounding), and the question could be read as \"add the check to\nthe PR nudge\". Evidence: `Nudges` is reset by status change and push (`NudgesAt`), counted toward\n`NudgeLimit`, and its overflow is an Escalate. That is a retry budget for an idle worker, not a\nrecord of what was said. `commentNudge` already shows the codebase's shape for \"say it once\":\na key the executor advances only after `herdr.Prompt` succeeds, outside the limits, to Working and\nIdle alike. Verdict: the counter is the wrong primitive for \"once per failing check run\"; the\nwatermark/key shape is the one this codebase would pick from scratch, so the forward is its own rule.\n\n### 3. Rollup state is the only check signal\n`statusCheckRollup { state }` alone cannot give per-run identity (pullrequest.go l.58). Not a\nconstraint: `contexts` on the same rollup node is in the same query, so one call still suffices.\n\n\"Workers never poll\" (SKILL.md l.10) is honoured: all reads stay in the tick.\n\n## Alternatives rejected\n- **Extend `PRNudge`/`inReviewIdle` with check names.** Keeps one rule, but either burns `Nudges`\n  on a worker that is doing its job (gap 5), or needs a special case inside the counter path that\n  says \"this nudge does not count\", which is what a separate rule is. It also cannot reach a working\n  worker or an In Progress ticket without changing `inReviewIdle`'s contract and every PR test.\n- **Key by head only (`PRHead`).** Simplest cache, but a re-run on the same head that fails again\n  is invisible (gap 3), and two checks failing minutes apart would forward only the first.\n- **Key by head plus check name.** Survives re-runs badly: the same name re-run gets the same key.\n  Also needs the executor to know the head, duplicating `ReadyHead` logic.\n- **Watermark on check run `completedAt`.** Mirrors `CommentSeen`, but a rollup lists runs in no\n  guaranteed order and runs complete concurrently; a run that finishes a second before another's\n  recorded time would be lost. A set of ids pruned to the live rollup is as small and exact.\n- **One nudge per failing run per tick.** Satisfies \"once per run\" literally but drains two\n  failures over two 5-minute ticks (`IntervalMinutes` default 5). One message naming all new runs\n  tells the worker everything at once; each run still appears in exactly one message.\n- **Gate In Progress reads on a Linear PR attachment.** Would avoid a gh call for In Progress\n  tickets with no PR yet, but `linear.Ticket` has no attachment data (linear.go l.29-41); it would\n  cost a Linear query change for a gh call that returns `nodes: []` cheaply.\n- **Record ids at relaunch.** The relaunched In Review worker starts at step 7 and could be left to\n  find the failure itself. Forwarding on its first tick costs one message and names the run.\n- **Error on >100 contexts vs. forward the first page.** Chose the error for parity with\n  `maxThreads`: a silently unforwarded failure is the same bug as a silently missed thread.\n\n## Risks not settled\n- **Tick duration.** Reading PRs for every active ticket with a working worker multiplies gh calls\n  per tick by roughly the number of In Progress tickets. Each is bounded by `PRTimeout` but serial,\n  under the lock. If this bites, the fix is parallel reads or a per-tick deadline, not the gate.\n- **Which conclusions count as failed.** CANCELLED, SKIPPED, NEUTRAL and STALE are left to the\n  rollup/`PRNudge` path. Whether GitHub's rollup reports CANCELLED as FAILURE was not verified\n  from the code; if it does, the PR is \"needs work\" with no forwarded run, and only the idle\n  backstop handles it.\n- **Re-run identity.** The contract relies on GitHub minting a new CheckRun id per re-run and a new\n  StatusContext node per status post. This is how the API behaves today but is not asserted by\n  anything in the repo; the dispatch-surface tests encode the assumption through the fake gh.\n- **Forward then backstop in two ticks.** An idle In Review worker now receives `CheckNudge`, then\n  `PRNudge` a tick later if still idle, both about the same check. Acceptable as the stall path,\n  but a reader may see it as a duplicate. Suppressing `PRNudge` when `ChecksForwarded` is non-empty\n  would remove the escalation backstop, so it was not done.\n- **Cache loss repeats one forward.** Accepted by the cache package doc; a worker hearing the same\n  failure twice is harmless, but the message says nothing about being a repeat.\n- **Message to a working worker.** herdr types into a busy agent's prompt (as `commentNudge` does).\n  Whether the agent sees it mid-tool-call or only at its next turn is herdr's behaviour, not tested here.\n\n=== candidate 3 ===\n# Rationale\n\n## Premise tested\n\"The PR nudge is the mechanism this extends\": it is read-gated to In Review with an Idle/None worker\n(`ReadsPR`, reconcile.go:353), deduped by the `Nudges` counter reset on push (`NudgesAt`), and bounded by\n`NudgeLimit` into Needs Human. Three sub-premises ride on it: (a) only idle workers can take a nudge, (b) a\nfailure has no identity so a counter is all we can dedupe by, (c) a nudge is a bounded retry.\n\nQuestion: from scratch with every signal now available, would this mechanism exist for failed checks?\nVerdict: not as the dedup for checks. (b) is not a true constraint; it is an artifact of the query\n(`statusCheckRollup { state }`, pullrequest.go:58), which returns a single state. The same call can return\n`contexts` with `databaseId`, which is a stable per-run id and changes on re-run. With an id, \"once per failing\nrun\" is a set membership test, which is what `commentNudge`'s watermark already does for comments. A counter\nis the right tool for \"I cannot tell if you acted\", and escalation is the right tool for a worker that\nignores feedback; neither is the right tool for \"tell the worker a fact once\".\n(a) is half true. Typing into a blocked worker is a real constraint (question dialog), and I keep it. Typing\ninto a working worker is not: `commentNudge` already does it, and the Objective's point is that the user stops\nrelaying. The idle-only gate in `ReadsPR` exists to save gh calls, not for correctness; widening it costs\none bounded call per In Progress/Working ticket per tick, under the same `PRTimeout`.\n(c) is a true constraint for review feedback (we cannot read whether a thread was addressed) and a false one for CI.\n\"Workers never poll\" holds: all reads stay in the tick.\n\n## Decision\nSeparate rule, `ciNudge`, next to `commentNudge`; `PRNudge` keeps review/conflict feedback.\n\n## Alternatives rejected\n1. Extend `PRNudge`/`inReviewIdle` (more specific text, same counter). Rejected: still In Review/idle only\n   (misses two of the Objective's stated cases), still deduped by head so a re-run failing again on the same head\n   is invisible, and each forward burns `Nudges` toward Needs Human for a worker that is doing its job (grounding gap 5).\n2. Key by head (like `ReadyHead`) or head+check name. Rejected: a flaky re-run on the same head with the same name\n   fails again and must be forwarded; only the run id differs. Head+name would also need reset logic on every re-run.\n3. A watermark of newest failure time (like `CommentSeen`). Rejected: needs completed_at on every context and\n   ordering across CheckRun and StatusContext types; one run completing out of order is lost; ids are simpler and exact.\n4. Keep ids forever. Rejected: unbounded growth; pruning to currently failing ids is safe because ids never recur.\n5. Remove \"a failed check\" from `Problems`. Rejected: `Ready`, `prRelaunch` and relaunch escalation depend on it.\n   Instead the idle PR nudge ignores it when identified runs exist.\n6. Send all unforwarded runs in one tick. Rejected: `watch` returns one action per ticket, and several messages\n   typed into one pane at once is noisy. One per tick costs a few ticks of delay.\n7. First-sighting suppression after cache loss (as comments). Rejected: a comment seen on first sight may be old\n   history, while a failing run on the current head is current; one repeat is cheaper than a missed fix.\n\n## Risks I could not settle\n1. No escalation for an ignored CI forward. Once forwarded, a worker that idles forever on a red PR is never\n   escalated (the generic nudge no longer counts that problem). A possible fix is a `CIForwards` counter per head\n   feeding the same limit, but it reintroduces the budget burn. Needs a product call.\n2. I believe \"re-run failed jobs\" on GitHub Actions creates a new check run databaseId, but rerunning a whole\n   workflow may reuse a suite and I did not verify id behaviour against live GitHub. If the id were reused the\n   re-run would be silent. Needs a check against a real repo before build.\n3. Required vs optional checks: a failing non-required check is forwarded too. The Objective says \"a check\", so\n   I did not filter; noisy repos may want a filter.\n4. A working worker is typed into mid-turn; claude queues it, but I did not confirm herdr.Prompt behaves for\n   Working panes (commentNudge suggests yes). The Prompt-error path covers a refusal.\n5. Read timing: a read between push and CI start sees the old failure on the new head? `commits(last:1)` follows\n   the head, so old-head failures vanish, but the read and head can race by one tick; worst case one stale forward.\n6. gh call volume grows by In Progress and Working tickets; on a large worker cap this could stretch the tick\n   (the tick holds its lock while it waits). Not measured.\n"
+              },
+              {
+                "name": "last-message-asks-sketch",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "This should be its own rule, `checkNudge`, modelled on the existing comment nudge. It should not extend the existing PR nudge. The sketch is untested: nothing was built or run, and GitHub's re-run id behaviour wasn't checked against a live repo.\n\n**Why a separate rule:** the PR nudge is a counted retry that escalates, and it only reaches idle In Review workers. \"Tell the worker this once\" is a different job from a retry.\n\n## Contract sketch\n\n- **Data read:** the same single `gh api graphql` call also lists the check runs on the PR's head commit. Each failed run gets an id, a name and a log URL. Cancelled, action-required, skipped, neutral and still-running checks are not forwarded. A listing of more than 100 checks is a read error, so the dispatcher never silently misses a failure.\n- **When it fires:**\n  - The ticket is In Progress or In Review.\n  - The worker is working or idle, never blocked, because typing would land in a question dialog.\n  - The PR has a failed run the worker hasn't been told about.\n  - It waits behind a due comment nudge.\n- **PR reads widen:**\n  - Reads now cover working workers.\n  - Reads now cover In Progress tickets.\n  - An In Progress PR can never trigger a relaunch.\n- **Message:**\n  - One per tick, naming every newly failed run as `name (url)`.\n  - It points the worker to its build skill's step 7: fix a real failure, or give a flaky one a Backlog ticket and a re-run.\n- **What the cache remembers:** the ids of failed runs already typed to this worker.\n  - It is recorded only after the prompt succeeds, so a failed prompt retries next tick.\n  - It is emptied on a push and pruned to checks still on the PR.\n  - It is kept while the tree is leased.\n  - A re-run gets a new id, so it forwards again if it fails again.\n  - Deleting the cache costs one repeated message.\n- **Interaction with limits:** the forward never touches `Nudges`, `NudgeLimit` or `Relaunches`. The PR nudge stays as the backstop, so a worker that ignores the failure still reaches Needs Human.\n- **Two code changes the candidates would have broken:**\n  - The reset logic in `settle` (dispatch.go) must apply its head-change reset only to In Review. Otherwise a push resets the In Progress stall count.\n  - `cache.Entry` gets a slice, so `c[id] == (cache.Entry{})` no longer compiles and needs an `IsZero()` method.\n- **Tests:** 17 cases through the dispatch surface. One existing test, `TestTickDoesNotReadThePRWhileTheInReviewWorkerIsBusy`, has to flip.\n\nAll three candidates reached the same shape, and the cross-judge agreed with my pick of candidate 2 as the base.\n\n## What you need to decide\n\n1. **Batching:** one message per tick naming every new failed run (the sketch), or literally one message per run? Each run is still forwarded exactly once either way.\n2. **Optional checks:** should a failing non-required check be forwarded? The sketch forwards every failed run.\n3. **Re-run ids:** can someone confirm against a real repository that a re-run, both \"re-run failed jobs\" and a whole-workflow re-run, gets a new check-run id? The whole once-per-run guarantee rests on that.\n\nSmaller open points are in `artifact.md`: longer ticks from extra `gh` calls, typing into a working pane, and the check message followed by the counted PR nudge on the next idle tick.\n\nThe skill text said to skip grounding, but you asked for Phase A, so I wrote it anyway. I avoided the how and why skills and the repo history.\n\nFiles are in the working directory (`/private/tmp/e-6Un0j2/home/cwd`):\n- `artifact.md`\n- `note.md`\n- `evidence.md`\n- `scratch/grounding.md`"
+              }
+            ]
+          },
+          {
+            "score": 0.5,
+            "passed": false,
+            "turns": 3,
+            "costUsd": 4.12374935,
+            "judgeCostUsd": 0.162508,
+            "durationSeconds": 814,
+            "startedAt": "2026-10-10T08:08:49.157Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-7Q0atM/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "how-fired",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Skill called 0x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "why-fired",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Skill called 0x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "arena-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "candidates-get-grounding",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Agent called 4x (expected 3..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "candidates-get-runner-prompt",
+                "passed": false,
+                "weight": 1,
+                "explanation": "Agent called 0x (expected 3..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "candidates-get-objective",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Agent called 4x (expected 3..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "grounding-traced",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "# Grounding (Phase A) — forward a failing CI check to the owning worker\n\nRead from the current tree only; no history, no how/why skills.\n\n## What exists\n- internal/pullrequest/pullrequest.go: Read() makes one `gh api graphql` call per ticket branch. It reads only\n  `commits(last:1).statusCheckRollup.state`. FAILURE/ERROR adds the string \"a failed check\" to PR.Problems.\n  No check-run ids, names or conclusions are read. PR has Number, URL, Head (SHA), Problems, Ready.\n- internal/reconcile/reconcile.go:\n  - PRNudge = \"PR %s for %s has %s. Handle it as your build skill's step 7 says, and push.\" (fixed text; tests and the build skill rely on it).\n  - ReadsPR (l.353): PRs are read ONLY for In Review tickets, non-design, no children, worker state None or Idle.\n    In Progress tickets are never read. Working or blocked workers are skipped.\n  - inReviewIdle (l.374): idle worker + pr.NeedsWork() -> Nudge, or Escalate when prev.NudgesAt(status, head) >= NudgeLimit.\n    prRelaunch relaunches a worker if none exists and the PR needs work.\n  - Nudges are capped per (status, head) by cfg.NudgeLimit (default 2, internal/config/config.go:59).\n- internal/cache/cache.go Entry: Nudges, PRHead, Relaunches, ResumePending, CommentSeen, ReadyHead...\n  NudgesAt(status, head) returns 0 when status or head changed (a push resets the count).\n  Header says a deleted cache must lose little: counters reset, at worst one repeated notification.\n- dispatch.go settle() (l.534): runs after actions. It resets Nudges on a status change, updates PRHead from prs,\n  and clears PRHead outside In Review. A refused nudge is not counted (l.411-423).\n- CommentNudge is the other precedent: it goes to working or idle workers, never counts toward the limit, and is\n  keyed by a high-water mark (CommentSeen) with a first-sighting-records-only rule.\n\n## Gap vs the Objective\n1. In Progress tickets are never read, so a failure on a PR opened early is invisible. (Only In Review is read.)\n2. The existing nudge is per head and rollup-level and counts toward NudgeLimit, then escalates. The Objective\n   wants one message per failing check run, with no escalation for a worker that is merely slow.\n3. There is no per-check-run identity anywhere in the cache or the PR struct.\n4. A failing run is reported while other checks may still be pending. The rollup may still read PENDING.\n\n## Decision inputs for the design\n- Extend the PR nudge: reuses ReadsPR, the idle gating and the reason prefix. But the count semantic (limit and\n  escalate) and the head-keyed reset conflict with once-per-run.\n- Own rule (like commentNudge): works for working or idle workers, keyed by a seen-set, never escalates.\n  Needs a wider PR read (In Progress too) and a new query field (checkSuites/checkRuns: databaseId, name, conclusion).\n- Cache must remember the set of check-run ids already forwarded (per ticket, bounded, scoped to PR head or\n  PR number), written only after a successful nudge so a refused one is retried. First sighting must decide\n  whether pre-existing failures are forwarded (cache loss would re-forward them, which the cache header says should be rare).\n- A re-run of the same check gets a new run id, so it is forwarded again; that is \"once per failing check run\".\n"
+              },
+              {
+                "name": "candidates-cite-grounding",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS — note: long file (19999 chars); llm judges are noisy on long inputs, prefer a regex grader for large artifacts",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "=== grounding ===\n# Grounding (Phase A) — forward a failing CI check to the owning worker\n\nRead from the current tree only; no history, no how/why skills.\n\n## What exists\n- internal/pullrequest/pullrequest.go: Read() makes one `gh api graphql` call per ticket branch. It reads only\n  `commits(last:1).statusCheckRollup.state`. FAILURE/ERROR adds the string \"a failed check\" to PR.Problems.\n  No check-run ids, names or conclusions are read. PR has Number, URL, Head (SHA), Problems, Ready.\n- internal/reconcile/reconcile.go:\n  - PRNudge = \"PR %s for %s has %s. Handle it as your build skill's step 7 says, and push.\" (fixed text; tests and the build skill rely on it).\n  - ReadsPR (l.353): PRs are read ONLY for In Review tickets, non-design, no children, worker state None or Idle.\n    In Progress tickets are never read. Working or blocked workers are skipped.\n  - inReviewIdle (l.374): idle worker + pr.NeedsWork() -> Nudge, or Escalate when prev.NudgesAt(status, head) >= NudgeLimit.\n    prRelaunch relaunches a worker if none exists and the PR needs work.\n  - Nudges are capped per (status, head) by cfg.NudgeLimit (default 2, internal/config/config.go:59).\n- internal/cache/cache.go Entry: Nudges, PRHead, Relaunches, ResumePending, CommentSeen, ReadyHead...\n  NudgesAt(status, head) returns 0 when status or head changed (a push resets the count).\n  Header says a deleted cache must lose little: counters reset, at worst one repeated notification.\n- dispatch.go settle() (l.534): runs after actions. It resets Nudges on a status change, updates PRHead from prs,\n  and clears PRHead outside In Review. A refused nudge is not counted (l.411-423).\n- CommentNudge is the other precedent: it goes to working or idle workers, never counts toward the limit, and is\n  keyed by a high-water mark (CommentSeen) with a first-sighting-records-only rule.\n\n## Gap vs the Objective\n1. In Progress tickets are never read, so a failure on a PR opened early is invisible. (Only In Review is read.)\n2. The existing nudge is per head and rollup-level and counts toward NudgeLimit, then escalates. The Objective\n   wants one message per failing check run, with no escalation for a worker that is merely slow.\n3. There is no per-check-run identity anywhere in the cache or the PR struct.\n4. A failing run is reported while other checks may still be pending. The rollup may still read PENDING.\n\n## Decision inputs for the design\n- Extend the PR nudge: reuses ReadsPR, the idle gating and the reason prefix. But the count semantic (limit and\n  escalate) and the head-keyed reset conflict with once-per-run.\n- Own rule (like commentNudge): works for working or idle workers, keyed by a seen-set, never escalates.\n  Needs a wider PR read (In Progress too) and a new query field (checkSuites/checkRuns: databaseId, name, conclusion).\n- Cache must remember the set of check-run ids already forwarded (per ticket, bounded, scoped to PR head or\n  PR number), written only after a successful nudge so a refused one is retried. First sighting must decide\n  whether pre-existing failures are forwarded (cache loss would re-forward them, which the cache header says should be rare).\n- A re-run of the same check gets a new run id, so it is forwarded again; that is \"once per failing check run\".\n=== candidate 1 ===\n# Rationale (candidate 1)\n\n## Premises tested\n\n**P1. \"The rollup-level failed-check nudge is the mechanism to build on.\"** From scratch: no. The PR nudge\nkeys on head SHA only because `Read` asks for nothing but `statusCheckRollup.state` (pullrequest.go:58,\n134-135). That is a limit of the query, not a constraint: GitHub's `contexts` connection exposes each\nCheckRun's node id, name and conclusion in the same call. What *is* a real constraint is the PR nudge's\ncounting: `inReviewIdle` escalates at `NudgesAt >= NudgeLimit` (reconcile.go:382-384), and the executor\nincrements `Nudges` for every non-comment nudge (dispatch.go:420-424). Folding per-run messages into that\ncounter would escalate a worker after two failing runs on one head, which the Objective rules out.\nVerdict: keep the PR nudge as the idle-and-not-pushing backstop; do not extend it.\n\n**P2. \"Workers never poll GitHub, so the dispatcher must push failures in.\"** True constraint. Build skill\nstep 7 says \"Follow the PR to merge\", but a Claude worker that has gone idle cannot wake itself; the only\nway anything reaches an idle pane is `herdr.Prompt` from the tick (dispatch.go:415). The existing PR nudge\nand comment nudge both exist for this reason.\n\n**P3. \"In Progress tickets can have a PR with failing checks.\"** True but narrow. Evidence: build step 6 says\nLinear moves a ticket to In Progress when it links a new PR and the worker must move it back; and a ticket\nreturned from Needs Human goes to In Progress with its PR still open (settle sets ResumePending,\ndispatch.go:557). `ReadsPR` never reads these (reconcile.go:354). So In Progress coverage is required, but it\nmust not leak into `PRs`: `prRelaunch` has no status check (reconcile.go:363-368) and settle rewrites\n`PRHead`/`Nudges` for any ticket present in `prs` (dispatch.go:565-568). Hence a separate `Checks` map fed by\nthe same single gh call.\n\n**P4. \"Working workers must be skipped to save calls.\"** Not a hard constraint. `ReadsPR` skips them \"so\ntheir PRs cost no call\" (reconcile.go:349-350). With a 5 minute tick and MaxInProgress 4 (config.go:56-57)\nthe added cost is a handful of GraphQL calls per tick. A failure that lands while the worker is mid-task is\nexactly the case the user relays by hand today.\n\n**P5. \"One message per failing check run\" means literally one prompt per run.** I read it as the dedupe\nguarantee (each run forwarded exactly once), and batch the runs that are new in one tick into one message.\nA single compile error commonly fails lint, test and build at once; three prompts in one tick would land in\nthe pane back to back, and a refusal halfway through leaves a partial state to reason about. **This is a\ndeviation the user must confirm**; if they want strictly one prompt per run, `checkNudge` returns the oldest\nnew run only and the rest follow on later ticks (one per tick), with no other change to the cache.\n\n## Alternatives considered\n\n1. **Extend the PR nudge** (add run names to `Problems`, keep `inReviewIdle`). Rejected: idle-In-Review only,\n   counts toward the limit and escalates, and `PRNudge` text is pinned by tests and the build skill.\n2. **Extend the PR nudge but exempt check problems from the counter.** Rejected: one Action would then carry\n   two cache semantics (counted problems and uncounted run ids), and the executor's `Reason` switch would\n   have to split them. Two rules with one meaning each is cheaper to read.\n3. **Widen `ReadsPR` to In Progress and working workers.** Rejected: silently changes `prRelaunch` (would\n   relaunch In Progress tickets with Reason PR), the 🟡 label logic (labels.go:53), and settle's head\n   bookkeeping. A second map from the same call isolates the new rule.\n4. **Key on head SHA + check name instead of run id.** Rejected: a re-run of a failed check on the same head\n   would never be forwarded, contradicting \"once per failing check run\"; and a name can repeat across suites.\n5. **Key on CheckRun `databaseId`.** Rejected in favor of node `id`: StatusContext (legacy commit statuses,\n   still used by some CI) has no databaseId; node id is uniform across both union members.\n6. **First sighting records only (like `CommentSeen`).** Rejected: a comment's age says nothing about whether\n   it was handled, but a failed run on the *current head* is still actionable by definition. Recording-only\n   would drop it forever on cache loss or at rollout; forwarding costs at most one repeat, which the cache\n   header already allows (\"may repeat one notification\").\n7. **High-water mark (newest completedAt) instead of a set.** Rejected: runs complete out of order, and a\n   re-run can complete with an older start; a set scoped to one head is small and exact.\n8. **Record ids in settle, with a pending map like `PendingComments`.** Rejected: settle runs before actions\n   (dispatch.go:366). Recording in the executor after a successful prompt, as `ReadyHead` does\n   (dispatch.go:455-462), gives retry-on-refusal for free with no pending machinery.\n9. **Forward CANCELLED runs.** Rejected: superseded runs under a concurrency group are cancelled on every\n   push; forwarding them is noise.\n10. **Error on a second page of contexts (like review threads).** Rejected: a missed failure beyond 100\n    contexts is still covered by the rollup state and the PR nudge backstop; failing the whole read would\n    also kill the ready notification and PR nudge for that ticket.\n\n## Open questions for the user\n- Confirm batching (P5).\n- Should an idle In Review worker that already got a check nudge skip the `PRNudge` the very next tick if\n  its only problem is \"a failed check\"? This design keeps today's backstop unchanged (it fires one tick\n  later, counted), which means one extra message for a worker that stays idle without pushing.\n=== candidate 2 ===\n# Candidate 2: rationale\n\n## Premises tested\n\n1. **\"Workers never poll GitHub.\"** Assumed by the Objective. Evidence it is a real constraint:\n   `skills/build/SKILL.md` l.10 forbids `/loop`, cron and polling, and names the nudge as the\n   worker's only wake-up. The Go code cannot enforce it, but every worker is built against that\n   text, and `decision-log.md` l.127 records a worker that sat idle for days waiting on a nudge\n   that did not yet exist. True constraint. It is what makes the dispatcher the right place.\n\n2. **\"A PR only matters In Review.\"** Assumed by `ReadsPR` (reconcile.go l.353-359) and by\n   `settle` clearing `PRHead` outside In Review (dispatch.go l.569-571). Tested against the\n   skill: step 6 says Linear bounces the ticket to In Progress on PR link, and step 7's \"move\n   the ticket to Needs Human\" plus the user's answer sends it back to In Progress with the PR\n   open. `ResumePending` exists for exactly that path. The `ReadsPR` comment gives cost as the\n   reason for the gate, not correctness. Not a constraint; the design widens it.\n\n3. **\"A failing check is one of the PR's problems.\"** True for the rollup (pullrequest.go\n   l.133-140), and that stays. But \"problem\" there is a state (the PR needs work), while the\n   Objective's unit is a run (an event). Treating the event as a state is what makes \"once per\n   run\" impossible inside `NudgesAt(status, head)`: the count resets on a push and caps at\n   `NudgeLimit`, neither of which is per run. The premise is true for the ladder and false for\n   the event, so the two are kept apart.\n\n4. **\"The dispatcher's message is enough for the worker to act.\"** The worker needs the run's\n   name and a URL, not a rollup word. The query must carry them; `state` alone cannot. That is\n   why the GraphQL change is unavoidable, and why it is the only new signal needed.\n\n5. **\"If we built this from scratch, would it exist?\"** Yes, but as the first instance of a\n   general \"PR event by identity\" rule, with the rollup nudge demoted to the stall ladder. A\n   new review (review id) and a new unresolved thread (thread id) would follow the same shape.\n   This candidate keeps the cache field named `FailedRuns` rather than a generic event set,\n   because nothing else is being built now and a generic name with one member hides intent.\n\n## Alternatives considered\n\n### A. Extend the PR nudge (reuse `inReviewIdle`, `PRNudge`, `NudgesAt`)\nRejected. Three conflicts, each visible in the code:\n- `inReviewIdle` runs only for `worker.Idle` (watch l.283-285). A worker mid-turn in step 7\n  would not hear about the failure until it went idle, which is the delay the Objective removes.\n- `NudgesAt` resets on head and caps at `NudgeLimit`, then `Escalate`. A worker that is merely\n  slow after a failure would be pushed to Needs Human by an event it has not had a turn to see.\n- `PRNudge` text is fixed and asserted verbatim in `review_test.go` l.19-21 and relied on by\n  the skill. Adding run names to it changes every PR-nudge test for a different feature.\nKeeping the ladder unchanged costs nothing and gives the \"worker ignored the event\" path for free.\n\n### B. Have the worker check CI itself after each push\nRejected on premise 1. It also makes each worker spend tokens waiting, which the skill's\n\"dispatcher is the only clock\" rule exists to prevent.\n\n### C. Key the seen-set on `(head, check name)` instead of run id\nRejected. A re-run of the same check on the same head gets the same name and would be\nsuppressed, so a second real failure would never reach the worker. Run id (`databaseId`) is\nthe identity GitHub gives, and a re-run mints a new one, which is exactly \"once per run\".\nLegacy status contexts have no run id, so they fall back to `<head>/<context>`; that fallback\nis named in the design rather than hidden.\n\n### D. First sighting records only, like `CommentSeen`\nRejected. The comment rule skips old comments because most are already handled and the cost\nof a wrong nudge is a reread. A check failing on the current head is unhandled by definition:\nhandling it means a push, and a push moves the head and empties the set. So forwarding on first\nsighting is correct, and the only cost of cache loss is one message per ticket, which the cache\nheader already allows.\n\n### E. One `Prompt` per failing run in the same tick\nRejected. `herdr.Prompt` can be refused mid-sequence (dispatch.go l.411-417), leaving some runs\nrecorded and some not, and two queued user messages in one turn add nothing over one. One\nmessage lists every new run; its ids are recorded together after the call succeeds. Each run is\nstill named exactly once across ticks, which is how \"once per failing check run\" is read.\n\n### F. Hold back the record with a pending flag, like `PendingComments`\nNot needed. `CommentSeen` is a high-water mark, so absorbing it loses the comment and a holdback\nflag is required. A seen-set has no such hazard: a run not recorded is a run not forwarded.\n\n### G. Read PRs for every In Progress ticket, including None and Blocked workers\nRejected. A None worker In Progress is being launched this tick; a Blocked one cannot take a\nprompt (herdr refuses, l.99-101 of herdr.go). Reading them buys nothing and costs a `gh` call.\nIn Review None stays read because `prRelaunch` needs the rollup.\n\n### H. Count `CANCELLED` runs as failures\nRejected. Cancelled runs are nearly always superseded by a push (and then live on the old\nhead anyway) or a concurrency rule; there is nothing for the worker to fix.\n\n## What this costs\n\n- One extra GraphQL fragment and a second page-size constant in `pullrequest`.\n- One new reason, one new fixed text, one new cache field, one new `Action` field.\n- `ReadsPR` and one `settle` condition widen to In Progress; one existing test inverts.\n- Per-tick `gh` calls grow from \"idle In Review\" to \"live, unblocked, In Progress or In Review\".\n=== candidate 3 ===\n# Rationale\n\n## Premises tested\nQuestion asked: \"if we built this from scratch with every signal now available, would this mechanism exist?\"\nAnswer for the existing PR nudge applied to CI: NO. Evidence:\n- It exists because PR carries only `statusCheckRollup.state` (pullrequest.go l.58, 134). With no\n  identity for a failure, the only way to avoid spamming is a counter keyed by head (NudgesAt) plus a\n  limit that escalates (reconcile.go l.382-385). Counting is a workaround for missing identity.\n- With check-run ids available in the same graphql call, \"have I told the worker about THIS failure\"\n  is answerable exactly, so the counter/limit/escalate machinery is unnecessary for CI. It stays\n  valid for review threads, changes requested and conflicts, which still have no identity.\n\nPremises the question assumes:\n1. \"This is a PR concern, so it belongs on the PR nudge.\" Not a constraint. PRNudge's contract (count,\n   limit, escalate, idle-only, In Review-only) is what CI forwarding must NOT have. The other precedent\n   (commentNudge, l.339) already shows a nudge that goes to working workers, skips the limit and uses a\n   seen marker. CI is structurally a comment: an external event the worker can't poll for.\n2. \"Only idle workers can be nudged.\" False. commentNudge sends to Working workers; only Blocked is\n   excluded (dialog capture). An In Progress worker is usually Working, so idle-only would miss the case.\n3. \"PRs map = In Review only; widening it is harmless.\" True constraint, and a trap: settle l.565-572\n   sets Nudges=NudgesAt(status, head) and PRHead from PRs. Putting In Progress PRs there would zero the\n   stall-nudge counter on first read (PRHead \"\" != head) and break stall escalation. Hence separate CIPRs.\n4. \"A deleted cache must lose little\" (cache.go header). True but soft: it already tolerates \"one repeated\n   notification\". A repeated failing-run message is the same class. This is why first-sighting FORWARDS:\n   comments are timeless, so skipping an old one costs little; a failing check is live state and a\n   skipped one means a Working worker never learns of it. Silent loss is worse than one repeat.\n5. \"Read PRs only for idle workers to save gh calls.\" Real cost, not logical necessity: a working\n   worker is exactly who needs telling. Cost is one serial call per live In Progress ticket per tick.\n6. \"Forward only when rollup is FAILURE.\" Not a constraint: rollup stays PENDING while siblings run;\n   per-context conclusion lets us forward at once.\n\n## Alternatives considered\nA. Extend PRNudge (add per-run keys inside inReviewIdle). Rejected: still idle+In Review only, still\n   increments Nudges (so slow worker -> escalation, contradicting the Objective), and the head-keyed\n   reset would re-forward nothing useful. Would need so many exceptions it is a second rule inside one.\nB. Extend PRNudge but lift gating and skip counting for CI only. Rejected: PRs map semantics (premise 3)\n   and the fixed PRNudge text/tests/build-skill step 7 coupling; ends up as A plus special cases.\nC. High-water mark like CommentSeen (max run id seen). Rejected: run ids from parallel workflows\n   finish out of order; a lower-id run failing later than a higher-id pass would be skipped. Needs a set.\nD. Key by (name, head) instead of run id. Rejected: a re-run of the same check at the same head would\n   not be forwarded; Objective says once per failing run. Also needs names stable across matrix jobs.\nE. One message per run (N prompts in a tick). Rejected: N rapid prompts into one Claude input is noisy and\n   each could be refused separately, needing per-key partial recording. Batch is atomic: all or none.\n   If a reviewer insists on literal one-per-run, loop prompts and record each key on its own success.\nF. Record at plan time in settle (like Nudges). Rejected: a refused prompt would lose the failure.\n   Record only in the executor after herdr.Prompt succeeds (matches CommentSeen's pending trick but simpler:\n   Plan reads the set, so no PendingComments analogue is needed).\nG. Forward on first sighting = record only (comment-style). Rejected, see premise 4.\nH. Cap total CI forwards per PR and escalate. Rejected for now: forwards need real pushes/re-runs;\n   escalating a slow worker was the thing the Objective rules out. Revisit if a loop is seen.\nI. Prune CISeen to the currently failing set each tick. Rejected: a truncated or partial read would\n   re-forward. Reset on head change plus cap 50 is enough.\nJ. Treat CANCELLED as failure. Rejected: concurrency groups cancel superseded runs on every push; it would\n   nag on noise. ACTION_REQUIRED is a human gate, not a code fix.\n\n## Risks left open\n- gh calls for In Progress add latency per tick; a batched multi-branch query would fix it later.\n- StatusContext key uses createdAt; if GitHub reports it identically across re-posts the re-run is not\n  re-forwarded. Rare (legacy statuses); noted.\n- Dual path (CI nudge plus PR nudge fallback) depends on `Failed` being trustworthy; fallback when empty\n  or truncated keeps today's behavior.\n"
+              },
+              {
+                "name": "last-message-asks-sketch",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "The design package is `artifact.md` and the synthesis note is `note.md`. `evidence.md` joins the grounding and the three rationales under the `=== grounding ===` and `=== candidate <n> ===` lines you asked for. Nothing was built or run, and I haven't filed or changed anything outside the output files.\n\nI didn't follow the skill's instruction to skip grounding, because you asked for a grounding file. I wrote it from the current tree, without the how or why skills and without reading history.\n\n## Decision\nThis is its own rule, `checkNudge`, next to `commentNudge`. It does not extend the existing PR nudge.\n- **Why not extend it:** the PR nudge counts toward `NudgeLimit` and escalates, and only fires for an idle In Review worker. Once-per-run must not escalate a slow worker, and In Progress and working workers must be covered.\n- **PR nudge unchanged:** it stays as the counted backstop for an idle worker that ignores the check message.\n- **Evidence:** the three candidates converged on this shape, and the judge and I picked candidate 1 as the base.\n\n## Contract sketch\n```go\n// internal/pullrequest\ntype CheckRun struct{ ID, Name, URL string } // ID = GraphQL node id; a re-run gets a new one\ntype PR struct { ...; Failed []CheckRun }     // failed runs on Head, from statusCheckRollup.contexts\n\n// internal/reconcile\nconst ReasonCheck = \"failed check run\"\ntype Input  struct { ...; Checks map[string]pullrequest.PR } // apart from PRs, so settle's stall count is untouched\ntype Action struct { ...; Head string; Checks []string }     // ids named in Text\nfunc (in Input) ReadsChecks(t linear.Ticket) bool            // In Progress or In Review, worker Idle or Working\nfunc NewFailures(pr pullrequest.PR, prev cache.Entry) []pullrequest.CheckRun\nfunc (in Input) checkNudge(t linear.Ticket, w worker.Worker, prev cache.Entry) (Action, bool)\n// watch(): checkNudge runs right after commentNudge, before the state switch\n\n// internal/cache.Entry\nChecksHead string   // PR head the set belongs to\nChecksSent []string // failed run ids already typed into the worker\n```\n\n**What the cache must remember:**\n- **When it writes:** the executor adds ids only after `herdr.Prompt` succeeds. A refused nudge is retried next tick.\n- **When it clears:** settle clears the set when the PR head moves. A status change alone does not clear it.\n- **After cache loss:** at most one repeated message per ticket.\n\nThe query adds `statusCheckRollup.contexts(first: 100)` to the same single `gh` call. A second page is logged and is not an error.\n\n## What you must decide next\n1. **Batching.** I read \"one message per failing check run\" as \"each run is forwarded exactly once\". Runs that fail in the same tick share one message of up to 5 names, so a refused prompt can't leave a half-recorded set. If you want strictly one prompt per run, `checkNudge` sends only the oldest new run per tick and the cache doesn't change.\n2. **Backstop.** If an idle In Review worker just got a check message and \"a failed check\" is its only problem, should the counted PR nudge skip the next tick? The design keeps it as is, so it fires a tick later and counts toward the limit.\n\nOne thing is unverified. No candidate ran a real `gh` query. Whether a re-posted legacy status gets a new node id is argued from the schema, so check it with one real query before building. I also added one build-skill sentence to the design: CI failures arrive from the dispatcher, so the worker must not poll `gh pr checks`."
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.45,
+        "passRate": 0
+      }
+    }
+  ],
+  "aggregates": {
+    "casesTotal": 1,
+    "casesPassed": 1,
+    "overallScore": 0.45,
+    "overallPassRate": 0
+  }
+}
