@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
@@ -67,6 +68,9 @@ func runAll(ctx context.Context, args []string, opts Options) error {
 	}
 	if *par <= 0 {
 		return fmt.Errorf("-parallel must be positive")
+	}
+	if *count <= 0 {
+		return fmt.Errorf("-n must be positive")
 	}
 	skill, err := os.ReadFile(*arm)
 	if err != nil {
@@ -136,25 +140,39 @@ func askClaude(ctx context.Context, model, prompt string) (string, error) {
 	return stdout.String(), nil
 }
 
-var heading = regexp.MustCompile(`(?m)^##\s+(.*?)\s*$`)
+var (
+	heading = regexp.MustCompile(`^##\s+(.*?)\s*$`)
+	fence   = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})(.*)$")
+)
 
 // Score reports whether a comment opens with an In plain English section,
-// shows a code-fenced example before the next heading, and follows with a
-// Details section.
+// shows a fenced example before the next heading, and follows with a Details
+// section. Lines inside a fenced block never count as headings.
 func Score(comment string) (opens, example, details bool) {
-	comment = strings.TrimRightFunc(comment, unicode.IsSpace)
-	heads := heading.FindAllStringSubmatchIndex(comment, -1)
-	if len(heads) == 0 || heads[0][0] != 0 || !strings.EqualFold(comment[heads[0][2]:heads[0][3]], "In plain English") {
+	lines := strings.Split(strings.TrimRightFunc(comment, unicode.IsSpace), "\n")
+	first := heading.FindStringSubmatch(lines[0])
+	if first == nil || !strings.EqualFold(first[1], "In plain English") {
 		return false, false, false
 	}
-	end := len(comment)
-	if len(heads) > 1 {
-		end = heads[1][0]
-	}
-	example = strings.Contains(comment[:end], "```")
-	for _, h := range heads[1:] {
-		if strings.EqualFold(comment[h[2]:h[3]], "Details") {
-			details = true
+	var open string
+	sections := 1
+	for _, line := range lines[1:] {
+		if m := fence.FindStringSubmatch(line); m != nil {
+			switch {
+			case open == "":
+				open = m[1]
+				example = example || sections == 1
+			case m[1][0] == open[0] && len(m[1]) >= len(open) && strings.TrimSpace(m[2]) == "":
+				open = ""
+			}
+			continue
+		}
+		if open != "" {
+			continue
+		}
+		if m := heading.FindStringSubmatch(line); m != nil {
+			sections++
+			details = details || strings.EqualFold(m[1], "Details")
 		}
 	}
 	return true, example, details
@@ -184,6 +202,9 @@ func report(args []string, opts Options) error {
 			base := strings.TrimSuffix(filepath.Base(file), ".md")
 			sep := strings.LastIndex(base, "-")
 			if sep <= 0 {
+				continue
+			}
+			if run, err := strconv.Atoi(base[sep+1:]); err != nil || run < 1 {
 				continue
 			}
 			name := base[:sep]

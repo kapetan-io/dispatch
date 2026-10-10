@@ -50,6 +50,9 @@ func TestCommentEvalScore(t *testing.T) {
 		{"complete", good, true, true, true},
 		{"leadingBlankLine", "\n" + good, false, false, false},
 		{"leadingWhitespace", " \t" + good, false, false, false},
+		{"detailsHeadingInsideFence", "## In plain English\n\nWords.\n\n```\n## Details\n```\n", true, true, false},
+		{"headingInsideFenceKeepsSection", "## In plain English\n\nWords.\n\n```\n## Ticket\nx\n```\n\n## Details\n", true, true, true},
+		{"tildeFence", "## In plain English\n\nWords.\n\n~~~\nx\n~~~\n\n## Details\n", true, true, true},
 		{"statusLineFirst", "Moving to Needs Human.\n\n" + good, false, false, false},
 		{"noExample", "## In plain English\n\nWords only.\n\n## Details\n\nx", true, false, true},
 		{"exampleAfterDetails", "## In plain English\n\nWords.\n\n## Details\n\n```\nx\n```", true, false, true},
@@ -95,4 +98,21 @@ func TestCommentEvalRunRejectsNonPositiveParallel(t *testing.T) {
 		assert.Equal(t, 1, code)
 		assert.Contains(t, stderr.String(), "-parallel must be positive")
 	}
+}
+
+func TestCommentEvalReportSkipsHyphenatedFilesWithoutRunNumber(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "release-notes.md"), []byte("notes"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "case-1.md"), []byte(good), 0o644))
+	var stdout bytes.Buffer
+	require.Equal(t, 0, commenteval.Run(t.Context(), []string{"report", dir}, commenteval.Options{Stdout: &stdout, Stderr: &bytes.Buffer{}}))
+	assert.NotContains(t, stdout.String(), "release")
+	assert.Regexp(t, `all\s+1\s+1\s+1\s+1`, stdout.String())
+}
+
+func TestCommentEvalRunRejectsNonPositiveCount(t *testing.T) {
+	var stderr bytes.Buffer
+	code := commenteval.Run(t.Context(), []string{"run", "-arm", "a", "-scenarios", "s", "-out", "o", "-n", "0"}, commenteval.Options{Stdout: &bytes.Buffer{}, Stderr: &stderr})
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr.String(), "-n must be positive")
 }
