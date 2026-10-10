@@ -472,3 +472,30 @@ func TestTickDoesNotRetryAFailedMergeAfterTheTicketLeavesTheReadAndReturns(t *te
 	assert.Len(t, h.notifications(), 1)
 	assert.Empty(t, h.lines("merges.log"))
 }
+
+// Without branch protection GitHub leaves reviewDecision empty even when a
+// reviewer's latest review requests changes.
+func TestTickDoesNotMergeOverAnotherReviewersChangesRequested(t *testing.T) {
+	h := newHarness(t)
+	h.config(autoMergeConfig)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.writeJSON("pr-eng-1.json", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
+		"number":         7,
+		"url":            prURL1,
+		"headRefOid":     "a1",
+		"mergeable":      "MERGEABLE",
+		"reviewDecision": "",
+		"commits":        map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]string{"state": "SUCCESS"}}}}},
+		"latestOpinionatedReviews": map[string]any{"nodes": []any{
+			map[string]any{"state": "APPROVED", "commit": map[string]string{"oid": "a1"}},
+			map[string]any{"state": "CHANGES_REQUESTED", "commit": map[string]string{"oid": "a1"}},
+		}},
+		"reviewThreads": map[string]any{"nodes": []any{}, "pageInfo": map[string]bool{"hasNextPage": false}},
+	}}}}}})
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, h.lines("merges.log"))
+}

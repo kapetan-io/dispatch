@@ -144,9 +144,16 @@ func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duratio
 	}
 	checksPassed := true
 	pr := PR{Number: n.Number, URL: n.URL, Head: n.HeadRefOid, Repo: RepoOf(n.URL)}
+	// reviewDecision is empty on an unprotected branch, so one reviewer's
+	// standing request for changes has to veto another's approval here.
 	for _, r := range n.LatestOpinionatedReviews.Nodes {
 		if r.State == "APPROVED" && r.Commit.Oid == n.HeadRefOid {
 			pr.Approved = true
+		}
+	}
+	for _, r := range n.LatestOpinionatedReviews.Nodes {
+		if r.State == "CHANGES_REQUESTED" {
+			pr.Approved = false
 		}
 	}
 	// PENDING and EXPECTED are not failures, because the worker has nothing to

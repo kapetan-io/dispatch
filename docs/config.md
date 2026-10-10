@@ -66,7 +66,7 @@ dispatch = "~/Development/dispatch"
 auto_merge = ["kapetan-io/dispatch"]
 ```
 
-In a listed repo, a tick that finds an In Review ticket's PR ready (the same test as the ready-for-review notification, with the worker idle) and approved by a review on its head commit runs `gh pr merge <PR URL> --merge --match-head-commit <head>`. It prints `merge ENG-1: PR approved` and sends a macOS notification, `ENG-1 was approved and merged: <PR URL>`, in place of the ready-for-review one. Any reviewer's approval counts, which today means CodeRabbit's. The merge only goes through for the commit that was approved.
+In a listed repo, a tick that finds an In Review ticket's PR ready (the same test as the ready-for-review notification, with the worker idle) and approved by a review on its head commit runs `gh pr merge <PR URL> --merge --match-head-commit <head>`. It prints `merge ENG-1: PR approved` and sends a macOS notification, `ENG-1 was approved and merged: <PR URL>`, in place of the ready-for-review one. Any reviewer's approval counts, which today means CodeRabbit's, unless another reviewer's latest review requests changes. The merge only goes through for the commit that was approved.
 
 - An approval of an earlier commit doesn't count, so a push after approval waits for a new one.
 - A ready PR with no approval on its head gets the ready-for-review notification as before. If the approval arrives later, the next tick merges it.
