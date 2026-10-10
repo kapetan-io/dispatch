@@ -363,7 +363,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 	if lookupFailed || len(unread) > 0 {
 		held = nil
 	}
-	settle(c, tickets, workers, input.PRs, cfg.Linear.Statuses, held)
+	settle(c, tickets, workers, input.PRs, cfg.Linear.Statuses, held, input.PendingComments())
 
 	alert := func(message string) error {
 		return notify.Send(ctx, opts.Osascript, "dispatch", message)
@@ -392,8 +392,12 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 				continue
 			}
 			e := c[a.Ticket.Identifier]
-			e.Nudges++
-			e.ResumePending = false
+			if a.Reason == reconcile.ReasonComment {
+				e.CommentSeen = a.Ticket.LastComment
+			} else {
+				e.Nudges++
+				e.ResumePending = false
+			}
 			c[a.Ticket.Identifier] = e
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		// One tree's failure is reported, not returned, so the remaining trees still get their turn.
@@ -485,7 +489,10 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 //
 // held names the finished tickets that still hold a lease. A nil held means the
 // leases could not be read this tick, and no dirty-tree warning is dropped.
-func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Worker, prs map[string]pullrequest.PR, statuses config.Statuses, held map[string]bool) {
+//
+// pending holds back a ticket's comment time (see Input.PendingComments), so
+// its nudge is retried instead of lost. A successful nudge advances it.
+func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Worker, prs map[string]pullrequest.PR, statuses config.Statuses, held map[string]bool, pending map[string]bool) {
 	seen := map[string]bool{}
 	for _, t := range tickets {
 		e := c[t.Identifier]
@@ -493,6 +500,13 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 			e.Nudges = 0
 			e.Relaunches = 0
 			e.TeardownWarned = false
+		}
+		if e.CommentSeen == "" || !pending[t.Identifier] {
+			// "0" sorts before any RFC 3339 time and, unlike "", marks the ticket seen.
+			e.CommentSeen = "0"
+			if t.LastComment != "" {
+				e.CommentSeen = t.LastComment
+			}
 		}
 		if workers[t.Identifier].State == worker.Blocked {
 			e.BlockedTicks++
