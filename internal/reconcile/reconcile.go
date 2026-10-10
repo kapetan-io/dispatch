@@ -303,7 +303,7 @@ func (in Input) PendingComments() map[string]bool {
 	pending := map[string]bool{}
 	for _, t := range in.Tickets {
 		prev := in.Cache[t.Identifier]
-		if !CommentDue(t, prev) || t.LabelsTruncated || t.HasChildren || t.HasLabel("design") || (t.Status != in.InProgress && t.Status != in.InReview) {
+		if !CommentDue(t, prev) || t.LabelsTruncated || t.HasChildren || t.HasLabel("design") || t.HasLabel("design-review") || (t.Status != in.InProgress && t.Status != in.InReview) {
 			continue
 		}
 		w := in.Workers[t.Identifier]

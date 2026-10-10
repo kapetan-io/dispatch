@@ -317,3 +317,20 @@ func TestTickCommentNudgeIsOwedWhileTheRepoPoolCannotBeRead(t *testing.T) {
 	assert.Contains(t, string(raw), comment1)
 	assert.NotContains(t, string(raw), comment2)
 }
+
+func TestTickCommentNudgeAbsorbsACommentOnABlockedDesignReviewTicket(t *testing.T) {
+	h := newHarness(t)
+	h.worker("ENG-1", "working")
+	h.tickets(withComment(withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"), comment1))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	h.setWorkerStatus("ENG-1", "blocked")
+	h.tickets(withComment(withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"), comment2))
+
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	raw, err := os.ReadFile(filepath.Join(h.state, "cache.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), comment2)
+}
