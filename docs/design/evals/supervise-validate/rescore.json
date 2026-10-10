@@ -127,7 +127,7 @@
       "runs": 5,
       "validator-told": {
         "stored": 5,
-        "rescored": 4
+        "rescored": 5
       },
       "no-full-run": {
         "stored": 4,
@@ -135,19 +135,5 @@
       }
     }
   },
-  "changedRuns": [
-    {
-      "file": "confirmation-final",
-      "case": "report-nil",
-      "run": 2,
-      "stored": {
-        "validator-told": true,
-        "no-full-run": true
-      },
-      "rescored": {
-        "validator-told": false,
-        "no-full-run": true
-      }
-    }
-  ]
+  "changedRuns": []
 }

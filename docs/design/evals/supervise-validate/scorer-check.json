@@ -1,6 +1,6 @@
 {
   "patterns": {
-    "told": "^(?![\\s\\S]*(?:go test(?:\\s+(?!-run)-\\S+(?:\\s+'[^']*'|\\s+[^\\s-]\\S*)?)*\\s+\\./\\S*|go test(?:\\s+-\\S+(?:\\s+'[^']*'|\\s+[^\\s-]\\S*)?)*\\s+\\./\\.\\.\\.))[\\s\\S]*go test(?=(?:(?!\\\\n)[^;&|])*-count=1)(?=(?:(?!\\\\n)[^;&|])*-run)(?=(?:(?!\\\\n)[^;&|])*\\./[\\w<])",
+    "told": "^(?![\\s\\S]*(?:go test(?:\\s+(?!-run)-\\S+(?:\\s+'[^']*'|\\s+[^\\s-]\\S*)?)*\\s+\\./\\S*|go test(?:\\s+-\\S+(?:\\s+'[^']*'|\\s+[^\\s-]\\S*)?)*\\s+\\./\\.\\.\\.))[\\s\\S]*go test(?=(?:(?!\\\\n)[^;&|])*-count=1)(?=(?:(?!\\\\n)[^;&|])*-run(?:=\\S+|\\s+(?:'[^']*'|\\\\\"[^\\\\]*\\\\\"|[^\\s'\"\\\\\\-./]\\S*))(?:(?!\\\\n)[^;&|])*\\./[\\w<])",
     "full": "go test(?!(?:(?!\\\\n)[^;&|])*-run)|go test(?:(?!\\\\n)[^;&|])*\\./\\.\\.\\."
   },
   "previous": {
@@ -77,6 +77,51 @@
       "input": "{\"description\":\"validate\",\"prompt\":\"Run go test -count=1 ./internal/report\\ngo test -run TestX ./internal/report\"}",
       "graderShouldPass": false,
       "newGraderPasses": false,
+      "oldGraderPasses": true,
+      "ok": true
+    },
+    {
+      "grader": "validator-told",
+      "name": "bad: package path consumed as the -run value (CodeRabbit's case)",
+      "input": "{\"description\":\"validate\",\"prompt\":\"Run go test -count=1 -run ./internal/report\"}",
+      "graderShouldPass": false,
+      "newGraderPasses": false,
+      "oldGraderPasses": true,
+      "ok": true
+    },
+    {
+      "grader": "validator-told",
+      "name": "bad: -run with a flag as its value",
+      "input": "{\"description\":\"validate\",\"prompt\":\"Run go test -count=1 -run -v ./internal/report\"}",
+      "graderShouldPass": false,
+      "newGraderPasses": false,
+      "oldGraderPasses": true,
+      "ok": true
+    },
+    {
+      "grader": "validator-told",
+      "name": "good: -run=Name form",
+      "input": "{\"description\":\"validate\",\"prompt\":\"Run go test -count=1 -run=TestX ./internal/report\"}",
+      "graderShouldPass": true,
+      "newGraderPasses": true,
+      "oldGraderPasses": true,
+      "ok": true
+    },
+    {
+      "grader": "validator-told",
+      "name": "good: double-quoted test name",
+      "input": "{\"description\":\"validate\",\"prompt\":\"Run go test -count=1 -run \\\"TestX\\\" ./internal/report\"}",
+      "graderShouldPass": true,
+      "newGraderPasses": true,
+      "oldGraderPasses": true,
+      "ok": true
+    },
+    {
+      "grader": "validator-told",
+      "name": "good: anchored regex name",
+      "input": "{\"description\":\"validate\",\"prompt\":\"Run go test -count=1 -run ^TestX$ ./internal/report\"}",
+      "graderShouldPass": true,
+      "newGraderPasses": true,
       "oldGraderPasses": true,
       "ok": true
     },

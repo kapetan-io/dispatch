@@ -66,6 +66,8 @@ Rescore (`results/rescore.json`). No model was run. The Agent and Bash inputs in
 
 CodeRabbit then found that the negative check in `validator-told` exempted any command with `-run`, so `go test -count=1 -run TestX ./internal/report; go test -count=1 -run TestX ./...` still passed. Confirmed on the pattern. It now also rejects `./...` as the package of any `go test`, with or without `-run`. The first version of that fix wrongly bound its alternation and the new scorer input still passed, so the scorer check caught it before the push. With the fix, all 16 hand-written inputs behave as intended and the rescore is unchanged (`validator-told` 19/20, `no-full-run` 19/20).
 
+CodeRabbit's last point was that `go test -count=1 -run ./internal/report` passed, since Go reads the path as the `-run` value and runs no package. Confirmed on the pattern. `-run` now needs a test-name value (quoted, `=`-joined or a bare word that is not a path or flag) followed by a separate `./` package. The scorer check holds 15 hand-written inputs, with the bad path-as-value and flag-as-value prompts and good `-run=Name`, double-quoted and anchored-regex forms added. All behave as intended and the rescore is unchanged.
+
 `no-full-run` still sees only the supervisor's own Bash calls, and the supervisor delegates, so the rescore leaves it mostly vacuous. The prompt check in `validator-told` is the one that bites.
 
 ## Limits
