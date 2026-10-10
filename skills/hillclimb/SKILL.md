@@ -7,7 +7,9 @@ description: Improve a skill's wording against a frozen `claude plugin eval` sui
 
 Change one piece of wording, measure it with a suite that doesn't move, and keep or revert the change.
 
-The suite lives next to the skill, such as `docs/design/evals/<name>/`: `cases.json`, the arms (each is the whole skill with only the wording under test replaced), a `README.md` and a `log.md`. If there is no suite, build one under the same rules.
+The suite lives next to the skill, such as `docs/design/evals/<name>/`: `cases.json`, the arms (each is the whole skill with only the wording under test replaced), a `README.md`, a `log.md` and `results/`. If there is no suite, build one under the same rules.
+
+Every score the log cites needs its `claude plugin eval` result JSON in `results/`, committed with the `log.md` entry that cites it. That covers the baseline, control, attempts and reruns, partial ones too. A score with no committed file doesn't count, because a later reader can't recheck it.
 
 ## Before attempt 1
 
@@ -22,8 +24,8 @@ The suite lives next to the skill, such as `docs/design/evals/<name>/`: `cases.j
 1. Name the one idea and the failure it targets.
 2. Start three fresh sub-agents with different angles, such as the failing visible transcripts, an outside source like pstack's playbooks, and skill-creator guidance. Give them the arms, scores and answer keys for visible cases only, and reject any wording that quotes a case's content.
 3. Start a fourth fresh sub-agent to pick one proposal or graft them under a word cap you set before proposing.
-4. Run the suite on the new arm at the bar's run count.
-5. Append to `log.md`: the idea, the scores, the cost, kept or reverted. Keep the change only if the bar's numbers move the right way and no case falls below the bar's per-case floor. Otherwise revert it in full and log it anyway.
+4. Run the suite on the new arm at the bar's run count, and write the result JSON to `results/` before you log anything.
+5. Append to `log.md`, in the commit with the result file: the idea, the scores, the cost, kept or reverted. Keep the change only if the bar's numbers move the right way and no case falls below the bar's per-case floor. Otherwise revert the wording in full, keep the result file, and log it anyway.
 
 ## Changing test data
 

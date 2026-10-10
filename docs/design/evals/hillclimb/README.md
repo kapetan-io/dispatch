@@ -1,6 +1,6 @@
 # Hillclimb eval
 
-Status 2026-10-10: not run. Claude Code denied the `claude plugin eval` command (the cause is unknown), so no result exists, the sensitivity check on `arms/careless.md` has not been done and the cases have not been loaded by the harness once. The skill was reviewed against skill-creator's guidance instead (see `log.md`). Run the steps under "How to run" before relying on the skill.
+Status 2026-10-10: the pass bar below is not met, so the skill is not adopted by it. The first full run (`results/skill-all-cases-run1.json`) passed 68 of 100 checks, and several graders on the older cases fail in every run. `log.md` has the numbers and the reading.
 
 Tests whether a worker given only "hillclimb this wording against that suite" follows `skills/hillclimb/SKILL.md`. The worker can't run `claude`, so the eval covers what the skill asks for before and between runs: the pass bar, the known-bad control, held-out cases, the budget, one idea per attempt, and stopping when the wording already passes. It does not test whether a full climb reaches its bar. That was shown by the size-check and ticket-claims climbs the skill comes from (`../size-check/log.md`, `../ticket-claims/log.md`).
 
@@ -18,6 +18,7 @@ Each case is a small repo with a commit-message skill and a suite for it, and th
 | fresh-suite | Cases and graders only. No bar, no control, nothing held out, no budget, no log. | Writes the bar, queues a known-bad control and a baseline first, holds cases out, states the budget, starts `log.md` with one idea for attempt 1. |
 | already-passing | Bar, control and a log showing the current wording met the bar twice. | Changes nothing, queues nothing new, and says so in `post.md`. |
 | after-failed | Bar and a log whose attempt 1 was reverted (rename got a body, 1/5 against a 4 of 5 floor). Revert and dep-bump are held out. | Adds attempt 2 from the current wording with one idea aimed at rename, queues it at 5 runs, keeps the bar and earlier log entries, and doesn't cite the held-out cases. |
+| results-committed | A git repo with a suite and a log that ends at a reverted attempt 1. `./run-suite.sh <arm>` stands in for the run and prints a fixed result JSON. | Writes attempt 2's arm, runs it, saves the JSON under `evals/commit-message/results/`, and commits it together with the `log.md` entry that cites it. |
 
 The fixtures' stored scores and the suite are made up to exercise the rules and are not a real climb.
 
@@ -29,12 +30,13 @@ Every grader reads a file the worker wrote, never what it says in chat.
 - fresh-suite: `bar`, `control`, `control-written`, `heldout`, `budget`, `one-change`.
 - already-passing: `stopped`, `told`, `unchanged`.
 - after-failed: `new-arm`, `no-leak`, `queued`, `bar-kept`.
+- results-committed: `result-committed`, `same-commit`, `cites-file`. The first two read `commits.txt`, which the prompt has the worker write with `git log --stat --patch` at the end, so the graders can match the path the log cites against the files committed (a commit hook doesn't fire in the eval sandbox).
 
 Each LLM grader takes the judge's single verdict. No grader opens the arm file the worker names as its control, because the worker chooses the file name. `control-written` checks that the README names a path and a bar, so a worker that queues a control it never wrote is caught only if the README lacks them.
 
 ## Pass bar (fixed 2026-10-10, before any run)
 
-The skill is adopted only if all hold on one attempt of 5 runs per case, 15 runs.
+The skill is adopted only if all hold on one attempt of 5 runs per case, 20 runs.
 
 1. Every grader passes in 4 of 5 runs on its case.
 2. All graders pooled pass in at least 90% of runs.
