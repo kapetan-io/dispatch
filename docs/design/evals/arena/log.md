@@ -46,3 +46,11 @@ Asked for by the user after the Needs Human comment. Two wording changes: Phase 
 Result (`results/attempt5-skill.json`), passes of 3: everything 3 except `verify` 0. Cost about $7.
 
 The line changed nothing. In all three runs the last two calls are `Write artifact.md` and `Write note.md`, with no read after them. Two runs ran a shell check of the docs and candidate files before writing the artifact, which is a check before the synthesis is final and not a re-read of the written file. Bar not met. Three runs can't show a failure rate under about 35%, but 0 of 3 beside 0 of 5 and 1 of 5 earlier is consistent.
+
+## 2026-10-10, attempt 6: a re-read todo item (3 runs)
+
+The user chose to add a required todo item. The todo list gained "7. Re-read the artifact with Read against the grounding material, then record what you checked in the note's verification result (if it fails, reopen Graft)" before "8. Ask the user". A fifth skill-creator review ran first, and its ordering and tool-call points were taken. Control on the final graders passes 2 of 28 (7%, `results/attempt6-control.json`).
+
+Result (`results/attempt6-skill.json`), passes of 3: everything 3 except `verify` 0. Cost about $6.6. Bar not met.
+
+What the traces show. One run ended with a `Read` of `artifact.md` after writing it, so the item changed behavior once, and that run still failed `verify`, so the grader's reading of that run is not understood (no judge reasons are recorded). The other two ran a shell check before writing and went from the two writes to the final message. The eval harness gives the worker no todo tool, so an item on the todo list can't act as a forcing function here. It may work in a real session that has one, and this eval can't show that.
