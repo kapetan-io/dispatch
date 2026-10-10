@@ -24,6 +24,12 @@ const (
 // to leave it out.
 func (h *harness) recordStop(ticket, tasks string) {
 	h.t.Helper()
+	h.recordStopFrom("worker", ticket, tasks)
+}
+
+// recordStopFrom is recordStop for the Claude session with the given id.
+func (h *harness) recordStopFrom(session, ticket, tasks string) {
+	h.t.Helper()
 	tree := filepath.Join(h.dir, "trees", ticket)
 	if _, err := os.Stat(filepath.Join(h.repo, ".git")); err != nil {
 		hintGit(h.t, h.repo, "init", "-q")
@@ -32,7 +38,7 @@ func (h *harness) recordStop(ticket, tasks string) {
 	if _, err := os.Stat(tree); err != nil {
 		hintGit(h.t, h.repo, "worktree", "add", "-q", "-b", "br-"+ticket, tree)
 	}
-	input := fmt.Sprintf(`{"hook_event_name":"Stop","cwd":%q`, tree)
+	input := fmt.Sprintf(`{"hook_event_name":"Stop","session_id":%q,"cwd":%q`, session, tree)
 	if tasks != "" {
 		input += "," + tasks
 	}
@@ -278,6 +284,31 @@ func TestTickStaysQuietWhenANewerStopIsBusyAfterAnIgnoredNudge(t *testing.T) {
 
 	assert.Empty(t, h.tick())
 	assert.Empty(t, h.notifications())
+}
+
+func TestTickLeavesAWorkerAloneWhenAnotherSessionInItsTreeStops(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "done")
+	h.recordStopFrom("worker", "ENG-1", runningTasks)
+	h.advance(5 * time.Minute)
+
+	h.recordStopFrom("stranger", "ENG-1", noTasks)
+
+	assert.Empty(t, h.tick())
+	assert.Empty(t, h.prompts())
+}
+
+func TestTickTrustsTheNewSessionOnceTheOldSessionHadNothingRunning(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "done")
+	h.recordStopFrom("old", "ENG-1", noTasks)
+	h.recordStopFrom("new", "ENG-1", runningTasks)
+	h.advance(5 * time.Minute)
+
+	assert.Empty(t, h.tick())
+	assert.Empty(t, h.prompts())
 }
 
 func TestTickSendsTheResumeNudgeWhateverTheStopRecordSays(t *testing.T) {

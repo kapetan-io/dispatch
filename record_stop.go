@@ -18,6 +18,7 @@ import (
 // BackgroundTasks is a pointer so a missing field, which means Claude Code
 // could not read its task registry, differs from an empty list.
 type stopInput struct {
+	SessionID       string `json:"session_id"`
 	CWD             string `json:"cwd"`
 	BackgroundTasks *[]struct {
 		Status string `json:"status"`
@@ -60,7 +61,7 @@ func recordStop(ctx context.Context, opts Options) error {
 	if !managed {
 		return nil
 	}
-	rec := stops.Record{At: opts.Now().UTC(), Reported: in.BackgroundTasks != nil}
+	rec := stops.Record{At: opts.Now().UTC(), Session: in.SessionID, Reported: in.BackgroundTasks != nil}
 	if rec.Reported {
 		for _, task := range *in.BackgroundTasks {
 			if task.Status == "running" {

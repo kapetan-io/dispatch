@@ -28,6 +28,8 @@ type Record struct {
 	Reported bool `json:"reported"`
 	// Running counts the tasks the Stop listed as running.
 	Running int `json:"running"`
+	// Session is the Claude session that made the Stop.
+	Session string `json:"session,omitempty"`
 }
 
 // Busy reports whether the worker was waiting on its own background work at
@@ -51,8 +53,14 @@ func path(stateDir, tree string) string {
 	return filepath.Join(Dir(stateDir), hex.EncodeToString(sum[:8])+".json")
 }
 
-// Write replaces the record of the worker in tree.
+// Write replaces the record of the worker in tree. Any Claude session whose
+// working directory is the tree fires the hook, so a Stop from a session other
+// than the one that wrote a still-busy record is dropped. Otherwise a stranger's
+// idle Stop would erase the worker's wait on its background tasks.
 func Write(stateDir, tree string, r Record) error {
+	if old, ok := Read(stateDir, tree); ok && old.Session != r.Session && old.Busy(r.At) {
+		return nil
+	}
 	b, err := json.Marshal(r)
 	if err != nil {
 		return err
