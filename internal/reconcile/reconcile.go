@@ -55,6 +55,7 @@ const (
 	ReasonStall             = "stall"
 	ReasonResume            = "resume"
 	ReasonPR                = "PR needs work"
+	ReasonComment           = "new comment"
 )
 
 // NeedsHumanText is the notification message for a ticket in Needs Human.
@@ -68,6 +69,9 @@ const (
 	StallNudge  = "%s is still In Progress. Re-read the ticket and its latest comments, then keep going. If the PR is ready, move it to In Review. If you need a decision from me, move it to Needs Human and comment what you need."
 	ResumeNudge = "I answered on %s. Read the latest comments and continue."
 	PRNudge     = "PR %s for %s has %s. Handle it as your build skill's step 7 says, and push."
+	// CommentNudge goes to a working or idle worker alike, and never counts
+	// toward the stall or PR limits.
+	CommentNudge = "%s has a new comment. Read the ticket's comments and act on them as your build skill says."
 )
 
 // Action is one decision about one ticket.
@@ -251,6 +255,9 @@ func (in Input) watch(t linear.Ticket) (Action, bool) {
 		return Action{}, false
 	}
 	w := in.Workers[t.Identifier]
+	if a, ok := in.commentNudge(t, w, prev); ok {
+		return a, true
+	}
 	switch w.State {
 	case worker.Blocked:
 		if in.RenotifyTicks > 0 && prev.BlockedTicks%in.RenotifyTicks != 0 {
@@ -278,6 +285,49 @@ func (in Input) watch(t linear.Ticket) (Action, bool) {
 		return Action{Kind: Nudge, Ticket: t, Reason: ReasonStall, PaneID: w.PaneID, Text: fmt.Sprintf(StallNudge, t.Identifier)}, true
 	}
 	return Action{}, false
+}
+
+// CommentDue reports whether t has a comment newer than the newest one the
+// cache has accounted for. A ticket with no cache time yet is on its first
+// sighting, which records a time and nudges nobody.
+func CommentDue(t linear.Ticket, prev cache.Entry) bool {
+	return prev.CommentSeen != "" && t.LastComment > prev.CommentSeen
+}
+
+// PendingComments names the tickets whose newest comment the cache must not
+// absorb yet, because the worker is owed a nudge or can't take one this tick.
+// A blocked worker would get the text in its question dialog, and a worker in
+// an unread repo may be running unseen. A comment dropped for any other reason,
+// such as a resume nudge standing in for it, is absorbed.
+func (in Input) PendingComments() map[string]bool {
+	pending := map[string]bool{}
+	for _, t := range in.Tickets {
+		prev := in.Cache[t.Identifier]
+		if !CommentDue(t, prev) || t.LabelsTruncated || t.HasChildren || t.HasLabel("design") || t.HasLabel("design-review") || (t.Status != in.InProgress && t.Status != in.InReview) {
+			continue
+		}
+		w := in.Workers[t.Identifier]
+		_, nudged := in.commentNudge(t, w, prev)
+		if nudged || w.State == worker.Blocked || (w.State == worker.None && in.unread(t)) {
+			pending[t.Identifier] = true
+		}
+	}
+	return pending
+}
+
+// commentNudge tells a working or idle worker to read its ticket's new comment.
+// A blocked worker is left to the blocked notification, because typing would
+// land in its question dialog. An idle worker's pending resume nudge already says to read
+// the latest comments, and a design-review worker is never nudged. It takes the
+// tick ahead of the stall and PR nudges, which fire on a later tick.
+func (in Input) commentNudge(t linear.Ticket, w worker.Worker, prev cache.Entry) (Action, bool) {
+	if w.State == worker.None || w.State == worker.Blocked || !CommentDue(t, prev) || t.HasLabel("design-review") {
+		return Action{}, false
+	}
+	if t.Status == in.InProgress && w.State == worker.Idle && (prev.ResumePending || prev.LastStatus == in.NeedsHuman) {
+		return Action{}, false
+	}
+	return Action{Kind: Nudge, Ticket: t, Reason: ReasonComment, PaneID: w.PaneID, Text: fmt.Sprintf(CommentNudge, t.Identifier)}, true
 }
 
 // ReadsPR reports whether Plan will use this In Review ticket's PR. Working and

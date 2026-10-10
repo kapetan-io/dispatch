@@ -94,6 +94,12 @@ Three kinds of ticket appear below. The **feature ticket** holds the blueprint a
     - Approve by saying "approved" to the review worker. It moves the review ticket to Done and makes sure the feature ticket is In Progress.
     - Moves you make in Linear's UI still work. They wait for the next tick.
     - You want no more Linear calls than necessary. A 1-minute timer and a tick after every worker status change were both rejected. An agent runs a tick only when you advance a phase.
+11. **Dispatch is the event broker.** (Settled 2026-10-09, ENG-257.) It sits between the outside world (GitHub, Linear) and both the workers and you. Each tick it polls those sources, compares what it finds with its cache, and forwards what the receiver doesn't know yet, as a nudge to a worker or a notification to you. Workers never poll. A new kind of event is a new forwarding rule in the dispatcher, never an instruction for workers to check something themselves. ENG-255's worker missed a comment posted minutes before it opened its PR, though its build step said to read the comments first. That instruction stays as a backstop.
+    - The comment nudge is one such rule, like the PR nudge. A comment newer than the newest one the cache has seen types `<ticket> has a new comment. Read the ticket's comments and act on them as your build skill says.` into the worker, busy or idle. Typing into a working Claude session delivers mid-turn.
+    - It skips a blocked worker, since typing would land in the question dialog, and fires once the worker is unblocked.
+    - Workers post as your Linear account, so the dispatcher can't tell your comment from the worker's own and doesn't try. A worker nudged about its own comment, or one dispatch posted, rereads it and carries on.
+    - It counts toward neither the stall nor the PR limit, and never escalates.
+    - The ready-for-review notification (ENG-256, planned) is the same idea pointed at you.
 
 ## Build stage (settled before 2026-10-07)
 

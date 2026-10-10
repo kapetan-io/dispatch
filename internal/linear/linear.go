@@ -35,6 +35,10 @@ type Ticket struct {
 	// LabelsTruncated means Labels is only the first page, so a repo or design
 	// label may be missing from it.
 	LabelsTruncated bool
+	// LastComment is the creation time of the ticket's newest comment, or empty
+	// when it has none. It is RFC 3339 and sorts as text. Only ManagedTickets
+	// fills it in, since only its tickets get comment nudges.
+	LastComment string
 	// Mine means the ticket is assigned to the key's owner. Only ParentChildren
 	// sets it, because ManagedTickets returns nothing else.
 	Mine bool
@@ -123,7 +127,8 @@ func (s *Stats) record(start time.Time, resp *http.Response) {
 const maxManaged = 100
 
 // The nested connections are capped because Linear charges a query by its
-// page sizes, and only the presence of a child matters.
+// page sizes, and only the presence of a child matters. Linear lists comments
+// newest first, so comments(first: 1) is the newest and last: 1 the oldest.
 const managedTickets = `query ManagedTickets($label: String!, $teams: [String!], $first: Int!) {
   viewer {
     assignedIssues(first: $first, filter: {labels: {name: {eq: $label}}, state: {type: {eq: "started"}}, team: {key: {in: $teams}}}) {
@@ -133,6 +138,7 @@ const managedTickets = `query ManagedTickets($label: String!, $teams: [String!],
         team { key }
         labels(first: 25) { nodes { name parent { name } } pageInfo { hasNextPage } }
         children(first: 1) { nodes { id } }
+        comments(first: 1) { nodes { createdAt } }
       }
       pageInfo { hasNextPage }
     }
@@ -170,6 +176,11 @@ type issueNode struct {
 			ID string `json:"id"`
 		} `json:"nodes"`
 	} `json:"children"`
+	Comments struct {
+		Nodes []struct {
+			CreatedAt string `json:"createdAt"`
+		} `json:"nodes"`
+	} `json:"comments"`
 	CreatedAt string `json:"createdAt"`
 	Parent    *struct {
 		Identifier string `json:"identifier"`
@@ -200,6 +211,9 @@ func (n issueNode) ticket() Ticket {
 		Team:            n.Team.Key,
 		HasChildren:     len(n.Children.Nodes) > 0,
 		LabelsTruncated: n.Labels.PageInfo.HasNextPage,
+	}
+	if len(n.Comments.Nodes) > 0 {
+		t.LastComment = n.Comments.Nodes[0].CreatedAt
 	}
 	for _, l := range n.Labels.Nodes {
 		label := Label{Name: l.Name}

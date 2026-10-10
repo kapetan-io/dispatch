@@ -1,7 +1,8 @@
 // Package cache holds the per-ticket counters a tick carries to the next one.
-// Deleting the cache loses little: every field is a counter that may reset,
-// a last-seen value that may repeat one notification, or an escalation
-// comment Linear has not yet accepted, which would then never be posted.
+// Deleting the cache loses little: counters reset, a last-seen status may
+// repeat one notification, a comment posted meanwhile gets no nudge because
+// the first tick only re-records the newest comment time, and an escalation
+// comment Linear has not yet accepted is never posted.
 package cache
 
 import (
@@ -40,6 +41,11 @@ type Entry struct {
 	PendingComment string `json:"pending_comment,omitempty"`
 	// TicketID is Linear's internal id for the ticket a pending comment goes on.
 	TicketID string `json:"ticket_id,omitempty"`
+	// CommentSeen is the creation time of the newest comment dispatch has
+	// accounted for, "0" when the ticket had none. Empty means the ticket was
+	// never seen, so its first sighting records a time without nudging. It
+	// stays put while a nudge is owed or the worker can't take one yet.
+	CommentSeen string `json:"comment_seen,omitempty"`
 	// TeardownWarned marks a finished ticket whose dirty tree already got its
 	// one comment. It is dropped when the ticket stops being a finished ticket
 	// that holds a lease.
