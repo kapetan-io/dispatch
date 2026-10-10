@@ -13,7 +13,7 @@ The ticket you were started on is the feature ticket. The session that created i
 
 ## Start
 
-Open a todolist with one entry per step before starting.
+Load `dispatch:converse` with the Skill tool. Open a todolist with one entry per step before starting.
 
 1. Orient
 2. Discuss the product half and get the Objective approved
