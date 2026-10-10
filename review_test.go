@@ -31,6 +31,8 @@ type prState struct {
 	moreThreads bool
 	// approved lists the commits a review approves.
 	approved []string
+	// fork marks a PR opened from a fork.
+	fork bool
 }
 
 func cleanPR(head string) prState {
@@ -53,6 +55,7 @@ func (h *harness) pr(ticket string, p prState) {
 	h.writeJSON("pr-"+strings.ToLower(ticket)+".json", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
 		"number":                   7,
 		"url":                      prURL1,
+		"isCrossRepository":        p.fork,
 		"headRefOid":               p.head,
 		"mergeable":                p.mergeable,
 		"reviewDecision":           p.decision,

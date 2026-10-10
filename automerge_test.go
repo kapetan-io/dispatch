@@ -2,6 +2,7 @@ package dispatch_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -498,4 +499,53 @@ func TestTickDoesNotMergeOverAnotherReviewersChangesRequested(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Empty(t, h.lines("merges.log"))
+}
+
+func TestTickDoesNotMergeAForkPRThatSharesTheWorkersBranchName(t *testing.T) {
+	h := newHarness(t)
+	h.config(autoMergeConfig)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	fork := approvedPR("evil")
+	fork.fork = true
+	h.pr("ENG-1", fork)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, out)
+	assert.Empty(t, h.lines("merges.log"))
+	assert.Empty(t, h.notifications())
+}
+
+func TestTickUsesTheWorkersPRWhenAForkPRSharesItsBranchName(t *testing.T) {
+	h := newHarness(t)
+	h.config(autoMergeConfig)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", approvedPR("a1"))
+	var file struct {
+		Data struct {
+			Repository struct {
+				PullRequests struct {
+					Nodes []map[string]any `json:"nodes"`
+				} `json:"pullRequests"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(h.readFile("pr-eng-1.json"), &file))
+	own := file.Data.Repository.PullRequests.Nodes[0]
+	evil := map[string]any{}
+	for k, v := range own {
+		evil[k] = v
+	}
+	evil["isCrossRepository"], evil["headRefOid"], evil["url"] = true, "evil", "https://github.com/kapetan-io/dispatch/pull/99"
+	file.Data.Repository.PullRequests.Nodes = []map[string]any{evil, own}
+	h.writeJSON("pr-eng-1.json", file)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "merge ENG-1: PR approved\n", out)
+	assert.Equal(t, []string{mergeCall1}, h.lines("merges.log"))
 }

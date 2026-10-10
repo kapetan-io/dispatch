@@ -60,9 +60,9 @@ const maxThreads = 100
 
 const query = `query PullRequest($owner: String!, $repo: String!, $branch: String!, $threads: Int!) {
   repository(owner: $owner, name: $repo) {
-    pullRequests(headRefName: $branch, states: OPEN, first: 1, orderBy: {field: UPDATED_AT, direction: DESC}) {
+    pullRequests(headRefName: $branch, states: OPEN, first: 20, orderBy: {field: UPDATED_AT, direction: DESC}) {
       nodes {
-        number url headRefOid mergeable reviewDecision
+        number url isCrossRepository headRefOid mergeable reviewDecision
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
         reviewThreads(first: $threads) { nodes { isResolved } pageInfo { hasNextPage } }
         latestOpinionatedReviews(first: 100) { nodes { state commit { oid } } }
@@ -97,12 +97,13 @@ func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duratio
 			Repository struct {
 				PullRequests struct {
 					Nodes []struct {
-						Number         int    `json:"number"`
-						URL            string `json:"url"`
-						HeadRefOid     string `json:"headRefOid"`
-						Mergeable      string `json:"mergeable"`
-						ReviewDecision string `json:"reviewDecision"`
-						Commits        struct {
+						Number            int    `json:"number"`
+						IsCrossRepository bool   `json:"isCrossRepository"`
+						URL               string `json:"url"`
+						HeadRefOid        string `json:"headRefOid"`
+						Mergeable         string `json:"mergeable"`
+						ReviewDecision    string `json:"reviewDecision"`
+						Commits           struct {
 							Nodes []struct {
 								Commit struct {
 									StatusCheckRollup *struct {
@@ -135,7 +136,12 @@ func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duratio
 	if err := json.Unmarshal(b, &resp); err != nil {
 		return PR{}, false, fmt.Errorf("while reading gh output for %s: %w", branch, err)
 	}
+	// headRefName matches fork PRs too, and anyone can open one on a branch
+	// name Linear makes predictable. Only a PR from this repo is the worker's.
 	nodes := resp.Data.Repository.PullRequests.Nodes
+	for len(nodes) > 0 && nodes[0].IsCrossRepository {
+		nodes = nodes[1:]
+	}
 	if len(nodes) == 0 {
 		return PR{}, false, nil
 	}
