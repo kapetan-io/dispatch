@@ -81,7 +81,7 @@ Launch all matching investigators in a single message so they run concurrently. 
 Subagent config (each):
 - `subagent_type`: `general-purpose`
 - `model`: `sonnet`
-- Tell it not to write anything. Do not use a read-only agent type such as `Explore`. It can't call MCP tools, which disables MCP-backed investigators entirely.
+- Tell it not to write anything. Do not restrict its tools. MCP access is what the MCP-backed investigators exist for.
 
 Each investigator gets:
 1. The base prompt from `references/investigator-prompt.md`
@@ -125,7 +125,7 @@ Spawn one synthesizer subagent:
 
 - `subagent_type`: `general-purpose`
 - `model`: `opus`
-- Do not use a read-only agent type such as `Explore`. The synthesizer's quality check spot-verifies citations, which can require MCP access.
+- Do not restrict its tools. The synthesizer's quality check spot-verifies citations, which can require MCP access.
 
 The synthesizer gets:
 1. The investigator findings, including any null results and any categories skipped with justification
