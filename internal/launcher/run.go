@@ -132,6 +132,10 @@ func (l *launch) run(ctx context.Context) Result {
 		l.log("usage: dispatch launch <TICKET> <BRANCH> [--base REF] [--model NAME] [--kickoff TEXT]")
 		return Result{Status: StatusUsageError, Detail: "TICKET and BRANCH are required"}
 	}
+	// Without it the worker starts with no dispatch plugin and no shims.
+	if l.opts.PluginRoot == "" {
+		return Result{Status: StatusUsageError, Detail: "no plugin root: set DISPATCH_PLUGIN_ROOT or plugin_root in the config"}
+	}
 	if req.Base == "" {
 		req.Base = "main"
 	}

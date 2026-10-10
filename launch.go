@@ -82,6 +82,9 @@ func pluginRoot(opts Options) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("no plugin root: set DISPATCH_PLUGIN_ROOT or plugin_root in the config: %w", err)
 	}
+	if cfg.PluginRoot == "" {
+		return "", errors.New("no plugin root: set DISPATCH_PLUGIN_ROOT or plugin_root in the config")
+	}
 	return cfg.PluginRoot, nil
 }
 

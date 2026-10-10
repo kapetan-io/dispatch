@@ -654,6 +654,34 @@ func TestTickRecordsKickoffScreensWhenTraced(t *testing.T) {
 	assert.Contains(t, string(h.readFile("trace.log")), "typing")
 }
 
+func TestLaunchRefusesAnEmptyPluginRoot(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+	t.Setenv("DISPATCH_PLUGIN_ROOT", "")
+	l.writeFile("config.toml", "plugin_root = \"\"\n")
+
+	out := l.launchWith(dispatch.Options{ConfigPath: filepath.Join(l.dir, "config.toml")}, "ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "usage_error", out.result["status"])
+	assert.Contains(t, out.result["detail"], "no plugin root")
+	assert.NoFileExists(t, filepath.Join(l.dir, "starts.log"))
+}
+
+func TestTickRefusesAnEmptyPluginRoot(t *testing.T) {
+	h := newHarness(t)
+	h.builtinLauncher = true
+	h.extra = "plugin_root = \"\"\n"
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	require.NoError(t, os.WriteFile(filepath.Join(h.repo, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
+	out, err := exec.Command("git", "-C", h.repo, "init", "-q", "-b", "main").CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	out2, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, out2, "launch ENG-1: usage_error (failure 1 of 2) no plugin root")
+}
+
 func TestLaunchWrapperRunsTheGoLauncher(t *testing.T) {
 	l := newLaunchHarness(t)
 	l.workerStarts()
@@ -665,12 +693,15 @@ func TestLaunchWrapperRunsTheGoLauncher(t *testing.T) {
 
 	cmd := exec.Command(wrapper, "ENG-1", "thrawn01/eng-1", "--kickoff", "/dispatch:grill ENG-1")
 	cmd.Dir = l.repo
-	cmd.Env = append(os.Environ(), "PATH="+l.bin+":"+os.Getenv("PATH"))
+	// The harness exports a plugin root, so clear it to see the wrapper set its own.
+	cmd.Env = append(os.Environ(), "PATH="+l.bin+":"+os.Getenv("PATH"), "DISPATCH_PLUGIN_ROOT=")
 	stdout, err := cmd.Output()
 	require.NoError(t, err)
 
+	root, err := filepath.Abs(".")
+	require.NoError(t, err)
 	assert.Contains(t, string(stdout), `"kickoff":"/dispatch:grill ENG-1"`)
-	assert.Contains(t, l.readFile("tabs.log"), "DISPATCH_PLUGIN_ROOT=")
+	assert.Contains(t, l.readFile("tabs.log"), "DISPATCH_PLUGIN_ROOT="+root)
 }
 
 // launchHarness runs `dispatch launch` in a throwaway git repo against fake
@@ -794,19 +825,22 @@ func (l *launchHarness) launch(ticket, branch string, flags ...string) launchOut
 }
 
 func (l *launchHarness) launchArgs(args ...string) launchOutput {
+	return l.launchWith(dispatch.Options{}, args...)
+}
+
+func (l *launchHarness) launchWith(opts dispatch.Options, args ...string) launchOutput {
 	var stdout bytes.Buffer
 	dir := l.repo
 	if l.dirOverride != "" {
 		dir = l.dirOverride
 	}
-	err := dispatch.Run(context.Background(), append([]string{"launch"}, args...), dispatch.Options{
-		Dir:        dir,
-		Herdr:      filepath.Join(l.bin, "herdr"),
-		Treehouse:  filepath.Join(l.bin, "treehouse"),
-		LaunchPace: time.Millisecond,
-		Stdout:     &stdout,
-		Stderr:     io.Discard,
-	})
+	opts.Dir = dir
+	opts.Herdr = filepath.Join(l.bin, "herdr")
+	opts.Treehouse = filepath.Join(l.bin, "treehouse")
+	opts.LaunchPace = time.Millisecond
+	opts.Stdout = &stdout
+	opts.Stderr = io.Discard
+	err := dispatch.Run(context.Background(), append([]string{"launch"}, args...), opts)
 	out := launchOutput{raw: stdout.String(), err: err}
 	require.NoError(l.t, json.Unmarshal(stdout.Bytes(), &out.result))
 	return out
