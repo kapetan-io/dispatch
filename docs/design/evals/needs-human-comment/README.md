@@ -7,6 +7,8 @@ Tests whether the build skill's wording makes a worker open every comment that n
 - `arms/current.md` is the whole build skill as it was on main before ENG-258. It is the baseline. If it passes, the check is broken.
 - The wording under test is `skills/build/SKILL.md` itself.
 
+`unknown-keys` and `max-range` quote the blueprint and config as of commit `2700f6c`, where the blueprint's example config had keys the config struct lacked. Main has since fixed that.
+
 ## Scenarios
 
 Four situations, one per comment kind the skill names. Each ends with the worker moving the ticket to Needs Human and writing the comment. No tools are available, so the reply is the comment.
@@ -40,7 +42,6 @@ Workers run on `claude-sonnet-5-5`, the model dispatch gives build workers. 4 sc
 | Run | opens | example | details |
 |---|---|---|---|
 | `results/current` (old wording) | 0 of 20 | 0 | 0 |
-| `results/draft-1` | 19 of 20 | 19 | 19 |
-| `results/draft-2` (adopted) | 20 of 20 | 20 | 20 |
+| `results/final` (adopted) | 20 of 20 | 20 | 20 |
 
-Draft 1 said "start with" the heading. One `unknown-keys` reply put a status line above it. Draft 2 says the heading is the first line, ahead of any status line, and all 20 replies opened with it.
+An earlier draft said "start with" the heading, and one of its 20 replies put a status line above it. The adopted wording says the heading is the first line, ahead of any status line, and asks for the example in a fenced code block, which is what the `example` check looks for.

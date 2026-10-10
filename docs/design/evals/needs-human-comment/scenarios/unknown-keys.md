@@ -1,6 +1,6 @@
 You are building ENG-306, "Reject unknown keys in config.toml". The ticket says to reject unknown keys at any depth and that nothing in the design changes.
 
-You read the blueprint's example config and the config loader. The example config has keys the loader's struct doesn't know:
+You read the blueprint's example config and the config loader, both as of commit `2700f6c`. The example config has keys the loader's struct doesn't know:
 
 ```toml
 [linear.statuses]

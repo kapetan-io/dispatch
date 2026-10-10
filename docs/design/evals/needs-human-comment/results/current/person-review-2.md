@@ -1,14 +1,10 @@
-Tickets with no repo label already never reach the launcher, so they can't be launched into the wrong worktree. The dispatcher's filter drops them before the launcher runs.
+Unlabeled tickets never reach the launcher, so they can't land in the wrong worktree. The dispatcher's filter drops them first, so a launcher check would never run. I didn't add one, because dead code there would suggest the filter isn't the guard.
 
-I checked this with a test that feeds the dispatcher an unlabeled ticket and asserts it is never launched:
+To check, I fed the dispatcher a ticket with no repo label. The test is `TestTickEscalatesTicketItCannotPlaceInARepo`, and it passes:
 
 ```
-$ go test ./... -run UnlabeledTicketIsNeverLaunched
+$ go test ./... -run TestTickEscalatesTicketItCannotPlaceInARepo
 ok  	github.com/kapetan-io/dispatch	0.31s
 ```
 
-So the skip this PR adds only matters for tickets that carry a repo label the launcher doesn't recognize. Adding a second check for the no-label case would duplicate the filter and leave two places to keep in sync.
-
-I'm not changing the code. If you've seen an unlabeled ticket get launched, send me the ticket or the log and I'll trace that path, since it would mean the filter has a gap my test doesn't cover. Otherwise, do you agree the filter is the right place to own this?
-
-Moving this to Needs Human until you've had a look.
+I'm moving this to Needs Human because I can't settle it without you. I may be missing a path where an unlabeled ticket gets past the filter, for example a label removed after the dispatcher has already picked the ticket up. If you've seen that happen, tell me the sequence and I'll write a test for it and fix the code. If the filter is the guard you wanted, reply here and I'll resolve the thread so the PR can merge.

@@ -1,6 +1,6 @@
-**Needs your decision: should the example config in the design keep loading once unknown keys are rejected?**
+I can't finish rejecting unknown keys in `config.toml` until you decide what the config is allowed to contain.
 
-Right now it can't. Rejecting unknown keys at every depth, as the ticket asks, makes the design's own example `config.toml` fail to load. Two of its entries have nothing in the loader to land on.
+The ticket says to reject unknown keys at any depth. The example config in the blueprint (as of commit `2700f6c`) has two entries the loader doesn't know, so it would fail to load under that rule:
 
 ```toml
 [linear.statuses]
@@ -9,13 +9,14 @@ todo = "Todo"            # Config.Statuses has no todo field
 status = "Needs Human"
 ```
 
-The ticket doesn't say which side gives way. That decides what `config.toml` accepts, so I'm not picking it for you. I've stopped work and moved this to Needs Human.
+Anyone who copies the documented config would get an error on first run. The ticket doesn't say which side is wrong, and the answer changes what users can put in their config, so I haven't picked one.
 
-**Options**
-- **Add `todo` and a `needs_human` table to the loader's struct.** The documented config loads unchanged, the check stays at every depth, and the design doesn't change. The catch is that two keys get accepted that I haven't confirmed anything reads.
-- **Edit the example config in the design to drop those keys.** The loader stays as it is. This contradicts the ticket's "nothing in the design changes".
-- **Reject unknown keys at the top level only.** Nothing breaks, but `[linear.statuses]` typos still pass silently, which is the case the ticket exists to catch.
+Options:
 
-**My recommendation** is to add the two fields. It's the only option that keeps both the ticket's "any depth" and its "no design change". If nothing will ever read `needs_human`, the second option is cleaner, and you'd know that better than I do.
+1. **Widen the loader.** Add `todo` and `needs_human.status` to the config struct. The documented config keeps working and the rest of the ticket stands.
+2. **Fix the documentation.** Remove those two entries from the blueprint example. This is right if they were leftovers that were never meant to be settings.
+3. **Check only top-level keys.** The example loads as written, but this contradicts "at any depth", and a typo like `[linear.statuss]` would still pass silently.
 
-Reply with which one and I'll build it. Everything else on the ticket is ready to go.
+I lean toward 1, because both entries look like settings dispatch would want to read. You know whether they were meant to be configurable.
+
+I've written no code yet. Reply with 1, 2 or 3 and I'll pick the build back up from there.

@@ -1,14 +1,12 @@
-Moving this to Needs Human. I can't reproduce the wrong-worktree launch you describe, and I'd like you to check my read before I change anything.
+Thanks for the review. I checked the unlabeled case and I don't think it reaches the launcher, so I'm not changing the code yet.
 
-A ticket with no repo label never reaches the launcher. The dispatcher's filter drops it first, so the launcher only sees tickets that have a label. I fed the dispatcher an unlabeled ticket and asserted nothing gets launched:
+The dispatcher's filter drops any ticket with no repo label before the launcher sees it. The dispatcher escalates that ticket to Needs Human instead, so it never gets a worktree. A test that feeds the dispatcher an unlabeled ticket confirms it:
 
 ```
-$ go test ./... -run UnlabeledTicketIsNeverLaunched
+$ go test ./... -run TestTickEscalatesTicketItCannotPlaceInARepo
 ok  	github.com/kapetan-io/dispatch	0.31s
 ```
 
-The skip in this PR covers the other case, a ticket whose label is present but names no known repo. That one passes the filter, so it needs its own check in the launcher.
+The skip in this PR covers the other case, where a label exists but names a repo we don't know. Adding an unlabeled check to the launcher would duplicate the filter and leave two places that decide what "no repo" means.
 
-Adding a second skip for unlabeled tickets would be dead code. It also hides the dispatcher filter as the real place that rule lives.
-
-If you saw an unlabeled ticket launch somewhere, send me the ticket or the log. That would mean the filter has a gap my test doesn't cover, and I'd fix it in the filter. Otherwise, can you confirm the filter is the right home for this rule so I can resolve the thread?
+If you've seen an unlabeled ticket get launched, I'd like the ticket ID so I can reproduce it. Otherwise I think this is fine as is. I'm moving the ticket to Needs Human because the call is yours. Tell me which way you want it.

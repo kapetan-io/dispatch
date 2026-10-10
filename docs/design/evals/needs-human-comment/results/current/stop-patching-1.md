@@ -1,23 +1,23 @@
-Stopping on ENG-301 and moving it to Needs Human. The design is wrong, and I'd rather say so now than ship a fourth workaround.
+**Needs your call.** ENG-301 can't land as designed, because the design assumes the Linear client returns typed errors and it returns plain strings. I've stopped work and moved this to Needs Human.
 
-The design puts the rate-limit retry in the Linear client, on the assumption that the client returns typed errors. It returns plain strings. So every caller that wants a retry has to recognize the failure by its wording, and three of them now do:
+In plain words, the design says the client retries rate-limited calls, so no caller has to care. The client can't tell a rate limit from any other failure without matching on message text. So the nudge sender, the status mover and the comment poster each ended up checking for the rate limit themselves. If the client ever rewords its message, all three stop retrying and nothing fails loudly.
 
-- the nudge sender
-- the status mover
-- the comment poster
-
-Each has this check:
+Example, the same check now sits in all three callers.
 
 ```go
 if strings.Contains(err.Error(), "rate limited") { time.Sleep(backoff) }
 ```
 
-That is the same workaround in three unrelated places, and each copy depends on how the client words its messages. If someone rewords "rate limited", all three stop retrying and nothing fails loudly. Each copy also picks its own backoff, so the retry policy now lives in three places instead of the one the design promised.
+**Evidence**
+- I added this check in three unrelated places over three days, which is the pattern that says the design is wrong and my patching isn't.
+- Each caller now depends on the client's wording, which is the knowledge the design meant to keep inside the client.
+- Every new Linear caller would need a fourth copy, and a fixed `time.Sleep(backoff)` in each ignores any retry-after hint Linear sends.
 
-I could finish by adding the check to the remaining callers, but that spreads the dependency further. I could also move the retry into the client, but that is not a small patch. It means giving the client typed errors, which changes the client's contract and touches every caller that handles its errors today. The design did not scope that, and the contract change is the user's call, not mine.
+**What I recommend**
+Give the client a typed rate-limit error and do the retry inside the client, as the design intended. Then delete the three string checks. This changes the client's error contract, which is why I'm asking instead of doing it.
 
-I think the design should add a typed rate-limit error to the client (for example a sentinel that callers match with `errors.Is`, carrying the retry-after delay Linear sends) and run the retry inside the client, so callers never see a rate limit at all. I have not built any of this.
+**What I need from you**
+1. Approve the typed-error change to the client, or tell me a different shape you want.
+2. Say whether the design doc should be amended to state that the client returns typed errors, since it currently assumes this.
 
-My three-day branch has the string checks in the three callers and tests for them. Nothing is merged and there is no PR. I'll leave the branch as is so you can see the pattern.
-
-Decision needed: do you want the design revised to add typed errors and a client-side retry, with this ticket redone against that, or do you want to keep the per-caller checks and accept the coupling?
+I'm making no further changes and opening no PR until you answer. The three caller patches stay unmerged on the branch, and I'll remove them once the client does the retry.

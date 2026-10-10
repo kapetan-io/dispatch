@@ -1,18 +1,14 @@
-Which values of `max_in_progress` may an operator set? That is a public contract call, so I'm stopping here and moving the ticket to Needs Human.
+**Needs you.** I need you to confirm what range operators may set for the concurrent worker cap, because the ticket and the design disagree about whether a range exists.
 
-The ticket says the blueprint gives it a valid range of 1 to 8 and that values outside it should be rejected. I searched the blueprint and the config package, and the blueprint says no such thing. It gives the setting a name and a default of 3.
+The ticket says the blueprint limits `max_in_progress` to 1 through 8 and wants values outside that rejected. I searched the blueprint and the config package at commit `2700f6c`. Both name the setting and default it to 4, and neither mentions a range. The 1 to 8 range appears only in this ticket.
 
-```toml
-[dispatch]
-max_in_progress = 3
-```
+Whatever range I pick becomes the contract operators write configs against. With 1 to 8, `max_in_progress = 12` makes dispatch refuse to start with an error. With no upper bound, the same config runs 12 workers. A ceiling set too low blocks a legitimate setup, and one set too high lets a typo launch dozens of workers at once.
 
-The 1 to 8 range appears only in this ticket. If I enforce it, I'm deciding what operators can configure on the strength of one line, with no design backing it.
+I'd go with 1 to 8 as the ticket says, and add the range to the blueprint in this PR so the two stop disagreeing. I'm not guessing at it myself because it is your call what operators are allowed to configure.
 
-I'd go with 1 to 8 as written and add the range to the blueprint. A floor of 1 is needed anyway, since 0 would stop all work. A ceiling is safe to start with because loosening it later never breaks an existing config, while tightening it later would. If you'd rather have no ceiling, say so and I'll reject only values below 1.
+Reply with one of these and I'll continue.
+- **Confirm 1 to 8.** I'll reject values outside it and update the blueprint.
+- **A different range.** Give me the bounds.
+- **Only reject values below 1.** There would be no upper limit.
 
-**What I need from you**
-- Confirm 1 to 8, or give me a different range.
-- Say whether the blueprint should be updated in this PR. I'd update it so the contract has one source.
-
-Once you answer, I'll write the answer here, add the validation with a surface test for each boundary (0, 1, 8, 9), and continue to the PR.
+I've written no validation code yet. I'm holding the ticket in Needs Human until you answer.

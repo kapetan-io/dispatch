@@ -1,12 +1,14 @@
-Thanks for the review. I checked the unlabeled case, and I don't think it can happen today, so I haven't changed the code.
+Tickets with no repo label never reach the launcher, so they can't be launched into the wrong worktree. The dispatcher's filter drops them first and escalates them.
 
-The dispatcher's filter drops any ticket with no repo label before the launcher sees it, so an unlabeled ticket never reaches a worktree. I fed the dispatcher an unlabeled ticket in a test and it was never launched:
+I checked by feeding the dispatcher an unlabeled ticket in a test.
 
 ```
-$ go test ./... -run UnlabeledTicketIsNeverLaunched
+$ go test ./... -run TestTickEscalatesTicketItCannotPlaceInARepo
 ok  	github.com/kapetan-io/dispatch	0.31s
 ```
 
-That test is in the PR. A second skip in the launcher would duplicate the filter's check and give two places to keep in sync.
+I haven't added a no-label skip to the launcher. It would be dead code, because the filter already handles that case before the launcher sees the ticket.
 
-I'm moving this to Needs Human because I disagree with a person's review and don't want to resolve it myself. If you have a path where an unlabeled ticket gets past the filter, send it and I'll add a test for it and the skip. Otherwise, please confirm the PR can merge as is.
+If you've seen an unlabeled ticket get launched, send me the ticket. That would mean the filter has a gap I haven't found, and I'd want to trace it.
+
+I'm moving this to Needs Human. Does the test cover the case you had in mind, or is there a path I missed?

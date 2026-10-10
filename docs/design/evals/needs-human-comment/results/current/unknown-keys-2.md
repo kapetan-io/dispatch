@@ -1,13 +1,19 @@
-Rejecting unknown keys at every depth makes the blueprint's own example config fail to load, so I need you to choose what `config.toml` accepts before I build ENG-306.
+I need a decision on what `config.toml` accepts. The ticket says to reject unknown keys at any depth, but the blueprint's own example config has keys the loader doesn't know. The ticket doesn't say whether the blueprint, the loader, or the check gives way.
 
-The example has two entries the loader doesn't know. `todo = "Todo"` under `[linear.statuses]` has no matching field on `Config.Statuses`. The `[linear.needs_human]` table with `status = "Needs Human"` has no matching table on `Config`. The ticket says to reject unknown keys at any depth and that nothing in the design changes. It doesn't say which side gives, the documented example or the loader. I found this by reading both. I haven't written any code yet.
+**Example.** The blueprint's example config (as of commit `2700f6c`) contains these lines.
+
+```toml
+[linear.statuses]
+todo = "Todo"
+[linear.needs_human]
+status = "Needs Human"
+```
+
+The loader's `Config` struct has no `todo` field under statuses and no `needs_human` table. With the strict check, anyone who copies the documented config gets an error on both keys.
 
 **Options**
+1. **Widen the loader.** Add `todo` and `needs_human` to the struct so the documented config loads and typos still fail. This is my pick. The ticket says nothing in the design changes, so the blueprint stays as written and the code catches up.
+2. **Change the blueprint.** Delete those two keys from the example. This only works if they were never meant to be settings.
+3. **Check top-level keys only.** The example loads unchanged, but a typo like `[linear.statuss]` still passes silently. That is the mistake this ticket exists to catch.
 
-- **A. Fix the example.** Delete those two entries from the blueprint's example config and keep the check strict at every depth. Typos like `statuss` or `todo` under the wrong table fail at load.
-- **B. Widen the loader.** Add a `todo` field and a `needs_human` table to the config struct so the example loads as written. This adds two settings that nothing reads today.
-- **C. Check top-level keys only.** The example loads untouched, but a typo inside `[linear.statuses]` passes silently. That contradicts "any depth" in the ticket.
-
-I recommend A. The loader is what runs, so the documentation should match it, and A is the only option that delivers what the ticket asks for without adding settings. If `todo` and `needs_human` are planned settings, pick B and tell me where they should take effect.
-
-Reply with A, B or C. I'll pick the ticket back up from your answer.
+Are `todo` and `needs_human` real settings? If yes, I'll take option 1 and start on it as soon as you answer. The ticket is in Needs Human until then.

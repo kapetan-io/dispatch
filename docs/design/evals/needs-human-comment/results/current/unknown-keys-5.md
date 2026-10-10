@@ -1,6 +1,6 @@
-Strict loading as the ticket describes would reject the example config in the blueprint, so it can't ship until you pick which side moves. This is your call because it sets what `config.toml` accepts.
+Moving this to Needs Human. I need a decision on what `config.toml` accepts before I can reject unknown keys.
 
-The example config has two things the loader doesn't know about.
+The ticket says to reject unknown keys at any depth. The blueprint's example config (as of commit `2700f6c`) has two entries the loader's struct doesn't know, so a strict check makes the documented example fail to load.
 
 ```toml
 [linear.statuses]
@@ -9,11 +9,13 @@ todo = "Todo"            # Config.Statuses has no todo field
 status = "Needs Human"
 ```
 
-Today the loader ignores both silently. With unknown keys rejected at any depth, anyone who copies the documented example gets a load error. The ticket doesn't cover this, and it says nothing in the design changes.
+The ticket doesn't say which side gives way. That is a call about what the config accepts, so I'm not making it for you.
 
 **Options**
-1. **Fix the example.** Remove `todo` and `[linear.needs_human]` from the blueprint so it matches what the loader reads. Nothing is read from those keys today, so no behavior changes. This is my recommendation.
-2. **Widen the struct.** Add `todo` and a `needs_human` table to `Config` so the example stays valid. This adds config surface that nothing consumes yet, and it needs its own design.
-3. **Check top-level keys only.** The example loads unchanged, but typos under `[linear.*]` still pass silently. That is the failure the ticket exists to stop.
+1. **Fix the example.** Remove `todo` and the `[linear.needs_human]` table from the documented config. The check stays as the ticket describes.
+2. **Widen the struct.** Add a `todo` status and a `needs_human` table to the loader, so the example stays valid and the keys start to mean something. This needs a decision on what they do.
+3. **Check top-level keys only.** The example loads, but a typo like `[linear.statusses]` still passes silently, which is the problem the ticket exists to fix.
 
-If those two keys were meant to do something, tell me and I'll take option 2, with a follow-up ticket for the behavior. Otherwise I'll take option 1. I'm holding the ticket in Needs Human until you answer, and I haven't started implementation.
+I'd take option 1. The loader ignores both entries today, so nothing can depend on them, and a strict check was always going to flag them. If the design intends them to work, option 2 is right, and I need to know what they should do.
+
+Which one do you want? I'll start on it as soon as you answer here.

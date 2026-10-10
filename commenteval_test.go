@@ -76,3 +76,12 @@ func TestCommentEvalUsage(t *testing.T) {
 	assert.Equal(t, 1, commenteval.Run(t.Context(), []string{"bogus"}, commenteval.Options{Stdout: &bytes.Buffer{}, Stderr: &stderr}))
 	assert.Contains(t, stderr.String(), "unknown command")
 }
+
+func TestCommentEvalReportSkipsFilesWithoutRunSuffix(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte("notes"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "case-1.md"), []byte(good), 0o644))
+	var stdout bytes.Buffer
+	require.Equal(t, 0, commenteval.Run(t.Context(), []string{"report", dir}, commenteval.Options{Stdout: &stdout, Stderr: &bytes.Buffer{}}))
+	assert.Regexp(t, `all\s+1\s+1\s+1\s+1`, stdout.String())
+}

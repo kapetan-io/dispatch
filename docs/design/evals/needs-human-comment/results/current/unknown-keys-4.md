@@ -1,20 +1,13 @@
-Needs Human. Rejecting unknown keys at any depth, as this ticket asks, makes the blueprint's own example `config.toml` fail to load, and the ticket doesn't say which side gives way.
+I need a decision on what `config.toml` is allowed to contain. The ticket's rule to reject unknown keys at any depth would make the example config in the blueprint fail to load. I've moved this ticket to Needs Human until you answer.
 
-The example has two keys the loader's `Config` struct doesn't define.
+At commit `2700f6c`, the example config has two entries the loader doesn't know. The first is `todo = "Todo"` under `[linear.statuses]`, and the loader's statuses struct has no `todo` field. The second is the `[linear.needs_human]` table with `status = "Needs Human"`, and the config struct has no such table. Today the loader silently ignores both, so they have no effect. Under the new check, anyone who copies the documented example gets an error on startup.
 
-```toml
-[linear.statuses]
-todo = "Todo"            # Config.Statuses has no todo field
-[linear.needs_human]     # Config has no needs_human table
-status = "Needs Human"
-```
+The ticket doesn't say which way to resolve this, and each way changes what the config accepts.
 
-Which keys the config accepts is a product call, so I'm not making it for you. Pick one.
+- **A. Remove the two entries from the example config.** The example then matches what the loader reads, and the any-depth check stays as written.
+- **B. Add both keys to the loader.** They become real settings. This only makes sense if you want them to do something, and I don't know what they would control.
+- **C. Check top-level keys only.** The example loads unchanged, but a typo like `[linear.statuss]` still passes silently, which is the problem the ticket is meant to fix.
 
-1. **Widen the struct** so it accepts `todo` and `[linear.needs_human]`. The example, the design and the "any depth" rule all stay as written. The cost is two new fields that nothing reads yet.
-2. **Edit the example config** to drop those keys. The struct stays as is, but this changes the design, and the ticket says nothing in the design changes.
-3. **Check top-level keys only.** This is the smallest change, but typos like `[linear.statuss]` would still pass, which is what the ticket exists to catch.
+I recommend A. The keys do nothing today, so an example that shows them is misleading, and A is the only option that keeps the ticket's rule and adds no new settings. If you want `todo` or `needs_human` to be real settings, tell me what each should control and I'll build B instead.
 
-I recommend 1. It is the only option that keeps both the ticket's stated rule and the design intact. If you'd rather the keys not exist, say 2 and I'll update the example and the design text together.
-
-Nothing is pushed. I have not started the strict check, since its tests would have to fail against the example config. Reply here with 1, 2 or 3 and I'll pick the work back up.
+Which option do you want? I'll implement it and move the ticket back to In Progress once I have your answer.

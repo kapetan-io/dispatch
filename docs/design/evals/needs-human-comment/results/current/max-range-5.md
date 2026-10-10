@@ -1,18 +1,20 @@
-Needs a decision from you on the valid range for `max_in_progress`, because the ticket and the blueprint disagree on where it comes from.
+I need you to confirm the valid range for `max_in_progress` before I build the validation. Whatever range I pick decides which values operators are allowed to configure, and that is your call.
 
-The ticket says the blueprint gives `max_in_progress` a valid range of 1 to 8 and asks me to reject anything outside it. I searched the blueprint and the config package. The blueprint sets only a name and a default.
+**Example.** If the range is 1 to 8, a config with `max_in_progress = 12` fails to load with an error. If the range is 1 to 16, the same config loads and runs 12 workers.
+
+**What I found.** The ticket says the blueprint gives `max_in_progress` a valid range of 1 to 8. I searched the blueprint and the config package at commit `2700f6c`. They give it a name and a default of 4, and say nothing about a range.
 
 ```toml
 [dispatch]
-max_in_progress = 3
+max_in_progress = 4
 ```
 
-The 1 to 8 range appears only in this ticket. Whatever bounds I enforce become what operators can configure, and a value that is valid today can't be tightened later without breaking someone's config. That is a public contract call, so I'm not picking it myself.
+The 1 to 8 range appears only in this ticket.
 
-**Question for you.** What range should config loading accept for `max_in_progress`?
+**My recommendation.** Keep 1 to 8 and add it to the blueprint, so the ticket and the design agree. Starting narrow is cheap to undo. Widening the range later breaks no existing config, but narrowing it later rejects configs that already work.
 
-1. **1 to 8, as the ticket says.** I recommend this one. A floor of 1 matters because 0 would leave the dispatcher running with no workers. A ceiling stops a typo like `80` from starting dozens of workers at once. The 8 is the ticket's number, and I have no evidence behind it. If you confirm it, I'll treat the ticket as the source.
-2. **At least 1, no upper limit.** Use this if you don't want the dispatcher second-guessing how many workers an operator runs.
-3. **A different range.** Tell me the bounds.
+**What I need from you.**
+- Confirm 1 to 8, or give me the range you want.
+- Tell me if you'd rather I not edit the blueprint, in which case the range lives only in the config validation.
 
-Once you answer, I'll write the answer here, add the validation with surface tests for both edges and the out-of-range errors, and move the ticket back to In Progress. I haven't written any validation yet.
+Everything else on the ticket doesn't depend on this answer, and I'll resume as soon as you reply.

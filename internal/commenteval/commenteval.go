@@ -178,7 +178,11 @@ func report(args []string, opts Options) error {
 				return err
 			}
 			base := strings.TrimSuffix(filepath.Base(file), ".md")
-			name := base[:strings.LastIndex(base, "-")]
+			sep := strings.LastIndex(base, "-")
+			if sep <= 0 {
+				continue
+			}
+			name := base[:sep]
 			if tallies[name] == nil {
 				tallies[name] = &tally{}
 			}
