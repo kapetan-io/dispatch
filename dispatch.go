@@ -450,7 +450,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 	launch := func(a reconcile.Action) launcher.Result {
 		model, kickoff := cfg.WorkerModel, ""
 		if a.Design {
-			model, kickoff = cfg.GrillModel, "/dispatch:grill "+a.Ticket.Identifier
+			model, kickoff = cfg.DesignModel, "/dispatch:design "+a.Ticket.Identifier
 		}
 		if opts.Launcher != "" {
 			return launcher.Launch(ctx, opts.Launcher, a.RepoDir, a.Ticket.Identifier, a.Ticket.Branch, model, kickoff)

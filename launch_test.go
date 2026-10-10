@@ -68,11 +68,11 @@ func TestLaunchTypesTheKickoffItIsGiven(t *testing.T) {
 	l := newLaunchHarness(t)
 	l.workerStarts()
 
-	out := l.launch("ENG-1", "thrawn01/eng-1", "--model", "opus", "--kickoff", "/dispatch:grill ENG-1")
+	out := l.launch("ENG-1", "thrawn01/eng-1", "--model", "opus", "--kickoff", "/dispatch:design ENG-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, "/dispatch:grill ENG-1", out.result["kickoff"])
-	assert.Equal(t, "w9:p1 /dispatch:grill ENG-1\n", l.readFile("runs.log"))
+	assert.Equal(t, "/dispatch:design ENG-1", out.result["kickoff"])
+	assert.Equal(t, "w9:p1 /dispatch:design ENG-1\n", l.readFile("runs.log"))
 	assert.Contains(t, l.readFile("starts.log"), "--model opus")
 }
 
@@ -429,12 +429,12 @@ func TestLaunchPressesEnterOnAGivenKickoffTypedButNotSubmitted(t *testing.T) {
 	l.workerStarts()
 	l.writeFile("wait-fails", "1")
 	l.writeFile("agents.json", `{"result":{"agents":[{"name":"x","pane_id":"w9:p1","agent":"claude","agent_status":"idle"}]}}`)
-	l.screens("❯", "❯ /dispatch:grill ENG-1")
+	l.screens("❯", "❯ /dispatch:design ENG-1")
 
-	out := l.launch("ENG-1", "thrawn01/eng-1", "--kickoff", "/dispatch:grill ENG-1")
+	out := l.launch("ENG-1", "thrawn01/eng-1", "--kickoff", "/dispatch:design ENG-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, "w9:p1 /dispatch:grill ENG-1\n", l.readFile("runs.log"))
+	assert.Equal(t, "w9:p1 /dispatch:design ENG-1\n", l.readFile("runs.log"))
 }
 
 func TestLaunchClosesTheWorkspaceWhenTheKickoffNeverRuns(t *testing.T) {
@@ -752,7 +752,7 @@ func TestLaunchWrapperRunsTheGoLauncher(t *testing.T) {
 	wrapper, err := filepath.Abs("bin/dispatch-launch")
 	require.NoError(t, err)
 
-	cmd := exec.Command(wrapper, "ENG-1", "thrawn01/eng-1", "--kickoff", "/dispatch:grill ENG-1")
+	cmd := exec.Command(wrapper, "ENG-1", "thrawn01/eng-1", "--kickoff", "/dispatch:design ENG-1")
 	cmd.Dir = l.repo
 	// The harness exports a plugin root, so clear it to see the wrapper set its own.
 	cmd.Env = append(os.Environ(), "PATH="+l.bin+":"+os.Getenv("PATH"), "DISPATCH_PLUGIN_ROOT=")
@@ -761,7 +761,7 @@ func TestLaunchWrapperRunsTheGoLauncher(t *testing.T) {
 
 	root, err := filepath.Abs(".")
 	require.NoError(t, err)
-	assert.Contains(t, string(stdout), `"kickoff":"/dispatch:grill ENG-1"`)
+	assert.Contains(t, string(stdout), `"kickoff":"/dispatch:design ENG-1"`)
 	assert.Contains(t, l.readFile("tabs.log"), "DISPATCH_PLUGIN_ROOT="+root)
 }
 

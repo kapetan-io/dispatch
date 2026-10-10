@@ -1,15 +1,15 @@
 ---
-name: grill
-description: "Design a feature with the user: one long conversation that settles what it must do, tests the design's shape against independent sketches, and ends in a blueprint and the ticket a worker builds. Use when started as `/dispatch:grill <ticket>`, or when asked to design, scope or grill a feature before building it. Not for bug fixes or changes too small to need a design."
+name: design
+description: "Design a feature with the user: one long conversation that settles what it must do, tests the design's shape against independent sketches, and ends in a blueprint and the ticket a worker builds. Use when started as `/dispatch:design <ticket>`, or when asked to design or scope a feature before building it. Not for bug fixes or changes too small to need a design."
 ---
 
-# Grill
+# Design
 
 Run one continuous back-and-forth design discussion, product definition and technical design together. Settle what the feature must do, test the design's shape with independent sketches, then write a single blueprint and file the ticket a worker builds. The product half and the technical half are one thought. Keeping them in one document and one conversation stops the build from implementing something the product never asked for.
 
 The blueprint fixes contracts, not content. How each function is written is the build's job, proved by tests.
 
-The ticket you were started on is the feature ticket. The session that created it filed it with the `design`, `ai` and repo labels, and the dispatcher launches a grill worker when it moves to In Progress. It stays In Progress for the whole design. A design is a long conversation in a window the user can see. The dispatcher never nudges it, and you hold the tree for the whole session because prototypes run there.
+The ticket you were started on is the feature ticket. The session that created it filed it with the `design`, `ai` and repo labels, and the dispatcher launches a design worker when it moves to In Progress. It stays In Progress for the whole design. A design is a long conversation in a window the user can see. The dispatcher never nudges it, and you hold the tree for the whole session because prototypes run there.
 
 ## Start
 
@@ -28,9 +28,12 @@ Load `dispatch:converse` with the Skill tool. Open a todolist with one entry per
 ### Orient
 
 1. Read the feature ticket and its comments.
-2. Read the domain glossary: `CONTEXT.md` files in the `docs/` directories this feature touches. Use them to catch terminology conflicts in both halves. 
+2. Read the domain glossary: `CONTEXT.md` files in the `docs/` directories this feature touches. Use them to catch terminology conflicts in both halves.
 3. List every file in `docs/adr/` and read each title. Read the full ADR for two kinds of title. A scope-capping title (users, tenancy, regions, roles, deployment targets) limits what the product can ask for, so frame product questions that do not invite answers it rules out, and surface the ADR if the user wants something it forbids. A title on a topic this design's technical half touches (storage, API patterns, auth, errors) sets precedent to honor. A departure is itself a decision that needs a new or superseding ADR.
-4. Write the full list of product and technical questions the blueprint must settle, tailored to this feature. Present the product list and start on the first question without asking whether to start. The user can redirect at any point.
+4. Read the code this feature will live in: existing patterns, related modules and prior art. Technical questions must ask where the feature fits in this codebase, not run a generic checklist.
+5. Write the full list of product and technical questions the blueprint must settle, tailored to this feature. Skip any whose answer the ticket already gives.
+6. Have a fresh sub-agent mark each technical question **settled** (the answer plus a one-line reason from the code, an ADR or standard practice for this stack) or **ask** (a real design choice, trade-off or policy call). Give it the list, the ticket, the glossary, the relevant ADRs and the code scan. Check each reason yourself before accepting it. Product questions are not triaged, because they are the user's to answer.
+7. Show the user the product list and the technical questions marked ask, then start on the first question without asking whether to start. The user can redirect at any point. Record each settled answer in the decision log as "agent assumed".
 
 ## The discussion
 
@@ -48,7 +51,7 @@ For each question:
 - **Interrupt on vague or overloaded terms.** "You said 'user'. Do you mean the account owner or anyone with access?" Resolve the term from the glossary before continuing, and track resolved terms for the glossary writeback.
 - **Test every scope boundary with one concrete scenario**, framed as confirmation: "So if a customer cancels mid-billing-cycle, that's out of scope?"
 
-Keep a running decision log, marking each entry "you decided" or "agent assumed". Show it on request and after each domain (problem, users, scope; then data, API, failure handling). The user corrects it in real time.
+Keep a running decision log, marking each entry "you decided" or "agent assumed". Show it on request and after each domain (problem, users, scope; then data, API, failure handling), with the settled technical answers and their reasons. The user overrides any of them in real time.
 
 ### What the product half covers
 
@@ -83,7 +86,7 @@ Skip Phase A only when the work is genuinely greenfield with no surrounding syst
 
 Run the **dispatch:arena** skill with the design-sketch task, the approved Objective and the Phase A grounding file. Pass `references/runner-prompt.md` as each runner's prompt. Each candidate produces a design package shaped per `references/rationale-template.md`. Load the arena with the Skill tool rather than reproducing it from memory, since it holds the judge, graft and verify steps.
 
-Design it twice. Require at least two structurally distinct candidates before synthesis, even when the first looks sufficient. This is the **exhaust-the-design-space** principle skill made concrete. Whole-shape alternatives, not point fixes inside one shape. When only one shape fits, the arena's rationale says so ("this was the only viable shape because...").
+Design it twice. Require at least two structurally distinct candidates before synthesis, even when the first looks sufficient. Whole-shape alternatives, not point fixes inside one shape. When only one shape fits, the arena's rationale says so ("this was the only viable shape because...").
 
 Screen every candidate against [`references/design-red-flags.md`](references/design-red-flags.md) before synthesis. Assume the next contributor is an agent that sees only the files it opened, copies the nearest example, and takes the shortest path that compiles. Prefer the design where a change that looks right from one file is right for the whole repo.
 
@@ -91,7 +94,7 @@ Compare viable candidates on interface depth. Prefer the design that hides more 
 
 Arena returns one synthesized design package. The synthesis decision populates the rationale's "Synthesis decision" section.
 
-Two things differ from running the arena by hand. The arena always runs, because starting a grill means the work deserves design, and you do not ask first. Take the result directly and skip the arena's last step ("Ask the user"), because the user approves the contract sketch below and should not be asked twice.
+Two things differ from running the arena by hand. The arena always runs, because starting a design means the work deserves design, and you do not ask first. Take the result directly and skip the arena's last step ("Ask the user"), because the user approves the contract sketch below and should not be asked twice.
 
 ## Agree on the contract sketch
 
@@ -116,7 +119,7 @@ Before writing, run two passes. **Correctness:** every invariant has a preservat
 
 Save the blueprint as a Linear document on the feature ticket, not under `docs/features/`. Save a draft after the Objective is approved and again after each phase, so a crash loses little. Write one document, product half first and then the technical half, with only the sections the discussion covered:
 
-Objective, Mental Model, User Stories, Correctness Constraints (State Invariants, Behavioral Constraints), Acceptance Criteria, Success Metrics, Scope (In Scope, Out of Scope), Dependencies and Constraints, then Functional, Architecture, Data Design (Invariant Preservation, Illegal State Analysis), Security, PII, Scale, Testing, Limitations and Future Work, Open Questions.
+Objective, Mental Model, User Stories, Correctness Constraints (State Invariants, Behavioral Constraints), Acceptance Criteria, Success Metrics, Scope (In Scope, Out of Scope), Dependencies and Constraints, then Functional, Architecture, Data Design (Invariant Preservation, Illegal State Analysis), Security, PII, Scale, Testing, Limitations and Future Work, Open Questions, Decision Log (every entry marked "you decided" or "agent assumed").
 
 Keep PII as its own section. Mark anything unresolved with `TODO:` and a line on what is missing. Keep it short, since a section that drives no decision is noise. Write for a reader who was not in the discussion, with no "the option we discussed". "We considered X but chose Y because Z" is useful. If the feature has an OpenAPI spec, the contract sketch becomes a second document on the ticket, as a fenced YAML block.
 

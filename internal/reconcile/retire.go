@@ -19,7 +19,7 @@ func (in Input) Retires(t linear.Ticket) bool {
 }
 
 // notReview reports whether the ticket is known not to be a design-review
-// ticket, whose trees belong to the review, which has no worker yet. A grill's
+// ticket, whose trees belong to the review, which has no worker yet. A design worker's
 // ticket is retired like a build's, since its worker holds a tree. A ticket
 // whose labels were cut short might be a review ticket.
 func (in Input) notReview(t linear.Ticket) bool {
@@ -27,7 +27,7 @@ func (in Input) notReview(t linear.Ticket) bool {
 }
 
 // notDesign reports whether the ticket is known not to be a design ticket,
-// whose trees belong to the grill and the review. A ticket whose labels were
+// whose trees belong to the design worker and the review. A ticket whose labels were
 // cut short might be one.
 func (in Input) notDesign(t linear.Ticket) bool {
 	return !t.LabelsTruncated && !slices.ContainsFunc(designLabels, t.HasLabel)

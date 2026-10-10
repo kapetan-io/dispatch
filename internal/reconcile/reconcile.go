@@ -138,7 +138,7 @@ type Action struct {
 	TreePath    string
 	// Untracked lists the files a Teardown deletes from its tree first.
 	Untracked []string
-	// Design marks a Launch of the grill for a design ticket, which runs a
+	// Design marks a Launch of the design skill for a design ticket, which runs a
 	// different kickoff and model than a build.
 	Design bool
 }
@@ -219,7 +219,7 @@ type Input struct {
 }
 
 // designLabels mark tickets whose sessions the dispatcher never nudges. It
-// launches the grill for "design" and nothing yet for "design-review", whose
+// launches the design skill for "design" and nothing yet for "design-review", whose
 // tree it leaves alone.
 var designLabels = []string{"design", "design-review"}
 
@@ -313,7 +313,7 @@ func Plan(in Input) []Action {
 
 // watch decides what a ticket needs from the user or its live worker: a
 // notification for a ticket entering Needs Human or a worker asking a question,
-// and a nudge for an idle In Progress worker. It skips the grill's feature
+// and a nudge for an idle In Progress worker. It skips the design skill's feature
 // ticket, which carries "design" and whose session waits on the user for as
 // long as the design takes, and tickets whose labels were cut short,
 // because it can't tell whether they are design tickets. A review ticket still

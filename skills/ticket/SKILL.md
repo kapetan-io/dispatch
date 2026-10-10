@@ -1,6 +1,6 @@
 ---
 name: ticket
-description: Use when creating or rewriting a Linear ticket in a repo dispatch manages, whether asked or filing one yourself. Sets labels, assignee, status and body so dispatch picks the ticket up, and starts a grill instead of a build for a `design` ticket.
+description: Use when creating or rewriting a Linear ticket in a repo dispatch manages, whether asked or filing one yourself. Sets labels, assignee, status and body so dispatch picks the ticket up, and starts the design skill instead of a build for a `design` ticket.
 ---
 
 # Write a dispatch ticket
@@ -16,7 +16,7 @@ If the file is missing or this repo is not in `[repos]`, dispatch does not manag
 ## Fields
 
 - **Team.** With one configured team, use it. With several, use the team of recent tickets carrying this repo's label, and ask the user if there are none.
-- **Labels.** An idea or feature whose design isn't settled gets `design`, the AI label and this repo's label, and waits in Backlog. Moving it to In Progress starts the grill. Otherwise apply the AI label, this repo's label from the `repo_label_group` group, and a type label (Bug, Feature) if the team has one. The `[repos]` key is the label's name and its value is the clone. Expand a leading `~` and compare it with `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`, since a worktree's own path never matches. Never create a label, because the workspace may belong to someone else. If a needed label is missing, don't create the ticket and tell the user which one.
+- **Labels.** An idea or feature whose design isn't settled gets `design`, the AI label and this repo's label, and waits in Backlog. Moving it to In Progress starts the design skill. Otherwise apply the AI label, this repo's label from the `repo_label_group` group, and a type label (Bug, Feature) if the team has one. The `[repos]` key is the label's name and its value is the clone. Expand a leading `~` and compare it with `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`, since a worktree's own path never matches. Never create a label, because the workspace may belong to someone else. If a needed label is missing, don't create the ticket and tell the user which one.
 - **Assignee.** The owner of dispatch's Linear API key, the only person the dispatcher manages tickets for. Read the key from `LINEAR_API_KEY` or the keychain service in `linear.api_key_keychain` (`security find-generic-password -s <service> -w` on macOS). Post `{"query":"{ viewer { id name } }"}` to `https://api.linear.app/graphql` with `Content-Type: application/json` (without it Linear rejects the call as CSRF) and `Authorization: <key>` (no `Bearer`), and assign that user by id. Never print the key. Don't use the Linear connector's `me` or a hardcoded name.
 - **Status.** The `Todo` entry of `linear.statuses.paused`, or its `Backlog` entry for a `design` ticket. If the list is empty or lacks the entry you need, don't guess. Don't create the ticket, and ask which paused status new tickets should wait in. The ticket waits until the user moves it to `in_progress`, so never create it there or move it there unless told to. After you do move one, run `dispatch tick` and report whether its worker started, since otherwise it waits for the dispatcher's timer.
 - **Title.** One plain phrase saying what changes, at most 50 characters and without the repo or tool name, which the repo label already carries. Shorten by dropping detail the body carries, not by abbreviating words.
@@ -45,7 +45,7 @@ When the ticket's purpose is to create, change or evaluate a skill, Notes for th
 - Count the title's characters. Over 50, shorten it.
 - Re-read In plain English as the user would. If it needs the code open to make sense, rewrite it.
 - On a ticket that touches a skill, confirm Notes for the worker carries each skill instruction listed above.
-- Confirm the ticket has the team, AI label, repo label, assignee and paused status. A missing one means the dispatcher never sees it or sees it too soon. A `design` ticket waits in Backlog on purpose, and the user moves it to In Progress to start the grill.
+- Confirm the ticket has the team, AI label, repo label, assignee and paused status. A missing one means the dispatcher never sees it or sees it too soon. A `design` ticket waits in Backlog on purpose, and the user moves it to In Progress to start the design skill.
 
 ## After saving
 
