@@ -482,6 +482,10 @@ func newHarness(t *testing.T) *harness {
   echo "$3" >> "`+dir+`/closes.log"
   jq --arg id "$3" '.result.workspaces |= map(select(.workspace_id != $id))' "`+dir+`/workspaces.json" > "`+dir+`/workspaces.tmp"
   mv "`+dir+`/workspaces.tmp" "`+dir+`/workspaces.json" ;;
+"workspace rename")
+  echo "$3|$4" >> "`+dir+`/renames.log"
+  jq --arg id "$3" --arg name "$4" '.result.workspaces |= map(if .workspace_id == $id then .label = $name else . end)' "`+dir+`/workspaces.json" > "`+dir+`/workspaces.tmp"
+  mv "`+dir+`/workspaces.tmp" "`+dir+`/workspaces.json" ;;
 "agent list") cat "`+dir+`/agents.json" ;;
 "agent prompt")
   [ -f "`+dir+`/prompt-fails" ] && { echo '{"error":{"code":"agent_blocked"}}'; exit 1; }
@@ -628,6 +632,11 @@ func (h *harness) lines(name string) []string {
 	}
 	require.NoError(h.t, err)
 	return strings.Split(strings.TrimSpace(string(b)), "\n")
+}
+
+// renames lists the workspace renames, as "<workspace>|<label>".
+func (h *harness) renames() []string {
+	return h.lines("renames.log")
 }
 
 // closes lists the herdr workspaces that were closed.

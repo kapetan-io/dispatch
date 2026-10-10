@@ -329,7 +329,7 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 		}
 	}
 	input.Unfinished, input.CheckErrors = inspectTrees(ctx, input)
-	input.PRs = readPRs(ctx, opts, input)
+	input.PRs, input.PRReadFailed = readPRs(ctx, opts, input)
 	actions := reconcile.Plan(input)
 
 	sum.actions = len(actions)
@@ -368,6 +368,16 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 	alert := func(message string) error {
 		return notify.Send(ctx, opts.Osascript, "dispatch", message)
 	}
+	current := map[string]string{}
+	for _, ws := range snap.Workspaces {
+		current[ws.ID] = ws.Label
+	}
+	// A failed rename is retried next tick, because the label still differs.
+	for _, r := range input.Renames(current) {
+		if err := herdr.RenameWorkspace(ctx, opts.Herdr, r.WorkspaceID, r.Label); err != nil {
+			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: %v\n", err)
+		}
+	}
 	launch := opts.Launcher
 	if launch == "" {
 		launch = filepath.Join(cfg.PluginRoot, "bin", "dispatch-launch")
@@ -381,6 +391,12 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			if err := escalate(ctx, lin, cfg, c, alert, a.Ticket, a.Reason); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while escalating %s: %v\n", a.Ticket.Identifier, err)
 				continue
+			}
+			// The renames above ran before this move, and the label must match the new status by the end of the tick.
+			if id := workers[a.Ticket.Identifier].WorkspaceID; id != "" {
+				if err := herdr.RenameWorkspace(ctx, opts.Herdr, id, reconcile.Label(reconcile.EmojiNeedsHuman, a.Ticket)); err != nil {
+					_, _ = fmt.Fprintf(opts.Stderr, "dispatch: %v\n", err)
+				}
 			}
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Nudge:
@@ -426,6 +442,18 @@ func tick(ctx context.Context, opts Options, dryRun bool) (sum tickSummary, err 
 			}
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Notify:
+			if a.Reason == reconcile.ReasonReady {
+				// A failed alert leaves the head unrecorded, so the next tick sends it again.
+				if err := alert(a.Text); err != nil {
+					_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
+					continue
+				}
+				e := c[a.Ticket.Identifier]
+				e.ReadyHead = a.Head
+				c[a.Ticket.Identifier] = e
+				_, _ = fmt.Fprintln(opts.Stdout, a)
+				continue
+			}
 			if err := alert(a.Text); err != nil {
 				// Settle already advanced the counters, so reset them to make Plan
 				// find this notification due again.
@@ -553,6 +581,8 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 		// comment posted meanwhile, so the comment time stays while a tree is leased.
 		if leased[id] {
 			kept.CommentSeen = e.CommentSeen
+			// Without it, a worker relaunched on the kept tree would announce a PR head twice.
+			kept.ReadyHead = e.ReadyHead
 		}
 		c[id] = kept
 		if c[id] == (cache.Entry{}) {
@@ -563,9 +593,10 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 
 // readPRs reads the open PR of each ticket for which in.ReadsPR is true. A PR
 // that can't be read is reported and left out, so it holds back only its own
-// ticket.
-func readPRs(ctx context.Context, opts Options, in reconcile.Input) map[string]pullrequest.PR {
-	prs := map[string]pullrequest.PR{}
+// ticket, and its ticket is named in failed to tell it from a ticket with no
+// open PR.
+func readPRs(ctx context.Context, opts Options, in reconcile.Input) (prs map[string]pullrequest.PR, failed map[string]bool) {
+	prs, failed = map[string]pullrequest.PR{}, map[string]bool{}
 	for _, t := range in.Tickets {
 		if !in.ReadsPR(t) {
 			continue
@@ -578,13 +609,14 @@ func readPRs(ctx context.Context, opts Options, in reconcile.Input) map[string]p
 		pr, found, err := pullrequest.Read(ctx, opts.GH, dir, t.Branch, opts.PRTimeout)
 		if err != nil {
 			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, err)
+			failed[t.Identifier] = true
 			continue
 		}
 		if found {
 			prs[t.Identifier] = pr
 		}
 	}
-	return prs
+	return prs, failed
 }
 
 // move sets a ticket's status by name.

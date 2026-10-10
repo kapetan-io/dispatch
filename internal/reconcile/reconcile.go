@@ -56,11 +56,17 @@ const (
 	ReasonResume            = "resume"
 	ReasonPR                = "PR needs work"
 	ReasonComment           = "new comment"
+	ReasonReady             = "PR ready for review"
 )
 
 // NeedsHumanText is the notification message for a ticket in Needs Human.
 func NeedsHumanText(t linear.Ticket) string {
 	return fmt.Sprintf("%s is in Needs Human: %s", t.Identifier, t.Title)
+}
+
+// ReadyText is the notification message for a ticket whose PR is ready for review.
+func ReadyText(t linear.Ticket, pr pullrequest.PR) string {
+	return fmt.Sprintf("%s is ready for review: %s", t.Identifier, pr.URL)
 }
 
 // Nudge texts are fixed because the build-worker skill and the tests rely on
@@ -84,6 +90,8 @@ type Action struct {
 	// Notify shows.
 	PaneID string
 	Text   string
+	// Head is the PR head a ready-for-review Notify is about.
+	Head string
 	// WorkspaceID and TreePath name what a Teardown, Keep or Stop acts on.
 	// WorkspaceID is empty when a Keep or Stop has no live worker to stop, so a
 	// workspace someone opened by hand is left open. A Teardown always closes
@@ -116,6 +124,9 @@ type Input struct {
 	// PRs maps an In Review ticket identifier to its open PR. Tickets whose PR
 	// was not read, or that have none, are absent.
 	PRs map[string]pullrequest.PR
+	// PRReadFailed holds the In Review tickets whose PR read errored, as opposed
+	// to finding no open PR.
+	PRReadFailed map[string]bool
 	// Cache is last tick's state. Plan only reads it.
 	Cache          cache.Cache
 	RepoLabelGroup string
@@ -266,7 +277,7 @@ func (in Input) watch(t linear.Ticket) (Action, bool) {
 		return Action{Kind: Notify, Ticket: t, Reason: ReasonBlocked, Text: fmt.Sprintf("%s is waiting on your answer in its herdr workspace", t.Identifier)}, true
 	case worker.Idle:
 		if t.Status == in.InReview {
-			return in.prNudge(t, w, prev)
+			return in.inReviewIdle(t, w, prev)
 		}
 		// A design-review ticket's worker is never nudged.
 		if t.HasLabel("design-review") {
@@ -352,10 +363,14 @@ func (in Input) prRelaunch(t linear.Ticket) (pullrequest.PR, bool) {
 	return pr, in.Workers[t.Identifier].State == worker.None
 }
 
-// prNudge handles an idle worker on an In Review ticket. A push resets the
+// inReviewIdle handles an idle worker on an In Review ticket: a ready PR notifies
+// once per head, and a PR that needs work gets a nudge. A push resets the
 // count, so a review that arrives days later starts a fresh one.
-func (in Input) prNudge(t linear.Ticket, w worker.Worker, prev cache.Entry) (Action, bool) {
+func (in Input) inReviewIdle(t linear.Ticket, w worker.Worker, prev cache.Entry) (Action, bool) {
 	pr, ok := in.PRs[t.Identifier]
+	if ok && pr.Ready && prev.ReadyHead != pr.Head {
+		return Action{Kind: Notify, Ticket: t, Reason: ReasonReady, Text: ReadyText(t, pr), Head: pr.Head}, true
+	}
 	if !ok || !pr.NeedsWork() {
 		return Action{}, false
 	}

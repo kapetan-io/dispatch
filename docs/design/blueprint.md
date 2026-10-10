@@ -217,7 +217,7 @@ Cheap actions run before launches, because one launch can take over 5 minutes.
 7. Promote Todo children of In Progress parents whose blockers are all Done, while the In Progress count, parents excluded, stays under the cap. A child that still holds a lease is never promoted, so a child you just paused stays paused.
 8. Apply the reconcile table to every In Progress and In Review ticket, except launches. Send the comment nudge to a working or idle worker whose ticket has a comment newer than the cache's `comment_seen`.
 9. Rename each worker's workspace with its status emoji.
-10. Fire a macOS notification for each ticket that entered Needs Human since the cache's last-seen status.
+10. Fire a macOS notification for each ticket that entered Needs Human since the cache's last-seen status, and one for each In Review ticket whose PR became ready for review at a head commit the cache has not notified about.
 11. Run the launches the table asked for, one at a time, while under the cap.
 12. Write the cache and release the lock.
 
@@ -230,7 +230,7 @@ Cheap actions run before launches, because one launch can take over 5 minutes.
 | In Progress | idle | Send the stall nudge, or the resume nudge if the cache's last-seen status was Needs Human. After 2 nudges with no status change, set Needs Human. |
 | In Progress or In Review | blocked | The worker is asking you a question. Notify you, and notify again if it stays unanswered. Never dismiss the dialog. A new comment waits for the worker to be unblocked. |
 | In Review | none | If the PR needs work, launch to resume, then send the PR nudge once the relaunched worker is idle (the next tick). Otherwise nothing, and the tree stays leased. |
-| In Review | idle | If the PR needs work, send the PR nudge. After 2 PR nudges with no push, set Needs Human. |
+| In Review | idle | If the PR needs work, send the PR nudge. After 2 PR nudges with no push, set Needs Human. If the PR is ready for review and the cache has not notified about its head, notify you. |
 | In Review | working | Nothing, or the comment nudge if the ticket has a new comment |
 | Needs Human | any | Nothing |
 
@@ -238,9 +238,11 @@ A PR needs work when any check has failed, `reviewDecision` is `CHANGES_REQUESTE
 
 #### Workspace labels
 
-The label format is `<emoji> <ticket> <title>`, truncated to fit. 🟢 means In Progress, 🟡 In Review, 🔴 Needs Human, ⏸️ paused (Backlog or Todo with a kept tree).
+The label format is `<emoji> <ticket> <title>`, cut to 40 characters with an ellipsis. 🟢 means In Progress, 🟡 In Review with the PR not ready, 👀 In Review with the PR ready for review, 🔴 Needs Human, ⏸️ paused (Backlog or Todo with a kept tree and a workspace still open). A workspace is renamed only when its current label differs from the wanted one.
 
-TODO: Confirm that herdr's workspace list shows the label with the emoji. Test with `herdr workspace rename` on one workspace before building on it.
+A PR is ready for review when the ticket is In Review, its worker is idle, every check has finished and passed, no review thread is unresolved, `reviewDecision` is not `CHANGES_REQUESTED`, and `mergeable` is `MERGEABLE`. A running check or a `mergeable` of `UNKNOWN` is not ready. The notification names the ticket and the PR and fires once per head commit.
+
+`herdr workspace rename` stores the emoji label and `workspace list` returns it unchanged (checked on 2026-10-09 with ENG-256). How the herdr UI draws 👀 and ⏸️ was not checked from the command line.
 
 ### Data Design
 
@@ -272,6 +274,7 @@ At work, where there is no admin right to add a Needs Human status, the design i
     "last_status": "In Progress",
     "nudges": 1,
     "pr_head": "9f2c1e0",
+    "ready_head": "9f2c1e0",
     "launch_failures": 0,
     "blocked_ticks": 0,
     "resume_pending": false,
@@ -282,7 +285,7 @@ At work, where there is no admin right to add a Needs Human status, the design i
 }
 ```
 
-`nudges` resets when the status changes, and for In Review tickets also when `pr_head` moves. Workers are not required to commit as they go, so commits are never a progress signal while In Progress. `launch_failures` resets on a successful launch. `blocked_ticks` resets when the worker is not blocked. `resume_pending` is set when a ticket moves from Needs Human back to In Progress and cleared once the resume nudge lands, so a worker that was blocked or working at that moment still gets it. `notify_pending` marks a Needs Human notification that failed to show, retried each tick. A ticket missing from the Linear read (paused or finished) keeps only `launch_failures`, a pending comment and its teardown warning, plus `comment_seen` while it holds a lease, so a ticket that returns starts its nudge count fresh, and a surviving worker still hears about a comment posted meanwhile. Without a lease, the return is a first sighting for comments. `comment_seen` is the creation time of the newest comment the dispatcher has accounted for, `"0"` for a ticket with none. A ticket's first sighting records it without nudging, so restarting `dispatch run` nudges nobody for old comments, and it stays behind while a comment nudge is owed or the worker is blocked. `teardown_warned` keeps the dirty-tree comment to one per ticket. Entries for tickets with no lease and a terminal status are dropped.
+`nudges` resets when the status changes, and for In Review tickets also when `pr_head` moves. Workers are not required to commit as they go, so commits are never a progress signal while In Progress. `launch_failures` resets on a successful launch. `blocked_ticks` resets when the worker is not blocked. `resume_pending` is set when a ticket moves from Needs Human back to In Progress and cleared once the resume nudge lands, so a worker that was blocked or working at that moment still gets it. `notify_pending` marks a Needs Human notification that failed to show, retried each tick. A ticket missing from the Linear read (paused or finished) keeps only `launch_failures`, a pending comment and its teardown warning, plus `comment_seen` while it holds a lease, so a ticket that returns starts its nudge count fresh, and a surviving worker still hears about a comment posted meanwhile. Without a lease, the return is a first sighting for comments. `comment_seen` is the creation time of the newest comment the dispatcher has accounted for, `"0"` for a ticket with none. A ticket's first sighting records it without nudging, so restarting `dispatch run` nudges nobody for old comments, and it stays behind while a comment nudge is owed or the worker is blocked. `ready_head` is the PR head the ready-for-review notification last fired for. A failed notification leaves it unset so the next tick retries. A ticket that leaves In Review and returns at the same head is not notified again, and the entry keeps `ready_head` while the ticket holds a lease. `teardown_warned` keeps the dirty-tree comment to one per ticket. Entries for tickets with no lease and a terminal status are dropped.
 
 ### Security
 
