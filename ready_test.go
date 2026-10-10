@@ -581,3 +581,31 @@ func TestTickKeepsTheReadyLabelWhenThePRCannotBeRead(t *testing.T) {
 
 	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1 ticket ENG-1"}, h.renames())
 }
+
+func TestTickDoesNotRepeatTheReadyNotificationAfterTheTicketLeavesAndReturnsToInReview(t *testing.T) {
+	for _, between := range []string{"Needs Human", "In Progress"} {
+		t.Run(between, func(t *testing.T) {
+			h := newHarness(t)
+			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+			h.worker("ENG-1", "idle")
+			h.pr("ENG-1", cleanPR("a1"))
+			_, err := h.run("tick")
+			require.NoError(t, err)
+
+			h.tickets(ticket("ENG-1", between, "dispatch"))
+			_, err = h.run("tick")
+			require.NoError(t, err)
+			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+			_, err = h.run("tick")
+			require.NoError(t, err)
+
+			var ready int
+			for _, n := range h.notifications() {
+				if strings.Contains(n, "ready for review") {
+					ready++
+				}
+			}
+			assert.Equal(t, 1, ready)
+		})
+	}
+}

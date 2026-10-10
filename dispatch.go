@@ -551,9 +551,6 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 		if t.Status != statuses.NeedsHuman {
 			e.NotifyPending = false
 		}
-		if t.Status != statuses.InReview {
-			e.ReadyHead = ""
-		}
 		// A moved head means a push. An unread PR leaves the last head in place,
 		// so the push is still seen once the PR is read again.
 		if pr, ok := prs[t.Identifier]; ok {
