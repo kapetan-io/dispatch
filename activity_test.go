@@ -519,3 +519,27 @@ func TestTickDoesNotRelaunchAGoneWorkerForAPlainCommentWhileAThreadIsOpen(t *tes
 	assert.Empty(t, out)
 	assert.Empty(t, h.launches())
 }
+
+func TestTickRecordsAThreadCommentWhenAProblemRelaunchesAGoneWorker(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "")
+	require.NoError(t, os.MkdirAll(h.state, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "cache.json"), []byte(`{"ENG-1":{"last_status":"In Review","pr_activity_seen":"`+time1+`"}}`), 0o600))
+	p := cleanPR("a1")
+	p.checks = "FAILURE"
+	p.threads = []activity{{"", time2, "alice", "", ""}}
+	h.pr("ENG-1", p)
+	out, err := h.run("tick")
+	require.NoError(t, err)
+	assert.Equal(t, "launch ENG-1: PR needs work: a failed check: ok\n", out)
+
+	// The failed check clears while the worker is still gone.
+	p.checks = "SUCCESS"
+	h.pr("ENG-1", p)
+	out, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, out)
+	assert.Len(t, h.launches(), 1)
+}

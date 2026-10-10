@@ -120,14 +120,17 @@ type Action struct {
 	// PRURL the PR a Merge merges.
 	Head  string
 	PRURL string
-	// ActivityAt is the PR activity time an activity Nudge puts to the worker,
-	// which the executor records as seen.
+	// ActivityAt is the PR activity time an activity Nudge or a Launch puts to
+	// the worker, which the executor records as seen.
 	ActivityAt string
 	// AnsweredStop is the Stop-hook time a stall or resume Nudge answers.
 	AnsweredStop time.Time
 	// AfterNudge marks a Notify that only makes sense once the Nudge before it
 	// landed.
 	AfterNudge bool
+	// ThreadOnly marks a Launch made only for a new review thread comment, which
+	// does not count toward the relaunch limit.
+	ThreadOnly bool
 	// WorkspaceID and TreePath name what a Teardown, Keep or Stop acts on.
 	// WorkspaceID is empty when a Keep or Stop has no live worker to stop, so a
 	// workspace someone opened by hand is left open. A Teardown always closes
@@ -283,10 +286,13 @@ func Plan(in Input) []Action {
 		// handle a PR is never held back by it.
 		if relaunch {
 			launch := Action{Kind: Launch, Ticket: t, RepoDir: dir, Reason: ReasonPR + ": " + pr.Problem()}
+			// The kickoff reads the whole PR, so a thread comment owed to the
+			// worker is handled once it is up, whatever else prompted the launch.
+			if in.threadOwed(t, pr) {
+				launch.ActivityAt = pr.ActivityAt
+			}
 			if !pr.NeedsWork() {
-				// The kickoff reads the whole PR, so the comment that owed this
-				// launch is handled once the worker is up.
-				launch.Reason, launch.ActivityAt = ReasonActivity+": "+pr.ActivitySummary, pr.ActivityAt
+				launch.Reason, launch.ThreadOnly = ReasonActivity+": "+pr.ActivitySummary, true
 			}
 			launches = append(launches, launch)
 			continue
