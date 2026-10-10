@@ -6,6 +6,7 @@
 package dispatch
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -435,9 +436,12 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 				continue
 			}
 			e := c[a.Ticket.Identifier]
-			if a.Reason == reconcile.ReasonComment {
+			switch {
+			case a.Reason == reconcile.ReasonComment:
 				e.CommentSeen = a.Ticket.LastComment
-			} else {
+			case a.ActivityAt != "":
+				e.PRActivitySeen = a.ActivityAt
+			default:
 				e.Nudges++
 				e.ResumePending = false
 			}
@@ -573,6 +577,11 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 	seen := map[string]bool{}
 	for _, t := range tickets {
 		e := c[t.Identifier]
+		e.PRActivitySeen = e.ActivityBaseline(t.Status, statuses.InReview)
+		if pr, ok := prs[t.Identifier]; ok && e.PRActivitySeen == "" && t.Status == statuses.InReview {
+			// No baseline yet, so the PR's current activity is taken as already seen.
+			e.PRActivitySeen = cmp.Or(pr.ActivityAt, "0")
+		}
 		if e.LastStatus != t.Status {
 			e.Nudges = 0
 			e.Relaunches = 0
@@ -630,6 +639,7 @@ func settle(c cache.Cache, tickets []linear.Ticket, workers map[string]worker.Wo
 			kept.CommentSeen = e.CommentSeen
 			// Without it, a worker relaunched on the kept tree would announce a PR head twice.
 			kept.ReadyHead = e.ReadyHead
+			kept.PRActivitySeen = e.PRActivitySeen
 			kept.MergeFailedHead = e.MergeFailedHead
 		}
 		c[id] = kept

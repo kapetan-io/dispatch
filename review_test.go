@@ -1,6 +1,7 @@
 package dispatch_test
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -33,6 +34,33 @@ type prState struct {
 	approved []string
 	// fork marks a PR opened from a fork.
 	fork bool
+	// reviews and comments are the PR's activity, oldest first.
+	reviews  []activity
+	comments []activity
+}
+
+// activity is a review (with a state) or a conversation comment.
+type activity struct {
+	state  string
+	at     string
+	author string
+	body   string
+	// submitted is when a review left draft, "" for the same time as at.
+	submitted string
+}
+
+func activityNodes(list []activity) map[string]any {
+	out := []map[string]any{}
+	for _, a := range list {
+		n := map[string]any{"createdAt": a.at, "author": map[string]string{"login": a.author}}
+		if a.state != "" {
+			n["state"] = a.state
+			n["body"] = a.body
+			n["submittedAt"] = cmp.Or(a.submitted, a.at)
+		}
+		out = append(out, n)
+	}
+	return map[string]any{"nodes": out}
 }
 
 func cleanPR(head string) prState {
@@ -61,6 +89,8 @@ func (h *harness) pr(ticket string, p prState) {
 		"reviewDecision":           p.decision,
 		"commits":                  map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]string{"state": p.checks}}}}},
 		"latestOpinionatedReviews": map[string]any{"nodes": reviews},
+		"reviews":                  activityNodes(p.reviews),
+		"comments":                 activityNodes(p.comments),
 		"reviewThreads":            map[string]any{"nodes": threads, "pageInfo": map[string]bool{"hasNextPage": p.moreThreads}},
 	}}}}}})
 }

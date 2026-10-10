@@ -52,6 +52,12 @@ type Entry struct {
 	// never seen, so its first sighting records a time without nudging. It
 	// stays put while a nudge is owed or the worker can't take one yet.
 	CommentSeen string `json:"comment_seen,omitempty"`
+	// PRActivitySeen is the time of the newest PR review or comment already put
+	// to the worker, or "0" for a ticket that entered In Review owing it all of
+	// the PR's activity. Empty means no baseline yet, and ActivityBaseline says
+	// what that means. It survives a trip out of In Review, so the worker is not
+	// nudged again about activity it handled.
+	PRActivitySeen string `json:"pr_activity_seen,omitempty"`
 	// TeardownWarned marks a finished ticket whose dirty tree already got its
 	// one comment. It is dropped when the ticket stops being a finished ticket
 	// that holds a lease.
@@ -66,6 +72,17 @@ func (e Entry) NudgesAt(status, head string) int {
 		return 0
 	}
 	return e.Nudges
+}
+
+// ActivityBaseline is the PR activity time before which nothing is owed to the
+// worker of a ticket whose status is now status, "" when the first PR read
+// should record one. A ticket new to the cache owes its worker whatever the PR
+// already has, and an In Review ticket without a time predates the field.
+func (e Entry) ActivityBaseline(status, inReview string) string {
+	if e.PRActivitySeen == "" && e.LastStatus != inReview && status == inReview {
+		return "0"
+	}
+	return e.PRActivitySeen
 }
 
 // RelaunchesAt is NudgesAt for the relaunch count.
