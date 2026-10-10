@@ -193,6 +193,14 @@ func runBuild(ctx context.Context, args []string, opts Options) error {
 	if err := writeFile(filepath.Join(out, "skills", "build", "SKILL.md"), skill, 0o644); err != nil {
 		return err
 	}
+	// Copied verbatim so report can run from the plugin directory.
+	raw, err := os.ReadFile(f.cases)
+	if err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(out, "cases.json"), string(raw), 0o644); err != nil {
+		return err
+	}
 	for _, c := range cases {
 		if err := buildCase(ctx, f, out, c); err != nil {
 			return fmt.Errorf("while building case %s: %w", c.Name, err)

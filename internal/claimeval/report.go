@@ -273,6 +273,11 @@ var (
 	inPlace     = regexp.MustCompile(`\b(?:sed|perl)\s+[^;&|\n]*-\w*i\b[^;&|\n]*`)
 	pathLike    = regexp.MustCompile(`[\w./~-]*[\w-]+\.(?:go|sh|toml|md|json|yaml|yml|awk)\b|\bbin/[\w-]+|\bscripts/[\w/-]+`)
 	scriptWrite = regexp.MustCompile(`open\(\s*['"]([^'"]+)['"]\s*,\s*['"][wa]|Path\(\s*['"]([^'"]+)['"]\s*\)\.write`)
+	// open(p, 'w') where p is a name. Only quoted literals assigned to the name
+	// are seen, so a path built at runtime is missed.
+	varWrite = regexp.MustCompile(`open\(\s*([A-Za-z_]\w*)\s*,\s*['"][wa]`)
+	// A quoted string, with no handling of escaped quotes.
+	quoted = regexp.MustCompile(`'[^']*'|"[^"]*"`)
 )
 
 // splitHeredocs separates a shell command's own text from the bodies of its
@@ -312,6 +317,39 @@ func isSourcePath(p string) bool {
 	return true
 }
 
+// assignedPath returns the quoted literal most recently assigned to name in the
+// script text before an open() call, or "" when there is none. An attribute such
+// as self.name = 'x' is not an assignment to name.
+func assignedPath(before, name string) string {
+	assign := regexp.MustCompile(`(?:^|[^.\w])` + regexp.QuoteMeta(name) + `\s*=\s*['"]([^'"]+)['"]`)
+	all := assign.FindAllStringSubmatch(before, -1)
+	if len(all) == 0 {
+		return ""
+	}
+	return all[len(all)-1][1]
+}
+
+// unquotePrograms replaces quoted strings with ” so a ">" inside an awk or grep
+// program is not read as a redirect. A quoted string right after ">" is a quoted
+// file name, as in cat > "bin/tool", and stays. So does the program of sh -c,
+// which is a shell command line of its own. Only redirects use this, because
+// tee and sed -i take their file names unquoted in practice.
+func unquotePrograms(command string) string {
+	var b strings.Builder
+	last := 0
+	for _, loc := range quoted.FindAllStringIndex(command, -1) {
+		b.WriteString(command[last:loc[0]])
+		if prefix := strings.TrimRight(command[:loc[0]], " \t"); strings.HasSuffix(prefix, ">") || strings.HasSuffix(prefix, " -c") {
+			b.WriteString(command[loc[0]:loc[1]])
+		} else {
+			b.WriteString("''")
+		}
+		last = loc[1]
+	}
+	b.WriteString(command[last:])
+	return b.String()
+}
+
 // bashWritesSource reports whether a shell command writes a file that is
 // neither a test file nor under ticket/, which is how workers edit with sed,
 // perl, redirects or an inline script instead of the Edit tool. It looks at the
@@ -319,7 +357,7 @@ func isSourcePath(p string) bool {
 func bashWritesSource(command string) bool {
 	head, bodies := splitHeredocs(command)
 	var targets []string
-	for _, m := range redirect.FindAllStringSubmatch(head, -1) {
+	for _, m := range redirect.FindAllStringSubmatch(unquotePrograms(head), -1) {
 		targets = append(targets, m[1])
 	}
 	for _, m := range teeTarget.FindAllStringSubmatch(head, -1) {
@@ -331,6 +369,11 @@ func bashWritesSource(command string) bool {
 	for _, text := range append(bodies, head) {
 		for _, m := range scriptWrite.FindAllStringSubmatch(text, -1) {
 			targets = append(targets, m[1]+m[2])
+		}
+		for _, m := range varWrite.FindAllStringSubmatchIndex(text, -1) {
+			if path := assignedPath(text[:m[0]], text[m[2]:m[3]]); path != "" {
+				targets = append(targets, path)
+			}
 		}
 	}
 	for _, t := range targets {

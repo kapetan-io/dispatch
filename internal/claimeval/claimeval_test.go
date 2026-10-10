@@ -344,3 +344,86 @@ func TestBuildNamesTheFixtureCommitItCannotArchive(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "while building case gone: while archiving no-such-commit")
 }
+
+func TestReportCountsAScriptEditThroughAPathVariable(t *testing.T) {
+	editFirst := traceFile(t,
+		[3]string{"Bash", "command", "python3 - <<'E'\np='bin/tool'\ns=open(p).read()\nopen(p,'w').write(s.replace('a','b'))\nE"},
+		[3]string{"Bash", "command", "./gotest red"})
+	cases := casesFile(t, claimeval.Case{Name: "bug", Kind: "control", Repro: "reproduce"})
+
+	stdout, _, code := run(t, "report", "-cases", cases, resultJSON(t, map[string][]runResult{
+		"bug": repeat(5, runResult{trace: editFirst, graders: allPass}),
+	}))
+
+	require.Equal(t, 1, code)
+	assert.Contains(t, stdout, "bug repro 0/5")
+}
+
+func TestReportIgnoresAComparisonInsideAnAwkProgram(t *testing.T) {
+	testFirst := traceFile(t,
+		[3]string{"Bash", "command", "awk 'NR>5' bin/tool"},
+		[3]string{"Bash", "command", "./gotest red"},
+		[3]string{"Edit", "file_path", "/w/bin/tool"})
+	cases := casesFile(t, claimeval.Case{Name: "bug", Kind: "control", Repro: "reproduce"})
+
+	stdout, _, code := run(t, "report", "-cases", cases, resultJSON(t, map[string][]runResult{
+		"bug": repeat(5, runResult{trace: testFirst, graders: allPass}),
+	}))
+
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "BAR MET")
+}
+
+func TestReportSeparatesScriptEditsFromScriptReads(t *testing.T) {
+	cases := casesFile(t, claimeval.Case{Name: "bug", Kind: "control", Repro: "reproduce"})
+	for _, test := range []struct {
+		name    string
+		command string
+		edits   bool
+	}{
+		{"write to tmp via variable", "python3 - <<'E'\np='/tmp/x'\nopen(p,'w').write('a')\nE", false},
+		{"write to test via variable", "python3 - <<'E'\np='a_test.go'\nopen(p,'w').write('a')\nE", false},
+		{"read through variable", "python3 - <<'E'\np='bin/tool'\nprint(open(p).read())\nE", false},
+		{"append through variable", "python3 - <<'E'\np = \"bin/tool\"\nopen(p, 'a').write('a')\nE", true},
+		{"inline script", "python3 -c \"p='bin/tool';open(p,'w').write('a')\"", true},
+		{"shell program redirect", "sh -c 'echo x > bin/tool'", true},
+		{"reassigned before write", "python3 - <<'E'\np='bin/tool'\nd=open(p).read()\np='/tmp/o'\nopen(p,'w').write(d)\nE", false},
+		{"attribute named like the variable", "python3 - <<'E'\nself.p='bin/tool'\np='/tmp/o'\nopen(p,'w').write('a')\nE", false},
+		{"quoted redirect target", "cat > \"bin/tool\" <<'E'\nx\nE", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			trace := traceFile(t, [3]string{"Bash", "command", test.command}, [3]string{"Bash", "command", "./gotest red"})
+			stdout, _, _ := run(t, "report", "-cases", cases, resultJSON(t, map[string][]runResult{
+				"bug": repeat(5, runResult{trace: trace, graders: allPass}),
+			}))
+			assert.Equal(t, !test.edits, strings.Contains(stdout, "BAR MET"))
+			assert.Equal(t, test.edits, strings.Contains(stdout, "bug repro 0/5"))
+		})
+	}
+}
+
+func TestBuildPutsTheCasesFileNextToThePlugin(t *testing.T) {
+	repo, work := gitRepo(t), t.TempDir()
+	write(t, filepath.Join(work, "skill.md"), skillText)
+	write(t, filepath.Join(work, "arm.md"), "1. **Orient.** New wording.\n")
+	write(t, filepath.Join(work, "tickets", "a.md"), "# ENG-1: a ticket\n")
+	cases, err := json.Marshal([]claimeval.Case{
+		{Name: "bug", Ticket: "ENG-1", File: "a.md", Fixture: "HEAD", Kind: "control", Expect: "CONTINUE", Repro: "reproduce"},
+	})
+	require.NoError(t, err)
+	write(t, filepath.Join(work, "src", "cases.json"), string(cases))
+	out := filepath.Join(work, "plugin")
+	_, stderr, code := run(t, "build", "-arm", filepath.Join(work, "arm.md"), "-out", out,
+		"-cases", filepath.Join(work, "src", "cases.json"), "-tickets", filepath.Join(work, "tickets"),
+		"-repo", repo, "-goroot", "/opt/go", "-skill", filepath.Join(work, "skill.md"))
+	require.Equal(t, 0, code, stderr)
+	t.Chdir(out)
+	trace := traceFile(t, [3]string{"Bash", "command", "./gotest red"})
+
+	stdout, _, code := run(t, "report", "-cases", "cases.json", resultJSON(t, map[string][]runResult{
+		"bug": repeat(5, runResult{trace: trace, graders: allPass}),
+	}))
+
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "BAR MET")
+}
