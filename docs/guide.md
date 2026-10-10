@@ -10,7 +10,7 @@ You need a Mac with these on your PATH. dispatch shells out to all of them.
 |---|---|
 | `herdr` 0.9.0 or later | Hosts one workspace per worker, and reports whether each worker is working, idle or blocked. |
 | `treehouse` v3.1.2 or later (`go install github.com/kunchenguid/treehouse/v3@latest`) | Leases a pooled git worktree to each worker. |
-| `gh`, signed in with `gh auth login` | The dispatcher reads PR checks, reviews and conflicts. Workers open and merge PRs with it. |
+| `gh`, signed in with `gh auth login` | The dispatcher reads PR checks, reviews and conflicts, and merges approved PRs in `auto_merge` repos. Workers open PRs with it. |
 | `claude` | The worker itself. |
 | `git`, `jq` | Used by `bin/dispatch-launch`. |
 | `go` | Builds the `dispatch` CLI. |
@@ -37,7 +37,7 @@ The command prompts for the key. Setting `LINEAR_API_KEY` in the environment ove
 
 Linear's GitHub integration should move a ticket to Done when its PR merges. dispatch never moves a built ticket to Done itself, and the Done move is what triggers teardown. (It does move a parent to Done when its children finish.)
 
-**4. Prepare each repo.** Workers run only on leased treehouse trees, so the repo's clone needs a `treehouse.toml` (`treehouse init` writes one). `max_trees` in it caps how many workers the repo runs at once. Turn on "Allow auto-merge" in the repo's GitHub settings. Workers enable auto-merge only when `main` requires an approving review, so protect `main` with the review and checks you want.
+**4. Prepare each repo.** Workers run only on leased treehouse trees, so the repo's clone needs a `treehouse.toml` (`treehouse init` writes one). `max_trees` in it caps how many workers the repo runs at once. Turn on "Allow auto-merge" in the repo's GitHub settings. Workers enable auto-merge only when `main` requires an approving review, so protect `main` with the review and checks you want. To have dispatch merge approved PRs itself instead, list the repo in `auto_merge` in the config (step 5).
 
 **5. Write the config.** Create `~/.config/dispatch/config.toml` with one `[repos]` entry per repo label, pointing at that repo's clone. Without `[repos]`, every In Progress ticket escalates to Needs Human with "its repo \"dispatch\" is not in the dispatcher's config" (naming the ticket's repo label):
 
@@ -64,7 +64,7 @@ It ticks now and every `interval_minutes` after, until you press Ctrl-C. It does
 4. **Build.** The worker follows the `dispatch:build` skill. It reads the ticket and its comments, implements with surface tests, has fresh sub-agents review the tests and the code, rebases onto `main`, runs the tests and the app, and opens a PR that ends with `Fixes <ticket>`. It reports only through the ticket's status and comments.
 5. **In Review.** The worker moves the ticket to In Review once the PR is linked. It then waits. Each tick, the dispatcher checks an In Review ticket with an idle worker, and nudges it when the PR has a failed check, requested changes, an unresolved thread or a conflict.
 6. **Needs Human.** A worker that needs a decision outside its terminal moves the ticket to Needs Human with a comment saying what it needs. dispatch fires a macOS notification. Answer on the ticket and move it back to In Progress, and the worker gets the resume nudge. The dispatcher also sets Needs Human itself, with one comment, after `nudge_limit` fruitless nudges, `nudge_limit` relaunches of an In Review worker that never pushed, or `launch_failure_limit` failed launches. It does the same at once for a ticket with no repo label, a repo label missing from `[repos]`, or more labels than it reads.
-7. **Merge.** The PR merges (auto-merge, or you), Linear moves the ticket to Done.
+7. **Merge.** The PR merges, either you or dispatch (when its repo is in [`auto_merge`](config.md#auto-merge) and a review has approved the head commit), and Linear moves the ticket to Done.
 8. **Teardown.** The next tick closes the worker's workspace and returns the tree to the pool, unless the tree holds modified or staged tracked files, or unpushed commits. Untracked files are deleted first.
 
 A question the worker asks in its terminal shows in herdr as blocked. dispatch notifies you, never answers for you, and never sets Needs Human for it.

@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/BurntSushi/toml"
 )
+
+var ownerSlashName = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
 // Config mirrors ~/.config/dispatch/config.toml. docs/config.md documents every field.
 type Config struct {
@@ -18,11 +21,14 @@ type Config struct {
 	NudgeLimit         int `toml:"nudge_limit"`
 	// BlockedRenotifyTicks is how many ticks pass between notifications for a
 	// worker that stays blocked on a question.
-	BlockedRenotifyTicks int               `toml:"blocked_renotify_ticks"`
-	PluginRoot           string            `toml:"plugin_root"`
-	WorkerModel          string            `toml:"worker_model"`
-	Linear               Linear            `toml:"linear"`
-	Repos                map[string]string `toml:"repos"`
+	BlockedRenotifyTicks int    `toml:"blocked_renotify_ticks"`
+	PluginRoot           string `toml:"plugin_root"`
+	WorkerModel          string `toml:"worker_model"`
+	// AutoMerge lists the GitHub repos, as owner/name, where dispatch merges a
+	// ready PR once a review approves its head commit.
+	AutoMerge []string          `toml:"auto_merge"`
+	Linear    Linear            `toml:"linear"`
+	Repos     map[string]string `toml:"repos"`
 }
 
 type Linear struct {
@@ -60,6 +66,7 @@ func defaults() Config {
 		BlockedRenotifyTicks: 3,
 		PluginRoot:           "~/Development/dispatch",
 		WorkerModel:          "sonnet",
+		AutoMerge:            []string{},
 		Linear: Linear{
 			APIKeyKeychain: "dispatch-linear-api-key",
 			Teams:          []string{"ENG"},
@@ -94,6 +101,11 @@ func Load(path string) (Config, error) {
 			keys[i] = key.String()
 		}
 		return Config{}, fmt.Errorf("while reading config %s: unknown setting %s", path, strings.Join(keys, ", "))
+	}
+	for _, repo := range c.AutoMerge {
+		if !ownerSlashName.MatchString(repo) {
+			return Config{}, fmt.Errorf("while reading config %s: auto_merge entry %q is not owner/name", path, repo)
+		}
 	}
 	c.PluginRoot = ExpandHome(c.PluginRoot)
 	for label, dir := range c.Repos {

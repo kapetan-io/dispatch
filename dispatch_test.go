@@ -503,9 +503,20 @@ esac`)
 echo "${@: -2:1}|${@: -1}" >> "`+dir+`/notifications.log"`)
 	// gh's branch= argument names the PR file to print, and each call is logged.
 	h.script("gh", `[ -f "`+dir+`/gh-fails" ] && exit 1
-for arg; do case "$arg" in branch=*) branch="${arg#branch=}" ;; esac; done
-echo "$branch" >> "`+dir+`/gh.log"
-cat "`+dir+`/pr-${branch##*/}.json" 2>/dev/null || echo '{"data":{"repository":{"pullRequests":{"nodes":[]}}}}'`)
+case "$1 $2" in
+"repo view")
+  echo "repo-view" >> "`+dir+`/repo-views.log"
+  cat "`+dir+`/repo-name" 2>/dev/null || echo kapetan-io/dispatch
+  exit 0 ;;
+"pr merge")
+  [ -f "`+dir+`/merge-fails" ] && { echo "Pull request is not mergeable: the base branch policy prohibits the merge" >&2; exit 1; }
+  echo "$*" >> "`+dir+`/merges.log"
+  rm -f "`+dir+`"/pr-*.json
+  exit 0 ;;
+esac
+for arg; do case "$arg" in branch=*) branch="${arg#branch=}" ;; after=*) after=".${arg#after=}" ;; esac; done
+echo "$branch$after" >> "`+dir+`/gh.log"
+cat "`+dir+`/pr-${branch##*/}$after.json" 2>/dev/null || echo '{"data":{"repository":{"pullRequests":{"nodes":[]}}}}'`)
 	// return marks the tree available, so later ticks see the slot free.
 	h.script("treehouse", `case "$1" in
 return)
