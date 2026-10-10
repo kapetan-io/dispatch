@@ -1,0 +1,535 @@
+{
+ "schemaVersion": 1,
+ "claudeVersion": "2.1.296",
+ "startedAt": "2026-10-10T06:50:46.879Z",
+ "durationSeconds": 140,
+ "costUsd": 3.406913600000001,
+ "partial": false,
+ "suite": {
+  "root": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.SUoAdnodPY/plugin",
+  "ablation": "none",
+  "judgeModel": "claude-opus-5-5",
+  "threshold": 0,
+  "concurrency": 5,
+  "plugins": [
+   {
+    "name": "worktools",
+    "version": "0.1.0",
+    "path": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.SUoAdnodPY/plugin"
+   }
+  ]
+ },
+ "cases": [
+  {
+   "name": "sample-question",
+   "dir": "cases/sample-question",
+   "source": "mixed",
+   "promptMarkdown": "Arena this: how often should the inventory service poll the supplier API for stock levels?\n\nRead `docs/inventory.md` and `docs/supplier-api.md` first.",
+   "model": "claude-sonnet-5-5",
+   "runsPerCase": 3,
+   "timeoutSeconds": 2400,
+   "maxTurns": 120,
+   "graders": [
+    {
+     "name": "skill-fired",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Skill"
+     }
+    },
+    {
+     "name": "fan-out",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "min": 4
+     }
+    },
+    {
+     "name": "model-fable",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "\"model\"\\s*:\\s*\"fable\"",
+      "min": 1
+     }
+    },
+    {
+     "name": "model-sonnet",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "\"model\"\\s*:\\s*\"sonnet\"",
+      "min": 1
+     }
+    },
+    {
+     "name": "model-opus",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "\"model\"\\s*:\\s*\"opus\"",
+      "min": 2
+     }
+    },
+    {
+     "name": "judge-readonly",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "\"subagent_type\"\\s*:\\s*\"Plan\"",
+      "min": 1
+     }
+    },
+    {
+     "name": "rubric-first",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if, before the first Agent call that starts a candidate, the worker has written out 3 to 6 gradeable criteria for judging an answer to the polling question (criteria it states, not a plan to write them later), and those criteria do not appear in the prompt of any candidate Agent call. FAIL if no criteria are written before the first candidate starts, there are fewer than 3 or more than 6, or the candidate prompts contain them.\n",
+     "config": {
+      "criteria": "PASS if, before the first Agent call that starts a candidate, the worker has written out 3 to 6 gradeable criteria for judging an answer to the polling question (criteria it states, not a plan to write them later), and those criteria do not appear in the prompt of any candidate Agent call. FAIL if no criteria are written before the first candidate starts, there are fewer than 3 or more than 6, or the candidate prompts contain them.\n",
+      "focus": "trace"
+     }
+    },
+    {
+     "name": "judge-after",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the Agent call that starts the judge (the one asked to score the candidates against the rubric) comes after the results or completion notices of every candidate Agent call, and the candidates and the judge were not started in one message. FAIL if the judge starts in the same message as the candidates or before all candidates finished, or if there is no judge call.\n",
+     "config": {
+      "criteria": "PASS if the Agent call that starts the judge (the one asked to score the candidates against the rubric) comes after the results or completion notices of every candidate Agent call, and the candidates and the judge were not started in one message. FAIL if the judge starts in the same message as the candidates or before all candidates finished, or if there is no judge call.\n",
+      "focus": "trace"
+     }
+    },
+    {
+     "name": "prompt-premise",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "Look at the prompt given to the candidate Agent calls. PASS if it tells each candidate to name at least one premise of the question and to answer whether, if the mechanism were built from scratch with every signal now available, it would exist, before answering the question as asked. FAIL if either instruction is missing.\n",
+     "config": {
+      "criteria": "Look at the prompt given to the candidate Agent calls. PASS if it tells each candidate to name at least one premise of the question and to answer whether, if the mechanism were built from scratch with every signal now available, it would exist, before answering the question as asked. FAIL if either instruction is missing.\n",
+      "focus": "trace"
+     }
+    },
+    {
+     "name": "prompt-clean",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "The question assumes the service polls, and the supplier docs show a webhook event makes polling unnecessary. Look at the prompt given to the candidate Agent calls. PASS if it does not state polling or the 10-minute job as a requirement or settled constraint, and does not include rubric criteria. FAIL if it presents polling or the existing job as required, hands the candidates the premise as background to start from, or includes the rubric criteria.\n",
+     "config": {
+      "criteria": "The question assumes the service polls, and the supplier docs show a webhook event makes polling unnecessary. Look at the prompt given to the candidate Agent calls. PASS if it does not state polling or the 10-minute job as a requirement or settled constraint, and does not include rubric criteria. FAIL if it presents polling or the existing job as required, hands the candidates the premise as background to start from, or includes the rubric criteria.\n",
+      "focus": "trace"
+     }
+    },
+    {
+     "name": "note",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "Find the synthesis note among the files the worker wrote. PASS if it names the base candidate, each graft with the candidate it came from (or says there were none and why), what was rejected, any dropouts (or says none), the judge's verdict, the model each candidate ran on, and the premises tested with what the candidates concluded about each. FAIL if there is no such note or any of those is missing.\n",
+     "config": {
+      "criteria": "Find the synthesis note among the files the worker wrote. PASS if it names the base candidate, each graft with the candidate it came from (or says there were none and why), what was rejected, any dropouts (or says none), the judge's verdict, the model each candidate ran on, and the premises tested with what the candidates concluded about each. FAIL if there is no such note or any of those is missing.\n",
+      "focus": "files"
+     }
+    },
+    {
+     "name": "premise-resolved",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "Find the synthesis note among the files the worker wrote. PASS if it reports whether any candidate tested the polling premise (argued from evidence, not only named it). If none did, it must say the arena was run again with the premise removed from the prompt. If some did, it must say what they concluded. FAIL if the note claims convergence confirms the shape while no candidate tested a premise, or does not address it.\n",
+     "config": {
+      "criteria": "Find the synthesis note among the files the worker wrote. PASS if it reports whether any candidate tested the polling premise (argued from evidence, not only named it). If none did, it must say the arena was run again with the premise removed from the prompt. If some did, it must say what they concluded. FAIL if the note claims convergence confirms the shape while no candidate tested a premise, or does not address it.\n",
+      "focus": "files"
+     }
+    },
+    {
+     "name": "verify",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if, after producing the synthesized artifact and before the final message, the worker checked it against the real material (for example re-read the supplier docs and compared the artifact's claims, or checked each rubric criterion against the final text). FAIL if it went straight from synthesizing to the final message.\n",
+     "config": {
+      "criteria": "PASS if, after producing the synthesized artifact and before the final message, the worker checked it against the real material (for example re-read the supplier docs and compared the artifact's claims, or checked each rubric criterion against the final text). FAIL if it went straight from synthesizing to the final message.\n",
+      "focus": "trace"
+     }
+    },
+    {
+     "name": "asked",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the message shows the user the result and asks before anything is filed or changed, and states that nothing was filed or changed. FAIL if it says it filed, edited or changed something outside its own working files, or shows no result, or asks nothing.\n",
+     "config": {
+      "criteria": "PASS if the message shows the user the result and asks before anything is filed or changed, and states that nothing was filed or changed. FAIL if it says it filed, edited or changed something outside its own working files, or shows no result, or asks nothing.\n",
+      "focus": "last_message"
+     }
+    }
+   ],
+   "arms": {
+    "with": [
+     {
+      "score": 0.14285714285714285,
+      "passed": false,
+      "turns": 1,
+      "costUsd": 1.8275554000000007,
+      "judgeCostUsd": 1.7277720000000008,
+      "durationSeconds": 140,
+      "startedAt": "2026-10-10T06:50:46.893Z",
+      "error": null,
+      "tracePath": "/private/tmp/e-XYlce7/out/trace.jsonl",
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "fan-out",
+        "passed": false,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 4..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-fable",
+        "passed": false,
+        "weight": 1,
+        "explanation": "Agent called 0x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-sonnet",
+        "passed": false,
+        "weight": 1,
+        "explanation": "Agent called 0x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-opus",
+        "passed": false,
+        "weight": 1,
+        "explanation": "Agent called 0x (expected 2..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-readonly",
+        "passed": false,
+        "weight": 1,
+        "explanation": "Agent called 0x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "rubric-first",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-XYlce7/home/cwd\",\"session_id\":\"19109e42-a080-4dc2-8329-58cd6aba73ac\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "judge-after",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-XYlce7/home/cwd\",\"session_id\":\"19109e42-a080-4dc2-8329-58cd6aba73ac\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "prompt-premise",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-XYlce7/home/cwd\",\"session_id\":\"19109e42-a080-4dc2-8329-58cd6aba73ac\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "prompt-clean",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-XYlce7/home/cwd\",\"session_id\":\"19109e42-a080-4dc2-8329-58cd6aba73ac\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "note",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "(no file changes)"
+       },
+       {
+        "name": "premise-resolved",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "(no file changes)"
+       },
+       {
+        "name": "verify",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-XYlce7/home/cwd\",\"session_id\":\"19109e42-a080-4dc2-8329-58cd6aba73ac\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "asked",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "The reviewer mostly agrees, and it found one flaw in my answer that I'm correcting below.\n\n**The flaw:** I said to ignore stale events, but the webhook carries only the SKU and the new level. There's no timestamp or sequence number, so a late old event can't be told apart from a fresh one. It could overwrite a newer level, and that would cause the same oversells.\n\n**Revised recommendation:**\n- **Webhook as a trigger:** when a `stock.changed` event arrives, treat it as a signal to re-read that SKU. Don't write its level straight into the local copy. Alternatively, let the reconciliation poll wi [trimmed]"
+       }
+      ]
+     },
+     {
+      "score": 0.14285714285714285,
+      "passed": false,
+      "turns": 6,
+      "costUsd": 1.5793582000000002,
+      "judgeCostUsd": 1.4733760000000002,
+      "durationSeconds": 82,
+      "startedAt": "2026-10-10T06:50:46.894Z",
+      "error": null,
+      "tracePath": "/private/tmp/e-MXWjB5/out/trace.jsonl",
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "fan-out",
+        "passed": false,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 4..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-fable",
+        "passed": false,
+        "weight": 1,
+        "explanation": "Agent called 0x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-sonnet",
+        "passed": false,
+        "weight": 1,
+        "explanation": "Agent called 0x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-opus",
+        "passed": false,
+        "weight": 1,
+        "explanation": "Agent called 0x (expected 2..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-readonly",
+        "passed": false,
+        "weight": 1,
+        "explanation": "Agent called 0x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "rubric-first",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-MXWjB5/home/cwd\",\"session_id\":\"7c56c01e-976b-48a5-9d18-15db841ab910\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "judge-after",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-MXWjB5/home/cwd\",\"session_id\":\"7c56c01e-976b-48a5-9d18-15db841ab910\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "prompt-premise",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-MXWjB5/home/cwd\",\"session_id\":\"7c56c01e-976b-48a5-9d18-15db841ab910\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "prompt-clean",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-MXWjB5/home/cwd\",\"session_id\":\"7c56c01e-976b-48a5-9d18-15db841ab910\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "note",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "(no file changes)"
+       },
+       {
+        "name": "premise-resolved",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "(no file changes)"
+       },
+       {
+        "name": "verify",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL PASS FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         true,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-MXWjB5/home/cwd\",\"session_id\":\"7c56c01e-976b-48a5-9d18-15db841ab910\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "asked",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "**Decision:** Don't tune the interval. Make the webhook the main update path and poll only as a safety net.\n\n- **Primary path:** Register the supplier's `stock.changed` webhook. It fires within seconds of a change, which fits the two oversells, since both happened within minutes of a supplier stock change. Polling every 10 minutes can't close that gap. Verify the signature on every event. Apply updates by SKU, and expect duplicate or out-of-order events.\n- **Reconciliation poll:** Call `GET /stock?since=<cursor>` every 1 minute. That's 60 calls an hour, about 10% of the 600/hr limit. Also run  [trimmed]"
+       }
+      ]
+     }
+    ]
+   },
+   "aggregates": {
+    "score": 0.14285714285714285,
+    "passRate": 0
+   }
+  }
+ ],
+ "aggregates": {
+  "casesTotal": 1,
+  "casesPassed": 1,
+  "overallScore": 0.14285714285714285,
+  "overallPassRate": 0
+ }
+}

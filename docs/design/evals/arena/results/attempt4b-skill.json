@@ -1,0 +1,1019 @@
+{
+ "schemaVersion": 1,
+ "claudeVersion": "2.1.296",
+ "startedAt": "2026-10-10T07:01:44.450Z",
+ "durationSeconds": 215,
+ "costUsd": 10.028126799999999,
+ "partial": false,
+ "suite": {
+  "root": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.yAsh2W7J14/plugin",
+  "ablation": "none",
+  "judgeModel": "claude-opus-5-5",
+  "threshold": 0,
+  "concurrency": 5,
+  "plugins": [
+   {
+    "name": "worktools",
+    "version": "0.1.0",
+    "path": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.yAsh2W7J14/plugin"
+   }
+  ]
+ },
+ "cases": [
+  {
+   "name": "sample-question",
+   "dir": "cases/sample-question",
+   "source": "mixed",
+   "promptMarkdown": "Arena this: how often should the inventory service poll the supplier API for stock levels?\n\nRead `docs/inventory.md` and `docs/supplier-api.md` first. Your scratchpad directory is `scratch/`.",
+   "model": "claude-sonnet-5-5",
+   "runsPerCase": 3,
+   "timeoutSeconds": 2400,
+   "maxTurns": 120,
+   "graders": [
+    {
+     "name": "skill-fired",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Skill"
+     }
+    },
+    {
+     "name": "fan-out",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "min": 4
+     }
+    },
+    {
+     "name": "model-fable",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "\"model\"\\s*:\\s*\"fable\"",
+      "min": 1
+     }
+    },
+    {
+     "name": "model-sonnet",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "\"model\"\\s*:\\s*\"sonnet\"",
+      "min": 1
+     }
+    },
+    {
+     "name": "model-opus",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "\"model\"\\s*:\\s*\"opus\"",
+      "min": 2
+     }
+    },
+    {
+     "name": "judge-readonly",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "\"subagent_type\"\\s*:\\s*\"Plan\"",
+      "min": 1
+     }
+    },
+    {
+     "name": "rubric-judge-only",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "(?i)rubric|criteri",
+      "min": 1,
+      "max": 1
+     }
+    },
+    {
+     "name": "judge-after",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the Agent call that starts the judge (the one asked to score the candidates against the rubric) comes after the results or completion notices of every candidate Agent call, and the candidates and the judge were not started in one message. FAIL if the judge starts in the same message as the candidates or before all candidates finished, or if there is no judge call.\n",
+     "config": {
+      "criteria": "PASS if the Agent call that starts the judge (the one asked to score the candidates against the rubric) comes after the results or completion notices of every candidate Agent call, and the candidates and the judge were not started in one message. FAIL if the judge starts in the same message as the candidates or before all candidates finished, or if there is no judge call.\n",
+      "focus": "trace"
+     }
+    },
+    {
+     "name": "prompt-scratch",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "(?i)from scratch with every signal now available",
+      "min": 3
+     }
+    },
+    {
+     "name": "prompt-premise",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "(?i)premise",
+      "min": 3
+     }
+    },
+    {
+     "name": "prompt-clean",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "(?i)(must|should|need to|needs to|has to|required to)\\s+(keep\\s+)?poll",
+      "min": 0,
+      "max": 0
+     }
+    },
+    {
+     "name": "note",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "Find the synthesis note among the files the worker wrote. PASS if it names the base candidate, each graft with the candidate it came from (or says there were none and why), what was rejected, any dropouts (or says none), the judge's verdict, the model each candidate ran on, and the premises tested with what the candidates concluded about each. FAIL if there is no such note or any of those is missing.\n",
+     "config": {
+      "criteria": "Find the synthesis note among the files the worker wrote. PASS if it names the base candidate, each graft with the candidate it came from (or says there were none and why), what was rejected, any dropouts (or says none), the judge's verdict, the model each candidate ran on, and the premises tested with what the candidates concluded about each. FAIL if there is no such note or any of those is missing.\n",
+      "focus": "files"
+     }
+    },
+    {
+     "name": "premise-resolved",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "Find the synthesis note among the files the worker wrote. PASS if it reports whether any candidate tested the polling premise (argued from evidence, not only named it). If none did, it must say the arena was run again with the premise removed from the prompt. If some did, it must say what they concluded. FAIL if the note claims convergence confirms the shape while no candidate tested a premise, or does not address it.\n",
+     "config": {
+      "criteria": "Find the synthesis note among the files the worker wrote. PASS if it reports whether any candidate tested the polling premise (argued from evidence, not only named it). If none did, it must say the arena was run again with the premise removed from the prompt. If some did, it must say what they concluded. FAIL if the note claims convergence confirms the shape while no candidate tested a premise, or does not address it.\n",
+      "focus": "files"
+     }
+    },
+    {
+     "name": "verify",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if, after producing the synthesized artifact and before the final message, the worker checked it against the real material (for example re-read the supplier docs and compared the artifact's claims, or checked each rubric criterion against the final text). FAIL if it went straight from synthesizing to the final message.\n",
+     "config": {
+      "criteria": "PASS if, after producing the synthesized artifact and before the final message, the worker checked it against the real material (for example re-read the supplier docs and compared the artifact's claims, or checked each rubric criterion against the final text). FAIL if it went straight from synthesizing to the final message.\n",
+      "focus": "trace"
+     }
+    },
+    {
+     "name": "asked",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the message shows the user the result and asks before anything is filed or changed, and states that nothing was filed or changed. FAIL if it says it filed, edited or changed something outside its own working files, or shows no result, or asks nothing.\n",
+     "config": {
+      "criteria": "PASS if the message shows the user the result and asks before anything is filed or changed, and states that nothing was filed or changed. FAIL if it says it filed, edited or changed something outside its own working files, or shows no result, or asks nothing.\n",
+      "focus": "last_message"
+     }
+    }
+   ],
+   "arms": {
+    "with": [
+     {
+      "score": 0.5333333333333333,
+      "passed": false,
+      "turns": 2,
+      "costUsd": 1.9714702000000002,
+      "judgeCostUsd": 0.9048680000000001,
+      "durationSeconds": 173,
+      "startedAt": "2026-10-10T07:01:44.465Z",
+      "error": null,
+      "tracePath": "/private/tmp/e-B3Iy9F/out/trace.jsonl",
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "fan-out",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 4..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-fable",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-sonnet",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-opus",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 2x (expected 2..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-readonly",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "rubric-judge-only",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: invalid regular expression modifier",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-after",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-B3Iy9F/home/cwd\",\"session_id\":\"7fa155a9-a683-4a5b-9676-342d2e123f44\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "prompt-scratch",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: unrecognized character after (?",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-premise",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: unrecognized character after (?",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-clean",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: unrecognized character after (?",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "note",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "scratch/arena-poll-interval/candidate-1/rationale.md\nscratch/arena-poll-interval/candidate-1/recommendation.md\nscratch/arena-poll-interval/candidate-2/rationale.md\nscratch/arena-poll-interval/candidate-2/recommendation.md\nscratch/arena-poll-interval/candidate-3/rationale.md\nscratch/arena-poll-interval/candidate-3/recommendation.md\nscratch/arena-poll-interval/final/recommendation.md\nscratch/arena-poll-interval/final/synthesis.md"
+       },
+       {
+        "name": "premise-resolved",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "scratch/arena-poll-interval/candidate-1/rationale.md\nscratch/arena-poll-interval/candidate-1/recommendation.md\nscratch/arena-poll-interval/candidate-2/rationale.md\nscratch/arena-poll-interval/candidate-2/recommendation.md\nscratch/arena-poll-interval/candidate-3/rationale.md\nscratch/arena-poll-interval/candidate-3/recommendation.md\nscratch/arena-poll-interval/final/recommendation.md\nscratch/arena-poll-interval/final/synthesis.md"
+       },
+       {
+        "name": "verify",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-B3Iy9F/home/cwd\",\"session_id\":\"7fa155a9-a683-4a5b-9676-342d2e123f44\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "asked",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "**Recommendation:** polling shouldn't be what keeps stock fresh. Use the supplier's webhooks for that, and poll only as a backstop: `GET /stock?since=` every 5 minutes, plus a full `GET /stock` once an hour.\n\nThe 10-minute poll is the cause of the oversells. Both happened within minutes of a supplier change, which is the gap a 10-minute poll leaves. Even if we polled as fast as the limit allows, staleness would stay at about 6 seconds and use the whole 600-calls-an-hour budget. The docs don't require polling. They only require keeping the local copy and staying under 600 calls an hour.\n\n**Desi [trimmed]"
+       }
+      ]
+     },
+     {
+      "score": 0.5333333333333333,
+      "passed": false,
+      "turns": 11,
+      "costUsd": 1.83308435,
+      "judgeCostUsd": 1.0449160000000002,
+      "durationSeconds": 187,
+      "startedAt": "2026-10-10T07:01:44.465Z",
+      "error": null,
+      "tracePath": "/private/tmp/e-nrqxwL/out/trace.jsonl",
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "fan-out",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 4..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-fable",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-sonnet",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-opus",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 2x (expected 2..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-readonly",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "rubric-judge-only",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: invalid regular expression modifier",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-after",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-nrqxwL/home/cwd\",\"session_id\":\"16ac45a3-f509-4c44-8162-e9331a6dd0ec\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "prompt-scratch",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: unrecognized character after (?",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-premise",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: unrecognized character after (?",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-clean",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: unrecognized character after (?",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "note",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "scratch/arena-poll-frequency/answer.md\nscratch/arena-poll-frequency/candidate-1/answer.md\nscratch/arena-poll-frequency/candidate-1/rationale.md\nscratch/arena-poll-frequency/candidate-2/answer.md\nscratch/arena-poll-frequency/candidate-2/rationale.md\nscratch/arena-poll-frequency/candidate-3/answer.md\nscratch/arena-poll-frequency/candidate-3/rationale.md\nscratch/arena-poll-frequency/synthesis.md"
+       },
+       {
+        "name": "premise-resolved",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "scratch/arena-poll-frequency/answer.md\nscratch/arena-poll-frequency/candidate-1/answer.md\nscratch/arena-poll-frequency/candidate-1/rationale.md\nscratch/arena-poll-frequency/candidate-2/answer.md\nscratch/arena-poll-frequency/candidate-2/rationale.md\nscratch/arena-poll-frequency/candidate-3/answer.md\nscratch/arena-poll-frequency/candidate-3/rationale.md\nscratch/arena-poll-frequency/synthesis.md"
+       },
+       {
+        "name": "verify",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-nrqxwL/home/cwd\",\"session_id\":\"16ac45a3-f509-4c44-8162-e9331a6dd0ec\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "asked",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "Don't make the poll interval the fix. Make the supplier's `stock.changed` webhooks the trigger, and keep polling only as a backstop. Nothing has been run or changed in the service. This is a recommendation, and the only files written are in `scratch/arena-poll-frequency/`.\n\nThe 10-minute poll is the cause of the oversells, which happened \"within minutes\" of supplier changes. Even polling as fast as the limit allows (a full `GET /stock` every 6 seconds, 600 calls an hour) would use the whole budget and still lag a webhook that arrives within seconds.\n\n**What to build (the local copy stays):**\n1 [trimmed]"
+       }
+      ]
+     },
+     {
+      "score": 0.5333333333333333,
+      "passed": false,
+      "turns": 3,
+      "costUsd": 1.4253399,
+      "judgeCostUsd": 0.6254639999999999,
+      "durationSeconds": 129,
+      "startedAt": "2026-10-10T07:01:44.465Z",
+      "error": null,
+      "tracePath": "/private/tmp/e-XVOhYf/out/trace.jsonl",
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "fan-out",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 4..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-fable",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-sonnet",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-opus",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 2x (expected 2..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-readonly",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "rubric-judge-only",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: invalid regular expression modifier",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-after",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-XVOhYf/home/cwd\",\"session_id\":\"ffcf33f1-bd76-4bae-adc8-a1c7ad106a5a\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "prompt-scratch",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: unrecognized character after (?",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-premise",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: unrecognized character after (?",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-clean",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: unrecognized character after (?",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "note",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "scratch/arena-poll/candidate-1/rationale.md\nscratch/arena-poll/candidate-1/recommendation.md\nscratch/arena-poll/candidate-2/rationale.md\nscratch/arena-poll/candidate-2/recommendation.md\nscratch/arena-poll/candidate-3/rationale.md\nscratch/arena-poll/candidate-3/recommendation.md\nscratch/arena-poll/recommendation.md\nscratch/arena-poll/synthesis-note.md"
+       },
+       {
+        "name": "premise-resolved",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "scratch/arena-poll/candidate-1/rationale.md\nscratch/arena-poll/candidate-1/recommendation.md\nscratch/arena-poll/candidate-2/rationale.md\nscratch/arena-poll/candidate-2/recommendation.md\nscratch/arena-poll/candidate-3/rationale.md\nscratch/arena-poll/candidate-3/recommendation.md\nscratch/arena-poll/recommendation.md\nscratch/arena-poll/synthesis-note.md"
+       },
+       {
+        "name": "verify",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-XVOhYf/home/cwd\",\"session_id\":\"ffcf33f1-bd76-4bae-adc8-a1c7ad106a5a\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "asked",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "**Recommendation:** poll `GET /stock?since=` every **5 minutes**, but only as a safety net. Webhooks should keep the stock levels fresh.\n\nA 10-minute poll isn't a settled constraint. The settled ones are the local copy and the limit of 600 calls an hour. The supplier's `stock.changed` webhook arrives within seconds, and both oversells happened inside the current 10-minute gap. Even polling as fast as the limit allows (every 6 seconds) would use the whole budget and still leave a gap.\n\n**Design**\n- **Webhook as a signal:** verify the signature and record the event durably, then return 2xx. Trea [trimmed]"
+       }
+      ]
+     },
+     {
+      "score": 0.5333333333333333,
+      "passed": false,
+      "turns": 2,
+      "costUsd": 2.4288062999999998,
+      "judgeCostUsd": 1.0974079999999997,
+      "durationSeconds": 215,
+      "startedAt": "2026-10-10T07:01:44.465Z",
+      "error": null,
+      "tracePath": "/private/tmp/e-MlD2Wt/out/trace.jsonl",
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "fan-out",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 4..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-fable",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-sonnet",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-opus",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 2x (expected 2..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-readonly",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "rubric-judge-only",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: invalid regular expression modifier",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-after",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-MlD2Wt/home/cwd\",\"session_id\":\"c8cb3345-b575-4d43-ad17-80523459e133\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "prompt-scratch",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: unrecognized character after (?",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-premise",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: unrecognized character after (?",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-clean",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: unrecognized character after (?",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "note",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "scratch/arena-poll/candidate-1/answer.md\nscratch/arena-poll/candidate-2/answer.md\nscratch/arena-poll/candidate-3/answer.md\nscratch/arena-poll/final.md"
+       },
+       {
+        "name": "premise-resolved",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "scratch/arena-poll/candidate-1/answer.md\nscratch/arena-poll/candidate-2/answer.md\nscratch/arena-poll/candidate-3/answer.md\nscratch/arena-poll/final.md"
+       },
+       {
+        "name": "verify",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-MlD2Wt/home/cwd\",\"session_id\":\"c8cb3345-b575-4d43-ad17-80523459e133\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "asked",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "**Poll rarely, and use the supplier's webhooks to keep stock fresh.** Polling stays only as a safety net. If we built this today, the 10-minute full-overwrite job wouldn't exist. The supplier already sends a signed `stock.changed` event within seconds of any change, and `GET /stock?since=` returns only changed SKUs.\n\n1. **Webhooks:** these are the main update path. The handler verifies the signature, queues the event and returns 2xx. It always writes an absolute level, never a delta, so duplicate events are harmless.\n2. **Out-of-order events:** the docs don't say events carry a version or time [trimmed]"
+       }
+      ]
+     },
+     {
+      "score": 0.5333333333333333,
+      "passed": false,
+      "turns": 11,
+      "costUsd": 2.3694260499999995,
+      "judgeCostUsd": 1.4113759999999997,
+      "durationSeconds": 214,
+      "startedAt": "2026-10-10T07:01:44.465Z",
+      "error": null,
+      "tracePath": "/private/tmp/e-PpxWsv/out/trace.jsonl",
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "fan-out",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 4..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-fable",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-sonnet",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-opus",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 2x (expected 2..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-readonly",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "rubric-judge-only",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: invalid regular expression modifier",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-after",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-PpxWsv/home/cwd\",\"session_id\":\"dfbbb98e-20b2-479d-af70-d0319762e245\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "prompt-scratch",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: unrecognized character after (?",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-premise",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: unrecognized character after (?",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-clean",
+        "passed": false,
+        "weight": 1,
+        "explanation": "grader threw: Invalid regular expression: unrecognized character after (?",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "note",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "scratch/arena-poll-interval/candidate-1/rationale.md\nscratch/arena-poll-interval/candidate-1/recommendation.md\nscratch/arena-poll-interval/candidate-2/rationale.md\nscratch/arena-poll-interval/candidate-2/recommendation.md\nscratch/arena-poll-interval/candidate-3/rationale.md\nscratch/arena-poll-interval/candidate-3/recommendation.md\nscratch/arena-poll-interval/final/recommendation.md\nscratch/arena-poll-interval/final/synthesis.md"
+       },
+       {
+        "name": "premise-resolved",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "scratch/arena-poll-interval/candidate-1/rationale.md\nscratch/arena-poll-interval/candidate-1/recommendation.md\nscratch/arena-poll-interval/candidate-2/rationale.md\nscratch/arena-poll-interval/candidate-2/recommendation.md\nscratch/arena-poll-interval/candidate-3/rationale.md\nscratch/arena-poll-interval/candidate-3/recommendation.md\nscratch/arena-poll-interval/final/recommendation.md\nscratch/arena-poll-interval/final/synthesis.md"
+       },
+       {
+        "name": "verify",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-PpxWsv/home/cwd\",\"session_id\":\"dfbbb98e-20b2-479d-af70-d0319762e245\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "asked",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "**Recommendation:** don't tune the poll interval. Make the supplier's `stock.changed` webhooks the main way stock stays current, and keep polling only as a safety net.\n\nThe 10-minute poll isn't a settled constraint. The two oversells came within minutes of a supplier change, which matches that 10-minute lag. Webhooks arrive within seconds, and no poll interval the 600 calls/hour limit allows can match that. Polling every 6 seconds would use the whole budget and still lag.\n\n**Design:**\n- **Webhooks:** verify the signature and write the new level straight to the local copy. Return success only a [trimmed]"
+       }
+      ]
+     }
+    ]
+   },
+   "aggregates": {
+    "score": 0.5333333333333333,
+    "passRate": 0
+   }
+  }
+ ],
+ "aggregates": {
+  "casesTotal": 1,
+  "casesPassed": 1,
+  "overallScore": 0.5333333333333333,
+  "overallPassRate": 0
+ }
+}

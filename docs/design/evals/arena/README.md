@@ -1,0 +1,74 @@
+# Arena eval
+
+Status 2026-10-10: the pass bar is met without `verify`. The user dropped `verify` from the bar after attempt 6, so the 14 gating graders pass 3 of 3 in each of the 3 runs (42 of 42). `verify` still runs and is reported (0 of 3) but does not gate. See `log.md`; raw results are in `results/` (each grader's evidence trimmed to 600 characters).
+
+Tests whether a session told "arena this" on a sample question follows `skills/arena/SKILL.md`: a rubric before fan-out, three candidates on different models, a candidate prompt that makes them question the question's premises, a synthesis note, and a closing message that asks before anything changes.
+
+## Arms
+
+- `skills/arena/SKILL.md` is the skill under test.
+- `arms/careless.md` is a known-bad control. It answers alone and asks one sub-agent to agree. If it passes the graders, they are broken and no result counts.
+
+## Case
+
+`sample-question` is a small repo with two docs. The inventory service polls a supplier API every 10 minutes, and the supplier docs show a `stock.changed` webhook that makes polling unnecessary. The prompt is `Arena this: how often should the inventory service poll the supplier API for stock levels?` The polling premise is the one a candidate should question.
+
+The prompt also names the scratchpad (`scratch/`) and where the final artifact (`artifact.md`) and the note (`note.md`) go.
+
+## Graders, per run
+
+Each grader reads either the arguments of the worker's `Agent` calls (exact checks), a file the worker was told to write, or the transcript. The prompt names only where the work goes (`scratch/`, `artifact.md`, `note.md`) and says nothing about rubrics, tickets or asking.
+
+- `skill-fired`, `fan-out` (at least 4 `Agent` calls), `model-fable`, `model-sonnet`, `model-opus` (at least 2, one is the judge). Exact.
+- `judge-readonly`: an `Agent` call with `subagent_type: "Plan"`. Exact.
+- `rubric-judge-only`: exactly one `Agent` call mentions a rubric or criteria. This is a term check, so it does not rule out scoring guidance phrased without those words. Exact. It does not show the rubric was written before fan-out, because that happens in the worker's reasoning, which the trace doesn't hold. Rubric-before-fan-out is not tested.
+- `prompt-scratch`, `prompt-premise`: at least 3 `Agent` calls contain "from scratch with every signal now available" and "premise". Exact.
+- `prompt-clean`: no `Agent` prompt says the service must, should or needs to poll. Exact and narrow. It passes vacuously for a worker that starts no sub-agents.
+- `judge-after`: an LLM reads the transcript to check the judge started after every candidate finished.
+- `note`, `premise-resolved`: an LLM reads `note.md`.
+- `verify`: an LLM reads the transcript for a check of the artifact against the real material before the final message.
+- `asked`: an LLM reads the worker's last message.
+
+## Bar change after attempt 6 (user decision, 2026-10-10)
+
+`verify` no longer gates. It stays in `case.yaml` and is reported, because it measures a real gap: in the eval, sessions mostly do not re-read the artifact before replying, and the eval worker has no todo tool, so the wording meant to fix it can't be tested here. The remaining thresholds are the attempt 6 thresholds below, applied to the other 14 graders.
+
+## Pass bar for attempt 6 (fixed 2026-10-10, before the run)
+
+The same as for attempt 5 below: 3 runs, every grader 3 of 3, pooled at least 90%, `skill-fired` and `fan-out` 3 of 3, and the control rerun first. The user chose this attempt after attempt 5 failed `verify` 0 of 3. The wording under test adds a todo item 7, a Read of the artifact against the grounding material with the result recorded in the note, before "8. Ask the user".
+
+## Pass bar for attempt 5 (fixed 2026-10-10, before the run)
+
+The user asked for 3 runs per case instead of 5 for this attempt. Four of five is 80%, and two of three is only 67%, so each grader must pass in 3 of 3 runs. All graders pooled must pass in at least 90% of runs, and `skill-fired` and `fan-out` must pass in 3 of 3. The wording under test is the one on the PR after the third skill-creator review plus the two edits reviewed in a fourth. Sensitivity check as below, 2 runs of the control on the final `case.yaml`. Three runs can't show a failure rate under about 35%.
+
+## Original pass bar (fixed 2026-10-10, before any run)
+
+The skill is adopted only if all hold on one attempt of 5 runs, with the skill's wording unchanged since the review that preceded the run.
+
+1. Every grader passes in 4 of 5 runs.
+2. All graders pooled pass in at least 90% of runs.
+3. `skill-fired` and `fan-out` pass in 5 of 5 runs.
+
+Sensitivity check: `arms/careless.md`, 2 runs, must pass fewer than 40% of the non-`skill-fired` graders, pooled. With the final grader set it passed 2 of 28 (7%, `results/attempt4d-control.json`). The control passes only the vacuous `prompt-clean`, and it fails `fan-out` because it starts one sub-agent.
+
+Budget: 5 runs per case, at most 3 attempts (an attempt is a change to the skill's wording followed by 5 runs), no cost ceiling beyond that. Five runs can't show a failure rate under about 20%. If the bar isn't met by attempt 3, the ticket goes to Needs Human with the results so far.
+
+Limits. One case, so the eval shows the phases followed on one question and does not show the arena beats a single attempt. `rubric-judge-only` does not show the rubric came before fan-out. Before attempt 5, `note` also required each candidate's model, which the skill's Outputs section does not ask for. That requirement was removed for attempt 5.
+
+The bar's thresholds did not change. The grader set did, after review (see `log.md`). Changing it goes to the user through Needs Human.
+
+## How to run
+
+```sh
+WORK=$(mktemp -d)
+mkdir -p $WORK/plugin/.claude-plugin $WORK/plugin/skills/arena
+echo '{"name":"worktools","version":"0.1.0","description":"Worker tools."}' > $WORK/plugin/.claude-plugin/plugin.json
+cp -R cases $WORK/plugin/cases
+cp ../../../../skills/arena/SKILL.md $WORK/plugin/skills/arena/SKILL.md   # or arms/careless.md for the control
+cd $WORK/plugin
+PATH=$HOME/.local/bin:$PATH claude plugin eval . --eval-dir cases --runs 5 --ablation none \
+  --allow-tools Write Edit Bash --scaffold --judge-model claude-opus-5-5 --keep-temp --no-publish \
+  --trust-plugin --threshold 0 -j 4 --json $WORK/result.json
+```
+
+Put the real `claude` ahead of dispatch's `scripts/shims/claude` on PATH, because the shim rejects the flags the eval passes.

@@ -1,0 +1,797 @@
+{
+ "schemaVersion": 1,
+ "claudeVersion": "2.1.296",
+ "startedAt": "2026-10-10T04:36:28.590Z",
+ "durationSeconds": 290,
+ "costUsd": 7.65851355,
+ "partial": false,
+ "suite": {
+  "root": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.zqbDdionU1/plugin",
+  "ablation": "none",
+  "judgeModel": "claude-opus-5-5",
+  "threshold": 0,
+  "concurrency": 5,
+  "plugins": [
+   {
+    "name": "worktools",
+    "version": "0.1.0",
+    "path": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.zqbDdionU1/plugin"
+   }
+  ]
+ },
+ "cases": [
+  {
+   "name": "sample-question",
+   "dir": "cases/sample-question",
+   "source": "mixed",
+   "promptMarkdown": "Arena this: how often should the inventory service poll the supplier API for stock levels?\n\nRead `docs/inventory.md` and `docs/supplier-api.md` first. You can't file tickets or change the docs in this session. Keep every file you write under `arena/`, except as follows. Save the exact prompt you give the candidates as `arena/prompt.md` and the rubric as `arena/rubric.md`. Put the final artifact in `artifact.md`, the synthesis note in `note.md`, and your closing message to the user in `final.md`.",
+   "model": "claude-sonnet-5-5",
+   "runsPerCase": 3,
+   "timeoutSeconds": 2400,
+   "maxTurns": 120,
+   "graders": [
+    {
+     "name": "skill-fired",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Skill"
+     }
+    },
+    {
+     "name": "fan-out",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent"
+     }
+    },
+    {
+     "name": "rubric",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the file holds 3 to 6 separately gradeable criteria for judging an answer to the polling question, each stating what a good answer does. FAIL if it is missing, has fewer than 3 or more than 6, or lists vague qualities such as \"quality\" or \"clarity\" with no test.\n",
+     "config": {
+      "criteria": "PASS if the file holds 3 to 6 separately gradeable criteria for judging an answer to the polling question, each stating what a good answer does. FAIL if it is missing, has fewer than 3 or more than 6, or lists vague qualities such as \"quality\" or \"clarity\" with no test.\n",
+      "focus": {
+       "source": "file",
+       "path": "arena/rubric.md"
+      }
+     }
+    },
+    {
+     "name": "candidates",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the note shows at least three independent candidate attempts were made and names which model each ran on, with at least two different models among them. FAIL if it shows fewer than three, or all on one model.\n",
+     "config": {
+      "criteria": "PASS if the note shows at least three independent candidate attempts were made and names which model each ran on, with at least two different models among them. FAIL if it shows fewer than three, or all on one model.\n",
+      "focus": {
+       "source": "file",
+       "path": "note.md"
+      }
+     }
+    },
+    {
+     "name": "prompt-premise",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "This is the prompt given to every candidate. PASS if it tells the candidate to name at least one premise of the question and to answer whether, if the mechanism were built from scratch with every signal now available, it would exist, before answering the question as asked. FAIL if either instruction is missing.\n",
+     "config": {
+      "criteria": "This is the prompt given to every candidate. PASS if it tells the candidate to name at least one premise of the question and to answer whether, if the mechanism were built from scratch with every signal now available, it would exist, before answering the question as asked. FAIL if either instruction is missing.\n",
+      "focus": {
+       "source": "file",
+       "path": "arena/prompt.md"
+      }
+     }
+    },
+    {
+     "name": "prompt-clean",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "The question assumes the service polls, and the supplier docs show a webhook event makes polling unnecessary. PASS if the prompt does not state polling as a fixed requirement or settled constraint (it may mention polling as today's behavior or as the question's subject), and does not hand the candidates the rubric. FAIL if it presents polling as required, or includes the rubric criteria.\n",
+     "config": {
+      "criteria": "The question assumes the service polls, and the supplier docs show a webhook event makes polling unnecessary. PASS if the prompt does not state polling as a fixed requirement or settled constraint (it may mention polling as today's behavior or as the question's subject), and does not hand the candidates the rubric. FAIL if it presents polling as required, or includes the rubric criteria.\n",
+      "focus": {
+       "source": "file",
+       "path": "arena/prompt.md"
+      }
+     }
+    },
+    {
+     "name": "note",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the note names the base candidate, each graft with the candidate it came from (or says there were none and why), what was rejected, any dropouts (or says none), the judge's verdict, and the premises tested with what the candidates concluded about each. FAIL if any of those is missing.\n",
+     "config": {
+      "criteria": "PASS if the note names the base candidate, each graft with the candidate it came from (or says there were none and why), what was rejected, any dropouts (or says none), the judge's verdict, and the premises tested with what the candidates concluded about each. FAIL if any of those is missing.\n",
+      "focus": {
+       "source": "file",
+       "path": "note.md"
+      }
+     }
+    },
+    {
+     "name": "premise-resolved",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the note reports whether any candidate questioned the polling premise. If none did, the note must say the arena was run again with the premise removed from the prompt. If some did, it must say what they concluded. FAIL if the note claims convergence confirms the shape while no candidate tested a premise, or does not address it.\n",
+     "config": {
+      "criteria": "PASS if the note reports whether any candidate questioned the polling premise. If none did, the note must say the arena was run again with the premise removed from the prompt. If some did, it must say what they concluded. FAIL if the note claims convergence confirms the shape while no candidate tested a premise, or does not address it.\n",
+      "focus": {
+       "source": "file",
+       "path": "note.md"
+      }
+     }
+    },
+    {
+     "name": "asked",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the message shows the user the result and asks before anything is filed or changed, and states that nothing was filed or changed. FAIL if it says it filed, edited or changed something, or shows no result, or asks nothing.\n",
+     "config": {
+      "criteria": "PASS if the message shows the user the result and asks before anything is filed or changed, and states that nothing was filed or changed. FAIL if it says it filed, edited or changed something, or shows no result, or asks nothing.\n",
+      "focus": {
+       "source": "file",
+       "path": "final.md"
+      }
+     }
+    }
+   ],
+   "arms": {
+    "with": [
+     {
+      "score": 1,
+      "passed": true,
+      "turns": 11,
+      "costUsd": 1.5633811500000006,
+      "judgeCostUsd": 0.21070800000000034,
+      "durationSeconds": 290,
+      "startedAt": "2026-10-10T04:36:28.608Z",
+      "error": null,
+      "tracePath": "/private/tmp/e-ibXBY3/out/trace.jsonl",
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "fan-out",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "rubric",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Rubric (each criterion 0-2)\n\n1. Premise tested: identifies that polling-as-primary is not a true constraint (webhooks deliver changes within seconds) and argues from the docs, not just names it.\n2. Fixes the actual problem: addresses overselling within minutes of a supplier change, with the resulting staleness bound stated.\n3. Correct arithmetic against the 600/hr limit, including cost of `GET /stock` vs `?since=`, and headroom.\n4. Handles webhook failure modes from the docs: duplicates, out-of-order, retries up to 24h, missed events, signature verification; gives a reconciliation poll inter [trimmed]"
+       },
+       {
+        "name": "candidates",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n\n**Runners:** candidate-1 (opus), candidate-2 (fable), candidate-3 (sonnet). No dropouts, no rejected model values.\n\n**Premise tested:** that polling is the primary refresh mechanism. All three argued from the docs (webhooks within seconds, oversells within minutes) that it is not a true constraint. The 10-minute job is background. Because every candidate tested the premise, their convergence on one shape (webhook primary, `since` reconcile, hourly full sync) is a real agreement signal.\n\n**Cross-judge (opus, Plan, readonly):** C1 12, C2 11, C3 9 out of 12. It recommended C1. M [trimmed]"
+       },
+       {
+        "name": "prompt-premise",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "Question: how often should the inventory service poll the supplier API for stock levels?\n\nGrounding: read `docs/inventory.md` and `docs/supplier-api.md` (paths relative to /private/tmp/e-ibXBY3/home/cwd). You cannot edit those docs or file tickets. Write only inside your own output directory.\n\nBefore answering, name at least one premise the question assumes (for example, that the service must poll at all, or that polling is the way stock gets refreshed). Ask of it: \"if we built this from scratch with every signal now available, would this mechanism exist?\" Argue from the evidence in the docs w [trimmed]"
+       },
+       {
+        "name": "prompt-clean",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "Question: how often should the inventory service poll the supplier API for stock levels?\n\nGrounding: read `docs/inventory.md` and `docs/supplier-api.md` (paths relative to /private/tmp/e-ibXBY3/home/cwd). You cannot edit those docs or file tickets. Write only inside your own output directory.\n\nBefore answering, name at least one premise the question assumes (for example, that the service must poll at all, or that polling is the way stock gets refreshed). Ask of it: \"if we built this from scratch with every signal now available, would this mechanism exist?\" Argue from the evidence in the docs w [trimmed]"
+       },
+       {
+        "name": "note",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n\n**Runners:** candidate-1 (opus), candidate-2 (fable), candidate-3 (sonnet). No dropouts, no rejected model values.\n\n**Premise tested:** that polling is the primary refresh mechanism. All three argued from the docs (webhooks within seconds, oversells within minutes) that it is not a true constraint. The 10-minute job is background. Because every candidate tested the premise, their convergence on one shape (webhook primary, `since` reconcile, hourly full sync) is a real agreement signal.\n\n**Cross-judge (opus, Plan, readonly):** C1 12, C2 11, C3 9 out of 12. It recommended C1. M [trimmed]"
+       },
+       {
+        "name": "premise-resolved",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n\n**Runners:** candidate-1 (opus), candidate-2 (fable), candidate-3 (sonnet). No dropouts, no rejected model values.\n\n**Premise tested:** that polling is the primary refresh mechanism. All three argued from the docs (webhooks within seconds, oversells within minutes) that it is not a true constraint. The 10-minute job is background. Because every candidate tested the premise, their convergence on one shape (webhook primary, `since` reconcile, hourly full sync) is a real agreement signal.\n\n**Cross-judge (opus, Plan, readonly):** C1 12, C2 11, C3 9 out of 12. It recommended C1. M [trimmed]"
+       },
+       {
+        "name": "asked",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "**Recommendation:** don't make polling the main way stock gets refreshed. Use the supplier's `stock.changed` webhooks as the main path. Back them with a `GET /stock?since=` poll every **60 s** and one full `GET /stock` per hour. That is 61 calls/hr, about 10% of the 600/hr limit. Worst-case staleness falls from 10 minutes to seconds, or about 60 s if webhooks are down.\n\n**Why:** the supplier docs say webhooks arrive within seconds, and both oversells came within minutes of a supplier change. Only the local copy and the 600/hr limit are settled. The 10-minute job is not a requirement.\n\n**If you [trimmed]"
+       }
+      ]
+     },
+     {
+      "score": 0.8888888888888888,
+      "passed": false,
+      "turns": 7,
+      "costUsd": 1.7030946,
+      "judgeCostUsd": 0.34845200000000015,
+      "durationSeconds": 256,
+      "startedAt": "2026-10-10T04:36:28.608Z",
+      "error": null,
+      "tracePath": "/private/tmp/e-y3rRni/out/trace.jsonl",
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "fan-out",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "rubric",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Rubric (judge/picker only; candidates never see it)\n\nSuccess: a concrete, actionable answer that fixes the overselling and stays inside the settled constraints, built on a tested premise.\n\n1. Premise tested: argues from the docs that \"poll on a timer\" is not the primary mechanism now that signed `stock.changed` webhooks arrive within seconds (not merely naming it).\n2. Concrete answer: gives a specific interval/cadence for any remaining poll, with arithmetic against the 600/hr limit.\n3. Webhook hazards handled: out-of-order and duplicate events (idempotency, per-SKU ordering), signature verif [trimmed]"
+       },
+       {
+        "name": "candidates",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "# Synthesis note\n\n**Base:** candidate 3 (sonnet). Cross-judge (opus, read-only) scored C3 11/12, C1 10/12, C2 10/12 and recommended C3; my own read agrees. C3 best covered webhook hazards (signature, ordering, 24h retry limit) and had the most honest open items.\n\n**Premise tested:** all three argued from the docs that timer polling is not the primary mechanism (webhooks within seconds, oversells within minutes of a change, 6 s fastest legal poll uses 100% of budget). Convergence on the webhook-primary shape is therefore a real signal. No re-run needed.\n\n**Grafts**\n- C2: full fetch hourly and o [trimmed]"
+       },
+       {
+        "name": "prompt-premise",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Task\n\nQuestion: how often should the inventory service poll the supplier API for stock levels?\n\nRead `docs/inventory.md` and `docs/supplier-api.md` first (paths relative to the repo root, /private/tmp/e-y3rRni/home/cwd). Do not edit them. Do not file tickets. Write only inside your own output directory.\n\nBackground (current state, which you may drop if it doesn't hold up): a job calls `GET /stock` every 10 minutes and overwrites the local copy.\n\nConstraints (settled): the local copy must stay; the supplier API allows 600 calls an hour per key.\n\nBefore answering the question as asked, name at [trimmed]"
+       },
+       {
+        "name": "prompt-clean",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Task\n\nQuestion: how often should the inventory service poll the supplier API for stock levels?\n\nRead `docs/inventory.md` and `docs/supplier-api.md` first (paths relative to the repo root, /private/tmp/e-y3rRni/home/cwd). Do not edit them. Do not file tickets. Write only inside your own output directory.\n\nBackground (current state, which you may drop if it doesn't hold up): a job calls `GET /stock` every 10 minutes and overwrites the local copy.\n\nConstraints (settled): the local copy must stay; the supplier API allows 600 calls an hour per key.\n\nBefore answering the question as asked, name at [trimmed]"
+       },
+       {
+        "name": "note",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n\n**Base:** candidate 3 (sonnet). Cross-judge (opus, read-only) scored C3 11/12, C1 10/12, C2 10/12 and recommended C3; my own read agrees. C3 best covered webhook hazards (signature, ordering, 24h retry limit) and had the most honest open items.\n\n**Premise tested:** all three argued from the docs that timer polling is not the primary mechanism (webhooks within seconds, oversells within minutes of a change, 6 s fastest legal poll uses 100% of budget). Convergence on the webhook-primary shape is therefore a real signal. No re-run needed.\n\n**Grafts**\n- C2: full fetch hourly and o [trimmed]"
+       },
+       {
+        "name": "premise-resolved",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n\n**Base:** candidate 3 (sonnet). Cross-judge (opus, read-only) scored C3 11/12, C1 10/12, C2 10/12 and recommended C3; my own read agrees. C3 best covered webhook hazards (signature, ordering, 24h retry limit) and had the most honest open items.\n\n**Premise tested:** all three argued from the docs that timer polling is not the primary mechanism (webhooks within seconds, oversells within minutes of a change, 6 s fastest legal poll uses 100% of budget). Convergence on the webhook-primary shape is therefore a real signal. No re-run needed.\n\n**Grafts**\n- C2: full fetch hourly and o [trimmed]"
+       },
+       {
+        "name": "asked",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "Recommendation: don't tune the poll interval. Make the supplier's `stock.changed` webhook the primary path, because it arrives within seconds. Both oversells happened within minutes of a supplier change, which matches the 10-minute lag. Polling at the fastest legal rate (every 6 s) would use the whole 600/hr budget and still lag the webhook.\n\n- Webhook: verify the signature, upsert the SKU.\n- Safety net: `GET /stock?since=` every 5 minutes (12 calls/hr).\n- Full `GET /stock`: hourly and on startup, without overwriting SKUs a webhook updated mid-request.\n- Alert when the safety poll finds any ch [trimmed]"
+       }
+      ]
+     },
+     {
+      "score": 1,
+      "passed": true,
+      "turns": 4,
+      "costUsd": 1.4672358499999998,
+      "judgeCostUsd": 0.28459200000000007,
+      "durationSeconds": 239,
+      "startedAt": "2026-10-10T04:36:28.608Z",
+      "error": null,
+      "tracePath": "/private/tmp/e-Rq9N0u/out/trace.jsonl",
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "fan-out",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "rubric",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Rubric (not shown to candidates)\n\nSuccess: a maintainer can act on it, it fixes the overselling, and it respects the real constraints without inheriting the fixed-interval premise.\n\n1. Premise tested: names the polling/fixed-interval premise and argues from the docs (webhooks arrive within seconds) whether it is a true constraint. Naming alone fails.\n2. Fixes the stated problem: oversells happen within minutes of a change, so the design bounds staleness to seconds, not minutes.\n3. Numbers hold: stays under 600 calls/hr with stated headroom; interval or cadence is concrete and the arithmetic  [trimmed]"
+       },
+       {
+        "name": "candidates",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n\n**Runners:** opus (candidate-1), fable (candidate-2), sonnet (candidate-3). All three seats ran on the requested models; no dropouts.\n\n**Convergence:** all three chose webhooks as primary, a 60 s `since` delta poll as the safety net, and a periodic full snapshot. Each one tested the premises (polling as mechanism, fixed interval as the knob) against the docs instead of just naming them, so the shape is confirmed and no re-run was needed.\n\n**Base: candidate-1.** Cross-judge (opus, read-only) scored it 29 vs 27 (C2) vs 26 (C3) and recommended it. I read all three first and lean [trimmed]"
+       },
+       {
+        "name": "prompt-premise",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Task\n\nQuestion: how often should the inventory service poll the supplier API for stock levels?\n\nRead `docs/inventory.md` and `docs/supplier-api.md` first (paths relative to the repo root, `/private/tmp/e-Rq9N0u/home/cwd`). Do not edit them. Do not file tickets.\n\nBackground (from the docs, not all of it is a hard constraint): today a job calls `GET /stock` every 10 minutes and overwrites the local copy. The storefront oversold twice this quarter, both times within minutes of a supplier stock change.\n\nHard constraints: the local copy stays (the storefront can't call the supplier on a page view [trimmed]"
+       },
+       {
+        "name": "prompt-clean",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Task\n\nQuestion: how often should the inventory service poll the supplier API for stock levels?\n\nRead `docs/inventory.md` and `docs/supplier-api.md` first (paths relative to the repo root, `/private/tmp/e-Rq9N0u/home/cwd`). Do not edit them. Do not file tickets.\n\nBackground (from the docs, not all of it is a hard constraint): today a job calls `GET /stock` every 10 minutes and overwrites the local copy. The storefront oversold twice this quarter, both times within minutes of a supplier stock change.\n\nHard constraints: the local copy stays (the storefront can't call the supplier on a page view [trimmed]"
+       },
+       {
+        "name": "note",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n\n**Runners:** opus (candidate-1), fable (candidate-2), sonnet (candidate-3). All three seats ran on the requested models; no dropouts.\n\n**Convergence:** all three chose webhooks as primary, a 60 s `since` delta poll as the safety net, and a periodic full snapshot. Each one tested the premises (polling as mechanism, fixed interval as the knob) against the docs instead of just naming them, so the shape is confirmed and no re-run was needed.\n\n**Base: candidate-1.** Cross-judge (opus, read-only) scored it 29 vs 27 (C2) vs 26 (C3) and recommended it. I read all three first and lean [trimmed]"
+       },
+       {
+        "name": "premise-resolved",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n\n**Runners:** opus (candidate-1), fable (candidate-2), sonnet (candidate-3). All three seats ran on the requested models; no dropouts.\n\n**Convergence:** all three chose webhooks as primary, a 60 s `since` delta poll as the safety net, and a periodic full snapshot. Each one tested the premises (polling as mechanism, fixed interval as the knob) against the docs instead of just naming them, so the shape is confirmed and no re-run was needed.\n\n**Base: candidate-1.** Cross-judge (opus, read-only) scored it 29 vs 27 (C2) vs 26 (C3) and recommended it. I read all three first and lean [trimmed]"
+       },
+       {
+        "name": "asked",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "I'd stop treating the poll interval as the way to get freshness. The supplier sends a signed `stock.changed` webhook within seconds of a change, so that should be the main path. Polling then becomes a safety net.\n\n**Poll cadence:**\n- Call `GET /stock?since=` every 60 s when idle, and 10 s after a webhook arrives.\n- Call the full `GET /stock` hourly and at startup.\n- If webhooks can't ship yet, poll `?since=` every 30 s. That is 120 calls an hour, and I wouldn't go below 15 s.\n\n**Budget:** the worst case is about 365 of the 600 calls an hour, and typical use is 60 to 100.\n\n**Why this fixes the  [trimmed]"
+       }
+      ]
+     },
+     {
+      "score": 1,
+      "passed": true,
+      "turns": 2,
+      "costUsd": 1.42925645,
+      "judgeCostUsd": 0.29355600000000004,
+      "durationSeconds": 238,
+      "startedAt": "2026-10-10T04:36:28.608Z",
+      "error": null,
+      "tracePath": "/private/tmp/e-WmKfOQ/out/trace.jsonl",
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "fan-out",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "rubric",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Rubric (not shown to candidates)\nSuccess: a recommendation the team can act on that actually addresses the oversell incidents within the settled constraints (local copy stays; 600 calls/hr/key).\n1. Premise tested: argues from the docs (webhooks push changes within seconds) that fixed-interval polling need not be the primary freshness mechanism, rather than just tuning the interval.\n2. Concrete and correct numbers: states a cadence/mechanism; rate-limit arithmetic is right (600/hr = 1 per 6s; 10 min = 6/hr).\n3. Handles webhook caveats: signature verification, duplicates, out-of-order (needs p [trimmed]"
+       },
+       {
+        "name": "candidates",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n- **Candidates:** 1 = opus, 2 = fable, 3 = sonnet. All three ran on the requested models, and none dropped out.\n- **Cross-judge** (Plan, opus, readonly): C1 28, C2 28, C3 26 out of 30. It recommended C2 as the base on the tie-break. I read all three end to end and agree.\n- **Base: candidate 2.** It has the most robust ack semantics (persist, then 2xx), flags its unknowns, and its reconcile cadence is tied to the incident window at 10% of budget.\n- **Convergence:** all three rejected the polling premise and argued it from the docs (webhooks within seconds; 600/hr is one call pe [trimmed]"
+       },
+       {
+        "name": "prompt-premise",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Task\n\nQuestion: how often should the inventory service poll the supplier API for stock levels?\n\nRead `docs/inventory.md` and `docs/supplier-api.md` first (paths relative to the repo root, /private/tmp/e-WmKfOQ/home/cwd). Do not modify them, file tickets, or write anywhere except your own output directory.\n\nBefore answering the question as asked, do this:\n1. Name at least one premise the question assumes (e.g. an existing mechanism or timer).\n2. Ask: \"if we built this from scratch with every signal now available, would this mechanism exist?\" Argue from evidence in the docs (not just by naming [trimmed]"
+       },
+       {
+        "name": "prompt-clean",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Task\n\nQuestion: how often should the inventory service poll the supplier API for stock levels?\n\nRead `docs/inventory.md` and `docs/supplier-api.md` first (paths relative to the repo root, /private/tmp/e-WmKfOQ/home/cwd). Do not modify them, file tickets, or write anywhere except your own output directory.\n\nBefore answering the question as asked, do this:\n1. Name at least one premise the question assumes (e.g. an existing mechanism or timer).\n2. Ask: \"if we built this from scratch with every signal now available, would this mechanism exist?\" Argue from evidence in the docs (not just by naming [trimmed]"
+       },
+       {
+        "name": "note",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n- **Candidates:** 1 = opus, 2 = fable, 3 = sonnet. All three ran on the requested models, and none dropped out.\n- **Cross-judge** (Plan, opus, readonly): C1 28, C2 28, C3 26 out of 30. It recommended C2 as the base on the tie-break. I read all three end to end and agree.\n- **Base: candidate 2.** It has the most robust ack semantics (persist, then 2xx), flags its unknowns, and its reconcile cadence is tied to the incident window at 10% of budget.\n- **Convergence:** all three rejected the polling premise and argued it from the docs (webhooks within seconds; 600/hr is one call pe [trimmed]"
+       },
+       {
+        "name": "premise-resolved",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n- **Candidates:** 1 = opus, 2 = fable, 3 = sonnet. All three ran on the requested models, and none dropped out.\n- **Cross-judge** (Plan, opus, readonly): C1 28, C2 28, C3 26 out of 30. It recommended C2 as the base on the tie-break. I read all three end to end and agree.\n- **Base: candidate 2.** It has the most robust ack semantics (persist, then 2xx), flags its unknowns, and its reconcile cadence is tied to the incident window at 10% of budget.\n- **Convergence:** all three rejected the polling premise and argued it from the docs (webhooks within seconds; 600/hr is one call pe [trimmed]"
+       },
+       {
+        "name": "asked",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "Poll `GET /stock?since=` every 60 s, with a full `GET /stock` hourly. Make the `stock.changed` webhook the primary feed, since the supplier already pushes changes within seconds. That is about 61 of your 600 calls/hour.\n\nThe 10-minute timer isn't one of your settled constraints, and it is what leaves the window your two oversells fell into. Polling faster can't close it. 600/hour is one call every 6 s, so even spending the whole budget leaves a gap.\n\n- **Webhooks:** verify the signature and save the event before returning 2xx. Duplicates are harmless because events carry the absolute level.\n-  [trimmed]"
+       }
+      ]
+     },
+     {
+      "score": 1,
+      "passed": true,
+      "turns": 7,
+      "costUsd": 1.4955455000000004,
+      "judgeCostUsd": 0.3245680000000004,
+      "durationSeconds": 288,
+      "startedAt": "2026-10-10T04:36:28.608Z",
+      "error": null,
+      "tracePath": "/private/tmp/e-gzdb6J/out/trace.jsonl",
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "fan-out",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "rubric",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Rubric (not shown to candidates)\n1. Premise tested: identifies that fixed-interval polling as the primary freshness mechanism is not a true constraint, with evidence (webhooks deliver within seconds; oversells happen within minutes of changes; 10 min interval is the cause).\n2. Fixes the actual problem: oversell window shrinks from ~10 min to seconds.\n3. Handles webhook realities: signature verification, duplicates, out-of-order events (needs versioning/timestamp or reconcile), retries, outages.\n4. Polling retained sensibly as reconciliation: uses `?since=` / full `GET /stock` at a rate justi [trimmed]"
+       },
+       {
+        "name": "candidates",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n**Question:** how often should inventory poll the supplier API for stock?\n**Answer shape:** webhooks primary; poll `?since` every 5 min, full read hourly.\n\n**Runners:** opus (C1), fable (C2), sonnet (C3). No dropouts, no rejected `model` values. Cross-judge: Plan/opus, readonly.\n\n**Premise tested:** \"fixed-interval polling is the primary freshness mechanism.\" All three rejected it with evidence (webhooks within seconds; oversells within minutes of changes; 600/h allows only one call per 6s). Convergence is therefore meaningful, not an untested-premise artefact.\n\n**Base: C1** ( [trimmed]"
+       },
+       {
+        "name": "prompt-premise",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Task\n\nQuestion from the user: \"How often should the inventory service poll the supplier API for stock levels?\"\n\nRead `docs/inventory.md` and `docs/supplier-api.md` first (paths relative to /private/tmp/e-gzdb6J/home/cwd). Do not modify them. You cannot file tickets.\n\nProduce a recommendation the team can act on.\n\n## Required first step\nBefore answering the question as asked, name at least one premise the question assumes. For each, answer: \"If we built this from scratch with every signal now available, would this mechanism exist?\" If the answer is no, say so first. Argue from evidence in the [trimmed]"
+       },
+       {
+        "name": "prompt-clean",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Task\n\nQuestion from the user: \"How often should the inventory service poll the supplier API for stock levels?\"\n\nRead `docs/inventory.md` and `docs/supplier-api.md` first (paths relative to /private/tmp/e-gzdb6J/home/cwd). Do not modify them. You cannot file tickets.\n\nProduce a recommendation the team can act on.\n\n## Required first step\nBefore answering the question as asked, name at least one premise the question assumes. For each, answer: \"If we built this from scratch with every signal now available, would this mechanism exist?\" If the answer is no, say so first. Argue from evidence in the [trimmed]"
+       },
+       {
+        "name": "note",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n**Question:** how often should inventory poll the supplier API for stock?\n**Answer shape:** webhooks primary; poll `?since` every 5 min, full read hourly.\n\n**Runners:** opus (C1), fable (C2), sonnet (C3). No dropouts, no rejected `model` values. Cross-judge: Plan/opus, readonly.\n\n**Premise tested:** \"fixed-interval polling is the primary freshness mechanism.\" All three rejected it with evidence (webhooks within seconds; oversells within minutes of changes; 600/h allows only one call per 6s). Convergence is therefore meaningful, not an untested-premise artefact.\n\n**Base: C1** ( [trimmed]"
+       },
+       {
+        "name": "premise-resolved",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n**Question:** how often should inventory poll the supplier API for stock?\n**Answer shape:** webhooks primary; poll `?since` every 5 min, full read hourly.\n\n**Runners:** opus (C1), fable (C2), sonnet (C3). No dropouts, no rejected `model` values. Cross-judge: Plan/opus, readonly.\n\n**Premise tested:** \"fixed-interval polling is the primary freshness mechanism.\" All three rejected it with evidence (webhooks within seconds; oversells within minutes of changes; 600/h allows only one call per 6s). Convergence is therefore meaningful, not an untested-premise artefact.\n\n**Base: C1** ( [trimmed]"
+       },
+       {
+        "name": "asked",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "**Recommendation:** polling frequency is the wrong lever. Use the supplier's `stock.changed` webhooks as the primary feed, and demote polling to a safety net: `GET /stock?since=` every 5 minutes and a full `GET /stock` hourly.\n\n- **Why:** both oversells came within minutes of a supplier change, which matches the 10-minute poll lag. Even polling at the 600/hour limit (once per 6s) would use the whole quota and still trail the webhook.\n- **Out-of-order events:** a webhook marks its SKU unconfirmed. A full `GET /stock` then runs at most every 15s and corrects it. Worst case is about 253 calls/hou [trimmed]"
+       }
+      ]
+     }
+    ]
+   },
+   "aggregates": {
+    "score": 0.9777777777777779,
+    "passRate": 0.8
+   }
+  }
+ ],
+ "aggregates": {
+  "casesTotal": 1,
+  "casesPassed": 1,
+  "overallScore": 0.9777777777777779,
+  "overallPassRate": 0.8
+ }
+}

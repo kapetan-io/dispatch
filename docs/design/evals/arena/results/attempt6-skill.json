@@ -1,0 +1,697 @@
+{
+ "schemaVersion": 1,
+ "claudeVersion": "2.1.296",
+ "startedAt": "2026-10-10T07:50:52.829Z",
+ "durationSeconds": 309,
+ "costUsd": 6.59336615,
+ "partial": false,
+ "suite": {
+  "root": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.DtLv22w9HH/plugin",
+  "ablation": "none",
+  "judgeModel": "claude-opus-5-5",
+  "threshold": 0,
+  "concurrency": 5,
+  "plugins": [
+   {
+    "name": "worktools",
+    "version": "0.1.0",
+    "path": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.DtLv22w9HH/plugin"
+   }
+  ]
+ },
+ "cases": [
+  {
+   "name": "sample-question",
+   "dir": "cases/sample-question",
+   "source": "mixed",
+   "promptMarkdown": "Arena this: how often should the inventory service poll the supplier API for stock levels?\n\nRead `docs/inventory.md` and `docs/supplier-api.md` first. Your scratchpad directory is `scratch/`. Write the final artifact to `artifact.md` and the note to `note.md`.",
+   "model": "claude-sonnet-5-5",
+   "runsPerCase": 3,
+   "timeoutSeconds": 2400,
+   "maxTurns": 120,
+   "graders": [
+    {
+     "name": "skill-fired",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Skill"
+     }
+    },
+    {
+     "name": "fan-out",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "min": 4
+     }
+    },
+    {
+     "name": "model-fable",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "\"model\"\\s*:\\s*\"fable\"",
+      "min": 1
+     }
+    },
+    {
+     "name": "model-sonnet",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "\"model\"\\s*:\\s*\"sonnet\"",
+      "min": 1
+     }
+    },
+    {
+     "name": "model-opus",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "\"model\"\\s*:\\s*\"opus\"",
+      "min": 2
+     }
+    },
+    {
+     "name": "judge-readonly",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "\"subagent_type\"\\s*:\\s*\"Plan\"",
+      "min": 1
+     }
+    },
+    {
+     "name": "rubric-judge-only",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "[Rr]ubric|[Cc]riteri",
+      "min": 1,
+      "max": 1
+     }
+    },
+    {
+     "name": "judge-after",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the Agent call that starts the judge (the one asked to score the candidates against the rubric) comes after the results or completion notices of every candidate Agent call, and the candidates and the judge were not started in one message. FAIL if the judge starts in the same message as the candidates or before all candidates finished, or if there is no judge call.\n",
+     "config": {
+      "criteria": "PASS if the Agent call that starts the judge (the one asked to score the candidates against the rubric) comes after the results or completion notices of every candidate Agent call, and the candidates and the judge were not started in one message. FAIL if the judge starts in the same message as the candidates or before all candidates finished, or if there is no judge call.\n",
+      "focus": "trace"
+     }
+    },
+    {
+     "name": "prompt-scratch",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "from scratch with every signal now available",
+      "min": 3
+     }
+    },
+    {
+     "name": "prompt-premise",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "[Pp]remise",
+      "min": 3
+     }
+    },
+    {
+     "name": "prompt-clean",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Agent",
+      "input_match": "(must|should|need to|needs to|has to|required to)\\s+(keep\\s+)?poll",
+      "min": 0,
+      "max": 0
+     }
+    },
+    {
+     "name": "note",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if it names the base candidate, each graft with the candidate it came from (or says there were none and why), what was rejected, any dropouts (or says none), the judge's verdict, and the premises tested with what the candidates concluded about each. FAIL if there is no such note or any of those is missing.\n",
+     "config": {
+      "criteria": "PASS if it names the base candidate, each graft with the candidate it came from (or says there were none and why), what was rejected, any dropouts (or says none), the judge's verdict, and the premises tested with what the candidates concluded about each. FAIL if there is no such note or any of those is missing.\n",
+      "focus": {
+       "source": "file",
+       "path": "note.md"
+      }
+     }
+    },
+    {
+     "name": "premise-resolved",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if it reports whether any candidate tested the polling premise (argued from evidence, not only named it). If none did, it must say the arena was run again with the premise removed from the prompt. If some did, it must say what they concluded. FAIL if the note claims convergence confirms the shape while no candidate tested a premise, or does not address it.\n",
+     "config": {
+      "criteria": "PASS if it reports whether any candidate tested the polling premise (argued from evidence, not only named it). If none did, it must say the arena was run again with the premise removed from the prompt. If some did, it must say what they concluded. FAIL if the note claims convergence confirms the shape while no candidate tested a premise, or does not address it.\n",
+      "focus": {
+       "source": "file",
+       "path": "note.md"
+      }
+     }
+    },
+    {
+     "name": "verify",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if, after producing the synthesized artifact and before the final message, the worker checked it against the real material (for example re-read the supplier docs and compared the artifact's claims, or checked each rubric criterion against the final text). FAIL if it went straight from synthesizing to the final message.\n",
+     "config": {
+      "criteria": "PASS if, after producing the synthesized artifact and before the final message, the worker checked it against the real material (for example re-read the supplier docs and compared the artifact's claims, or checked each rubric criterion against the final text). FAIL if it went straight from synthesizing to the final message.\n",
+      "focus": "trace"
+     }
+    },
+    {
+     "name": "asked",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the message shows the user the result and asks before anything is filed or changed, and states that nothing was filed or changed. FAIL if it says it filed, edited or changed something outside its own working files, or shows no result, or asks nothing.\n",
+     "config": {
+      "criteria": "PASS if the message shows the user the result and asks before anything is filed or changed, and states that nothing was filed or changed. FAIL if it says it filed, edited or changed something outside its own working files, or shows no result, or asks nothing.\n",
+      "focus": "last_message"
+     }
+    }
+   ],
+   "arms": {
+    "with": [
+     {
+      "score": 0.9333333333333333,
+      "passed": false,
+      "turns": 3,
+      "costUsd": 2.40084885,
+      "judgeCostUsd": 1.197816,
+      "durationSeconds": 211,
+      "startedAt": "2026-10-10T07:50:52.845Z",
+      "error": null,
+      "tracePath": "/private/tmp/e-FVuBJV/out/trace.jsonl",
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "fan-out",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 4..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-fable",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-sonnet",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-opus",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 2x (expected 2..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-readonly",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "rubric-judge-only",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..1)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-after",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-FVuBJV/home/cwd\",\"session_id\":\"116a485a-dc9d-4a49-b74e-63cfaaf34b73\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "prompt-scratch",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 3x (expected 3..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-premise",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 3..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-clean",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 0x (expected 0..0)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "note",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n\n- **Base:** candidate 3 (sonnet). The cross-judge preferred candidate 1 (23/21/20 for C1/C2/C3), but also found the same flaw in C1 and C2 that I did: they claim out-of-order or late-retried events are corrected within 60 s, which is false. A late retry re-applies an old level to a SKU the `since` poll no longer returns, so it stays wrong until the full sweep (1 h in C1, 6 h in C2). C3's trigger-then-fetch design avoids this. Final shape is C3 base plus C1's grafts, which is what the judge's first graft suggestion amounts to.\n- **Grafts:**\n  - From C1: the 60 s `since` reconc [trimmed]"
+       },
+       {
+        "name": "premise-resolved",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n\n- **Base:** candidate 3 (sonnet). The cross-judge preferred candidate 1 (23/21/20 for C1/C2/C3), but also found the same flaw in C1 and C2 that I did: they claim out-of-order or late-retried events are corrected within 60 s, which is false. A late retry re-applies an old level to a SKU the `since` poll no longer returns, so it stays wrong until the full sweep (1 h in C1, 6 h in C2). C3's trigger-then-fetch design avoids this. Final shape is C3 base plus C1's grafts, which is what the judge's first graft suggestion amounts to.\n- **Grafts:**\n  - From C1: the 60 s `since` reconc [trimmed]"
+       },
+       {
+        "name": "verify",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-FVuBJV/home/cwd\",\"session_id\":\"116a485a-dc9d-4a49-b74e-63cfaaf34b73\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "asked",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "The polling interval is the wrong thing to tune. I recommend making the supplier's `stock.changed` webhook the trigger for updates and keeping polling only as a backstop.\n\nBoth oversells happened \"within minutes\" of a supplier change, which is the gap a 10-minute poll leaves. The webhook arrives within seconds and costs no API calls. The local copy and the 600 calls/hour limit both still hold.\n\n- **Webhook as trigger:** a webhook event only schedules a fetch of `GET /stock?since=<watermark>`, at most one per 15 s. I don't apply the event's level directly. Events can be duplicated, reordered, o [trimmed]"
+       }
+      ]
+     },
+     {
+      "score": 0.9333333333333333,
+      "passed": false,
+      "turns": 8,
+      "costUsd": 1.8833479999999998,
+      "judgeCostUsd": 0.6736879999999996,
+      "durationSeconds": 309,
+      "startedAt": "2026-10-10T07:50:52.845Z",
+      "error": null,
+      "tracePath": "/private/tmp/e-CZDPML/out/trace.jsonl",
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "fan-out",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 4..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-fable",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-sonnet",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-opus",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 2x (expected 2..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-readonly",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "rubric-judge-only",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..1)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-after",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-CZDPML/home/cwd\",\"session_id\":\"64028cb1-9c97-440c-afa9-c232c7efd2f6\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "prompt-scratch",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 3x (expected 3..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-premise",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 3..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-clean",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 0x (expected 0..0)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "note",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n\n**Question:** how often should the inventory service poll the supplier API?\n\n**Candidates:** 1 (opus), 2 (fable), 3 (sonnet). All ran on the requested models, with no dropouts. Files are in `scratch/arena-poll/`.\n\n**Cross-judge (opus, readonly):** recommended candidate 1 as base. Scores were C1 23, C2 20, C3 21 out of 25. I read all three end to end and agree.\n\n**Premises tested:** all three challenged \"the 10-minute `GET /stock` job is the mechanism\" and argued from the docs. Evidence cited: webhooks arrive within seconds, the oversells happened within minutes, and only two  [trimmed]"
+       },
+       {
+        "name": "premise-resolved",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Synthesis note\n\n**Question:** how often should the inventory service poll the supplier API?\n\n**Candidates:** 1 (opus), 2 (fable), 3 (sonnet). All ran on the requested models, with no dropouts. Files are in `scratch/arena-poll/`.\n\n**Cross-judge (opus, readonly):** recommended candidate 1 as base. Scores were C1 23, C2 20, C3 21 out of 25. I read all three end to end and agree.\n\n**Premises tested:** all three challenged \"the 10-minute `GET /stock` job is the mechanism\" and argued from the docs. Evidence cited: webhooks arrive within seconds, the oversells happened within minutes, and only two  [trimmed]"
+       },
+       {
+        "name": "verify",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-CZDPML/home/cwd\",\"session_id\":\"64028cb1-9c97-440c-afa9-c232c7efd2f6\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "asked",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "Poll `GET /stock?since=` every 60 seconds as a backstop, and run a full `GET /stock` once an hour. Let the supplier's `stock.changed` webhook keep the copy fresh. The 10-minute job shouldn't be the freshness mechanism at all.\n\n- **Why not just tune the interval:** polling can't beat webhooks inside the rate limit. The fastest legal rate (one call per 6 seconds) uses the whole budget. Both oversells happened within minutes of a supplier change, which is the window a 10-minute poll leaves open. Only two constraints are actually settled: keep the local copy, and stay within 600 calls an hour.\n- * [trimmed]"
+       }
+      ]
+     },
+     {
+      "score": 0.9333333333333333,
+      "passed": false,
+      "turns": 3,
+      "costUsd": 2.3091692999999998,
+      "judgeCostUsd": 1.1840639999999998,
+      "durationSeconds": 201,
+      "startedAt": "2026-10-10T07:50:52.845Z",
+      "error": null,
+      "tracePath": "/private/tmp/e-ciVGAR/out/trace.jsonl",
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "fan-out",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 4..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-fable",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-sonnet",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "model-opus",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 2x (expected 2..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-readonly",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "rubric-judge-only",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 1x (expected 1..1)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "judge-after",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-ciVGAR/home/cwd\",\"session_id\":\"a8b9dcca-a2b6-4f1d-ac9d-8b7cc5ae9885\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "prompt-scratch",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 3x (expected 3..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-premise",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 4x (expected 3..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "prompt-clean",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Agent called 0x (expected 0..0)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "note",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Arena synthesis note\n\n**Task:** how often should the inventory service poll the supplier API for stock levels?\n\n**Candidates:** opus (1), fable (2), sonnet (3). No dropouts; all three accepted their `model` value.\n\n**Cross-judge (opus, Plan, read-only):** scored C3 23, C1 21, C2 20; recommended C3 as base. My own read agreed, so there was no disagreement to resolve.\n\n**Base:** candidate 3. It was shortest, had correct arithmetic, kept doc facts apart from judgment calls, and was the only one to flag that `?since=` may count against the limit. Its hourly full pull also covers late-retried sta [trimmed]"
+       },
+       {
+        "name": "premise-resolved",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Arena synthesis note\n\n**Task:** how often should the inventory service poll the supplier API for stock levels?\n\n**Candidates:** opus (1), fable (2), sonnet (3). No dropouts; all three accepted their `model` value.\n\n**Cross-judge (opus, Plan, read-only):** scored C3 23, C1 21, C2 20; recommended C3 as base. My own read agreed, so there was no disagreement to resolve.\n\n**Base:** candidate 3. It was shortest, had correct arithmetic, kept doc facts apart from judgment calls, and was the only one to flag that `?since=` may count against the limit. Its hourly full pull also covers late-retried sta [trimmed]"
+       },
+       {
+        "name": "verify",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/private/tmp/e-ciVGAR/home/cwd\",\"session_id\":\"a8b9dcca-a2b6-4f1d-ac9d-8b7cc5ae9885\",\"tools\":[\"Task\",\"Bash\",\"Edit\",\"Glob\",\"Grep\",\"NotebookEdit\",\"Read\",\"Skill\",\"TaskStop\",\"ToolSearch\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[\"deep-research\",\"worktools:arena\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"schedule\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"plugin-authoring\",\"agents\",\"auto-mode-setup\",\"autoc [trimmed]"
+       },
+       {
+        "name": "asked",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "I wrote `artifact.md` and `note.md` in the working directory. I haven't changed anything outside the `scratch/` arena folders and those two files.\n\n**Answer:** Don't treat polling as the way the service learns about stock changes. The supplier's `stock.changed` webhook arrives within seconds, and both oversells happened within minutes of a supplier change, which is the window a 10-minute poll leaves open. Polling faster can't close it. Make the webhook the main update path and poll only to repair drift:\n- **Delta poll:** `GET /stock?since=<last sync>` every **5 minutes** (12 calls/hr).\n- **Ful [trimmed]"
+       }
+      ]
+     }
+    ]
+   },
+   "aggregates": {
+    "score": 0.9333333333333332,
+    "passRate": 0
+   }
+  }
+ ],
+ "aggregates": {
+  "casesTotal": 1,
+  "casesPassed": 1,
+  "overallScore": 0.9333333333333332,
+  "overallPassRate": 0
+ }
+}
