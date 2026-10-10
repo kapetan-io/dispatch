@@ -234,7 +234,7 @@ func buildCase(ctx context.Context, f buildFlags, out string, c Case) error {
 	if err := os.MkdirAll(fixture, 0o755); err != nil {
 		return err
 	}
-	tarball, err := exec.CommandContext(ctx, "git", "-C", f.repo, "archive", c.Fixture, "--", ".", ":(exclude)docs/design/evals").Output()
+	tarball, err := exec.CommandContext(ctx, "git", "-C", f.repo, "archive", c.Fixture, "--", ".", ":(exclude)docs/design/evals", ":(exclude)evals").Output()
 	if err != nil {
 		return fmt.Errorf("while archiving %s: %w", c.Fixture, err)
 	}

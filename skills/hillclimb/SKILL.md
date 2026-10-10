@@ -7,7 +7,7 @@ description: Improve a skill's wording against a frozen `claude plugin eval` sui
 
 Change one piece of wording, measure it with a suite that doesn't move, and keep or revert the change.
 
-The suite lives next to the skill, such as `docs/design/evals/<name>/`: `cases.json`, the arms (each is the whole skill with only the wording under test replaced), a `README.md`, a `log.md` and `results/`. If there is no suite, build one under the same rules.
+The suite lives in `evals/<skill>/` at the repo root. A skill with several suites puts each in `evals/<skill>/<suite>/`. Name each case `<skill>-<scenario>` so names stay unique across suites. A suite holds `cases.json` (or `cases/`), `arms/` (each arm is the whole skill with only the wording under test replaced), `README.md`, `log.md` and `results/`. If there is no suite, build one under the same rules.
 
 Every score the log cites needs its `claude plugin eval` result JSON in `results/`, committed with the `log.md` entry that cites it. That covers the baseline, control, attempts and reruns, partial ones too. A score with no committed file doesn't count, because a later reader can't recheck it.
 
@@ -15,7 +15,7 @@ Every score the log cites needs its `claude plugin eval` result JSON in `results
 
 1. **Commit the pass bar** in the suite's `README.md` (git commit) before any run. Give numbers per case and pooled, plus one confirmation rerun of the final wording. Set the numbers from what you need, not from what the baseline scores. Changing the bar later is a product call, so ask the user, and never relax it to pass.
 2. **Fail a known-bad control.** Write an arm that is wrong on purpose and set its own bar, such as "passes under 40% of checks". Make it plausible, so it fails on the behavior and not on format. If it passes, the checks are broken, so read no result until they are fixed. The control only exercises the wording, so also run the scorer on a stored or hand-written run known to be good and one known to be bad. A scorer that misses edits made through a path variable passes workers that edited first, and the control never shows it (ENG-261).
-3. **Hold cases out.** Before any run, set aside about a third by a rule that ignores difficulty, such as every third case, and mark them `heldout` in `cases.json`. They count toward the bar, but read only their scores, never their transcripts, and never describe their failures in a proposer's brief. Write a fresh case of the same kind before the confirmation rerun, from the design and not from the winning wording.
+3. **Hold cases out.** Before any run, set aside about a third by a rule that ignores difficulty, such as every third case, and mark them `heldout` in `cases.json`, or in each case's `case.yaml`. They count toward the bar, but read only their scores, never their transcripts, and never describe their failures in a proposer's brief. Write a fresh case of the same kind before the confirmation rerun, from the design and not from the winning wording.
 4. **Fix the budget** in the `README.md`: runs per case, number of attempts and a cost ceiling. Five runs per case can't show a failure rate under about 20%, so say so in the log. Run the confirmation rerun once per wording.
 5. **Log a baseline** for today's wording. If the baseline and a confirmation rerun already meet the bar, change nothing, say so on the ticket and stop.
 

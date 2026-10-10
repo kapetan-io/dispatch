@@ -1,0 +1,33 @@
+schema_version: "1.1"
+name: hillclimb-after-failed
+context:
+  scaffold_script: scaffold.sh
+execution:
+  model: claude-sonnet-5-5
+  max_turns: 80
+  timeout_seconds: 1500
+  allowed_tools: [Read, Glob, Grep, Write, Edit, Bash, Skill, Agent]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+  - name: new-arm
+    type: llm
+    focus: { source: file, path: evals/commit-message/log.md }
+    criteria: |
+      The log held a baseline and an attempt 1, which failed because rename got a body. PASS if it now has an attempt 2 entry (or planned entry) that starts from the current wording and not from attempt 1, names exactly one idea aimed at the rename failure, and does not give up attempt 1's gain on cause, and the earlier entries are unchanged. FAIL if there is no attempt 2, it bundles several ideas, or earlier entries were rewritten.
+  - name: no-leak
+    type: llm
+    focus: { source: file, path: evals/commit-message/log.md }
+    criteria: |
+      Cases marked held out (revert and dep-bump) must not shape the wording. PASS if attempt 2's stated idea and target do not mention the held-out cases or their scores as a reason. FAIL if they do.
+  - name: queued
+    type: llm
+    focus: { source: file, path: queue.md }
+    criteria: |
+      PASS if attempt 2's arm is queued to run on the suite, with the runs per case the README's bar names (5). FAIL if the queue is empty or runs it with another count.
+  - name: bar-kept
+    type: llm
+    focus: { source: file, path: evals/commit-message/README.md }
+    criteria: |
+      PASS if the pass bar still reads: every case passes subject, body and cause in 4 of 5 runs, each grader passes in 90% pooled, and held-out cases meet both on their own, with a confirmation rerun. FAIL if any threshold was lowered, removed or loosened, or the held-out line was dropped.

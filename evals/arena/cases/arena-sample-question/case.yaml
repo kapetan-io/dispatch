@@ -1,0 +1,84 @@
+schema_version: "1.1"
+name: arena-sample-question
+context:
+  scaffold_script: scaffold.sh
+execution:
+  model: claude-sonnet-5-5
+  max_turns: 120
+  timeout_seconds: 2400
+  allowed_tools: [Read, Glob, Grep, Write, Edit, Bash, Skill, Agent]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+  - name: fan-out
+    type: tool_used
+    tool: Agent
+    min: 4
+  - name: model-fable
+    type: tool_used
+    tool: Agent
+    input_match: '"model"\s*:\s*"fable"'
+    min: 1
+  - name: model-sonnet
+    type: tool_used
+    tool: Agent
+    input_match: '"model"\s*:\s*"sonnet"'
+    min: 1
+  - name: model-opus
+    type: tool_used
+    tool: Agent
+    input_match: '"model"\s*:\s*"opus"'
+    min: 2
+  - name: judge-readonly
+    type: tool_used
+    tool: Agent
+    input_match: '"subagent_type"\s*:\s*"Plan"'
+    min: 1
+  - name: rubric-judge-only
+    type: tool_used
+    tool: Agent
+    input_match: '[Rr]ubric|[Cc]riteri'
+    min: 1
+    max: 1
+  - name: judge-after
+    type: llm
+    focus: trace
+    criteria: |
+      PASS if the Agent call that starts the judge (the one asked to score the candidates against the rubric) comes after the results or completion notices of every candidate Agent call, and the candidates and the judge were not started in one message. FAIL if the judge starts in the same message as the candidates or before all candidates finished, or if there is no judge call.
+  - name: prompt-scratch
+    type: tool_used
+    tool: Agent
+    input_match: 'from scratch with every signal now available'
+    min: 3
+  - name: prompt-premise
+    type: tool_used
+    tool: Agent
+    input_match: '[Pp]remise'
+    min: 3
+  - name: prompt-clean
+    type: tool_used
+    tool: Agent
+    input_match: '(must|should|need to|needs to|has to|required to)\s+(keep\s+)?poll'
+    min: 0
+    max: 0
+  - name: note
+    type: llm
+    focus: { source: file, path: note.md }
+    criteria: |
+      PASS if it names the base candidate, each graft with the candidate it came from (or says there were none and why), what was rejected, any dropouts (or says none), the judge's verdict, and the premises tested with what the candidates concluded about each. FAIL if there is no such note or any of those is missing.
+  - name: premise-resolved
+    type: llm
+    focus: { source: file, path: note.md }
+    criteria: |
+      PASS if it reports whether any candidate tested the polling premise (argued from evidence, not only named it). If none did, it must say the arena was run again with the premise removed from the prompt. If some did, it must say what they concluded. FAIL if the note claims convergence confirms the shape while no candidate tested a premise, or does not address it.
+  - name: verify
+    type: llm
+    focus: trace
+    criteria: |
+      PASS if, after producing the synthesized artifact and before the final message, the worker checked it against the real material (for example re-read the supplier docs and compared the artifact's claims, or checked each rubric criterion against the final text). FAIL if it went straight from synthesizing to the final message.
+  - name: asked
+    type: llm
+    focus: last_message
+    criteria: |
+      PASS if the message shows the user the result and asks before anything is filed or changed, and states that nothing was filed or changed. FAIL if it says it filed, edited or changed something outside its own working files, or shows no result, or asks nothing.

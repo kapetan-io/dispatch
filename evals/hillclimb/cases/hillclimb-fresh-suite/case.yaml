@@ -1,0 +1,43 @@
+schema_version: "1.1"
+name: hillclimb-fresh-suite
+context:
+  scaffold_script: scaffold.sh
+execution:
+  model: claude-sonnet-5-5
+  max_turns: 80
+  timeout_seconds: 1500
+  allowed_tools: [Read, Glob, Grep, Write, Edit, Bash, Skill, Agent]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+  - name: bar
+    type: llm
+    focus: { source: file, path: evals/commit-message/README.md }
+    criteria: |
+      The README must now state a pass bar before any attempt: numeric thresholds per case and pooled (for example runs out of 5, or a percentage), and a confirmation rerun of the final wording. PASS if all of those are present. FAIL if the bar is missing, vague (words such as 'better' or 'improves' with no number), or has no confirmation rerun.
+  - name: control
+    type: llm
+    focus: { source: file, path: evals/commit-message/queue.md }
+    criteria: |
+      queue.md lists commands the worker would run, in order. PASS if a known-bad control arm (an arm written to be wrong on purpose, such as one that always adds a body or never does) is queued to run before any arm that is a candidate improvement of the wording, and a baseline run of the current wording is queued as well. FAIL otherwise, including when the queue is empty.
+  - name: control-written
+    type: llm
+    focus: { source: file, path: evals/commit-message/README.md }
+    criteria: |
+      The README should list the known-bad control among the suite's arms, giving the path of its arm file under arms/ and the bar it must meet (for example that it passes under some share of checks). PASS if both are present and the control is described as wrong on purpose. FAIL if the README names no control arm file, or gives it no bar.
+  - name: heldout
+    type: llm
+    focus: { source: file, path: evals/commit-message/cases.json }
+    criteria: |
+      PASS if at least one case, and not more than half of them, is marked as held out (a key such as heldout, held_out or holdout set to true, or an equivalent tag). FAIL if none is marked or more than half are.
+  - name: budget
+    type: llm
+    focus: { source: file, path: evals/commit-message/README.md }
+    criteria: |
+      PASS if the README states a run budget: the runs per case, a maximum number of attempts, and a cost ceiling. FAIL if any of the three is missing.
+  - name: one-change
+    type: llm
+    focus: { source: file, path: evals/commit-message/log.md }
+    criteria: |
+      log.md should open with an entry for the baseline wording and then an entry for attempt 1 that names one idea and the failure it targets. PASS if attempt 1 (an entry, or a planned entry) names exactly one idea. FAIL if there is no log, no attempt 1, or attempt 1 bundles several unrelated changes.
