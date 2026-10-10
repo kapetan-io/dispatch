@@ -22,11 +22,18 @@ func child(id, parent, status string, blockedBy ...[2]string) fakeTicket {
 	for _, b := range blockedBy {
 		relations = append(relations, map[string]any{
 			"type":  "blocks",
-			"issue": map[string]any{"identifier": b[0], "state": map[string]string{"name": b[1]}},
+			"issue": map[string]any{"identifier": b[0], "state": map[string]string{"name": b[1], "type": stateType(b[1])}},
 		})
 	}
 	t["inverseRelations"] = map[string]any{"nodes": relations, "pageInfo": map[string]bool{"hasNextPage": false}}
 	return t
+}
+
+func stateType(status string) string {
+	if status == "Canceled" || status == "Duplicate" {
+		return "canceled"
+	}
+	return "started"
 }
 
 func parent(id, status string) fakeTicket {
@@ -83,8 +90,6 @@ func TestTickPromotesABlockedChildOnTheFirstTickAfterItsBlockerIsDone(t *testing
 		{name: "BlockerInReview", blocker: "In Review"},
 		{name: "BlockerNeedsHuman", blocker: "Needs Human"},
 		{name: "BlockerDone", blocker: "Done", want: "promote ENG-3: child of ENG-1\n"},
-		{name: "BlockerCanceled", blocker: "Canceled"},
-		{name: "BlockerDuplicate", blocker: "Duplicate"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
@@ -108,6 +113,132 @@ func TestTickPromotesABlockedChildOnTheFirstTickAfterItsBlockerIsDone(t *testing
 			assert.Equal(t, "uuid-ENG-3", h.linear.mutations()[0].variables["id"])
 		})
 	}
+}
+
+func TestTickEscalatesAChildWhoseBlockerWasAbandoned(t *testing.T) {
+	for _, status := range []string{"Canceled", "Duplicate"} {
+		t.Run(status, func(t *testing.T) {
+			h := newHarness(t)
+			h.tickets(parent("ENG-1", "In Progress"))
+			h.linear.setChildren(
+				child("ENG-2", "ENG-1", status),
+				child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", status}),
+			)
+
+			out, err := h.run("tick")
+			require.NoError(t, err)
+
+			assert.Contains(t, out, "escalate ENG-3")
+			assert.NotContains(t, out, "promote")
+			mutations := h.linear.mutations()
+			require.Len(t, mutations, 2)
+			assert.Equal(t, "uuid-ENG-3", mutations[0].variables["id"])
+			assert.Equal(t, needsHumanID, mutations[0].variables["state"])
+			assert.Equal(t, "uuid-ENG-3", mutations[1].variables["id"])
+			assert.Contains(t, mutations[1].variables["body"], "ENG-2 is "+status)
+			assert.Contains(t, mutations[1].variables["body"], "Remove the blocker relation")
+			assert.Empty(t, h.launches())
+		})
+	}
+}
+
+func TestTickEscalatesAChildOnlyOnceAndAgainWhenMovedBackToTodo(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(parent("ENG-1", "In Progress"))
+	blocked := child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Canceled"})
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Canceled"), blocked)
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	require.Len(t, h.linear.mutations(), 2)
+
+	// Needs Human leaves the Todo set, so the next tick stays quiet.
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Canceled"), child("ENG-3", "ENG-1", "Needs Human", [2]string{"ENG-2", "Canceled"}))
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	assert.Len(t, h.linear.mutations(), 2)
+
+	// The user moves it back to Todo with the blocker still attached.
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Canceled"), child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Canceled"}))
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	assert.Len(t, h.linear.mutations(), 4)
+}
+
+func TestTickKeepsWaitingSilentlyOnAnOpenBlocker(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(parent("ENG-1", "In Progress"))
+	h.linear.setChildren(
+		child("ENG-2", "ENG-1", "In Progress"),
+		child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "In Progress"}),
+	)
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, h.linear.mutations())
+}
+
+func TestTickEscalatesAChildWithAnAbandonedBlockerBesideAnOpenOne(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(parent("ENG-1", "In Progress"))
+	h.linear.setChildren(
+		child("ENG-2", "ENG-1", "In Progress"),
+		child("ENG-4", "ENG-1", "Canceled"),
+		child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "In Progress"}, [2]string{"ENG-4", "Canceled"}),
+	)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "escalate ENG-3: its blocker ENG-4 is Canceled")
+	assert.Len(t, h.linear.mutations(), 2)
+}
+
+func TestTickEscalatesOnlyChildrenOfYoursThatCarryTheAILabel(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(parent("ENG-1", "In Progress"))
+	blocker := [2]string{"ENG-9", "Canceled"}
+	someoneElses := child("ENG-2", "ENG-1", "Todo", blocker)
+	someoneElses["assignee"] = map[string]string{"id": "someone-else"}
+	unlabeled := child("ENG-3", "ENG-1", "Todo", blocker)
+	unlabeled["labels"] = map[string]any{"nodes": []map[string]any{{"name": "dispatch", "parent": map[string]string{"name": "repo"}}}}
+	leased := child("ENG-4", "ENG-1", "Todo", blocker)
+	h.worker("ENG-4", "")
+	h.linear.setElsewhere(child("ENG-4", "ENG-1", "Todo", blocker))
+	h.linear.setChildren(someoneElses, unlabeled, leased)
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, h.linear.mutations())
+}
+
+func TestTickEscalatesAnAbandonedBlockerEvenAtTheWorkerCap(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(parent("ENG-1", "In Progress"))
+	h.config("max_in_progress = 1\n")
+	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-5", "In Progress", "dispatch"))
+	h.linear.setChildren(child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Canceled"}))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "escalate ENG-3")
+}
+
+func TestTickDryRunPrintsTheEscalationOfAnAbandonedBlocker(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(parent("ENG-1", "In Progress"))
+	h.linear.setChildren(
+		child("ENG-2", "ENG-1", "Canceled"),
+		child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Canceled"}),
+	)
+
+	out, err := h.run("tick", "--dry-run")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "escalate ENG-3: its blocker ENG-2 is Canceled")
+	assert.Empty(t, h.linear.mutations())
 }
 
 func TestTickHoldsAChildWhoseBlockersWereCutShort(t *testing.T) {
@@ -415,6 +546,39 @@ func TestTickHoldsAChildWhoseRepoPoolCannotBeRead(t *testing.T) {
 
 	// Whether the child holds a lease in that pool is unknown, so it waits.
 	assert.Contains(t, out, "wait ENG-2: the tiger pool could not be read this tick")
+	assert.Empty(t, h.linear.mutations())
+}
+
+func TestTickDoesNotEscalateAChildWhoseRepoPoolCannotBeRead(t *testing.T) {
+	h := newHarness(t)
+	h.addRepo("tiger", h.dir+"/moved")
+	h.tickets(parent("ENG-1", "In Progress"))
+	tiger := child("ENG-2", "ENG-1", "Todo", [2]string{"ENG-9", "Canceled"})
+	tiger["labels"] = map[string]any{"nodes": []map[string]any{
+		{"name": "ai", "parent": nil},
+		{"name": "tiger", "parent": map[string]string{"name": "repo"}},
+	}}
+	h.linear.setChildren(tiger)
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	// A paused child may hold a lease in the unread pool, and escalating it would unpause it.
+	assert.Empty(t, h.linear.mutations())
+}
+
+func TestTickDoesNotEscalateAChildWhoseBlockerIsDoneButNotBlockerDone(t *testing.T) {
+	h := newHarness(t)
+	h.config("[linear.statuses]\nblocker_done = \"Released\"\n")
+	h.tickets(parent("ENG-1", "In Progress"))
+	h.linear.setChildren(
+		child("ENG-2", "ENG-1", "Done"),
+		child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Done"}),
+	)
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
 	assert.Empty(t, h.linear.mutations())
 }
 
