@@ -79,7 +79,7 @@ func runReport(args []string, opts Options) error {
 	if fs.NArg() != 1 {
 		return fmt.Errorf("report needs one result.json")
 	}
-	cases, err := loadCases(*casesPath)
+	cases, _, err := loadCases(*casesPath)
 	if err != nil {
 		return err
 	}
@@ -318,10 +318,11 @@ func isSourcePath(p string) bool {
 }
 
 // assignedPath returns the quoted literal most recently assigned to name in the
-// script text before an open() call, or "" when there is none. An attribute such
-// as self.name = 'x' is not an assignment to name.
+// script text before an open() call, or "" when there is none or when the latest
+// assignment is not a complete quoted literal. An attribute such as
+// self.name = 'x' is not an assignment to name.
 func assignedPath(before, name string) string {
-	assign := regexp.MustCompile(`(?:^|[^.\w])` + regexp.QuoteMeta(name) + `\s*=\s*['"]([^'"]+)['"]`)
+	assign := regexp.MustCompile(`(?m)(?:^|[^.\w])` + regexp.QuoteMeta(name) + `\s*=\s*(?:['"]([^'"]+)['"]\s*(?:[;#]|$)|[^=\s])`)
 	all := assign.FindAllStringSubmatch(before, -1)
 	if len(all) == 0 {
 		return ""
@@ -331,17 +332,23 @@ func assignedPath(before, name string) string {
 
 // unquotePrograms replaces quoted strings with ” so a ">" inside an awk or grep
 // program is not read as a redirect. A quoted string right after ">" is a quoted
-// file name, as in cat > "bin/tool", and stays. So does the program of sh -c,
-// which is a shell command line of its own. Only redirects use this, because
+// file name, as in cat > "bin/tool", and stays. The program of sh -c is a shell
+// command line of its own, so its quotes are scanned the same way. Only redirects use this, because
 // tee and sed -i take their file names unquoted in practice.
 func unquotePrograms(command string) string {
 	var b strings.Builder
 	last := 0
 	for _, loc := range quoted.FindAllStringIndex(command, -1) {
 		b.WriteString(command[last:loc[0]])
-		if prefix := strings.TrimRight(command[:loc[0]], " \t"); strings.HasSuffix(prefix, ">") || strings.HasSuffix(prefix, " -c") {
+		prefix := strings.TrimRight(command[:loc[0]], " \t")
+		switch {
+		case strings.HasSuffix(prefix, ">"):
 			b.WriteString(command[loc[0]:loc[1]])
-		} else {
+		case strings.HasSuffix(prefix, " -c"):
+			b.WriteString(command[loc[0] : loc[0]+1])
+			b.WriteString(unquotePrograms(command[loc[0]+1 : loc[1]-1]))
+			b.WriteString(command[loc[1]-1 : loc[1]])
+		default:
 			b.WriteString("''")
 		}
 		last = loc[1]
@@ -377,7 +384,7 @@ func bashWritesSource(command string) bool {
 		}
 	}
 	for _, t := range targets {
-		if isSourcePath(t) {
+		if isSourcePath(strings.Trim(t, `'"`)) {
 			return true
 		}
 	}

@@ -389,6 +389,10 @@ func TestReportSeparatesScriptEditsFromScriptReads(t *testing.T) {
 		{"shell program redirect", "sh -c 'echo x > bin/tool'", true},
 		{"reassigned before write", "python3 - <<'E'\np='bin/tool'\nd=open(p).read()\np='/tmp/o'\nopen(p,'w').write(d)\nE", false},
 		{"attribute named like the variable", "python3 - <<'E'\nself.p='bin/tool'\np='/tmp/o'\nopen(p,'w').write('a')\nE", false},
+		{"nonliteral reassignment", "python3 - <<'E'\np='bin/tool'\np=make_path()\nopen(p,'w').write('a')\nE", false},
+		{"awk comparison inside shell program", "sh -c \"awk 'NR>5' bin/tool\"", false},
+		{"quoted tmp redirect target", "cat > \"/tmp/x\" <<'E'\nx\nE", false},
+		{"quoted test redirect target", "cat > 'a_test.go' <<'E'\nx\nE", false},
 		{"quoted redirect target", "cat > \"bin/tool\" <<'E'\nx\nE", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -426,4 +430,24 @@ func TestBuildPutsTheCasesFileNextToThePlugin(t *testing.T) {
 
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "BAR MET")
+}
+
+func TestBuildReadsCasesBeforeClearingThePluginDirectory(t *testing.T) {
+	repo, work := gitRepo(t), t.TempDir()
+	write(t, filepath.Join(work, "skill.md"), skillText)
+	write(t, filepath.Join(work, "arm.md"), "1. **Orient.** New wording.\n")
+	write(t, filepath.Join(work, "tickets", "a.md"), "# ENG-1: a ticket\n")
+	cases, err := json.Marshal([]claimeval.Case{
+		{Name: "bug", Ticket: "ENG-1", File: "a.md", Fixture: "HEAD", Kind: "control", Expect: "CONTINUE"},
+	})
+	require.NoError(t, err)
+	out := filepath.Join(work, "plugin")
+	write(t, filepath.Join(out, "cases.json"), string(cases))
+
+	_, stderr, code := run(t, "build", "-arm", filepath.Join(work, "arm.md"), "-out", out,
+		"-cases", filepath.Join(out, "cases.json"), "-tickets", filepath.Join(work, "tickets"),
+		"-repo", repo, "-goroot", "/opt/go", "-skill", filepath.Join(work, "skill.md"))
+
+	require.Equal(t, 0, code, stderr)
+	assert.FileExists(t, filepath.Join(out, "cases.json"))
 }
