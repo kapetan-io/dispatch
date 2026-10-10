@@ -855,7 +855,7 @@ get)
   echo "$*" >> "$d/gets.log"
   [ -f "$d/get-fails" ] && { echo "no tree for you" >&2; exit 1; }
   [ -f "$d/get-pathless" ] && { echo '{}'; exit 0; }
-  echo '{"path":"` + tree + `"}' ;;
+  echo "{\"path\":\"` + tree + `\"}" ;;
 return) echo "$*" >> "$d/returns.log" ;;
 *) exit 2 ;;
 esac`
@@ -940,7 +940,7 @@ func (l *launchHarness) branchIn(dir string) string {
 }
 
 func (l *launchHarness) script(name, body string) {
-	require.NoError(l.t, os.WriteFile(filepath.Join(l.bin, name), []byte("#!/usr/bin/env bash\n"+body+"\n"), 0o755))
+	writeFake(l.t, filepath.Join(l.bin, name), l.dir, body)
 }
 
 func (l *launchHarness) writeFile(name, content string) {
