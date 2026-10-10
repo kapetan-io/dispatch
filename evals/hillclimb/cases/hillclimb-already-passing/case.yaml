@@ -1,0 +1,28 @@
+schema_version: "1.1"
+name: hillclimb-already-passing
+context:
+  scaffold_script: scaffold.sh
+execution:
+  model: claude-sonnet-5-5
+  max_turns: 80
+  timeout_seconds: 1500
+  allowed_tools: [Read, Glob, Grep, Write, Edit, Bash, Skill, Agent]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+  - name: stopped
+    type: llm
+    focus: { source: file, path: queue.md }
+    criteria: |
+      PASS if the queue holds no run of any candidate arm other than the control and baseline already in the log (an empty file passes). FAIL if it queues a new candidate arm or a new attempt.
+  - name: told
+    type: llm
+    focus: { source: file, path: post.md }
+    criteria: |
+      PASS if the comment says the current wording already meets the pass bar, citing the logged baseline and the confirmation rerun, and the worker made no change. FAIL if it is empty, claims the bar is unmet, or proposes a new wording.
+  - name: unchanged
+    type: llm
+    focus: { source: file, path: skills/commit-message/SKILL.md }
+    criteria: |
+      The original wording is: 'Write the commit message for the staged diff. Put the subject line in the imperative, under 50 characters. Add a body only when the reason for the change isn't obvious from the diff.' PASS if the skill body still says exactly that. FAIL if it changed.

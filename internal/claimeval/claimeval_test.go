@@ -35,6 +35,7 @@ func gitRepo(t *testing.T) string {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "bin", "tool"), "echo hi\n")
 	write(t, filepath.Join(dir, "docs", "design", "evals", "key.md"), "answer key\n")
+	write(t, filepath.Join(dir, "evals", "build", "key.md"), "answer key\n")
 	for _, args := range [][]string{
 		{"init", "-q"}, {"add", "-A"},
 		{"-c", "user.name=dev", "-c", "user.email=dev@example.com", "commit", "-qm", "start"},
@@ -76,6 +77,7 @@ func TestBuildWritesBlindedCases(t *testing.T) {
 	assert.FileExists(t, filepath.Join(out, "cases", "wrong-cause", "fixture", "bin", "tool"))
 	assert.FileExists(t, filepath.Join(out, "cases", "wrong-cause", "fixture", "ticket", "ENG-1.md"))
 	assert.NoFileExists(t, filepath.Join(out, "cases", "wrong-cause", "fixture", "docs", "design", "evals", "key.md"))
+	assert.NoFileExists(t, filepath.Join(out, "cases", "wrong-cause", "fixture", "evals", "build", "key.md"))
 
 	planted, err := os.ReadFile(filepath.Join(out, "cases", "wrong-cause", "case.yaml"))
 	require.NoError(t, err)
