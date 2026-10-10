@@ -76,3 +76,31 @@ func (in Input) Renames(current map[string]string) []Rename {
 	}
 	return renames
 }
+
+// TabRename asks for a herdr tab to take a new label.
+type TabRename struct {
+	TabID string
+	Label string
+}
+
+// TabLabel is `<ticket> <title>`.
+func TabLabel(t linear.Ticket) string {
+	return t.Identifier + " " + t.Title
+}
+
+// TabRenames lists the tabs holding a worker's Claude pane whose label differs
+// from its ticket's. current maps a tab id to its label now. A tab missing
+// from current is left alone.
+func (in Input) TabRenames(current map[string]string) []TabRename {
+	var renames []TabRename
+	for _, t := range in.Tickets {
+		if t.HasChildren || !slices.Contains([]string{in.InProgress, in.InReview, in.NeedsHuman}, t.Status) {
+			continue
+		}
+		w := in.Workers[t.Identifier]
+		if have, ok := current[w.TabID]; ok && w.TabID != "" && have != TabLabel(t) {
+			renames = append(renames, TabRename{TabID: w.TabID, Label: TabLabel(t)})
+		}
+	}
+	return renames
+}

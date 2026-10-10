@@ -9,10 +9,17 @@ import (
 	"strings"
 )
 
-// Snapshot is herdr's view of every workspace and agent at one moment.
+// Snapshot is herdr's view of every workspace, tab and agent at one moment.
 type Snapshot struct {
 	Workspaces []Workspace
+	Tabs       []Tab
 	Agents     []Agent
+}
+
+// Tab is a herdr tab and the label it shows.
+type Tab struct {
+	ID    string
+	Label string
 }
 
 // Workspace is a herdr workspace and the checkout it shows.
@@ -27,10 +34,12 @@ type Agent struct {
 	Kind        string
 	Status      string
 	PaneID      string
+	TabID       string
 	WorkspaceID string
 }
 
-// Read takes a snapshot by running `<bin> workspace list` and `<bin> agent list`.
+// Read takes a snapshot by running `<bin> workspace list`, `<bin> tab list` and
+// `<bin> agent list`.
 func Read(ctx context.Context, bin string) (Snapshot, error) {
 	var workspaces struct {
 		Result struct {
@@ -52,6 +61,7 @@ func Read(ctx context.Context, bin string) (Snapshot, error) {
 				Agent       string `json:"agent"`
 				Status      string `json:"agent_status"`
 				PaneID      string `json:"pane_id"`
+				TabID       string `json:"tab_id"`
 				WorkspaceID string `json:"workspace_id"`
 			} `json:"agents"`
 		} `json:"result"`
@@ -59,7 +69,20 @@ func Read(ctx context.Context, bin string) (Snapshot, error) {
 	if err := run(ctx, bin, &agents, "agent", "list"); err != nil {
 		return Snapshot{}, err
 	}
+	var tabs struct {
+		Result struct {
+			Tabs []struct {
+				TabID string `json:"tab_id"`
+				Label string `json:"label"`
+			} `json:"tabs"`
+		} `json:"result"`
+	}
+	// Tab labels are cosmetic, so a herdr without `tab list` must not stop launches, nudges and teardown.
+	_ = run(ctx, bin, &tabs, "tab", "list")
 	var s Snapshot
+	for _, t := range tabs.Result.Tabs {
+		s.Tabs = append(s.Tabs, Tab{ID: t.TabID, Label: t.Label})
+	}
 	for _, w := range workspaces.Result.Workspaces {
 		ws := Workspace{ID: w.WorkspaceID, Label: w.Label}
 		if w.Worktree != nil {
@@ -68,7 +91,7 @@ func Read(ctx context.Context, bin string) (Snapshot, error) {
 		s.Workspaces = append(s.Workspaces, ws)
 	}
 	for _, a := range agents.Result.Agents {
-		s.Agents = append(s.Agents, Agent{Kind: a.Agent, Status: a.Status, PaneID: a.PaneID, WorkspaceID: a.WorkspaceID})
+		s.Agents = append(s.Agents, Agent{Kind: a.Agent, Status: a.Status, PaneID: a.PaneID, TabID: a.TabID, WorkspaceID: a.WorkspaceID})
 	}
 	return s, nil
 }
@@ -89,6 +112,15 @@ func RenameWorkspace(ctx context.Context, bin, workspace, label string) error {
 	out, err := exec.CommandContext(ctx, bin, "workspace", "rename", workspace, label).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("while renaming herdr workspace %s: %w: %s", workspace, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// RenameTab sets a tab's label.
+func RenameTab(ctx context.Context, bin, tab, label string) error {
+	out, err := exec.CommandContext(ctx, bin, "tab", "rename", tab, label).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("while renaming herdr tab %s: %w: %s", tab, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

@@ -89,6 +89,7 @@ Each criterion is checked through the dispatcher's surface (`dispatch tick`, `di
 15. Two ticks started together result in one doing work and the other exiting without side effects.
 16. Every launched worker runs with `--disallowedTools EnterPlanMode,ExitPlanMode`.
 17. Every PR a worker opens on a protected branch has auto-merge enabled.
+18. After every tick, the herdr tab holding each worker's Claude pane is labeled `<ticket> <title>` in full, and a tab that already matches is not renamed.
 
 ### Scope
 
@@ -114,7 +115,7 @@ Out of scope.
 
 | Dependency | Needed for |
 |---|---|
-| herdr 0.9.0 or later | `agent_status` (idle, working, blocked, done, unknown), `agent prompt` refusing blocked agents, `agent send-keys`, `agent read`, `workspace rename`, `workspace close` |
+| herdr 0.9.0 or later | `agent_status` (idle, working, blocked, done, unknown), `agent prompt` refusing blocked agents, `agent send-keys`, `agent read`, `workspace rename`, `tab list`, `tab rename`, `workspace close` |
 | treehouse v3.1.2 (`go install github.com/kunchenguid/treehouse/v3@latest`) | `get --lease --lease-holder --json`, `status --json`, `return --if-lease-holder --force` |
 | Linear API key | The dispatcher is a script and cannot use the MCP connector |
 | Linear GitHub integration | Moves a ticket to Done on merge. ENG-216 moved 2 seconds after its merge on 2026-10-06. |
