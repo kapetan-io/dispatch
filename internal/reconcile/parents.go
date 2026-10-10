@@ -100,16 +100,16 @@ func (in Input) startable(c linear.Ticket) bool {
 }
 
 // activeCount is the In Progress tickets that hold or will take a worker slot.
-// A parent never has a worker, and a design ticket with no live worker takes
-// no slot because the dispatcher skips it. A ticket in an unread repo counts,
-// since it may have a worker nobody could see.
+// Every ticket without children counts, with or without a worker, since it
+// has one or will get one. A parent never has a worker, except a design ticket
+// whose grill has made children.
 func (in Input) activeCount() int {
 	n := 0
 	for _, t := range in.Tickets {
-		if t.Status != in.InProgress || t.HasChildren {
+		if t.Status != in.InProgress {
 			continue
 		}
-		if in.Workers[t.Identifier].State != worker.None || in.unread(t) || in.notDesign(t) {
+		if !t.HasChildren || (t.HasLabel("design") && in.Workers[t.Identifier].State != worker.None) {
 			n++
 		}
 	}

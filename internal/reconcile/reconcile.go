@@ -138,6 +138,9 @@ type Action struct {
 	TreePath    string
 	// Untracked lists the files a Teardown deletes from its tree first.
 	Untracked []string
+	// Design marks a Launch of the grill for a design ticket, which runs a
+	// different kickoff and model than a build.
+	Design bool
 }
 
 func (a Action) String() string {
@@ -215,8 +218,9 @@ type Input struct {
 	Untracked map[string][]string
 }
 
-// designLabels mark tickets whose sessions this piece of the dispatcher does
-// not start: the grill's feature ticket and the review ticket.
+// designLabels mark tickets whose trees belong to the grill and the review, and
+// whose sessions the dispatcher never nudges, stops or escalates. It launches
+// the grill for "design" and nothing yet for "design-review".
 var designLabels = []string{"design", "design-review"}
 
 // Plan returns the actions for one tick, launches last, in ticket order.
@@ -263,8 +267,9 @@ func Plan(in Input) []Action {
 			actions = append(actions, Action{Kind: Escalate, Ticket: t, Reason: "it has more labels than the dispatcher reads, so it can't reliably tell its repo or whether it is a design ticket. Remove some labels and move it back to In Progress."})
 			continue
 		}
-		if l, ok := designLabel(t); ok {
-			actions = append(actions, Action{Kind: Skip, Ticket: t, Reason: fmt.Sprintf("carries %q, which this dispatcher does not launch yet", l)})
+		// design-review wins when both labels appear.
+		if t.HasLabel("design-review") {
+			actions = append(actions, Action{Kind: Skip, Ticket: t, Reason: `carries "design-review", which this dispatcher does not launch yet`})
 			continue
 		}
 		repo, ok := t.LabelIn(in.RepoLabelGroup)
@@ -301,7 +306,7 @@ func Plan(in Input) []Action {
 			continue
 		}
 		running++
-		launches = append(launches, Action{Kind: Launch, Ticket: t, RepoDir: dir})
+		launches = append(launches, Action{Kind: Launch, Ticket: t, RepoDir: dir, Design: t.HasLabel("design")})
 	}
 	return append(actions, launches...)
 }
@@ -309,7 +314,8 @@ func Plan(in Input) []Action {
 // watch decides what a ticket needs from the user or its live worker: a
 // notification for a ticket entering Needs Human or a worker asking a question,
 // and a nudge for an idle In Progress worker. It skips the grill's feature
-// ticket, which carries "design", and tickets whose labels were cut short,
+// ticket, which carries "design" and whose session waits on the user for as
+// long as the design takes, and tickets whose labels were cut short,
 // because it can't tell whether they are design tickets. A review ticket still
 // notifies, since its hand-off is a move to Needs Human, but it is never nudged.
 // A parent notifies on Needs Human like any ticket, and never gets a worker.
@@ -516,13 +522,4 @@ func (in Input) inReviewIdle(t linear.Ticket, w worker.Worker, prev cache.Entry)
 func (in Input) unread(t linear.Ticket) bool {
 	repo, ok := t.LabelIn(in.RepoLabelGroup)
 	return ok && in.UnreadRepos[repo]
-}
-
-func designLabel(t linear.Ticket) (string, bool) {
-	for _, l := range designLabels {
-		if t.HasLabel(l) {
-			return l, true
-		}
-	}
-	return "", false
 }

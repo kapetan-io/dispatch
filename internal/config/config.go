@@ -24,6 +24,7 @@ type Config struct {
 	BlockedRenotifyTicks int    `toml:"blocked_renotify_ticks"`
 	PluginRoot           string `toml:"plugin_root"`
 	WorkerModel          string `toml:"worker_model"`
+	GrillModel           string `toml:"grill_model"`
 	// AutoMerge lists the GitHub repos, as owner/name, where dispatch merges a
 	// ready PR once a review approves its head commit.
 	AutoMerge []string          `toml:"auto_merge"`
@@ -66,6 +67,7 @@ func defaults() Config {
 		BlockedRenotifyTicks: 3,
 		PluginRoot:           "~/Development/dispatch",
 		WorkerModel:          "sonnet",
+		GrillModel:           "opus",
 		AutoMerge:            []string{},
 		Linear: Linear{
 			APIKeyKeychain: "dispatch-linear-api-key",
