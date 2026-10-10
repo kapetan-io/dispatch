@@ -12,7 +12,7 @@ Start with the [user guide](docs/guide.md) to set it up and for troubleshooting,
 
 ## Layout
 
-- `.claude-plugin/plugin.json` is the plugin manifest. Skills live in `skills/` (`build` runs a ticket, `ticket` writes one, and `supervise` is a trial of working habits for the interactive session that steers workers, started only by the user with `/dispatch:supervise`), scripts on the session PATH in `bin/`, and the plugin's hooks in `hooks/`. `hooks/hooks.json` runs `dispatch ticket-hint` at session start (silently skipped when `dispatch` is not installed), which points an agent in a dispatch-managed repo at `dispatch:ticket` because a long skill list can show a skill by name only.
+- `.claude-plugin/plugin.json` is the plugin manifest. Skills live in `skills/` (`build` runs a ticket, `ticket` writes one, `arena` runs independent attempts at a question and merges the best, and `supervise` is a trial of working habits for the interactive session that steers workers, started only by the user with `/dispatch:supervise`), scripts on the session PATH in `bin/`, and the plugin's hooks in `hooks/`. `hooks/hooks.json` runs `dispatch ticket-hint` at session start (silently skipped when `dispatch` is not installed), which points an agent in a dispatch-managed repo at `dispatch:ticket` because a long skill list can show a skill by name only.
 - `cmd/` and `internal/` hold the `dispatch` Go CLI.
 - `docs/` holds the [user guide](docs/guide.md) and the [config reference](docs/config.md). `docs/design/` holds the design: the decision log, the dispatcher blueprint, the handoff, and the size-check eval suite.
 
