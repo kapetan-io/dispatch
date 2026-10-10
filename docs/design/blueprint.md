@@ -257,38 +257,9 @@ Phase 1 owes this design three things on every ticket. It must carry a repo labe
 
 #### Config (`~/.config/dispatch/config.toml`)
 
-```toml
-interval_minutes = 5
-max_in_progress = 4
-nudge_limit = 2
-blocked_renotify_ticks = 3            # re-notify a blocked worker every 3rd tick (15 minutes at the default interval)
-launch_failure_limit = 2
-plugin_root = "~/Development/dispatch"   # the plugin workers load, and where bin/dispatch-launch lives
-worker_model = "sonnet"               # your 2026-08-25 policy: sonnet for coding tickets
+`docs/config.md` lists every setting with its default and complete examples, and a test loads each example through `config.Load`. `config.Load` rejects a setting it doesn't know. The Needs Human status is `needs_human` under `[linear.statuses]`.
 
-[linear]
-api_key_keychain = "dispatch-linear-api-key"   # macOS keychain service; LINEAR_API_KEY overrides
-teams = ["ENG"]
-ai_label = "ai"                  # only tickets assigned to you with this label are managed
-repo_label_group = "repo"        # a ticket's repo is its label in this group
-
-[linear.statuses]
-todo = "Todo"
-in_progress = "In Progress"
-in_review = "In Review"
-done = ["Done", "Canceled", "Duplicate"]
-paused = ["Backlog", "Todo"]
-close_parent = "Done"            # what a parent becomes when its children finish
-blocker_done = "Done"            # what a blocker must reach before its child starts
-
-[linear.needs_human]
-status = "Needs Human"           # at work: label = "needs-human"
-
-[repos]                          # repo label -> local clone with a treehouse.toml
-dispatch = "~/Development/dispatch"
-```
-
-With the label form of `needs_human`, an In Progress ticket carrying the label counts as Needs Human, and removing the label counts as the move back to In Progress.
+At work, where there is no admin right to add a Needs Human status, the design is a `needs-human` label instead: an In Progress ticket carrying the label counts as Needs Human, and removing the label counts as the move back to In Progress. The config has no setting for this yet.
 
 #### Cache (`~/.local/state/dispatch/cache.json`)
 
