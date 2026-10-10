@@ -289,7 +289,7 @@ func TestTickStaysQuietWhenANewerStopIsBusyAfterAnIgnoredNudge(t *testing.T) {
 func TestTickLeavesAWorkerAloneWhenAnotherSessionInItsTreeStops(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "done")
+	h.worker("ENG-1", "idle")
 	h.recordStopFrom("worker", "ENG-1", runningTasks)
 	h.advance(5 * time.Minute)
 
@@ -299,16 +299,47 @@ func TestTickLeavesAWorkerAloneWhenAnotherSessionInItsTreeStops(t *testing.T) {
 	assert.Empty(t, h.prompts())
 }
 
-func TestTickTrustsTheNewSessionOnceTheOldSessionHadNothingRunning(t *testing.T) {
+func TestTickNudgesAnIdleWorkerAfterAnotherSessionStopsBusyInItsTree(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "done")
-	h.recordStopFrom("old", "ENG-1", noTasks)
-	h.recordStopFrom("new", "ENG-1", runningTasks)
+	h.worker("ENG-1", "idle")
+	h.recordStopFrom("worker", "ENG-1", noTasks)
+	assert.Equal(t, "nudge ENG-1: stall\n", h.tick())
+
+	h.advance(time.Minute)
+	h.recordStopFrom("stranger", "ENG-1", runningTasks)
 	h.advance(5 * time.Minute)
+	h.recordStopFrom("worker", "ENG-1", noTasks)
+
+	assert.Equal(t, "nudge ENG-1: stall\n", h.tick())
+	assert.Len(t, h.prompts(), 2)
+}
+
+func TestTickDoesNotNudgeAgainWhenAnotherSessionStopsIdleInTheTree(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.recordStopFrom("worker", "ENG-1", noTasks)
+	assert.Equal(t, "nudge ENG-1: stall\n", h.tick())
+
+	h.advance(5 * time.Minute)
+	h.recordStopFrom("stranger", "ENG-1", noTasks)
 
 	assert.Empty(t, h.tick())
-	assert.Empty(t, h.prompts())
+	assert.Len(t, h.prompts(), 1)
+}
+
+func TestTickNudgesARelaunchedWorkerWhoseOldSessionWasBusy(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.recordStopFrom("worker", "ENG-1", runningTasks)
+	h.advance(5 * time.Minute)
+
+	h.setWorkerSession("ENG-1", "relaunched")
+	h.recordStopFrom("relaunched", "ENG-1", noTasks)
+
+	assert.Equal(t, "nudge ENG-1: stall\n", h.tick())
 }
 
 func TestTickSendsTheResumeNudgeWhateverTheStopRecordSays(t *testing.T) {
@@ -402,16 +433,17 @@ func TestStopHookRunsRecordStop(t *testing.T) {
 
 func stopRecords(t *testing.T, stateDir string) []string {
 	t.Helper()
-	entries, err := os.ReadDir(filepath.Join(stateDir, "stops"))
-	if os.IsNotExist(err) {
-		return nil
-	}
-	require.NoError(t, err)
 	var out []string
-	for _, e := range entries {
-		b, err := os.ReadFile(filepath.Join(stateDir, "stops", e.Name()))
-		require.NoError(t, err)
+	err := filepath.WalkDir(filepath.Join(stateDir, "stops"), func(path string, e os.DirEntry, err error) error {
+		if err != nil || e.IsDir() {
+			return err
+		}
+		b, err := os.ReadFile(path)
 		out = append(out, e.Name()+string(b))
+		return err
+	})
+	if !os.IsNotExist(err) {
+		require.NoError(t, err)
 	}
 	return out
 }

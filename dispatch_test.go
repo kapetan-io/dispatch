@@ -625,16 +625,17 @@ func (h *harness) workerOn(ticket, tree, id, status string) {
 	}
 	var agents struct {
 		Result struct {
-			Agents []map[string]string `json:"agents"`
+			Agents []map[string]any `json:"agents"`
 		} `json:"result"`
 	}
 	require.NoError(h.t, json.Unmarshal(h.readFile("agents.json"), &agents))
-	agents.Result.Agents = append(agents.Result.Agents, map[string]string{
-		"agent":        "claude",
-		"agent_status": status,
-		"pane_id":      id + ":p1",
-		"tab_id":       id + ":t1",
-		"workspace_id": id,
+	agents.Result.Agents = append(agents.Result.Agents, map[string]any{
+		"agent":         "claude",
+		"agent_status":  status,
+		"agent_session": map[string]string{"value": "worker"},
+		"pane_id":       id + ":p1",
+		"tab_id":        id + ":t1",
+		"workspace_id":  id,
 	})
 	h.writeJSON("agents.json", agents)
 
@@ -652,13 +653,30 @@ func (h *harness) workerOn(ticket, tree, id, status string) {
 func (h *harness) setWorkerStatus(ticket, status string) {
 	var agents struct {
 		Result struct {
-			Agents []map[string]string `json:"agents"`
+			Agents []map[string]any `json:"agents"`
 		} `json:"result"`
 	}
 	require.NoError(h.t, json.Unmarshal(h.readFile("agents.json"), &agents))
 	for _, a := range agents.Result.Agents {
 		if a["workspace_id"] == "w-"+ticket {
 			a["agent_status"] = status
+		}
+	}
+	h.writeJSON("agents.json", agents)
+}
+
+// setWorkerSession changes the Claude session id herdr reports for a worker
+// added with worker, as a relaunch does.
+func (h *harness) setWorkerSession(ticket, session string) {
+	var agents struct {
+		Result struct {
+			Agents []map[string]any `json:"agents"`
+		} `json:"result"`
+	}
+	require.NoError(h.t, json.Unmarshal(h.readFile("agents.json"), &agents))
+	for _, a := range agents.Result.Agents {
+		if a["workspace_id"] == "w-"+ticket {
+			a["agent_session"] = map[string]string{"value": session}
 		}
 	}
 	h.writeJSON("agents.json", agents)

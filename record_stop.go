@@ -61,7 +61,7 @@ func recordStop(ctx context.Context, opts Options) error {
 	if !managed {
 		return nil
 	}
-	rec := stops.Record{At: opts.Now().UTC(), Session: in.SessionID, Reported: in.BackgroundTasks != nil}
+	rec := stops.Record{At: opts.Now().UTC(), Reported: in.BackgroundTasks != nil}
 	if rec.Reported {
 		for _, task := range *in.BackgroundTasks {
 			if task.Status == "running" {
@@ -69,7 +69,7 @@ func recordStop(ctx context.Context, opts Options) error {
 			}
 		}
 	}
-	if err := stops.Write(opts.StateDir, tree, rec); err != nil {
+	if err := stops.Write(opts.StateDir, tree, in.SessionID, rec); err != nil {
 		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
 	}
 	return nil

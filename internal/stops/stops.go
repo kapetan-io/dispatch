@@ -28,8 +28,6 @@ type Record struct {
 	Reported bool `json:"reported"`
 	// Running counts the tasks the Stop listed as running.
 	Running int `json:"running"`
-	// Session is the Claude session that made the Stop.
-	Session string `json:"session,omitempty"`
 }
 
 // Busy reports whether the worker was waiting on its own background work at
@@ -43,32 +41,33 @@ func Dir(stateDir string) string {
 	return filepath.Join(stateDir, "stops")
 }
 
-// path names the record of the worker in tree. Two spellings of one tree must
-// share a record, so the tree is resolved first.
-func path(stateDir, tree string) string {
+// treeDir holds the records of the worker in tree, one file for each Claude
+// session that stopped there. Any session whose working directory is the tree
+// fires the hook, so the tick must pick the worker's own session out. Two
+// spellings of one tree must share records, so the tree is resolved first.
+func treeDir(stateDir, tree string) string {
 	if resolved, err := filepath.EvalSymlinks(tree); err == nil {
 		tree = resolved
 	}
-	sum := sha256.Sum256([]byte(tree))
-	return filepath.Join(Dir(stateDir), hex.EncodeToString(sum[:8])+".json")
+	return filepath.Join(Dir(stateDir), hash(tree))
 }
 
-// Write replaces the record of the worker in tree. Any Claude session whose
-// working directory is the tree fires the hook, so a Stop from a session other
-// than the one that wrote a still-busy record is dropped. Otherwise a stranger's
-// idle Stop would erase the worker's wait on its background tasks.
-func Write(stateDir, tree string, r Record) error {
-	if old, ok := Read(stateDir, tree); ok && old.Session != r.Session && old.Busy(r.At) {
-		return nil
-	}
+func hash(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:8])
+}
+
+// Write replaces the record of session in the tree.
+func Write(stateDir, tree, session string, r Record) error {
 	b, err := json.Marshal(r)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(Dir(stateDir), 0o755); err != nil {
+	dir := treeDir(stateDir, tree)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("while writing stop record: %w", err)
 	}
-	tmp, err := os.CreateTemp(Dir(stateDir), ".stop-*.json")
+	tmp, err := os.CreateTemp(dir, ".stop-*.tmp")
 	if err != nil {
 		return fmt.Errorf("while writing stop record: %w", err)
 	}
@@ -81,13 +80,29 @@ func Write(stateDir, tree string, r Record) error {
 		_ = os.Remove(tmp.Name())
 		return fmt.Errorf("while writing stop record: %w", err)
 	}
-	return os.Rename(tmp.Name(), path(stateDir, tree))
+	return os.Rename(tmp.Name(), filepath.Join(dir, hash(session)+".json"))
 }
 
-// Read returns the record of the worker in tree. A missing or unreadable
+// Read returns the latest Stop of session in the tree. With no session known,
+// it returns the latest Stop of any session there. A missing or unreadable
 // record is reported as absent, because the tick treats both as unknown.
-func Read(stateDir, tree string) (Record, bool) {
-	b, err := os.ReadFile(path(stateDir, tree))
+func Read(stateDir, tree, session string) (Record, bool) {
+	dir := treeDir(stateDir, tree)
+	if session != "" {
+		return readFile(filepath.Join(dir, hash(session)+".json"))
+	}
+	files, _ := filepath.Glob(filepath.Join(dir, "*.json"))
+	var latest Record
+	for _, f := range files {
+		if r, ok := readFile(f); ok && r.At.After(latest.At) {
+			latest = r
+		}
+	}
+	return latest, !latest.At.IsZero()
+}
+
+func readFile(name string) (Record, bool) {
+	b, err := os.ReadFile(name)
 	if err != nil {
 		return Record{}, false
 	}
@@ -98,8 +113,8 @@ func Read(stateDir, tree string) (Record, bool) {
 	return r, true
 }
 
-// Remove deletes the record of the worker in tree, so the next ticket leased
-// that tree does not inherit this one's last Stop.
+// Remove deletes the records of the tree, so the next ticket leased that tree
+// does not inherit this one's last Stop.
 func Remove(stateDir, tree string) {
-	_ = os.Remove(path(stateDir, tree))
+	_ = os.RemoveAll(treeDir(stateDir, tree))
 }

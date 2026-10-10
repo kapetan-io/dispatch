@@ -103,15 +103,16 @@ func (h *harness) prReads() []string {
 func (h *harness) setWorkerAgent(ticket, status string) {
 	var agents struct {
 		Result struct {
-			Agents []map[string]string `json:"agents"`
+			Agents []map[string]any `json:"agents"`
 		} `json:"result"`
 	}
 	require.NoError(h.t, json.Unmarshal(h.readFile("agents.json"), &agents))
-	agents.Result.Agents = append(agents.Result.Agents, map[string]string{
-		"agent":        "claude",
-		"agent_status": status,
-		"pane_id":      "w-" + ticket + ":p1",
-		"workspace_id": "w-" + ticket,
+	agents.Result.Agents = append(agents.Result.Agents, map[string]any{
+		"agent":         "claude",
+		"agent_status":  status,
+		"agent_session": map[string]string{"value": "worker"},
+		"pane_id":       "w-" + ticket + ":p1",
+		"workspace_id":  "w-" + ticket,
 	})
 	h.writeJSON("agents.json", agents)
 }

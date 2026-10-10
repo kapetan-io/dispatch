@@ -325,7 +325,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 		w := worker.Find(t.Identifier, trees, snap)
 		workers[t.Identifier] = w
 		if w.State == worker.Idle && t.Status == cfg.Linear.Statuses.InProgress {
-			if rec, ok := stops.Read(opts.StateDir, w.TreePath); ok {
+			if rec, ok := stops.Read(opts.StateDir, w.TreePath, w.Session); ok {
 				lastStops[t.Identifier] = rec
 			}
 		}
