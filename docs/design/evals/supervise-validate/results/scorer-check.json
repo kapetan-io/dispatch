@@ -1,0 +1,147 @@
+{
+  "patterns": {
+    "told": "^(?![\\s\\S]*go test(?:\\s+(?!-run)-\\S+(?:\\s+'[^']*'|\\s+[^\\s-]\\S*)?)*\\s+\\./\\S*)[\\s\\S]*go test(?=(?:(?!\\\\n)[^;&|])*-count=1)(?=(?:(?!\\\\n)[^;&|])*-run)(?=(?:(?!\\\\n)[^;&|])*\\./[\\w<])",
+    "full": "go test(?!(?:(?!\\\\n)[^;&|])*-run)|go test(?:(?!\\\\n)[^;&|])*\\./\\.\\.\\."
+  },
+  "previous": {
+    "told": "go test(?=[^\\n]*-count=1)(?=[^\\n]*-run)(?=[^\\n]*\\./[\\w<])",
+    "full": "go test(?![^\\n;&|]*-run)|go test[^\\n;&|]*\\./\\.\\.\\."
+  },
+  "checks": [
+    {
+      "grader": "validator-told",
+      "name": "good: backticked template with never ./...",
+      "input": "{\"description\":\"validate\",\"prompt\":\"Prove it. Run only `go test -count=1 -run '<TestNames>' ./<pkg>` with an explicit package and never `./...`. Cite CI for the rest.\"}",
+      "graderShouldPass": true,
+      "newGraderPasses": true,
+      "oldGraderPasses": true,
+      "ok": true
+    },
+    {
+      "grader": "validator-told",
+      "name": "good: unbackticked relay",
+      "input": "{\"description\":\"validate\",\"prompt\":\"Run go test -count=1 -run 'TestNameNil' ./internal/report with an explicit package. NEVER run ./... . Cite CI.\"}",
+      "graderShouldPass": true,
+      "newGraderPasses": true,
+      "oldGraderPasses": true,
+      "ok": true
+    },
+    {
+      "grader": "validator-told",
+      "name": "good: flags in other order",
+      "input": "{\"description\":\"validate\",\"prompt\":\"Run go test -run TestNameNil -count=1 ./internal/report only.\"}",
+      "graderShouldPass": true,
+      "newGraderPasses": true,
+      "oldGraderPasses": true,
+      "ok": true
+    },
+    {
+      "grader": "validator-told",
+      "name": "bad: also tells it to run go test ./... (supervisor's case)",
+      "input": "{\"description\":\"validate\",\"prompt\":\"Prove it with go test -count=1 -run TestNameNil ./internal/report, then run go test ./... to confirm nothing else broke.\"}",
+      "graderShouldPass": false,
+      "newGraderPasses": false,
+      "oldGraderPasses": true,
+      "ok": true
+    },
+    {
+      "grader": "validator-told",
+      "name": "bad: also tells it to run the package without -run",
+      "input": "{\"description\":\"validate\",\"prompt\":\"Run go test -count=1 -run TestX ./internal/report and then go test ./internal/report.\"}",
+      "graderShouldPass": false,
+      "newGraderPasses": false,
+      "oldGraderPasses": true,
+      "ok": true
+    },
+    {
+      "grader": "validator-told",
+      "name": "bad: also go test -count=1 ./... with flags first",
+      "input": "{\"description\":\"validate\",\"prompt\":\"Run go test -count=1 -run TestX ./internal/report, then go test -count=1 ./... as a baseline.\"}",
+      "graderShouldPass": false,
+      "newGraderPasses": false,
+      "oldGraderPasses": true,
+      "ok": true
+    },
+    {
+      "grader": "validator-told",
+      "name": "bad: -count=1 and -run split over two commands",
+      "input": "{\"description\":\"validate\",\"prompt\":\"Run go test -count=1 ./internal/report\\ngo test -run TestX ./internal/report\"}",
+      "graderShouldPass": false,
+      "newGraderPasses": false,
+      "oldGraderPasses": true,
+      "ok": true
+    },
+    {
+      "grader": "validator-told",
+      "name": "bad: no -count=1",
+      "input": "{\"description\":\"validate\",\"prompt\":\"Run go test -run TestX ./internal/report\"}",
+      "graderShouldPass": false,
+      "newGraderPasses": false,
+      "oldGraderPasses": false,
+      "ok": true
+    },
+    {
+      "grader": "validator-told",
+      "name": "bad: no package",
+      "input": "{\"description\":\"validate\",\"prompt\":\"Run go test -count=1 -run TestX\"}",
+      "graderShouldPass": false,
+      "newGraderPasses": false,
+      "oldGraderPasses": false,
+      "ok": true
+    },
+    {
+      "grader": "no-full-run",
+      "name": "good: scoped run",
+      "input": "{\"command\":\"cd repo\\ngo test -count=1 -run TestX ./internal/report\"}",
+      "graderShouldPass": true,
+      "newGraderPasses": true,
+      "oldGraderPasses": true,
+      "ok": true
+    },
+    {
+      "grader": "no-full-run",
+      "name": "good: scoped run with JSON-escaped quotes",
+      "input": "{\"command\":\"go test -count=1 -run \\\\\\\"TestX\\\\\\\" ./internal/report\"}",
+      "graderShouldPass": true,
+      "newGraderPasses": true,
+      "oldGraderPasses": true,
+      "ok": true
+    },
+    {
+      "grader": "no-full-run",
+      "name": "bad: package run before a scoped one on separate lines (supervisor's case)",
+      "input": "{\"command\":\"cd repo\\ngo test ./internal/report\\ngo test -count=1 -run TestX ./internal/report\"}",
+      "graderShouldPass": false,
+      "newGraderPasses": false,
+      "oldGraderPasses": true,
+      "ok": true
+    },
+    {
+      "grader": "no-full-run",
+      "name": "bad: package run chained with && before a scoped one",
+      "input": "{\"command\":\"go test ./internal/report && go test -count=1 -run TestX ./internal/report\"}",
+      "graderShouldPass": false,
+      "newGraderPasses": false,
+      "oldGraderPasses": false,
+      "ok": true
+    },
+    {
+      "grader": "no-full-run",
+      "name": "bad: ./... with -run",
+      "input": "{\"command\":\"go test -count=1 -run TestX ./...\"}",
+      "graderShouldPass": false,
+      "newGraderPasses": false,
+      "oldGraderPasses": false,
+      "ok": true
+    },
+    {
+      "grader": "no-full-run",
+      "name": "bad: bare go test",
+      "input": "{\"command\":\"go test\"}",
+      "graderShouldPass": false,
+      "newGraderPasses": false,
+      "oldGraderPasses": false,
+      "ok": true
+    }
+  ]
+}

@@ -53,6 +53,19 @@ CodeRabbit raised two more points about the graders. Both were checked against t
 
 Results with the final graders. Control, 2 runs per case, $1.15. 0 of 16 on both graders. Baseline, 5 runs per case, $1.94. 0 of 40 on both. Adopted wording, 5 runs per case, $2.84. `validator-told` 20/20 and `no-full-run` 19/20 (`report-nil`, held out, 4/5). Pooled 39/40, and every case at 4 of 5 or better, so the bar holds. These files are the ones that count. The earlier `*-tight.json` and first-round files used earlier patterns and are kept as a record. Total spend about $33 of the $40 ceiling.
 
+## Third round: prompts that also ask for the full suite, and JSON-encoded newlines (results/scorer-check.json, results/rescore.json)
+
+The supervisor found two holes by running the patterns on hand-written inputs, and both reproduce.
+
+- `validator-told` passed an Agent prompt that said `go test -count=1 -run TestNameNil ./internal/report, then run go test ./...`, because it only looked for one good command. It now also fails any prompt that holds an unscoped `go test` (a package path with no `-run`, such as `go test ./...` or `go test ./pkg`).
+- The tool input reaches the patterns as JSON, where a newline is the two characters `\n`. The `[^\n]` in `validator-told` therefore spanned the whole prompt, so `-count=1` and `-run` could sit in different commands, and `no-full-run` ran a package-wide `go test` followed on the next line by a scoped one without noticing. Both patterns now end a command at `\n`, `;`, `&` or `|`.
+
+Scorer check (`results/scorer-check.json`). 15 hand-written inputs, JSON-encoded as the harness sees them, run through the old and new patterns in Node, which is the engine the harness uses. The 3 good prompts and 2 good Bash calls pass on both. The supervisor's two bad inputs pass the old graders and fail the new ones, and so do the other bad prompts (a package run without `-run`, flags split across two commands).
+
+Rescore (`results/rescore.json`). No model was run. The Agent and Bash inputs in each stored final trace were replayed through the patterns. Replaying the previous patterns first reproduced all 96 stored verdicts, so the replay matches the harness. Under the new patterns the control (0 of 16) and baseline (0 of 40) stay at 0, and the adopted wording's 20 confirmation runs move by one: `report-nil` run 2 (held out, so only its score was read) now fails `validator-told`. `validator-told` 19/20, `no-full-run` 19/20, pooled 38/40, and no case under 4 of 5. The bar holds. The Node script that did the replay is not committed, since this repo writes its tooling in Go and Go's regexp has no lookahead to run these patterns.
+
+`no-full-run` still sees only the supervisor's own Bash calls, and the supervisor delegates, so the rescore leaves it mostly vacuous. The prompt check in `validator-told` is the one that bites.
+
 ## Limits
 
 Total spend about $33 of the $40 ceiling. Cases that tuned the wording: `refund-rounding`, `ledger-last`. Held out: `report-nil`. Fresh: `refund-negative`. 5 runs per case, workers on `claude-sonnet-5-5`, judge model unused (no LLM graders). Five runs per case can't show a failure rate under about 20%. The graders read attempted commands, so a validator running inside a sub-agent is judged by the prompt the supervisor wrote and not by what the sub-agent ran. The eval cannot run Go, so it does not show that the proof file stays out of the PR, the second sentence of the wording.

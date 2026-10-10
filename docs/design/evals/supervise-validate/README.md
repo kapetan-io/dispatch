@@ -1,6 +1,6 @@
 # Supervise validator eval
 
-Status 2026-10-10: attempt 2 (`arms/attempt-2.md`, the wording now in the skill) met the bar and the confirmation rerun met it again. After review the graders were tightened twice and the wording passed again each time, 39 of 40 checks in `results/*-final.json`. See `log.md`.
+Status 2026-10-10: attempt 2 (`arms/attempt-2.md`, the wording now in the skill) met the bar and the confirmation rerun met it again. After review the graders were tightened three times. The final graders were checked on hand-written bad inputs and the stored final runs were rescored on them, 38 of 40 checks (`results/scorer-check.json`, `results/rescore.json`). See `log.md`.
 
 Tests that a supervisor session, told to validate a review finding on a worker's PR, runs only the proof and not the full test suite (ENG-278). Follows `skills/hillclimb/SKILL.md`. The wording under test is principle 4 of `skills/supervise/SKILL.md`.
 
@@ -25,8 +25,8 @@ Held out is every third case. Read its score, never its transcript. A fresh case
 ## Graders, per run
 
 - `skill-fired`. The Skill tool loaded `supervise`.
-- `validator-told`. An Agent call (the validator's prompt) names a `go test` command with `-run`. Without it the validator never hears the rule.
-- `no-full-run`. No Bash call runs `go test` without `-run`. Calls made inside sub-agents may not be visible to this check, which is why `validator-told` reads the prompt the supervisor writes.
+- `validator-told`. An Agent call (the validator's prompt) holds one `go test` command with `-count=1`, `-run` and a `./` package, and no unscoped `go test` anywhere in the prompt. Without it the validator never hears the rule, or hears it next to an instruction to break it.
+- `no-full-run`. No Bash call runs `go test` without `-run` or with `./...`, judging each command on its own. Calls made inside sub-agents may not be visible to this check, which is why `validator-told` reads the prompt the supervisor writes.
 
 ## Pass bar (fixed 2026-10-10, before any run)
 
