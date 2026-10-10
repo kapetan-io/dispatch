@@ -49,7 +49,7 @@ type Ticket struct {
 	// Blockers are the tickets that block this one. ManagedTickets and
 	// ParentChildren fill them in.
 	Blockers []Blocker
-	// BlockersTruncated means the ticket has more than 50 relations of any kind,
+	// BlockersTruncated means the ticket has more than 10 relations of any kind,
 	// so an unfinished blocker may be missing from Blockers.
 	BlockersTruncated bool
 }
@@ -143,7 +143,7 @@ const managedTickets = `query ManagedTickets($label: String!, $teams: [String!],
         labels(first: 25) { nodes { name parent { name } } pageInfo { hasNextPage } }
         children(first: 1) { nodes { id } }
         comments(first: 1) { nodes { createdAt } }
-        inverseRelations(first: 50) { nodes { type issue { identifier state { name type } } } pageInfo { hasNextPage } }
+        inverseRelations(first: 10) { nodes { type issue { identifier state { name type } } } pageInfo { hasNextPage } }
       }
       pageInfo { hasNextPage }
     }
@@ -349,7 +349,7 @@ const parentChildren = `query ParentChildren($parents: [ID!], $first: Int!) {
       parent { identifier }
       labels(first: 25) { nodes { name parent { name } } pageInfo { hasNextPage } }
       children(first: 1) { nodes { id } }
-      inverseRelations(first: 50) { nodes { type issue { identifier state { name type } } } pageInfo { hasNextPage } }
+      inverseRelations(first: 10) { nodes { type issue { identifier state { name type } } } pageInfo { hasNextPage } }
     }
     pageInfo { hasNextPage }
   }

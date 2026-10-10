@@ -156,10 +156,11 @@ func (in Input) blockerHold(t linear.Ticket) (Action, bool) {
 		}
 	}
 	if t.BlockersTruncated {
-		open = append(open, "relations past the first 50")
+		open = append(open, "relations past the first 10")
 		ids = append(ids, "relations the dispatcher did not read")
 	}
 	reason := "blocked by " + strings.Join(open, ", ")
+	slices.Sort(ids)
 	note := "No worker is running because this ticket is blocked by " + strings.Join(ids, ", ")
 	note += ". The dispatcher starts one on the first tick after every blocker is Done."
 	return Action{Kind: Wait, Ticket: t, Reason: reason, Note: note}, true

@@ -63,7 +63,7 @@ Behavioral constraints.
 - The dispatcher never answers a question for a worker or approves a PR. It merges a PR only in a repo listed in `auto_merge`, once a review has approved the PR's head commit and the PR is ready. Otherwise it nudges with fixed text, dismisses dialogs, launches, tears down and escalates.
 - Two dispatcher runs never act at the same time.
 - Nudges carry no source tag. Workers treat them as coming from you.
-- The dispatcher comments on a ticket only when it sets Needs Human, or when it refuses to tear down a dirty tree. It never comments to record a nudge.
+- The dispatcher comments on a ticket only when it sets Needs Human, when it refuses to tear down a dirty tree, or when it holds an In Progress ticket for its blockers. It never comments to record a nudge.
 - A worker never stops on a failing check. A flake gets its own ticket and a re-run. A real failure gets fixed.
 - The dispatcher decides when a PR merges, not GitHub. GitHub-side auto-merge on a branch with no required review would merge the moment checks pass, before CodeRabbit weighs in. In a repo listed in `auto_merge`, the dispatcher merges once a review approves the head commit.
 - A worker may ask you a question in its terminal through AskUserQuestion, which herdr shows as blocked. Needs Human is for things you do outside the window, such as approving a design or settling a disputed review.
@@ -90,7 +90,7 @@ Each criterion is checked through the dispatcher's surface (`dispatch tick`, `di
 16. Every launched worker runs with `--disallowedTools EnterPlanMode,ExitPlanMode`.
 17. In a repo listed in `auto_merge`, a ready PR with a review approving its head commit is merged by the dispatcher. A PR without one, an approval of an earlier commit, or a repo not listed is never merged.
 18. After every tick, the herdr tab holding each worker's Claude pane is labeled `<ticket> <title>` in full, and a tab that already matches is not renamed.
-19. A standalone ticket in In Progress with a blocker not yet at `blocker_done` gets no worker. The dispatcher comments on the ticket with the open blockers' identifiers, again only if that set changes, and `dispatch tick --dry-run` prints `wait <ticket>: blocked by <blocker> (<status>)`. It launches on the first tick after every blocker is Done. A canceled or duplicate blocker sends the ticket to Needs Human. A held ticket takes no slot under `max_in_progress`. A worker already running is never stopped when a blocker is added or reopened. A ticket with more than 50 relations of any kind is held, since a blocker may be past the first 50.
+19. A standalone ticket in In Progress with a blocker not yet at `blocker_done` gets no worker. The dispatcher comments on the ticket with the open blockers' identifiers, again only if that set changes, and `dispatch tick --dry-run` prints `wait <ticket>: blocked by <blocker> (<status>)`. It launches on the first tick after every blocker is Done. A canceled or duplicate blocker sends the ticket to Needs Human. A held ticket takes no slot under `max_in_progress`. A worker already running is never stopped when a blocker is added or reopened. A ticket with more than 10 relations of any kind is held, since a blocker may be past the first 10. Reading more would push the query past Linear's 10,000-point complexity limit.
 
 ### Scope
 

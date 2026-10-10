@@ -127,7 +127,7 @@ func TestTickHoldsATicketWhoseBlockersWereCutShort(t *testing.T) {
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "wait ENG-2: blocked by relations past the first 50\n", out)
+	assert.Equal(t, "wait ENG-2: blocked by relations past the first 10\n", out)
 	assert.Empty(t, h.launches())
 }
 
@@ -196,4 +196,17 @@ func TestTickSendsAHeldTicketWithADuplicateBlockerToNeedsHuman(t *testing.T) {
 
 	assert.Contains(t, out, "escalate ENG-2: its blocker ENG-1 is Duplicate")
 	assert.Empty(t, h.launches())
+}
+
+func TestTickDoesNotRepeatTheHoldCommentWhenLinearReordersBlockers(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(blockedBy(ticket("ENG-3", "In Progress", "dispatch"), false, [2]string{"ENG-1", "Todo"}, [2]string{"ENG-2", "Todo"}))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	h.tickets(blockedBy(ticket("ENG-3", "In Progress", "dispatch"), false, [2]string{"ENG-2", "Todo"}, [2]string{"ENG-1", "Todo"}))
+	_, err = h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"No worker is running because this ticket is blocked by ENG-1, ENG-2. The dispatcher starts one on the first tick after every blocker is Done."}, comments(h))
 }
