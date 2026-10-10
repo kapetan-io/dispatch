@@ -7,7 +7,7 @@ description: "Use for \"how does X work\", code walkthroughs before changing som
 
 Explore the codebase to answer "how does X work?" questions. Produce architectural explanations at the level of a senior engineer onboarding onto a subsystem, enough to build a working mental model, not so much that it reads like annotated source code.
 
-Each spawn below sets the Agent tool's `model` parameter. Valid values are `sonnet`, `opus`, `haiku` and `fable`. Explorers and investigators default to `sonnet`, and explainers and synthesizers default to `opus`. If the Agent tool rejects a value, use the closest valid one from its error message.
+Each spawn below sets the Agent tool's `model` parameter. Valid values are `sonnet`, `opus`, `haiku` and `fable`. Explorers default to `sonnet`, and the explainer defaults to `opus`. If the Agent tool rejects a value, use the closest valid one from its error message.
 
 ## Step 1. Assess Complexity
 

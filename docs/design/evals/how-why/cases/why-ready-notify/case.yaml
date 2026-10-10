@@ -1,0 +1,23 @@
+schema_version: "1.1"
+name: why-ready-notify
+context:
+  scaffold_script: scaffold.sh
+execution:
+  model: claude-sonnet-5-5
+  max_turns: 80
+  timeout_seconds: 1500
+  allowed_tools: [Read, Glob, Grep, Write, Bash, Skill, Agent]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: "Skill"
+    input_match: "\"skill\":\\s*\"dispatch:why\""
+  - name: cited
+    type: regex
+    target: { source: "file", path: "answer.md" }
+    pattern: "ENG-256|decision-log"
+    flags: "i"
+  - name: reason
+    type: llm
+    criteria: "PASS if the answer says an In Review ticket stays In Review while the worker fixes findings, so the user had to check Linear, GitHub and herdr by hand to see when a PR was ready. FAIL if it gives another reason or none."
+    focus: { source: "file", path: "answer.md" }

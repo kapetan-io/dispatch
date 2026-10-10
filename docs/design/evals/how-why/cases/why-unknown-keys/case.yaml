@@ -10,14 +10,14 @@ execution:
 graders:
   - name: skill-fired
     type: tool_used
-    tool: Skill
+    tool: "Skill"
+    input_match: "\"skill\":\\s*\"dispatch:why\""
   - name: cited
-    type: llm
-    focus: { source: file, path: answer.md }
-    criteria: |
-      PASS if the answer cites at least one concrete source: the commit "Reject unknown config keys and add a user guide and config reference" (334430a), internal/config/config.go, or docs/config.md. FAIL if it cites nothing checkable.
+    type: regex
+    target: { source: "file", path: "answer.md" }
+    pattern: "334430a"
+    flags: "i"
   - name: reason
     type: llm
-    focus: { source: file, path: answer.md }
-    criteria: |
-      PASS if the answer says a mistyped setting would otherwise fall back to its default without anyone noticing, so the config is rejected with an error naming the setting and the file. FAIL if it gives another reason or none.
+    criteria: "PASS if the answer says a mistyped setting would otherwise fall back to its default without anyone noticing, so loading the config fails with an error that names the setting and the file. FAIL if it gives another reason or none."
+    focus: { source: "file", path: "answer.md" }

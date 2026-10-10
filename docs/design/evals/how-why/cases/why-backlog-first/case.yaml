@@ -1,0 +1,24 @@
+schema_version: "1.1"
+name: why-backlog-first
+tags: [heldout]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  model: claude-sonnet-5-5
+  max_turns: 80
+  timeout_seconds: 1500
+  allowed_tools: [Read, Glob, Grep, Write, Bash, Skill, Agent]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: "Skill"
+    input_match: "\"skill\":\\s*\"dispatch:why\""
+  - name: cited
+    type: regex
+    target: { source: "file", path: "answer.md" }
+    pattern: "decision-log"
+    flags: "i"
+  - name: reason
+    type: llm
+    criteria: "PASS if the answer says a ticket created straight into Todo could be promoted by a tick before its blockers were attached. FAIL if it gives another reason or none."
+    focus: { source: "file", path: "answer.md" }

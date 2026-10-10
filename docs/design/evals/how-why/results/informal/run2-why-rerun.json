@@ -1,0 +1,334 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.296",
+  "startedAt": "2026-10-10T05:40:35.070Z",
+  "durationSeconds": 75,
+  "costUsd": 1.2758205,
+  "partial": false,
+  "suite": {
+    "root": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.sdazDu7abl/plugin",
+    "ablation": "none",
+    "judgeModel": "claude-opus-5-5",
+    "caseFilter": "why-unknown-keys",
+    "threshold": 0,
+    "concurrency": 4,
+    "plugins": [
+      {
+        "name": "dispatch",
+        "path": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.sdazDu7abl/plugin"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "why-unknown-keys",
+      "dir": "cases/why-unknown-keys",
+      "source": "mixed",
+      "promptMarkdown": "Use the why skill to answer this question about the repo in the current directory, then write the answer to answer.md. Linear and other MCPs may be unavailable. Say so in the answer and use git history and the docs.\n\nWhy does dispatch reject unknown config keys?",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1500,
+      "maxTurns": 80,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill"
+          }
+        },
+        {
+          "name": "cited",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer cites at least one concrete source: the commit \"Reject unknown config keys and add a user guide and config reference\" (334430a), internal/config/config.go, or docs/config.md. FAIL if it cites nothing checkable.\n",
+          "config": {
+            "criteria": "PASS if the answer cites at least one concrete source: the commit \"Reject unknown config keys and add a user guide and config reference\" (334430a), internal/config/config.go, or docs/config.md. FAIL if it cites nothing checkable.\n",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        },
+        {
+          "name": "reason",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "PASS if the answer says a mistyped setting would otherwise fall back to its default without anyone noticing, so the config is rejected with an error naming the setting and the file. FAIL if it gives another reason or none.\n",
+          "config": {
+            "criteria": "PASS if the answer says a mistyped setting would otherwise fall back to its default without anyone noticing, so the config is rejected with an error naming the setting and the file. FAIL if it gives another reason or none.\n",
+            "focus": {
+              "source": "file",
+              "path": "answer.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 13,
+            "costUsd": 0.2539614,
+            "judgeCostUsd": 0.11558400000000002,
+            "durationSeconds": 39,
+            "startedAt": "2026-10-10T05:40:35.088Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-UZOsjI/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n## Short answer\n\nSo that a misspelled setting can't silently fall back to its default. dispatch's config is all-optional with defaults, so a typo such as `max_in_progres` would otherwise be dropped without a word and the user would get the default behavior. The loader now fails and names the setting and the file.\n\n## What we found (confirmed in the repo)\n\n- `internal/config/config.go:84-97`: `Load` decodes with `toml.DecodeFile`, then checks `meta.Undecoded()`. Any key the `Config` struct doesn't map returns `while reading config <path>: unknown setting <keys>`. The comment above the check says: \"A misspelled key would otherwise fall back to its default without a word.\"\n- Commit `334430a` (\"Reject unknown config keys and add a user guide and config reference\") introduced this. Its message: \"config.Load now fails on a setting dispatch doesn't know, naming the setting and the file.\"\n- `docs/config.md:3` states the same rationale for users: every setting is optional and a missing one takes its default, and dispatch refuses to run on an unknown setting \"so a typo never falls back to a default unnoticed\". It shows the error for `max_in_progres`.\n- `config_test.go` (`TestUnknownConfigKeyFailsEveryCommand`, `TestUnknownConfigKeyTakesNoAction`) checks that typos at the top level and under `[linear.statuses]` fail on `tick`, `tick --dry-run`, `run` and `tell`, and that nothing is acted on after a failure.\n- The same commit moved the config documentation out of the blueprint into `docs/config.md` and added `docs_test.go`, which loads every toml example in the docs through `config.Load`. Rejecting unknown keys exposed drift: the blueprint's old example had a `[linear.needs_human]` table that the struct never read. The test now asserts that table fails (`unknown setting linear.needs_human`). The docs now say Needs Human is `needs_human` under `[linear.statuses]` and that the label form has no setting yet.\n\n## What we can reasonably infer\n\n- Strictness and the docs-example test are two halves of one change. If the loader ignored unknown keys, a doc example with a dead key would look fine. Strict loading plus the example test keeps the documented config and the real config from drifting apart. This is inferred from the commit's contents, not from a stated rationale.\n- Failing every command, rather than warning, fits a tool that runs unattended on a schedule (`tick`, `run`) and launches workers. A warning could go unseen. This is an inference; no source says it.\n\n## What we don't know\n\n- Whether a specific incident (someone mistyping a key) prompted the change. The commit message and docs give no ticket or report.\n- Whether alternatives (warn-only, a `--strict` flag) were considered.\n\n## Sources consulted\n\n- Source control (git, `docs/`, code and tests): searched; findings above. `git` needed `/opt/homebrew/bin/git` because the default `/usr/bin/git` shim fails in the sandbox.\n- Linear / issue tracker: **unavailable**, no MCP in this session. The ticket trail, if any, was not searched.\n- Docs MCPs, chat, observability, error tracking, analytics: unavailable, not searched. The \"why\" is a single local commit whose message, code comment and user docs agree. I did not spawn parallel investigator or synthesizer subagents; I read the sources inline.\n\n## Confidence\n\nHigh that the stated reason is \"a typo must not silently fall back to a default\" (code comment and user docs say so directly). Medium on the inferences about drift prevention and unattended operation. Low on any motivating incident, which is unknown.\n\n## If you change this\n\n- **Preserve:** the error naming both the setting and the file; failure on every command; the docs-example test.\n- **Avoid:** downgrading to a warning without replacing the \"typo never goes unnoticed\" guarantee.\n- **Risk:** any new setting must be added to the struct and `docs/config.md` together, or valid configs and doc examples will fail to load.\n"
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n## Short answer\n\nSo that a misspelled setting can't silently fall back to its default. dispatch's config is all-optional with defaults, so a typo such as `max_in_progres` would otherwise be dropped without a word and the user would get the default behavior. The loader now fails and names the setting and the file.\n\n## What we found (confirmed in the repo)\n\n- `internal/config/config.go:84-97`: `Load` decodes with `toml.DecodeFile`, then checks `meta.Undecoded()`. Any key the `Config` struct doesn't map returns `while reading config <path>: unknown setting <keys>`. The comment above the check says: \"A misspelled key would otherwise fall back to its default without a word.\"\n- Commit `334430a` (\"Reject unknown config keys and add a user guide and config reference\") introduced this. Its message: \"config.Load now fails on a setting dispatch doesn't know, naming the setting and the file.\"\n- `docs/config.md:3` states the same rationale for users: every setting is optional and a missing one takes its default, and dispatch refuses to run on an unknown setting \"so a typo never falls back to a default unnoticed\". It shows the error for `max_in_progres`.\n- `config_test.go` (`TestUnknownConfigKeyFailsEveryCommand`, `TestUnknownConfigKeyTakesNoAction`) checks that typos at the top level and under `[linear.statuses]` fail on `tick`, `tick --dry-run`, `run` and `tell`, and that nothing is acted on after a failure.\n- The same commit moved the config documentation out of the blueprint into `docs/config.md` and added `docs_test.go`, which loads every toml example in the docs through `config.Load`. Rejecting unknown keys exposed drift: the blueprint's old example had a `[linear.needs_human]` table that the struct never read. The test now asserts that table fails (`unknown setting linear.needs_human`). The docs now say Needs Human is `needs_human` under `[linear.statuses]` and that the label form has no setting yet.\n\n## What we can reasonably infer\n\n- Strictness and the docs-example test are two halves of one change. If the loader ignored unknown keys, a doc example with a dead key would look fine. Strict loading plus the example test keeps the documented config and the real config from drifting apart. This is inferred from the commit's contents, not from a stated rationale.\n- Failing every command, rather than warning, fits a tool that runs unattended on a schedule (`tick`, `run`) and launches workers. A warning could go unseen. This is an inference; no source says it.\n\n## What we don't know\n\n- Whether a specific incident (someone mistyping a key) prompted the change. The commit message and docs give no ticket or report.\n- Whether alternatives (warn-only, a `--strict` flag) were considered.\n\n## Sources consulted\n\n- Source control (git, `docs/`, code and tests): searched; findings above. `git` needed `/opt/homebrew/bin/git` because the default `/usr/bin/git` shim fails in the sandbox.\n- Linear / issue tracker: **unavailable**, no MCP in this session. The ticket trail, if any, was not searched.\n- Docs MCPs, chat, observability, error tracking, analytics: unavailable, not searched. The \"why\" is a single local commit whose message, code comment and user docs agree. I did not spawn parallel investigator or synthesizer subagents; I read the sources inline.\n\n## Confidence\n\nHigh that the stated reason is \"a typo must not silently fall back to a default\" (code comment and user docs say so directly). Medium on the inferences about drift prevention and unattended operation. Low on any motivating incident, which is unknown.\n\n## If you change this\n\n- **Preserve:** the error naming both the setting and the file; failure on every command; the docs-example test.\n- **Avoid:** downgrading to a warning without replacing the \"typo never goes unnoticed\" guarantee.\n- **Risk:** any new setting must be added to the struct and `docs/config.md` together, or valid configs and doc examples will fail to load.\n"
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 13,
+            "costUsd": 0.27739670000000005,
+            "judgeCostUsd": 0.14801200000000006,
+            "durationSeconds": 41,
+            "startedAt": "2026-10-10T05:40:35.088Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-Ae4f1u/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n**Short answer:** so a misspelled setting can't silently fall back to its default. The code comment says it directly: \"A misspelled key would otherwise fall back to its default without a word.\" (`internal/config/config.go:90`). Every setting is optional with a default, so before this change a typo like `max_in_progres = 9` was indistinguishable from not setting anything.\n\n## Coverage\n- Linear and other MCPs were unavailable in this session, so the issue tracker (ENG-250) and chat/docs were not searched. This answer rests on git history, the repo docs and the tests.\n- The default `git` on PATH is the Xcode shim and fails in the sandbox, so I used `/opt/homebrew/bin/git`.\n- I did not spawn investigator subagents. With only git and the docs available, the other categories were empty and the answer sits in one commit.\n\n## What we found (high confidence)\n- `config.Load` rejects any key left over after decoding: `meta.Undecoded()` at `internal/config/config.go:91-97` returns `while reading config <path>: unknown setting <keys>`. Blame puts all of it in commit `334430a` (\"Reject unknown config keys and add a user guide and config reference\", merged as PR #20, branch `eng-250-user-guide-and-config-reference-for-dispatch-with-examples`).\n- `docs/config.md:3` gives the user-facing rationale: dispatch refuses to start on a setting it doesn't know, naming the setting and the file, \"so a typo never falls back to a default unnoticed\". The same sentence says every setting is optional and a missing one takes its default.\n- The change shipped with tests, in `config_test.go`: `TestUnknownConfigKeyFailsEveryCommand` covers the typo `max_in_progres`, a nested typo (`linear.statuses.todoo`), several unknown keys at once, and every command that loads config (`tick`, `tick --dry-run`, `run`, `tell`). `TestUnknownConfigKeyTakesNoAction` checks that a rejected config does nothing.\n- `docs_test.go` loads every toml example in the docs through `config.Load`, so the documented examples can't contain unknown keys. The test's case list includes `[linear.needs_human]`, a table that appeared in the blueprint's example config but was never read by the loader.\n- `dispatch ticket-hint` runs in every Claude Code session, so it prints the error to stderr and exits 0 instead of failing (`docs/config.md:9`).\n\n## What we can reasonably infer (medium confidence)\n- The strictness was added in the same commit as the first user guide and config reference. Writing a complete, documented list of settings is what made \"anything else is a mistake\" enforceable.\n- The `docs_test.go` check keeps docs and loader in sync. The blueprint example had keys the loader never read, so a user copying it got no error and no effect, which is the failure this change ends.\n\n## What we don't know\n- The ENG-250 ticket text and any chat discussion. I can't say whether a specific incident (someone losing time to a typo) prompted this, or whether it was a preventive design choice.\n- Why strict rejection was chosen over a warning. The docs only say it is so a typo \"never falls back to a default unnoticed\".\n\n## Sources consulted\n- Source control (git, `gh` not used): searched, found `334430a` and PR #20 merge `b15e692`.\n- Docs (`docs/config.md`, tests): searched, found the rationale above.\n- Issue tracker (Linear): skipped, no MCP available.\n- Long-form docs, team chat, observability, error tracking, analytics warehouse: skipped, no MCP available.\n\n## Confidence\nHigh that the purpose is catching typos that would silently use defaults. Low on any further business context, because the ticket and chat were not searchable.\n"
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n**Short answer:** so a misspelled setting can't silently fall back to its default. The code comment says it directly: \"A misspelled key would otherwise fall back to its default without a word.\" (`internal/config/config.go:90`). Every setting is optional with a default, so before this change a typo like `max_in_progres = 9` was indistinguishable from not setting anything.\n\n## Coverage\n- Linear and other MCPs were unavailable in this session, so the issue tracker (ENG-250) and chat/docs were not searched. This answer rests on git history, the repo docs and the tests.\n- The default `git` on PATH is the Xcode shim and fails in the sandbox, so I used `/opt/homebrew/bin/git`.\n- I did not spawn investigator subagents. With only git and the docs available, the other categories were empty and the answer sits in one commit.\n\n## What we found (high confidence)\n- `config.Load` rejects any key left over after decoding: `meta.Undecoded()` at `internal/config/config.go:91-97` returns `while reading config <path>: unknown setting <keys>`. Blame puts all of it in commit `334430a` (\"Reject unknown config keys and add a user guide and config reference\", merged as PR #20, branch `eng-250-user-guide-and-config-reference-for-dispatch-with-examples`).\n- `docs/config.md:3` gives the user-facing rationale: dispatch refuses to start on a setting it doesn't know, naming the setting and the file, \"so a typo never falls back to a default unnoticed\". The same sentence says every setting is optional and a missing one takes its default.\n- The change shipped with tests, in `config_test.go`: `TestUnknownConfigKeyFailsEveryCommand` covers the typo `max_in_progres`, a nested typo (`linear.statuses.todoo`), several unknown keys at once, and every command that loads config (`tick`, `tick --dry-run`, `run`, `tell`). `TestUnknownConfigKeyTakesNoAction` checks that a rejected config does nothing.\n- `docs_test.go` loads every toml example in the docs through `config.Load`, so the documented examples can't contain unknown keys. The test's case list includes `[linear.needs_human]`, a table that appeared in the blueprint's example config but was never read by the loader.\n- `dispatch ticket-hint` runs in every Claude Code session, so it prints the error to stderr and exits 0 instead of failing (`docs/config.md:9`).\n\n## What we can reasonably infer (medium confidence)\n- The strictness was added in the same commit as the first user guide and config reference. Writing a complete, documented list of settings is what made \"anything else is a mistake\" enforceable.\n- The `docs_test.go` check keeps docs and loader in sync. The blueprint example had keys the loader never read, so a user copying it got no error and no effect, which is the failure this change ends.\n\n## What we don't know\n- The ENG-250 ticket text and any chat discussion. I can't say whether a specific incident (someone losing time to a typo) prompted this, or whether it was a preventive design choice.\n- Why strict rejection was chosen over a warning. The docs only say it is so a typo \"never falls back to a default unnoticed\".\n\n## Sources consulted\n- Source control (git, `gh` not used): searched, found `334430a` and PR #20 merge `b15e692`.\n- Docs (`docs/config.md`, tests): searched, found the rationale above.\n- Issue tracker (Linear): skipped, no MCP available.\n- Long-form docs, team chat, observability, error tracking, analytics warehouse: skipped, no MCP available.\n\n## Confidence\nHigh that the purpose is catching typos that would silently use defaults. Low on any further business context, because the ticket and chat were not searchable.\n"
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 13,
+            "costUsd": 0.28986330000000005,
+            "judgeCostUsd": 0.14208800000000005,
+            "durationSeconds": 41,
+            "startedAt": "2026-10-10T05:40:35.088Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-smydUq/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n## Short answer\n\nA misspelled or unsupported setting in `config.toml` would otherwise be dropped without a word, and dispatch would run on the default for that setting. Rejecting unknown keys turns that silent failure into an error that names the setting and the file.\n\n## Evidence\n\n**Stated in the code (confirmed).** `internal/config/config.go:90-97` is the check. `Load` decodes the file over the defaults, then calls `meta.Undecoded()` from BurntSushi/toml. If any key is left over, it returns `while reading config <path>: unknown setting <keys>`. The comment above the check gives the reason: \"A misspelled key would otherwise fall back to its default without a word.\"\n\n**Stated in the docs (confirmed).** `docs/config.md:3` says dispatch \"refuses to start a command on a file with a setting it doesn't know, and the error names the setting and the file, so a typo never falls back to a default unnoticed\". It gives the example `unknown setting max_in_progres`.\n\n**Introduced in one commit (confirmed).** Commit `334430a`, \"Reject unknown config keys and add a user guide and config reference\", added the check. It is part of PR #20 (`eng-250-user-guide-and-config-reference-for-dispatch-with-examples`). Before it, `Load` discarded the decode metadata, so unknown keys were ignored. The commit also added:\n- `config_test.go`. Unknown keys must fail `tick`, `tick --dry-run`, `run` and `tell`. A failing load must take no action: no launches and no Linear mutations. Known keys must behave as before.\n- `docs_test.go`. It loads every `toml` example in the docs through `config.Load`, so the docs can't drift from what the loader accepts.\n\n**A concrete case of the problem (confirmed from the diff, with the causal link inferred).** The old blueprint example config had a `[linear.needs_human]` table with `status = \"Needs Human\"`. The loader never read it. Commit `c8eefbd` had moved the real setting to `needs_human` under `[linear.statuses]`. Someone copying the documented example would have had a setting that did nothing, with no error. `334430a` replaced the blueprint's example with a pointer to `docs/config.md` and added a test, `BlueprintNeedsHumanTable`, that expects `unknown setting linear.needs_human`. The commit message doesn't say this was the trigger, so treat that link as an inference.\n\n## Inferred, not stated\n\n- The setting names that matter most here (`max_in_progress`, `nudge_limit`, `worker_model`, the status names) change how dispatch acts on Linear tickets. A typo that quietly reverts to a default could launch workers or move tickets under the wrong limits or statuses. The tests assert that a bad config takes no action. That fits a fail-closed intent, but no commit or doc states this as the motivation.\n- The error is raised in `Load`, so every command that reads the config fails the same way. The test names that path.\n\n## Related history\n\n`a64f626`, \"Narrow the unknown-keys ticket to top-level keys and log why\", is an eval-suite commit. It changed a test ticket in `docs/design/evals/ticket-claims`. It is not a decision about the loader. The loader as shipped rejects unknown keys at any depth, as the `linear.statuses.todoo` test shows.\n\n## Sources consulted\n\n- **Source control:** `git log --follow` on `internal/config/config.go`, `git show 334430a` and `c8eefbd`, and the in-repo docs. Used. `git` only worked through `/opt/homebrew/bin/git`, because the `/usr/bin/git` shim failed in the sandbox.\n- **PR #20 body and discussion:** not retrieved. `gh` is not authenticated here, so review comments, if any, were not read.\n- **Linear and other MCPs (issue tracker, docs, chat, observability, error tracking, analytics):** none were available in this session. I did not search them and I did not spawn investigator subagents. The ticket for `eng-250` and any discussion around it were not read. The answer rests on git history and the repo docs only.\n\n## Confidence\n\n- High: what the check does, and the reason the code and docs give for it.\n- Medium: that the `linear.needs_human` mismatch prompted the change.\n- Unknown: any discussion outside the repo, such as the ticket or chat.\n"
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n## Short answer\n\nA misspelled or unsupported setting in `config.toml` would otherwise be dropped without a word, and dispatch would run on the default for that setting. Rejecting unknown keys turns that silent failure into an error that names the setting and the file.\n\n## Evidence\n\n**Stated in the code (confirmed).** `internal/config/config.go:90-97` is the check. `Load` decodes the file over the defaults, then calls `meta.Undecoded()` from BurntSushi/toml. If any key is left over, it returns `while reading config <path>: unknown setting <keys>`. The comment above the check gives the reason: \"A misspelled key would otherwise fall back to its default without a word.\"\n\n**Stated in the docs (confirmed).** `docs/config.md:3` says dispatch \"refuses to start a command on a file with a setting it doesn't know, and the error names the setting and the file, so a typo never falls back to a default unnoticed\". It gives the example `unknown setting max_in_progres`.\n\n**Introduced in one commit (confirmed).** Commit `334430a`, \"Reject unknown config keys and add a user guide and config reference\", added the check. It is part of PR #20 (`eng-250-user-guide-and-config-reference-for-dispatch-with-examples`). Before it, `Load` discarded the decode metadata, so unknown keys were ignored. The commit also added:\n- `config_test.go`. Unknown keys must fail `tick`, `tick --dry-run`, `run` and `tell`. A failing load must take no action: no launches and no Linear mutations. Known keys must behave as before.\n- `docs_test.go`. It loads every `toml` example in the docs through `config.Load`, so the docs can't drift from what the loader accepts.\n\n**A concrete case of the problem (confirmed from the diff, with the causal link inferred).** The old blueprint example config had a `[linear.needs_human]` table with `status = \"Needs Human\"`. The loader never read it. Commit `c8eefbd` had moved the real setting to `needs_human` under `[linear.statuses]`. Someone copying the documented example would have had a setting that did nothing, with no error. `334430a` replaced the blueprint's example with a pointer to `docs/config.md` and added a test, `BlueprintNeedsHumanTable`, that expects `unknown setting linear.needs_human`. The commit message doesn't say this was the trigger, so treat that link as an inference.\n\n## Inferred, not stated\n\n- The setting names that matter most here (`max_in_progress`, `nudge_limit`, `worker_model`, the status names) change how dispatch acts on Linear tickets. A typo that quietly reverts to a default could launch workers or move tickets under the wrong limits or statuses. The tests assert that a bad config takes no action. That fits a fail-closed intent, but no commit or doc states this as the motivation.\n- The error is raised in `Load`, so every command that reads the config fails the same way. The test names that path.\n\n## Related history\n\n`a64f626`, \"Narrow the unknown-keys ticket to top-level keys and log why\", is an eval-suite commit. It changed a test ticket in `docs/design/evals/ticket-claims`. It is not a decision about the loader. The loader as shipped rejects unknown keys at any depth, as the `linear.statuses.todoo` test shows.\n\n## Sources consulted\n\n- **Source control:** `git log --follow` on `internal/config/config.go`, `git show 334430a` and `c8eefbd`, and the in-repo docs. Used. `git` only worked through `/opt/homebrew/bin/git`, because the `/usr/bin/git` shim failed in the sandbox.\n- **PR #20 body and discussion:** not retrieved. `gh` is not authenticated here, so review comments, if any, were not read.\n- **Linear and other MCPs (issue tracker, docs, chat, observability, error tracking, analytics):** none were available in this session. I did not search them and I did not spawn investigator subagents. The ticket for `eng-250` and any discussion around it were not read. The answer rests on git history and the repo docs only.\n\n## Confidence\n\n- High: what the check does, and the reason the code and docs give for it.\n- Medium: that the `linear.needs_human` mismatch prompted the change.\n- Unknown: any discussion outside the repo, such as the ticket or chat.\n"
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 14,
+            "costUsd": 0.28550110000000006,
+            "judgeCostUsd": 0.13540000000000005,
+            "durationSeconds": 41,
+            "startedAt": "2026-10-10T05:40:35.088Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-8X3Aqw/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n## Short answer\n\nA misspelled setting would otherwise be ignored, and dispatch would run on the default for that setting without telling anyone. Rejecting it makes the typo fail loudly, with an error that names the setting and the file.\n\n## Evidence\n\n- **Code comment.** `internal/config/config.go:90` says \"A misspelled key would otherwise fall back to its default without a word.\" `Load` (`config.go:84-97`) decodes the TOML over the defaults. It then fails if `meta.Undecoded()` is non-empty, with `while reading config <path>: unknown setting <keys>`.\n- **Commit 334430a**, \"Reject unknown config keys and add a user guide and config reference\". It says \"config.Load now fails on a setting dispatch doesn't know, naming the setting and the file.\" It is also the commit that added the user guide and config reference.\n- **User docs.** `docs/config.md:3` says dispatch refuses to start on a setting it doesn't know, \"so a typo never falls back to a default unnoticed\". Its example error is `unknown setting max_in_progres`.\n- **Tests** (`config_test.go`, same commit):\n  - `TestUnknownConfigKeyFailsEveryCommand` covers the typos `max_in_progres`, `linear.statuses.todoo`, `nudge_limt` and `worker_modle`. It also covers every command that loads the config: `tick`, `run` and `tell`.\n  - `TestUnknownConfigKeyTakesNoAction` checks that a bad config launches nothing and mutates nothing in Linear.\n  - `TestKnownConfigKeysBehaveAsBefore` checks that valid configs are unaffected.\n- **A real silent failure behind it.** The blueprint's example config had a `[linear.needs_human]` table with `status = \"Needs Human\"`. The loader never read it, so setting it had no effect and gave no error. The same commit removed that example and replaced it with a pointer to `docs/config.md`. It added a test case named `BlueprintNeedsHumanTable` that expects `unknown setting linear.needs_human`. The docs now say the Needs Human status lives at `linear.statuses.needs_human`.\n- **Docs can't drift.** The commit also added `docs_test.go`, which loads every `toml` block in the docs through `config.Load`. Strict loading is what makes that test mean something. An example with a key the loader doesn't read would now fail the test.\n- **Exception.** `dispatch ticket-hint` runs in every Claude Code session. It prints the error to stderr and exits 0 instead of failing (`docs/config.md:9`).\n\n## Inference (not stated in any source)\n\nThe failure is expensive because the settings control autonomous behavior: `max_in_progress`, status names, `worker_model`, nudge limits. A silently ignored typo changes what dispatch does to tickets without any signal. Refusing to act (see `TestUnknownConfigKeyTakesNoAction`) fits that. No source says this was the weighing, so I'm calling it inference.\n\n## Not known\n\n- Whether alternatives were considered, such as warning instead of failing. I found no discussion.\n- Whether the `needs_human` miss was the direct trigger or just the most visible example. The commit doesn't say.\n\n## Sources consulted\n\n- **Source control (git, repo docs):** used. Findings are above. The merge was PR #20, \"user guide and config reference\". I did not fetch its PR discussion with `gh`.\n- **Issue tracker (Linear), long-form docs, team chat, observability, error tracking, analytics:** not available. No MCPs for these were present in this session, so any ticket or conversation behind the decision was not searchable. This answer relies only on git history and the repo docs.\n- **Subagents:** I did not spawn the parallel investigators or the synthesizer. The only available source was git plus repo docs, and the answer was in a single commit, so I searched inline.\n- **Tooling note:** the default `git` shim failed in the sandbox, so I ran `/opt/homebrew/bin/git` directly.\n\n## Confidence\n\n- **High:** the purpose is to stop typos from silently falling back to defaults. The code comment, the commit message and the docs all say so.\n- **Medium:** the `[linear.needs_human]` table was the concrete trigger. The commit shows it was removed and tested, but doesn't say why.\n- **Low:** why failing was chosen over warning.\n"
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n## Short answer\n\nA misspelled setting would otherwise be ignored, and dispatch would run on the default for that setting without telling anyone. Rejecting it makes the typo fail loudly, with an error that names the setting and the file.\n\n## Evidence\n\n- **Code comment.** `internal/config/config.go:90` says \"A misspelled key would otherwise fall back to its default without a word.\" `Load` (`config.go:84-97`) decodes the TOML over the defaults. It then fails if `meta.Undecoded()` is non-empty, with `while reading config <path>: unknown setting <keys>`.\n- **Commit 334430a**, \"Reject unknown config keys and add a user guide and config reference\". It says \"config.Load now fails on a setting dispatch doesn't know, naming the setting and the file.\" It is also the commit that added the user guide and config reference.\n- **User docs.** `docs/config.md:3` says dispatch refuses to start on a setting it doesn't know, \"so a typo never falls back to a default unnoticed\". Its example error is `unknown setting max_in_progres`.\n- **Tests** (`config_test.go`, same commit):\n  - `TestUnknownConfigKeyFailsEveryCommand` covers the typos `max_in_progres`, `linear.statuses.todoo`, `nudge_limt` and `worker_modle`. It also covers every command that loads the config: `tick`, `run` and `tell`.\n  - `TestUnknownConfigKeyTakesNoAction` checks that a bad config launches nothing and mutates nothing in Linear.\n  - `TestKnownConfigKeysBehaveAsBefore` checks that valid configs are unaffected.\n- **A real silent failure behind it.** The blueprint's example config had a `[linear.needs_human]` table with `status = \"Needs Human\"`. The loader never read it, so setting it had no effect and gave no error. The same commit removed that example and replaced it with a pointer to `docs/config.md`. It added a test case named `BlueprintNeedsHumanTable` that expects `unknown setting linear.needs_human`. The docs now say the Needs Human status lives at `linear.statuses.needs_human`.\n- **Docs can't drift.** The commit also added `docs_test.go`, which loads every `toml` block in the docs through `config.Load`. Strict loading is what makes that test mean something. An example with a key the loader doesn't read would now fail the test.\n- **Exception.** `dispatch ticket-hint` runs in every Claude Code session. It prints the error to stderr and exits 0 instead of failing (`docs/config.md:9`).\n\n## Inference (not stated in any source)\n\nThe failure is expensive because the settings control autonomous behavior: `max_in_progress`, status names, `worker_model`, nudge limits. A silently ignored typo changes what dispatch does to tickets without any signal. Refusing to act (see `TestUnknownConfigKeyTakesNoAction`) fits that. No source says this was the weighing, so I'm calling it inference.\n\n## Not known\n\n- Whether alternatives were considered, such as warning instead of failing. I found no discussion.\n- Whether the `needs_human` miss was the direct trigger or just the most visible example. The commit doesn't say.\n\n## Sources consulted\n\n- **Source control (git, repo docs):** used. Findings are above. The merge was PR #20, \"user guide and config reference\". I did not fetch its PR discussion with `gh`.\n- **Issue tracker (Linear), long-form docs, team chat, observability, error tracking, analytics:** not available. No MCPs for these were present in this session, so any ticket or conversation behind the decision was not searchable. This answer relies only on git history and the repo docs.\n- **Subagents:** I did not spawn the parallel investigators or the synthesizer. The only available source was git plus repo docs, and the answer was in a single commit, so I searched inline.\n- **Tooling note:** the default `git` shim failed in the sandbox, so I ran `/opt/homebrew/bin/git` directly.\n\n## Confidence\n\n- **High:** the purpose is to stop typos from silently falling back to defaults. The code comment, the commit message and the docs all say so.\n- **Medium:** the `[linear.needs_human]` table was the concrete trigger. The commit shows it was removed and tested, but doesn't say why.\n- **Low:** why failing was chosen over warning.\n"
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 13,
+            "costUsd": 0.16909800000000003,
+            "judgeCostUsd": 0.03066000000000002,
+            "durationSeconds": 36,
+            "startedAt": "2026-10-10T05:41:14.526Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-Je7618/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "cited",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n## Answer\n\nA misspelled setting must not silently fall back to its default. Every setting is optional and has a default, so a typo such as `max_in_progres` would otherwise load without error and have no effect. `config.Load` therefore fails on any key it doesn't know.\n\n## Evidence (confirmed)\n\n- `internal/config/config.go:90-97` has the comment \"A misspelled key would otherwise fall back to its default without a word.\" Right after it, `meta.Undecoded()` is checked, and `Load` returns `unknown setting <keys>`. The error names every unknown key and the file.\n- `docs/config.md:3` gives the same reason: \"a typo never falls back to a default unnoticed\". It shows `unknown setting max_in_progres` as the example error.\n- Commit `334430a`, \"Reject unknown config keys and add a user guide and config reference\", introduced the check. Its message says `config.Load` \"now fails on a setting dispatch doesn't know, naming the setting and the file.\" It also added a test that loads every `toml` example in the docs through `config.Load`.\n- `config_test.go` covers a top-level typo (`max_in_progres`), a nested typo (`linear.statuses.todoo`) and several typos in one file. Each case is checked against `tick`, `tick --dry-run`, `run` and `tell`. It also covers `[linear.needs_human]`, a key copied from the blueprint (the design document) that the loader never read.\n- `docs/guide.md:150` names two usual causes: a typo, and \"an example copied from an old design document\".\n- The rule applies to every command. `dispatch ticket-hint` runs in every Claude Code session, so it prints the error to stderr and exits 0 instead of failing the session (`docs/config.md:9`).\n\n## Inference (not stated in a source)\n\nThe blueprint's example config held keys the loader never read. Those keys were silently ignored, and `334430a` removed the config section from the blueprint (`docs/design/blueprint.md`, 33 lines changed). So the commit was probably also a reaction to documentation that had drifted from the code. The docs-loading test then keeps the examples valid. The commit message doesn't say this directly. The eval scenario in `docs/design/evals/needs-human-comment/` describes the same situation.\n\n## Gaps\n\n- **Linear and other MCPs were unavailable.** I couldn't read the ticket behind `334430a`, so any motivation recorded only there is missing. This answer rests on git history and the repo docs.\n- **No subagent investigators were run.** Only git history and the docs were searched, so no PR discussion, chat or incident record was checked. That is enough for the main reason, because the code, the docs and the commit message agree. I can't rule out that other motives, such as an incident, exist elsewhere.\n- Git needed the full path `/Library/Developer/CommandLineTools/usr/bin/git` because the sandbox blocked the `git` shim. This didn't change any result.\n\n## Confidence\n\n- **High:** a typo must not fall back to a default unnoticed. It is stated in the code comment and the docs, and the commit and tests match.\n- **Medium:** the drift from documented examples as a secondary motivation.\n"
+              },
+              {
+                "name": "reason",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "# Why does dispatch reject unknown config keys?\n\n## Answer\n\nA misspelled setting must not silently fall back to its default. Every setting is optional and has a default, so a typo such as `max_in_progres` would otherwise load without error and have no effect. `config.Load` therefore fails on any key it doesn't know.\n\n## Evidence (confirmed)\n\n- `internal/config/config.go:90-97` has the comment \"A misspelled key would otherwise fall back to its default without a word.\" Right after it, `meta.Undecoded()` is checked, and `Load` returns `unknown setting <keys>`. The error names every unknown key and the file.\n- `docs/config.md:3` gives the same reason: \"a typo never falls back to a default unnoticed\". It shows `unknown setting max_in_progres` as the example error.\n- Commit `334430a`, \"Reject unknown config keys and add a user guide and config reference\", introduced the check. Its message says `config.Load` \"now fails on a setting dispatch doesn't know, naming the setting and the file.\" It also added a test that loads every `toml` example in the docs through `config.Load`.\n- `config_test.go` covers a top-level typo (`max_in_progres`), a nested typo (`linear.statuses.todoo`) and several typos in one file. Each case is checked against `tick`, `tick --dry-run`, `run` and `tell`. It also covers `[linear.needs_human]`, a key copied from the blueprint (the design document) that the loader never read.\n- `docs/guide.md:150` names two usual causes: a typo, and \"an example copied from an old design document\".\n- The rule applies to every command. `dispatch ticket-hint` runs in every Claude Code session, so it prints the error to stderr and exits 0 instead of failing the session (`docs/config.md:9`).\n\n## Inference (not stated in a source)\n\nThe blueprint's example config held keys the loader never read. Those keys were silently ignored, and `334430a` removed the config section from the blueprint (`docs/design/blueprint.md`, 33 lines changed). So the commit was probably also a reaction to documentation that had drifted from the code. The docs-loading test then keeps the examples valid. The commit message doesn't say this directly. The eval scenario in `docs/design/evals/needs-human-comment/` describes the same situation.\n\n## Gaps\n\n- **Linear and other MCPs were unavailable.** I couldn't read the ticket behind `334430a`, so any motivation recorded only there is missing. This answer rests on git history and the repo docs.\n- **No subagent investigators were run.** Only git history and the docs were searched, so no PR discussion, chat or incident record was checked. That is enough for the main reason, because the code, the docs and the commit message agree. I can't rule out that other motives, such as an incident, exist elsewhere.\n- Git needed the full path `/Library/Developer/CommandLineTools/usr/bin/git` because the sandbox blocked the `git` shim. This didn't change any result.\n\n## Confidence\n\n- **High:** a typo must not fall back to a default unnoticed. It is stated in the code comment and the docs, and the commit and tests match.\n- **Medium:** the drift from documented examples as a secondary motivation.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 1,
+        "passRate": 1
+      }
+    }
+  ],
+  "aggregates": {
+    "casesTotal": 1,
+    "casesPassed": 1,
+    "overallScore": 1,
+    "overallPassRate": 1
+  }
+}

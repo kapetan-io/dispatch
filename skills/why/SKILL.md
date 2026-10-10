@@ -9,7 +9,7 @@ Investigate the motivation and intent behind code.
 
 Companion to the `how` skill. `how` answers what the code does and how it works. `why` answers what forces led to its shape.
 
-Each spawn below sets the Agent tool's `model` parameter. Valid values are `sonnet`, `opus`, `haiku` and `fable`. Explorers and investigators default to `sonnet`, and explainers and synthesizers default to `opus`. If the Agent tool rejects a value, use the closest valid one from its error message.
+Each spawn below sets the Agent tool's `model` parameter. Valid values are `sonnet`, `opus`, `haiku` and `fable`. Investigators default to `sonnet`, and the synthesizer defaults to `opus`. If the Agent tool rejects a value, use the closest valid one from its error message.
 
 ## Operating Posture
 
