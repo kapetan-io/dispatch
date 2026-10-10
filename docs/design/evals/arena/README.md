@@ -21,7 +21,7 @@ Each grader reads either the arguments of the worker's `Agent` calls (exact chec
 
 - `skill-fired`, `fan-out` (at least 4 `Agent` calls), `model-fable`, `model-sonnet`, `model-opus` (at least 2, one is the judge). Exact.
 - `judge-readonly`: an `Agent` call with `subagent_type: "Plan"`. Exact.
-- `rubric-judge-only`: exactly one `Agent` call mentions a rubric or criteria, which means the candidates were not given them. Exact. It does not show the rubric was written before fan-out, because that happens in the worker's reasoning, which the trace doesn't hold. Rubric-before-fan-out is not tested.
+- `rubric-judge-only`: exactly one `Agent` call mentions a rubric or criteria. This is a term check, so it does not rule out scoring guidance phrased without those words. Exact. It does not show the rubric was written before fan-out, because that happens in the worker's reasoning, which the trace doesn't hold. Rubric-before-fan-out is not tested.
 - `prompt-scratch`, `prompt-premise`: at least 3 `Agent` calls contain "from scratch with every signal now available" and "premise". Exact.
 - `prompt-clean`: no `Agent` prompt says the service must, should or needs to poll. Exact and narrow. It passes vacuously for a worker that starts no sub-agents.
 - `judge-after`: an LLM reads the transcript to check the judge started after every candidate finished.
@@ -45,7 +45,7 @@ Sensitivity check: `arms/careless.md`, 2 runs, must pass fewer than 40% of the n
 
 Budget: 5 runs per case, at most 3 attempts (an attempt is a change to the skill's wording followed by 5 runs), no cost ceiling beyond that. Five runs can't show a failure rate under about 20%. If the bar isn't met by attempt 3, the ticket goes to Needs Human with the results so far.
 
-Limits. One case, so the eval shows the phases followed on one question and does not show the arena beats a single attempt. `rubric-judge-only` does not show the rubric came before fan-out. `note` also requires the models each candidate ran on, which the skill's Outputs section does not ask for, so it over-asks.
+Limits. One case, so the eval shows the phases followed on one question and does not show the arena beats a single attempt. `rubric-judge-only` does not show the rubric came before fan-out. Before attempt 5, `note` also required each candidate's model, which the skill's Outputs section does not ask for. That requirement was removed for attempt 5.
 
 The bar's thresholds did not change. The grader set did, after review (see `log.md`). Changing it goes to the user through Needs Human.
 
