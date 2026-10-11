@@ -77,6 +77,10 @@ type Entry struct {
 	// what that means. It survives a trip out of In Review, so the worker is not
 	// nudged again about activity it handled.
 	PRActivitySeen string `json:"pr_activity_seen,omitempty"`
+	// HoldNoted is the comment that told the user why the ticket has no worker
+	// yet, so a ticket held across ticks gets it once. It clears when the
+	// ticket is no longer held.
+	HoldNoted string `json:"hold_noted,omitempty"`
 	// TeardownWarned marks a finished ticket whose dirty tree already got its
 	// one comment. It is dropped when the ticket stops being a finished ticket
 	// that holds a lease.

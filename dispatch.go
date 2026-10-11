@@ -459,10 +459,26 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 		lo.RepoDir = a.RepoDir
 		return launcher.Run(ctx, launcher.Request{Ticket: a.Ticket.Identifier, Title: a.Ticket.Title, Branch: a.Ticket.Branch, Model: model, Kickoff: kickoff}, lo)
 	}
+	// Only a ticket that stopped waiting gets a fresh comment later. A pool that
+	// couldn't be read this tick says nothing about its blockers.
+	for _, t := range tickets {
+		if e := c[t.Identifier]; e.HoldNoted != "" && !input.WaitsOnBlockers(t) {
+			e.HoldNoted = ""
+			c[t.Identifier] = e
+		}
+	}
 	for _, a := range actions {
 		switch a.Kind {
 		case reconcile.Skip, reconcile.Wait:
 			_, _ = fmt.Fprintln(opts.Stdout, a)
+			if e := c[a.Ticket.Identifier]; a.Note != "" && e.HoldNoted != a.Note {
+				if err := lin.Comment(ctx, a.Ticket.ID, a.Note); err != nil {
+					_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while commenting on %s: %v\n", a.Ticket.Identifier, err)
+					continue
+				}
+				e.HoldNoted = a.Note
+				c[a.Ticket.Identifier] = e
+			}
 		case reconcile.Escalate:
 			// One ticket's failed escalation must not hold up the others.
 			if err := escalate(ctx, lin, cfg, c, post, a.Ticket, a.Reason); err != nil {
