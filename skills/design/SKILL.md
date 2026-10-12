@@ -27,7 +27,7 @@ Load `dispatch:converse` with the Skill tool. Open a todolist with one entry per
 
 ### Orient
 
-1. Read the feature ticket and its comments.
+1. Read the feature ticket and its comments. A design in the ticket's Notes is a suggestion. Carry it to the arena's premise list, not into the grounding as a constraint.
 2. Read the domain glossary: `CONTEXT.md` files in the `docs/` directories this feature touches. Use them to catch terminology conflicts in both halves.
 3. List every file in `docs/adr/` and read each title. Read the full ADR for two kinds of title. A scope-capping title (users, tenancy, regions, roles, deployment targets) limits what the product can ask for, so frame product questions that do not invite answers it rules out, and surface the ADR if the user wants something it forbids. A title on a topic this design's technical half touches (storage, API patterns, auth, errors) sets precedent to honor. A departure is itself a decision that needs a new or superseding ADR.
 4. Read the code this feature will live in: existing patterns, related modules and prior art. Technical questions must ask where the feature fits in this codebase, not run a generic checklist.
@@ -62,29 +62,35 @@ Tailor to the feature.
 - **Mental model.** For platform and tooling: the core concepts and how they relate.
 - **Core design principles.** What the product will always do and deliberately never do. Surface them early, because they resolve later questions and are ADR candidates.
 - **Correctness constraints.** Two subsections. *State invariants* are always-true statements about data, each with what violates it and what the system does then. An invariant with no enforcement is a comment in dead code. *Behavioral constraints* are things the system must never do, even in failure. Elicit both with three prompts. Concurrency: what happens when two users touch the same resource at once? Reversibility: which operations can be undone? Partial failure: what happens if this succeeds halfway?
-- **Acceptance criteria.** Each one mechanically verifiable. Ask "how would a test know this happened?" of every criterion, and rewrite any that needs human judgment. Cover failure cases explicitly.
+- **Acceptance criteria.** Each one an outcome a user or caller sees, mechanically verifiable, never which test or layer must catch it. Rewrite any that needs human judgment. Cover failure cases explicitly.
 - **Scope and non-goals.** What is in the first version and what is out.
 - **Dependencies and constraints.**
 - **User stories.** Only when several personas have divergent workflows, the interactions branch, many discrete behaviors need verifying, or engineers build in parallel. Skip them for infrastructure, simple features, or when the criteria already sit at story granularity. Each story's criteria are mechanically verifiable and trace to the section they come from.
 - **Success metrics.** Post-ship outcomes only, never a restatement of scope. Omit the section when none exists.
 
-When the product half is done, write the **Objective** and ask the user to approve it. The Objective is the anchor. Every candidate sketch, review round and build ticket is checked against it, so do not move on until the user says it is right.
+When the product half is done, write the **Objective** and ask the user to approve it. The Objective is the anchor. Every candidate sketch, review round and build ticket is checked against it, so do not move on until the user says it is right. Raise any acceptance criterion that names a mechanism as its own question first, since one "yes" to the whole Objective approves it unread.
 
 ## Phase A: Ground the problem
 
-Build a real mental model of every system the new code touches. Run the **dispatch:how** skill over the relevant subsystems.
+Build a real mental model of every system the new code touches. Run the **dispatch:how** skill over the relevant subsystems. Ask it and `dispatch:why` in the problem domain's terms: what the system asks of each dependency, what each one refuses, and which behaviors rely on it. Technical detail (command lines, wire formats, call mechanics) is evidence, not the model.
 
-Naming a file isn't grounding. Produce the traced model `dispatch:how` prescribes. If the design redefines ownership or layering, also run the **dispatch:why** skill on the existing shape so the rationale becomes a constraint, not a guess. Choosing between extending an existing mechanism and adding a new one counts as layering.
+Naming a file isn't grounding. Produce the traced model `dispatch:how` prescribes. If the design redefines ownership or layering, also run the **dispatch:why** skill on the existing shape so the candidates see the recorded reason, not a guess. Choosing between extending an existing mechanism and adding a new one counts as layering.
 
 Load both with the Skill tool and do not read the repo yourself in their place. `dispatch:how` holds the explorer and explainer prompts that make the trace thorough, and `dispatch:why` holds the sources that turn history into a recorded reason.
 
-Write the grounding to one file in the scratchpad. It is what the candidates read, so it must hold the traced code and the decisions behind it, not a list of file names.
+Write the grounding to one file in the scratchpad, in three sections. It is what the candidates read, so it must hold the traced code and the decisions behind it, not a list of file names.
+
+- **Facts.** The domain model first: what each part is to the system, what the system asks of it, what it refuses, and how tests stand in for it today, each with a file and line or a command and its output. Technical detail goes in an appendix the Facts point to. No "should", "must" or "so".
+- **History.** Each decision quoted in the source's words, with source, date and subject. Do not widen a quote past its subject.
+- **Constraints.** Only items that end in a source: an Objective line, a dated user decision, or a History quote at its own scope.
+
+An inference, however likely, goes to the arena's premise list instead. Before Phase B, a fresh sub-agent lists every should or must sentence in the grounding with its source line. Move the unsourced ones to the premise list and report how many moved in the arena's synthesis note.
 
 Skip Phase A only when the work is genuinely greenfield with no surrounding system to integrate. Then write "no surrounding system" in the grounding file, so the candidates read a file that says so.
 
 ## Phase B: Sketch
 
-Run the **dispatch:arena** skill with the design-sketch task, the approved Objective and the Phase A grounding file. Pass `references/runner-prompt.md` as each runner's prompt. Each candidate produces a design package shaped per `references/rationale-template.md`. Load the arena with the Skill tool rather than reproducing it from memory, since it holds the judge, graft and verify steps.
+Run the **dispatch:arena** skill with the design-sketch task, the approved Objective, the Phase A grounding file and the premise list. Pass `references/runner-prompt.md` as each runner's prompt. Each candidate produces a design package shaped per `references/rationale-template.md`. Load the arena with the Skill tool rather than reproducing it from memory, since it holds the judge, graft and verify steps.
 
 Design it twice. Require at least two structurally distinct candidates before synthesis, even when the first looks sufficient. Whole-shape alternatives, not point fixes inside one shape. When only one shape fits, the arena's rationale says so ("this was the only viable shape because...").
 
@@ -108,7 +114,7 @@ Settle what an engineer needs before writing code, not a checklist: data, depend
 
 - **Domain-boundary opacity.** A domain must not contain logic that belongs to a domain it calls. For each interface, ask whether the caller ever needs to know which implementation is behind it. If so, either the contract is missing a guarantee or the caller is absorbing the callee's job. State the principle in the blueprint when an interface has several implementations.
 - **Correctness translation.** For each state invariant, name every operation that touches its data and show why none can violate it. Prefer designs where the data model makes the illegal state unrepresentable, and say which invariants rest on application logic and so need more tests. For each behavioral constraint, show how the architecture satisfies it. Make assumptions between components explicit as preconditions and postconditions.
-- **Testing.** Name the surface a test enters through, the substitute for each external dependency, an observability API for any async effect the surface doesn't show, an injectable clock for time-dependent behavior, and a parity plan for any in-memory store beside a real one. Testing follows the `dispatch:surface-testing` skill.
+- **Testing.** Name the surface a test enters through, the substitute for each external dependency, standing in at a domain type, an observability API for any async effect the surface doesn't show, an injectable clock for time-dependent behavior, and a parity plan for any in-memory store beside a real one. Testing follows the `dispatch:surface-testing` skill.
 - **Level of detail.** Pin a signature only where a consumer or test binds to it. Describe an internal surface's responsibility, inputs and outputs, invariants and error categories, and leave its signature to the implementor, who sees the real types. A schema is pinned in full, and the interface that wraps it is not.
 
 When a question can't be settled now, insert `[NEEDS CLARIFICATION: <question>]` and continue with the best assumption. Three or more flags mean the blueprint isn't ready to build from, so stop and ask the user to settle them.

@@ -23,7 +23,9 @@ If the file is missing or this repo is not in `[repos]`, dispatch does not manag
 
 ## Body
 
-Describe the problem and what is true afterwards. Leave out how to build it (flags to keep, wording to preserve, files to touch) and which tests to write, because the worker may treat every line as a requirement and your guesses become constraints nobody chose. State a decision only if the user made it, and say so ("the user wants X"). Otherwise drop it, or offer it in Notes for the worker as a labelled suggestion.
+Write every section from the problem domain and the surface, even for a technical change. Use the domain's terms, and describe what a user or caller sees, not how the code or tests achieve it. Technical detail goes in Notes for the worker, labelled as a suggestion.
+
+Describe the problem and what is true afterwards. Leave out how to build it (flags to keep, wording to preserve, files to touch) and which tests to write, because the worker may treat every line as a requirement and your guesses become constraints nobody chose. State a decision only if the user made it, and say so ("the user wants X"). Otherwise drop it, or offer it in Notes for the worker as a labelled suggestion. A design the user hasn't approved isn't governing design. Put it in Notes for the worker, labelled as a suggestion.
 
 Use these sections in this order.
 

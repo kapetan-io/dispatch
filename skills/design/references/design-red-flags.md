@@ -20,6 +20,12 @@ Information leakage makes multiple modules depend on the same internal decision.
 
 Public re-exports of transport or wire types are leakage. Parse external data into domain types behind the interface. Keep storage schemas, framework objects, and protocol details private.
 
+## Boundary below the domain
+
+Testing the main behavior would mean scripting a dependency's output or asserting the exact request sent. The boundary sits below the domain, so tests can only restate the implementation.
+
+Move the boundary up until tests read as situations: state set up in the domain's words, an action through the surface, a domain outcome asserted.
+
 ## Temporal decomposition
 
 Temporal decomposition organizes modules by execution order instead of the knowledge they own. Separate load, validate, transform, and save stages often repeat one representation and its invariants across several boundaries.
