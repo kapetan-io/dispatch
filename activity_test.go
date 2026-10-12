@@ -306,10 +306,10 @@ func TestTickRetriesAPRActivityNudgeHerdrRefused(t *testing.T) {
 	h := watched(t, before)
 	before.reviews = []activity{{"COMMENTED", time2, "alice", "", ""}}
 	h.pr("ENG-1", before)
-	h.writeFile("prompt-fails", "")
+	h.blockAfterSnapshot("ENG-1")
 	_, err := h.run("tick")
 	require.NoError(t, err)
-	h.removeFile("prompt-fails")
+	h.unblock("ENG-1")
 
 	out, err := h.run("tick")
 	require.NoError(t, err)

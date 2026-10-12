@@ -1,6 +1,7 @@
 package dispatch_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -78,7 +79,7 @@ func TestTickDoesNotCountANudgeHerdrRefused(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.worker("ENG-1", "idle")
-	h.writeFile("prompt-fails", "")
+	h.blockAfterSnapshot("ENG-1")
 
 	var stderr string
 	for range 4 {
@@ -125,7 +126,7 @@ func TestTickNotifiesOnceWhenATicketEntersNeedsHuman(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1|dispatch"}, h.notifications())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
 	assert.Empty(t, h.prompts())
 	assert.Empty(t, h.linear.mutations())
 }
@@ -140,21 +141,21 @@ func TestTickNotifiesWhenADispatcherEscalationMovesATicket(t *testing.T) {
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1|dispatch"}, h.notifications())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
 }
 
 func TestTickRetriesANeedsHumanNotificationThatFailed(t *testing.T) {
 	h := newHarness(t)
 	h.worker("ENG-1", "working")
 	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))
-	h.writeFile("notify-fails", "")
+	h.tools.Alerts.Fail(errors.New("exit status 1"))
 
 	_, stderr, err := h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
 	assert.Contains(t, stderr, "while notifying about ENG-1")
 	assert.Empty(t, h.notifications())
 
-	h.removeFile("notify-fails")
+	h.tools.Alerts.Fail(nil)
 	_, err = h.run("tick")
 	require.NoError(t, err)
 	_, err = h.run("tick")
@@ -169,7 +170,7 @@ func TestTickNotifiesAgainWhileAWorkerStaysBlocked(t *testing.T) {
 			h := newHarness(t)
 			h.tickets(ticket("ENG-1", status, "dispatch"))
 			h.worker("ENG-1", "blocked")
-			const want = "ENG-1 is waiting on your answer in its herdr workspace|dispatch"
+			const want = "ENG-1 is waiting on your answer in its herdr workspace"
 
 			var counts []int
 			for range 7 {
@@ -267,7 +268,7 @@ func TestTellFails(t *testing.T) {
 func TestTellReportsAWorkerHerdrRefuses(t *testing.T) {
 	h := newHarness(t)
 	h.worker("ENG-1", "idle")
-	h.writeFile("prompt-fails", "")
+	h.blockAfterSnapshot("ENG-1")
 
 	_, err := h.run("tell", "ENG-1", "hi")
 
@@ -351,7 +352,7 @@ func TestTickNotifiesForNeedsHumanWhateverTheWorkerIs(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1|dispatch"}, h.notifications())
+			assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
 			assert.Empty(t, h.prompts())
 			assert.Empty(t, h.launches())
 			assert.Empty(t, h.linear.mutations())
@@ -381,7 +382,7 @@ func TestTickNotifiesAfterAnEscalationWhoseAlertFailed(t *testing.T) {
 		_, err := h.run("tick")
 		require.NoError(t, err)
 	}
-	h.writeFile("notify-fails", "")
+	h.tools.Alerts.Fail(errors.New("exit status 1"))
 
 	out, err := h.run("tick")
 	require.NoError(t, err)
@@ -389,14 +390,14 @@ func TestTickNotifiesAfterAnEscalationWhoseAlertFailed(t *testing.T) {
 	assert.Empty(t, h.notifications())
 	assert.Len(t, h.linear.mutations(), 2)
 
-	h.removeFile("notify-fails")
+	h.tools.Alerts.Fail(nil)
 	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))
 	for range 2 {
 		_, err = h.run("tick")
 		require.NoError(t, err)
 	}
 
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1|dispatch"}, h.notifications())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
 	assert.Len(t, h.linear.mutations(), 2)
 }
 
@@ -423,14 +424,14 @@ func TestTickRetriesABlockedNotificationThatFailed(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.worker("ENG-1", "blocked")
-	h.writeFile("notify-fails", "")
+	h.tools.Alerts.Fail(errors.New("exit status 1"))
 
 	_, stderr, err := h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
 	assert.Contains(t, stderr, "while notifying about ENG-1")
 	assert.Empty(t, h.notifications())
 
-	h.removeFile("notify-fails")
+	h.tools.Alerts.Fail(nil)
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
@@ -443,8 +444,8 @@ func TestTickTracksBlockedTicksPerTicket(t *testing.T) {
 	h.worker("ENG-1", "blocked")
 	h.worker("ENG-2", "working")
 	const (
-		first  = "ENG-1 is waiting on your answer in its herdr workspace|dispatch"
-		second = "ENG-2 is waiting on your answer in its herdr workspace|dispatch"
+		first  = "ENG-1 is waiting on your answer in its herdr workspace"
+		second = "ENG-2 is waiting on your answer in its herdr workspace"
 	)
 
 	_, err := h.run("tick")
@@ -533,10 +534,10 @@ func TestTickRetriesAResumeNudgeHerdrRefused(t *testing.T) {
 	_, err := h.run("tick")
 	require.NoError(t, err)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.writeFile("prompt-fails", "")
+	h.blockAfterSnapshot("ENG-1")
 	_, err = h.run("tick")
 	require.NoError(t, err)
-	h.removeFile("prompt-fails")
+	h.unblock("ENG-1")
 
 	out, err := h.run("tick")
 	require.NoError(t, err)
@@ -572,10 +573,10 @@ func TestTickSendsTheResumeNudgeAfterANeedsHumanNotificationFailed(t *testing.T)
 	_, err := h.run("tick")
 	require.NoError(t, err)
 	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))
-	h.writeFile("notify-fails", "")
+	h.tools.Alerts.Fail(errors.New("exit status 1"))
 	_, err = h.run("tick")
 	require.NoError(t, err)
-	h.removeFile("notify-fails")
+	h.tools.Alerts.Fail(nil)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	out, err := h.run("tick")
@@ -593,7 +594,7 @@ func TestTickNotifiesWhenAReviewWorkerIsBlockedOnAQuestion(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, out, "notify ENG-1: ")
-	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its herdr workspace|dispatch"}, h.notifications())
+	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its herdr workspace"}, h.notifications())
 }
 
 func TestTickNotifiesWhenAReviewTicketThatAlsoCarriesDesignIsBlocked(t *testing.T) {
@@ -604,7 +605,7 @@ func TestTickNotifiesWhenAReviewTicketThatAlsoCarriesDesignIsBlocked(t *testing.
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its herdr workspace|dispatch"}, h.notifications())
+	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its herdr workspace"}, h.notifications())
 }
 
 func TestTickNotifiesWhenAReviewTicketEntersNeedsHuman(t *testing.T) {
@@ -620,7 +621,7 @@ func TestTickNotifiesWhenAReviewTicketEntersNeedsHuman(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1|dispatch"}, h.notifications())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
 }
 
 func TestTickStartsFreshWhenAPausedTicketReturns(t *testing.T) {

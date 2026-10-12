@@ -1,6 +1,8 @@
 package dispatch_test
 
 import (
+	"errors"
+	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +23,7 @@ func TestTickNotifiesOnceWhenAnInReviewPRIsReady(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
-	assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+	assert.Equal(t, []string{readyText1 + ""}, h.notifications())
 	assert.Empty(t, h.prompts())
 	assert.Empty(t, h.linear.mutations())
 
@@ -87,7 +89,7 @@ func TestTickNotifiesWhenAPRMidReviewFinishesItsChecks(t *testing.T) {
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+	assert.Equal(t, []string{readyText1 + ""}, h.notifications())
 }
 
 func TestTickRetriesAReadyNotificationThatFailed(t *testing.T) {
@@ -95,18 +97,18 @@ func TestTickRetriesAReadyNotificationThatFailed(t *testing.T) {
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", cleanPR("a1"))
-	h.writeFile("notify-fails", "")
+	h.tools.Alerts.Fail(errors.New("exit status 1"))
 
 	_, stderr, err := h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
 	assert.Contains(t, stderr, "while notifying about ENG-1")
 	assert.Empty(t, h.notifications())
 
-	h.removeFile("notify-fails")
+	h.tools.Alerts.Fail(nil)
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+	assert.Equal(t, []string{readyText1 + ""}, h.notifications())
 }
 
 func TestTickDryRunNamesTheReadyNotificationWithoutSendingIt(t *testing.T) {
@@ -255,7 +257,7 @@ func TestTickNotifiesWhenAReadyPRHasNoChecks(t *testing.T) {
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+	assert.Equal(t, []string{readyText1 + ""}, h.notifications())
 }
 
 func TestTickNotifiesForPRsThatAreStillReady(t *testing.T) {
@@ -276,7 +278,7 @@ func TestTickNotifiesForPRsThatAreStillReady(t *testing.T) {
 			_, err := h.run("tick")
 			require.NoError(t, err)
 
-			assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+			assert.Equal(t, []string{readyText1 + ""}, h.notifications())
 		})
 	}
 }
@@ -336,7 +338,7 @@ func TestTickNotifiesWhenAWorkingWorkerGoesIdleOnAReadyPR(t *testing.T) {
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+	assert.Equal(t, []string{readyText1 + ""}, h.notifications())
 }
 
 func TestTickDoesNotRepeatTheNotificationWhenTheSameHeadIsReadyAgain(t *testing.T) {
@@ -381,18 +383,18 @@ func TestTickNotifiesForTheNewHeadWhenAFailedNotificationIsFollowedByAPush(t *te
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", cleanPR("a1"))
-	h.writeFile("notify-fails", "")
+	h.tools.Alerts.Fail(errors.New("exit status 1"))
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	h.removeFile("notify-fails")
+	h.tools.Alerts.Fail(nil)
 	h.pr("ENG-1", cleanPR("a2"))
 	for range 2 {
 		_, err = h.run("tick")
 		require.NoError(t, err)
 	}
 
-	assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+	assert.Equal(t, []string{readyText1 + ""}, h.notifications())
 }
 
 func TestTickNotifiesOncePerReadyTicket(t *testing.T) {
@@ -406,7 +408,7 @@ func TestTickNotifiesOncePerReadyTicket(t *testing.T) {
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+	assert.Equal(t, []string{readyText1 + ""}, h.notifications())
 }
 
 func TestTickDoesNotNotifyForAReadyPRWhileTheTicketIsNotInReview(t *testing.T) {
@@ -449,20 +451,16 @@ func TestTickDoesNotRenameATicketWithoutAWorkspace(t *testing.T) {
 
 func TestTickRetriesARenameHerdrRefused(t *testing.T) {
 	h := newHarness(t)
-	real := h.dir + "/herdr-real"
-	h.script("herdr-real", string(h.readFile("herdr")))
-	h.script("herdr", `[ -f "`+h.dir+`/rename-fails" ] && [ "$1 $2" = "workspace rename" ] && exit 1
-exec "`+real+`" "$@"`)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.worker("ENG-1", "working")
-	h.writeFile("rename-fails", "")
+	h.tools.Herdr.Fail(herdrtest.OpRenameWorkspace, errors.New("exit status 1"))
 
 	_, stderr, err := h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
 	assert.Contains(t, stderr, "while renaming herdr workspace w-ENG-1")
 	assert.Empty(t, h.renames())
 
-	h.removeFile("rename-fails")
+	h.tools.Herdr.Fail(herdrtest.OpRenameWorkspace, nil)
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
@@ -732,9 +730,7 @@ func TestTickStillWorksWhenTabListFails(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.worker("ENG-1", "working")
-	h.script("herdr-real", string(h.readFile("herdr")))
-	h.script("herdr", `[ "$1 $2" = "tab list" ] && exit 1
-exec "`+h.dir+`/herdr-real" "$@"`)
+	h.tools.Herdr.Fail(herdrtest.OpTabList, errors.New("exit status 1"))
 
 	_, err := h.run("tick")
 	require.NoError(t, err)

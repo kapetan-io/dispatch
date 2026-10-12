@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kapetan-io/dispatch/internal/deliverytest"
+	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/journal"
 	"github.com/kapetan-io/dispatch/internal/treehousetest"
 )
@@ -15,13 +17,15 @@ import (
 type Tools struct {
 	Journal   *journal.Journal
 	Treehouse *treehousetest.Pool
+	Herdr     *herdrtest.Herdr
+	Alerts    *deliverytest.Alerts
 }
 
 // New returns fresh fakes. Fakes that need cleanup register it on t.
 func New(t testing.TB) *Tools {
 	t.Helper()
 	j := &journal.Journal{}
-	return &Tools{Journal: j, Treehouse: treehousetest.New(j)}
+	return &Tools{Journal: j, Treehouse: treehousetest.New(j), Herdr: herdrtest.New(j), Alerts: deliverytest.New(j)}
 }
 
 // Calls lists the calls to a tool's operation, each as its arguments joined by

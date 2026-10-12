@@ -2,6 +2,7 @@ package dispatch_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -178,8 +179,8 @@ func TestTickNotifiesOnEverySixthStallNudge(t *testing.T) {
 	}
 
 	assert.Equal(t, []string{
-		"ENG-1 has had 6 stall nudges with no status change|dispatch",
-		"ENG-1 has had 12 stall nudges with no status change|dispatch",
+		"ENG-1 has had 6 stall nudges with no status change",
+		"ENG-1 has had 12 stall nudges with no status change",
 	}, h.notifications())
 	assert.Empty(t, h.linear.mutations())
 }
@@ -215,7 +216,7 @@ func TestTickDoesNotNotifyAboutANudgeHerdrRefused(t *testing.T) {
 		h.recordStop("ENG-1", noTasks)
 		h.tick()
 	}
-	h.writeFile("prompt-fails", "")
+	h.blockAfterSnapshot("ENG-1")
 	h.advance(5 * time.Minute)
 	h.recordStop("ENG-1", noTasks)
 
@@ -240,7 +241,7 @@ func TestTickNotifiesOnceWhenAWorkerIgnoresItsNudgeForAnHour(t *testing.T) {
 
 	h.advance(2 * time.Minute)
 	assert.Equal(t, "notify ENG-1: worker hasn't responded to its nudge in an hour\n", h.tick())
-	assert.Equal(t, []string{"ENG-1: the worker hasn't responded to its nudge in an hour|dispatch"}, h.notifications())
+	assert.Equal(t, []string{"ENG-1: the worker hasn't responded to its nudge in an hour"}, h.notifications())
 
 	h.advance(time.Hour)
 	assert.Empty(t, h.tick())
@@ -266,17 +267,17 @@ func TestTickRetriesTheSixthStallNotificationThatFailed(t *testing.T) {
 	}
 	h.advance(5 * time.Minute)
 	h.recordStop("ENG-1", noTasks)
-	h.writeFile("notify-fails", "")
+	h.tools.Alerts.Fail(errors.New("exit status 1"))
 
 	_, stderr, err := h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
 	assert.Contains(t, stderr, "while notifying about ENG-1")
 	assert.Empty(t, h.notifications())
 
-	h.removeFile("notify-fails")
+	h.tools.Alerts.Fail(nil)
 	h.advance(5 * time.Minute)
 	assert.Equal(t, "notify ENG-1: 6 stall nudges with no status change\n", h.tick())
-	assert.Equal(t, []string{"ENG-1 has had 6 stall nudges with no status change|dispatch"}, h.notifications())
+	assert.Equal(t, []string{"ENG-1 has had 6 stall nudges with no status change"}, h.notifications())
 
 	h.advance(5 * time.Minute)
 	assert.Empty(t, h.tick())
@@ -289,13 +290,13 @@ func TestTickRetriesTheUnresponsiveWorkerNotificationThatFailed(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.tick()
 	h.advance(61 * time.Minute)
-	h.writeFile("notify-fails", "")
+	h.tools.Alerts.Fail(errors.New("exit status 1"))
 
 	_, stderr, err := h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
 	assert.Contains(t, stderr, "while notifying about ENG-1")
 
-	h.removeFile("notify-fails")
+	h.tools.Alerts.Fail(nil)
 	assert.Contains(t, h.tick(), "notify ENG-1")
 }
 
@@ -381,7 +382,7 @@ func TestTickSendsTheResumeNudgeWhateverTheStopRecordSays(t *testing.T) {
 	assert.Equal(t, "nudge ENG-1: resume\n", h.tick())
 	assert.Empty(t, h.tick())
 	assert.Equal(t, []string{"w-ENG-1:p1|" + resumeText1}, h.prompts())
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1|dispatch"}, h.notifications())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
 }
 
 func TestTickForgetsTheStopRecordOfATreeItReturns(t *testing.T) {
