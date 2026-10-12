@@ -5,173 +5,68 @@ description: "Audit a blueprint against the repository's Accepted ADRs to find w
 
 # Audit a blueprint against the repository's ADRs
 
-Determine whether a proposed plan violates or contradicts any **Accepted** Architecture
-Decision Record currently in force. The plan is usually a **blueprint** but can be any
-design artifact — a tech spec, design doc, an ADR the plan itself records, an
-implementation checklist, or an uncommitted diff. The ADR corpus is whatever binding
-decisions live in the repo (`docs/adr/`, `services/*/docs/adr/`).
+Decide whether a plan violates or contradicts any **Accepted** Architecture Decision Record in force. The plan is usually a blueprint, and the audit judges design intent, so there may be no code yet. `design-review` checks the design against itself; this checks it against the binding decisions around it, so a contradiction surfaces as a design fix and not a mid-build surprise.
 
-**Where this fits.** `design-review` checks the design against *itself* (gaps,
-unresolved questions, correctness holes); this checks it against the *binding decisions
-around it*. Run it once the blueprint is stable, so a contradiction with an Accepted ADR
-surfaces as a design fix, not a mid-build surprise.
+This is **read-only**. You never edit the plan, the ADRs or code. Acting on findings is a follow-up the user approves.
 
-This is **read-only**. You audit and report. You never edit the plan, the ADRs, or any
-code, and you never run builds or tests as part of the audit. Acting on the findings
-(renaming a field, capturing an open question, recording a superseding ADR) is a separate,
-explicit follow-up the user approves — not part of the audit.
+## 1. Resolve the plan
 
-The engine is **fan-out**: the plan is small and shared, the ADR corpus is large and
-divisible, so N sub-agents each read the whole plan and audit a disjoint slice of the
-ADRs, and you synthesize one verdict. This keeps each agent's context tight enough to read
-every ADR in its slice *closely* rather than skimming 40 of them in one pass.
+Use what the user or `design-review` supplied. For a feature ticket's blueprint, a Linear document that sub-agents can't read, write its text and any spec document to files in your scratchpad and list those paths. Assemble every file an agent must read to know what the plan decides, including any ADR the plan itself records. If you can't identify the plan, ask.
 
-## 1. Resolve what is being audited (the plan)
+## 2. Scope the ADR corpus
 
-Resolve in order; stop at the first hit:
+Find the ADR directories with `find . -type d -name adr -not -path '*/node_modules/*'`, then decide which sets bind the plan.
 
-1. **Supplied** — the user or `design-review` named or pasted a file/doc/PR/diff → use it.
-2. **A feature ticket's blueprint** — a Linear document. Sub-agents can't read Linear, so
-   write its text, and any spec document, to files in your scratchpad and list those paths.
+- Root ADRs (`docs/adr/`) bind every service. Include them.
+- The owning service's ADRs (`services/<svc>/docs/adr/`) bind that service. Include them.
+- Another service's ADRs bind the plan only through a shared contract. Include them only then, and say so.
 
-Assemble the **full plan artifact list** — every file an agent must read to know what the
-plan decides. Typically: the blueprint/design doc (primary), the authored contract
-(its spec document), any decision-log/technical-shape sections it changed, and **any ADR the
-plan itself records** (see the exclusion rule in §3). If you cannot identify the plan, ask;
-never guess.
+State the scope before dispatching. Only Accepted ADRs are enforceable, and each agent checks the status.
 
-## 2. Discover and scope the ADR corpus
+## 3. Partition and dispatch
 
-Discover, do not assume:
+Every agent reads the whole plan. Split only the corpus, by filename sort order and never by suspected relevance, which would bring in your bias. Give each agent an explicit file list of about 5 to 8 ADRs, keeping corpus boundaries so each gets the right scope note. A corpus of about 10 ADRs or fewer needs one agent. An ADR the plan records is plan input, so list it in the plan files and keep it out of every slice.
+
+Launch all agents at once in one message (`general-purpose`), with the same template and no hints about what to look for, because hints manufacture false positives.
 
 ```
-find . -type d -name adr -not -path '*/node_modules/*'
+You are an ADR-compliance auditor. Decide whether the plan VIOLATES or CONTRADICTS any
+Accepted ADR in your batch. Read-only: edit nothing, run no builds or tests.
+
+PLAN (read all in full first; mark any ADR the plan records as part of the plan):
+{PLAN_FILES}
+
+YOUR ADR BATCH (audit only these):
+{ADR_BATCH}
+
+SCOPE: {SCOPE_NOTE}
+Only Accepted ADRs bind. Read each status line, and honor Supersedes links. If the plan
+depends on a non-Accepted ADR in your batch, flag it.
+
+METHOD: extract the plan's load-bearing decisions (contract, storage, auth, eventing,
+package boundaries, tests, deferred work). Derive each ADR's rule from the ADR text, never
+from the plan's account of it. Test each decision against each ADR.
+
+CLASSES, most severe first:
+- VIOLATION: does what an ADR forbids or omits what it mandates. Blocking.
+- CONTRADICTION: asserts a decision that conflicts with an ADR without superseding it. Blocking.
+- SUPERSEDES(confirm): overrides an ADR explicitly. Surface it for a human to confirm.
+- TENSION: gray area. Say what would resolve it. Non-blocking.
+- COMPLIANT: respects a relevant ADR. One line each, no padding.
+
+EVIDENCE: cite the ADR (number and title), quote the binding clause, and give the plan
+location. Silence is a violation only if an ADR mandates the thing. When unsure, use
+TENSION.
+
+OUTPUT:
+BATCH: <ids>
+VERDICT: PASS or FAIL (FAIL on any VIOLATION or CONTRADICTION)
+FINDINGS: [CLASS] ADR-<n> <title> | RULE: <clause> | PLAN: <location> | RESOLUTION: <line>
+COMPLIANT & RELEVANT: <ids and decisions>
+NOT APPLICABLE: <ids>
+NON-ACCEPTED DEPENDENCY: <any, or none>
 ```
 
-Then decide **which ADR sets bind this plan**:
+## 4. Synthesize
 
-- **Root / cross-cutting ADRs** (e.g. `docs/adr/`) bind every service, including the one
-  the plan touches. Include them unless the user scopes them out.
-- **The owning service's ADRs** (`services/<svc>/docs/adr/`) bind that service. Include.
-- **Another service's ADRs** bind this plan only through a shared contract (e.g. the plan
-  produces into that service). Include *only* if there is such a dependency, and say so.
-
-**State the scope** before dispatching, because it materially changes the audit
-("I'm reading 'our ADRs' as root + <svc>, excluding <other-svc>'s internal ADRs"). Only ADRs whose **Status is Accepted** are enforceable; the agents
-verify each one's status, but scope the corpus to the accepted-ADR directories up front.
-
-List the corpus as **explicit file paths** — you will partition this list.
-
-## 3. Partition the work
-
-- **The plan is shared, never partitioned.** Every agent reads the entire plan artifact
-  list, because any ADR can conflict with any plan decision — you cannot slice the plan.
-- **Partition only the ADR corpus**, by a **content-agnostic, deterministic key**
-  (filename sort order). Do **not** bucket ADRs by which ones you suspect are relevant —
-  relevance-based bucketing reintroduces the reviewer's bias the fan-out exists to avoid.
-  Each agent decides relevance for its own slice independently.
-- **Explicit file lists per agent** — guarantees full coverage, zero overlap, zero gaps.
-- **Preserve corpus boundaries** so each agent gets the right binding-scope framing (root
-  binds-all vs service-local).
-- **Exclude any ADR the plan itself records** from every audit slice — it is *plan input*,
-  not a pre-existing constraint. Put it in the shared plan reading list instead, so its
-  decision is tested against every slice (an agent auditing root ADR-X will test the
-  plan-recorded ADR's decision against ADR-X for free).
-- **Batch size ~5–8 ADRs per agent.** Compute agent count as `ceil(corpus / ~7)`; keep
-  batches even.
-
-## 4. Dispatch the auditor sub-agents
-
-Launch all agents **concurrently** — send them in a single message with multiple `Agent`
-tool calls (subagent_type `general-purpose`). Give each the identical template below, with
-`{PLAN_FILES}`, `{ADR_BATCH}`, and `{SCOPE_NOTE}` filled in.
-
-Do **not** add "things to pay special attention to" hints. Seeding your own suspicions
-biases the sweep and manufactures false positives; a clean, uniform prompt is both a better
-audit and a better test of the method.
-
-### Auditor prompt template
-
-```
-ROLE & GOAL
-You are an ADR-compliance auditor. Determine whether a proposed plan VIOLATES or
-CONTRADICTS any Accepted Architecture Decision Record (ADR) in your assigned batch. This is
-READ-ONLY: audit and report only. Do not edit any file; do not run builds or tests.
-
-THE PLAN (read ALL of these in full first; audit design intent — there may be no code yet):
-{PLAN_FILES}   # one path per line; mark the primary; mark any ADR recorded BY the plan as
-               # "treat its decision as PART OF THE PLAN, not a constraint to audit against"
-
-YOUR ADR BATCH (audit the plan against ONLY these; other agents cover the rest):
-{ADR_BATCH}    # explicit file paths
-
-BINDING SCOPE
-{SCOPE_NOTE}   # e.g. "ROOT set, binds all services" or "the <svc> service set, binds <svc>"
-  - Only ADRs whose Status is Accepted are enforceable. Read each ADR's status line. Treat
-    Proposed/Draft/Superseded/Rejected as non-binding — but if the plan DEPENDS on a
-    non-Accepted ADR in your batch, flag it.
-  - Honor Supersedes/Superseded-by links.
-
-METHOD
-  1. Read the plan fully. Extract its concrete, load-bearing decisions (contract shape;
-     storage/state behavior; auth; async/eventing + delivery/ordering; module/package
-     boundaries; test approach; deferred work).
-  2. For EACH ADR in your batch, derive its rule/invariant FROM THE ADR TEXT — never from
-     what the plan says about it.
-  3. Test each plan decision against each ADR in your batch. Classify.
-
-CLASSIFICATION (most severe first)
-  - VIOLATION       — plan does what an Accepted ADR forbids, or omits what it mandates. Blocking.
-  - CONTRADICTION   — plan asserts a decision that directly conflicts with an Accepted ADR's
-                      decision, without superseding it. Blocking.
-  - SUPERSEDES(confirm) — plan intentionally overrides an ADR and says so explicitly. Not a
-                      violation; surface it so a human confirms the supersession is intended/recorded.
-  - TENSION         — gray area / partial compliance / unstated-interpretation-dependent.
-                      Non-blocking; say precisely what would resolve it.
-  - COMPLIANT       — plan respects a relevant, load-bearing ADR. List briefly; do NOT pad
-                      with trivially-irrelevant ADRs.
-
-EVIDENCE DISCIPLINE
-  - Every finding cites the ADR (number + title) AND the plan location (file + line or
-    section), and quotes the specific ADR clause that binds.
-  - Do NOT manufacture violations from silence: the plan being silent on X is a violation
-    only if an ADR mandates X.
-  - When uncertain, use TENSION and state what would resolve it — do not inflate to VIOLATION.
-  - Derive each ADR's rule independently; do not assume the plan's characterization is correct.
-
-OUTPUT (return exactly this; your returned text IS the result, not a message to a human):
-  BATCH: <the ADR ids you audited>
-  VERDICT: PASS or FAIL   (FAIL if >=1 VIOLATION or CONTRADICTION in your batch)
-  FINDINGS (most severe first):
-    [CLASS] ADR-<n> <title> — RULE: <cited clause> | PLAN: <file + line/section> | RESOLUTION: <one line>
-  COMPLIANT & RELEVANT: ADR-<n> <title> — <the decision the plan honors> (one line each)
-  NOT APPLICABLE: <bare id list>
-  NON-ACCEPTED DEPENDENCY: <any, or "none">
-```
-
-## 5. Synthesize
-
-Merge the agent results into one report:
-
-- **Overall verdict: FAIL if any agent reports a VIOLATION or CONTRADICTION; else PASS.**
-- **Findings table**, most severe first, across all agents — class, ADR (with corpus),
-  the tension in one line, and *when* it resolves (now / at implementation / in a named
-  follow-up ticket).
-- **Cluster related findings.** When several ADRs flag the *same* underspecified plan
-  element (a common pattern: one deferred mechanism drawing tension from three different
-  ADRs), say so — that convergence is the strongest signal in the audit and usually means
-  that element needs its own decision, not three separate fixes.
-- **Disambiguate ADR numbers across corpora** (root ADR-0007 ≠ service ADR-0007). Always
-  prefix the corpus.
-- Keep the COMPLIANT and NOT-APPLICABLE lists terse; the findings are the product.
-- End by separating **act-on-now** items (usually contract/naming issues in files that
-  exist) from **carry-forward** items (implementation-time invariants, follow-up-ticket
-  decisions), and ask what the user wants to do through AskUserQuestion — do not act unprompted.
-
-## Boundaries
-
-- READ-ONLY. Never edit the plan, ADRs, or code inside this skill; never `git` mutate.
-- Do not seed the agents with relevance hints or suspected violations.
-- Do not treat a plan-recorded ADR as a constraint to audit against — it is plan input.
-- Surface a doc-vs-ADR *behavior* disagreement as a finding; do not silently "fix" either
-  side to make them agree.
+Merge the results. The overall verdict is FAIL if any agent reports a VIOLATION or CONTRADICTION. List findings most severe first with class, ADR, the tension in one line and when it resolves (now, at implementation, or in a named follow-up). Prefix ADR numbers with their corpus, since root ADR-0007 is not service ADR-0007. When several ADRs flag the same underspecified element, say so, because that element needs its own decision. Report a disagreement between a doc and an ADR as a finding, and fix neither side. End by separating act-on-now items from carry-forward items, and ask the user what to do through AskUserQuestion.
