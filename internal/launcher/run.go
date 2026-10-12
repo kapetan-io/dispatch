@@ -682,6 +682,9 @@ func (l *launch) defaultBranch(ctx context.Context) string {
 		}
 		return strings.TrimSpace(out)
 	}
+	// A rename on origin leaves the cached origin/HEAD stale. If origin can't be
+	// reached the cached value stands.
+	_, _ = l.git(ctx, l.repo, "remote", "set-head", "origin", "--auto")
 	if name := strings.TrimPrefix(line("symbolic-ref", "--short", "refs/remotes/origin/HEAD"), "origin/"); name != "" {
 		return name
 	}
