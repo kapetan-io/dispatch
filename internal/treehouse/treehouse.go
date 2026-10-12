@@ -1,9 +1,11 @@
-// Package treehouse reads a repo's pool of leased worktrees.
+// Package treehouse leases worktrees from a repo's pool and reports what a tree holds.
 package treehouse
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,21 +19,57 @@ type Tree struct {
 	Status string `json:"status"`
 	// LeaseHolder is the ticket identifier for trees the launcher leased.
 	LeaseHolder string `json:"lease_holder"`
-	// RepoDir is the clone whose pool holds the tree. Status fills it in.
+	// RepoDir is the clone whose pool holds the tree. Trees fills it in.
 	RepoDir string `json:"-"`
 }
 
-// Status runs `<bin> status --json` in repoDir and returns its trees.
-func Status(ctx context.Context, bin, repoDir string) ([]Tree, error) {
-	cmd := exec.CommandContext(ctx, bin, "status", "--json")
-	cmd.Dir = repoDir
-	b, err := cmd.Output()
+// Pool is a repo's pool of leased worktrees.
+type Pool interface {
+	// Trees lists the pool of the clone at repoDir.
+	Trees(ctx context.Context, repoDir string) ([]Tree, error)
+	// Lease takes an available tree for ticket, or fails when none is available.
+	Lease(ctx context.Context, repoDir, ticket string) (Tree, error)
+	// Return gives the tree at path back to the pool, discarding anything left
+	// in it. It refuses, and leaves the tree as it was, when holder does not
+	// hold the lease, so a tree leased to someone else since the caller looked
+	// is left alone.
+	Return(ctx context.Context, repoDir, path, holder string) error
+}
+
+// ErrNoPath is the failure of a lease that treehouse reported as successful
+// but whose output named no tree.
+var ErrNoPath = errors.New("lease succeeded but treehouse JSON had no path")
+
+// unreadable is a status whose output could not be parsed.
+type unreadable struct{ error }
+
+func (u unreadable) Unwrap() error { return u.error }
+
+// StatusError says what failed in reading the pool of repoDir, for the caller
+// to report. A status treehouse printed but dispatch could not parse reads
+// differently from one treehouse failed to produce.
+func StatusError(repoDir string, err error) error {
+	if errors.As(err, &unreadable{}) {
+		return fmt.Errorf("while reading treehouse status in %s: %w", repoDir, errors.Unwrap(err))
+	}
+	return fmt.Errorf("while running treehouse status in %s: %w", repoDir, err)
+}
+
+// CLI is the Pool that runs the installed treehouse command.
+type CLI struct{ bin string }
+
+// NewCLI returns a Pool that runs bin.
+func NewCLI(bin string) *CLI { return &CLI{bin: bin} }
+
+func (c *CLI) Trees(ctx context.Context, repoDir string) ([]Tree, error) {
+	cmd := c.command(ctx, repoDir, "status", "--json")
+	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("while running treehouse status in %s: %w", repoDir, err)
+		return nil, err
 	}
 	var trees []Tree
-	if err := json.Unmarshal(b, &trees); err != nil {
-		return nil, fmt.Errorf("while reading treehouse status in %s: %w", repoDir, err)
+	if err := json.Unmarshal(out, &trees); err != nil {
+		return nil, unreadable{err}
 	}
 	for i := range trees {
 		trees[i].RepoDir = repoDir
@@ -39,16 +77,36 @@ func Status(ctx context.Context, bin, repoDir string) ([]Tree, error) {
 	return trees, nil
 }
 
-// Return gives the tree at path back to repoDir's pool, discarding anything
-// left in it. holder pins the call to that lease, so a tree leased to someone
-// else since the caller looked is left alone.
-func Return(ctx context.Context, bin, repoDir, path, holder string) error {
-	cmd := exec.CommandContext(ctx, bin, "return", path, "--if-lease-holder", holder, "--force")
-	cmd.Dir = repoDir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("while returning %s to the pool: %w: %s", path, err, strings.TrimSpace(string(out)))
+// Lease fails with treehouse's own stderr as the error text, empty when it
+// printed none, because the launcher reports that text.
+func (c *CLI) Lease(ctx context.Context, repoDir, ticket string) (Tree, error) {
+	var stderr bytes.Buffer
+	cmd := c.command(ctx, repoDir, "get", "--lease", "--lease-holder", ticket, "--json")
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil || len(bytes.TrimSpace(out)) == 0 {
+		return Tree{}, errors.New(strings.TrimSpace(stderr.String()))
+	}
+	var tree Tree
+	if err := json.Unmarshal(out, &tree); err != nil || tree.Path == "" {
+		return Tree{}, fmt.Errorf("%w: %s", ErrNoPath, strings.TrimSpace(string(out)))
+	}
+	tree.Status, tree.LeaseHolder, tree.RepoDir = "leased", ticket, repoDir
+	return tree, nil
+}
+
+func (c *CLI) Return(ctx context.Context, repoDir, path, holder string) error {
+	out, err := c.command(ctx, repoDir, "return", path, "--if-lease-holder", holder, "--force").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+func (c *CLI) command(ctx context.Context, repoDir string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, c.bin, args...)
+	cmd.Dir = repoDir
+	return cmd
 }
 
 // Unfinished says what returning the tree at path would destroy: modified or

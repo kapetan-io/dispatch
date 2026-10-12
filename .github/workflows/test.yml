@@ -23,8 +23,9 @@ jobs:
       - name: vet
         run: go vet ./...
       - name: test
-        # The surface tests drive `dispatch launch` against fake herdr and
-        # treehouse scripts and a real git, which the runner image provides.
+        # The surface tests run against fake tools and a real git, which the
+        # runner image provides. The drift check (go test -tags drift
+        # ./internal/...) needs the installed tools and does not run here.
         run: go test -race ./...
       - name: shellcheck
         run: shellcheck -S warning bin/dispatch-launch scripts/shims/claude

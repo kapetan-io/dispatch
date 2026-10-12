@@ -108,8 +108,8 @@ func teardown(ctx context.Context, opts Options, a reconcile.Action) error {
 		}
 		a.Reason = a.Ticket.Status + ", removed untracked " + reconcile.NameList(files)
 	}
-	if err := treehouse.Return(ctx, opts.Treehouse, a.RepoDir, a.TreePath, a.Ticket.Identifier); err != nil {
-		return err
+	if err := opts.Treehouse.Return(ctx, a.RepoDir, a.TreePath, a.Ticket.Identifier); err != nil {
+		return fmt.Errorf("while returning %s to the pool: %w", a.TreePath, err)
 	}
 	stops.Remove(opts.StateDir, a.TreePath)
 	_, _ = fmt.Fprintln(opts.Stdout, a)

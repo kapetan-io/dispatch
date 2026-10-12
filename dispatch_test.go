@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +23,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch"
+	"github.com/kapetan-io/dispatch/internal/tooltest"
+	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
 func TestTickDryRunListsLaunchWithoutActing(t *testing.T) {
@@ -376,9 +379,7 @@ func TestRunTicksOnEachIntervalUntilCanceled(t *testing.T) {
 func TestRunPrintsASlowTickInSeconds(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.writeFile("treehouse-slow", "")
-	h.script("treehouse", `if [ -f "`+h.dir+`/treehouse-slow" ]; then rm "`+h.dir+`/treehouse-slow"; sleep 1.1; fi
-cat "`+h.dir+`/trees.json"`)
+	h.tools.Treehouse.DelayTrees(1100 * time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -403,9 +404,7 @@ func TestRunKeepsTickingAfterAFailedTick(t *testing.T) {
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	// treehouse fails its first call only, so the first tick fails and the
 	// second one launches.
-	h.writeFile("treehouse-fails", "")
-	h.script("treehouse", `if [ -f "`+h.dir+`/treehouse-fails" ]; then rm "`+h.dir+`/treehouse-fails"; exit 1; fi
-cat "`+h.dir+`/trees.json"`)
+	h.tools.Treehouse.FailTrees(errors.New("exit status 1"))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -451,6 +450,7 @@ type harness struct {
 	extra  string
 	repos  string
 	linear *fakeLinear
+	tools  *tooltest.Tools
 	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
 	// with the launcher built into dispatch.
 	builtinLauncher bool
@@ -466,13 +466,13 @@ func newHarness(t *testing.T) *harness {
 		repo:   filepath.Join(dir, "repo"),
 		state:  filepath.Join(dir, "state"),
 		linear: newFakeLinear(t),
+		tools:  tooltest.New(t),
 		clock:  time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC),
 	}
 	require.NoError(t, os.MkdirAll(h.repo, 0o755))
 	h.writeFile("workspaces.json", `{"result":{"workspaces":[]}}`)
 	h.writeFile("agents.json", `{"result":{"agents":[]}}`)
 	h.writeFile("tabs.json", `{"result":{"tabs":[]}}`)
-	h.writeFile("trees.json", `[]`)
 	h.writeFile("launch.json", `{"status":"ok"}`)
 	h.script("herdr", `case "$1 $2" in
 "workspace list") cat "`+dir+`/workspaces.json" ;;
@@ -515,15 +515,6 @@ esac
 for arg; do case "$arg" in branch=*) branch="${arg#branch=}" ;; after=*) after=".${arg#after=}" ;; esac; done
 echo "$branch$after" >> "`+dir+`/gh.log"
 cat "`+dir+`/pr-${branch##*/}$after.json" 2>/dev/null || echo '{"data":{"repository":{"pullRequests":{"nodes":[]}}}}'`)
-	// return marks the tree available, so later ticks see the slot free.
-	h.script("treehouse", `case "$1" in
-return)
-  [ -f "`+dir+`/return-fails" ] && exit 1
-  echo "$PWD|$*" >> "`+dir+`/returns.log"
-  jq --arg p "$2" 'map(if .path == $p then .lease_holder = "" | .status = "available" else . end)' "`+dir+`/trees.json" > "`+dir+`/trees.tmp"
-  mv "`+dir+`/trees.tmp" "`+dir+`/trees.json" ;;
-*) cat "`+dir+`/trees.json" ;;
-esac`)
 	h.script("launcher", `echo "$PWD $*" >> "`+dir+`/launches.log"
 cat "`+dir+`/launch.json"`)
 	return h
@@ -557,7 +548,7 @@ func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...s
 	extra.LinearURL = h.linear.server.URL
 	extra.LinearKey = "test-key"
 	extra.Herdr = filepath.Join(h.dir, "herdr")
-	extra.Treehouse = filepath.Join(h.dir, "treehouse")
+	extra.Treehouse = h.tools.Treehouse
 	extra.GH = filepath.Join(h.dir, "gh")
 	extra.Osascript = filepath.Join(h.dir, "osascript")
 	if !h.builtinLauncher {
@@ -594,10 +585,7 @@ func (h *harness) worker(ticket, status string) {
 
 // workerOn is worker for a tree at a chosen path and workspace id.
 func (h *harness) workerOn(ticket, tree, id, status string) {
-	trees := []map[string]string{}
-	require.NoError(h.t, json.Unmarshal(h.readFile("trees.json"), &trees))
-	trees = append(trees, map[string]string{"path": tree, "status": "leased", "lease_holder": ticket})
-	h.writeJSON("trees.json", trees)
+	h.tools.Treehouse.Seed(h.repo, treehouse.Tree{Path: tree, Status: "leased", LeaseHolder: ticket})
 
 	var ws struct {
 		Result struct {
@@ -740,9 +728,9 @@ func (h *harness) closes() []string {
 	return h.lines("closes.log")
 }
 
-// returns lists the treehouse return calls, as "<directory>|<arguments>".
+// returns lists the treehouse return calls, as "<repo>|<tree>|<holder>".
 func (h *harness) returns() []string {
-	return h.lines("returns.log")
+	return h.tools.Calls("treehouse", "return")
 }
 
 func (h *harness) launchResult(result string) {
