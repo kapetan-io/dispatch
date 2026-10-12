@@ -14,6 +14,10 @@ The prose that ships alongside the type sketch. One page. Sentence-case headings
 
 *The recommended architecture. Data structures first. Then how data flows through the signatures. Name the load-bearing decisions. State which invariants are encoded in types, where validation lives, and what the system deliberately does not do. Judge interface depth explicitly. State what complexity the public surface hides, what remains exposed to callers, and why the interface is no larger than needed. Cite the principle behind each decision (e.g., `per boundary-discipline`). Don't restate it.*
 
+## Instruction check
+
+*One line per rule in the user's instruction files on structure, naming or testing, saying how the design follows it or what following it would cost.*
+
 ## Synthesis decision
 
 *Filled in by [arena](../../arena/SKILL.md). Records which candidate became the base and why, what was adapted from each of the others, and what was rejected and why.*
