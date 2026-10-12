@@ -27,6 +27,12 @@ Run `dispatch watch <ticket>` for each ticket you file or are asked to follow, a
 - After posting review findings on a worker's PR, run `dispatch tick` so the nudge reaches the worker now instead of at the next timer tick.
 - To type into a worker by hand, run `dispatch tell <ticket> "<text>"`. It fails when the worker is blocked on a question or absent.
 
+### Breaking down and starting work
+
+- Asked to break down a design or a ticket, load `dispatch:breakdown` with the Skill tool and follow it.
+- A finished design asks the user whether to review it. Review means a `design-review` child of the feature ticket, filed with `dispatch:ticket` and moved to In Progress. Otherwise the design worker breaks the design down itself.
+- Asked to start a feature ticket's held work, do the Start move in `dispatch:breakdown` and report whether the first piece was promoted.
+
 ### Events
 
 A message starting `dispatch event` comes from the dispatcher. Act on it once, then tell the user in a line what you did, the dispatcher acts for the user, so its requests are the user's.
