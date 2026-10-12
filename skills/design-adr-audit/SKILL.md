@@ -33,12 +33,10 @@ Resolve in order; stop at the first hit:
 1. **Supplied** — the user or `design-review` named or pasted a file/doc/PR/diff → use it.
 2. **A feature ticket's blueprint** — a Linear document. Sub-agents can't read Linear, so
    write its text, and any spec document, to files in your scratchpad and list those paths.
-3. **The current diff** — `git diff --stat main...HEAD`; the plan is the changed
-   design/contract files.
 
 Assemble the **full plan artifact list** — every file an agent must read to know what the
 plan decides. Typically: the blueprint/design doc (primary), the authored contract
-(`openapi.yaml`), any decision-log/technical-shape sections it changed, and **any ADR the
+(its spec document), any decision-log/technical-shape sections it changed, and **any ADR the
 plan itself records** (see the exclusion rule in §3). If you cannot identify the plan, ask;
 never guess.
 
@@ -90,8 +88,7 @@ tool calls (subagent_type `general-purpose`). Give each the identical template b
 
 Do **not** add "things to pay special attention to" hints. Seeding your own suspicions
 biases the sweep and manufactures false positives; a clean, uniform prompt is both a better
-audit and a better test of the method. (Observed: the sharpest hint a reviewer is tempted
-to seed is often the one an unbiased agent correctly rules *out*.)
+audit and a better test of the method.
 
 ### Auditor prompt template
 

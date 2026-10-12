@@ -11,8 +11,6 @@ You are the review worker for one `design-review` ticket, a child of the feature
 
 Make the Blueprint **buildable**: an engineer (or an LLM planner) can take it and build the right feature without getting stuck on ambiguous contracts, contradictory requirements, missing decisions, or unverifiable acceptance criteria — and without the technical half drifting from the product intent. The review is done when a goal-validation agent confirms this, not when it runs out of findings to file. The skill does not pursue completeness, exhaustiveness, or editorial polish.
 
-Because the product definition and technical design live in one document, this review replaces the older separate PRD + tech-spec + stories review pipeline. The cross-document handoff files (`prd-handoff.md` / `spec-handoff.md`) are gone — product↔technical disagreement is now an internal inconsistency the review resolves directly, not a finding handed to another skill.
-
 ## How it works
 
 The orchestrator runs a review cycle per iteration — find issues → validate → skeptic → propose fixes → apply — then a **goal validation agent** reads the updated Blueprint cold and answers: "Can an engineer build the right thing from this?" If yes, the review is done. If no, the validator names specific blockers, and those become the sole inputs for the next cycle (max 5 iterations). Phase 6 PASS is the authoritative exit signal — not zero findings.
@@ -26,10 +24,10 @@ The orchestrator runs a review cycle per iteration — find issues → validate 
 2. **Inputs and pre-work**, below.
 3. **The loop**, Phases 1 to 6 below, at most 5 rounds.
 4. **Five rounds without PASS.** Comment the remaining blockers on the review ticket, opening with `## In plain English`, move it to Needs Human, file nothing and stop. The user reads the ticket, not your scrollback.
-5. **ADR audit.** When the repo has `docs/adr/`, run `design-adr-audit` on the blueprint. A fix it causes gets one more Phase 6 run, which counts toward the 5 rounds. Ask its closing question through AskUserQuestion.
+5. **ADR audit.** When the repo has `docs/adr/`, run `design-adr-audit` on the blueprint. A fix it causes gets one more Phase 6 run, which counts toward the 5 rounds. If that run fails with no round left, follow step 4. Ask its closing question through AskUserQuestion.
 6. **End steps**, "At the end of the review" below.
 7. **Break down.** Invoke `dispatch:breakdown` on the feature ticket. Each `Pieces` row also names the ADR and glossary sections its piece commits.
-8. **Finish.** After the user answers start or hold, comment a summary on the review ticket that says how to start held work, then move it to Done. On "start now", `design` must already be off the feature ticket. A crash between the two leaves the review In Progress, and step 1 finishes it.
+8. **Finish.** After the user answers start or hold, comment a summary on the review ticket that says how to start held work, then move it to Done. On "start now", `dispatch:breakdown` has already taken `design` off, and you never move the review to Done before that. A crash between the two leaves the review In Progress, and step 1 finishes it.
 
 ## Reading and writing the blueprint
 
@@ -78,7 +76,7 @@ Run Phases 1–5 followed by Phase 6 (Goal Validation) as a loop. Each iteration
 - Phase 6 (Goal Validation) returns **PASS** — the Blueprint is buildable.
 - 5 iterations have completed (hard cap).
 
-**Do NOT exit** just because an iteration produced zero findings or zero applied fixes — always run Phase 6 to confirm buildability. Goal validation is the authoritative exit signal.
+Phase 6 always runs, even after a round with no findings.
 
 Track across iterations:
 - `total_auto_applied`: running count of all auto-applied fixes (Blueprint was edited)
@@ -87,7 +85,7 @@ Track across iterations:
 - `total_validation_fp`: running count of false positives caught by the validation agent (Phase 2)
 - `total_skeptic_rejections`: running count of findings the skeptic downgraded (Phase 3)
 
-At the start of iteration 2+, re-read the Blueprint to pick up changes from prior iterations and rebuild the coverage map before spawning the Phase 1 agent. Tell the user which iteration is starting (e.g., "Starting iteration 2 — re-reviewing after 4 fixes applied.").
+At the start of iteration 2+, re-read the Blueprint to pick up changes from prior iterations and rebuild the coverage map before spawning the Phase 1 agent. 
 
 Maintain a **deferred list** of findings the user explicitly dismissed or deferred. Include it in the Phase 1 prompt for iteration 2+ alongside PRIOR FIXES APPLIED, so the review agent does not re-file them. A deferred finding should re-surface only if the Blueprint text around it changed in a way that makes the original dismissal no longer apply.
 
@@ -397,7 +395,7 @@ Using Phase 4's output, apply or surface each fix.
 
 ### Auto-apply findings
 
-For each finding routed **auto-apply**, apply the recommended option directly with a patch. If two auto-apply findings were flagged tightly coupled with a combined fix, apply it as a single Edit. If sequential auto-apply edits target overlapping text, re-read the affected section after each edit to verify the next edit's old text still matches. After applying, tell the user what was auto-applied in a brief summary, naming the option applied for each.
+For each finding routed **auto-apply**, apply the recommended option directly with a patch. If two auto-apply findings were flagged tightly coupled with a combined fix, apply it as one patch. Note each one applied for the step 8 comment.
 
 ### Surface trade-off findings
 
@@ -409,7 +407,7 @@ For each finding routed **surface-to-user**, check the verdict:
 
 Cluster a finding with the next only when the fix agent flagged them tightly coupled. Resolve each before moving on. Apply the user's choice immediately after they answer.
 
-Keep a running decision log of everything applied or resolved (auto-applied and user-resolved). Show it on request, and whenever you finish a finding category. If the user pushes back with "that's already in the Blueprint," stop and re-read the section they point to before continuing.
+If the user pushes back with "that's already in the Blueprint," re-read the section they point to before continuing.
 
 ### Proceed to Goal Validation
 
@@ -479,7 +477,7 @@ Maximum 5 blockers. If you find yourself listing more than 5, you are being too 
 
 ### Decide whether to loop
 
-- **PASS** → exit the loop; proceed to "Writing the updated document."
+- **PASS** → exit the loop; go to step 5 of the steps above, then "Final read".
 - **FAIL** → if iteration count < 5, continue to the next iteration; pass the blocker list to Phase 1 as its ONLY inputs. If iteration count = 5, follow step 4.
 
 ## Final read
@@ -488,26 +486,15 @@ Fixes are saved as they are applied. After the loop exits, read the document onc
 
 ## Output
 
-After the loop exits, print a final summary and use it as the start of your step 8 comment:
+After a PASS, print a summary and open your step 8 comment with it:
 
 ```
 ## Blueprint Review Complete
 
-**Result**: <PASS — buildable | INCOMPLETE — blockers remain after 5 iterations>
 **Iterations**: N
-**Auto-applied fixes**: N (across all iterations)
-- <one-line summary of each, grouped by iteration>
-
-**User-resolved findings**: N
-- <one-line summary of each, grouped by iteration>
-
-**User dismissals**: N (findings the user deferred or skipped without a change)
-**Validation false positives**: N (rejected by the validation agent)
-**Skeptic rejections**: N (downgraded by the skeptic agent)
-
-<if INCOMPLETE, include:>
-**Remaining blockers**:
-- <blocker from final goal validation that was not resolved>
+**Auto-applied fixes**: N, one line each
+**User-resolved findings**: N, one line each
+**User dismissals**: N
 
 Blueprint: <document link>
 ```

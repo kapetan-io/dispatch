@@ -352,7 +352,7 @@ func Plan(in Input) []Action {
 // notifies, since its hand-off is a move to Needs Human, but it is never nudged.
 // A parent notifies on Needs Human like any ticket, and never gets a worker.
 func (in Input) watch(t linear.Ticket) []Action {
-	if t.LabelsTruncated || t.HasLabel("design") {
+	if t.LabelsTruncated || SkillOf(t) == Design {
 		return nil
 	}
 	prev := in.Cache[t.Identifier]

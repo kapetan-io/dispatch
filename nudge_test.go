@@ -596,6 +596,17 @@ func TestTickNotifiesWhenAReviewWorkerIsBlockedOnAQuestion(t *testing.T) {
 	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its herdr workspace|dispatch"}, h.notifications())
 }
 
+func TestTickNotifiesWhenAReviewTicketThatAlsoCarriesDesignIsBlocked(t *testing.T) {
+	h := newHarness(t)
+	h.worker("ENG-1", "blocked")
+	h.tickets(withLabel(designTicket("ENG-1", "In Progress"), "design-review"))
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its herdr workspace|dispatch"}, h.notifications())
+}
+
 func TestTickNotifiesWhenAReviewTicketEntersNeedsHuman(t *testing.T) {
 	h := newHarness(t)
 	h.worker("ENG-1", "working")
