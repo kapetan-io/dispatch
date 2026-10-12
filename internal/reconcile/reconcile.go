@@ -83,12 +83,12 @@ func NeedsHumanText(t linear.Ticket) string {
 }
 
 // ReadyText is the notification message for a ticket whose PR is ready for review.
-func ReadyText(t linear.Ticket, pr pullrequest.PR) string {
+func ReadyText(t linear.Ticket, pr pullrequest.PullRequest) string {
 	return fmt.Sprintf("%s is ready for review: %s", t.Identifier, pr.URL)
 }
 
 // MergedText is the notification message for a PR dispatch merged.
-func MergedText(t linear.Ticket, pr pullrequest.PR) string {
+func MergedText(t linear.Ticket, pr pullrequest.PullRequest) string {
 	return fmt.Sprintf("%s was approved and merged: %s", t.Identifier, pr.URL)
 }
 
@@ -209,7 +209,7 @@ type Input struct {
 	AutoMerge map[string]bool
 	// PRs maps an In Review ticket identifier to its open PR. Tickets whose PR
 	// was not read, or that have none, are absent.
-	PRs map[string]pullrequest.PR
+	PRs map[string]pullrequest.PullRequest
 	// PRReadFailed holds the In Review tickets whose PR read errored, as opposed
 	// to finding no open PR.
 	PRReadFailed map[string]bool
@@ -498,10 +498,10 @@ func (in Input) ReadsPR(t linear.Ticket) bool {
 // prRelaunch returns the PR of an In Review ticket that has no worker and whose
 // PR needs work or has an open review thread with an unseen comment, which Plan
 // relaunches a worker for.
-func (in Input) prRelaunch(t linear.Ticket) (pullrequest.PR, bool) {
+func (in Input) prRelaunch(t linear.Ticket) (pullrequest.PullRequest, bool) {
 	pr, ok := in.PRs[t.Identifier]
 	if !ok || !pr.NeedsWork() && !in.threadOwed(t, pr) {
-		return pullrequest.PR{}, false
+		return pullrequest.PullRequest{}, false
 	}
 	return pr, in.Workers[t.Identifier].State == worker.None
 }
@@ -509,7 +509,7 @@ func (in Input) prRelaunch(t linear.Ticket) (pullrequest.PR, bool) {
 // threadOwed reports whether an open review thread has a comment dispatch has
 // not yet put to the worker. A thread is not a PR problem, so without this a
 // PR whose worker is gone would never get one back to read it.
-func (in Input) threadOwed(t linear.Ticket, pr pullrequest.PR) bool {
+func (in Input) threadOwed(t linear.Ticket, pr pullrequest.PullRequest) bool {
 	seen := in.Cache[t.Identifier].ActivityBaseline(t.Status, in.InReview)
 	return seen != "" && pr.ThreadAt > seen
 }

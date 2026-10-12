@@ -2,6 +2,7 @@ package dispatch_test
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -334,11 +335,11 @@ func TestTickDryRunPrintsEscalationAndMergeMessages(t *testing.T) {
 func TestTickTellsFollowersAboutAMergeWhenTheAlertFails(t *testing.T) {
 	for _, test := range []struct {
 		name  string
-		fails string
+		fails bool
 		want  string
 	}{
 		{name: "Merged", want: "ENG-1 was approved and merged"},
-		{name: "MergeFailed", fails: "merge-fails", want: "merging"},
+		{name: "MergeFailed", fails: true, want: "merging"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
@@ -351,8 +352,8 @@ func TestTickTellsFollowersAboutAMergeWhenTheAlertFails(t *testing.T) {
 			_, err := h.run("watch", "ENG-1")
 			require.NoError(t, err)
 			h.writeFile("notify-fails", "")
-			if test.fails != "" {
-				h.writeFile(test.fails, "")
+			if test.fails {
+				h.tools.PullRequests.FailMerge(errors.New("while running gh pr merge " + prURL1 + ": exit status 1: " + mergeRefused))
 			}
 
 			_, err = h.run("tick")

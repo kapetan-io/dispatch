@@ -10,4 +10,4 @@ A file in `bin/` may stay a one-line shell wrapper that execs the Go binary, sin
 
 ## Testing
 
-`go test ./...` runs everything CI runs, against in-process fakes of the external tools (`internal/tooltest`). `go test -tags drift ./internal/...` runs the same contract scenarios against the installed treehouse in a temp repo and pool root, and fails when treehouse is missing. CI never runs it, so run it after changing a fake or a real adapter.
+`go test ./...` runs everything CI runs, against in-process fakes of the external tools (`internal/tooltest`). `go test -tags drift ./internal/...` runs the same contract scenarios against the installed treehouse in a temp repo and pool root, and checks the flags dispatch passes to gh against the installed gh's `--help`. It fails when treehouse or gh is missing. The gh fake holds GitHub's answers per branch and refuses to merge a pull request whose head moved, but no test reaches GitHub, so only the flags are checked against the real tool. CI never runs it, so run it after changing a fake or a real adapter.

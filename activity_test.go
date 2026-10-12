@@ -201,7 +201,7 @@ func TestTickHoldsAutoMergeForNewPRActivity(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "nudge ENG-1: new PR activity: a comment by alice\n", out)
-	assert.Empty(t, h.lines("merges.log"))
+	assert.Empty(t, h.merges())
 
 	out, err = h.run("tick")
 	require.NoError(t, err)
@@ -437,7 +437,7 @@ func TestTickDoesNotAutoMergeWhileAThreadStaysOpenAfterItsNudge(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, out)
 	}
-	assert.Empty(t, h.lines("merges.log"))
+	assert.Empty(t, h.merges())
 
 	p.threads = nil
 	p.resolved = 1

@@ -4,15 +4,13 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/kapetan-io/dispatch"
 )
 
 const prURL1 = "https://github.com/kapetan-io/dispatch/pull/7"
@@ -85,7 +83,7 @@ func (h *harness) pr(ticket string, p prState) {
 	for _, oid := range p.approved {
 		reviews = append(reviews, map[string]any{"state": "APPROVED", "commit": map[string]string{"oid": oid}})
 	}
-	h.writeJSON("pr-"+strings.ToLower(ticket)+".json", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
+	h.respond(ticket, "", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
 		"number":                   7,
 		"url":                      prURL1,
 		"isCrossRepository":        p.fork,
@@ -100,8 +98,47 @@ func (h *harness) pr(ticket string, p prState) {
 	}}}}}})
 }
 
+// prBranch is the branch Linear names for a ticket.
+func prBranch(ticket string) string {
+	return "thrawn01/" + strings.ToLower(ticket)
+}
+
+// respond sets what GitHub answers for the ticket's PR query, for the page
+// after cursor, or the first page when cursor is empty.
+func (h *harness) respond(ticket, cursor string, response any) {
+	b, err := json.Marshal(response)
+	require.NoError(h.t, err)
+	h.pages[ticket+"|"+cursor] = b
+	h.tools.PullRequests.Respond(prBranch(ticket), cursor, json.RawMessage(b))
+}
+
+// responded is what GitHub was last set to answer for the ticket's PR query.
+func (h *harness) responded(ticket, cursor string) []byte {
+	return h.pages[ticket+"|"+cursor]
+}
+
+// closePR closes the ticket's PR without merging it.
+func (h *harness) closePR(ticket string) {
+	h.tools.PullRequests.Close(prBranch(ticket))
+}
+
+// merges lists the PRs that merged, as url|head.
+func (h *harness) merges() []string {
+	return h.tools.PullRequests.Merged()
+}
+
+// prReads lists the branches dispatch read a PR for, with ".cursor" after a
+// page past the first.
 func (h *harness) prReads() []string {
-	return h.lines("gh.log")
+	var reads []string
+	for _, call := range h.tools.Calls("pullrequest", "read") {
+		branch, cursor, _ := strings.Cut(call, "|")
+		if cursor != "" {
+			branch += "." + cursor
+		}
+		reads = append(reads, branch)
+	}
+	return reads
 }
 
 // setWorkerAgent starts a Claude agent in a workspace made with an empty status.
@@ -426,7 +463,7 @@ func TestTickSkipsATicketWhosePRCannotBeRead(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
-	h.writeFile("gh-fails", "")
+	h.tools.PullRequests.FailRead(errors.New("exit status 1"))
 
 	out, stderr, err := h.runContext(context.Background(), "tick")
 	require.NoError(t, err)
@@ -565,18 +602,16 @@ func TestTickGivesARelaunchedWorkerTwoPRNudgesBeforeEscalating(t *testing.T) {
 	assert.Len(t, h.prompts(), 2)
 }
 
-func TestTickStopsWaitingOnAGHCallThatHangs(t *testing.T) {
+func TestTickHoldsBackOnlyTheTicketWhosePRReadFailed(t *testing.T) {
 	h := newHarness(t)
 	h.config("")
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
 	h.worker("ENG-1", "idle")
-	h.script("gh", `exec sleep 20`)
+	h.tools.PullRequests.FailRead(errors.New("context deadline exceeded"))
 
-	start := time.Now()
-	out, stderr, err := h.runWith(context.Background(), dispatch.Options{PRTimeout: 300 * time.Millisecond}, "tick")
+	out, stderr, err := h.runContext(context.Background(), "tick")
 	require.NoError(t, err)
 
-	assert.Less(t, time.Since(start), 5*time.Second)
 	assert.Contains(t, stderr, "while reading the PR for ENG-1")
 	assert.Equal(t, "launch ENG-2: ok\n", out)
 }
@@ -585,7 +620,7 @@ func TestTickReportsWhatGHSaidWhenItFails(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
-	h.script("gh", `echo "HTTP 401: Bad credentials" >&2; exit 1`)
+	h.tools.PullRequests.FailRead(errors.New("HTTP 401: Bad credentials"))
 
 	_, stderr, err := h.runContext(context.Background(), "tick")
 	require.NoError(t, err)

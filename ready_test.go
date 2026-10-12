@@ -1,6 +1,7 @@
 package dispatch_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -242,7 +243,7 @@ func TestTickNotifiesWhenAReadyPRHasNoChecks(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
-	h.writeJSON("pr-eng-1.json", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
+	h.respond("ENG-1", "", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
 		"number":         7,
 		"url":            prURL1,
 		"headRefOid":     "a1",
@@ -366,10 +367,10 @@ func TestTickDoesNotRepeatTheNotificationWhenThePRIsUnreadableForATick(t *testin
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	h.writeFile("gh-fails", "")
+	h.tools.PullRequests.FailRead(errors.New("exit status 1"))
 	_, err = h.run("tick")
 	require.NoError(t, err)
-	h.removeFile("gh-fails")
+	h.tools.PullRequests.FailRead(nil)
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
@@ -571,7 +572,7 @@ func TestTickKeepsTheReadyLabelWhenThePRCannotBeRead(t *testing.T) {
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	h.writeFile("gh-fails", "")
+	h.tools.PullRequests.FailRead(errors.New("exit status 1"))
 	_, _, err = h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
 
@@ -647,7 +648,7 @@ func TestTickDropsTheReadyLabelWhenThePRIsClosed(t *testing.T) {
 	require.NoError(t, err)
 
 	// The PR is closed without merging, so the branch has no open PR.
-	h.removeFile("pr-eng-1.json")
+	h.closePR("ENG-1")
 	for range 2 {
 		_, err = h.run("tick")
 		require.NoError(t, err)
