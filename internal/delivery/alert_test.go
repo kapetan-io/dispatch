@@ -63,3 +63,18 @@ func TestNotificationCenterReportsWhatOsascriptSaid(t *testing.T) {
 
 	require.ErrorContains(t, err, "exit status 1: not allowed")
 }
+
+func TestNotificationCenterShowsTextThatLooksLikeAnOption(t *testing.T) {
+	exe, err := os.Executable()
+	require.NoError(t, err)
+	argsFile := t.TempDir() + "/args"
+	t.Setenv(envArgs, argsFile)
+
+	err = delivery.NewNotificationCenter(exe).Show(context.Background(), "-e")
+
+	require.NoError(t, err)
+	got, err := os.ReadFile(argsFile)
+	require.NoError(t, err)
+	args := strings.Split(string(got), "\x00")
+	assert.Equal(t, []string{"--", "-e", "dispatch"}, args[len(args)-3:])
+}
