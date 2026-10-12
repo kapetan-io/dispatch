@@ -80,7 +80,7 @@ Each criterion is checked through the dispatcher's surface (`dispatch tick`, `di
 6. For an In Review ticket, a push that moves the PR head resets the nudge count, so a review that arrives days later starts a fresh count.
 7. A blocked worker, one asking you a question through AskUserQuestion, triggers a macOS notification on the first tick it is blocked and again on later ticks while it stays blocked. The dispatcher never dismisses the dialog and never sets Needs Human for it (decision 9).
 8. Two consecutive failed launches set Needs Human with the launcher's error. `pool_exhausted` never counts as a failure.
-9. An In Review ticket whose PR has a failing check, changes requested or a merge conflict, and whose worker is idle or gone, receives the PR nudge naming the problem. A gone worker is resumed first.
+9. An In Review ticket whose PR has a failing check, changes requested on its head or a merge conflict, and whose worker is idle or gone, receives the PR nudge naming the problem. A gone worker is resumed first.
 10. A Done, Canceled or Duplicate ticket with a clean, pushed tree has its workspace closed and its tree returned. `treehouse status` shows the slot available.
 11. The same ticket with modified or staged tracked files, or an unpushed tree, keeps its tree leased, its worker is stopped, and exactly one comment explains why.
 12. A ticket moved back to Backlog or Todo has its worker stopped and its tree kept.
@@ -236,13 +236,13 @@ Cheap actions run before launches, because one launch can take over 5 minutes.
 | In Review | working | Nothing, or the comment nudge if the ticket has a new comment |
 | Needs Human | any | Nothing |
 
-A PR needs work when any check has failed, `reviewDecision` is `CHANGES_REQUESTED`, or `mergeable` is `CONFLICTING`. An unresolved review thread is nudged once per new comment through the activity rule, not as needs-work.
+A PR needs work when any check has failed, a reviewer's latest review requests changes on the PR head commit, or `mergeable` is `CONFLICTING`. A request on an older commit does not count, and neither does one while a check on the head is still running. An unresolved review thread is nudged once per new comment through the activity rule, not as needs-work.
 
 #### Workspace labels
 
 The label format is `<emoji> <ticket>`, with no title. 🟢 means In Progress, 🟡 In Review with the PR not ready, 👀 In Review with the PR ready for review, 🔴 Needs Human, ⏸️ paused (Backlog or Todo with a kept tree and a workspace still open). A workspace is renamed only when its current label differs from the wanted one.
 
-A PR is ready for review when the ticket is In Review, its worker is idle, every check has finished and passed, no review thread is unresolved, `reviewDecision` is not `CHANGES_REQUESTED`, and `mergeable` is `MERGEABLE`. A running check or a `mergeable` of `UNKNOWN` is not ready. The notification names the ticket and the PR and fires once per head commit.
+A PR is ready for review when the ticket is In Review, its worker is idle, every check has finished and passed, no review thread is unresolved, no reviewer's latest review requests changes on the head, and `mergeable` is `MERGEABLE`. A running check or a `mergeable` of `UNKNOWN` is not ready. The notification names the ticket and the PR and fires once per head commit.
 
 `herdr workspace rename` stores the emoji label and `workspace list` returns it unchanged (checked on 2026-10-09 with ENG-256). How the herdr UI draws 👀 and ⏸️ was not checked from the command line.
 

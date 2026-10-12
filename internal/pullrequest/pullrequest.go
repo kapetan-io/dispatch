@@ -67,8 +67,8 @@ type PullRequest struct {
 	Ready bool
 }
 
-// NeedsWork reports whether the PR has a failed check, changes requested or a
-// merge conflict.
+// NeedsWork reports whether the PR has a failed check, changes requested on its
+// head or a merge conflict.
 func (p PullRequest) NeedsWork() bool {
 	return len(p.Problems) > 0
 }
@@ -100,7 +100,7 @@ const query = `query PullRequest($owner: String!, $repo: String!, $branch: Strin
     pullRequests(headRefName: $branch, states: OPEN, first: 20, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number url isCrossRepository headRefOid mergeable reviewDecision
+        number url isCrossRepository headRefOid mergeable
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
         reviewThreads(first: $threads) { nodes { isResolved comments(last: 1) { nodes { createdAt author { login } } } } pageInfo { hasNextPage } }
         latestOpinionatedReviews(first: 100) { nodes { state commit { oid } } }
@@ -117,7 +117,6 @@ type prNode struct {
 	URL               string `json:"url"`
 	HeadRefOid        string `json:"headRefOid"`
 	Mergeable         string `json:"mergeable"`
-	ReviewDecision    string `json:"reviewDecision"`
 	Commits           struct {
 		Nodes []struct {
 			Commit struct {
@@ -224,18 +223,23 @@ func Find(ctx context.Context, branch string, fetch Fetch) (PullRequest, bool, e
 	if n.ReviewThreads.PageInfo.HasNextPage {
 		return PullRequest{}, false, fmt.Errorf("PR %s has more than %d review threads; dispatch reads one page and would miss unresolved ones", n.URL, maxThreads)
 	}
-	checksPassed := true
+	checksPassed, checksRunning := true, false
 	pr := PullRequest{Number: n.Number, URL: n.URL, Head: n.HeadRefOid, Repo: RepoOf(n.URL)}
-	// reviewDecision is empty on an unprotected branch, so one reviewer's
-	// standing request for changes has to veto another's approval here.
+	// GitHub's reviewDecision is empty on an unprotected branch and can't say
+	// which commit a request is on, so the reviews are read directly. One
+	// reviewer's standing request vetoes another's approval.
 	for _, r := range n.LatestOpinionatedReviews.Nodes {
 		if r.State == "APPROVED" && r.Commit.Oid == n.HeadRefOid {
 			pr.Approved = true
 		}
 	}
+	// A request on an older commit is the worker's to have answered by pushing,
+	// so only one on the head counts.
+	changesRequested := false
 	for _, r := range n.LatestOpinionatedReviews.Nodes {
 		if r.State == "CHANGES_REQUESTED" {
 			pr.Approved = false
+			changesRequested = changesRequested || r.Commit.Oid == n.HeadRefOid
 		}
 	}
 	// PENDING and EXPECTED are not failures, because the worker has nothing to
@@ -246,6 +250,7 @@ func Find(ctx context.Context, branch string, fetch Fetch) (PullRequest, bool, e
 		}
 		if r := c.Commit.StatusCheckRollup; r != nil && r.State != "SUCCESS" {
 			checksPassed = false
+			checksRunning = checksRunning || r.State == "PENDING" || r.State == "EXPECTED"
 		}
 	}
 	// RFC 3339 UTC times sort as strings, and only the newest item matters, so
@@ -266,7 +271,8 @@ func Find(ctx context.Context, branch string, fetch Fetch) (PullRequest, bool, e
 	for _, c := range n.Comments.Nodes {
 		note(c.CreatedAt, "a comment by "+c.Author.name())
 	}
-	if n.ReviewDecision == "CHANGES_REQUESTED" {
+	// A review bot still checking the head may be about to answer the request.
+	if changesRequested && !checksRunning {
 		pr.Problems = append(pr.Problems, "changes requested")
 	}
 	for _, t := range n.ReviewThreads.Nodes {
