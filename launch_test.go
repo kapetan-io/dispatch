@@ -244,6 +244,15 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 	}
 }
 
+func TestLaunchNamesTheBaseWhenANewBranchWillNotCheckOut(t *testing.T) {
+	l := newLaunchHarness(t)
+
+	out := l.launch("ENG-1", "thrawn01/eng-1", "--base", "nosuch")
+
+	assert.Equal(t, "checkout_failed", out.result["status"])
+	assert.Contains(t, out.result["detail"], "from nosuch")
+}
+
 func TestLaunchReturnsALeaseWhenTheBranchWillNotCheckOut(t *testing.T) {
 	l := newLaunchHarness(t)
 	// A branch checked out in the main clone cannot be switched to in the pool tree.
@@ -538,6 +547,75 @@ func TestLaunchStartsNewBranchesFromTheRemoteBase(t *testing.T) {
 	assert.Equal(t, l.revParse(remote, "refs/heads/main"), l.revParse(l.tree, "HEAD"))
 }
 
+func TestLaunchStartsNewBranchesFromTheCheckedOutBranchWhenThereIsNoRemote(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+	l.git(l.repo, "branch", "-m", "master")
+
+	out := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Equal(t, l.revParse(l.repo, "master"), l.revParse(l.tree, "HEAD"))
+}
+
+func TestLaunchStartsNewBranchesFromTheRemoteDefaultBranch(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+	remote := filepath.Join(l.dir, "remote.git")
+	l.git(l.dir, "init", "-q", "--bare", "-b", "master", remote)
+	l.git(l.repo, "branch", "-m", "master")
+	l.git(l.repo, "remote", "add", "origin", remote)
+	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "remote master")
+	l.git(l.repo, "push", "-q", "origin", "master")
+	l.git(l.repo, "remote", "set-head", "origin", "master")
+	l.git(l.repo, "reset", "-q", "--hard", "HEAD~1")
+	l.git(l.repo, "switch", "-q", "-c", "scratch")
+
+	out := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Equal(t, l.revParse(remote, "refs/heads/master"), l.revParse(l.tree, "HEAD"))
+}
+
+func TestLaunchFollowsARemoteThatRenamedItsDefaultBranch(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+	remote := filepath.Join(l.dir, "remote.git")
+	l.git(l.dir, "init", "-q", "--bare", "-b", "master", remote)
+	l.git(l.repo, "branch", "-m", "master")
+	l.git(l.repo, "remote", "add", "origin", remote)
+	l.git(l.repo, "push", "-q", "origin", "master")
+	l.git(l.repo, "remote", "set-head", "origin", "master")
+	// origin renames master to main and moves ahead, leaving origin/HEAD stale.
+	l.git(remote, "branch", "-m", "master", "main")
+	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "ahead")
+	l.git(l.repo, "push", "-q", "origin", "master:main")
+	l.git(l.repo, "reset", "-q", "--hard", "HEAD~1")
+
+	out := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Equal(t, l.revParse(remote, "refs/heads/main"), l.revParse(l.tree, "HEAD"))
+}
+
+func TestLaunchSkipsAnUnpushedCheckedOutBranchWhenChoosingTheBase(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+	remote := filepath.Join(l.dir, "remote.git")
+	l.git(l.dir, "init", "-q", "--bare", remote)
+	l.git(l.repo, "remote", "add", "origin", remote)
+	l.git(l.repo, "push", "-q", "origin", "main")
+	l.git(l.repo, "fetch", "-q", "origin")
+	l.git(l.repo, "config", "init.defaultBranch", "main")
+	l.git(l.repo, "switch", "-q", "-c", "thrawn01/eng-9")
+	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "unpushed work")
+
+	out := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Equal(t, l.revParse(remote, "refs/heads/main"), l.revParse(l.tree, "HEAD"))
+}
+
 func TestLaunchOpensTheWorkspaceFromTheMainCheckout(t *testing.T) {
 	l := newLaunchHarness(t)
 	l.workerStarts()
@@ -604,6 +682,33 @@ func TestLaunchClosesTheWorkspaceWhenClaudeNeverShowsAnInputBox(t *testing.T) {
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "injection_unconfirmed", out.result["status"])
+	assert.Equal(t, "workspace close w9\n", l.readFile("closes.log"))
+	assert.NoFileExists(t, filepath.Join(l.dir, "runs.log"))
+}
+
+func TestLaunchPressesEnterOnAClaudeCommandLeftUnrunAtTheShellPrompt(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+	l.screens("~/gubernator  thrawn01/eng-332 *35\n❯ claude --model opus --plugin-dir /plugin", "❯")
+
+	out := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	// The first Enter runs the stranded command, the second submits the kickoff.
+	assert.Equal(t, "pane send-keys w9:p1 Enter\npane send-keys w9:p1 Enter\n", l.readFile("keys.log"))
+	assert.Equal(t, "w9:p1 /dispatch:build ENG-1\n", l.readFile("runs.log"))
+}
+
+func TestLaunchReportsClaudeNeverStartedWhenItsCommandStaysAtTheShellPrompt(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+	l.screens("❯ claude --model opus --plugin-dir /plugin")
+
+	out := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "injection_unconfirmed", out.result["status"])
+	assert.Contains(t, out.result["detail"], "never started")
+	assert.NotContains(t, out.result["detail"], "Claude started")
 	assert.Equal(t, "workspace close w9\n", l.readFile("closes.log"))
 	assert.NoFileExists(t, filepath.Join(l.dir, "runs.log"))
 }

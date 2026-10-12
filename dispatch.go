@@ -52,11 +52,10 @@ type Options struct {
 	HerdrCommand string
 	// Treehouse is the pool of worktrees. Defaults to the installed treehouse.
 	Treehouse treehouse.Pool
-	// GH is the command that reads pull requests. Defaults to "gh".
-	GH string
-	// PRTimeout bounds each gh call, so a stalled network can't hold the tick
-	// lock. Defaults to 30 seconds.
-	PRTimeout time.Duration
+	// PullRequests is the GitHub repo's pull requests. Defaults to the installed
+	// gh, which cuts each call off after 30 seconds so a stalled network can't
+	// hold the tick lock.
+	PullRequests pullrequest.Repository
 	// Alerts shows notifications. Defaults to macOS notifications through osascript.
 	Alerts delivery.Alerts
 	// Launcher, when set, is an external program run in place of the built-in launcher. Tests use it to fake launches.
@@ -171,11 +170,8 @@ func withDefaults(o Options) Options {
 	if o.Treehouse == nil {
 		o.Treehouse = treehouse.NewCLI("treehouse")
 	}
-	if o.GH == "" {
-		o.GH = "gh"
-	}
-	if o.PRTimeout == 0 {
-		o.PRTimeout = 30 * time.Second
+	if o.PullRequests == nil {
+		o.PullRequests = pullrequest.NewCLI("gh")
 	}
 	if o.Alerts == nil {
 		o.Alerts = delivery.NewNotificationCenter("osascript")
@@ -557,7 +553,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Merge:
 			e := c[a.Ticket.Identifier]
-			if err := pullrequest.Merge(ctx, opts.GH, a.PRURL, a.Head, opts.PRTimeout); err != nil {
+			if err := opts.PullRequests.Merge(ctx, a.PRURL, a.Head); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while merging %s: %v\n", a.Ticket.Identifier, err)
 				// Recorded before the alert, so a failed alert can't make the next tick retry the merge.
 				e.MergeFailedHead = a.Head
@@ -683,7 +679,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 //
 // pending holds back a ticket's comment time (see Input.PendingComments), so
 // its nudge is retried instead of lost. A successful nudge advances it.
-func settle(c cache.Cache, now time.Time, tickets []linear.Ticket, workers map[string]worker.Worker, prs map[string]pullrequest.PR, statuses config.Statuses, held, pending, leased map[string]bool) {
+func settle(c cache.Cache, now time.Time, tickets []linear.Ticket, workers map[string]worker.Worker, prs map[string]pullrequest.PullRequest, statuses config.Statuses, held, pending, leased map[string]bool) {
 	seen := map[string]bool{}
 	for _, t := range tickets {
 		e := c[t.Identifier]
@@ -775,8 +771,8 @@ func settle(c cache.Cache, now time.Time, tickets []linear.Ticket, workers map[s
 // that can't be read is reported and left out, so it holds back only its own
 // ticket, and its ticket is named in failed to tell it from a ticket with no
 // open PR.
-func readPRs(ctx context.Context, opts Options, in reconcile.Input) (prs map[string]pullrequest.PR, failed map[string]bool) {
-	prs, failed = map[string]pullrequest.PR{}, map[string]bool{}
+func readPRs(ctx context.Context, opts Options, in reconcile.Input) (prs map[string]pullrequest.PullRequest, failed map[string]bool) {
+	prs, failed = map[string]pullrequest.PullRequest{}, map[string]bool{}
 	for _, t := range in.Tickets {
 		if !in.ReadsPR(t) {
 			continue
@@ -786,7 +782,7 @@ func readPRs(ctx context.Context, opts Options, in reconcile.Input) (prs map[str
 		if !ok || dir == "" {
 			continue
 		}
-		pr, found, err := pullrequest.Read(ctx, opts.GH, dir, t.Branch, opts.PRTimeout)
+		pr, found, err := opts.PullRequests.Read(ctx, dir, t.Branch)
 		if err != nil {
 			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, err)
 			failed[t.Identifier] = true

@@ -460,6 +460,8 @@ type harness struct {
 	builtinLauncher bool
 	// clock is the time every command sees, and moves only through advance.
 	clock time.Time
+	// pages is what GitHub was last set to answer, by ticket and cursor.
+	pages map[string][]byte
 }
 
 func newHarness(t *testing.T) *harness {
@@ -472,25 +474,10 @@ func newHarness(t *testing.T) *harness {
 		linear: newFakeLinear(t),
 		tools:  tooltest.New(t),
 		clock:  time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC),
+		pages:  map[string][]byte{},
 	}
 	require.NoError(t, os.MkdirAll(h.repo, 0o755))
 	h.writeFile("launch.json", `{"status":"ok"}`)
-	// gh's branch= argument names the PR file to print, and each call is logged.
-	h.script("gh", `[ -f "`+dir+`/gh-fails" ] && exit 1
-case "$1 $2" in
-"repo view")
-  echo "repo-view" >> "`+dir+`/repo-views.log"
-  cat "`+dir+`/repo-name" 2>/dev/null || echo kapetan-io/dispatch
-  exit 0 ;;
-"pr merge")
-  [ -f "`+dir+`/merge-fails" ] && { echo "Pull request is not mergeable: the base branch policy prohibits the merge" >&2; exit 1; }
-  echo "$*" >> "`+dir+`/merges.log"
-  rm -f "`+dir+`"/pr-*.json
-  exit 0 ;;
-esac
-for arg; do case "$arg" in branch=*) branch="${arg#branch=}" ;; after=*) after=".${arg#after=}" ;; esac; done
-echo "$branch$after" >> "`+dir+`/gh.log"
-cat "`+dir+`/pr-${branch##*/}$after.json" 2>/dev/null || echo '{"data":{"repository":{"pullRequests":{"nodes":[]}}}}'`)
 	h.script("launcher", `echo "$PWD $*" >> "`+dir+`/launches.log"
 cat "`+dir+`/launch.json"`)
 	return h
@@ -526,7 +513,7 @@ func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...s
 	extra.Herdr = h.tools.Herdr
 	extra.HerdrCommand = filepath.Join(h.dir, "herdr")
 	extra.Treehouse = h.tools.Treehouse
-	extra.GH = filepath.Join(h.dir, "gh")
+	extra.PullRequests = h.tools.PullRequests
 	extra.Alerts = h.tools.Alerts
 	if !h.builtinLauncher {
 		extra.Launcher = filepath.Join(h.dir, "launcher")
