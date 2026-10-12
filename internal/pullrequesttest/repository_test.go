@@ -91,3 +91,21 @@ func TestRepositoryInjectedFailuresDoNotChangeWhatItAccepts(t *testing.T) {
 
 	require.ErrorContains(t, repo.Merge(ctx, prURL, "a1"), "Head branch was modified")
 }
+
+func TestRepositoryKeepsAPushQueuedUntilAReadFindsThePR(t *testing.T) {
+	ctx := context.Background()
+	repo := pullrequesttest.New(&journal.Journal{})
+	repo.Respond("b", "", page("a1", false))
+	repo.PushAfterRead("b", "a2")
+
+	repo.FailRead(errors.New("outage"))
+	_, _, err := repo.Read(ctx, "/repo", "b")
+	require.Error(t, err)
+	repo.FailRead(nil)
+	pr, found, err := repo.Read(ctx, "/repo", "b")
+
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, "a1", pr.Head)
+	assert.Equal(t, "a2", repo.Head("b"))
+}

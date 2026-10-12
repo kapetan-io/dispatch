@@ -97,8 +97,8 @@ func (r *Repository) Head(branch string) string {
 }
 
 // PushAfterRead moves the head of the pull request on branch to head right
-// after the next Read of that branch returns, which is a push that lands after
-// dispatch looked.
+// after the next Read of that branch that finds the PR returns, which is a push
+// that lands after dispatch looked. A failed read leaves the push queued.
 func (r *Repository) PushAfterRead(branch, head string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -155,7 +155,7 @@ func (r *Repository) Read(ctx context.Context, repoDir, branch string) (pullrequ
 	})
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if head, ok := r.pushes[branch]; ok {
+	if head, ok := r.pushes[branch]; ok && err == nil && found {
 		r.push(branch, head)
 		delete(r.pushes, branch)
 	}
