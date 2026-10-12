@@ -23,7 +23,11 @@ import (
 // default session is never touched. A missing herdr fails the test.
 // Run with: go test -tags drift ./internal/herdr/
 func TestRealHerdrKeepsTheHerdrContract(t *testing.T) {
-	t.Cleanup(func() { assert.Empty(t, herdrtest.Leftovers(t, os.Getpid())) })
+	t.Cleanup(func() {
+		left, err := herdrtest.Leftovers(os.Getpid())
+		require.NoError(t, err)
+		assert.Empty(t, left)
+	})
 
 	for _, scenario := range herdrtest.Scenarios {
 		t.Run(scenario.Name, func(t *testing.T) {

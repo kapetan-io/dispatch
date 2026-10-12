@@ -72,20 +72,24 @@ func (s *Session) Run(args ...string) error {
 	return err
 }
 
-// Leftovers lists the throwaway sessions that herdr still lists for process pid.
-func Leftovers(t testing.TB, pid int) []string {
-	t.Helper()
+// Leftovers lists the throwaway sessions that herdr still lists for process
+// pid. A herdr that can't list its sessions is an error, not an empty answer.
+func Leftovers(pid int) ([]string, error) {
 	bin, err := exec.LookPath("herdr")
-	require.NoError(t, err)
+	if err != nil {
+		return nil, err
+	}
 	names, err := sessions(bin)
-	require.NoError(t, err)
+	if err != nil {
+		return nil, err
+	}
 	var found []string
 	for _, name := range names {
 		if strings.HasPrefix(name, fmt.Sprintf("%s%d-", sessionPrefix, pid)) {
 			found = append(found, name)
 		}
 	}
-	return found
+	return found, nil
 }
 
 func removeStale(bin string) error {
