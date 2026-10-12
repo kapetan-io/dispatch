@@ -244,6 +244,15 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 	}
 }
 
+func TestLaunchNamesTheBaseWhenANewBranchWillNotCheckOut(t *testing.T) {
+	l := newLaunchHarness(t)
+
+	out := l.launch("ENG-1", "thrawn01/eng-1", "--base", "nosuch")
+
+	assert.Equal(t, "checkout_failed", out.result["status"])
+	assert.Contains(t, out.result["detail"], "from nosuch")
+}
+
 func TestLaunchReturnsALeaseWhenTheBranchWillNotCheckOut(t *testing.T) {
 	l := newLaunchHarness(t)
 	// A branch checked out in the main clone cannot be switched to in the pool tree.

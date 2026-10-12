@@ -258,9 +258,11 @@ func (l *launch) leaseTree(ctx context.Context, existed bool) (Result, bool) {
 	l.fresh = true
 
 	var switchErr error
+	from := ""
 	if existed {
 		switchErr = l.gitToStderr(ctx, l.tree, "switch", req.Branch)
 	} else {
+		from = " from " + req.Base
 		_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", req.Base)
 		switchErr = l.gitToStderr(ctx, l.tree, "switch", "--no-track", "-c", req.Branch, "origin/"+req.Base)
 		if switchErr != nil {
@@ -270,7 +272,7 @@ func (l *launch) leaseTree(ctx context.Context, existed bool) (Result, bool) {
 	if switchErr != nil {
 		l.log("checkout of %s failed in leased tree, returning the lease", req.Branch)
 		l.returnLease(ctx)
-		return Result{Status: StatusCheckoutFailed, Detail: fmt.Sprintf("git switch to %s failed in leased tree %s (lease returned)", req.Branch, l.tree)}, false
+		return Result{Status: StatusCheckoutFailed, Detail: fmt.Sprintf("git switch to %s%s failed in leased tree %s (lease returned)", req.Branch, from, l.tree)}, false
 	}
 	return Result{}, true
 }
