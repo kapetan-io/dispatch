@@ -15,6 +15,7 @@ const (
 	EmojiReady      = "👀"
 	EmojiNeedsHuman = "🔴"
 	EmojiPaused     = "⏸️"
+	EmojiQuiet      = "💤"
 )
 
 // Rename asks for a herdr workspace to take a new label.
@@ -47,7 +48,11 @@ func (in Input) Renames(current map[string]string) []Rename {
 		w := in.Workers[t.Identifier]
 		switch t.Status {
 		case in.InProgress:
-			add(t, w, EmojiInProgress)
+			emoji := EmojiInProgress
+			if in.quiet(t, w) {
+				emoji = EmojiQuiet
+			}
+			add(t, w, emoji)
 		case in.InReview:
 			emoji := EmojiInReview
 			pr, ok := in.PRs[t.Identifier]
@@ -75,6 +80,18 @@ func (in Input) Renames(current map[string]string) []Rename {
 		}
 	}
 	return renames
+}
+
+// quiet reports whether t is a design or review ticket whose worker has sat
+// idle for UnresponsiveAfter. The dispatcher never nudges these, so the label
+// is the only sign the worker stopped without asking anything. It reads
+// the idle clock that settle updates, so Renames must run after settle.
+func (in Input) quiet(t linear.Ticket, w worker.Worker) bool {
+	if w.State != worker.Idle || !slices.ContainsFunc(designLabels, t.HasLabel) {
+		return false
+	}
+	since := in.Cache[t.Identifier].IdleSince
+	return !since.IsZero() && in.Now.Sub(since) >= UnresponsiveAfter
 }
 
 // TabRename asks for a herdr tab to take a new label.
