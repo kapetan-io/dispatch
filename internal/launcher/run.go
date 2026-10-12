@@ -41,7 +41,8 @@ type Request struct {
 	// <Title>", or just <Ticket> when it is empty.
 	Title  string
 	Branch string
-	// Base is the ref a new branch starts from. Defaults to main.
+	// Base is the ref a new branch starts from. Defaults to the repo's default
+	// branch.
 	Base string
 	// Model is the Claude model the worker runs. Defaults to sonnet.
 	Model string
@@ -144,9 +145,6 @@ func (l *launch) run(ctx context.Context) Result {
 	if l.opts.PluginRoot == "" {
 		return Result{Status: StatusUsageError, Detail: "no plugin root: set DISPATCH_PLUGIN_ROOT or plugin_root in the config"}
 	}
-	if req.Base == "" {
-		req.Base = "main"
-	}
 	if req.Model == "" {
 		req.Model = "sonnet"
 	}
@@ -164,6 +162,9 @@ func (l *launch) run(ctx context.Context) Result {
 		return Result{Status: StatusNotARepo, Detail: "run from inside the target repo"}
 	}
 	l.repo = strings.TrimSpace(top)
+	if req.Base == "" {
+		req.Base = l.defaultBranch(ctx)
+	}
 	if _, err := os.Stat(filepath.Join(l.repo, "treehouse.toml")); err != nil {
 		return Result{Status: StatusNotPooled, Detail: l.repo + " has no treehouse.toml. Workers only run on leased pool trees, so add one (treehouse init) before approving tickets in this repo."}
 	}
@@ -262,9 +263,11 @@ func (l *launch) leaseTree(ctx context.Context, existed bool) (Result, bool) {
 	l.fresh = true
 
 	var switchErr error
+	from := ""
 	if existed {
 		switchErr = l.gitToStderr(ctx, l.tree, "switch", req.Branch)
 	} else {
+		from = " from " + req.Base
 		_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", req.Base)
 		switchErr = l.gitToStderr(ctx, l.tree, "switch", "--no-track", "-c", req.Branch, "origin/"+req.Base)
 		if switchErr != nil {
@@ -274,7 +277,7 @@ func (l *launch) leaseTree(ctx context.Context, existed bool) (Result, bool) {
 	if switchErr != nil {
 		l.log("checkout of %s failed in leased tree, returning the lease", req.Branch)
 		l.returnLease(ctx)
-		return Result{Status: StatusCheckoutFailed, Detail: fmt.Sprintf("git switch to %s failed in leased tree %s (lease returned)", req.Branch, l.tree)}, false
+		return Result{Status: StatusCheckoutFailed, Detail: fmt.Sprintf("git switch to %s%s failed in leased tree %s (lease returned)", req.Branch, from, l.tree)}, false
 	}
 	return Result{}, true
 }
@@ -684,6 +687,36 @@ func (l *launch) git(ctx context.Context, dir string, args ...string) (string, e
 	}
 	out, err := exec.CommandContext(ctx, l.opts.Git, args...).Output()
 	return string(out), err
+}
+
+// defaultBranch follows treehouse's order for a repo's base branch: the
+// remote's HEAD, then the branch checked out in the repo, then
+// init.defaultBranch. A checked-out branch that origin doesn't have is someone's
+// unpushed work, so it is skipped when the repo has an origin.
+func (l *launch) defaultBranch(ctx context.Context) string {
+	line := func(args ...string) string {
+		out, err := l.git(ctx, l.repo, args...)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(out)
+	}
+	// A rename on origin leaves the cached origin/HEAD stale. If origin can't be
+	// reached the cached value stands.
+	_, _ = l.git(ctx, l.repo, "remote", "set-head", "origin", "--auto")
+	if name := strings.TrimPrefix(line("symbolic-ref", "--short", "refs/remotes/origin/HEAD"), "origin/"); name != "" {
+		return name
+	}
+	if name := line("symbolic-ref", "--short", "HEAD"); name != "" {
+		_, err := l.git(ctx, l.repo, "remote", "get-url", "origin")
+		if err != nil || line("rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+name) != "" {
+			return name
+		}
+	}
+	if name := line("config", "init.defaultBranch"); name != "" {
+		return name
+	}
+	return "main"
 }
 
 func (l *launch) gitToStderr(ctx context.Context, dir string, args ...string) error {

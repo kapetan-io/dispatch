@@ -20,7 +20,7 @@ import (
 func launchWorker(ctx context.Context, opts Options, args []string) error {
 	fs := flag.NewFlagSet("launch", flag.ContinueOnError)
 	fs.SetOutput(opts.Stderr)
-	base := fs.String("base", "", "ref a new branch starts from (default main)")
+	base := fs.String("base", "", "ref a new branch starts from (default the repo's default branch)")
 	model := fs.String("model", "", "Claude model the worker runs (default sonnet)")
 	kickoff := fs.String("kickoff", "", "first command typed into the worker (default /dispatch:build <TICKET>)")
 	title := fs.String("title", "", "ticket title; the worker's tab is labeled \"<TICKET> <title>\" (default the ticket alone)")

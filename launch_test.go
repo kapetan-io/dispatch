@@ -244,6 +244,15 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 	}
 }
 
+func TestLaunchNamesTheBaseWhenANewBranchWillNotCheckOut(t *testing.T) {
+	l := newLaunchHarness(t)
+
+	out := l.launch("ENG-1", "thrawn01/eng-1", "--base", "nosuch")
+
+	assert.Equal(t, "checkout_failed", out.result["status"])
+	assert.Contains(t, out.result["detail"], "from nosuch")
+}
+
 func TestLaunchReturnsALeaseWhenTheBranchWillNotCheckOut(t *testing.T) {
 	l := newLaunchHarness(t)
 	// A branch checked out in the main clone cannot be switched to in the pool tree.
@@ -531,6 +540,75 @@ func TestLaunchStartsNewBranchesFromTheRemoteBase(t *testing.T) {
 	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "remote main")
 	l.git(l.repo, "push", "-q", "origin", "main")
 	l.git(l.repo, "reset", "-q", "--hard", "HEAD~1")
+
+	out := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Equal(t, l.revParse(remote, "refs/heads/main"), l.revParse(l.tree, "HEAD"))
+}
+
+func TestLaunchStartsNewBranchesFromTheCheckedOutBranchWhenThereIsNoRemote(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+	l.git(l.repo, "branch", "-m", "master")
+
+	out := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Equal(t, l.revParse(l.repo, "master"), l.revParse(l.tree, "HEAD"))
+}
+
+func TestLaunchStartsNewBranchesFromTheRemoteDefaultBranch(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+	remote := filepath.Join(l.dir, "remote.git")
+	l.git(l.dir, "init", "-q", "--bare", "-b", "master", remote)
+	l.git(l.repo, "branch", "-m", "master")
+	l.git(l.repo, "remote", "add", "origin", remote)
+	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "remote master")
+	l.git(l.repo, "push", "-q", "origin", "master")
+	l.git(l.repo, "remote", "set-head", "origin", "master")
+	l.git(l.repo, "reset", "-q", "--hard", "HEAD~1")
+	l.git(l.repo, "switch", "-q", "-c", "scratch")
+
+	out := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Equal(t, l.revParse(remote, "refs/heads/master"), l.revParse(l.tree, "HEAD"))
+}
+
+func TestLaunchFollowsARemoteThatRenamedItsDefaultBranch(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+	remote := filepath.Join(l.dir, "remote.git")
+	l.git(l.dir, "init", "-q", "--bare", "-b", "master", remote)
+	l.git(l.repo, "branch", "-m", "master")
+	l.git(l.repo, "remote", "add", "origin", remote)
+	l.git(l.repo, "push", "-q", "origin", "master")
+	l.git(l.repo, "remote", "set-head", "origin", "master")
+	// origin renames master to main and moves ahead, leaving origin/HEAD stale.
+	l.git(remote, "branch", "-m", "master", "main")
+	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "ahead")
+	l.git(l.repo, "push", "-q", "origin", "master:main")
+	l.git(l.repo, "reset", "-q", "--hard", "HEAD~1")
+
+	out := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Equal(t, l.revParse(remote, "refs/heads/main"), l.revParse(l.tree, "HEAD"))
+}
+
+func TestLaunchSkipsAnUnpushedCheckedOutBranchWhenChoosingTheBase(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+	remote := filepath.Join(l.dir, "remote.git")
+	l.git(l.dir, "init", "-q", "--bare", remote)
+	l.git(l.repo, "remote", "add", "origin", remote)
+	l.git(l.repo, "push", "-q", "origin", "main")
+	l.git(l.repo, "fetch", "-q", "origin")
+	l.git(l.repo, "config", "init.defaultBranch", "main")
+	l.git(l.repo, "switch", "-q", "-c", "thrawn01/eng-9")
+	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "unpushed work")
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
