@@ -117,7 +117,7 @@ func (in Input) activeCount() int {
 			if live || (t.HasLabel("design") && in.unread(t)) {
 				n++
 			}
-		case live || in.unread(t) || (!t.LabelsTruncated && !t.HasLabel("design-review") && !in.WaitsOnBlockers(t)):
+		case live || in.unread(t) || !in.WaitsOnBlockers(t):
 			n++
 		}
 	}

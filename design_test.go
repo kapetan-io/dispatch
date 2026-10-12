@@ -182,18 +182,49 @@ func TestTickHoldsAPromotionForADesignTicketAboutToLaunch(t *testing.T) {
 	assert.Empty(t, h.linear.mutations())
 }
 
-func TestTickStillSkipsADesignReviewTicketThatAlsoCarriesDesign(t *testing.T) {
+func TestTickLaunchesADesignReviewTicketOnTheDesignModel(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(withLabel(designTicket("ENG-1", "In Progress"), "design-review"))
+	h.config("design_model = \"haiku\"\n")
+	h.tickets(withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"))
 
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "skip ENG-1: carries \"design-review\", which this dispatcher does not launch yet\n", out)
-	assert.Empty(t, h.launches())
+	assert.Equal(t, "launch ENG-1: ok\n", out)
+	assert.Equal(t, []string{
+		h.repo + " ENG-1 thrawn01/eng-1 --model haiku --kickoff /dispatch:design-review ENG-1 --no-focus",
+	}, h.launches())
 }
 
-func TestTickDoesNotHoldAPromotionForADesignReviewTicket(t *testing.T) {
+func TestTickLaunchesADesignReviewTicketThatAlsoCarriesDesignAsAReview(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(withLabel(designTicket("ENG-1", "In Progress"), "design-review"))
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		h.repo + " ENG-1 thrawn01/eng-1 --model opus --kickoff /dispatch:design-review ENG-1 --no-focus",
+	}, h.launches())
+}
+
+func TestTickCountsADesignReviewAgainstMaxInProgress(t *testing.T) {
+	h := newHarness(t)
+	h.config("max_in_progress = 1\n")
+	h.tickets(
+		withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"),
+		ticket("ENG-2", "In Progress", "dispatch"),
+	)
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "launch ENG-1")
+	assert.Contains(t, out, "wait ENG-2: 1 of 1 workers already running\n")
+	assert.Len(t, h.launches(), 1)
+}
+
+func TestTickHoldsAPromotionWhileADesignReviewTakesTheLastSlot(t *testing.T) {
 	h := newHarness(t)
 	h.config("max_in_progress = 1\n")
 	h.tickets(parent("ENG-1", "In Progress"), withLabel(ticket("ENG-3", "In Progress", "dispatch"), "design-review"))
@@ -202,7 +233,7 @@ func TestTickDoesNotHoldAPromotionForADesignReviewTicket(t *testing.T) {
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Contains(t, out, "promote ENG-2: child of ENG-1\n")
+	assert.Contains(t, out, "wait ENG-2: 1 of 1 In Progress tickets already\n")
 }
 
 func TestTickHoldsAPromotionForADesignParentInAnUnreadRepo(t *testing.T) {

@@ -269,6 +269,18 @@ func TestTickDryRunPlansPromotionWithoutActing(t *testing.T) {
 	assert.Empty(t, h.linear.mutations())
 }
 
+func TestTickPromotesTheFirstPieceOnceDesignIsOffAndAReviewChildIsDone(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(parent("ENG-1", "In Progress"))
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Done"), child("ENG-3", "ENG-1", "Todo"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "promote ENG-3: child of ENG-1\n")
+	assert.NotContains(t, out, "close ENG-1")
+}
+
 func TestTickClosesAParentWhoseChildrenAreAllFinished(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(parent("ENG-1", "In Progress"))
