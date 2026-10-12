@@ -38,7 +38,7 @@ func StartSession(t testing.TB) *Session {
 	t.Helper()
 	bin, err := exec.LookPath("herdr")
 	require.NoError(t, err)
-	removeStale(bin)
+	require.NoError(t, removeStale(bin))
 
 	s := &Session{Name: fmt.Sprintf("%s%d-%d", sessionPrefix, os.Getpid(), time.Now().UnixNano()), bin: bin}
 	server := exec.Command(bin, "--session", s.Name, "server")
@@ -77,8 +77,10 @@ func Leftovers(t testing.TB, pid int) []string {
 	t.Helper()
 	bin, err := exec.LookPath("herdr")
 	require.NoError(t, err)
+	names, err := sessions(bin)
+	require.NoError(t, err)
 	var found []string
-	for _, name := range sessions(bin) {
+	for _, name := range names {
 		if strings.HasPrefix(name, fmt.Sprintf("%s%d-", sessionPrefix, pid)) {
 			found = append(found, name)
 		}
@@ -86,8 +88,12 @@ func Leftovers(t testing.TB, pid int) []string {
 	return found
 }
 
-func removeStale(bin string) {
-	for _, name := range sessions(bin) {
+func removeStale(bin string) error {
+	names, err := sessions(bin)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
 		pid, _, _ := strings.Cut(strings.TrimPrefix(name, sessionPrefix), "-")
 		// EPERM means the process exists and belongs to another user.
 		if n, err := strconv.Atoi(pid); err == nil {
@@ -98,13 +104,15 @@ func removeStale(bin string) {
 		_ = exec.Command(bin, "session", "stop", name).Run()
 		_ = exec.Command(bin, "session", "delete", name).Run()
 	}
+	return nil
 }
 
-// sessions lists the throwaway sessions herdr knows of.
-func sessions(bin string) []string {
+// sessions lists the throwaway sessions herdr knows of. A failed listing is an
+// error, because an empty answer would let a leftover session pass unseen.
+func sessions(bin string) ([]string, error) {
 	out, err := exec.Command(bin, "session", "list").Output()
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("while listing herdr sessions: %w", err)
 	}
 	var names []string
 	for _, line := range strings.Split(string(out), "\n") {
@@ -112,5 +120,5 @@ func sessions(bin string) []string {
 			names = append(names, fields[0])
 		}
 	}
-	return names
+	return names, nil
 }
