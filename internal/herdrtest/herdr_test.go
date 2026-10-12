@@ -129,3 +129,33 @@ func TestHerdrRecordsItsCallsInOrder(t *testing.T) {
 		{Tool: "herdr", Name: "close-workspace", Args: []string{"w1"}},
 	}, calls.Calls())
 }
+
+func TestHerdrRefusesAPromptToAWorkingAgentThatBlockedAfterTheSnapshot(t *testing.T) {
+	ctx := context.Background()
+	fake := seeded()
+	fake.SetStatus("w1:p1", "working")
+	fake.BlockAfterSnapshot("w1:p1")
+
+	snap, err := fake.Read(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "working", snap.Agents[0].Status)
+	err = fake.Prompt(ctx, "w1:p1", "hi")
+
+	require.ErrorIs(t, err, herdr.ErrAgentBlocked)
+	assert.Empty(t, fake.Prompted())
+}
+
+func TestHerdrFailedRenameLeavesTheLabelAndStillRefusesUnknownTargets(t *testing.T) {
+	ctx := context.Background()
+	fake := seeded()
+
+	fake.Fail(herdrtest.OpRenameWorkspace, errors.New("exit status 1"))
+	require.ErrorContains(t, fake.RenameWorkspace(ctx, "w1", "x"), "exit status 1")
+	fake.Fail(herdrtest.OpRenameWorkspace, nil)
+
+	snap, err := fake.Read(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "ENG-1", snap.Workspaces[0].Label)
+	require.ErrorContains(t, fake.RenameWorkspace(ctx, "w9", "x"), "workspace_not_found")
+	require.ErrorContains(t, fake.CloseTab(ctx, "w1:t9"), "tab_not_found")
+}

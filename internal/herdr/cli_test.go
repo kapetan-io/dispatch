@@ -145,6 +145,9 @@ func TestCLIReportsWhatHerdrRefuses(t *testing.T) {
 	err := cli.Prompt(ctx, "w1:p1", "hi")
 	require.ErrorIs(t, err, herdr.ErrAgentBlocked)
 	assert.EqualError(t, err, blocked)
+	var refusal *herdr.Refusal
+	require.ErrorAs(t, err, &refusal)
+	assert.Equal(t, "agent_blocked", refusal.Code)
 
 	err = cli.Prompt(ctx, "w9:p9", "hi")
 	require.ErrorContains(t, err, "agent_not_found")

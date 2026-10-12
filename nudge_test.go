@@ -266,13 +266,18 @@ func TestTellFails(t *testing.T) {
 }
 
 func TestTellReportsAWorkerHerdrRefuses(t *testing.T) {
-	h := newHarness(t)
-	h.worker("ENG-1", "idle")
-	h.blockAfterSnapshot("ENG-1")
+	for _, status := range []string{"idle", "working"} {
+		t.Run(status, func(t *testing.T) {
+			h := newHarness(t)
+			h.worker("ENG-1", status)
+			h.blockAfterSnapshot("ENG-1")
 
-	_, err := h.run("tell", "ENG-1", "hi")
+			_, err := h.run("tell", "ENG-1", "hi")
 
-	require.ErrorContains(t, err, "agent_blocked")
+			require.ErrorContains(t, err, "agent_blocked")
+			assert.Empty(t, h.prompts())
+		})
+	}
 }
 
 func TestTellNamesAPoolItCouldNotRead(t *testing.T) {
