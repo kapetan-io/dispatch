@@ -455,10 +455,6 @@ func TestTickLeavesTheTreesOfTicketsItDoesNotManage(t *testing.T) {
 		ticket fakeTicket
 	}{
 		{
-			name:   "ReviewTicket",
-			ticket: withLabel(ticket("ENG-1", "Canceled", "dispatch"), "design-review"),
-		},
-		{
 			name:   "AssignedToSomeoneElse",
 			ticket: assignedTo(ticket("ENG-1", "Done", "dispatch"), "someone-else"),
 		},
@@ -498,9 +494,9 @@ func TestTickIgnoresALeaseHeldByNoTicket(t *testing.T) {
 	assert.Empty(t, h.returns())
 }
 
-func TestTickSkipsAFinishedTicketWhoseLabelsDidNotFitOnePage(t *testing.T) {
+func TestTickReturnsTheTreeOfAFinishedTicketWhoseLabelsDidNotFitOnePage(t *testing.T) {
 	h := newHarness(t)
-	h.gitTree("ENG-1")
+	path := h.gitTree("ENG-1")
 	h.worker("ENG-1", "idle")
 	cut := ticket("ENG-1", "Done", "dispatch")
 	cut["labels"].(map[string]any)["pageInfo"] = map[string]bool{"hasNextPage": true}
@@ -509,9 +505,45 @@ func TestTickSkipsAFinishedTicketWhoseLabelsDidNotFitOnePage(t *testing.T) {
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Contains(t, out, "skip ENG-1: it has more labels than the dispatcher reads")
-	assert.Empty(t, h.closes())
+	assert.Equal(t, "teardown ENG-1: Done, clean and pushed\n", out)
+	assert.Equal(t, []string{h.repo + "|return " + path + " --if-lease-holder ENG-1 --force"}, h.returns())
+}
+
+func TestTickReturnsTheCleanTreeOfAFinishedReviewTicket(t *testing.T) {
+	for _, status := range []string{"Done", "Canceled"} {
+		t.Run(status, func(t *testing.T) {
+			h := newHarness(t)
+			path := h.gitTree("ENG-1")
+			h.worker("ENG-1", "idle")
+			h.linear.setElsewhere(withLabel(ticket("ENG-1", status, "dispatch"), "design-review"))
+
+			out, err := h.run("tick")
+			require.NoError(t, err)
+
+			assert.Equal(t, "teardown ENG-1: "+status+", clean and pushed\n", out)
+			assert.Equal(t, []string{"w-ENG-1"}, h.closes())
+			assert.Equal(t, []string{h.repo + "|return " + path + " --if-lease-holder ENG-1 --force"}, h.returns())
+		})
+	}
+}
+
+func TestTickKeepsTheDirtyTreeOfADoneReviewTicketWithOneComment(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.dirty(path)
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(withLabel(ticket("ENG-1", "Done", "dispatch"), "design-review"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "keep ENG-1: Done, but its tree "+path+" has uncommitted changes")
 	assert.Empty(t, h.returns())
+	assert.Len(t, h.linear.mutations(), 1)
+
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	assert.Len(t, h.linear.mutations(), 1)
 }
 
 func TestTickAsksLinearAboutLeasesOnlyWhenAManagedTicketDoesNotHoldThem(t *testing.T) {
@@ -898,24 +930,12 @@ func TestTickLeavesPausedTicketsItDoesNotManage(t *testing.T) {
 		ticket fakeTicket
 	}{
 		{
-			name:   "ReviewTicketInBacklog",
-			ticket: withLabel(ticket("ENG-1", "Backlog", "dispatch"), "design-review"),
-		},
-		{
 			name:   "AssignedToSomeoneElse",
 			ticket: assignedTo(ticket("ENG-1", "Todo", "dispatch"), "someone-else"),
 		},
 		{
 			name:   "NoAILabel",
 			ticket: withoutLabels(ticket("ENG-1", "Backlog", "dispatch")),
-		},
-		{
-			name: "LabelsDidNotFitOnePage",
-			ticket: func() fakeTicket {
-				cut := ticket("ENG-1", "Todo", "dispatch")
-				cut["labels"].(map[string]any)["pageInfo"] = map[string]bool{"hasNextPage": true}
-				return cut
-			}(),
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -963,19 +983,17 @@ func TestTickDoesNothingForAPausedTicketWithNoWorkspace(t *testing.T) {
 	assert.Empty(t, h.returns())
 }
 
-func TestTickSkipsAPausedTicketWhoseLabelsDidNotFitOnePage(t *testing.T) {
+func TestTickStopsTheWorkerOfAPausedReviewTicketAndKeepsItsTree(t *testing.T) {
 	h := newHarness(t)
 	h.gitTree("ENG-1")
 	h.worker("ENG-1", "idle")
-	cut := ticket("ENG-1", "Todo", "dispatch")
-	cut["labels"].(map[string]any)["pageInfo"] = map[string]bool{"hasNextPage": true}
-	h.linear.setElsewhere(cut)
+	h.linear.setElsewhere(withLabel(ticket("ENG-1", "Backlog", "dispatch"), "design-review"))
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Contains(t, out, "skip ENG-1: it has more labels than the dispatcher reads")
-	assert.Empty(t, h.closes())
+	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
+	assert.Empty(t, h.returns())
 }
 
 func TestTickCommentsAgainWhenAReopenedTicketFinishesWithWorkInItsTree(t *testing.T) {

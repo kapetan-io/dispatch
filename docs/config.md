@@ -57,7 +57,7 @@ dispatch = "~/Development/dispatch"
 | `blocked_renotify_ticks` | `3` | Ticks between macOS notifications for a worker that stays blocked on a question. The first notification comes on the first blocked tick. `0` notifies on every blocked tick. |
 | `plugin_root` | `~/Development/dispatch` | Your checkout of this repo. Workers get `scripts/shims` first on their PATH and load the plugin with `--plugin-dir`, both from it. |
 | `worker_model` | `sonnet` | The model name passed to `claude --model` for every build worker. |
-| `design_model` | `opus` | The model name passed to `claude --model` for the design worker of a `design` ticket. |
+| `design_model` | `opus` | The model name passed to `claude --model` for the worker of a `design` or `design-review` ticket. |
 | `auto_merge` | `[]` | GitHub repos, as `owner/name`, where dispatch merges a ready PR itself once a review approves its head commit. See [Auto-merge](#auto-merge). An entry that isn't `owner/name` fails the config load. |
 
 ## Auto-merge

@@ -584,6 +584,29 @@ func TestTickSendsTheResumeNudgeAfterANeedsHumanNotificationFailed(t *testing.T)
 	assert.Equal(t, "nudge ENG-1: resume\n", out)
 }
 
+func TestTickNotifiesWhenAReviewWorkerIsBlockedOnAQuestion(t *testing.T) {
+	h := newHarness(t)
+	h.worker("ENG-1", "blocked")
+	h.tickets(withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"))
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "notify ENG-1: ")
+	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its herdr workspace|dispatch"}, h.notifications())
+}
+
+func TestTickNotifiesWhenAReviewTicketThatAlsoCarriesDesignIsBlocked(t *testing.T) {
+	h := newHarness(t)
+	h.worker("ENG-1", "blocked")
+	h.tickets(withLabel(designTicket("ENG-1", "In Progress"), "design-review"))
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its herdr workspace|dispatch"}, h.notifications())
+}
+
 func TestTickNotifiesWhenAReviewTicketEntersNeedsHuman(t *testing.T) {
 	h := newHarness(t)
 	h.worker("ENG-1", "working")

@@ -151,11 +151,6 @@ func TestTickSkipsTicketsItNeverLaunches(t *testing.T) {
 			ticket: withChildren(ticket("ENG-1", "In Progress", "dispatch")),
 			want:   "skip ENG-1: has sub-issues, and a parent never gets a worker\n",
 		},
-		{
-			name:   "ReviewTicket",
-			ticket: withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"),
-			want:   "skip ENG-1: carries \"design-review\", which this dispatcher does not launch yet\n",
-		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)

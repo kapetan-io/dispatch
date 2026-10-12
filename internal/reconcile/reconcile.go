@@ -140,9 +140,42 @@ type Action struct {
 	Note string
 	// Untracked lists the files a Teardown deletes from its tree first.
 	Untracked []string
-	// Design marks a Launch of the design skill for a design ticket, which runs a
-	// different kickoff and model than a build.
-	Design bool
+	// Skill names what a Launch runs. The zero value is a build.
+	Skill Skill
+}
+
+// Skill is the dispatch skill a launched worker runs. Design and review
+// workers run on the design model with their own kickoff, and are never nudged.
+type Skill int
+
+const (
+	Build Skill = iota
+	Design
+	DesignReview
+)
+
+// SkillOf maps a ticket's labels to the skill its worker runs. A ticket
+// carrying both design labels is a review.
+func SkillOf(t linear.Ticket) Skill {
+	switch {
+	case t.HasLabel("design-review"):
+		return DesignReview
+	case t.HasLabel("design"):
+		return Design
+	}
+	return Build
+}
+
+// Name is the skill's name in a kickoff, or empty for a build, which keeps the
+// launcher's default kickoff.
+func (s Skill) Name() string {
+	switch s {
+	case Design:
+		return "design"
+	case DesignReview:
+		return "design-review"
+	}
+	return ""
 }
 
 func (a Action) String() string {
@@ -220,9 +253,7 @@ type Input struct {
 	Untracked map[string][]string
 }
 
-// designLabels mark tickets whose sessions the dispatcher never nudges. It
-// launches the design skill for "design" and nothing yet for "design-review", whose
-// tree it leaves alone.
+// designLabels mark tickets whose sessions the dispatcher never nudges.
 var designLabels = []string{"design", "design-review"}
 
 // Plan returns the actions for one tick, launches last, in ticket order.
@@ -269,11 +300,6 @@ func Plan(in Input) []Action {
 			actions = append(actions, Action{Kind: Escalate, Ticket: t, Reason: "it has more labels than the dispatcher reads, so it can't reliably tell its repo or whether it is a design ticket. Remove some labels and move it back to In Progress."})
 			continue
 		}
-		// design-review wins when both labels appear.
-		if t.HasLabel("design-review") {
-			actions = append(actions, Action{Kind: Skip, Ticket: t, Reason: `carries "design-review", which this dispatcher does not launch yet`})
-			continue
-		}
 		repo, ok := t.LabelIn(in.RepoLabelGroup)
 		if !ok {
 			actions = append(actions, Action{Kind: Escalate, Ticket: t, Reason: fmt.Sprintf("it has no %q label, so the dispatcher can't tell which repo to build in. Add one and move it back to In Progress.", in.RepoLabelGroup)})
@@ -312,7 +338,7 @@ func Plan(in Input) []Action {
 			continue
 		}
 		running++
-		launches = append(launches, Action{Kind: Launch, Ticket: t, RepoDir: dir, Design: t.HasLabel("design")})
+		launches = append(launches, Action{Kind: Launch, Ticket: t, RepoDir: dir, Skill: SkillOf(t)})
 	}
 	return append(actions, launches...)
 }
@@ -326,7 +352,7 @@ func Plan(in Input) []Action {
 // notifies, since its hand-off is a move to Needs Human, but it is never nudged.
 // A parent notifies on Needs Human like any ticket, and never gets a worker.
 func (in Input) watch(t linear.Ticket) []Action {
-	if t.LabelsTruncated || t.HasLabel("design") {
+	if t.LabelsTruncated || SkillOf(t) == Design {
 		return nil
 	}
 	prev := in.Cache[t.Identifier]

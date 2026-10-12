@@ -12,23 +12,14 @@ import (
 )
 
 // Retires reports whether Plan will tear down this lease holder's trees: its
-// status is a finished one and it is not a review ticket. The tick reads the
-// git state of those trees only.
+// status is a finished one. The tick reads the git state of those trees only.
 func (in Input) Retires(t linear.Ticket) bool {
-	return slices.Contains(in.Done, t.Status) && in.notReview(t)
+	return slices.Contains(in.Done, t.Status)
 }
 
-// notReview reports whether the ticket is known not to be a design-review
-// ticket, whose trees belong to the review, which has no worker yet. A design worker's
-// ticket is retired like a build's, since its worker holds a tree. A ticket
-// whose labels were cut short might be a review ticket.
-func (in Input) notReview(t linear.Ticket) bool {
-	return !t.LabelsTruncated && !t.HasLabel("design-review")
-}
-
-// notDesign reports whether the ticket is known not to be a design ticket,
-// whose trees belong to the design worker and the review. A ticket whose labels were
-// cut short might be one.
+// notDesign reports whether the ticket is known not to be a design or review
+// ticket, whose children are never promoted. A ticket whose labels were cut
+// short might be one.
 func (in Input) notDesign(t linear.Ticket) bool {
 	return !t.LabelsTruncated && !slices.ContainsFunc(designLabels, t.HasLabel)
 }
@@ -44,13 +35,6 @@ func (in Input) retire() []Action {
 	for _, t := range in.LeaseHolders {
 		done, paused := slices.Contains(in.Done, t.Status), slices.Contains(in.Paused, t.Status)
 		if !done && !paused {
-			continue
-		}
-		if t.LabelsTruncated {
-			actions = append(actions, Action{Kind: Skip, Ticket: t, Reason: "it has more labels than the dispatcher reads, so it can't tell whether the ticket is a design-review ticket that owns its trees"})
-			continue
-		}
-		if !in.notReview(t) {
 			continue
 		}
 		if done {

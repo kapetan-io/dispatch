@@ -138,7 +138,7 @@ If the discussion resolved domain terms, write them to the right `docs/CONTEXT.m
 After the user approves the design, ask whether it gets a review. Recommend one when the design looks larger than one PR or changes a public contract, because only the review writes and lints the formal spec.
 
 - **No review.** Load `dispatch:breakdown` with the Skill tool and follow it on the feature ticket. It sizes the design, files the build tickets, and asks whether to start the work or hold it.
-- **Review.** File a child of the feature ticket labeled `ai`, `design-review` and the repo label, never `design`, assigned to the owner of dispatch's Linear API key, with `dispatch:ticket`. Its body links the blueprint. Move it to In Progress and run `dispatch tick`. The dispatcher launches no review worker yet, so tell the user the review starts nothing until that piece ships. Until then, the user can ask any session to break the design down.
+- **Review.** File a child of the feature ticket labeled `ai`, `design-review` and the repo label, never `design`, assigned to the owner of dispatch's Linear API key, with `dispatch:ticket`. Its body links the blueprint. Move it to In Progress and run `dispatch tick`. The next tick launches the review worker, which reviews the blueprint with the user and then runs `dispatch:breakdown`.
 
 If you end with nothing filed, move the feature ticket to Backlog, since an In Progress `design` ticket with no children gets a new design worker.
 
