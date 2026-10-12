@@ -3,6 +3,7 @@ package launcher
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -58,10 +59,11 @@ type Options struct {
 	// PluginRoot holds scripts/shims and is handed to the worker as its plugin.
 	// It has no default.
 	PluginRoot string
-	// Herdr, Treehouse and Git are the commands to run.
-	Herdr     string
-	Treehouse string
-	Git       string
+	// Herdr and Git are the commands to run.
+	Herdr string
+	Git   string
+	// Treehouse is the pool to lease from. Defaults to the installed treehouse.
+	Treehouse treehouse.Pool
 	// Stderr receives progress. Defaults to discarding it.
 	Stderr io.Writer
 	// Trace, when set, is a file that every screen the kickoff step reads is
@@ -78,8 +80,8 @@ func (o Options) withDefaults() Options {
 	if o.Herdr == "" {
 		o.Herdr = "herdr"
 	}
-	if o.Treehouse == "" {
-		o.Treehouse = "treehouse"
+	if o.Treehouse == nil {
+		o.Treehouse = treehouse.NewCLI("treehouse")
 	}
 	if o.Git == "" {
 		o.Git = "git"
@@ -231,7 +233,7 @@ func (l *launch) trackBranch(ctx context.Context) bool {
 // loudly.
 func (l *launch) leaseTree(ctx context.Context, existed bool) (Result, bool) {
 	req := l.req
-	trees, _ := treehouse.Status(ctx, l.opts.Treehouse, l.repo)
+	trees, _ := l.opts.Treehouse.Trees(ctx, l.repo)
 	for _, t := range trees {
 		if t.LeaseHolder == req.Ticket {
 			l.tree = t.Path
@@ -240,24 +242,15 @@ func (l *launch) leaseTree(ctx context.Context, existed bool) (Result, bool) {
 	}
 
 	l.log("leasing a treehouse tree for %s", req.Ticket)
-	get := exec.CommandContext(ctx, l.opts.Treehouse, "get", "--lease", "--lease-holder", req.Ticket, "--json")
-	get.Dir = l.repo
-	var stderr strings.Builder
-	get.Stderr = &stderr
-	out, err := get.Output()
-	if err != nil || len(strings.TrimSpace(string(out))) == 0 {
-		leaseErr := strings.TrimSpace(stderr.String())
-		if leaseErr != "" {
-			l.log("treehouse get: %s", leaseErr)
+	leased, err := l.opts.Treehouse.Lease(ctx, l.repo, req.Ticket)
+	if err != nil {
+		if errors.Is(err, treehouse.ErrNoPath) {
+			return Result{Status: StatusPoolError, Detail: err.Error()}, false
 		}
-		return l.leaseFailure(ctx, leaseErr), false
-	}
-	var leased struct {
-		Path string `json:"path"`
-	}
-	_ = json.Unmarshal(out, &leased)
-	if leased.Path == "" {
-		return Result{Status: StatusPoolError, Detail: "lease succeeded but treehouse JSON had no path: " + strings.TrimSpace(string(out))}, false
+		if err.Error() != "" {
+			l.log("treehouse get: %v", err)
+		}
+		return l.leaseFailure(ctx, err.Error()), false
 	}
 	l.tree = leased.Path
 	l.log("leased %s", l.tree)
@@ -284,7 +277,7 @@ func (l *launch) leaseTree(ctx context.Context, existed bool) (Result, bool) {
 var maxTrees = regexp.MustCompile(`(?m)^max_trees *= *([0-9]+)`)
 
 func (l *launch) leaseFailure(ctx context.Context, leaseErr string) Result {
-	trees, _ := treehouse.Status(ctx, l.opts.Treehouse, l.repo)
+	trees, _ := l.opts.Treehouse.Trees(ctx, l.repo)
 	limit := -1
 	if toml, err := os.ReadFile(filepath.Join(l.repo, "treehouse.toml")); err == nil {
 		if m := maxTrees.FindSubmatch(toml); m != nil {
@@ -334,8 +327,8 @@ func (l *launch) giveBack(ctx context.Context) {
 }
 
 func (l *launch) returnLease(ctx context.Context) {
-	if err := treehouse.Return(context.WithoutCancel(ctx), l.opts.Treehouse, l.repo, l.tree, l.req.Ticket); err != nil {
-		l.log("%v", err)
+	if err := l.opts.Treehouse.Return(context.WithoutCancel(ctx), l.repo, l.tree, l.req.Ticket); err != nil {
+		l.log("while returning %s to the pool: %v", l.tree, err)
 	}
 }
 

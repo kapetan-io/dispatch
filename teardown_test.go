@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,7 +35,7 @@ func TestTickReturnsTheTreeOfAFinishedTicket(t *testing.T) {
 
 			assert.Equal(t, "teardown ENG-1: "+test.status+", clean and pushed\n", out)
 			assert.Equal(t, []string{"w-ENG-1"}, h.closes())
-			assert.Equal(t, []string{h.repo + "|return " + path + " --if-lease-holder ENG-1 --force"}, h.returns())
+			assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 			assert.Empty(t, h.linear.mutations())
 			assert.Empty(t, h.launches())
 
@@ -58,7 +59,7 @@ func TestTickReturnsATreeWhoseWorkspaceIsAlreadyClosed(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Empty(t, h.closes())
-	assert.Equal(t, []string{h.repo + "|return " + path + " --if-lease-holder ENG-1 --force"}, h.returns())
+	assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 }
 
 func TestTickReturnsATreeWhoseWorkspaceHoldsNoAgent(t *testing.T) {
@@ -73,7 +74,7 @@ func TestTickReturnsATreeWhoseWorkspaceHoldsNoAgent(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
-	assert.Equal(t, []string{h.repo + "|return " + path + " --if-lease-holder ENG-1 --force"}, h.returns())
+	assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 }
 
 func TestTickDryRunListsTeardownWithoutActing(t *testing.T) {
@@ -163,7 +164,7 @@ func TestTickRemovesUntrackedFilesBeforeReturningTheTree(t *testing.T) {
 	assert.Equal(t, "teardown ENG-1: Done, removed untracked zz_tmp_test.go\n", out)
 	assert.NoFileExists(t, filepath.Join(path, "zz_tmp_test.go"))
 	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
-	assert.Equal(t, []string{h.repo + "|return " + path + " --if-lease-holder ENG-1 --force"}, h.returns())
+	assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 	assert.Empty(t, h.linear.mutations())
 }
 
@@ -400,13 +401,16 @@ func TestTickKeepsTheTreeWhenTreehouseRefusesTheReturn(t *testing.T) {
 	h.gitTree("ENG-1")
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-	h.writeFile("return-fails", "")
+	// The lease moves to another ticket after dispatch looked at the pool.
+	h.tools.Treehouse.MoveLeaseAfterRead(filepath.Join(h.dir, "trees", "ENG-1"), "ENG-2")
 
 	out, stderr, err := h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
 
 	assert.Empty(t, out)
 	assert.Contains(t, stderr, "dispatch: while tearing down ENG-1: while returning")
+	assert.Contains(t, stderr, "lease holder does not match worktree")
+	assert.Equal(t, "ENG-2", h.tools.Treehouse.Holder(filepath.Join(h.dir, "trees", "ENG-1")))
 	assert.Empty(t, h.linear.mutations())
 }
 
@@ -423,7 +427,7 @@ func TestTickTearsDownOneTreeAndKeepsAnotherOfTheSameTicket(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.ElementsMatch(t, []string{"w-ENG-1", "w-library"}, h.closes())
-	assert.Equal(t, []string{h.repo + "|return " + clean + " --if-lease-holder ENG-1 --force"}, h.returns())
+	assert.Equal(t, []string{h.repo + "|" + clean + "|ENG-1"}, h.returns())
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
 	assert.Contains(t, mutations[0].variables["body"], stranded)
@@ -506,7 +510,7 @@ func TestTickReturnsTheTreeOfAFinishedTicketWhoseLabelsDidNotFitOnePage(t *testi
 	require.NoError(t, err)
 
 	assert.Equal(t, "teardown ENG-1: Done, clean and pushed\n", out)
-	assert.Equal(t, []string{h.repo + "|return " + path + " --if-lease-holder ENG-1 --force"}, h.returns())
+	assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 }
 
 func TestTickReturnsTheCleanTreeOfAFinishedReviewTicket(t *testing.T) {
@@ -522,7 +526,7 @@ func TestTickReturnsTheCleanTreeOfAFinishedReviewTicket(t *testing.T) {
 
 			assert.Equal(t, "teardown ENG-1: "+status+", clean and pushed\n", out)
 			assert.Equal(t, []string{"w-ENG-1"}, h.closes())
-			assert.Equal(t, []string{h.repo + "|return " + path + " --if-lease-holder ENG-1 --force"}, h.returns())
+			assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 		})
 	}
 }
@@ -710,7 +714,7 @@ func TestTickRelaunchesAPausedTicketOnItsKeptTree(t *testing.T) {
 	assert.Equal(t, "launch ENG-1: ok\n", out)
 	assert.Len(t, h.launches(), 1)
 	assert.Empty(t, h.returns())
-	assert.Contains(t, string(h.readFile("trees.json")), `"lease_holder":"ENG-1"`)
+	assert.Equal(t, "ENG-1", h.tools.Treehouse.Holder(filepath.Join(h.dir, "trees", "ENG-1")))
 }
 
 func TestTickDoesNotTouchTreesOfTicketsInReviewOrNeedsHuman(t *testing.T) {
@@ -772,18 +776,20 @@ func TestTickClosesTheWorkspaceBeforeItReturnsTheTree(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 	// A worker still running in the tree could write to it after the return.
-	h.script("treehouse", `case "$1" in
-return)
-  if grep -q '"w-ENG-1"' "`+h.dir+`/workspaces.json"; then echo open >> "`+h.dir+`/order.log"; else echo closed >> "`+h.dir+`/order.log"; fi
-  echo "$PWD|$*" >> "`+h.dir+`/returns.log" ;;
-*) cat "`+h.dir+`/trees.json" ;;
-esac`)
+	var order []string
+	h.tools.Treehouse.BeforeReturn(func(string) {
+		if strings.Contains(string(h.readFile("workspaces.json")), `"w-ENG-1"`) {
+			order = append(order, "open")
+		} else {
+			order = append(order, "closed")
+		}
+	})
 
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"closed"}, h.lines("order.log"))
-	assert.Equal(t, []string{h.repo + "|return " + path + " --if-lease-holder ENG-1 --force"}, h.returns())
+	assert.Equal(t, []string{"closed"}, order)
+	assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 }
 
 func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
@@ -1038,7 +1044,8 @@ func (h *harness) gitTree(ticket string) string {
 
 // lease holds a tree for a ticket with no herdr workspace on it.
 func (h *harness) lease(ticket, path string) {
-	h.writeJSON("trees.json", []map[string]string{{"path": path, "status": "leased", "lease_holder": ticket}})
+	h.tools.Treehouse.Clear(h.repo)
+	h.tools.Treehouse.Seed(h.repo, treehouse.Tree{Path: path, Status: "leased", LeaseHolder: ticket})
 }
 
 // dirty stages a new file in the tree.

@@ -66,7 +66,7 @@ func TestTickTypesTheDesignKickoffWithTheBuiltInLauncher(t *testing.T) {
 		require.NoError(t, err, string(out))
 	}
 	h.script("herdr", fakeHerdr(h.dir))
-	h.script("treehouse", fakeTreehouse(h.dir, tree))
+	h.tools.Treehouse.AddTree(h.repo, tree)
 	for _, name := range []string{"open-works", "tab-works", "start-works"} {
 		h.writeFile(name, "")
 	}

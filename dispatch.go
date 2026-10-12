@@ -44,9 +44,10 @@ type Options struct {
 	LinearURL string
 	// LinearKey overrides LINEAR_API_KEY and the keychain entry named in config.
 	LinearKey string
-	// Herdr and Treehouse are the commands to run. Default "herdr" and "treehouse".
-	Herdr     string
-	Treehouse string
+	// Herdr is the command to run. Defaults to "herdr".
+	Herdr string
+	// Treehouse is the pool of worktrees. Defaults to the installed treehouse.
+	Treehouse treehouse.Pool
 	// GH is the command that reads pull requests. Defaults to "gh".
 	GH string
 	// PRTimeout bounds each gh call, so a stalled network can't hold the tick
@@ -160,8 +161,8 @@ func withDefaults(o Options) Options {
 	if o.Herdr == "" {
 		o.Herdr = "herdr"
 	}
-	if o.Treehouse == "" {
-		o.Treehouse = "treehouse"
+	if o.Treehouse == nil {
+		o.Treehouse = treehouse.NewCLI("treehouse")
 	}
 	if o.GH == "" {
 		o.GH = "gh"
@@ -300,8 +301,9 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 	var trees []treehouse.Tree
 	readErrs := map[string]error{}
 	for label, dir := range cfg.Repos {
-		t, err := treehouse.Status(ctx, opts.Treehouse, dir)
+		t, err := opts.Treehouse.Trees(ctx, dir)
 		if err != nil {
+			err = treehouse.StatusError(dir, err)
 			readErrs[label] = err
 			continue
 		}

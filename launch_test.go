@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -17,6 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch"
+	"github.com/kapetan-io/dispatch/internal/tooltest"
+	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
 func TestLaunchStartsAWorkerTypedTheBuildKickoff(t *testing.T) {
@@ -90,7 +94,7 @@ func TestLaunchStartsNewBranchesFromTheBase(t *testing.T) {
 
 func TestLaunchReportsAWorkerThatIsAlreadyRunning(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.writeJSON("trees.json", []map[string]string{{"path": l.tree, "status": "leased", "lease_holder": "ENG-1"}})
+	l.tools.Treehouse.MoveLease(l.tree, "ENG-1")
 	l.writeFile("workspaces.json", `{"result":{"workspaces":[{"workspace_id":"w3","worktree":{"checkout_path":"`+l.tree+`"}}]}}`)
 	l.writeFile("panes.json", `{"result":{"panes":[{"pane_id":"w3:p2","workspace_id":"w3","tab_id":"w3:t1","agent":"claude"}]}}`)
 
@@ -100,19 +104,19 @@ func TestLaunchReportsAWorkerThatIsAlreadyRunning(t *testing.T) {
 	assert.Equal(t, "w3", out.result["workspace"])
 	assert.Equal(t, "w3:p2", out.result["pane"])
 	assert.NoFileExists(t, filepath.Join(l.dir, "runs.log"))
-	assert.NoFileExists(t, filepath.Join(l.dir, "gets.log"))
+	assert.Empty(t, l.tools.Calls("treehouse", "lease"))
 }
 
 func TestLaunchReusesTheLeaseOfAnEarlierRun(t *testing.T) {
 	l := newLaunchHarness(t)
 	l.workerStarts()
-	l.writeJSON("trees.json", []map[string]string{{"path": l.tree, "status": "leased", "lease_holder": "ENG-1"}})
+	l.tools.Treehouse.MoveLease(l.tree, "ENG-1")
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, l.tree, out.result["worktree"])
-	assert.NoFileExists(t, filepath.Join(l.dir, "gets.log"))
+	assert.Empty(t, l.tools.Calls("treehouse", "lease"))
 }
 
 func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
@@ -166,13 +170,13 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 		{
 			name: "PoolExhausted",
 			setup: func(l *launchHarness) {
-				l.writeFile("get-fails", "")
-				l.writeJSON("trees.json", []map[string]string{
-					{"path": "/t/1", "status": "leased", "lease_holder": "ENG-7"},
-					{"path": "/t/2", "status": "leased", "lease_holder": "ENG-8"},
-					{"path": "/t/3", "status": "leased", "lease_holder": "ENG-9"},
-					{"path": "/t/4", "status": "leased"},
-				})
+				l.tools.Treehouse.Clear(l.repo)
+				l.tools.Treehouse.Seed(l.repo,
+					treehouse.Tree{Path: "/t/1", Status: "leased", LeaseHolder: "ENG-7"},
+					treehouse.Tree{Path: "/t/2", Status: "leased", LeaseHolder: "ENG-8"},
+					treehouse.Tree{Path: "/t/3", Status: "leased", LeaseHolder: "ENG-9"},
+					treehouse.Tree{Path: "/t/4", Status: "leased"},
+				)
 			},
 			args:   []string{"ENG-1", "b"},
 			status: "pool_exhausted",
@@ -181,8 +185,7 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 		{
 			name: "PoolErrorWhenATreeIsFree",
 			setup: func(l *launchHarness) {
-				l.writeFile("get-fails", "")
-				l.writeJSON("trees.json", []map[string]string{{"path": "/t/1", "status": "available"}})
+				l.tools.Treehouse.FailLease(errors.New("no tree for you"))
 			},
 			args:   []string{"ENG-1", "b"},
 			status: "pool_error",
@@ -193,36 +196,37 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 			// escalate instead of waiting for a slot.
 			name: "PoolErrorWhenEveryTreeIsTakenBelowMaxTrees",
 			setup: func(l *launchHarness) {
-				l.writeFile("get-fails", "")
-				l.writeJSON("trees.json", []map[string]string{
-					{"path": "/t/1", "status": "leased", "lease_holder": "ENG-7"},
-					{"path": "/t/2", "status": "leased", "lease_holder": "ENG-8"},
-					{"path": "/t/3", "status": "leased", "lease_holder": "ENG-9"},
-				})
+				l.tools.Treehouse.Clear(l.repo)
+				l.tools.Treehouse.Seed(l.repo,
+					treehouse.Tree{Path: "/t/1", Status: "leased", LeaseHolder: "ENG-7"},
+					treehouse.Tree{Path: "/t/2", Status: "leased", LeaseHolder: "ENG-8"},
+					treehouse.Tree{Path: "/t/3", Status: "leased", LeaseHolder: "ENG-9"},
+				)
+				l.tools.Treehouse.FailLease(errors.New("cannot create a worktree"))
 			},
 			args:   []string{"ENG-1", "b"},
 			status: "pool_error",
 			detail: "the pool is not exhausted (0 of 3 available, max_trees=4",
 		},
 		{
-			name: "PoolErrorWhenMaxTreesIsUnknown",
-			setup: func(l *launchHarness) {
-				require.NoError(t, os.WriteFile(filepath.Join(l.repo, "treehouse.toml"), nil, 0o644))
-				l.writeFile("get-fails", "")
-				l.writeJSON("trees.json", []map[string]string{{"path": "/t/1", "status": "leased", "lease_holder": "ENG-7"}})
-			},
-			args:   []string{"ENG-1", "b"},
-			status: "pool_error",
-			detail: "the pool is not exhausted (0 of 1 available, max_trees=-1",
-		},
-		{
 			name: "LeaseWithoutAPath",
 			setup: func(l *launchHarness) {
-				l.writeFile("get-pathless", "")
+				l.tools.Treehouse.FailLease(fmt.Errorf("%w: {}", treehouse.ErrNoPath))
 			},
 			args:   []string{"ENG-1", "b"},
 			status: "pool_error",
 			detail: "lease succeeded but treehouse JSON had no path",
+		},
+		{
+			name: "PoolErrorWhenMaxTreesIsUnknown",
+			setup: func(l *launchHarness) {
+				require.NoError(t, os.WriteFile(filepath.Join(l.repo, "treehouse.toml"), nil, 0o644))
+				l.tools.Treehouse.Clear(l.repo)
+				l.tools.Treehouse.Seed(l.repo, treehouse.Tree{Path: "/t/1", Status: "leased", LeaseHolder: "ENG-7"})
+			},
+			args:   []string{"ENG-1", "b"},
+			status: "pool_error",
+			detail: "the pool is not exhausted (0 of 1 available, max_trees=-1",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -249,7 +253,7 @@ func TestLaunchReturnsALeaseWhenTheBranchWillNotCheckOut(t *testing.T) {
 
 	assert.Equal(t, "checkout_failed", out.result["status"])
 	assert.Contains(t, out.result["detail"], "(lease returned)")
-	assert.Equal(t, []string{"return " + l.tree + " --if-lease-holder ENG-1 --force"}, l.returns())
+	assert.Equal(t, []string{l.repo + "|" + l.tree + "|ENG-1"}, l.returns())
 }
 
 func TestLaunchReturnsALeaseItTookWhenTheWorkspaceFails(t *testing.T) {
@@ -258,14 +262,14 @@ func TestLaunchReturnsALeaseItTookWhenTheWorkspaceFails(t *testing.T) {
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "workspace_failed", out.result["status"])
-	assert.Equal(t, []string{"return " + l.tree + " --if-lease-holder ENG-1 --force"}, l.returns())
+	assert.Equal(t, []string{l.repo + "|" + l.tree + "|ENG-1"}, l.returns())
 }
 
 func TestLaunchKeepsALeaseFromAnEarlierRunWhenTheWorkspaceFails(t *testing.T) {
 	l := newLaunchHarness(t)
 	// The tree is already leased to ENG-1, so it may hold a worker's
 	// uncommitted work that a forced return would discard.
-	l.writeJSON("trees.json", []map[string]string{{"path": l.tree, "status": "leased", "lease_holder": "ENG-1"}})
+	l.tools.Treehouse.MoveLease(l.tree, "ENG-1")
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
@@ -281,7 +285,7 @@ func TestLaunchClosesTheWorkspaceBeforeReturningALeaseItTook(t *testing.T) {
 
 	assert.Equal(t, "workspace_failed", out.result["status"])
 	assert.Equal(t, "workspace close w9\n", l.readFile("closes.log"))
-	assert.Equal(t, []string{"return " + l.tree + " --if-lease-holder ENG-1 --force"}, l.returns())
+	assert.Equal(t, []string{l.repo + "|" + l.tree + "|ENG-1"}, l.returns())
 }
 
 func TestLaunchKeepsALeaseWhoseWorkspaceWouldNotClose(t *testing.T) {
@@ -335,7 +339,7 @@ func TestLaunchGivesBackTheLeaseWhenTheAgentWillNotStart(t *testing.T) {
 
 	assert.Equal(t, "agent_start_failed", out.result["status"])
 	assert.Equal(t, "workspace close w9\n", l.readFile("closes.log"))
-	assert.Equal(t, []string{"return " + l.tree + " --if-lease-holder ENG-1 --force"}, l.returns())
+	assert.Equal(t, []string{l.repo + "|" + l.tree + "|ENG-1"}, l.returns())
 	// The first start fails and the second runs after a pause, since a
 	// timed-out start may still bring Claude up.
 	assert.Len(t, strings.Split(strings.TrimSpace(l.readFile("starts.log")), "\n"), 2)
@@ -457,7 +461,7 @@ func TestLaunchExitsCleanlyOnlyWhenTheWorkerIsRunning(t *testing.T) {
 	l := newLaunchHarness(t)
 	l.workerStarts()
 	ok := l.launch("ENG-1", "thrawn01/eng-1")
-	l.writeJSON("trees.json", []map[string]string{{"path": l.tree, "status": "leased", "lease_holder": "ENG-1"}})
+	l.tools.Treehouse.MoveLease(l.tree, "ENG-1")
 	l.writeFile("workspaces.json", `{"result":{"workspaces":[{"workspace_id":"w3","worktree":{"checkout_path":"`+l.tree+`"}}]}}`)
 	l.writeFile("panes.json", `{"result":{"panes":[{"pane_id":"w3:p2","workspace_id":"w3","tab_id":"w3:t1","agent":"claude"}]}}`)
 
@@ -552,7 +556,7 @@ func TestLaunchOpensTheWorkspaceFromTheMainCheckout(t *testing.T) {
 func TestLaunchReusesAWorkspaceThatHasNoClaudePane(t *testing.T) {
 	l := newLaunchHarness(t)
 	l.workerStarts()
-	l.writeJSON("trees.json", []map[string]string{{"path": l.tree, "status": "leased", "lease_holder": "ENG-1"}})
+	l.tools.Treehouse.MoveLease(l.tree, "ENG-1")
 	l.writeFile("workspaces.json", `{"result":{"workspaces":[{"workspace_id":"w3","worktree":{"checkout_path":"`+l.tree+`"}}]}}`)
 	l.writeFile("panes.json", `{"result":{"panes":[{"pane_id":"w3:p2","workspace_id":"w3","tab_id":"w3:t1","agent":""}]}}`)
 
@@ -645,7 +649,7 @@ func TestTickLaunchesWithTheBuiltInLauncher(t *testing.T) {
 		require.NoError(t, err, string(out))
 	}
 	h.script("herdr", fakeHerdr(h.dir))
-	h.script("treehouse", fakeTreehouse(h.dir, tree))
+	h.tools.Treehouse.AddTree(h.repo, tree)
 	for _, name := range []string{"open-works", "tab-works", "start-works"} {
 		h.writeFile(name, "")
 	}
@@ -702,7 +706,7 @@ func TestTickRecordsKickoffScreensWhenTraced(t *testing.T) {
 		require.NoError(t, err, string(out))
 	}
 	h.script("herdr", fakeHerdr(h.dir))
-	h.script("treehouse", fakeTreehouse(h.dir, tree))
+	h.tools.Treehouse.AddTree(h.repo, tree)
 	for _, name := range []string{"open-works", "tab-works", "start-works"} {
 		h.writeFile(name, "")
 	}
@@ -751,11 +755,14 @@ func TestLaunchWrapperRunsTheGoLauncher(t *testing.T) {
 	require.NoError(t, err, string(out))
 	wrapper, err := filepath.Abs("bin/dispatch-launch")
 	require.NoError(t, err)
+	self, err := os.Executable()
+	require.NoError(t, err)
+	require.NoError(t, os.Symlink(self, filepath.Join(l.bin, standInTreehouse)))
 
 	cmd := exec.Command(wrapper, "ENG-1", "thrawn01/eng-1", "--kickoff", "/dispatch:design ENG-1")
 	cmd.Dir = l.repo
 	// The harness exports a plugin root, so clear it to see the wrapper set its own.
-	cmd.Env = append(os.Environ(), "PATH="+l.bin+":"+os.Getenv("PATH"), "DISPATCH_PLUGIN_ROOT=")
+	cmd.Env = append(os.Environ(), "PATH="+l.bin+":"+os.Getenv("PATH"), "DISPATCH_PLUGIN_ROOT=", standInTreeEnv+"="+l.tree)
 	stdout, err := cmd.Output()
 	require.NoError(t, err)
 
@@ -769,11 +776,12 @@ func TestLaunchWrapperRunsTheGoLauncher(t *testing.T) {
 // herdr and treehouse commands. With no other setup the launch fails at the
 // workspace step. workerStarts lets it run through to the kickoff.
 type launchHarness struct {
-	t    *testing.T
-	dir  string
-	repo string
-	tree string
-	bin  string
+	t     *testing.T
+	dir   string
+	repo  string
+	tree  string
+	bin   string
+	tools *tooltest.Tools
 	// dirOverride replaces the repo as the directory the launch runs in.
 	dirOverride string
 }
@@ -785,13 +793,15 @@ type launchOutput struct {
 }
 
 func newLaunchHarness(t *testing.T) *launchHarness {
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	l := &launchHarness{
-		t:    t,
-		dir:  dir,
-		repo: filepath.Join(dir, "repo"),
-		tree: filepath.Join(dir, "tree"),
-		bin:  filepath.Join(dir, "bin"),
+		t:     t,
+		dir:   dir,
+		repo:  filepath.Join(dir, "repo"),
+		tree:  filepath.Join(dir, "tree"),
+		bin:   filepath.Join(dir, "bin"),
+		tools: tooltest.New(t),
 	}
 	require.NoError(t, os.MkdirAll(l.repo, 0o755))
 	require.NoError(t, os.MkdirAll(l.bin, 0o755))
@@ -799,9 +809,8 @@ func newLaunchHarness(t *testing.T) *launchHarness {
 	l.git(l.repo, "init", "-q", "-b", "main")
 	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "init")
 	l.git(l.repo, "worktree", "add", "-q", "--detach", l.tree)
-	l.writeFile("trees.json", `[]`)
+	l.tools.Treehouse.AddTree(l.repo, l.tree)
 	l.script("herdr", fakeHerdr(dir))
-	l.script("treehouse", fakeTreehouse(dir, l.tree))
 	t.Setenv("DISPATCH_PLUGIN_ROOT", "/plugin")
 	t.Setenv("DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT", "1")
 	return l
@@ -847,20 +856,6 @@ case "$1 $2" in
 esac`
 }
 
-func fakeTreehouse(dir, tree string) string {
-	return `d="` + dir + `"
-case "$1" in
-status) cat "$d/trees.json" ;;
-get)
-  echo "$*" >> "$d/gets.log"
-  [ -f "$d/get-fails" ] && { echo "no tree for you" >&2; exit 1; }
-  [ -f "$d/get-pathless" ] && { echo '{}'; exit 0; }
-  echo "{\"path\":\"` + tree + `\"}" ;;
-return) echo "$*" >> "$d/returns.log" ;;
-*) exit 2 ;;
-esac`
-}
-
 // workerStarts lets the workspace, tab and agent steps succeed.
 func (l *launchHarness) workerStarts() {
 	l.writeFile("open-works", "")
@@ -897,7 +892,7 @@ func (l *launchHarness) launchWith(opts dispatch.Options, args ...string) launch
 	}
 	opts.Dir = dir
 	opts.Herdr = filepath.Join(l.bin, "herdr")
-	opts.Treehouse = filepath.Join(l.bin, "treehouse")
+	opts.Treehouse = l.tools.Treehouse
 	opts.LaunchPace = time.Millisecond
 	opts.Stdout = &stdout
 	opts.Stderr = io.Discard
@@ -907,13 +902,9 @@ func (l *launchHarness) launchWith(opts dispatch.Options, args ...string) launch
 	return out
 }
 
+// returns lists the treehouse return calls, as "<repo>|<tree>|<holder>".
 func (l *launchHarness) returns() []string {
-	b, err := os.ReadFile(filepath.Join(l.dir, "returns.log"))
-	if os.IsNotExist(err) {
-		return nil
-	}
-	require.NoError(l.t, err)
-	return strings.Split(strings.TrimSpace(string(b)), "\n")
+	return l.tools.Calls("treehouse", "return")
 }
 
 func (l *launchHarness) readFile(name string) string {
