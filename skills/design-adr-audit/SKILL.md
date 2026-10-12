@@ -1,6 +1,6 @@
 ---
-name: blueprint-adr-audit
-description: Audit a blueprint (or other plan/design/spec/diff) against the repository's Accepted ADRs to find where it VIOLATES or CONTRADICTS a binding decision — using parallel sub-agents that each own a slice of the ADR corpus, then a synthesized verdict. This is a companion to blueprint-review, meant to run during blueprint work once the design is drafted and before the build starts. Use when the user says "check the blueprint against our ADRs", "does this violate any ADRs", "audit the plan for ADR compliance", "make sure the blueprint doesn't contradict an ADR", or "/blueprint-adr-audit". It is READ-ONLY: it reports findings and does not edit the plan, the ADRs, or any code. Do NOT use it to WRITE a new ADR (that is adr-write), to REVIEW the blueprint for gaps/correctness (that is blueprint-review), to review code for bugs (/code-review), or to check a spec's documentation quality (review-openapi).
+name: design-adr-audit
+description: "Audit a blueprint against the repository's Accepted ADRs to find where it violates or contradicts a binding decision, using parallel sub-agents that each own a slice of the ADR corpus, then a synthesized verdict. Use when `design-review` calls for it, or when asked to check a blueprint or plan against the ADRs. Read-only: it reports findings and edits nothing."
 ---
 
 # Audit a blueprint against the repository's ADRs
@@ -11,12 +11,10 @@ design artifact — a tech spec, design doc, an ADR the plan itself records, an
 implementation checklist, or an uncommitted diff. The ADR corpus is whatever binding
 decisions live in the repo (`docs/adr/`, `services/*/docs/adr/`).
 
-**Where this fits.** This runs during blueprint work, once the design is drafted — a
-companion to `blueprint-review`. `blueprint-review` checks the design against *itself* (gaps,
-unresolved questions, correctness holes); this checks the design against the *binding
-decisions around it*. Run it after the blueprint is stable and before the build starts, so a
-contradiction with an Accepted ADR surfaces as a design fix, not a mid-build surprise. It is
-also fine to run standalone whenever a plan needs checking against the ADRs.
+**Where this fits.** `design-review` checks the design against *itself* (gaps,
+unresolved questions, correctness holes); this checks it against the *binding decisions
+around it*. Run it once the blueprint is stable, so a contradiction with an Accepted ADR
+surfaces as a design fix, not a mid-build surprise.
 
 This is **read-only**. You audit and report. You never edit the plan, the ADRs, or any
 code, and you never run builds or tests as part of the audit. Acting on the findings
@@ -32,9 +30,9 @@ every ADR in its slice *closely* rather than skimming 40 of them in one pass.
 
 Resolve in order; stop at the first hit:
 
-1. **Supplied** — the user named or pasted a file/dir/PR/diff → use it.
-2. **A feature directory** — if the work centers on `docs/features/<name>/` (a blueprint +
-   contract), the plan is that directory's design artifacts.
+1. **Supplied** — the user or `design-review` named or pasted a file/doc/PR/diff → use it.
+2. **A feature ticket's blueprint** — a Linear document. Sub-agents can't read Linear, so
+   write its text, and any spec document, to files in your scratchpad and list those paths.
 3. **The current diff** — `git diff --stat main...HEAD`; the plan is the changed
    design/contract files.
 
@@ -60,9 +58,8 @@ Then decide **which ADR sets bind this plan**:
 - **Another service's ADRs** bind this plan only through a shared contract (e.g. the plan
   produces into that service). Include *only* if there is such a dependency, and say so.
 
-**Confirm the scope out loud** before dispatching, because it materially changes the audit
-("I'm reading 'our ADRs' as root + <svc>, excluding <other-svc>'s internal ADRs — say the
-word to narrow it"). Only ADRs whose **Status is Accepted** are enforceable; the agents
+**State the scope** before dispatching, because it materially changes the audit
+("I'm reading 'our ADRs' as root + <svc>, excluding <other-svc>'s internal ADRs"). Only ADRs whose **Status is Accepted** are enforceable; the agents
 verify each one's status, but scope the corpus to the accepted-ADR directories up front.
 
 List the corpus as **explicit file paths** — you will partition this list.
@@ -172,18 +169,7 @@ Merge the agent results into one report:
 - Keep the COMPLIANT and NOT-APPLICABLE lists terse; the findings are the product.
 - End by separating **act-on-now** items (usually contract/naming issues in files that
   exist) from **carry-forward** items (implementation-time invariants, follow-up-ticket
-  decisions), and ask what the user wants to do — do not act unprompted.
-
-## Notes and trade-offs
-
-- **Uniform vs. targeted split.** The content-agnostic split is unbiased but can spend a
-  whole agent on a batch nothing in the plan could touch (e.g. UI/frontend ADRs for a
-  backend plan). That waste is the price of no bias; keep it unless the user asks to
-  prioritize, in which case say you are trading neutrality for efficiency.
-- **Pre-implementation is normal.** Audits often run on a design before any code exists —
-  the agents audit *design intent*. Say so in the plan block so agents don't look for code.
-- **One agent is fine for a small corpus** (≲10 ADRs). Fan out when the corpus is large
-  enough that a single context would skim.
+  decisions), and ask what the user wants to do through AskUserQuestion — do not act unprompted.
 
 ## Boundaries
 

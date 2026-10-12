@@ -1,10 +1,11 @@
 ---
-name: blueprint-review
-description: Review an existing Blueprint (the single product + technical design document) for gaps, inconsistencies, unresolved questions, correctness holes, and ambiguities that would force decisions during the build, then produce an updated version. Use when the user asks to "review the blueprint", "check the blueprint", or "update the blueprint". Reviews both halves and the user-stories section in one pass. Do NOT use to start a new Blueprint from scratch (use blueprint-create) or to make minor wording edits that don't need a structured review.
-allowed-tools: Read, Edit, Bash, Agent, AskUserQuestion
+name: design-review
+description: "Review a feature ticket's blueprint with the user, audit it against the repo's ADRs, then break the design down into build tickets. Use when started as `/dispatch:design-review <review ticket>`, or when asked to review a design held in a Linear blueprint document."
 ---
 
 # Review a Blueprint
+
+You are the review worker for one `design-review` ticket, a child of the feature ticket that holds the blueprint as a Linear document. The dispatcher started you in a leased worktree, and you own the review ticket until it is Done or in Needs Human. Load `dispatch:converse` with the Skill tool first, and open a todolist for the steps below. You run unattended until a question needs the user, so ask through AskUserQuestion, and never run `/loop`, cron, `dispatch tick` or `treehouse return`. A tick after your own move to Done would tear down the workspace you run in. You never commit. Your tree is discarded.
 
 ## Goal
 
@@ -16,32 +17,36 @@ Because the product definition and technical design live in one document, this r
 
 The orchestrator runs a review cycle per iteration — find issues → validate → skeptic → propose fixes → apply — then a **goal validation agent** reads the updated Blueprint cold and answers: "Can an engineer build the right thing from this?" If yes, the review is done. If no, the validator names specific blockers, and those become the sole inputs for the next cycle (max 5 iterations). Phase 6 PASS is the authoritative exit signal — not zero findings.
 
-## Environment
+## Steps
 
-| | Claude Code | Claude chat |
-|---|---|---|
-| **Reading the Blueprint** | Read from `docs/features/{feature}/blueprint.md` | Ask the user to paste the Blueprint |
-| **Writing the updated Blueprint** | Write to the same path on disk | Produce as a markdown artifact; remind the user to replace the file at its original path |
-| **ADR offer at end** | Invoke `adr-write` for approved decisions | Surface ADR-worthy decisions clearly; tell the user to run `adr-write` for each in Claude Code |
-| **API contract at end** | Author/update the `openapi.yaml` (or equivalent contract source) to match the Blueprint's surface and run the contract lint (`duh lint` / `task duh-gen`) | Provide the updated spec fragment; tell the user to run the lint in Claude Code |
-| **Question options** | `AskUserQuestion` tool | Numbered options block in text |
+1. **Orient and resume.** Read the review ticket, its comments, its parent, and the parent's documents and children. No parent or no blueprint document: comment under `## In plain English` and move the ticket to Needs Human. You may have been relaunched with no memory, so take the first row that is true.
+   - The feature ticket lacks `design` and has children with a `Piece:` line: approval already happened, so move the review ticket to Done and stop.
+   - The blueprint has a `Pieces` section: go to step 7.
+   - Otherwise: step 2.
+2. **Inputs and pre-work**, below.
+3. **The loop**, Phases 1 to 6 below, at most 5 rounds.
+4. **Five rounds without PASS.** Comment the remaining blockers on the review ticket, opening with `## In plain English`, move it to Needs Human, file nothing and stop. The user reads the ticket, not your scrollback.
+5. **ADR audit.** When the repo has `docs/adr/`, run `design-adr-audit` on the blueprint. A fix it causes gets one more Phase 6 run, which counts toward the 5 rounds. Ask its closing question through AskUserQuestion.
+6. **End steps**, "At the end of the review" below.
+7. **Break down.** Invoke `dispatch:breakdown` on the feature ticket. Each `Pieces` row also names the ADR and glossary sections its piece commits.
+8. **Finish.** After the user answers start or hold, comment a summary on the review ticket that says how to start held work, then move it to Done. On "start now", `design` must already be off the feature ticket. A crash between the two leaves the review In Progress, and step 1 finishes it.
 
-If Read, Write, and Edit tools are available in your toolset, you are in Claude Code; otherwise you are in Claude chat. Everything else is identical in both environments.
+## Reading and writing the blueprint
+
+The blueprint is a Linear document. Read it with `get_document` on the feature ticket, never from `docs/features/`. Sub-agents can't read Linear, so paste its full text into their prompts as the phases say.
+
+Linear rewrites markdown on save, so bullets come back as `*`, a leading H1 is dropped and lines can gain blanks. Apply each fix as a `save_document` patch whose old text you copied from a fresh `get_document`, and read again before the next patch. Never push the whole document back, because that makes you retype it every round.
+
+Log each user answer or dismissal in the blueprint's Decision Log as "you decided (review)" as you get it, so a rerun doesn't ask again.
 
 ## Inputs
 
-The skill expects a Blueprint file. If `$ARGUMENTS` is provided, treat it as a path to the file. Otherwise, search for `blueprint.md` in `docs/features/` directories under the current working directory.
+Locate and read:
+- The blueprint document (required).
+- `docs/CONTEXT.md`, the domain glossary, found by walking up from the code the blueprint touches. Optional.
+- The implementing code, if any exists, for the code drift scan.
 
-Before starting, locate and read these:
-- The Blueprint file (required).
-- `CONTEXT.md` — walk up from the feature directory to find `docs/CONTEXT.md` at the service root. The domain glossary. Optional — skip if not found.
-- The implementing code, if any exists — used for the code drift scan (below).
-
-If the Blueprint cannot be found, ask the user for the path.
-
-Derive the `{feature}` slug from the file path — the directory name under `docs/features/`.
-
-Additionally, list files in the `adr/` directory at the service docs root (e.g., `docs/adr/`). Do NOT read the ADR files upfront. Pass the list of filenames and paths to the sub-agents so they can read specific ADRs on demand when a finding needs scope or architectural context.
+List the files in the repo's `docs/adr/` without reading them. Pass the paths to the sub-agents so they read specific ADRs on demand.
 
 ## Orchestrator Pre-work
 
@@ -58,8 +63,6 @@ This is the step that prevents false-positive gap findings. Include the coverage
 ### Code drift scan
 
 Scan the code that implements (or partially implements) the technical half. Where the Blueprint and the code disagree, those disagreements become pre-seeded drift findings. For each, note: the Blueprint passage, the code location, what differs, and an **authoritativeness classification** — **code-is-authoritative** (the code is shipped/tested and the Blueprint simply wasn't updated) or **unclear** (genuine ambiguity about which is correct). This classification determines Phase 4 routing: code-is-authoritative drift gets auto-applied; unclear drift gets surfaced to the user.
-
-If a `plan-from-prompt` / `plan-from-context` session triggered this review by surfacing technical questions, those questions are also pre-seeded findings — include them alongside drift findings.
 
 If no implementing code exists yet, skip this scan.
 
@@ -98,7 +101,7 @@ Spawn a sub-agent (Agent tool, **foreground**, `model: "sonnet"`) with the follo
 You are reviewing a Blueprint — a single design document holding both a feature's product definition (problem, users, scope, correctness constraints, acceptance criteria, optional user stories) and its technical design (interfaces, architecture, data design, security, PII, scale, testing). Find gaps, inconsistencies, and ambiguities that would force product or implementation decisions during the build, plus places where the technical half does not satisfy the product intent. Read all provided content fully before producing findings.
 
 BLUEPRINT CONTENTS:
-<paste the full text of the blueprint.md file — do NOT paste just the path>
+<paste the full text of the blueprint document — do NOT paste just the link>
 
 CONTEXT FILE (domain glossary):
 <paste the full text of CONTEXT.md, or "not found">
@@ -110,7 +113,7 @@ COVERAGE MAP (from orchestrator — includes whether a Correctness Constraints s
 <paste the coverage map>
 
 PRE-SEEDED FINDINGS (from orchestrator):
-<paste code-drift findings, plan-from-prompt questions, and soft-flag triage results>
+<paste code-drift findings and soft-flag triage results>
 
 ITERATION: <N of max 5>
 <if iteration 2+, include:>
@@ -217,7 +220,7 @@ Take the Phase 1 findings and spawn a second sub-agent (Agent tool, **foreground
 You are a second-opinion reviewer. Verify whether each finding below is correct by cross-referencing the Blueprint, the ADRs, and the domain glossary.
 
 BLUEPRINT CONTENTS:
-<paste the full text of the blueprint.md file>
+<paste the full text of the blueprint document>
 
 CONTEXT FILE (domain glossary):
 <paste the full text of CONTEXT.md, or "not found">
@@ -262,7 +265,7 @@ Take only the **Confirmed** findings from Phase 2 and spawn a third sub-agent (A
 You are a skeptic reviewer — the defense attorney for the Blueprint. Try to prove each confirmed finding is wrong, unnecessary, or overstated.
 
 BLUEPRINT CONTENTS:
-<paste the full text of the blueprint.md file>
+<paste the full text of the blueprint document>
 
 CONTEXT FILE (domain glossary):
 <paste the full text of CONTEXT.md, or "not found">
@@ -323,7 +326,7 @@ Spawn a sub-agent (Agent tool, **foreground**, `model: "sonnet"`) to propose con
 You are a fix proposal agent. For each finding, propose 2–3 concrete fix options for the Blueprint, then pick the best one. Turn each finding into an actionable edit with a clear recommendation.
 
 BLUEPRINT CONTENTS:
-<paste the full text of the blueprint.md file>
+<paste the full text of the blueprint document>
 
 CONTEXT FILE (domain glossary):
 <paste the full text of CONTEXT.md, or "not found">
@@ -341,7 +344,7 @@ For each finding:
 **Routing**: <"auto-apply" or "surface-to-user" — see rules below>
 
 **Option 1** (recommended) — <one-line summary>
-Blueprint edit: <quote the current text to replace, then the replacement text. Precise enough for an Edit tool call.>
+Blueprint edit: <quote the current text to replace, then the replacement text. Precise enough for a patch.>
 Rationale: <why this is best>
 
 **Option 2** — <one-line summary>
@@ -390,32 +393,17 @@ The orchestrator MUST paste the full Blueprint, CONTEXT.md, and the full SURVIVI
 
 Using Phase 4's output, apply or surface each fix.
 
-**Stale-text guard:** before applying any edit, verify the "old text" still matches the current Blueprint. After prior fixes in the same iteration or in iteration 2+, the file may have changed since the fix agent read it. If the old text no longer matches, re-read the affected section and adapt the edit to the current text, preserving the recommended fix's intent. If it cannot be adapted, skip it and note that in the summary.
+**Stale-text guard:** the fix agent's old text comes from a read that is now stale. Before each patch, read the document again and copy the old text from that read. If the text no longer matches, adapt the patch to the current text, preserving the fix's intent. If it cannot be adapted, skip it and note that in the summary.
 
 ### Auto-apply findings
 
-For each finding routed **auto-apply**, apply the recommended option directly with the Edit tool. If two auto-apply findings were flagged tightly coupled with a combined fix, apply it as a single Edit. If sequential auto-apply edits target overlapping text, re-read the affected section after each edit to verify the next edit's old text still matches. After applying, tell the user what was auto-applied in a brief summary, naming the option applied for each.
+For each finding routed **auto-apply**, apply the recommended option directly with a patch. If two auto-apply findings were flagged tightly coupled with a combined fix, apply it as a single Edit. If sequential auto-apply edits target overlapping text, re-read the affected section after each edit to verify the next edit's old text still matches. After applying, tell the user what was auto-applied in a brief summary, naming the option applied for each.
 
 ### Surface trade-off findings
 
 For each finding routed **surface-to-user**, check the verdict:
 
 **Design-decision findings** (verdict: Upheld or Confirmed) — clear issue, user picks an approach. Before presenting, score the finding against the high-impact trigger criteria in the `deliberate` skill. If it is P0 or P1 and 2+ signals fire, run the deliberation protocol — the synthesis replaces the options block. Otherwise present the fix agent's options with `AskUserQuestion`. Frame as "Finding N: <title> (<category>)" with a "Why this matters" explanation in the question text. Place the recommended option first with "(Recommended)" appended. Use the `description` field for trade-offs. Always include your reasoning in the question text.
-
-In Claude chat (no `AskUserQuestion`), fall back to a text options block:
-
-```
-**Finding N: <title>** (<category>)
-<one-line issue summary>
-
-**Why this matters:** <1-2 sentences on the product or technical consequence of leaving this unresolved — what breaks, what becomes ambiguous for implementers, or what decision gets forced downstream.>
-
-**Option 1** (recommended) — <summary>
-**Option 2** — <summary>
-**Option 3** — <summary (if present)>
-
-The fix agent recommends Option 1 because <reason>. Pick one or propose another.
-```
 
 **Clarification findings** (verdict: Needs clarification or Downgraded to clarification) — the Blueprint and available context are both ambiguous, so this is a decision without a clear right answer. Include a "Why this matters" explanation, then present with `AskUserQuestion` (ambiguity framed as a question, concrete options from the fix agent). After the user answers, apply the corresponding edit (or craft a new one if the answer doesn't match any proposed option).
 
@@ -437,7 +425,7 @@ You are a goal validation agent. Determine whether this Blueprint is BUILDABLE �
 You are NOT a reviewer. Do NOT look for things to improve, polish, or expand. Answer one question: if an engineer (or an LLM planner) sat down to build this tomorrow with only this Blueprint plus the ADRs, would they get stuck anywhere, or build the wrong thing?
 
 BLUEPRINT CONTENTS:
-<paste the full text of the blueprint.md file>
+<paste the full text of the blueprint document>
 
 CONTEXT FILE (domain glossary):
 <paste the full text of CONTEXT.md, or "not found">
@@ -492,19 +480,15 @@ Maximum 5 blockers. If you find yourself listing more than 5, you are being too 
 ### Decide whether to loop
 
 - **PASS** → exit the loop; proceed to "Writing the updated document."
-- **FAIL** → if iteration count < 5, continue to the next iteration; pass the blocker list to Phase 1 as its ONLY inputs. If iteration count = 5, exit and report the remaining blockers to the user as unresolved.
+- **FAIL** → if iteration count < 5, continue to the next iteration; pass the blocker list to Phase 1 as its ONLY inputs. If iteration count = 5, follow step 4.
 
-## Writing the updated document
+## Final read
 
-Fixes are applied incrementally during Phase 5 via Edit. After the loop exits, do a final read to verify all changes landed. If any resolved finding was not yet incorporated, apply it now.
-
-Preserve unchanged sections and their ordering — a review does not reshuffle the document. Remove resolved soft flags, replacing each with the actual decision. Do not add sections for findings the user dismissed or deferred.
-
-Err toward shorter. Resolving a finding rarely requires a new section. A review sharpens the Blueprint, it does not inflate it. Write for an engineer who was not in the review. No deictic references; "We considered X but chose Y because Z" is fine, a bare reference to "the approach we rejected in review" is not.
+Fixes are saved as they are applied. After the loop exits, read the document once more to verify every resolved finding landed, and apply any that did not. Preserve unchanged sections and their ordering, remove resolved soft flags in favor of the decision, and add no sections for dismissed findings. Err toward shorter, and write for an engineer who was not in the review.
 
 ## Output
 
-After the loop exits, print a final summary:
+After the loop exits, print a final summary and use it as the start of your step 8 comment:
 
 ```
 ## Blueprint Review Complete
@@ -525,20 +509,16 @@ After the loop exits, print a final summary:
 **Remaining blockers**:
 - <blocker from final goal validation that was not resolved>
 
-File updated: <path>
+Blueprint: <document link>
 ```
 
 ## At the end of the review
 
-1. Confirm the updated file was written with its path.
-2. If the review resolved or corrected any domain terms, write them to the appropriate `docs/CONTEXT.md` in a single pass alongside the Blueprint update. Because the Blueprint is one document, the glossary is written once. If the file does not exist, create it in the `docs/` directory closest to the code whose domain it describes, using the format in [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md); in a monorepo, route per-service.
-3. Review the running decision log. For each decision, apply this checklist — offer an ADR only if all three are true:
-   - **Hard to reverse** — the cost of changing your mind later is meaningful
-   - **Surprising without context** — a future reader will wonder "why did they do it this way?"
-   - **Result of a real trade-off** — there were genuine alternatives and you picked one for specific reasons
+1. **Glossary.** Put corrected or new domain terms in a `Glossary changes` section of the blueprint, for the first piece to commit to `docs/CONTEXT.md` (format in [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md)). Your tree is discarded.
+2. **ADRs.** Review the decision log. Offer an ADR only if all three are true:
+   - **Hard to reverse** — changing your mind later costs something meaningful.
+   - **Surprising without context** — a future reader will wonder why.
+   - **A real trade-off** — there were genuine alternatives.
 
-   If any is missing, skip the ADR; the decision already lives in the Blueprint. Decisions made during review — resolving soft flags, settling an ambiguous boundary, choosing between approaches, fixing a product/technical inconsistency — are strong candidates when they pass. Decisions resolved through `deliberate` automatically satisfy "Hard to reverse" and "Result of a real trade-off" — only check "Surprising without context"; these should already have been offered immediately after deliberation resolved, so do not re-offer them here.
-4. For each decision that passes, offer to capture it as an ADR: "This looks ADR-worthy — want me to record it?" Invoke `adr-write` for the ones the user approves.
-5. **Review the API/contract surface.** If the Blueprint defines or changes a service's consumer-facing contract — DUH-RPC / HTTP / RPC endpoints, request/response schemas, or error codes, i.e. anything in its Functional/contract section — that contract *is* the surface the Blueprint fixes, so bringing the service's contract source into line is part of closing the review, not a downstream build step. Review whether the service's `openapi.yaml` — the active contract version the Blueprint targets (`api/v<N>/openapi.yaml`), or the project's equivalent contract source — needs new or changed paths, schemas, and error responses to match the Blueprint's endpoint table, shared schemas, and error codes — and whether any field name or shape the Blueprint deferred "to openapi authoring" must now be pinned. Then offer to author/update the spec to match and run the contract lint (for DUH-RPC services `duh lint`, usually wrapped by a `task duh-gen` target; otherwise the project's lint target), reporting the lint result. This is contract authoring + validation only — not the generated proto/server/client stubs or handler implementation, which remain the build phase. Skip only when the Blueprint defines no such surface (a pure-internal or infra change with no external contract).
-6. Note that the reviewed Blueprint is ready as the primary input to `plan-from-context` or `plan-from-prompt` when the user is ready to plan implementation.
-7. Do not commit. The user handles commits.
+   Decisions resolved through `deliberate` already pass the first and third, so check only the second, and don't re-offer ones already offered right after the deliberation. Ask "This looks ADR-worthy, want me to record it?" for each that passes. For each the user approves, add an `ADR: <title>` section to the blueprint in `adr-write`'s format, unnumbered. The first piece that implements the decision commits it under the next free `NNNN-` number.
+3. **Contract.** If the blueprint defines or changes a consumer-facing contract (endpoints, schemas, error codes), its spec document on the feature ticket must match. Write the spec from its document to a file in your scratchpad, run `duh lint` on it until it passes, patch the result back to the document, read it back and lint it again. A design with no such surface skips this.
