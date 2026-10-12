@@ -21,8 +21,9 @@ func TestPoolKeepsTheTreehouseContract(t *testing.T) {
 			pool := treehousetest.New(&journal.Journal{})
 			repo := t.TempDir()
 			scenario.Run(t, treehousetest.Subject{
-				Pool: pool,
-				Repo: repo,
+				Pool:      pool,
+				Repo:      repo,
+				Elsewhere: func() string { return t.TempDir() },
 				Provision: func(n int) {
 					for i := range n {
 						pool.AddTree(repo, filepath.Join(repo, "pool", fmt.Sprint(i)))

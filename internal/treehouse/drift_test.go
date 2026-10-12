@@ -35,6 +35,13 @@ func TestRealTreehouseKeepsTheTreehouseContract(t *testing.T) {
 			scenario.Run(t, treehousetest.Subject{
 				Pool: treehouse.NewCLI(bin),
 				Repo: repo,
+				Elsewhere: func() string {
+					other := filepath.Join(root, "other")
+					require.NoError(t, os.Mkdir(other, 0o755))
+					runGit(t, other, "init", "-q", "-b", "main")
+					runGit(t, other, "-c", "user.name=drift", "-c", "user.email=drift@example.com", "commit", "-q", "--allow-empty", "-m", "init")
+					return other
+				},
 				Provision: func(n int) {
 					toml := fmt.Sprintf("max_trees = %d\n", n)
 					require.NoError(t, os.WriteFile(filepath.Join(repo, "treehouse.toml"), []byte(toml), 0o644))

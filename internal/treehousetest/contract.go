@@ -18,6 +18,8 @@ type Subject struct {
 	// Provision makes the pool able to lease n trees at once. The fake gets n
 	// available trees, and treehouse gets max_trees = n in its config.
 	Provision func(n int)
+	// Elsewhere makes a second repo, which has a pool of its own.
+	Elsewhere func() string
 }
 
 // Scenario is one situation with the outcome both the fake and the real
@@ -119,6 +121,19 @@ var Scenarios = []Scenario{
 		err := s.Pool.Return(context.Background(), s.Repo, "/nowhere/tree", "ENG-1")
 
 		require.ErrorContains(t, err, "/nowhere/tree is not managed by treehouse")
+	}},
+	{Name: "ReturnFindsThePoolFromThePath", Run: func(t *testing.T, s Subject) {
+		ctx := context.Background()
+		s.Provision(1)
+		leased, err := s.Pool.Lease(ctx, s.Repo, "ENG-1")
+		require.NoError(t, err)
+
+		require.NoError(t, s.Pool.Return(ctx, s.Elsewhere(), leased.Path, "ENG-1"))
+
+		trees, err := s.Pool.Trees(ctx, s.Repo)
+		require.NoError(t, err)
+		require.Len(t, trees, 1)
+		assert.Equal(t, "available", trees[0].Status)
 	}},
 	{Name: "ReturnedTreeIsLeasedAgain", Run: func(t *testing.T, s Subject) {
 		ctx := context.Background()
