@@ -20,7 +20,7 @@ Make the blueprint **buildable**: an engineer can build the right feature from i
 2. **Pre-work**, below.
 3. **The loop**, Phases 1 to 6, at most 5 rounds.
 4. **Five rounds without PASS.** Comment the remaining blockers on the review ticket, opening with `## In plain English`, move it to Needs Human, file nothing and stop. The user reads the ticket, not your scrollback.
-5. **ADR audit.** When the repo has `docs/adr/`, run `design-adr-audit` on the blueprint. A fix it causes gets one more Phase 6 run, which counts toward the 5 rounds. If that run fails with no round left, follow step 4. Ask its closing question through AskUserQuestion.
+5. **ADR audit.** When the repo has `docs/adr/`, run `design-adr-audit` on the blueprint. A fix it causes always gets one more Phase 6 run, even when round 5 already passed, since an unvalidated fix could break the blueprint. That run counts as a round, and if it fails with all 5 used, follow step 4 without a further round. Ask its closing question through AskUserQuestion.
 6. **End steps**, below.
 7. **Break down.** Invoke `dispatch:breakdown` on the feature ticket. Each `Pieces` row also names the ADR and glossary sections its piece commits.
 8. **Finish.** After the user answers start or hold, comment a summary on the review ticket that says how to start held work, then move it to Done. You never move the review to Done before `design` is off on "start now". A crash between the two leaves the review In Progress, and step 1 finishes it. Open the comment with the final summary:
