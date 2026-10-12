@@ -755,11 +755,14 @@ func TestLaunchWrapperRunsTheGoLauncher(t *testing.T) {
 	require.NoError(t, err, string(out))
 	wrapper, err := filepath.Abs("bin/dispatch-launch")
 	require.NoError(t, err)
+	self, err := os.Executable()
+	require.NoError(t, err)
+	require.NoError(t, os.Symlink(self, filepath.Join(l.bin, standInTreehouse)))
 
 	cmd := exec.Command(wrapper, "ENG-1", "thrawn01/eng-1", "--kickoff", "/dispatch:design ENG-1")
 	cmd.Dir = l.repo
 	// The harness exports a plugin root, so clear it to see the wrapper set its own.
-	cmd.Env = append(os.Environ(), "PATH="+l.bin+":"+os.Getenv("PATH"), "DISPATCH_PLUGIN_ROOT=")
+	cmd.Env = append(os.Environ(), "PATH="+l.bin+":"+os.Getenv("PATH"), "DISPATCH_PLUGIN_ROOT=", standInTreeEnv+"="+l.tree)
 	stdout, err := cmd.Output()
 	require.NoError(t, err)
 

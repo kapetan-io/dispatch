@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -750,6 +751,31 @@ func (h *harness) script(name, body string) {
 	writeFake(h.t, filepath.Join(h.dir, name), h.dir, body)
 }
 
+// standInTreehouse is the name a test symlinks this test binary under, so a
+// subprocess that runs `treehouse` gets runStandInTreehouse instead of the
+// installed tool or its real pool.
+const standInTreehouse = "treehouse"
+
+// standInTreeEnv names the variable holding the path the stand-in leases.
+const standInTreeEnv = "DISPATCH_STAND_IN_TREE"
+
+// runStandInTreehouse answers the commands a launch makes from a subprocess,
+// which the in-process fake can't reach. It tracks no leases, so only the
+// wrapper test uses it, and the drift check covers the wrapper against the
+// real tools.
+func runStandInTreehouse(args []string, stdout io.Writer) int {
+	switch {
+	case len(args) > 0 && args[0] == "status":
+		_, _ = fmt.Fprintln(stdout, "[]")
+	case len(args) > 0 && args[0] == "get":
+		_, _ = fmt.Fprintf(stdout, "{\"path\":%q}\n", os.Getenv(standInTreeEnv))
+	case len(args) > 0 && args[0] == "return":
+	default:
+		return 2
+	}
+	return 0
+}
+
 // fakeDirEnv names the variable that tells a shared fake which test's files to use.
 const fakeDirEnv = "DISPATCH_TEST_DIR"
 
@@ -757,6 +783,9 @@ const fakeDirEnv = "DISPATCH_TEST_DIR"
 var sharedFakes string
 
 func TestMain(m *testing.M) {
+	if filepath.Base(os.Args[0]) == standInTreehouse {
+		os.Exit(runStandInTreehouse(os.Args[1:], os.Stdout))
+	}
 	var err error
 	if sharedFakes, err = os.MkdirTemp("", "dispatch-fakes"); err != nil {
 		panic(err)
