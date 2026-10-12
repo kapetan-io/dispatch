@@ -8,20 +8,22 @@ import (
 	"testing"
 
 	"github.com/kapetan-io/dispatch/internal/journal"
+	"github.com/kapetan-io/dispatch/internal/pullrequesttest"
 	"github.com/kapetan-io/dispatch/internal/treehousetest"
 )
 
 // Tools holds one fake per tool and the journal they all write to.
 type Tools struct {
-	Journal   *journal.Journal
-	Treehouse *treehousetest.Pool
+	Journal      *journal.Journal
+	Treehouse    *treehousetest.Pool
+	PullRequests *pullrequesttest.Repository
 }
 
 // New returns fresh fakes. Fakes that need cleanup register it on t.
 func New(t testing.TB) *Tools {
 	t.Helper()
 	j := &journal.Journal{}
-	return &Tools{Journal: j, Treehouse: treehousetest.New(j)}
+	return &Tools{Journal: j, Treehouse: treehousetest.New(j), PullRequests: pullrequesttest.New(j)}
 }
 
 // Calls lists the calls to a tool's operation, each as its arguments joined by

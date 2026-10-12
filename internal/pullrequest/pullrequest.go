@@ -14,8 +14,22 @@ import (
 	"time"
 )
 
-// PR is an open pull request and what is wrong with it.
-type PR struct {
+// Repository is the GitHub repo a clone belongs to, where a ticket's branch has
+// at most one open pull request.
+type Repository interface {
+	// Read finds the open PR whose head branch is branch in the repo cloned at
+	// repoDir. It returns false when the branch has no open PR from this repo.
+	Read(ctx context.Context, repoDir, branch string) (PullRequest, bool, error)
+	// Merge merges the PR at prURL with a merge commit. It refuses, and merges
+	// nothing, when the PR's head is no longer head, so a push after the
+	// approval was read is never merged unreviewed.
+	Merge(ctx context.Context, prURL, head string) error
+	// RepoName returns the owner/name of the repo cloned at repoDir.
+	RepoName(ctx context.Context, repoDir string) (string, error)
+}
+
+// PullRequest is an open pull request and what is wrong with it.
+type PullRequest struct {
 	Number int
 	URL    string
 	// Head is the SHA of the PR's head commit. A push moves it.
@@ -55,13 +69,13 @@ type PR struct {
 
 // NeedsWork reports whether the PR has a failed check, changes requested or a
 // merge conflict.
-func (p PR) NeedsWork() bool {
+func (p PullRequest) NeedsWork() bool {
 	return len(p.Problems) > 0
 }
 
 // Problem joins the problems into one phrase, such as "a failed check and a
 // merge conflict".
-func (p PR) Problem() string {
+func (p PullRequest) Problem() string {
 	switch len(p.Problems) {
 	case 0:
 		return ""
@@ -76,7 +90,7 @@ func (p PR) Problem() string {
 // an unresolved thread beyond the first page would go unnoticed.
 const maxThreads = 100
 
-// prPages bounds how many pages of same-named PRs Read walks looking for one
+// prPages bounds how many pages of same-named PRs Find walks looking for one
 // from this repo. A branch with 20 fork PRs ahead of the worker's is the case
 // this exists for, and more than prPages of them is an error rather than a miss.
 const prPages = 5
@@ -166,22 +180,30 @@ type prPage struct {
 	} `json:"data"`
 }
 
-// Read finds the open PR whose head branch is branch in the repo cloned at
-// repoDir, with one `gh api graphql` call per page of same-named PRs. It
-// returns false when the branch has no open PR from this repo, and an error
-// when the PR has more than maxThreads review threads. Each call is cut off after timeout.
-func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duration) (PR, bool, error) {
+// Fetch returns one page of GitHub's answer to the PR query for a branch, the
+// page after cursor when cursor is not empty.
+type Fetch func(ctx context.Context, branch, cursor string) ([]byte, error)
+
+// Find walks the pages fetch returns for branch and picks the open PR from this
+// repo, since a fork PR can share the branch name. It returns false when the
+// branch has no such PR, and an error when the PR has more than maxThreads
+// review threads.
+func Find(ctx context.Context, branch string, fetch Fetch) (PullRequest, bool, error) {
 	// headRefName matches fork PRs too, and anyone can open one on a branch
 	// name Linear makes predictable. Only a PR from this repo is the worker's.
 	var n prNode
 	after := ""
 	for page := 0; ; page++ {
 		if page == prPages {
-			return PR{}, false, fmt.Errorf("branch %s has more than %d PRs and none from this repo in the first %d pages", branch, prPages*20, prPages)
+			return PullRequest{}, false, fmt.Errorf("branch %s has more than %d PRs and none from this repo in the first %d pages", branch, prPages*20, prPages)
 		}
-		resp, err := readPage(ctx, bin, repoDir, branch, after, timeout)
+		b, err := fetch(ctx, branch, after)
 		if err != nil {
-			return PR{}, false, err
+			return PullRequest{}, false, err
+		}
+		var resp prPage
+		if err := json.Unmarshal(b, &resp); err != nil {
+			return PullRequest{}, false, fmt.Errorf("while reading gh output for %s: %w", branch, err)
 		}
 		prs := resp.Data.Repository.PullRequests
 		found := false
@@ -195,15 +217,15 @@ func Read(ctx context.Context, bin, repoDir, branch string, timeout time.Duratio
 			break
 		}
 		if !prs.PageInfo.HasNextPage {
-			return PR{}, false, nil
+			return PullRequest{}, false, nil
 		}
 		after = prs.PageInfo.EndCursor
 	}
 	if n.ReviewThreads.PageInfo.HasNextPage {
-		return PR{}, false, fmt.Errorf("PR %s has more than %d review threads; dispatch reads one page and would miss unresolved ones", n.URL, maxThreads)
+		return PullRequest{}, false, fmt.Errorf("PR %s has more than %d review threads; dispatch reads one page and would miss unresolved ones", n.URL, maxThreads)
 	}
 	checksPassed := true
-	pr := PR{Number: n.Number, URL: n.URL, Head: n.HeadRefOid, Repo: RepoOf(n.URL)}
+	pr := PullRequest{Number: n.Number, URL: n.URL, Head: n.HeadRefOid, Repo: RepoOf(n.URL)}
 	// reviewDecision is empty on an unprotected branch, so one reviewer's
 	// standing request for changes has to veto another's approval here.
 	for _, r := range n.LatestOpinionatedReviews.Nodes {
@@ -290,13 +312,65 @@ func RepoOf(prURL string) string {
 	return parts[0] + "/" + parts[1]
 }
 
-// Merge merges the PR with a merge commit. It names the PR by URL, so gh needs
-// no remote to resolve, and it passes the head so a push after the approval
-// was read makes gh refuse instead of merging unreviewed code.
-func Merge(ctx context.Context, bin, prURL, head string, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+// CLI is the Repository that runs the installed gh command.
+type CLI struct {
+	bin     string
+	timeout time.Duration
+}
+
+// Option sets how a CLI runs gh.
+type Option func(*CLI)
+
+// WithTimeout cuts each gh call off after d, so a stalled network can't hold
+// the tick that is waiting on it.
+func WithTimeout(d time.Duration) Option {
+	return func(c *CLI) { c.timeout = d }
+}
+
+const defaultTimeout = 30 * time.Second
+
+// NewCLI returns a Repository that runs bin.
+func NewCLI(bin string, opts ...Option) *CLI {
+	c := &CLI{bin: bin, timeout: defaultTimeout}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
+}
+
+// Read makes one `gh api graphql` call per page of same-named PRs.
+func (c *CLI) Read(ctx context.Context, repoDir, branch string) (PullRequest, bool, error) {
+	return Find(ctx, branch, func(ctx context.Context, branch, after string) ([]byte, error) {
+		ctx, cancel := context.WithTimeout(ctx, c.timeout)
+		defer cancel()
+		args := []string{"api", "graphql",
+			"-F", "owner={owner}", "-F", "repo={repo}", "-f", "branch=" + branch,
+			"-F", fmt.Sprintf("threads=%d", maxThreads), "-f", "query=" + query}
+		if after != "" {
+			args = append(args, "-f", "after="+after)
+		}
+		cmd := exec.CommandContext(ctx, c.bin, args...)
+		cmd.Dir = repoDir
+		// A child that inherits gh's pipes must not keep Output waiting after the kill.
+		cmd.WaitDelay = time.Second
+		b, err := cmd.Output()
+		if err != nil {
+			var exit *exec.ExitError
+			if errors.As(err, &exit) {
+				return nil, fmt.Errorf("while running gh in %s: %w: %s", repoDir, err, strings.TrimSpace(string(exit.Stderr)))
+			}
+			return nil, fmt.Errorf("while running gh in %s: %w", repoDir, err)
+		}
+		return b, nil
+	})
+}
+
+// Merge names the PR by URL, so gh needs no remote to resolve, and passes the
+// head so gh refuses a PR that was pushed to since.
+func (c *CLI) Merge(ctx context.Context, prURL, head string) error {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "pr", "merge", prURL, "--merge", "--match-head-commit", head)
+	cmd := exec.CommandContext(ctx, c.bin, "pr", "merge", prURL, "--merge", "--match-head-commit", head)
 	cmd.WaitDelay = time.Second
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -307,10 +381,10 @@ func Merge(ctx context.Context, bin, prURL, head string, timeout time.Duration) 
 
 // RepoName returns the owner/name that gh resolves for the repo cloned at
 // repoDir, which is the repo Read looks for PRs in.
-func RepoName(ctx context.Context, bin, repoDir string, timeout time.Duration) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+func (c *CLI) RepoName(ctx context.Context, repoDir string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner")
+	cmd := exec.CommandContext(ctx, c.bin, "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner")
 	cmd.Dir = repoDir
 	cmd.WaitDelay = time.Second
 	b, err := cmd.Output()
@@ -324,31 +398,4 @@ func RepoName(ctx context.Context, bin, repoDir string, timeout time.Duration) (
 	return strings.TrimSpace(string(b)), nil
 }
 
-func readPage(ctx context.Context, bin, repoDir, branch, after string, timeout time.Duration) (prPage, error) {
-	// The tick holds its lock while it waits, and gh sets no timeout of its own.
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	args := []string{"api", "graphql",
-		"-F", "owner={owner}", "-F", "repo={repo}", "-f", "branch=" + branch,
-		"-F", fmt.Sprintf("threads=%d", maxThreads), "-f", "query=" + query}
-	if after != "" {
-		args = append(args, "-f", "after="+after)
-	}
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Dir = repoDir
-	// A child that inherits gh's pipes must not keep Output waiting after the kill.
-	cmd.WaitDelay = time.Second
-	b, err := cmd.Output()
-	if err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			return prPage{}, fmt.Errorf("while running gh in %s: %w: %s", repoDir, err, strings.TrimSpace(string(exit.Stderr)))
-		}
-		return prPage{}, fmt.Errorf("while running gh in %s: %w", repoDir, err)
-	}
-	var resp prPage
-	if err := json.Unmarshal(b, &resp); err != nil {
-		return prPage{}, fmt.Errorf("while reading gh output for %s: %w", branch, err)
-	}
-	return resp, nil
-}
+var _ Repository = (*CLI)(nil)

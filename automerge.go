@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/kapetan-io/dispatch/internal/config"
-	"github.com/kapetan-io/dispatch/internal/pullrequest"
 )
 
 func autoMergeSet(repos []string) map[string]bool {
@@ -37,7 +36,7 @@ func (a *autoMergeCheck) warn(ctx context.Context, opts Options, cfg config.Conf
 		name, ok := a.names[dir]
 		if !ok {
 			var err error
-			if name, err = pullrequest.RepoName(ctx, opts.GH, dir, opts.PRTimeout); err != nil {
+			if name, err = opts.PullRequests.RepoName(ctx, dir); err != nil {
 				// An unresolved repo might be the one the entry names, so nothing is reported this tick.
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while resolving the GitHub repo of %s for auto_merge: %v\n", label, err)
 				return

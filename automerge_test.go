@@ -3,6 +3,7 @@ package dispatch_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +15,8 @@ import (
 const (
 	autoMergeConfig = "auto_merge = [\"kapetan-io/dispatch\"]\n"
 	mergedText1     = "ENG-1 was approved and merged: " + prURL1
-	mergeCall1      = "pr merge " + prURL1 + " --merge --match-head-commit a1"
+	mergeCall1      = prURL1 + "|a1"
+	mergeRefused    = "Pull request is not mergeable: the base branch policy prohibits the merge"
 )
 
 func approvedPR(head string) prState {
@@ -34,7 +36,7 @@ func TestTickMergesAnApprovedReadyPRInAListedRepo(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "merge ENG-1: PR approved\n", out)
-	assert.Equal(t, []string{mergeCall1}, h.lines("merges.log"))
+	assert.Equal(t, []string{mergeCall1}, h.merges())
 	assert.Equal(t, []string{mergedText1 + "|dispatch"}, h.notifications())
 	assert.Empty(t, h.prompts())
 
@@ -42,7 +44,7 @@ func TestTickMergesAnApprovedReadyPRInAListedRepo(t *testing.T) {
 	out, err = h.run("tick")
 	require.NoError(t, err)
 	assert.Empty(t, out)
-	assert.Len(t, h.lines("merges.log"), 1)
+	assert.Len(t, h.merges(), 1)
 }
 
 func TestTickMatchesTheRepoCaseInsensitively(t *testing.T) {
@@ -55,7 +57,7 @@ func TestTickMatchesTheRepoCaseInsensitively(t *testing.T) {
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Len(t, h.lines("merges.log"), 1)
+	assert.Len(t, h.merges(), 1)
 }
 
 func TestTickDoesNotMergeInARepoThatIsNotListed(t *testing.T) {
@@ -80,7 +82,7 @@ func TestTickDoesNotMergeInARepoThatIsNotListed(t *testing.T) {
 
 			assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
 			assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
-			assert.Empty(t, h.lines("merges.log"))
+			assert.Empty(t, h.merges())
 		})
 	}
 }
@@ -104,7 +106,7 @@ func TestTickDoesNotMergeAPRWithoutAnApprovalOnItsHead(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
-			assert.Empty(t, h.lines("merges.log"))
+			assert.Empty(t, h.merges())
 		})
 	}
 }
@@ -129,7 +131,7 @@ func TestTickDoesNotMergeAnApprovedPRThatIsNotReady(t *testing.T) {
 			_, err := h.run("tick")
 			require.NoError(t, err)
 
-			assert.Empty(t, h.lines("merges.log"))
+			assert.Empty(t, h.merges())
 		})
 	}
 }
@@ -150,7 +152,7 @@ func TestTickMergesAfterAnApprovalArrivesOnAnAlreadyAnnouncedHead(t *testing.T) 
 	require.NoError(t, err)
 
 	assert.Equal(t, "merge ENG-1: PR approved\n", out)
-	assert.Equal(t, []string{mergeCall1}, h.lines("merges.log"))
+	assert.Equal(t, []string{mergeCall1}, h.merges())
 	assert.Equal(t, []string{readyText1 + "|dispatch", mergedText1 + "|dispatch"}, h.notifications())
 }
 
@@ -163,13 +165,13 @@ func TestTickWaitsForANewApprovalAfterAPush(t *testing.T) {
 
 	_, err := h.run("tick")
 	require.NoError(t, err)
-	assert.Empty(t, h.lines("merges.log"))
+	assert.Empty(t, h.merges())
 
 	h.pr("ENG-1", approvedPR("a2"))
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{strings.Replace(mergeCall1, "a1", "a2", 1)}, h.lines("merges.log"))
+	assert.Equal(t, []string{strings.Replace(mergeCall1, "a1", "a2", 1)}, h.merges())
 }
 
 func TestTickReportsAFailedMergeOnceAndRetriesOnlyAfterAPush(t *testing.T) {
@@ -178,7 +180,7 @@ func TestTickReportsAFailedMergeOnceAndRetriesOnlyAfterAPush(t *testing.T) {
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", approvedPR("a1"))
-	h.writeFile("merge-fails", "")
+	h.tools.PullRequests.FailMerge(errors.New("while running gh pr merge " + prURL1 + ": exit status 1: " + mergeRefused))
 
 	out, stderr, err := h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
@@ -191,14 +193,14 @@ func TestTickReportsAFailedMergeOnceAndRetriesOnlyAfterAPush(t *testing.T) {
 	assert.Contains(t, h.notifications()[0], "the base branch policy prohibits the merge")
 
 	// The same head is not retried, and the user hears nothing more.
-	h.removeFile("merge-fails")
+	h.tools.PullRequests.FailMerge(nil)
 	for range 2 {
 		out, stderr, err = h.runContext(t.Context(), "tick")
 		require.NoError(t, err)
 		assert.Empty(t, out)
 		assert.Empty(t, stderr)
 	}
-	assert.Empty(t, h.lines("merges.log"))
+	assert.Empty(t, h.merges())
 	assert.Len(t, h.notifications(), 1)
 
 	// A push that gets approved is a new head, so it merges.
@@ -206,7 +208,34 @@ func TestTickReportsAFailedMergeOnceAndRetriesOnlyAfterAPush(t *testing.T) {
 	out, err = h.run("tick")
 	require.NoError(t, err)
 	assert.Equal(t, "merge ENG-1: PR approved\n", out)
-	assert.Len(t, h.lines("merges.log"), 1)
+	assert.Len(t, h.merges(), 1)
+}
+
+func TestTickMergesNothingWhenThePRHeadMovesAfterTheApprovalWasRead(t *testing.T) {
+	h := newHarness(t)
+	h.config(autoMergeConfig)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", approvedPR("a1"))
+	// Someone pushes between dispatch reading the approval and merging.
+	h.tools.PullRequests.PushAfterRead(prBranch("ENG-1"), "a2")
+
+	out, stderr, err := h.runContext(t.Context(), "tick")
+	require.NoError(t, err)
+
+	assert.Empty(t, out)
+	assert.Contains(t, stderr, "while merging ENG-1")
+	assert.Contains(t, stderr, "Head branch was modified")
+	assert.Empty(t, h.merges())
+	assert.Equal(t, "a2", h.tools.PullRequests.Head(prBranch("ENG-1")))
+	require.Len(t, h.notifications(), 1)
+	assert.Contains(t, h.notifications()[0], "ENG-1: merging "+prURL1+" failed")
+
+	// The new head has no approval, so it is announced as ready for review and not merged.
+	out, err = h.run("tick")
+	require.NoError(t, err)
+	assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
+	assert.Empty(t, h.merges())
 }
 
 func TestTickDryRunNamesTheMergeWithoutMerging(t *testing.T) {
@@ -220,7 +249,7 @@ func TestTickDryRunNamesTheMergeWithoutMerging(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "merge ENG-1: PR approved\n", out)
-	assert.Empty(t, h.lines("merges.log"))
+	assert.Empty(t, h.merges())
 	assert.Empty(t, h.notifications())
 }
 
@@ -233,12 +262,12 @@ func TestTickReadsAutoMergeOnEveryTick(t *testing.T) {
 	// Not listed yet, so the PR is announced.
 	_, err := h.run("tick")
 	require.NoError(t, err)
-	assert.Empty(t, h.lines("merges.log"))
+	assert.Empty(t, h.merges())
 
 	h.config(autoMergeConfig)
 	_, err = h.run("tick")
 	require.NoError(t, err)
-	assert.Len(t, h.lines("merges.log"), 1)
+	assert.Len(t, h.merges(), 1)
 }
 
 func TestConfigRejectsAMalformedAutoMergeEntry(t *testing.T) {
@@ -287,7 +316,7 @@ func TestRunWarnsOncePerRunAboutAnAutoMergeEntryThatMatchesNoRepo(t *testing.T) 
 	assert.Equal(t, 1, strings.Count(stderr, `auto_merge entry "kapetan-io/tiger" matches no repo`))
 	assert.NotContains(t, stderr, `"kapetan-io/dispatch"`)
 	// The repo name is looked up once, not on every tick.
-	assert.Len(t, h.lines("repo-views.log"), 1)
+	assert.Len(t, h.tools.Calls("pullrequest", "repo-name"), 1)
 }
 
 func TestTickWarnsAboutAnAutoMergeEntryThatMatchesNoRepoWithoutFailing(t *testing.T) {
@@ -310,11 +339,11 @@ func TestTickSaysNothingOfAutoMergeWhenItIsEmpty(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Empty(t, stderr)
-	assert.Empty(t, h.lines("repo-views.log"))
+	assert.Empty(t, h.tools.Calls("pullrequest", "repo-name"))
 }
 
 func (h *harness) prWithReview(url, state, commit string) {
-	h.writeJSON("pr-eng-1.json", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
+	h.respond("ENG-1", "", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
 		"number":                   7,
 		"url":                      url,
 		"headRefOid":               "a1",
@@ -338,7 +367,7 @@ func TestTickDoesNotMergeWhenTheReviewOnTheHeadIsNotAnApproval(t *testing.T) {
 			_, err := h.run("tick")
 			require.NoError(t, err)
 
-			assert.Empty(t, h.lines("merges.log"))
+			assert.Empty(t, h.merges())
 		})
 	}
 }
@@ -356,7 +385,7 @@ func TestTickMatchesThePRByTheRepoItsURLNames(t *testing.T) {
 	out, err := h.run("tick")
 	require.NoError(t, err)
 	assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
-	assert.Empty(t, h.lines("merges.log"))
+	assert.Empty(t, h.merges())
 
 	// The PR's repo is listed, though the clone resolves to a different one.
 	h = newHarness(t)
@@ -368,7 +397,7 @@ func TestTickMatchesThePRByTheRepoItsURLNames(t *testing.T) {
 	out, err = h.run("tick")
 	require.NoError(t, err)
 	assert.Equal(t, "merge ENG-1: PR approved\n", out)
-	assert.Equal(t, []string{"pr merge " + otherURL + " --merge --match-head-commit a1"}, h.lines("merges.log"))
+	assert.Equal(t, []string{otherURL + "|a1"}, h.merges())
 }
 
 func TestTickDryRunLeavesTheMergeForTheNextRealTick(t *testing.T) {
@@ -387,7 +416,7 @@ func TestTickDryRunLeavesTheMergeForTheNextRealTick(t *testing.T) {
 	out, err = h.run("tick")
 	require.NoError(t, err)
 	assert.Equal(t, "merge ENG-1: PR approved\n", out)
-	assert.Len(t, h.lines("merges.log"), 1)
+	assert.Len(t, h.merges(), 1)
 }
 
 func TestTickDoesNotRetryAFailedMergeOnAHeadAnnouncedAsReady(t *testing.T) {
@@ -399,23 +428,23 @@ func TestTickDoesNotRetryAFailedMergeOnAHeadAnnouncedAsReady(t *testing.T) {
 	_, err := h.run("tick")
 	require.NoError(t, err)
 	h.pr("ENG-1", approvedPR("a1"))
-	h.writeFile("merge-fails", "")
+	h.tools.PullRequests.FailMerge(errors.New("while running gh pr merge " + prURL1 + ": exit status 1: " + mergeRefused))
 	_, _, err = h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
-	h.removeFile("merge-fails")
+	h.tools.PullRequests.FailMerge(nil)
 
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
 	assert.Empty(t, out)
-	assert.Empty(t, h.lines("merges.log"))
+	assert.Empty(t, h.merges())
 	assert.Len(t, h.notifications(), 2)
 }
 
 func TestTickWarnsWhenTheResolvedRepoIsNotTheListedOne(t *testing.T) {
 	h := newHarness(t)
 	h.config(autoMergeConfig)
-	h.writeFile("repo-name", "kapetan-io/other\n")
+	h.tools.PullRequests.SetRepoName("kapetan-io/other")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	_, stderr, err := h.runContext(t.Context(), "tick")
@@ -438,8 +467,7 @@ func TestTickDoesNotWarnWhenTheEntryDiffersFromTheRepoOnlyInCase(t *testing.T) {
 func TestTickDoesNotWarnWhenTheRepoNameCannotBeResolved(t *testing.T) {
 	h := newHarness(t)
 	h.config(autoMergeConfig)
-	h.script("gh", `[ "$1 $2" = "repo view" ] && { echo "no remote" >&2; exit 1; }
-echo '{"data":{"repository":{"pullRequests":{"nodes":[]}}}}'`)
+	h.tools.PullRequests.FailRepoName(errors.New("no remote"))
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	out, stderr, err := h.runContext(t.Context(), "tick")
@@ -456,7 +484,7 @@ func TestTickDoesNotRetryAFailedMergeAfterTheTicketLeavesTheReadAndReturns(t *te
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", approvedPR("a1"))
-	h.writeFile("merge-fails", "")
+	h.tools.PullRequests.FailMerge(errors.New("while running gh pr merge " + prURL1 + ": exit status 1: " + mergeRefused))
 	_, err := h.run("tick")
 	require.NoError(t, err)
 	require.Len(t, h.notifications(), 1)
@@ -466,12 +494,12 @@ func TestTickDoesNotRetryAFailedMergeAfterTheTicketLeavesTheReadAndReturns(t *te
 	_, err = h.run("tick")
 	require.NoError(t, err)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
-	h.removeFile("merge-fails")
+	h.tools.PullRequests.FailMerge(nil)
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
 	assert.Len(t, h.notifications(), 1)
-	assert.Empty(t, h.lines("merges.log"))
+	assert.Empty(t, h.merges())
 }
 
 // Without branch protection GitHub leaves reviewDecision empty even when a
@@ -481,7 +509,7 @@ func TestTickDoesNotMergeOverAnotherReviewersChangesRequested(t *testing.T) {
 	h.config(autoMergeConfig)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
-	h.writeJSON("pr-eng-1.json", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
+	h.respond("ENG-1", "", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
 		"number":         7,
 		"url":            prURL1,
 		"headRefOid":     "a1",
@@ -498,7 +526,7 @@ func TestTickDoesNotMergeOverAnotherReviewersChangesRequested(t *testing.T) {
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Empty(t, h.lines("merges.log"))
+	assert.Empty(t, h.merges())
 }
 
 func TestTickDoesNotMergeAForkPRThatSharesTheWorkersBranchName(t *testing.T) {
@@ -514,7 +542,7 @@ func TestTickDoesNotMergeAForkPRThatSharesTheWorkersBranchName(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Empty(t, out)
-	assert.Empty(t, h.lines("merges.log"))
+	assert.Empty(t, h.merges())
 	assert.Empty(t, h.notifications())
 }
 
@@ -533,7 +561,7 @@ func TestTickUsesTheWorkersPRWhenAForkPRSharesItsBranchName(t *testing.T) {
 			} `json:"repository"`
 		} `json:"data"`
 	}
-	require.NoError(t, json.Unmarshal(h.readFile("pr-eng-1.json"), &file))
+	require.NoError(t, json.Unmarshal(h.responded("ENG-1", ""), &file))
 	own := file.Data.Repository.PullRequests.Nodes[0]
 	evil := map[string]any{}
 	for k, v := range own {
@@ -541,13 +569,13 @@ func TestTickUsesTheWorkersPRWhenAForkPRSharesItsBranchName(t *testing.T) {
 	}
 	evil["isCrossRepository"], evil["headRefOid"], evil["url"] = true, "evil", "https://github.com/kapetan-io/dispatch/pull/99"
 	file.Data.Repository.PullRequests.Nodes = []map[string]any{evil, own}
-	h.writeJSON("pr-eng-1.json", file)
+	h.respond("ENG-1", "", file)
 
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
 	assert.Equal(t, "merge ENG-1: PR approved\n", out)
-	assert.Equal(t, []string{mergeCall1}, h.lines("merges.log"))
+	assert.Equal(t, []string{mergeCall1}, h.merges())
 }
 
 // forkPage writes the first page of the ticket's PR query: 20 fork PRs and a
@@ -563,7 +591,7 @@ func (h *harness) forkPage(next string) {
 			} `json:"repository"`
 		} `json:"data"`
 	}
-	require.NoError(h.t, json.Unmarshal(h.readFile("pr-eng-1.json"), &file))
+	require.NoError(h.t, json.Unmarshal(h.responded("ENG-1", ""), &file))
 	forks := []map[string]any{}
 	for range 20 {
 		fork := map[string]any{}
@@ -575,7 +603,7 @@ func (h *harness) forkPage(next string) {
 	}
 	file.Data.Repository.PullRequests.Nodes = forks
 	file.Data.Repository.PullRequests.PageInfo = map[string]any{"hasNextPage": true, "endCursor": next}
-	h.writeJSON("pr-eng-1.json", file)
+	h.respond("ENG-1", "", file)
 }
 
 func TestTickFindsTheWorkersPRBehindAFullPageOfForkPRs(t *testing.T) {
@@ -584,14 +612,14 @@ func TestTickFindsTheWorkersPRBehindAFullPageOfForkPRs(t *testing.T) {
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", approvedPR("a1"))
-	h.writeFile("pr-eng-1.c1.json", string(h.readFile("pr-eng-1.json")))
+	h.respond("ENG-1", "c1", json.RawMessage(h.responded("ENG-1", "")))
 	h.forkPage("c1")
 
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
 	assert.Equal(t, "merge ENG-1: PR approved\n", out)
-	assert.Equal(t, []string{mergeCall1}, h.lines("merges.log"))
+	assert.Equal(t, []string{mergeCall1}, h.merges())
 	assert.Equal(t, []string{"thrawn01/eng-1", "thrawn01/eng-1.c1"}, h.prReads())
 }
 
@@ -603,13 +631,13 @@ func TestTickReportsABranchWhoseForkPRsFillEveryPageItReads(t *testing.T) {
 	h.pr("ENG-1", approvedPR("a1"))
 	h.forkPage("c1")
 	// Every page points at the next one, so the worker's PR is never reached.
-	h.writeFile("pr-eng-1.c1.json", string(h.readFile("pr-eng-1.json")))
+	h.respond("ENG-1", "c1", json.RawMessage(h.responded("ENG-1", "")))
 
 	_, stderr, err := h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
 
 	assert.Contains(t, stderr, "while reading the PR for ENG-1")
 	assert.Contains(t, stderr, "none from this repo")
-	assert.Empty(t, h.lines("merges.log"))
+	assert.Empty(t, h.merges())
 	assert.Len(t, h.prReads(), 5)
 }
