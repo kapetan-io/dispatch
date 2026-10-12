@@ -2,6 +2,7 @@ package herdrtest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -88,8 +89,11 @@ func Leftovers(t testing.TB, pid int) []string {
 func removeStale(bin string) {
 	for _, name := range sessions(bin) {
 		pid, _, _ := strings.Cut(strings.TrimPrefix(name, sessionPrefix), "-")
-		if n, err := strconv.Atoi(pid); err == nil && syscall.Kill(n, 0) == nil {
-			continue
+		// EPERM means the process exists and belongs to another user.
+		if n, err := strconv.Atoi(pid); err == nil {
+			if err := syscall.Kill(n, 0); err == nil || errors.Is(err, syscall.EPERM) {
+				continue
+			}
 		}
 		_ = exec.Command(bin, "session", "stop", name).Run()
 		_ = exec.Command(bin, "session", "delete", name).Run()

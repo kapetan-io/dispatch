@@ -34,7 +34,7 @@ type Herdr struct {
 	tabs        []herdr.Tab
 	panes       []herdr.Pane
 	agents      []herdr.Agent
-	lagging     map[string]string
+	shown       map[string]string // pane to the stale status Read reports while the agent is really blocked
 	failures    map[string]error
 	prompted    []string
 	renamed     []string
@@ -45,7 +45,7 @@ type Herdr struct {
 
 // New returns an empty Herdr that records its calls in j.
 func New(j *journal.Journal) *Herdr {
-	return &Herdr{journal: j, lagging: map[string]string{}, failures: map[string]error{}}
+	return &Herdr{journal: j, shown: map[string]string{}, failures: map[string]error{}}
 }
 
 // AddWorkspace puts a workspace in herdr exactly as given.
@@ -81,7 +81,7 @@ func (h *Herdr) AddAgent(a herdr.Agent) {
 func (h *Herdr) SetStatus(pane, status string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	delete(h.lagging, pane)
+	delete(h.shown, pane)
 	h.agent(pane, func(a *herdr.Agent) { a.Status = status })
 }
 
@@ -95,7 +95,7 @@ func (h *Herdr) BlockAfterSnapshot(pane string) {
 		if a.Status == "blocked" {
 			return
 		}
-		h.lagging[pane] = a.Status
+		h.shown[pane] = a.Status
 		a.Status = "blocked"
 	})
 }
@@ -104,8 +104,8 @@ func (h *Herdr) BlockAfterSnapshot(pane string) {
 func (h *Herdr) Unblock(pane string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if shown, ok := h.lagging[pane]; ok {
-		delete(h.lagging, pane)
+	if shown, ok := h.shown[pane]; ok {
+		delete(h.shown, pane)
 		h.agent(pane, func(a *herdr.Agent) { a.Status = shown })
 	}
 }
@@ -190,7 +190,7 @@ func (h *Herdr) Read(ctx context.Context) (herdr.Snapshot, error) {
 		s.Tabs = slices.Clone(h.tabs)
 	}
 	for i, a := range s.Agents {
-		if shown, ok := h.lagging[a.PaneID]; ok {
+		if shown, ok := h.shown[a.PaneID]; ok {
 			s.Agents[i].Status = shown
 		}
 	}

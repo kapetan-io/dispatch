@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"github.com/kapetan-io/dispatch/internal/herdr"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch"
+	"github.com/kapetan-io/dispatch/internal/herdr"
 )
 
 const prURL1 = "https://github.com/kapetan-io/dispatch/pull/7"

@@ -76,8 +76,8 @@ type Herdr interface {
 // question.
 var ErrAgentBlocked = errors.New("agent is blocked on a question")
 
-// Refusal is herdr declining a request. Its text is herdr's own, so callers
-// that report it show what herdr said.
+// Refusal is herdr declining a request. Error renders herdr's JSON error body,
+// so a reported refusal reads as herdr printed it.
 type Refusal struct {
 	// Code is herdr's name for the refusal, such as agent_blocked or workspace_not_found.
 	Code    string
@@ -104,6 +104,8 @@ func (r *Refusal) Error() string {
 	return strings.TrimSpace(buf.String())
 }
 
+// Is makes a blocked-agent refusal match ErrAgentBlocked, so callers can tell
+// it from other refusals.
 func (r *Refusal) Is(target error) bool {
 	return target == ErrAgentBlocked && r.Code == "agent_blocked"
 }
@@ -159,7 +161,7 @@ func (c *CLI) Read(ctx context.Context) (Snapshot, error) {
 			} `json:"tabs"`
 		} `json:"result"`
 	}
-	// Tab labels and panes are cosmetic to dispatch, so a herdr without `tab
+	// dispatch's own logic doesn't read tabs or panes, so a herdr without `tab
 	// list` or `pane list` must not stop launches, nudges and teardown.
 	_ = c.list(ctx, &tabs, "tab", "list")
 	var panes struct {

@@ -87,7 +87,7 @@ func TestRealHerdrKeepsTheHerdrContract(t *testing.T) {
 						require.NoError(t, session.Run("pane", "run", pane, claude))
 						require.Eventually(t, func() bool {
 							out, err := session.Output(ctx, "agent", "list")
-							return err == nil && json.Valid(out) && contains(out, pane)
+							return err == nil && json.Valid(out) && listsAgent(out, pane)
 						}, 10*time.Second, 50*time.Millisecond)
 					}
 					require.NoError(t, session.Run("pane", "report-agent", "--source", "drift", "--agent", "claude", "--state", status, pane))
@@ -97,7 +97,7 @@ func TestRealHerdrKeepsTheHerdrContract(t *testing.T) {
 	}
 }
 
-func contains(out []byte, pane string) bool {
+func listsAgent(out []byte, pane string) bool {
 	var agents struct {
 		Result struct {
 			Agents []struct {

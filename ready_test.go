@@ -2,13 +2,14 @@ package dispatch_test
 
 import (
 	"errors"
-	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kapetan-io/dispatch/internal/herdrtest"
 )
 
 const readyText1 = "ENG-1 is ready for review: " + prURL1
@@ -23,7 +24,7 @@ func TestTickNotifiesOnceWhenAnInReviewPRIsReady(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
-	assert.Equal(t, []string{readyText1 + ""}, h.notifications())
+	assert.Equal(t, []string{readyText1}, h.notifications())
 	assert.Empty(t, h.prompts())
 	assert.Empty(t, h.linear.mutations())
 
@@ -89,7 +90,7 @@ func TestTickNotifiesWhenAPRMidReviewFinishesItsChecks(t *testing.T) {
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{readyText1 + ""}, h.notifications())
+	assert.Equal(t, []string{readyText1}, h.notifications())
 }
 
 func TestTickRetriesAReadyNotificationThatFailed(t *testing.T) {
@@ -108,7 +109,7 @@ func TestTickRetriesAReadyNotificationThatFailed(t *testing.T) {
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{readyText1 + ""}, h.notifications())
+	assert.Equal(t, []string{readyText1}, h.notifications())
 }
 
 func TestTickDryRunNamesTheReadyNotificationWithoutSendingIt(t *testing.T) {
@@ -257,7 +258,7 @@ func TestTickNotifiesWhenAReadyPRHasNoChecks(t *testing.T) {
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{readyText1 + ""}, h.notifications())
+	assert.Equal(t, []string{readyText1}, h.notifications())
 }
 
 func TestTickNotifiesForPRsThatAreStillReady(t *testing.T) {
@@ -278,7 +279,7 @@ func TestTickNotifiesForPRsThatAreStillReady(t *testing.T) {
 			_, err := h.run("tick")
 			require.NoError(t, err)
 
-			assert.Equal(t, []string{readyText1 + ""}, h.notifications())
+			assert.Equal(t, []string{readyText1}, h.notifications())
 		})
 	}
 }
@@ -338,7 +339,7 @@ func TestTickNotifiesWhenAWorkingWorkerGoesIdleOnAReadyPR(t *testing.T) {
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{readyText1 + ""}, h.notifications())
+	assert.Equal(t, []string{readyText1}, h.notifications())
 }
 
 func TestTickDoesNotRepeatTheNotificationWhenTheSameHeadIsReadyAgain(t *testing.T) {
@@ -394,7 +395,7 @@ func TestTickNotifiesForTheNewHeadWhenAFailedNotificationIsFollowedByAPush(t *te
 		require.NoError(t, err)
 	}
 
-	assert.Equal(t, []string{readyText1 + ""}, h.notifications())
+	assert.Equal(t, []string{readyText1}, h.notifications())
 }
 
 func TestTickNotifiesOncePerReadyTicket(t *testing.T) {
@@ -408,7 +409,7 @@ func TestTickNotifiesOncePerReadyTicket(t *testing.T) {
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{readyText1 + ""}, h.notifications())
+	assert.Equal(t, []string{readyText1}, h.notifications())
 }
 
 func TestTickDoesNotNotifyForAReadyPRWhileTheTicketIsNotInReview(t *testing.T) {

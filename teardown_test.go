@@ -2,13 +2,13 @@ package dispatch_test
 
 import (
 	"errors"
-	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

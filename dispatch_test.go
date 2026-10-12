@@ -442,8 +442,9 @@ const (
 	viewerID     = "viewer-1"
 )
 
-// harness runs the dispatcher against a fake Linear server and fake herdr,
-// treehouse and launcher commands, all rooted in one temp directory.
+// harness runs the dispatcher against a fake Linear server, the in-process
+// fakes in tools (herdr, treehouse, notifications) and gh and launcher scripts,
+// all rooted in one temp directory.
 type harness struct {
 	t      *testing.T
 	dir    string
@@ -454,7 +455,8 @@ type harness struct {
 	linear *fakeLinear
 	tools  *tooltest.Tools
 	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
-	// with the launcher built into dispatch.
+	// with the launcher built into dispatch. That launcher still runs the herdr
+	// script from fakeHerdr, so it shares no state with tools.Herdr.
 	builtinLauncher bool
 	// clock is the time every command sees, and moves only through advance.
 	clock time.Time

@@ -48,6 +48,7 @@ func TestNotificationCenterPassesTheTextAsAScriptArgument(t *testing.T) {
 	require.NoError(t, err)
 	args := strings.Split(string(got), "\x00")
 	assert.Equal(t, []string{`ENG-1 needs "you"`, "dispatch"}, args[len(args)-2:])
+	// The text must reach osascript only as a trailing argument, never inside a -e script line.
 	assert.NotContains(t, strings.Join(args[:len(args)-2], " "), "needs")
 }
 

@@ -46,8 +46,9 @@ type Options struct {
 	LinearKey string
 	// Herdr is the workspace manager that hosts the workers. Defaults to the installed herdr.
 	Herdr herdr.Herdr
-	// HerdrCommand is the command the built-in launcher runs until it works
-	// through Herdr. Defaults to "herdr".
+	// HerdrCommand is the herdr binary the built-in launcher runs directly. The
+	// launcher does not go through Herdr yet, so setting only Herdr leaves it
+	// on the installed herdr. Defaults to "herdr".
 	HerdrCommand string
 	// Treehouse is the pool of worktrees. Defaults to the installed treehouse.
 	Treehouse treehouse.Pool
