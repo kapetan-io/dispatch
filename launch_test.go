@@ -608,6 +608,33 @@ func TestLaunchClosesTheWorkspaceWhenClaudeNeverShowsAnInputBox(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(l.dir, "runs.log"))
 }
 
+func TestLaunchPressesEnterOnAClaudeCommandLeftUnrunAtTheShellPrompt(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+	l.screens("~/gubernator  thrawn01/eng-332 *35\n❯ claude --model opus --plugin-dir /plugin", "❯")
+
+	out := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	// The first Enter runs the stranded command, the second submits the kickoff.
+	assert.Equal(t, "pane send-keys w9:p1 Enter\npane send-keys w9:p1 Enter\n", l.readFile("keys.log"))
+	assert.Equal(t, "w9:p1 /dispatch:build ENG-1\n", l.readFile("runs.log"))
+}
+
+func TestLaunchReportsClaudeNeverStartedWhenItsCommandStaysAtTheShellPrompt(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.workerStarts()
+	l.screens("❯ claude --model opus --plugin-dir /plugin")
+
+	out := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "injection_unconfirmed", out.result["status"])
+	assert.Contains(t, out.result["detail"], "never started")
+	assert.NotContains(t, out.result["detail"], "Claude started")
+	assert.Equal(t, "workspace close w9\n", l.readFile("closes.log"))
+	assert.NoFileExists(t, filepath.Join(l.dir, "runs.log"))
+}
+
 func TestLaunchPressesEnterOnlyOnTheFolderTrustDialogWhenYesIsSelected(t *testing.T) {
 	l := newLaunchHarness(t)
 	l.workerStarts()

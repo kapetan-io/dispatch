@@ -124,6 +124,7 @@ type launch struct {
 	workspace string
 	pane      string
 	agent     string
+	unrun     bool // the launch command was last seen unexecuted at the shell prompt
 	// fresh is set when this run took the lease, as opposed to finding one from
 	// an earlier run.
 	fresh bool
@@ -185,9 +186,13 @@ func (l *launch) run(ctx context.Context) Result {
 	// would look like a live worker, and no tick would retry or escalate.
 	if !l.inject(ctx) {
 		_ = l.herdr(context.WithoutCancel(ctx), "workspace", "close", l.workspace)
+		detail := "Claude started but herdr"
+		if l.unrun {
+			detail = "Claude never started, because its launch command sat unrun at the shell prompt, and herdr"
+		}
 		return Result{
 			Status:    StatusInjectionUnconfirmed,
-			Detail:    "Claude started but herdr never showed the kickoff running, so the workspace was closed and the next tick retries. Record the screens with Options.Trace (DISPATCH_LAUNCH_TRACE for `dispatch launch`).",
+			Detail:    detail + " never showed the kickoff running, so the workspace was closed and the next tick retries. Record the screens with Options.Trace (DISPATCH_LAUNCH_TRACE for `dispatch launch`).",
 			Workspace: l.workspace, Pane: l.pane, Worktree: l.tree,
 		}
 	}
@@ -569,7 +574,17 @@ func (l *launch) inject(ctx context.Context) bool {
 			l.sleep(ctx, l.opts.Pace)
 			continue
 		}
+		// The shell's own prompt also draws ❯. A launch command still after it
+		// means Enter was lost, so press it rather than type the kickoff onto
+		// that command line.
+		if shellCommand.MatchString(screen) {
+			l.unrun = true
+			_ = l.herdr(ctx, "pane", "send-keys", l.pane, "Enter")
+			l.sleep(ctx, l.opts.Pace)
+			continue
+		}
 		if strings.Contains(screen, "❯") {
+			l.unrun = false
 			ready = true
 			break
 		}
@@ -615,6 +630,8 @@ func (l *launch) inject(ctx context.Context) bool {
 	}
 	return false
 }
+
+var shellCommand = regexp.MustCompile(`❯ *claude +--`)
 
 var cursorOnNo = regexp.MustCompile(`(?i)❯ *(no|don.t)`)
 
