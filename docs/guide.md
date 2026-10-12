@@ -110,6 +110,7 @@ After every tick, each worker's herdr workspace is labeled `<emoji> <ticket>`.
 | 🟢 | In Progress |
 | 🟡 | In Review, PR not ready |
 | 👀 | In Review, ready for review (the same condition as the notification) |
+| 💤 | Design or review worker idle In Progress for an hour. It is never nudged, so look at it. Goes back to 🟢 when it works again |
 | 🔴 | Needs Human |
 | ⏸️ | Paused (Backlog or Todo) with the tree kept and a workspace still open |
 
