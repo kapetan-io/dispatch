@@ -824,8 +824,7 @@ func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
 	// The plan saw a clean tree, and the worker writes a file as it is killed.
 	h.tools.Herdr.BeforeCloseWorkspace(func(string) {
 		require.NoError(t, os.WriteFile(filepath.Join(path, "late.txt"), []byte("late\n"), 0o644))
-		out, err := exec.Command("git", "-C", path, "add", "late.txt").CombinedOutput()
-		require.NoError(t, err, string(out))
+		require.NoError(t, exec.Command("git", "-C", path, "add", "late.txt").Run())
 	})
 
 	out, err := h.run("tick")
