@@ -82,16 +82,17 @@ func (in Input) Renames(current map[string]string) []Rename {
 	return renames
 }
 
-// quiet reports whether t is a design or review ticket whose worker has sat
-// idle for UnresponsiveAfter. The dispatcher never nudges these, so the label
-// is the only sign the worker stopped without asking anything. It reads
-// the idle clock that settle updates, so Renames must run after settle.
+// quiet reports whether t is a design or review ticket whose worker ended its
+// last turn at least UnresponsiveAfter ago. The dispatcher never nudges these,
+// so the label is the only sign the worker stopped without asking anything.
+// The Stop record catches a turn that began and ended between two ticks. It
+// reads the idle clock that settle updates, so Renames must run after settle.
 func (in Input) quiet(t linear.Ticket, w worker.Worker) bool {
 	if w.State != worker.Idle || !slices.ContainsFunc(designLabels, t.HasLabel) {
 		return false
 	}
-	since := in.Cache[t.Identifier].IdleSince
-	return !since.IsZero() && in.Now.Sub(since) >= UnresponsiveAfter
+	stop, busy := in.lastStop(t, in.Cache[t.Identifier])
+	return !busy && in.Now.Sub(stop) >= UnresponsiveAfter
 }
 
 // TabRename asks for a herdr tab to take a new label.

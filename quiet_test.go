@@ -82,3 +82,20 @@ func TestTickKeepsAnIdleBuildWorkerGreen(t *testing.T) {
 
 	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, h.renames())
 }
+
+func TestTickClearsTheQuietMarkWhenAShortTurnEndsBetweenTicks(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(designTicket("ENG-1", "In Progress"))
+	h.worker("ENG-1", "idle")
+	h.tick()
+	h.advance(time.Hour)
+	h.tick()
+
+	// The user replies and the worker's whole turn fits between two ticks.
+	h.advance(3 * time.Minute)
+	h.recordStop("ENG-1", noTasks)
+	h.advance(2 * time.Minute)
+	h.tick()
+
+	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1", "w-ENG-1|💤 ENG-1", "w-ENG-1|🟢 ENG-1"}, h.renames())
+}
