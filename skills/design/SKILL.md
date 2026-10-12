@@ -1,11 +1,11 @@
 ---
 name: design
-description: "Design a feature with the user: one long conversation that settles what it must do, tests the design's shape against independent sketches, and ends in a blueprint and the ticket a worker builds. Use when started as `/dispatch:design <ticket>`, or when asked to design or scope a feature before building it. Not for bug fixes or changes too small to need a design."
+description: "Design a feature with the user: one long conversation that settles what it must do, tests the design's shape against independent sketches, and ends in a blueprint and the tickets a worker builds. Use when started as `/dispatch:design <ticket>`, or when asked to design or scope a feature before building it. Not for bug fixes or changes too small to need a design."
 ---
 
 # Design
 
-Run one continuous back-and-forth design discussion, product definition and technical design together. Settle what the feature must do, test the design's shape with independent sketches, then write a single blueprint and file the ticket a worker builds. The product half and the technical half are one thought. Keeping them in one document and one conversation stops the build from implementing something the product never asked for.
+Run one continuous back-and-forth design discussion, product definition and technical design together. Settle what the feature must do, test the design's shape with independent sketches, then write a single blueprint and file the tickets a worker builds. The product half and the technical half are one thought. Keeping them in one document and one conversation stops the build from implementing something the product never asked for.
 
 The blueprint fixes contracts, not content. How each function is written is the build's job, proved by tests.
 
@@ -22,7 +22,7 @@ Load `dispatch:converse` with the Skill tool. Open a todolist with one entry per
 5. Agree on the contract sketch
 6. Discuss the rest of the technical half, then run the correctness and testability passes
 7. Write the blueprint
-8. Size it and file the child ticket
+8. Review or break down
 9. Hand off
 
 ### Orient
@@ -131,21 +131,16 @@ Keep PII as its own section. Mark anything unresolved with `TODO:` and a line on
 
 If the discussion resolved domain terms, write them to the right `docs/CONTEXT.md` in one pass. Do not commit. The tree is returned at hand-off, which discards the change, so the hand-off uploads it.
 
-## Size it and file the child
+## Review or break down
 
-Judge size once, after the user approves the design, with this wording. Tell the user the verdict and the pieces you counted.
+After the user approves the design, ask whether it gets a review. Recommend one when the design looks larger than one PR or changes a public contract, because only the review writes and lints the formal spec.
 
-> A **piece** is complete when, after it merges, a user or caller can do something they could not do before. Its acceptance criteria are observable at the surface and pass without any other unmerged piece. Group a piece by what a user does together, not by endpoint, flag or rule. Work with no surface of its own, such as a new seam, backend, package or refactor, is never a piece by itself. It ships inside the first piece a user can observe through it.
->
-> A design is too big for one pull request when it holds more than one piece. Line count alone never makes a design too big. A design a reviewer can read in one sitting, about an hour, fits even when it touches more than one piece. When the two tests disagree, the one-sitting test wins, because easy review sets the size in both directions. Count only what the design commits to build. Work it defers, or lists as a limitation, open question or future work, is not part of any piece.
+- **No review.** Load `dispatch:breakdown` with the Skill tool and follow it on the feature ticket. It sizes the design, files the build tickets, and asks whether to start the work or hold it.
+- **Review.** File a child of the feature ticket labeled `ai`, `design-review` and the repo label, never `design`, assigned to the owner of dispatch's Linear API key, with `dispatch:ticket`. Its body links the blueprint. Move it to In Progress and run `dispatch tick`. The dispatcher launches no review worker yet, so tell the user the review starts nothing until that piece ships. Until then, the user can ask any session to break the design down.
 
-Create exactly one child of the feature ticket, in **Backlog** and not Todo, which overrides `dispatch:ticket`'s default. The dispatcher starts a Todo child of an In Progress parent at once, and the user's move to In Progress is the approval.
-
-- **The design fits one PR and changes no public contract.** The child is one build ticket, labeled `ai` and the repo label, written with the `dispatch:ticket` skill. Its Governing design section links the blueprint and the grounding file.
-- **Anything larger, or any change to a public contract.** The child is a review ticket, labeled `ai`, `design-review` and the repo label, never `design`, assigned to the owner of dispatch's Linear API key, and written with `dispatch:ticket` (with the Backlog override above). The dispatcher manages only tickets with the `ai` label that are assigned to that owner, so without both the review would never start after the user approves it. Its body links the blueprint. The dispatcher skips `design-review` tickets until the review step exists, so tell the user that moving it to In Progress starts no worker yet. Only the review writes the formal spec and lints it, so a public contract change takes this path even when it is small. Assume every repo lints OpenAPI specs with `duh` for now.
+If you end with nothing filed, move the feature ticket to Backlog, since an In Progress `design` ticket with no children gets a new design worker.
 
 ## Hand off
 
 1. Upload the experiments worth keeping, the Phase A grounding file, and the glossary change (`git diff -- docs`), to the feature ticket as attachments, so build workers can get them.
-2. Tell the user which ticket to move to In Progress, and that the move is the approval. Do not move it yourself.
-3. Return the tree with `treehouse return <tree path> --if-lease-holder <feature ticket> --force`, where the tree path is `git rev-parse --show-toplevel`. Do this last. It discards anything uncommitted, including any experiment you did not upload, and it ends the session. A held tree blocks other launches.
+2. Return the tree with `treehouse return <tree path> --if-lease-holder <feature ticket> --force`, where the tree path is `git rev-parse --show-toplevel`. Do this last. It discards anything uncommitted, including any experiment you did not upload, and it ends the session. A held tree blocks other launches.
