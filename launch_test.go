@@ -379,6 +379,17 @@ func TestLaunchReportsClaudeNeverStartedWhenItsCommandStaysAtTheShellPrompt(t *t
 	assert.Equal(t, []string{"w2"}, l.tools.Herdr.ClosedWorkspaces())
 }
 
+func TestLaunchReportsEnterNotSentWhenHerdrRefusesTheKey(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.tools.Herdr.Fail(herdrtest.OpKickoff, herdr.ErrEnterNotSent)
+
+	out := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "injection_unconfirmed", out.result["status"])
+	assert.Contains(t, out.result["detail"], "could not send Enter")
+	assert.NotContains(t, out.result["detail"], "after Enter was pressed")
+}
+
 func TestLaunchExitsCleanlyOnlyWhenTheWorkerIsRunning(t *testing.T) {
 	l := newLaunchHarness(t)
 	ok := l.launch("ENG-1", "thrawn01/eng-1")
@@ -911,4 +922,24 @@ func TestClaudeShimSkipsAShimDirectoryReachedThroughASymlink(t *testing.T) {
 	argv, err := os.ReadFile(filepath.Join(dir, "argv"))
 	require.NoError(t, err)
 	assert.Equal(t, "--resume\n", string(argv))
+}
+
+func TestClaudeShimNamesAStaleDispatchBinary(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/usr/bin/env bash\necho started > \""+filepath.Join(dir, "ran")+"\"\n"), 0o755))
+	stale := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(stale, "dispatch"), []byte("#!/usr/bin/env bash\necho 'dispatch: unknown command \"claude-shim\"' >&2\nexit 1\n"), 0o755))
+	shims, err := filepath.Abs("scripts/shims")
+	require.NoError(t, err)
+
+	cmd := exec.Command(filepath.Join(shims, "claude"), "--resume")
+	cmd.Env = append(os.Environ(), "PATH="+strings.Join([]string{shims, stale, dir, os.Getenv("PATH")}, ":"))
+	out, err := cmd.CombinedOutput()
+
+	var exit *exec.ExitError
+	require.ErrorAs(t, err, &exit)
+	assert.Equal(t, 127, exit.ExitCode())
+	assert.Contains(t, string(out), filepath.Join(stale, "dispatch"))
+	assert.Contains(t, string(out), "go install ./cmd/dispatch")
+	assert.NoFileExists(t, filepath.Join(dir, "ran"))
 }

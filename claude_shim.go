@@ -9,12 +9,20 @@ import (
 	"syscall"
 )
 
+// checkFlag lets the shim script ask whether the dispatch on PATH is new enough
+// to have claude-shim, since a git pull updates the script before go install
+// updates the binary.
+const checkFlag = "--dispatch-check"
+
 // claudeShim runs the real claude with the plugin and worker flags added. herdr
 // restarts a worker with a bare `claude --resume` and does not replay argv, so
 // the shim in scripts/shims re-adds them. Print-mode runs pass through
 // untouched. It never adds --name, because Claude draws the name below an open
 // question and herdr then misses the question.
 func claudeShim(args []string) error {
+	if len(args) == 1 && args[0] == checkFlag {
+		return nil
+	}
 	target, err := realClaude(filepath.SplitList(os.Getenv("PATH")))
 	if err != nil {
 		return err
