@@ -743,3 +743,16 @@ exec "`+h.dir+`/herdr-real" "$@"`)
 	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, h.renames())
 	assert.Empty(t, h.tabRenames())
 }
+
+func TestTickNotifiesWhenTheOnlyChangesRequestedIsOnAnOlderCommit(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", prState{head: "b2", checks: "SUCCESS", changesOn: []string{"a1"}, mergeable: "MERGEABLE"})
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Len(t, h.notifications(), 1)
+	assert.Empty(t, h.prompts())
+}

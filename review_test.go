@@ -30,6 +30,10 @@ type prState struct {
 	moreThreads bool
 	// approved lists the commits a review approves.
 	approved []string
+	// changesOn lists the commits a review requests changes on. A decision of
+	// CHANGES_REQUESTED alone adds a request on the head. dispatch reads the
+	// reviews, not the decision field.
+	changesOn []string
 	// fork marks a PR opened from a fork.
 	fork bool
 	// threads are the newest comments of unresolved review threads.
@@ -82,6 +86,13 @@ func (h *harness) pr(ticket string, p prState) {
 	reviews := []map[string]any{}
 	for _, oid := range p.approved {
 		reviews = append(reviews, map[string]any{"state": "APPROVED", "commit": map[string]string{"oid": oid}})
+	}
+	changesOn := p.changesOn
+	if p.decision == "CHANGES_REQUESTED" && changesOn == nil {
+		changesOn = []string{p.head}
+	}
+	for _, oid := range changesOn {
+		reviews = append(reviews, map[string]any{"state": "CHANGES_REQUESTED", "commit": map[string]string{"oid": oid}})
 	}
 	h.respond(ticket, "", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
 		"number":                   7,
@@ -626,4 +637,82 @@ func TestTickReportsWhatGHSaidWhenItFails(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, stderr, "HTTP 401: Bad credentials")
+}
+
+func TestTickIgnoresChangesRequestedOnACommitThatIsNoLongerTheHead(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", prState{head: "b2", checks: "SUCCESS", decision: "CHANGES_REQUESTED", changesOn: []string{"a1"}, mergeable: "MERGEABLE"})
+
+	for range 4 {
+		out, err := h.run("tick")
+		require.NoError(t, err)
+		assert.NotContains(t, out, "nudge")
+		assert.NotContains(t, out, "escalate")
+	}
+
+	assert.Empty(t, h.prompts())
+	assert.Empty(t, h.linear.mutations())
+}
+
+func TestTickDoesNotNudgeOverChangesRequestedWhileACheckOnTheHeadRuns(t *testing.T) {
+	for _, checks := range []string{"PENDING", "EXPECTED"} {
+		t.Run(checks, func(t *testing.T) {
+			h := newHarness(t)
+			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+			h.worker("ENG-1", "idle")
+			h.pr("ENG-1", prState{head: "b2", checks: checks, decision: "CHANGES_REQUESTED", mergeable: "MERGEABLE"})
+
+			for range 4 {
+				out, err := h.run("tick")
+				require.NoError(t, err)
+				assert.NotContains(t, out, "nudge")
+				assert.NotContains(t, out, "escalate")
+			}
+
+			assert.Empty(t, h.prompts())
+			assert.Empty(t, h.linear.mutations())
+		})
+	}
+}
+
+func TestTickNudgesOverChangesRequestedOnTheHeadOnceChecksFinish(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", prState{head: "b2", checks: "PENDING", decision: "CHANGES_REQUESTED", mergeable: "MERGEABLE"})
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	assert.Empty(t, h.prompts())
+
+	h.pr("ENG-1", prState{head: "b2", checks: "SUCCESS", decision: "CHANGES_REQUESTED", mergeable: "MERGEABLE"})
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "nudge ENG-1: PR needs work: changes requested\n", out)
+}
+
+func TestTickStillNudgesForAFailedCheckWhileChangesRequestedIsStale(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", prState{head: "b2", checks: "FAILURE", decision: "CHANGES_REQUESTED", changesOn: []string{"a1"}, mergeable: "MERGEABLE"})
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "nudge ENG-1: PR needs work: a failed check\n", out)
+}
+
+func TestTickNudgesWhenOneReviewerIsStaleAndAnotherRequestsChangesOnTheHead(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", prState{head: "b2", checks: "SUCCESS", changesOn: []string{"a1", "b2"}, mergeable: "MERGEABLE"})
+
+	out, err := h.run("tick")
+	require.NoError(t, err)
+
+	assert.Equal(t, "nudge ENG-1: PR needs work: changes requested\n", out)
 }
