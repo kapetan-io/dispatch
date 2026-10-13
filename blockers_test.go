@@ -1,6 +1,7 @@
 package dispatch_test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -168,20 +169,22 @@ func TestTickDoesNotRepeatTheHoldCommentAfterAnUnreadPool(t *testing.T) {
 	held := func() fakeTicket {
 		return blockedBy(ticket("ENG-2", "In Progress", "tiger"), false, [2]string{"ENG-1", "Todo"})
 	}
-	h.addRepo("tiger", h.repo)
+	tiger := filepath.Join(h.dir, "tiger")
+	require.NoError(t, os.MkdirAll(tiger, 0o755))
+	h.addRepo("tiger", tiger)
 	h.tickets(held())
 	_, err := h.run("tick")
 	require.NoError(t, err)
 	require.Len(t, comments(h), 1)
 
 	// The clone moves, so the pool can't be read and Plan never reaches the blocker check.
-	h.repos = ""
+	h.resetRepos()
 	h.addRepo("tiger", filepath.Join(h.dir, "moved"))
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
-	h.repos = ""
-	h.addRepo("tiger", h.repo)
+	h.resetRepos()
+	h.addRepo("tiger", tiger)
 	_, err = h.run("tick")
 	require.NoError(t, err)
 	assert.Len(t, comments(h), 1)

@@ -10,7 +10,7 @@ You need a Mac with these on your PATH. dispatch shells out to all of them.
 |---|---|
 | `herdr` 0.9.0 or later | Hosts one workspace per worker, and reports whether each worker is working, idle or blocked. |
 | `treehouse` v3.1.2 or later (`go install github.com/kunchenguid/treehouse/v3@latest`) | Leases a pooled git worktree to each worker. |
-| `gh`, signed in with `gh auth login` | The dispatcher reads PR checks, reviews and conflicts, and merges approved PRs in `auto_merge` repos. Workers open PRs with it. |
+| `gh`, signed in with `gh auth login` | The dispatcher reads PR checks, reviews and conflicts, and merges approved PRs in repos with `auto_merge = true`. Workers open PRs with it. |
 | `claude` | The worker itself. |
 | `git` | Used by `dispatch launch` to create the ticket's branch in its tree. |
 | `go` | Builds the `dispatch` CLI. |
@@ -39,13 +39,13 @@ The command prompts for the key. Setting `LINEAR_API_KEY` in the environment ove
 
 Linear's GitHub integration should move a ticket to Done when its PR merges. dispatch never moves a built ticket to Done itself, and the Done move is what triggers teardown. (It does move a parent to Done when its children finish.)
 
-**4. Prepare each repo.** Workers run only on leased treehouse trees, so the repo's clone needs a `treehouse.toml` (`treehouse init` writes one). `max_trees` in it caps how many workers the repo runs at once. Turn on "Allow auto-merge" in the repo's GitHub settings. Workers enable auto-merge only when `main` requires an approving review, so protect `main` with the review and checks you want. To have dispatch merge approved PRs itself instead, list the repo in `auto_merge` in the config (step 5).
+**4. Prepare each repo.** Workers run only on leased treehouse trees, so the repo's clone needs a `treehouse.toml` (`treehouse init` writes one). `max_trees` in it caps how many workers the repo runs at once. Turn on "Allow auto-merge" in the repo's GitHub settings. Workers enable auto-merge only when `main` requires an approving review, so protect `main` with the review and checks you want. To have dispatch merge approved PRs itself instead, set `auto_merge = true` in the repo's table in the config (step 5).
 
-**5. Write the config.** Create `~/.config/dispatch/config.toml` with one `[repos]` entry per repo label, pointing at that repo's clone. Without `[repos]`, every In Progress ticket escalates to Needs Human with "its repo \"dispatch\" is not in the dispatcher's config" (naming the ticket's repo label):
+**5. Write the config.** Create `~/.config/dispatch/config.toml` with one `[repos.<label>]` table per repo label, whose `path` is that repo's clone. Without one, every In Progress ticket escalates to Needs Human with "its repo \"dispatch\" is not in the dispatcher's config" (naming the ticket's repo label):
 
 ```toml
-[repos]
-dispatch = "~/Development/dispatch"
+[repos.dispatch]
+path = "~/Development/dispatch"
 ```
 
 The [config reference](config.md) lists every other setting and has examples for several repos and renamed statuses. dispatch fails on a setting it doesn't know.
@@ -65,8 +65,8 @@ It ticks now and every `interval_minutes` after, until you press Ctrl-C. It does
 3. **Launch.** On the next tick, `dispatch launch` leases a treehouse tree held by the ticket id, creates the ticket's branch in it, opens a herdr workspace, and starts Claude with `/dispatch:build <ticket>`.
 4. **Build.** The worker follows the `dispatch:build` skill. It reads the ticket and its comments, implements with surface tests, has fresh sub-agents review the tests and the code, rebases onto `main`, runs the tests and the app, and opens a PR that ends with `Fixes <ticket>`. It reports only through the ticket's status and comments.
 5. **In Review.** The worker moves the ticket to In Review once the PR is linked. It then waits. Each tick, the dispatcher checks an In Review ticket with an idle worker, and nudges it when the PR has a failed check, requested changes or a conflict.
-6. **Needs Human.** A worker that needs a decision outside its terminal moves the ticket to Needs Human with a comment saying what it needs. dispatch fires a macOS notification. Answer on the ticket and move it back to In Progress, and the worker gets the resume nudge. The dispatcher also sets Needs Human itself, with one comment, after `nudge_limit` fruitless PR nudges, `nudge_limit` relaunches of an In Review worker that never pushed, or `launch_failure_limit` failed launches. It does the same at once for a ticket with no repo label, a repo label missing from `[repos]`, or more labels than it reads.
-7. **Merge.** The PR merges, either you or dispatch (when its repo is in [`auto_merge`](config.md#auto-merge) and a review has approved the head commit), and Linear moves the ticket to Done.
+6. **Needs Human.** A worker that needs a decision outside its terminal moves the ticket to Needs Human with a comment saying what it needs. dispatch fires a macOS notification. Answer on the ticket and move it back to In Progress, and the worker gets the resume nudge. The dispatcher also sets Needs Human itself, with one comment, after `nudge_limit` fruitless PR nudges, `nudge_limit` relaunches of an In Review worker that never pushed, or `launch_failure_limit` failed launches. It does the same at once for a ticket with no repo label, a repo label with no `[repos.<label>]` table, or more labels than it reads.
+7. **Merge.** The PR merges, either you or dispatch (when its repo sets [`auto_merge = true`](config.md#auto-merge) and a review has approved the head commit), and Linear moves the ticket to Done.
 8. **Teardown.** The next tick closes the worker's workspace and returns the tree to the pool, unless the tree holds modified or staged tracked files, or unpushed commits. Untracked files are deleted first.
 
 A question the worker asks in its terminal shows in herdr as blocked. dispatch notifies you, never answers for you, and never sets Needs Human for it.
@@ -181,7 +181,7 @@ It fails when the ticket's worker is blocked on a question or absent.
 
 **The tick prints `while escalating ENG-4: team ENG has no "Needs Human" status` every tick.** The tick carries on, but the escalation fails and the ticket keeps its old status. The team lacks that status or calls it something else. Create it in Linear (Started category) or set `needs_human` under `[linear.statuses]`. A missing `in_progress` or `close_parent` status fails the same way.
 
-**An In Progress ticket never launches.** Run `dispatch tick --dry-run`. The ticket is skipped or escalated when it has no `repo` label, when its label isn't a key in `[repos]`, or when it has sub-issues (a parent never gets a worker). A `design` ticket launches too, as a design session rather than a build, and a `design-review` ticket as a review session. A ticket that isn't assigned to you or lacks the `ai` label doesn't appear at all. `wait` means the cap (`max_in_progress`) is reached or the repo's pool couldn't be read. A full treehouse pool shows only on a live tick, as `launch ENG-1: pool_exhausted: all 4/4 pool trees are taken: ...` naming who holds every tree. A `not_pooled` launch means the repo has no `treehouse.toml`.
+**An In Progress ticket never launches.** Run `dispatch tick --dry-run`. The ticket is skipped or escalated when it has no `repo` label, when its label has no `[repos.<label>]` table, or when it has sub-issues (a parent never gets a worker). A `design` ticket launches too, as a design session rather than a build, and a `design-review` ticket as a review session. A ticket that isn't assigned to you or lacks the `ai` label doesn't appear at all. `wait` means the cap (`max_in_progress`) is reached or the repo's pool couldn't be read. A full treehouse pool shows only on a live tick, as `launch ENG-1: pool_exhausted: all 4/4 pool trees are taken: ...` naming who holds every tree. A `not_pooled` launch means the repo has no `treehouse.toml`.
 
 **A worker sits in a state of working.** dispatch nudges a working worker only about a new ticket comment, so a worker that keeps working is never nudged for stalling. Open its herdr workspace and look. To redirect it, run `dispatch tell <ticket> "<text>"`. To restart it, move the ticket to Backlog and back to In Progress. Its tree and branch stay. Wait for a tick to see Backlog before moving it back, because a round trip inside one interval changes nothing.
 

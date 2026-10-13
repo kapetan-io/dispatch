@@ -20,14 +20,14 @@ const ticketHint = "load the dispatch:ticket skill"
 
 func TestTicketHintNamesTheSkillInAManagedRepo(t *testing.T) {
 	clone := newHintRepo(t)
-	config := writeHintConfig(t, "[repos]\ndispatch = \""+clone+"\"\n")
+	config := writeHintConfig(t, "[repos.dispatch]\npath = \""+clone+"\"\n")
 
 	assert.Contains(t, runTicketHint(t, clone, config), ticketHint)
 }
 
 func TestTicketHintNamesTheSkillInAWorktreeOfAManagedRepo(t *testing.T) {
 	clone := newHintRepo(t)
-	config := writeHintConfig(t, "[repos]\ndispatch = \""+clone+"\"\n")
+	config := writeHintConfig(t, "[repos.dispatch]\npath = \""+clone+"\"\n")
 	tree := filepath.Join(t.TempDir(), "tree")
 	hintGit(t, clone, "worktree", "add", "-b", "tree", tree)
 
@@ -40,7 +40,7 @@ func TestTicketHintExpandsTildeInRepoPaths(t *testing.T) {
 	clone := filepath.Join(home, "src", "repo")
 	require.NoError(t, os.MkdirAll(clone, 0o755))
 	hintGit(t, clone, "init", "-q")
-	config := writeHintConfig(t, "[repos]\nrepo = \"~/src/repo\"\n")
+	config := writeHintConfig(t, "[repos.repo]\npath = \"~/src/repo\"\n")
 
 	assert.Contains(t, runTicketHint(t, clone, config), ticketHint)
 }
@@ -48,7 +48,7 @@ func TestTicketHintExpandsTildeInRepoPaths(t *testing.T) {
 func TestTicketHintStaysSilentOutsideManagedRepos(t *testing.T) {
 	managed := newHintRepo(t)
 	other := newHintRepo(t)
-	config := writeHintConfig(t, "[linear]\nteams = [\"ENG\"]\n\n[repos]\ndispatch = \""+managed+"\"\n")
+	config := writeHintConfig(t, "[linear]\nteams = [\"ENG\"]\n\n[repos.dispatch]\npath = \""+managed+"\"\n")
 
 	assert.Empty(t, runTicketHint(t, other, config))
 	assert.Empty(t, runTicketHint(t, t.TempDir(), config))
@@ -68,10 +68,10 @@ func TestTicketHintReadsTheTomlFormsTheDispatcherAccepts(t *testing.T) {
 		name   string
 		config string
 	}{
-		{"SingleQuotes", "[repos]\ndispatch = '" + clone + "'\n"},
-		{"CRLF", "[repos]\r\ndispatch = \"" + clone + "\"\r\n"},
-		{"HeaderComment", "[repos] # clones\ndispatch = \"" + clone + "\"\n"},
-		{"IndentedHeader", "  [repos]\n  dispatch = \"" + clone + "\" # mine\n"},
+		{"SingleQuotes", "[repos.dispatch]\npath = '" + clone + "'\n"},
+		{"CRLF", "[repos.dispatch]\r\npath = \"" + clone + "\"\r\n"},
+		{"HeaderComment", "[repos.dispatch] # clones\npath = \"" + clone + "\"\n"},
+		{"IndentedHeader", "  [repos.dispatch]\n  path = \"" + clone + "\" # mine\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			assert.Contains(t, runTicketHint(t, clone, writeHintConfig(t, test.config)), ticketHint)
@@ -86,14 +86,14 @@ func TestTicketHintReadsEscapesInQuotedPaths(t *testing.T) {
 	require.NoError(t, os.MkdirAll(clone, 0o755))
 	hintGit(t, clone, "init", "-q")
 	escaped := strings.ReplaceAll(clone, `"`, `\"`)
-	config := writeHintConfig(t, "[repos]\ndispatch = \""+escaped+"\"\n")
+	config := writeHintConfig(t, "[repos.dispatch]\npath = \""+escaped+"\"\n")
 
 	assert.Contains(t, runTicketHint(t, clone, config), ticketHint)
 }
 
 func TestTicketHintIgnoresACommentedOutRepo(t *testing.T) {
 	clone := newHintRepo(t)
-	config := writeHintConfig(t, "[repos]\n# dispatch = \""+clone+"\"\n")
+	config := writeHintConfig(t, "[repos.dispatch]\n# path = \""+clone+"\"\n")
 
 	assert.Empty(t, runTicketHint(t, clone, config))
 }
@@ -106,14 +106,14 @@ func TestTicketHintStaysSilentWithoutAConfig(t *testing.T) {
 
 func TestTicketHintStaysSilentWithABrokenConfig(t *testing.T) {
 	clone := newHintRepo(t)
-	config := writeHintConfig(t, "[repos]\ndispatch = 5\n")
+	config := writeHintConfig(t, "[repos]\ndispatch = \"~/x\"\n")
 
 	assert.Empty(t, runTicketHint(t, clone, config))
 }
 
 func TestTicketHintGivesUpWhenGitHangsPastTheContext(t *testing.T) {
 	clone := newHintRepo(t)
-	configPath := writeHintConfig(t, "[repos]\ndispatch = \""+clone+"\"\n")
+	configPath := writeHintConfig(t, "[repos.dispatch]\npath = \""+clone+"\"\n")
 	bin := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nexec sleep 30\n"), 0o755))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))

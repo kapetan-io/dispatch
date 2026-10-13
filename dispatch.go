@@ -77,6 +77,7 @@ const usage = `usage: dispatch tick [--dry-run]
        dispatch run [--interval DURATION]
        dispatch tell <ticket> "<text>"
        dispatch ticket-hint
+       dispatch repo-settings
        dispatch linear-viewer
        dispatch launch <ticket> <branch> [--base REF] [--model NAME] [--kickoff TEXT] [--title TEXT]
        dispatch claude-shim [CLAUDE ARGS]
@@ -93,6 +94,9 @@ const usage = `usage: dispatch tick [--dry-run]
   ticket-hint  print a reminder to use the dispatch:ticket skill when run in a repo listed under
                [repos] in the config, or a worktree of one; prints nothing elsewhere.
                The plugin's SessionStart hook runs it
+  repo-settings  print the [repos.<label>] table of the configured repo containing the working
+               directory, every setting at its effective value, in a form the config accepts. Fails
+               elsewhere
   linear-viewer  print the id and name of the Linear user who owns dispatch's API key, as one JSON
                object, found the way tick finds the key
   launch       lease a tree, open a herdr workspace and start a worker typed --kickoff, which
@@ -124,7 +128,7 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		_, err := tick(ctx, opts, *dryRun, &autoMergeCheck{}, &keyLookup{})
+		_, err := tick(ctx, opts, *dryRun, &keyLookup{})
 		return err
 	case "tell":
 		if len(args) != 3 {
@@ -134,6 +138,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		return tell(ctx, opts, args[1], args[2])
 	case "ticket-hint":
 		return ticketHint(ctx, opts)
+	case "repo-settings":
+		return repoSettings(ctx, opts)
 	case "linear-viewer":
 		return linearViewer(ctx, opts)
 	case "launch":
@@ -216,11 +222,10 @@ func run(ctx context.Context, opts Options, interval time.Duration) error {
 		return fmt.Errorf("interval must be positive, got %s", interval)
 	}
 	_, _ = fmt.Fprintf(opts.Stdout, "dispatch: ticking every %s, Ctrl-C to stop\n", interval)
-	check := &autoMergeCheck{}
 	keys := &keyLookup{}
 	for {
 		start := time.Now()
-		sum, err := tick(ctx, opts, false, check, keys)
+		sum, err := tick(ctx, opts, false, keys)
 		took := time.Since(start).Round(time.Millisecond)
 		switch {
 		case ctx.Err() != nil:
@@ -263,7 +268,7 @@ func count(n int, noun string) string {
 	return fmt.Sprintf("%d %ss", n, noun)
 }
 
-func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck, keys *keyLookup) (sum tickSummary, err error) {
+func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum tickSummary, err error) {
 	if err := os.MkdirAll(opts.StateDir, 0o755); err != nil {
 		return sum, fmt.Errorf("while creating state dir: %w", err)
 	}
@@ -281,7 +286,6 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck,
 	if err != nil {
 		return sum, err
 	}
-	check.warn(ctx, opts, cfg)
 	cachePath := filepath.Join(opts.StateDir, "cache.json")
 	c, err := cache.Load(cachePath)
 	if err != nil {
@@ -319,7 +323,8 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck,
 	// moved clone doesn't stop launches in every other repo.
 	var trees []treehouse.Tree
 	readErrs := map[string]error{}
-	for label, dir := range cfg.Repos {
+	for label, repo := range cfg.Repos {
+		dir := repo.Path
 		t, err := opts.Treehouse.Trees(ctx, dir)
 		if err != nil {
 			err = treehouse.StatusError(dir, err)
@@ -390,7 +395,6 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck,
 		Teams:          cfg.Linear.Teams,
 		BlockerDone:    cfg.Linear.Statuses.BlockerDone,
 		Leased:         leased,
-		AutoMerge:      autoMergeSet(cfg.AutoMerge),
 	}
 	// Only promotion and closing wait on the children, so a failed read holds
 	// back those two and nothing else.
@@ -791,7 +795,7 @@ func readPRs(ctx context.Context, opts Options, in reconcile.Input) (prs map[str
 			continue
 		}
 		repo, ok := t.LabelIn(in.RepoLabelGroup)
-		dir := in.Repos[repo]
+		dir := in.Repos[repo].Path
 		if !ok || dir == "" {
 			continue
 		}

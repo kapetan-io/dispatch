@@ -451,7 +451,7 @@ type harness struct {
 	repo          string
 	state         string
 	extra         string
-	repos         string
+	repos         []repoEntry
 	linear        *fakeLinear
 	tools         *tooltest.Tools
 	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
@@ -476,6 +476,7 @@ func newHarness(t *testing.T) *harness {
 		pages:  map[string][]byte{},
 	}
 	require.NoError(t, os.MkdirAll(h.repo, 0o755))
+	h.addRepo("dispatch", h.repo)
 	return h
 }
 
@@ -490,9 +491,34 @@ func (h *harness) config(extra string) {
 	h.extra = extra
 }
 
-// addRepo adds a repo to the config's [repos] table.
+type repoEntry struct{ label, dir, settings string }
+
+// addRepo adds a [repos.<label>] table to the config.
 func (h *harness) addRepo(label, dir string) {
-	h.repos += fmt.Sprintf("%s = %q\n", label, dir)
+	h.repos = append(h.repos, repoEntry{label: label, dir: dir})
+}
+
+// resetRepos drops every repo added after the dispatch repo.
+func (h *harness) resetRepos() {
+	h.repos = h.repos[:1]
+}
+
+// repoSettings appends extra TOML lines to the table of a repo, such as
+// "auto_merge = true\n". The dispatch repo is always configured.
+func (h *harness) repoSettings(label, extra string) {
+	for i := range h.repos {
+		if h.repos[i].label == label {
+			h.repos[i].settings += extra
+		}
+	}
+}
+
+func (h *harness) reposTOML() string {
+	var out strings.Builder
+	for _, repo := range h.repos {
+		fmt.Fprintf(&out, "\n[repos.%s]\npath = %q\n%s", repo.label, repo.dir, repo.settings)
+	}
+	return out.String()
 }
 
 func (h *harness) run(args ...string) (string, error) {
@@ -506,7 +532,7 @@ func (h *harness) runContext(ctx context.Context, args ...string) (string, strin
 
 // runWith runs a command with the harness's fakes, over the Options given.
 func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...string) (string, string, error) {
-	h.writeFile("config.toml", h.extra+fmt.Sprintf("\n[repos]\ndispatch = %q\n", h.repo)+h.repos)
+	h.writeFile("config.toml", h.extra+h.reposTOML())
 	var stdout, stderr bytes.Buffer
 	extra.ConfigPath = filepath.Join(h.dir, "config.toml")
 	extra.StateDir = h.state

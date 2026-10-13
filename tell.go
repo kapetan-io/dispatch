@@ -26,7 +26,8 @@ func tell(ctx context.Context, opts Options, ticket, text string) error {
 	}
 	var trees []treehouse.Tree
 	var unread []string
-	for label, dir := range cfg.Repos {
+	for label, repo := range cfg.Repos {
+		dir := repo.Path
 		t, err := opts.Treehouse.Trees(ctx, dir)
 		if err != nil {
 			err = treehouse.StatusError(dir, err)

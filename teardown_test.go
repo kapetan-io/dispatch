@@ -659,7 +659,7 @@ func TestTickDoesNotRepeatTheCommentAfterAPoolCannotBeRead(t *testing.T) {
 	_, _, err = h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
 	// Clearing the extra repo makes the next tick read every pool again.
-	h.repos = ""
+	h.resetRepos()
 	_, err = h.run("tick")
 	require.NoError(t, err)
 

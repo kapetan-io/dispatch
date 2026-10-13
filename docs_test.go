@@ -72,7 +72,12 @@ func TestDocConfigReferenceListsEveryKeyAtItsDefault(t *testing.T) {
 	require.NoError(t, err)
 	want, err := loadExample(t, "")
 	require.NoError(t, err)
-	// [repos] has no default, so the reference only shows its shape.
+	// Repos have no default, so the reference shows one repo at its defaults.
+	assert.Equal(t, config.Repo{
+		Path:                 config.ExpandHome("~/Development/dispatch"),
+		OpenPRAs:             "open",
+		IgnoreCommentAuthors: []string{},
+	}, got.Repos["dispatch"])
 	got.Repos, want.Repos = nil, nil
 	assert.Equal(t, want, got)
 
@@ -85,6 +90,12 @@ func TestDocConfigReferenceListsEveryKeyAtItsDefault(t *testing.T) {
 	}
 	for _, key := range settingKeys(reflect.TypeOf(config.Config{}), "") {
 		assert.Contains(t, documented, key)
+	}
+	body, err := os.ReadFile("docs/config.md")
+	require.NoError(t, err)
+	for _, key := range settingKeys(reflect.TypeOf(config.Repo{}), "repos.dispatch.") {
+		assert.Contains(t, documented, key)
+		assert.Contains(t, string(body), "| `"+strings.TrimPrefix(key, "repos.dispatch.")+"` |")
 	}
 }
 
@@ -103,4 +114,13 @@ func settingKeys(typ reflect.Type, prefix string) []string {
 		}
 	}
 	return keys
+}
+
+func TestContextDefinesTheRepoSettingsTerms(t *testing.T) {
+	body, err := os.ReadFile("docs/CONTEXT.md")
+	require.NoError(t, err)
+
+	for _, term := range []string{"Repo settings", "Listed author", "Optional check", "PR phase", "Review question"} {
+		assert.Contains(t, string(body), "**"+term+"**:")
+	}
 }

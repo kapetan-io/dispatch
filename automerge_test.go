@@ -1,22 +1,21 @@
 package dispatch_test
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 const (
-	autoMergeConfig = "auto_merge = [\"kapetan-io/dispatch\"]\n"
-	mergedText1     = "ENG-1 was approved and merged: " + prURL1
-	mergeCall1      = prURL1 + "|a1"
-	mergeRefused    = "Pull request is not mergeable: the base branch policy prohibits the merge"
+	autoMergeSetting = "auto_merge = true\n"
+	mergedText1      = "ENG-1 was approved and merged: " + prURL1
+	mergeCall1       = prURL1 + "|a1"
+	mergeRefused     = "Pull request is not mergeable: the base branch policy prohibits the merge"
 )
 
 func approvedPR(head string) prState {
@@ -27,7 +26,7 @@ func approvedPR(head string) prState {
 
 func TestTickMergesAnApprovedReadyPRInAListedRepo(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", approvedPR("a1"))
@@ -47,32 +46,21 @@ func TestTickMergesAnApprovedReadyPRInAListedRepo(t *testing.T) {
 	assert.Len(t, h.merges(), 1)
 }
 
-func TestTickMatchesTheRepoCaseInsensitively(t *testing.T) {
-	h := newHarness(t)
-	h.config("auto_merge = [\"Kapetan-IO/Dispatch\"]\n")
-	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
-	h.worker("ENG-1", "idle")
-	h.pr("ENG-1", approvedPR("a1"))
-
-	_, err := h.run("tick")
-	require.NoError(t, err)
-
-	assert.Len(t, h.merges(), 1)
-}
-
-func TestTickDoesNotMergeInARepoThatIsNotListed(t *testing.T) {
+func TestTickDoesNotMergeInARepoWithoutAutoMerge(t *testing.T) {
 	for _, test := range []struct {
-		name   string
-		config string
+		name     string
+		settings string
+		other    string
 	}{
-		{name: "NoAutoMerge", config: ""},
-		{name: "EmptyList", config: "auto_merge = []\n"},
-		{name: "OtherRepo", config: "auto_merge = [\"kapetan-io/tiger\"]\n"},
-		{name: "SameNameOtherOwner", config: "auto_merge = [\"someone/dispatch\"]\n"},
+		{name: "NoSetting"},
+		{name: "SetFalse", settings: "auto_merge = false\n"},
+		{name: "OnlyAnotherRepoSetsIt", other: "auto_merge = true\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
-			h.config(test.config)
+			h.addRepo("tiger", filepath.Join(h.dir, "tiger"))
+			h.repoSettings("dispatch", test.settings)
+			h.repoSettings("tiger", test.other)
 			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 			h.worker("ENG-1", "idle")
 			h.pr("ENG-1", approvedPR("a1"))
@@ -97,7 +85,7 @@ func TestTickDoesNotMergeAPRWithoutAnApprovalOnItsHead(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
-			h.config(autoMergeConfig)
+			h.repoSettings("dispatch", autoMergeSetting)
 			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 			h.worker("ENG-1", "idle")
 			h.pr("ENG-1", test.pr)
@@ -123,7 +111,7 @@ func TestTickDoesNotMergeAnApprovedPRThatIsNotReady(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
-			h.config(autoMergeConfig)
+			h.repoSettings("dispatch", autoMergeSetting)
 			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 			h.worker("ENG-1", "idle")
 			h.pr("ENG-1", test.pr)
@@ -138,7 +126,7 @@ func TestTickDoesNotMergeAnApprovedPRThatIsNotReady(t *testing.T) {
 
 func TestTickMergesAfterAnApprovalArrivesOnAnAlreadyAnnouncedHead(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", prState{head: "a1", checks: "SUCCESS", mergeable: "MERGEABLE"})
@@ -158,7 +146,7 @@ func TestTickMergesAfterAnApprovalArrivesOnAnAlreadyAnnouncedHead(t *testing.T) 
 
 func TestTickWaitsForANewApprovalAfterAPush(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", prState{head: "a2", checks: "SUCCESS", decision: "APPROVED", mergeable: "MERGEABLE", approved: []string{"a1"}})
@@ -176,7 +164,7 @@ func TestTickWaitsForANewApprovalAfterAPush(t *testing.T) {
 
 func TestTickReportsAFailedMergeOnceAndRetriesOnlyAfterAPush(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", approvedPR("a1"))
@@ -213,7 +201,7 @@ func TestTickReportsAFailedMergeOnceAndRetriesOnlyAfterAPush(t *testing.T) {
 
 func TestTickMergesNothingWhenThePRHeadMovesAfterTheApprovalWasRead(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", approvedPR("a1"))
@@ -240,7 +228,7 @@ func TestTickMergesNothingWhenThePRHeadMovesAfterTheApprovalWasRead(t *testing.T
 
 func TestTickDryRunNamesTheMergeWithoutMerging(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", approvedPR("a1"))
@@ -264,82 +252,10 @@ func TestTickReadsAutoMergeOnEveryTick(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, h.merges())
 
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	_, err = h.run("tick")
 	require.NoError(t, err)
 	assert.Len(t, h.merges(), 1)
-}
-
-func TestConfigRejectsAMalformedAutoMergeEntry(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		config string
-		want   string
-	}{
-		{name: "NoOwner", config: "auto_merge = [\"dispatch\"]\n", want: `auto_merge entry "dispatch" is not owner/name`},
-		{name: "ThreeParts", config: "auto_merge = [\"a/b/c\"]\n", want: `auto_merge entry "a/b/c" is not owner/name`},
-		{name: "Empty", config: "auto_merge = [\"\"]\n", want: `auto_merge entry "" is not owner/name`},
-		{name: "EmptyName", config: "auto_merge = [\"kapetan-io/\"]\n", want: `auto_merge entry "kapetan-io/" is not owner/name`},
-		{name: "Path", config: "auto_merge = [\"~/Development/dispatch\"]\n", want: `is not owner/name`},
-		{name: "OneBadAmongGood", config: "auto_merge = [\"kapetan-io/dispatch\", \"nope\"]\n", want: `auto_merge entry "nope" is not owner/name`},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			h := newHarness(t)
-			h.config(test.config)
-			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
-
-			_, err := h.run("tick")
-
-			require.ErrorContains(t, err, test.want)
-		})
-	}
-}
-
-func TestRunWarnsOncePerRunAboutAnAutoMergeEntryThatMatchesNoRepo(t *testing.T) {
-	h := newHarness(t)
-	h.config("auto_merge = [\"kapetan-io/dispatch\", \"kapetan-io/tiger\"]\n")
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	done := make(chan error, 1)
-	var stderr string
-
-	go func() {
-		var err error
-		_, stderr, err = h.runContext(ctx, "run", "--interval", "20ms")
-		done <- err
-	}()
-	require.Eventually(t, func() bool { return len(h.launches()) >= 4 }, 15*time.Second, 10*time.Millisecond)
-	cancel()
-
-	require.NoError(t, <-done)
-	assert.Equal(t, 1, strings.Count(stderr, `auto_merge entry "kapetan-io/tiger" matches no repo`))
-	assert.NotContains(t, stderr, `"kapetan-io/dispatch"`)
-	// The repo name is looked up once, not on every tick.
-	assert.Len(t, h.tools.Calls("pullrequest", "repo-name"), 1)
-}
-
-func TestTickWarnsAboutAnAutoMergeEntryThatMatchesNoRepoWithoutFailing(t *testing.T) {
-	h := newHarness(t)
-	h.config("auto_merge = [\"kapetan-io/tiger\"]\n")
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-
-	out, stderr, err := h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
-
-	assert.Equal(t, "launch ENG-1: ok\n", out)
-	assert.Contains(t, stderr, `warning: auto_merge entry "kapetan-io/tiger" matches no repo under [repos]`)
-}
-
-func TestTickSaysNothingOfAutoMergeWhenItIsEmpty(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-
-	_, stderr, err := h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
-
-	assert.Empty(t, stderr)
-	assert.Empty(t, h.tools.Calls("pullrequest", "repo-name"))
 }
 
 func (h *harness) prWithReview(url, state, commit string) {
@@ -359,7 +275,7 @@ func TestTickDoesNotMergeWhenTheReviewOnTheHeadIsNotAnApproval(t *testing.T) {
 	for _, state := range []string{"CHANGES_REQUESTED", "COMMENTED", "DISMISSED"} {
 		t.Run(state, func(t *testing.T) {
 			h := newHarness(t)
-			h.config(autoMergeConfig)
+			h.repoSettings("dispatch", autoMergeSetting)
 			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 			h.worker("ENG-1", "idle")
 			h.prWithReview(prURL1, state, "a1")
@@ -372,37 +288,9 @@ func TestTickDoesNotMergeWhenTheReviewOnTheHeadIsNotAnApproval(t *testing.T) {
 	}
 }
 
-func TestTickMatchesThePRByTheRepoItsURLNames(t *testing.T) {
-	const otherURL = "https://github.com/someone/fork/pull/7"
-
-	// The clone resolves to a listed repo, but the PR lives in another one.
-	h := newHarness(t)
-	h.config(autoMergeConfig)
-	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
-	h.worker("ENG-1", "idle")
-	h.prWithReview(otherURL, "APPROVED", "a1")
-
-	out, err := h.run("tick")
-	require.NoError(t, err)
-	assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
-	assert.Empty(t, h.merges())
-
-	// The PR's repo is listed, though the clone resolves to a different one.
-	h = newHarness(t)
-	h.config("auto_merge = [\"someone/fork\"]\n")
-	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
-	h.worker("ENG-1", "idle")
-	h.prWithReview(otherURL, "APPROVED", "a1")
-
-	out, err = h.run("tick")
-	require.NoError(t, err)
-	assert.Equal(t, "merge ENG-1: PR approved\n", out)
-	assert.Equal(t, []string{otherURL + "|a1"}, h.merges())
-}
-
 func TestTickDryRunLeavesTheMergeForTheNextRealTick(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", approvedPR("a1"))
@@ -421,7 +309,7 @@ func TestTickDryRunLeavesTheMergeForTheNextRealTick(t *testing.T) {
 
 func TestTickDoesNotRetryAFailedMergeOnAHeadAnnouncedAsReady(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", cleanPR("a1"))
@@ -441,46 +329,9 @@ func TestTickDoesNotRetryAFailedMergeOnAHeadAnnouncedAsReady(t *testing.T) {
 	assert.Len(t, h.notifications(), 2)
 }
 
-func TestTickWarnsWhenTheResolvedRepoIsNotTheListedOne(t *testing.T) {
-	h := newHarness(t)
-	h.config(autoMergeConfig)
-	h.tools.PullRequests.SetRepoName("kapetan-io/other")
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-
-	_, stderr, err := h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
-
-	assert.Contains(t, stderr, `auto_merge entry "kapetan-io/dispatch" matches no repo`)
-}
-
-func TestTickDoesNotWarnWhenTheEntryDiffersFromTheRepoOnlyInCase(t *testing.T) {
-	h := newHarness(t)
-	h.config("auto_merge = [\"KAPETAN-io/Dispatch\"]\n")
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-
-	_, stderr, err := h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
-
-	assert.Empty(t, stderr)
-}
-
-func TestTickDoesNotWarnWhenTheRepoNameCannotBeResolved(t *testing.T) {
-	h := newHarness(t)
-	h.config(autoMergeConfig)
-	h.tools.PullRequests.FailRepoName(errors.New("no remote"))
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-
-	out, stderr, err := h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
-
-	assert.Equal(t, "launch ENG-1: ok\n", out)
-	assert.NotContains(t, stderr, "matches no repo")
-	assert.Contains(t, stderr, "no remote")
-}
-
 func TestTickDoesNotRetryAFailedMergeAfterTheTicketLeavesTheReadAndReturns(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", approvedPR("a1"))
@@ -506,7 +357,7 @@ func TestTickDoesNotRetryAFailedMergeAfterTheTicketLeavesTheReadAndReturns(t *te
 // reviewer's latest review requests changes.
 func TestTickDoesNotMergeOverAnotherReviewersChangesRequested(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.respond("ENG-1", "", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
@@ -531,7 +382,7 @@ func TestTickDoesNotMergeOverAnotherReviewersChangesRequested(t *testing.T) {
 
 func TestTickDoesNotMergeAForkPRThatSharesTheWorkersBranchName(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	fork := approvedPR("evil")
@@ -548,7 +399,7 @@ func TestTickDoesNotMergeAForkPRThatSharesTheWorkersBranchName(t *testing.T) {
 
 func TestTickUsesTheWorkersPRWhenAForkPRSharesItsBranchName(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", approvedPR("a1"))
@@ -608,7 +459,7 @@ func (h *harness) forkPage(next string) {
 
 func TestTickFindsTheWorkersPRBehindAFullPageOfForkPRs(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", approvedPR("a1"))
@@ -625,7 +476,7 @@ func TestTickFindsTheWorkersPRBehindAFullPageOfForkPRs(t *testing.T) {
 
 func TestTickReportsABranchWhoseForkPRsFillEveryPageItReads(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", approvedPR("a1"))
