@@ -16,6 +16,10 @@ func repoSettings(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	labels, clone := reposAt(ctx, cfg, "")
+	if len(labels) > 1 {
+		return fmt.Errorf("repos.%s and repos.%s both resolve to %s: give each repo its own clone", labels[0], labels[1], clone)
+	}
 	label, repo, ok := repoAt(ctx, cfg, "")
 	if !ok {
 		dir, _ := os.Getwd()

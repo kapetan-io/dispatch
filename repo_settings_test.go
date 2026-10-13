@@ -150,3 +150,15 @@ func mustRead(t *testing.T, path string) string {
 	require.NoError(t, err)
 	return string(body)
 }
+
+func TestRepoSettingsFailsWhenTwoReposResolveToTheCloneAtTheWorkingDirectory(t *testing.T) {
+	clone := newHintRepo(t)
+	link := filepath.Join(t.TempDir(), "link")
+	require.NoError(t, os.Symlink(clone, link))
+	config := writeHintConfig(t, "[repos.alpha]\npath = \""+link+"\"\nauto_merge = true\n[repos.zeta]\npath = \""+clone+"\"\n")
+
+	out, err := runRepoSettings(t, clone, config)
+
+	require.ErrorContains(t, err, "repos.alpha and repos.zeta both resolve to "+clone+": give each repo its own clone")
+	assert.Empty(t, out)
+}
