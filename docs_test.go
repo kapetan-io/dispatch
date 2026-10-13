@@ -1,6 +1,7 @@
 package dispatch_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -123,4 +124,30 @@ func TestContextDefinesTheRepoSettingsTerms(t *testing.T) {
 	for _, term := range []string{"Repo settings", "Listed author", "Optional check", "PR phase", "Review question"} {
 		assert.Contains(t, string(body), "**"+term+"**:")
 	}
+}
+
+func TestGuideInstallCommandsMatchTheMarketplace(t *testing.T) {
+	var manifest, catalog struct {
+		Name    string `json:"name"`
+		Plugins []struct {
+			Name   string `json:"name"`
+			Source string `json:"source"`
+		} `json:"plugins"`
+	}
+	for file, into := range map[string]any{
+		".claude-plugin/plugin.json":      &manifest,
+		".claude-plugin/marketplace.json": &catalog,
+	} {
+		body, err := os.ReadFile(file)
+		require.NoError(t, err)
+		require.NoError(t, json.Unmarshal(body, into))
+	}
+
+	require.Len(t, catalog.Plugins, 1)
+	assert.Equal(t, manifest.Name, catalog.Plugins[0].Name)
+	assert.Equal(t, "./", catalog.Plugins[0].Source)
+
+	guide, err := os.ReadFile("docs/guide.md")
+	require.NoError(t, err)
+	assert.Contains(t, string(guide), "claude plugin install "+catalog.Plugins[0].Name+"@"+catalog.Name)
 }

@@ -15,9 +15,10 @@ You need a Mac with these on your PATH. dispatch shells out to all of them.
 | `git` | Used by `dispatch launch` to create the ticket's branch in its tree. |
 | `go` | Builds the `dispatch` CLI. |
 
-**1. Install the CLI** from your checkout of this repo, which is also the plugin workers load:
+**1. Clone this repo and install the CLI.** The clone is also the plugin workers load. `~/Development/dispatch` is the default location. If you clone elsewhere, set `plugin_root` in step 5.
 
 ```sh
+gh repo clone kapetan-io/dispatch ~/Development/dispatch
 cd ~/Development/dispatch && go install ./cmd/dispatch
 ```
 
@@ -50,7 +51,32 @@ path = "~/Development/dispatch"
 
 The [config reference](config.md) lists every other setting and has examples for several repos and renamed statuses. dispatch fails on a setting it doesn't know.
 
-**6. Start it.** Open a herdr window and run:
+**6. Load the plugin in your own Claude sessions.** Workers get the plugin from `plugin_root` on their own. Your session, the one that files tickets and supervises workers, needs it too, for `/dispatch:dispatch` and `dispatch:ticket`. The repo is its own marketplace, so install it once from your clone. Use your clone's path where the commands show `~/Development/dispatch`:
+
+```sh
+claude plugin marketplace add ~/Development/dispatch
+claude plugin install dispatch@dispatch
+```
+
+Every Claude session you start after that has the dispatch skills, and `claude plugin list` shows `dispatch@dispatch` enabled. The install is a snapshot of the clone's commit. After a `git pull`, run `claude plugin update dispatch@dispatch` and restart your session. For a single session without installing, run `claude --plugin-dir ~/Development/dispatch`.
+
+**7. Check the setup.** Run these in order. Each must pass before you start the dispatcher, and a failure points at the step to redo.
+
+```sh
+herdr --version && treehouse --version && gh auth status
+dispatch linear-viewer
+dispatch tick --dry-run
+claude plugin list
+```
+
+- The first line passes when `herdr` is 0.9.0 or later, `treehouse` is v3.1.2 or later and `gh` reports you logged in. A "command not found" or a logged-out `gh` means the tools table above is incomplete.
+- `dispatch linear-viewer` prints `{"id":"...","name":"..."}` for the owner of your Linear key. `no Linear API key` means step 2 is incomplete. An error naming a command is `api_key_command` failing. `Linear rejected the API key` means the key was revoked or mistyped. The `name` should be you, because dispatch manages only tickets assigned to the key's owner.
+- `dispatch tick --dry-run` prints one line per action and changes nothing. Move a test ticket that has the `ai` label and a `repo` label to In Progress first, and expect a `launch ENG-n` line for it. `unknown setting` means a typo in the config (step 5). `escalate ENG-n: its repo "x" is not in the dispatcher's config` means the label has no `[repos]` entry. `team ENG has no "Needs Human" status` means step 3 is incomplete. No lines at all means no ticket matches: check its assignee, label and status.
+- `claude plugin list` shows `dispatch@dispatch` enabled (step 6). Without it, `/dispatch:dispatch` is not found in your session.
+
+If every check passes, the setup is complete. Troubleshooting at the end of this guide covers the rest.
+
+**8. Start it.** Open a herdr window and run:
 
 ```sh
 dispatch run

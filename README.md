@@ -8,7 +8,7 @@ You design a feature with Claude in an interactive session. An autonomous review
 
 The dispatcher works end to end today. `dispatch run` launches a worker for each ticket you move to In Progress, nudges idle workers (once per Stop, never escalating them) and stalled PRs, escalates to Needs Human with a macOS notification, starts a parent ticket's children in order and closes the parent, and tears down finished trees. The `dispatch:build` skill carries a ticket to an open PR, and `dispatch:ticket` writes tickets the dispatcher picks up. Not built yet is the herdr workspace status emoji the blueprint describes.
 
-Start with the [user guide](docs/guide.md) to set it up and for troubleshooting, and the [config reference](docs/config.md) for every setting. The design is in `docs/design/`, starting with `decision-log.md`.
+Start with "Set it up" in the [user guide](docs/guide.md), which takes a fresh Mac to a working dispatcher and supervisor session and ends with a check you run to confirm it. The [config reference](docs/config.md) lists every setting. The design is in `docs/design/`, starting with `decision-log.md`.
 
 ## Layout
 
@@ -18,7 +18,7 @@ Start with the [user guide](docs/guide.md) to set it up and for troubleshooting,
 
 ## Development
 
-Load the plugin in place for one session:
+Load the plugin in place for one session (the [user guide](docs/guide.md) installs it for good):
 
 ```sh
 claude --plugin-dir ~/Development/dispatch

@@ -1,0 +1,13 @@
+{
+  "name": "dispatch",
+  "owner": {
+    "name": "Derrick J. Wippler"
+  },
+  "plugins": [
+    {
+      "name": "dispatch",
+      "source": "./",
+      "description": "An autonomous build workflow for Claude Code. Design a feature with you, then build approved Linear tickets into merged pull requests."
+    }
+  ]
+}
