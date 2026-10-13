@@ -2,20 +2,18 @@ package launcher
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/reconcile"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
@@ -34,58 +32,31 @@ const (
 	StatusInjectionUnconfirmed = "injection_unconfirmed"
 )
 
-// Request is one ticket to start a worker for.
-type Request struct {
-	Ticket string
-	// Title is the ticket's title. The worker's tab is labeled "<Ticket>
-	// <Title>", or just <Ticket> when it is empty.
-	Title  string
-	Branch string
-	// Base is the ref a new branch starts from. Defaults to the repo's default
-	// branch.
-	Base string
-	// Model is the Claude model the worker runs. Defaults to sonnet.
-	Model string
-	// Kickoff is the first command typed into the worker. Defaults to
-	// "/dispatch:build <Ticket>".
-	Kickoff string
-}
-
-// Options names the tools to drive and the places to run them. Zero values
-// take the defaults.
+// Options names the tools a Local launcher drives and the places it runs them.
+// Zero values take the defaults.
 type Options struct {
-	// RepoDir is where the launch starts looking for the target repo. Defaults
-	// to the working directory.
-	RepoDir string
 	// PluginRoot holds scripts/shims and is handed to the worker as its plugin.
 	// It has no default.
 	PluginRoot string
-	// Herdr and Git are the commands to run.
-	Herdr string
-	Git   string
+	// Herdr hosts the worker. Defaults to the installed herdr.
+	Herdr herdr.Herdr
 	// Treehouse is the pool to lease from. Defaults to the installed treehouse.
 	Treehouse treehouse.Pool
 	// Stderr receives progress. Defaults to discarding it.
 	Stderr io.Writer
-	// Trace, when set, is a file that every screen the kickoff step reads is
-	// appended to.
-	Trace string
 	// PreflightTimeout bounds the wait for the herdr server. Defaults to 60s.
 	PreflightTimeout time.Duration
-	// Pace is the unit of waiting between herdr polls. The server wait uses 5 and
-	// the agent restart 3. Defaults to 1s.
+	// Pace is the unit of waiting between polls for the herdr server, which waits 5 units.
+	// Defaults to 1s.
 	Pace time.Duration
 }
 
 func (o Options) withDefaults() Options {
-	if o.Herdr == "" {
-		o.Herdr = "herdr"
+	if o.Herdr == nil {
+		o.Herdr = herdr.NewCLI("herdr")
 	}
 	if o.Treehouse == nil {
 		o.Treehouse = treehouse.NewCLI("treehouse")
-	}
-	if o.Git == "" {
-		o.Git = "git"
 	}
 	if o.Stderr == nil {
 		o.Stderr = io.Discard
@@ -99,7 +70,16 @@ func (o Options) withDefaults() Options {
 	return o
 }
 
-// Run leases a treehouse tree for the ticket, opens a herdr workspace on it and
+// Local is the Launcher that leases a tree from the pool on this machine and
+// starts the worker in the herdr that hosts it.
+type Local struct {
+	opts Options
+}
+
+// New returns a Launcher over the tools in opts.
+func New(opts Options) *Local { return &Local{opts: opts.withDefaults()} }
+
+// Launch leases a treehouse tree for the ticket, opens a herdr workspace on it and
 // starts a Claude worker that is typed the kickoff. The Result says what
 // happened, and progress goes to Options.Stderr.
 //
@@ -110,9 +90,10 @@ func (o Options) withDefaults() Options {
 //
 // The herdr handling depends on nested worktree workspaces, an env-stamped tab,
 // waiting for the shell before starting the agent, answering the consent and
-// folder-trust dialogs, and confirming the kickoff landed.
-func Run(ctx context.Context, req Request, opts Options) Result {
-	l := &launch{req: req, opts: opts.withDefaults()}
+// folder-trust dialogs, and confirming the kickoff landed. The herdr adapter
+// does all of it behind OpenWorkspace, StartWorker and Kickoff.
+func (r *Local) Launch(ctx context.Context, req Request) Result {
+	l := &launch{req: req, opts: r.opts}
 	return l.run(ctx)
 }
 
@@ -123,9 +104,6 @@ type launch struct {
 	repo      string
 	tree      string
 	workspace string
-	pane      string
-	agent     string
-	unrun     bool // the launch command was last seen unexecuted at the shell prompt
 	// fresh is set when this run took the lease, as opposed to finding one from
 	// an earlier run.
 	fresh bool
@@ -157,7 +135,7 @@ func (l *launch) run(ctx context.Context) Result {
 	// and reports the worker done instead of blocked.
 	workerName := strings.ToLower(req.Ticket)
 
-	top, err := l.git(ctx, l.opts.RepoDir, "rev-parse", "--show-toplevel")
+	top, err := l.git(ctx, req.RepoDir, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return Result{Status: StatusNotARepo, Detail: "run from inside the target repo"}
 	}
@@ -179,33 +157,37 @@ func (l *launch) run(ctx context.Context) Result {
 	if r, ok := l.openWorkspace(ctx); !ok {
 		return r
 	}
-	if r, ok := l.startAgent(ctx, workerName); !ok {
+	started, r, ok := l.startWorker(ctx, workerName)
+	if !ok {
 		return r
 	}
 
 	// An unconfirmed kickoff closes the workspace. Left open, its idle Claude
 	// would look like a live worker, and no tick would retry or escalate.
-	if !l.inject(ctx) {
-		_ = l.herdr(context.WithoutCancel(ctx), "workspace", "close", l.workspace)
+	if err := l.opts.Herdr.Kickoff(ctx, started.Pane, req.Kickoff); err != nil {
+		_ = l.opts.Herdr.CloseWorkspace(context.WithoutCancel(ctx), l.workspace)
 		detail := "Claude started but herdr"
-		if l.unrun {
+		if errors.Is(err, herdr.ErrClaudeNeverStarted) {
 			detail = "Claude never started, because its launch command sat unrun at the shell prompt, and herdr"
 		}
 		return Result{
 			Status:    StatusInjectionUnconfirmed,
-			Detail:    detail + " never showed the kickoff running, so the workspace was closed and the next tick retries. Record the screens with Options.Trace (DISPATCH_LAUNCH_TRACE for `dispatch launch`).",
-			Workspace: l.workspace, Pane: l.pane, Worktree: l.tree,
+			Detail:    detail + " never showed the kickoff running, so the workspace was closed and the next tick retries. Record the screens with DISPATCH_LAUNCH_TRACE (`dispatch launch`).",
+			Workspace: l.workspace, Pane: started.Pane, Worktree: l.tree,
 		}
 	}
 	return Result{
 		Status: StatusOK, Ticket: req.Ticket, Branch: req.Branch, Worktree: l.tree,
-		Workspace: l.workspace, Pane: l.pane, Agent: l.agent, Kickoff: req.Kickoff,
+		Workspace: l.workspace, Pane: started.Pane, Agent: started.Agent, Kickoff: req.Kickoff,
 	}
 }
 
 func (l *launch) preflight(ctx context.Context) (Result, bool) {
 	deadline := time.Now().Add(l.opts.PreflightTimeout)
-	for l.herdr(ctx, "workspace", "list") != nil {
+	for {
+		if _, err := l.opts.Herdr.Read(ctx); err == nil {
+			return Result{}, true
+		}
 		if !time.Now().Before(deadline) {
 			return Result{Status: StatusHerdrUnavailable, Detail: "herdr server not answering"}, false
 		}
@@ -214,7 +196,6 @@ func (l *launch) preflight(ctx context.Context) (Result, bool) {
 			return Result{Status: StatusHerdrUnavailable, Detail: "interrupted while waiting for the herdr server"}, false
 		}
 	}
-	return Result{}, true
 }
 
 // trackBranch reports whether the branch already exists, locally or on origin,
@@ -326,7 +307,7 @@ func (l *launch) giveBack(ctx context.Context) {
 	// The lease goes back only after the workspace is confirmed closed. A tree
 	// returned with its workspace still open would match that workspace by
 	// path, so the next ticket to lease it would never start.
-	if l.workspace != "" && l.herdr(ctx, "workspace", "close", l.workspace) != nil {
+	if l.workspace != "" && l.opts.Herdr.CloseWorkspace(ctx, l.workspace) != nil {
 		l.log("workspace %s did not close, keeping the lease on %s", l.workspace, l.tree)
 		return
 	}
@@ -340,314 +321,60 @@ func (l *launch) returnLease(ctx context.Context) {
 	}
 }
 
-type pane struct {
-	PaneID      string `json:"pane_id"`
-	WorkspaceID string `json:"workspace_id"`
-	TabID       string `json:"tab_id"`
-	Agent       string `json:"agent"`
-}
-
-func (l *launch) panes(ctx context.Context) []pane {
-	var r struct {
-		Result struct {
-			Panes []pane `json:"panes"`
-		} `json:"result"`
-	}
-	_ = l.herdrJSON(ctx, &r, "pane", "list")
-	return r.Result.Panes
-}
-
 func (l *launch) openWorkspace(ctx context.Context) (Result, bool) {
-	var list struct {
-		Result struct {
-			Workspaces []struct {
-				WorkspaceID string `json:"workspace_id"`
-				Worktree    *struct {
-					CheckoutPath string `json:"checkout_path"`
-				} `json:"worktree"`
-			} `json:"workspaces"`
-		} `json:"result"`
+	snap, err := l.opts.Herdr.Read(ctx)
+	if err != nil {
+		l.giveBack(ctx)
+		return Result{Status: StatusWorkspaceFailed, Detail: fmt.Sprintf("while reading herdr for %s: %v", l.tree, err), Worktree: l.tree}, false
 	}
-	_ = l.herdrJSON(ctx, &list, "workspace", "list")
-	for _, w := range list.Result.Workspaces {
-		if w.Worktree != nil && w.Worktree.CheckoutPath == l.tree {
-			l.workspace = w.WorkspaceID
+	for _, w := range snap.Workspaces {
+		if w.CheckoutPath == l.tree {
+			l.workspace = w.ID
 			break
 		}
 	}
-
 	if l.workspace != "" {
-		for _, p := range l.panes(ctx) {
-			if p.WorkspaceID == l.workspace && p.Agent == "claude" {
+		for _, a := range snap.Agents {
+			if a.WorkspaceID == l.workspace && a.Kind == "claude" {
 				return Result{
 					Status:    StatusAlreadyRunning,
-					Detail:    fmt.Sprintf("workspace %s already has a Claude pane (%s); not typing a second kickoff", l.workspace, p.PaneID),
-					Workspace: l.workspace, Pane: p.PaneID, Worktree: l.tree,
+					Detail:    fmt.Sprintf("workspace %s already has a Claude pane (%s); not typing a second kickoff", l.workspace, a.PaneID),
+					Workspace: l.workspace, Pane: a.PaneID, Worktree: l.tree,
 				}, false
 			}
 		}
+		return Result{}, true
 	}
 
-	// The checkout opens as a worktree so its workspace nests under the repo in
-	// herdr's sidebar. There is no bare-workspace fallback, since herdr reports
-	// a bare workspace with no worktree path, so the dispatcher could never find
-	// its worker and would launch another one on every tick.
-	if l.workspace == "" {
-		// herdr refuses a linked worktree as the source, so name the main
-		// checkout even when the launcher runs from inside a pool tree.
-		common, _ := l.git(ctx, l.repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
-		mainCheckout := filepath.Dir(strings.TrimSpace(common))
-		out, _ := l.herdrCombined(ctx, "worktree", "open", "--cwd", mainCheckout, "--path", l.tree, "--label", l.req.Ticket, "--no-focus", "--json")
-		var opened struct {
-			Result struct {
-				Worktree struct {
-					OpenWorkspaceID string `json:"open_workspace_id"`
-				} `json:"worktree"`
-				Workspace struct {
-					WorkspaceID string `json:"workspace_id"`
-				} `json:"workspace"`
-			} `json:"result"`
-		}
-		_ = json.Unmarshal([]byte(out), &opened)
-		l.workspace = opened.Result.Worktree.OpenWorkspaceID
-		if l.workspace == "" {
-			l.workspace = opened.Result.Workspace.WorkspaceID
-		}
-		if l.workspace == "" {
-			l.giveBack(ctx)
-			return Result{Status: StatusWorkspaceFailed, Detail: fmt.Sprintf("herdr worktree open failed for %s: %s", l.tree, out), Worktree: l.tree}, false
-		}
-	}
-
-	// The shim dir carries a `claude` wrapper that re-adds the plugin and worker
-	// flags when herdr restarts it with a bare `claude --resume`, since herdr
-	// does not replay agent argv. worktree open carries no --env but tab create
-	// does, so the worker runs in a fresh stamped tab and the agent-less tabs
-	// the workspace opened with are closed.
-	shims := filepath.Join(l.opts.PluginRoot, "scripts", "shims")
-	out, _ := l.herdrCombined(ctx, "tab", "create", "--workspace", l.workspace, "--cwd", l.tree, "--label", l.tabLabel(),
-		"--env", "PATH="+shims+":"+os.Getenv("PATH"),
-		"--env", "AUTONOMOUS_WORKER=1",
-		"--env", "DISPATCH_PLUGIN_ROOT="+l.opts.PluginRoot,
-		"--no-focus")
-	var created struct {
-		Result struct {
-			RootPane struct {
-				PaneID string `json:"pane_id"`
-			} `json:"root_pane"`
-		} `json:"result"`
-	}
-	_ = json.Unmarshal([]byte(out), &created)
-	l.pane = created.Result.RootPane.PaneID
-	if l.pane == "" {
-		l.giveBack(ctx)
-		return Result{Status: StatusWorkspaceFailed, Detail: fmt.Sprintf("herdr tab create failed in %s: %s", l.workspace, out), Workspace: l.workspace, Worktree: l.tree}, false
-	}
-	stale := map[string]bool{}
-	for _, p := range l.panes(ctx) {
-		if p.WorkspaceID == l.workspace && p.PaneID != l.pane && p.Agent == "" {
-			stale[p.TabID] = true
-		}
-	}
-	tabs := make([]string, 0, len(stale))
-	for id := range stale {
-		if id != "" {
-			tabs = append(tabs, id)
-		}
-	}
-	sort.Strings(tabs)
-	for _, id := range tabs {
-		_ = l.herdr(ctx, "tab", "close", id)
-	}
-	return Result{}, true
-}
-
-type agentInfo struct {
-	Name   string `json:"name"`
-	PaneID string `json:"pane_id"`
-	Agent  string `json:"agent"`
-	Status string `json:"agent_status"`
-}
-
-func (l *launch) agents(ctx context.Context) []agentInfo {
-	var r struct {
-		Result struct {
-			Agents []agentInfo `json:"agents"`
-		} `json:"result"`
-	}
-	_ = l.herdrJSON(ctx, &r, "agent", "list")
-	return r.Result.Agents
-}
-
-func (l *launch) paneHasClaude(ctx context.Context) bool {
-	for _, a := range l.agents(ctx) {
-		if a.PaneID == l.pane && a.Agent == "claude" {
-			return true
-		}
-	}
-	return false
-}
-
-var shellPrompt = regexp.MustCompile(`[>❯$%]`)
-
-func (l *launch) startAgent(ctx context.Context, workerName string) (Result, bool) {
-	start := func() bool {
-		l.agent = workerName
-		for _, a := range l.agents(ctx) {
-			if a.Name == l.agent {
-				l.agent = fmt.Sprintf("%s-r%d", workerName, rand.IntN(32768))
-				break
-			}
-		}
-		// A fresh pane rejects agent start until its shell has drawn a prompt.
-		for try := 1; try <= 15; try++ {
-			if out, err := l.herdrOut(ctx, "pane", "read", l.pane); err == nil && shellPrompt.MatchString(out) {
-				break
-			}
-			l.log("pane %s shell not ready yet (%d/15)", l.pane, try)
-			l.sleep(ctx, l.opts.Pace)
-		}
-		out, err := l.herdrCombined(ctx, "agent", "start", l.agent, "--kind", "claude", "--pane", l.pane, "--timeout", "90000", "--",
-			"--model", l.req.Model, "--plugin-dir", l.opts.PluginRoot,
-			"--disallowedTools", "EnterPlanMode,ExitPlanMode", "--dangerously-skip-permissions")
-		if err != nil {
-			l.log("agent start failed: %s", out)
-			return false
-		}
-		return true
-	}
-	// A timed-out start may still bring Claude up, so retry only into a pane
-	// that has no Claude agent.
-	ok := start()
-	if !ok {
-		l.sleep(ctx, 3*l.opts.Pace)
-		ok = l.paneHasClaude(ctx) || start()
-	}
-	if !ok && !l.paneHasClaude(ctx) {
-		l.giveBack(ctx)
-		return Result{Status: StatusAgentStartFailed, Detail: "herdr agent start failed in pane " + l.pane, Workspace: l.workspace, Pane: l.pane, Worktree: l.tree}, false
-	}
-	return Result{}, true
-}
-
-// inject types the kickoff and reports whether it landed.
-//
-// A submitted kickoff is confirmed by herdr's agent status leaving idle, never
-// by finding its text on screen. While a skill runs, Claude's screen shows only
-// the spinner and an empty input box, and a text probe misread that as a lost
-// kickoff and typed it again. The kickoff is retyped only while the agent is
-// still idle with the text gone from its input box.
-func (l *launch) inject(ctx context.Context) bool {
-	kickoff := l.req.Kickoff
-	// A prefix is enough to find the typed kickoff, which Claude may wrap.
-	probe := kickoff
-	if r := []rune(kickoff); len(r) > 24 {
-		probe = string(r[:24])
-	}
-	visible := func() string {
-		out, _ := l.herdrOut(ctx, "agent", "read", l.pane, "--source", "visible", "--lines", "30")
-		return strings.ReplaceAll(out, "\n", " ")
-	}
-	_ = l.herdr(ctx, "agent", "wait", l.pane, "--until", "idle", "--timeout", "15000")
-	ready := false
-	consentTry := 0
-	for range 30 {
-		screen := visible()
-		l.trace("dialogs", screen)
-		lower := strings.ToLower(screen)
-		// One-time bypass-permissions consent. Match the option text, never
-		// "bypass permissions", which the status line shows forever after.
-		if strings.Contains(lower, "yes, i accept") {
-			if consentTry%2 == 0 {
-				_ = l.herdr(ctx, "pane", "send-keys", l.pane, "Down", "Enter")
-			} else {
-				_ = l.herdr(ctx, "pane", "send-keys", l.pane, "2")
-				_ = l.herdr(ctx, "pane", "send-keys", l.pane, "Enter")
-			}
-			consentTry++
-			l.sleep(ctx, l.opts.Pace)
-			continue
-		}
-		// First-run folder trust. The cursor may default to "No, exit".
-		if strings.Contains(lower, "trust this folder") {
-			if cursorOnNo.MatchString(screen) {
-				_ = l.herdr(ctx, "pane", "send-keys", l.pane, "Down")
-			}
-			_ = l.herdr(ctx, "pane", "send-keys", l.pane, "Enter")
-			l.sleep(ctx, l.opts.Pace)
-			continue
-		}
-		// The shell's own prompt also draws ❯. A launch command still after it
-		// means Enter was lost, so press it rather than type the kickoff onto
-		// that command line.
-		if shellCommand.MatchString(screen) {
-			l.unrun = true
-			_ = l.herdr(ctx, "pane", "send-keys", l.pane, "Enter")
-			l.sleep(ctx, l.opts.Pace)
-			continue
-		}
-		if strings.Contains(screen, "❯") {
-			l.unrun = false
-			ready = true
-			break
-		}
-		l.sleep(ctx, l.opts.Pace)
-	}
-	if !ready {
-		return false
-	}
-	wait := func() bool {
-		return l.herdr(ctx, "agent", "wait", l.pane, "--until", "working", "--until", "blocked", "--timeout", "15000") == nil
-	}
-	for try := 1; try <= 3; try++ {
-		l.trace("typing", fmt.Sprintf("%s (try %d)", kickoff, try))
-		_ = l.herdr(ctx, "pane", "run", l.pane, kickoff)
-		_ = l.herdr(ctx, "pane", "send-keys", l.pane, "Enter")
-		if wait() {
-			return true
-		}
-		screen := visible()
-		l.trace("not-working", screen)
-		// Retype only while the agent sits idle. done means a fast kickoff
-		// already ran, and working or blocked means it is running, so never type
-		// it again.
-		var status string
-		for _, a := range l.agents(ctx) {
-			if a.PaneID == l.pane {
-				status = a.Status
-				break
-			}
-		}
-		switch status {
-		case "idle": // fall through to the retype
-		case "working", "blocked", "done":
-			return true
-		default:
-			return false
-		}
-		// Typed but never submitted, so press Enter rather than type it twice.
-		if strings.Contains(screen, probe) {
-			_ = l.herdr(ctx, "pane", "send-keys", l.pane, "Enter")
-			return wait()
-		}
-	}
-	return false
-}
-
-var shellCommand = regexp.MustCompile(`❯ *claude +--`)
-
-var cursorOnNo = regexp.MustCompile(`(?i)❯ *(no|don.t)`)
-
-func (l *launch) trace(label, body string) {
-	if l.opts.Trace == "" {
-		return
-	}
-	f, err := os.OpenFile(l.opts.Trace, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	// herdr refuses a linked worktree as the source, so name the main
+	// checkout even when the launcher runs from inside a pool tree.
+	common, _ := l.git(ctx, l.repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	id, err := l.opts.Herdr.OpenWorkspace(ctx, herdr.NewWorkspace{Repo: filepath.Dir(strings.TrimSpace(common)), Path: l.tree, Label: l.req.Ticket})
 	if err != nil {
-		return
+		l.giveBack(ctx)
+		return Result{Status: StatusWorkspaceFailed, Detail: err.Error(), Worktree: l.tree}, false
 	}
-	defer func() { _ = f.Close() }()
-	_, _ = fmt.Fprintf(f, "=== %s %s\n%s\n", time.Now().Format("15:04:05"), label, body)
+	l.workspace = id
+	return Result{}, true
+}
+
+func (l *launch) startWorker(ctx context.Context, name string) (herdr.Started, Result, bool) {
+	started, err := l.opts.Herdr.StartWorker(ctx, herdr.Worker{
+		Workspace:  l.workspace,
+		Dir:        l.tree,
+		Label:      l.tabLabel(),
+		Name:       name,
+		Model:      l.req.Model,
+		PluginRoot: l.opts.PluginRoot,
+	})
+	if err == nil {
+		return started, Result{}, true
+	}
+	l.giveBack(ctx)
+	if started.Pane == "" {
+		return started, Result{Status: StatusWorkspaceFailed, Detail: err.Error(), Workspace: l.workspace, Worktree: l.tree}, false
+	}
+	return started, Result{Status: StatusAgentStartFailed, Detail: err.Error(), Workspace: l.workspace, Pane: started.Pane, Worktree: l.tree}, false
 }
 
 func (l *launch) sleep(ctx context.Context, d time.Duration) bool {
@@ -659,33 +386,11 @@ func (l *launch) sleep(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-func (l *launch) herdr(ctx context.Context, args ...string) error {
-	return exec.CommandContext(ctx, l.opts.Herdr, args...).Run()
-}
-
-func (l *launch) herdrOut(ctx context.Context, args ...string) (string, error) {
-	out, err := exec.CommandContext(ctx, l.opts.Herdr, args...).Output()
-	return string(out), err
-}
-
-func (l *launch) herdrCombined(ctx context.Context, args ...string) (string, error) {
-	out, err := exec.CommandContext(ctx, l.opts.Herdr, args...).CombinedOutput()
-	return strings.TrimRight(string(out), "\n"), err
-}
-
-func (l *launch) herdrJSON(ctx context.Context, into any, args ...string) error {
-	out, err := l.herdrOut(ctx, args...)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal([]byte(out), into)
-}
-
 func (l *launch) git(ctx context.Context, dir string, args ...string) (string, error) {
 	if dir != "" {
 		args = append([]string{"-C", dir}, args...)
 	}
-	out, err := exec.CommandContext(ctx, l.opts.Git, args...).Output()
+	out, err := exec.CommandContext(ctx, "git", args...).Output()
 	return string(out), err
 }
 
@@ -720,7 +425,7 @@ func (l *launch) defaultBranch(ctx context.Context) string {
 }
 
 func (l *launch) gitToStderr(ctx context.Context, dir string, args ...string) error {
-	cmd := exec.CommandContext(ctx, l.opts.Git, append([]string{"-C", dir}, args...)...)
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 	cmd.Stdout, cmd.Stderr = l.opts.Stderr, l.opts.Stderr
 	return cmd.Run()
 }

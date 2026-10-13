@@ -3,15 +3,13 @@ package dispatch_test
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -25,6 +23,7 @@ import (
 
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/herdr"
+	"github.com/kapetan-io/dispatch/internal/launcher"
 	"github.com/kapetan-io/dispatch/internal/tooltest"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
@@ -50,7 +49,7 @@ func TestTickLaunchesApprovedTicketWithNoWorker(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "launch ENG-1: ok\n", out)
-	assert.Equal(t, []string{h.repo + " ENG-1 thrawn01/eng-1 --model sonnet --no-focus"}, h.launches())
+	assert.Equal(t, []string{h.repo + " ENG-1 thrawn01/eng-1 --model sonnet"}, h.launches())
 	assert.Empty(t, h.linear.mutations())
 }
 
@@ -262,7 +261,7 @@ func TestTickHoldsBackOnlyTheRepoWhosePoolCannotBeRead(t *testing.T) {
 
 	assert.Equal(t, "wait ENG-2: the tiger pool could not be read this tick\nlaunch ENG-1: ok\n", out)
 	assert.Contains(t, stderr, "dispatch: while reading the tiger pool:")
-	assert.Equal(t, []string{h.repo + " ENG-1 thrawn01/eng-1 --model sonnet --no-focus"}, h.launches())
+	assert.Equal(t, []string{h.repo + " ENG-1 thrawn01/eng-1 --model sonnet"}, h.launches())
 	assert.Empty(t, h.linear.mutations())
 }
 
@@ -367,7 +366,7 @@ func TestRunTicksOnEachIntervalUntilCanceled(t *testing.T) {
 		out, _, err = h.runContext(ctx, "run", "--interval", "20ms")
 		done <- err
 	}()
-	// The fake herdr never shows a worker, so every tick launches ENG-1 again.
+	// The fake launcher starts no worker herdr could show, so every tick launches ENG-1 again.
 	// A 4th launch proves the 3rd tick printed before cancellation could drop it.
 	require.Eventually(t, func() bool { return len(h.launches()) >= 4 }, 15*time.Second, 10*time.Millisecond)
 	cancel()
@@ -442,8 +441,8 @@ const (
 	viewerID     = "viewer-1"
 )
 
-// harness runs the dispatcher against a fake Linear server, the in-process
-// fakes in tools (herdr, treehouse, notifications) and gh and launcher scripts,
+// harness runs the dispatcher against a fake Linear server and the in-process
+// fakes in tools (herdr, treehouse, pull requests, notifications, launcher),
 // all rooted in one temp directory.
 type harness struct {
 	t      *testing.T
@@ -455,8 +454,7 @@ type harness struct {
 	linear *fakeLinear
 	tools  *tooltest.Tools
 	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
-	// with the launcher built into dispatch. That launcher still runs the herdr
-	// script from fakeHerdr, so it shares no state with tools.Herdr.
+	// with the launcher built into dispatch, over tools.Herdr and tools.Treehouse.
 	builtinLauncher bool
 	// clock is the time every command sees, and moves only through advance.
 	clock time.Time
@@ -477,9 +475,6 @@ func newHarness(t *testing.T) *harness {
 		pages:  map[string][]byte{},
 	}
 	require.NoError(t, os.MkdirAll(h.repo, 0o755))
-	h.writeFile("launch.json", `{"status":"ok"}`)
-	h.script("launcher", `echo "$PWD $*" >> "`+dir+`/launches.log"
-cat "`+dir+`/launch.json"`)
 	return h
 }
 
@@ -511,12 +506,11 @@ func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...s
 	extra.LinearURL = h.linear.server.URL
 	extra.LinearKey = "test-key"
 	extra.Herdr = h.tools.Herdr
-	extra.HerdrCommand = filepath.Join(h.dir, "herdr")
 	extra.Treehouse = h.tools.Treehouse
 	extra.PullRequests = h.tools.PullRequests
 	extra.Alerts = h.tools.Alerts
 	if !h.builtinLauncher {
-		extra.Launcher = filepath.Join(h.dir, "launcher")
+		extra.Launcher = h.tools.Launcher
 	}
 	extra.LaunchPace = time.Millisecond
 	extra.Stdout = &stdout
@@ -631,83 +625,41 @@ func (h *harness) returns() []string {
 	return h.tools.Calls("treehouse", "return")
 }
 
+// pool makes the harness's repo a git repo that treehouse pools, with one tree
+// in it, and returns the tree's path.
+func (h *harness) pool() string {
+	tree := filepath.Join(h.dir, "tree")
+	require.NoError(h.t, os.WriteFile(filepath.Join(h.repo, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "init"},
+		{"worktree", "add", "-q", "--detach", tree},
+	} {
+		out, err := exec.Command("git", append([]string{"-C", h.repo}, args...)...).CombinedOutput()
+		require.NoError(h.t, err, string(out))
+	}
+	h.tools.Treehouse.AddTree(h.repo, tree)
+	return tree
+}
+
 func (h *harness) launchResult(result string) {
-	h.writeFile("launch.json", result)
+	var r launcher.Result
+	require.NoError(h.t, json.Unmarshal([]byte(result), &r))
+	h.tools.Launcher.Answer(r)
 }
 
+// launches lists the launch requests the dispatcher made, as
+// "<repo> <ticket> <branch> --model <model>" plus " --kickoff <text>" when one was set.
 func (h *harness) launches() []string {
-	b, err := os.ReadFile(filepath.Join(h.dir, "launches.log"))
-	if os.IsNotExist(err) {
-		return nil
+	var found []string
+	for _, r := range h.tools.Launcher.Launched() {
+		line := fmt.Sprintf("%s %s %s --model %s", r.RepoDir, r.Ticket, r.Branch, r.Model)
+		if r.Kickoff != "" {
+			line += " --kickoff " + r.Kickoff
+		}
+		found = append(found, line+"")
 	}
-	require.NoError(h.t, err)
-	return strings.Split(strings.TrimSpace(string(b)), "\n")
-}
-
-func (h *harness) script(name, body string) {
-	writeFake(h.t, filepath.Join(h.dir, name), h.dir, body)
-}
-
-// standInTreehouse is the name a test symlinks this test binary under, so a
-// subprocess that runs `treehouse` gets runStandInTreehouse instead of the
-// installed tool or its real pool.
-const standInTreehouse = "treehouse"
-
-// standInTreeEnv names the variable holding the path the stand-in leases.
-const standInTreeEnv = "DISPATCH_STAND_IN_TREE"
-
-// runStandInTreehouse answers the commands a launch makes from a subprocess,
-// which the in-process fake can't reach. It tracks no leases, so only the
-// wrapper test uses it, and the drift check covers the wrapper against the
-// real tools.
-func runStandInTreehouse(args []string, stdout io.Writer) int {
-	switch {
-	case len(args) > 0 && args[0] == "status":
-		_, _ = fmt.Fprintln(stdout, "[]")
-	case len(args) > 0 && args[0] == "get":
-		_, _ = fmt.Fprintf(stdout, "{\"path\":%q}\n", os.Getenv(standInTreeEnv))
-	case len(args) > 0 && args[0] == "return":
-	default:
-		return 2
-	}
-	return 0
-}
-
-// fakeDirEnv names the variable that tells a shared fake which test's files to use.
-const fakeDirEnv = "DISPATCH_TEST_DIR"
-
-// sharedFakes holds one copy of each distinct fake script for the whole run.
-var sharedFakes string
-
-func TestMain(m *testing.M) {
-	if filepath.Base(os.Args[0]) == standInTreehouse {
-		os.Exit(runStandInTreehouse(os.Args[1:], os.Stdout))
-	}
-	var err error
-	if sharedFakes, err = os.MkdirTemp("", "dispatch-fakes"); err != nil {
-		panic(err)
-	}
-	code := m.Run()
-	_ = os.RemoveAll(sharedFakes)
-	os.Exit(code)
-}
-
-// writeFake installs a fake command at dest. macOS pays about a second for the
-// first run of every new executable file, so identical scripts are shared across
-// tests and find the test's own files through fakeDirEnv instead of a baked-in path.
-func writeFake(t *testing.T, dest, dir, body string) {
-	t.Helper()
-	body = "#!/usr/bin/env bash\n" + strings.ReplaceAll(body, dir, "$"+fakeDirEnv) + "\n"
-	sum := sha256.Sum256([]byte(body))
-	shared := filepath.Join(sharedFakes, hex.EncodeToString(sum[:8]))
-	if _, err := os.Stat(shared); err != nil {
-		tmp := shared + ".tmp"
-		require.NoError(t, os.WriteFile(tmp, []byte(body), 0o755))
-		require.NoError(t, os.Rename(tmp, shared))
-	}
-	_ = os.Remove(dest)
-	require.NoError(t, os.Symlink(shared, dest))
-	t.Setenv(fakeDirEnv, dir)
+	return found
 }
 
 func (h *harness) removeFile(name string) {

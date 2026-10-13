@@ -26,6 +26,9 @@ type reply struct {
 // the adapter's reading of herdr output is tested without a shell script. It
 // answers each command line with the reply the test gave for it.
 func TestMain(m *testing.M) {
+	if dir, ok := os.LookupEnv(envState); ok {
+		os.Exit(runStatefulStandIn(dir, os.Args[1:]))
+	}
 	if raw, ok := os.LookupEnv(envReplies); ok {
 		var replies map[string]reply
 		if err := json.Unmarshal([]byte(raw), &replies); err != nil {

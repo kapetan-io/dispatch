@@ -2,14 +2,34 @@
 // worker for one ticket.
 package launcher
 
-import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"fmt"
-	"os/exec"
-	"strings"
-)
+import "context"
+
+// Launcher starts a worker for a ticket.
+type Launcher interface {
+	// Launch leases a tree for the ticket's branch and starts a Claude worker on
+	// it. The Result says what happened, and never fails to carry a status.
+	Launch(ctx context.Context, r Request) Result
+}
+
+// Request is one ticket to start a worker for.
+type Request struct {
+	// RepoDir is where the launch starts looking for the target repo. Defaults
+	// to the working directory.
+	RepoDir string
+	Ticket  string
+	// Title is the ticket's title. The worker's tab is labeled "<Ticket>
+	// <Title>", or just <Ticket> when it is empty.
+	Title  string
+	Branch string
+	// Base is the ref a new branch starts from. Defaults to the repo's default
+	// branch.
+	Base string
+	// Model is the Claude model the worker runs. Defaults to sonnet.
+	Model string
+	// Kickoff is the first command typed into the worker. Defaults to
+	// "/dispatch:build <Ticket>".
+	Kickoff string
+}
 
 // Launcher statuses that the dispatcher treats specially.
 const (
@@ -41,29 +61,4 @@ func (r Result) Succeeded() bool {
 // full pool is waiting, not failing, and an existing worker is success.
 func (r Result) Failed() bool {
 	return !r.Succeeded() && r.Status != StatusPoolExhausted
-}
-
-// Launch runs `<bin> <ticket> <branch> --model <model> [--kickoff <kickoff>]
-// --no-focus` from repoDir. It drives an external launcher program in place of
-// Run.
-func Launch(ctx context.Context, bin, repoDir, ticket, branch, model, kickoff string) Result {
-	args := []string{ticket, branch, "--model", model}
-	if kickoff != "" {
-		args = append(args, "--kickoff", kickoff)
-	}
-	cmd := exec.CommandContext(ctx, bin, append(args, "--no-focus")...)
-	cmd.Dir = repoDir
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	runErr := cmd.Run()
-	var r Result
-	if err := json.Unmarshal(stdout.Bytes(), &r); err != nil || r.Status == "" {
-		detail := strings.TrimSpace(stderr.String())
-		if runErr != nil {
-			detail = fmt.Sprintf("%v: %s", runErr, detail)
-		}
-		return Result{Status: "launcher_error", Detail: detail}
-	}
-	return r
 }

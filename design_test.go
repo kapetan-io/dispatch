@@ -1,8 +1,6 @@
 package dispatch_test
 
 import (
-	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -35,8 +33,8 @@ func TestTickLaunchesADesignTicketWithTheDesignKickoff(t *testing.T) {
 
 	assert.Equal(t, "launch ENG-1: ok\nlaunch ENG-2: ok\n", out)
 	assert.Equal(t, []string{
-		h.repo + " ENG-1 thrawn01/eng-1 --model opus --kickoff /dispatch:design ENG-1 --no-focus",
-		h.repo + " ENG-2 thrawn01/eng-2 --model sonnet --no-focus",
+		h.repo + " ENG-1 thrawn01/eng-1 --model opus --kickoff /dispatch:design ENG-1",
+		h.repo + " ENG-2 thrawn01/eng-2 --model sonnet",
 	}, h.launches())
 }
 
@@ -48,35 +46,22 @@ func TestTickRunsTheDesignOnTheConfiguredModel(t *testing.T) {
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{h.repo + " ENG-1 thrawn01/eng-1 --model fable --kickoff /dispatch:design ENG-1 --no-focus"}, h.launches())
+	assert.Equal(t, []string{h.repo + " ENG-1 thrawn01/eng-1 --model fable --kickoff /dispatch:design ENG-1"}, h.launches())
 }
 
 func TestTickTypesTheDesignKickoffWithTheBuiltInLauncher(t *testing.T) {
 	h := newHarness(t)
 	h.builtinLauncher = true
 	h.tickets(designTicket("ENG-1", "In Progress"))
-	tree := filepath.Join(h.dir, "tree")
-	require.NoError(t, os.WriteFile(filepath.Join(h.repo, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
-	for _, args := range [][]string{
-		{"init", "-q", "-b", "main"},
-		{"-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "init"},
-		{"worktree", "add", "-q", "--detach", tree},
-	} {
-		out, err := exec.Command("git", append([]string{"-C", h.repo}, args...)...).CombinedOutput()
-		require.NoError(t, err, string(out))
-	}
-	h.script("herdr", fakeHerdr(h.dir))
-	h.tools.Treehouse.AddTree(h.repo, tree)
-	for _, name := range []string{"open-works", "tab-works", "start-works"} {
-		h.writeFile(name, "")
-	}
+	h.pool()
 
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
 	assert.Equal(t, "launch ENG-1: ok\n", out)
-	assert.Equal(t, "w9:p1 /dispatch:design ENG-1\n", string(h.readFile("runs.log")))
-	assert.Contains(t, string(h.readFile("starts.log")), "--model opus")
+	assert.Equal(t, []string{"w2:p2|/dispatch:design ENG-1"}, h.tools.Herdr.Kicked())
+	require.Len(t, h.tools.Herdr.Started(), 1)
+	assert.Equal(t, "opus", h.tools.Herdr.Started()[0].Model)
 }
 
 func TestTickNeverNudgesOrEscalatesADesignWorker(t *testing.T) {
@@ -153,7 +138,7 @@ func TestTickLaunchesAChildOfADesignTicketAsABuild(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "launch ENG-2: ok\n", out)
-	assert.Equal(t, []string{h.repo + " ENG-2 thrawn01/eng-2 --model sonnet --no-focus"}, h.launches())
+	assert.Equal(t, []string{h.repo + " ENG-2 thrawn01/eng-2 --model sonnet"}, h.launches())
 }
 
 func TestTickCountsADesignTicketAgainstTheWorkerCap(t *testing.T) {
@@ -192,7 +177,7 @@ func TestTickLaunchesADesignReviewTicketOnTheDesignModel(t *testing.T) {
 
 	assert.Equal(t, "launch ENG-1: ok\n", out)
 	assert.Equal(t, []string{
-		h.repo + " ENG-1 thrawn01/eng-1 --model haiku --kickoff /dispatch:design-review ENG-1 --no-focus",
+		h.repo + " ENG-1 thrawn01/eng-1 --model haiku --kickoff /dispatch:design-review ENG-1",
 	}, h.launches())
 }
 
@@ -204,7 +189,7 @@ func TestTickLaunchesADesignReviewTicketThatAlsoCarriesDesignAsAReview(t *testin
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
-		h.repo + " ENG-1 thrawn01/eng-1 --model opus --kickoff /dispatch:design-review ENG-1 --no-focus",
+		h.repo + " ENG-1 thrawn01/eng-1 --model opus --kickoff /dispatch:design-review ENG-1",
 	}, h.launches())
 }
 

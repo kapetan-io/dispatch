@@ -21,6 +21,16 @@ const (
 	// OpTabList makes Read return no tabs, as the adapter does when herdr can't
 	// list them.
 	OpTabList = "tab-list"
+	// OpRead makes Read fail, as it does when the herdr server is down.
+	OpRead          = "read"
+	OpOpenWorkspace = "open-workspace"
+	// OpStartTab fails StartWorker before any tab exists. OpStartAgent fails it
+	// after the tab came up, with Claude not running in it.
+	OpStartTab   = "start-tab"
+	OpStartAgent = "start-agent"
+	// OpKickoff fails Kickoff with the error given, such as
+	// herdr.ErrKickoffUnconfirmed.
+	OpKickoff = "kickoff"
 )
 
 // Herdr is a herdr.Herdr backed by memory. Its refusals come only from its
@@ -40,12 +50,16 @@ type Herdr struct {
 	renamed     []string
 	tabRenamed  []string
 	closed      []string
+	opened      []herdr.NewWorkspace
+	workers     []herdr.Worker
+	kicked      []string
+	names       map[string]string // pane to the name of its agent
 	beforeClose func(workspace string)
 }
 
 // New returns an empty Herdr that records its calls in j.
 func New(j *journal.Journal) *Herdr {
-	return &Herdr{journal: j, shown: map[string]string{}, failures: map[string]error{}}
+	return &Herdr{journal: j, shown: map[string]string{}, failures: map[string]error{}, names: map[string]string{}}
 }
 
 // AddWorkspace puts a workspace in herdr exactly as given.
@@ -74,6 +88,14 @@ func (h *Herdr) AddAgent(a herdr.Agent) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.agents = append(h.agents, a)
+}
+
+// NameAgent gives the agent in pane the name herdr lists it under, which
+// StartWorker avoids when it names a new agent.
+func (h *Herdr) NameAgent(pane, name string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.names[pane] = name
 }
 
 // SetStatus changes the status of the agent in pane, which Read reports from
@@ -155,6 +177,16 @@ func (h *Herdr) BeforeCloseWorkspace(f func(workspace string)) {
 	h.beforeClose = f
 }
 
+// Opened lists the workspaces OpenWorkspace was asked to open, one for each
+// call that opened a new one.
+func (h *Herdr) Opened() []herdr.NewWorkspace { return logged(h, &h.opened) }
+
+// Started lists the workers StartWorker brought up, as it was asked to.
+func (h *Herdr) Started() []herdr.Worker { return logged(h, &h.workers) }
+
+// Kicked lists what Kickoff typed into agents, as "<pane>|<text>".
+func (h *Herdr) Kicked() []string { return h.log(&h.kicked) }
+
 // HasWorkspace says whether herdr still shows the workspace.
 func (h *Herdr) HasWorkspace(id string) bool {
 	h.mu.Lock()
@@ -181,6 +213,9 @@ func (h *Herdr) Read(ctx context.Context) (herdr.Snapshot, error) {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if err := h.failures[OpRead]; err != nil {
+		return herdr.Snapshot{}, err
+	}
 	s := herdr.Snapshot{
 		Workspaces: slices.Clone(h.workspaces),
 		Panes:      slices.Clone(h.panes),
@@ -307,7 +342,9 @@ func notFound(kind, id, command string) error {
 	return &herdr.Refusal{Code: kind + "_not_found", Message: fmt.Sprintf("%s %s not found", kind, id), Command: command}
 }
 
-func (h *Herdr) log(entries *[]string) []string {
+func (h *Herdr) log(entries *[]string) []string { return logged(h, entries) }
+
+func logged[T any](h *Herdr, entries *[]T) []T {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return slices.Clone(*entries)

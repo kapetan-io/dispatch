@@ -42,8 +42,16 @@ func TestRealHerdrKeepsTheHerdrContract(t *testing.T) {
 			require.NoError(t, os.Symlink(cat, claude))
 			started := map[string]bool{}
 
+			// herdr starts the worker with the PATH the adapter hands it, so the
+			// stand-in Claude goes on that PATH.
+			t.Setenv("PATH", herdrtest.StandInClaude(t)+string(os.PathListSeparator)+os.Getenv("PATH"))
+			plugin, err := filepath.Abs("../..")
+			require.NoError(t, err)
+
 			scenario.Run(t, herdrtest.Subject{
-				Herdr: session.CLI(),
+				Herdr:      session.CLI(),
+				PluginRoot: plugin,
+				Checkout:   func() (string, string) { return herdrtest.NewCheckout(t) },
 				Workspace: func(label string) herdrtest.Layout {
 					out, err := session.Output(ctx, "workspace", "create", "--cwd", cwd, "--label", label, "--no-focus")
 					require.NoError(t, err)

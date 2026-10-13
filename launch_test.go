@@ -10,7 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -19,13 +19,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch"
+	"github.com/kapetan-io/dispatch/internal/herdr"
+	"github.com/kapetan-io/dispatch/internal/herdrtest"
+	"github.com/kapetan-io/dispatch/internal/journal"
 	"github.com/kapetan-io/dispatch/internal/tooltest"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
 func TestLaunchStartsAWorkerTypedTheBuildKickoff(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
@@ -34,55 +36,51 @@ func TestLaunchStartsAWorkerTypedTheBuildKickoff(t *testing.T) {
 	assert.Equal(t, "ENG-1", out.result["ticket"])
 	assert.Equal(t, "thrawn01/eng-1", out.result["branch"])
 	assert.Equal(t, l.tree, out.result["worktree"])
-	assert.Equal(t, "w9", out.result["workspace"])
-	assert.Equal(t, "w9:p1", out.result["pane"])
+	assert.Equal(t, "w2", out.result["workspace"])
+	assert.Equal(t, "w2:p2", out.result["pane"])
 	assert.Equal(t, "eng-1", out.result["agent"])
 	assert.Equal(t, "/dispatch:build ENG-1", out.result["kickoff"])
-	assert.Equal(t, "w9:p1 /dispatch:build ENG-1\n", l.readFile("runs.log"))
+	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, l.tools.Herdr.Kicked())
 	assert.Equal(t, l.branchIn(l.tree), "thrawn01/eng-1")
-	starts := l.readFile("starts.log")
-	assert.Contains(t, starts, "agent start eng-1 --kind claude --pane w9:p1 --timeout 90000 -- --model sonnet --plugin-dir /plugin")
-	tabs := l.readFile("tabs.log")
-	assert.Contains(t, tabs, "--env DISPATCH_PLUGIN_ROOT=/plugin")
-	assert.Contains(t, tabs, "--env AUTONOMOUS_WORKER=1")
-	assert.Contains(t, tabs, "--env PATH=/plugin/scripts/shims:")
+	require.Len(t, l.tools.Herdr.Started(), 1)
+	started := l.tools.Herdr.Started()[0]
+	assert.Equal(t, herdr.Worker{Workspace: "w2", Dir: l.tree, Label: "ENG-1", Name: "eng-1", Model: "sonnet", PluginRoot: "/plugin"}, started)
 }
 
 func TestLaunchLabelsTheTabWithTheTicketAndTitle(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 
 	out := l.launch("ENG-1", "thrawn01/eng-1", "--title", "Fix the thing")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Contains(t, l.readFile("tabs.log"), "--label ENG-1 Fix the thing --env")
+	require.Len(t, l.tools.Herdr.Started(), 1)
+	assert.Equal(t, "ENG-1 Fix the thing", l.tools.Herdr.Started()[0].Label)
 }
 
 func TestLaunchLabelsTheTabWithTheTicketWhenGivenNoTitle(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Contains(t, l.readFile("tabs.log"), "--label ENG-1 --env")
+	require.Len(t, l.tools.Herdr.Started(), 1)
+	assert.Equal(t, "ENG-1", l.tools.Herdr.Started()[0].Label)
 }
 
 func TestLaunchTypesTheKickoffItIsGiven(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 
 	out := l.launch("ENG-1", "thrawn01/eng-1", "--model", "opus", "--kickoff", "/dispatch:design ENG-1")
 
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, "/dispatch:design ENG-1", out.result["kickoff"])
-	assert.Equal(t, "w9:p1 /dispatch:design ENG-1\n", l.readFile("runs.log"))
-	assert.Contains(t, l.readFile("starts.log"), "--model opus")
+	assert.Equal(t, []string{"w2:p2|/dispatch:design ENG-1"}, l.tools.Herdr.Kicked())
+	require.Len(t, l.tools.Herdr.Started(), 1)
+	assert.Equal(t, "opus", l.tools.Herdr.Started()[0].Model)
 }
 
 func TestLaunchStartsNewBranchesFromTheBase(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "second")
 	l.git(l.repo, "branch", "release", "HEAD~1")
 
@@ -95,21 +93,21 @@ func TestLaunchStartsNewBranchesFromTheBase(t *testing.T) {
 func TestLaunchReportsAWorkerThatIsAlreadyRunning(t *testing.T) {
 	l := newLaunchHarness(t)
 	l.tools.Treehouse.MoveLease(l.tree, "ENG-1")
-	l.writeFile("workspaces.json", `{"result":{"workspaces":[{"workspace_id":"w3","worktree":{"checkout_path":"`+l.tree+`"}}]}}`)
-	l.writeFile("panes.json", `{"result":{"panes":[{"pane_id":"w3:p2","workspace_id":"w3","tab_id":"w3:t1","agent":"claude"}]}}`)
+	l.tools.Herdr.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: l.tree})
+	l.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: "working", PaneID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "already_running", out.result["status"])
 	assert.Equal(t, "w3", out.result["workspace"])
 	assert.Equal(t, "w3:p2", out.result["pane"])
-	assert.NoFileExists(t, filepath.Join(l.dir, "runs.log"))
+	assert.Empty(t, l.tools.Herdr.Kicked())
+	assert.Empty(t, l.tools.Herdr.Started())
 	assert.Empty(t, l.tools.Calls("treehouse", "lease"))
 }
 
 func TestLaunchReusesTheLeaseOfAnEarlierRun(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 	l.tools.Treehouse.MoveLease(l.tree, "ENG-1")
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
@@ -162,7 +160,7 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 		},
 		{
 			name:   "HerdrUnavailable",
-			setup:  func(l *launchHarness) { l.writeFile("herdr-down", "") },
+			setup:  func(l *launchHarness) { l.tools.Herdr.Fail(herdrtest.OpRead, errors.New("server not running")) },
 			args:   []string{"ENG-1", "b"},
 			status: "herdr_unavailable",
 			detail: "herdr server not answering",
@@ -267,10 +265,12 @@ func TestLaunchReturnsALeaseWhenTheBranchWillNotCheckOut(t *testing.T) {
 
 func TestLaunchReturnsALeaseItTookWhenTheWorkspaceFails(t *testing.T) {
 	l := newLaunchHarness(t)
+	l.tools.Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "workspace_failed", out.result["status"])
+	assert.Contains(t, out.result["detail"], "herdr worktree open failed")
 	assert.Equal(t, []string{l.repo + "|" + l.tree + "|ENG-1"}, l.returns())
 }
 
@@ -279,6 +279,7 @@ func TestLaunchKeepsALeaseFromAnEarlierRunWhenTheWorkspaceFails(t *testing.T) {
 	// The tree is already leased to ENG-1, so it may hold a worker's
 	// uncommitted work that a forced return would discard.
 	l.tools.Treehouse.MoveLease(l.tree, "ENG-1")
+	l.tools.Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
@@ -288,21 +289,22 @@ func TestLaunchKeepsALeaseFromAnEarlierRunWhenTheWorkspaceFails(t *testing.T) {
 
 func TestLaunchClosesTheWorkspaceBeforeReturningALeaseItTook(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.writeFile("open-works", "")
+	l.tools.Herdr.Fail(herdrtest.OpStartTab, errors.New("herdr tab create failed in w2"))
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "workspace_failed", out.result["status"])
-	assert.Equal(t, "workspace close w9\n", l.readFile("closes.log"))
+	assert.Equal(t, []string{"w2"}, l.tools.Herdr.ClosedWorkspaces())
 	assert.Equal(t, []string{l.repo + "|" + l.tree + "|ENG-1"}, l.returns())
+	assert.Less(t, l.callIndex("herdr", "close-workspace"), l.callIndex("treehouse", "return"))
 }
 
 func TestLaunchKeepsALeaseWhoseWorkspaceWouldNotClose(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.writeFile("open-works", "")
+	l.tools.Herdr.Fail(herdrtest.OpStartTab, errors.New("herdr tab create failed in w2"))
 	// A tree returned with its workspace still open would match that
 	// workspace by path, so the next ticket to lease it would never start.
-	l.writeFile("close-fails", "")
+	l.tools.Herdr.Fail(herdrtest.OpCloseWorkspace, errors.New("exit status 1"))
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
@@ -312,64 +314,38 @@ func TestLaunchKeepsALeaseWhoseWorkspaceWouldNotClose(t *testing.T) {
 
 func TestLaunchClosesTheTabsTheWorkspaceOpenedWith(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
-	l.writeFile("panes.json", `{"result":{"panes":[`+
-		`{"pane_id":"w9:p0","workspace_id":"w9","tab_id":"w9:t0","agent":""},`+
-		`{"pane_id":"w9:p1","workspace_id":"w9","tab_id":"w9:t1","agent":""},`+
-		`{"pane_id":"w2:p1","workspace_id":"w2","tab_id":"w2:t1","agent":""}]}}`)
+	l.tools.Herdr.AddWorkspace(herdr.Workspace{ID: "w2", Label: "other"})
+	l.tools.Herdr.AddTab(herdr.Tab{ID: "w2:t1", Label: "other", WorkspaceID: "w2"})
+	l.tools.Herdr.AddPane(herdr.Pane{ID: "w2:p1", TabID: "w2:t1", WorkspaceID: "w2"})
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, "tab close w9:t0\n", l.readFile("tab-closes.log"))
-}
-
-func TestLaunchNeverGivesClaudeASessionName(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.writeFile("open-works", "")
-	l.writeFile("tab-works", "")
-
-	out := l.launch("ENG-1", "thrawn01/eng-1")
-
-	// Claude draws a --name below an open question, which hides the question
-	// from herdr's blocked detection.
-	assert.Equal(t, "agent_start_failed", out.result["status"])
-	starts := l.readFile("starts.log")
-	assert.Contains(t, starts, "agent start eng-1 --kind claude --pane w9:p1")
-	assert.NotContains(t, starts, "--name")
+	snap, err := l.tools.Herdr.Read(context.Background())
+	require.NoError(t, err)
+	assert.Contains(t, snap.Tabs, herdr.Tab{ID: "w2:t1", Label: "other", WorkspaceID: "w2"})
+	assert.Contains(t, snap.Tabs, herdr.Tab{ID: out.result["workspace"] + ":t2", Label: "ENG-1", WorkspaceID: out.result["workspace"]})
+	assert.NotContains(t, snap.Tabs, herdr.Tab{ID: out.result["workspace"] + ":t1", Label: "ENG-1", WorkspaceID: out.result["workspace"]})
 }
 
 func TestLaunchGivesBackTheLeaseWhenTheAgentWillNotStart(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.writeFile("open-works", "")
-	l.writeFile("tab-works", "")
+	l.tools.Herdr.Fail(herdrtest.OpStartAgent, errors.New("herdr agent start failed in pane w2:p2"))
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "agent_start_failed", out.result["status"])
-	assert.Equal(t, "workspace close w9\n", l.readFile("closes.log"))
+	assert.Equal(t, "w2:p2", out.result["pane"])
+	assert.Equal(t, []string{"w2"}, l.tools.Herdr.ClosedWorkspaces())
 	assert.Equal(t, []string{l.repo + "|" + l.tree + "|ENG-1"}, l.returns())
-	// The first start fails and the second runs after a pause, since a
-	// timed-out start may still bring Claude up.
-	assert.Len(t, strings.Split(strings.TrimSpace(l.readFile("starts.log")), "\n"), 2)
-}
-
-func TestLaunchKeepsAnAgentWhoseStartTimedOutButCameUp(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.workerStarts()
-	l.writeFile("start-fails", "")
-	l.writeFile("agents.json", `{"result":{"agents":[{"name":"eng-1","pane_id":"w9:p1","agent":"claude","agent_status":"idle"}]}}`)
-
-	out := l.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "ok", out.result["status"])
-	assert.Len(t, strings.Split(strings.TrimSpace(l.readFile("starts.log")), "\n"), 1)
+	assert.Empty(t, l.tools.Herdr.Kicked())
 }
 
 func TestLaunchNamesARelaunchedWorkerApartFromItsPredecessor(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
-	l.writeFile("agents.json", `{"result":{"agents":[{"name":"eng-1","pane_id":"w1:p1","agent":"claude","agent_status":"done"}]}}`)
+	l.tools.Herdr.AddWorkspace(herdr.Workspace{ID: "w1", CheckoutPath: "/elsewhere"})
+	l.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: "done", PaneID: "w1:p1", TabID: "w1:t1", WorkspaceID: "w1"})
+	l.tools.Herdr.NameAgent("w1:p1", "eng-1")
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
@@ -377,98 +353,34 @@ func TestLaunchNamesARelaunchedWorkerApartFromItsPredecessor(t *testing.T) {
 	assert.Regexp(t, `^eng-1-r\d+$`, out.result["agent"])
 }
 
-func TestLaunchAnswersTheConsentAndFolderTrustDialogs(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.workerStarts()
-	l.screens("Bypass Permissions mode  1. No, exit  2. Yes, I accept",
-		"Bypass Permissions mode  1. No, exit  2. Yes, I accept",
-		"Do you trust this folder?  ❯ No, exit  Yes, proceed",
-		"❯")
-
-	out := l.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "ok", out.result["status"])
-	// The consent dialog is answered two ways in turn, because herdr's key
-	// names differ across versions.
-	assert.Equal(t, "pane send-keys w9:p1 Down Enter\n"+
-		"pane send-keys w9:p1 2\n"+
-		"pane send-keys w9:p1 Enter\n"+
-		"pane send-keys w9:p1 Down\n"+
-		"pane send-keys w9:p1 Enter\n"+
-		"pane send-keys w9:p1 Enter\n", l.readFile("keys.log"))
-}
-
-func TestLaunchNeverRetypesAKickoffThatIsRunning(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.workerStarts()
-	// While a skill runs, the screen shows only a spinner, so the kickoff is
-	// confirmed by herdr's status and not by its text.
-	l.writeFile("wait-fails", "1")
-	l.writeFile("agents.json", `{"result":{"agents":[{"name":"x","pane_id":"w9:p1","agent":"claude","agent_status":"working"}]}}`)
-
-	out := l.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, "w9:p1 /dispatch:build ENG-1\n", l.readFile("runs.log"))
-}
-
-func TestLaunchRetypesAKickoffWhileTheAgentStaysIdle(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.workerStarts()
-	l.writeFile("wait-fails", "1")
-	l.writeFile("agents.json", `{"result":{"agents":[{"name":"x","pane_id":"w9:p1","agent":"claude","agent_status":"idle"}]}}`)
-
-	out := l.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, "w9:p1 /dispatch:build ENG-1\nw9:p1 /dispatch:build ENG-1\n", l.readFile("runs.log"))
-}
-
-func TestLaunchPressesEnterOnAKickoffThatWasTypedButNotSubmitted(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.workerStarts()
-	l.writeFile("wait-fails", "1")
-	l.writeFile("agents.json", `{"result":{"agents":[{"name":"x","pane_id":"w9:p1","agent":"claude","agent_status":"idle"}]}}`)
-	l.screens("❯", "❯ /dispatch:build ENG-1")
-
-	out := l.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, "w9:p1 /dispatch:build ENG-1\n", l.readFile("runs.log"))
-}
-
-func TestLaunchPressesEnterOnAGivenKickoffTypedButNotSubmitted(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.workerStarts()
-	l.writeFile("wait-fails", "1")
-	l.writeFile("agents.json", `{"result":{"agents":[{"name":"x","pane_id":"w9:p1","agent":"claude","agent_status":"idle"}]}}`)
-	l.screens("❯", "❯ /dispatch:design ENG-1")
-
-	out := l.launch("ENG-1", "thrawn01/eng-1", "--kickoff", "/dispatch:design ENG-1")
-
-	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, "w9:p1 /dispatch:design ENG-1\n", l.readFile("runs.log"))
-}
-
 func TestLaunchClosesTheWorkspaceWhenTheKickoffNeverRuns(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
-	l.writeFile("wait-fails", "100")
-	l.writeFile("agents.json", `{"result":{"agents":[{"name":"x","pane_id":"w9:p1","agent":"claude","agent_status":"idle"}]}}`)
+	l.tools.Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
 	// Left open, the idle Claude would look like a live worker and no tick
 	// would retry the launch.
 	assert.Equal(t, "injection_unconfirmed", out.result["status"])
-	assert.Equal(t, "workspace close w9\n", l.readFile("closes.log"))
-	assert.Len(t, strings.Split(strings.TrimSpace(l.readFile("runs.log")), "\n"), 3)
+	assert.Contains(t, out.result["detail"], "Claude started but herdr never showed the kickoff running")
+	assert.Equal(t, []string{"w2"}, l.tools.Herdr.ClosedWorkspaces())
 	assert.Empty(t, l.returns())
+}
+
+func TestLaunchReportsClaudeNeverStartedWhenItsCommandStaysAtTheShellPrompt(t *testing.T) {
+	l := newLaunchHarness(t)
+	l.tools.Herdr.Fail(herdrtest.OpKickoff, herdr.ErrClaudeNeverStarted)
+
+	out := l.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "injection_unconfirmed", out.result["status"])
+	assert.Contains(t, out.result["detail"], "never started")
+	assert.NotContains(t, out.result["detail"], "Claude started")
+	assert.Equal(t, []string{"w2"}, l.tools.Herdr.ClosedWorkspaces())
 }
 
 func TestLaunchExitsCleanlyOnlyWhenTheWorkerIsRunning(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 	ok := l.launch("ENG-1", "thrawn01/eng-1")
 	l.tools.Treehouse.MoveLease(l.tree, "ENG-1")
 	l.writeFile("workspaces.json", `{"result":{"workspaces":[{"workspace_id":"w3","worktree":{"checkout_path":"`+l.tree+`"}}]}}`)
@@ -484,6 +396,7 @@ func TestLaunchExitsCleanlyOnlyWhenTheWorkerIsRunning(t *testing.T) {
 
 func TestLaunchPutsStatusFirstInEveryResult(t *testing.T) {
 	l := newLaunchHarness(t)
+	l.tools.Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
@@ -494,7 +407,6 @@ func TestLaunchPutsStatusFirstInEveryResult(t *testing.T) {
 
 func TestLaunchAcceptsTheNoFocusFlag(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 
 	out := l.launch("ENG-1", "thrawn01/eng-1", "--no-focus")
 
@@ -503,7 +415,6 @@ func TestLaunchAcceptsTheNoFocusFlag(t *testing.T) {
 
 func TestLaunchChecksOutAnExistingLocalBranch(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "second")
 	l.git(l.repo, "branch", "thrawn01/eng-1", "HEAD~1")
 
@@ -516,7 +427,6 @@ func TestLaunchChecksOutAnExistingLocalBranch(t *testing.T) {
 
 func TestLaunchChecksOutABranchOnlyTheRemoteHas(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 	remote := filepath.Join(l.dir, "remote.git")
 	l.git(l.dir, "init", "-q", "--bare", remote)
 	l.git(l.repo, "remote", "add", "origin", remote)
@@ -533,7 +443,6 @@ func TestLaunchChecksOutABranchOnlyTheRemoteHas(t *testing.T) {
 
 func TestLaunchStartsNewBranchesFromTheRemoteBase(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 	remote := filepath.Join(l.dir, "remote.git")
 	l.git(l.dir, "init", "-q", "--bare", remote)
 	l.git(l.repo, "remote", "add", "origin", remote)
@@ -549,7 +458,6 @@ func TestLaunchStartsNewBranchesFromTheRemoteBase(t *testing.T) {
 
 func TestLaunchStartsNewBranchesFromTheCheckedOutBranchWhenThereIsNoRemote(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 	l.git(l.repo, "branch", "-m", "master")
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
@@ -560,7 +468,6 @@ func TestLaunchStartsNewBranchesFromTheCheckedOutBranchWhenThereIsNoRemote(t *te
 
 func TestLaunchStartsNewBranchesFromTheRemoteDefaultBranch(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 	remote := filepath.Join(l.dir, "remote.git")
 	l.git(l.dir, "init", "-q", "--bare", "-b", "master", remote)
 	l.git(l.repo, "branch", "-m", "master")
@@ -579,7 +486,6 @@ func TestLaunchStartsNewBranchesFromTheRemoteDefaultBranch(t *testing.T) {
 
 func TestLaunchFollowsARemoteThatRenamedItsDefaultBranch(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 	remote := filepath.Join(l.dir, "remote.git")
 	l.git(l.dir, "init", "-q", "--bare", "-b", "master", remote)
 	l.git(l.repo, "branch", "-m", "master")
@@ -600,7 +506,6 @@ func TestLaunchFollowsARemoteThatRenamedItsDefaultBranch(t *testing.T) {
 
 func TestLaunchSkipsAnUnpushedCheckedOutBranchWhenChoosingTheBase(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 	remote := filepath.Join(l.dir, "remote.git")
 	l.git(l.dir, "init", "-q", "--bare", remote)
 	l.git(l.repo, "remote", "add", "origin", remote)
@@ -618,7 +523,6 @@ func TestLaunchSkipsAnUnpushedCheckedOutBranchWhenChoosingTheBase(t *testing.T) 
 
 func TestLaunchOpensTheWorkspaceFromTheMainCheckout(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 	l.writeFile(filepath.Join("tree", "treehouse.toml"), "max_trees = 4\n")
 	l.dirOverride = l.tree
 
@@ -627,145 +531,41 @@ func TestLaunchOpensTheWorkspaceFromTheMainCheckout(t *testing.T) {
 	assert.Equal(t, "ok", out.result["status"])
 	resolved, err := filepath.EvalSymlinks(l.repo)
 	require.NoError(t, err)
-	assert.Contains(t, l.readFile("opens.log"), "--cwd "+resolved+" ")
-	assert.Contains(t, l.readFile("opens.log"), "--path "+l.tree)
+	assert.Equal(t, []herdr.NewWorkspace{{Repo: resolved, Path: l.tree, Label: "ENG-1"}}, l.tools.Herdr.Opened())
 }
 
 func TestLaunchReusesAWorkspaceThatHasNoClaudePane(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 	l.tools.Treehouse.MoveLease(l.tree, "ENG-1")
-	l.writeFile("workspaces.json", `{"result":{"workspaces":[{"workspace_id":"w3","worktree":{"checkout_path":"`+l.tree+`"}}]}}`)
-	l.writeFile("panes.json", `{"result":{"panes":[{"pane_id":"w3:p2","workspace_id":"w3","tab_id":"w3:t1","agent":""}]}}`)
+	l.tools.Herdr.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: l.tree})
+	l.tools.Herdr.AddTab(herdr.Tab{ID: "w3:t1", WorkspaceID: "w3"})
+	l.tools.Herdr.AddPane(herdr.Pane{ID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
 
 	out := l.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, "w3", out.result["workspace"])
-	assert.NoFileExists(t, filepath.Join(l.dir, "opens.log"))
-	assert.Contains(t, l.readFile("tabs.log"), "--workspace w3")
-}
-
-func TestLaunchDoesNotRetypeAKickoffThatAlreadyFinishedOrIsBlocked(t *testing.T) {
-	for _, status := range []string{"done", "blocked"} {
-		t.Run(status, func(t *testing.T) {
-			l := newLaunchHarness(t)
-			l.workerStarts()
-			l.writeFile("wait-fails", "1")
-			l.writeFile("agents.json", `{"result":{"agents":[{"name":"x","pane_id":"w9:p1","agent":"claude","agent_status":"`+status+`"}]}}`)
-
-			out := l.launch("ENG-1", "thrawn01/eng-1")
-
-			assert.Equal(t, "ok", out.result["status"])
-			assert.Equal(t, "w9:p1 /dispatch:build ENG-1\n", l.readFile("runs.log"))
-		})
-	}
-}
-
-func TestLaunchClosesTheWorkspaceWhenTheAgentVanishesAfterTheKickoff(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.workerStarts()
-	l.writeFile("wait-fails", "100")
-
-	out := l.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "injection_unconfirmed", out.result["status"])
-	assert.Equal(t, "workspace close w9\n", l.readFile("closes.log"))
-	assert.Equal(t, "w9:p1 /dispatch:build ENG-1\n", l.readFile("runs.log"))
-}
-
-func TestLaunchClosesTheWorkspaceWhenClaudeNeverShowsAnInputBox(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.workerStarts()
-	l.screens("loading")
-
-	out := l.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "injection_unconfirmed", out.result["status"])
-	assert.Equal(t, "workspace close w9\n", l.readFile("closes.log"))
-	assert.NoFileExists(t, filepath.Join(l.dir, "runs.log"))
-}
-
-func TestLaunchPressesEnterOnAClaudeCommandLeftUnrunAtTheShellPrompt(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.workerStarts()
-	l.screens("~/gubernator  thrawn01/eng-332 *35\n❯ claude --model opus --plugin-dir /plugin", "❯")
-
-	out := l.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "ok", out.result["status"])
-	// The first Enter runs the stranded command, the second submits the kickoff.
-	assert.Equal(t, "pane send-keys w9:p1 Enter\npane send-keys w9:p1 Enter\n", l.readFile("keys.log"))
-	assert.Equal(t, "w9:p1 /dispatch:build ENG-1\n", l.readFile("runs.log"))
-}
-
-func TestLaunchReportsClaudeNeverStartedWhenItsCommandStaysAtTheShellPrompt(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.workerStarts()
-	l.screens("❯ claude --model opus --plugin-dir /plugin")
-
-	out := l.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "injection_unconfirmed", out.result["status"])
-	assert.Contains(t, out.result["detail"], "never started")
-	assert.NotContains(t, out.result["detail"], "Claude started")
-	assert.Equal(t, "workspace close w9\n", l.readFile("closes.log"))
-	assert.NoFileExists(t, filepath.Join(l.dir, "runs.log"))
-}
-
-func TestLaunchPressesEnterOnlyOnTheFolderTrustDialogWhenYesIsSelected(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.workerStarts()
-	l.screens("Do you trust this folder?  No, exit  ❯ Yes, proceed", "❯")
-
-	out := l.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, "pane send-keys w9:p1 Enter\npane send-keys w9:p1 Enter\n", l.readFile("keys.log"))
-}
-
-func TestLaunchRecordsTheScreensItReadsWhenTraced(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.workerStarts()
-	trace := filepath.Join(l.dir, "trace.log")
-	t.Setenv("DISPATCH_LAUNCH_TRACE", trace)
-
-	out := l.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "ok", out.result["status"])
-	b, err := os.ReadFile(trace)
-	require.NoError(t, err)
-	assert.Contains(t, string(b), "dialogs")
-	assert.Contains(t, string(b), "typing")
+	assert.Empty(t, l.tools.Herdr.Opened())
+	require.Len(t, l.tools.Herdr.Started(), 1)
+	assert.Equal(t, "w3", l.tools.Herdr.Started()[0].Workspace)
 }
 
 func TestTickLaunchesWithTheBuiltInLauncher(t *testing.T) {
 	h := newHarness(t)
 	h.builtinLauncher = true
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	tree := filepath.Join(h.dir, "tree")
-	require.NoError(t, os.WriteFile(filepath.Join(h.repo, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
-	for _, args := range [][]string{
-		{"init", "-q", "-b", "main"},
-		{"-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "init"},
-		{"worktree", "add", "-q", "--detach", tree},
-	} {
-		out, err := exec.Command("git", append([]string{"-C", h.repo}, args...)...).CombinedOutput()
-		require.NoError(t, err, string(out))
-	}
-	h.script("herdr", fakeHerdr(h.dir))
-	h.tools.Treehouse.AddTree(h.repo, tree)
-	for _, name := range []string{"open-works", "tab-works", "start-works"} {
-		h.writeFile(name, "")
-	}
+	tree := h.pool()
 
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
 	assert.Equal(t, "launch ENG-1: ok\n", out)
-	assert.Equal(t, "w9:p1 /dispatch:build ENG-1\n", string(h.readFile("runs.log")))
-	assert.Contains(t, string(h.readFile("starts.log")), "--model sonnet")
-	assert.Contains(t, string(h.readFile("tabs.log")), "--label ENG-1 ticket ENG-1 --env")
+	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, h.tools.Herdr.Kicked())
+	require.Len(t, h.tools.Herdr.Started(), 1)
+	started := h.tools.Herdr.Started()[0]
+	assert.Equal(t, "sonnet", started.Model)
+	assert.Equal(t, "ENG-1 ticket ENG-1", started.Label)
+	assert.Equal(t, tree, h.tools.Herdr.Opened()[0].Path)
 }
 
 func TestLaunchTakesFlagsBeforeAndBetweenTheTicketAndBranch(t *testing.T) {
@@ -774,19 +574,19 @@ func TestLaunchTakesFlagsBeforeAndBetweenTheTicketAndBranch(t *testing.T) {
 		{"ENG-1", "--model", "opus", "thrawn01/eng-1"},
 	} {
 		l := newLaunchHarness(t)
-		l.workerStarts()
 
 		out := l.launchArgs(args...)
 
 		assert.Equal(t, "ok", out.result["status"])
 		assert.Equal(t, "thrawn01/eng-1", out.result["branch"])
-		assert.Contains(t, l.readFile("starts.log"), "--model opus")
+		require.Len(t, l.tools.Herdr.Started(), 1)
+		assert.Equal(t, "opus", l.tools.Herdr.Started()[0].Model)
 	}
 }
 
 func TestLaunchGivesUpAtOnceWhenThePreflightTimeoutIsZero(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.writeFile("herdr-down", "")
+	l.tools.Herdr.Fail(herdrtest.OpRead, errors.New("server not running"))
 	t.Setenv("DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT", "0")
 
 	start := time.Now()
@@ -794,39 +594,11 @@ func TestLaunchGivesUpAtOnceWhenThePreflightTimeoutIsZero(t *testing.T) {
 
 	assert.Equal(t, "herdr_unavailable", out.result["status"])
 	assert.Less(t, time.Since(start), 4*time.Second)
-}
-
-func TestTickRecordsKickoffScreensWhenTraced(t *testing.T) {
-	h := newHarness(t)
-	h.builtinLauncher = true
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	tree := filepath.Join(h.dir, "tree")
-	require.NoError(t, os.WriteFile(filepath.Join(h.repo, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
-	for _, args := range [][]string{
-		{"init", "-q", "-b", "main"},
-		{"-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "init"},
-		{"worktree", "add", "-q", "--detach", tree},
-	} {
-		out, err := exec.Command("git", append([]string{"-C", h.repo}, args...)...).CombinedOutput()
-		require.NoError(t, err, string(out))
-	}
-	h.script("herdr", fakeHerdr(h.dir))
-	h.tools.Treehouse.AddTree(h.repo, tree)
-	for _, name := range []string{"open-works", "tab-works", "start-works"} {
-		h.writeFile(name, "")
-	}
-	trace := filepath.Join(h.dir, "trace.log")
-	t.Setenv("DISPATCH_LAUNCH_TRACE", trace)
-
-	_, err := h.run("tick")
-	require.NoError(t, err)
-
-	assert.Contains(t, string(h.readFile("trace.log")), "typing")
+	assert.Empty(t, l.tools.Calls("treehouse", "lease"))
 }
 
 func TestLaunchRefusesAnEmptyPluginRoot(t *testing.T) {
 	l := newLaunchHarness(t)
-	l.workerStarts()
 	t.Setenv("DISPATCH_PLUGIN_ROOT", "")
 	l.writeFile("config.toml", "plugin_root = \"\"\n")
 
@@ -834,7 +606,7 @@ func TestLaunchRefusesAnEmptyPluginRoot(t *testing.T) {
 
 	assert.Equal(t, "usage_error", out.result["status"])
 	assert.Contains(t, out.result["detail"], "no plugin root")
-	assert.NoFileExists(t, filepath.Join(l.dir, "starts.log"))
+	assert.Empty(t, l.tools.Herdr.Started())
 }
 
 func TestTickRefusesAnEmptyPluginRoot(t *testing.T) {
@@ -852,40 +624,13 @@ func TestTickRefusesAnEmptyPluginRoot(t *testing.T) {
 	assert.Contains(t, out2, "launch ENG-1: usage_error (failure 1 of 2) no plugin root")
 }
 
-func TestLaunchWrapperRunsTheGoLauncher(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.workerStarts()
-	build := exec.Command("go", "build", "-o", filepath.Join(l.bin, "dispatch"), "./cmd/dispatch")
-	out, err := build.CombinedOutput()
-	require.NoError(t, err, string(out))
-	wrapper, err := filepath.Abs("bin/dispatch-launch")
-	require.NoError(t, err)
-	self, err := os.Executable()
-	require.NoError(t, err)
-	require.NoError(t, os.Symlink(self, filepath.Join(l.bin, standInTreehouse)))
-
-	cmd := exec.Command(wrapper, "ENG-1", "thrawn01/eng-1", "--kickoff", "/dispatch:design ENG-1")
-	cmd.Dir = l.repo
-	// The harness exports a plugin root, so clear it to see the wrapper set its own.
-	cmd.Env = append(os.Environ(), "PATH="+l.bin+":"+os.Getenv("PATH"), "DISPATCH_PLUGIN_ROOT=", standInTreeEnv+"="+l.tree)
-	stdout, err := cmd.Output()
-	require.NoError(t, err)
-
-	root, err := filepath.Abs(".")
-	require.NoError(t, err)
-	assert.Contains(t, string(stdout), `"kickoff":"/dispatch:design ENG-1"`)
-	assert.Contains(t, l.readFile("tabs.log"), "DISPATCH_PLUGIN_ROOT="+root)
-}
-
-// launchHarness runs `dispatch launch` in a throwaway git repo against fake
-// herdr and treehouse commands. With no other setup the launch fails at the
-// workspace step. workerStarts lets it run through to the kickoff.
+// launchHarness runs `dispatch launch` in a throwaway git repo against the
+// in-process herdr and treehouse fakes in tools.
 type launchHarness struct {
 	t     *testing.T
 	dir   string
 	repo  string
 	tree  string
-	bin   string
 	tools *tooltest.Tools
 	// dirOverride replaces the repo as the directory the launch runs in.
 	dirOverride string
@@ -905,80 +650,17 @@ func newLaunchHarness(t *testing.T) *launchHarness {
 		dir:   dir,
 		repo:  filepath.Join(dir, "repo"),
 		tree:  filepath.Join(dir, "tree"),
-		bin:   filepath.Join(dir, "bin"),
 		tools: tooltest.New(t),
 	}
 	require.NoError(t, os.MkdirAll(l.repo, 0o755))
-	require.NoError(t, os.MkdirAll(l.bin, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(l.repo, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
 	l.git(l.repo, "init", "-q", "-b", "main")
 	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "init")
 	l.git(l.repo, "worktree", "add", "-q", "--detach", l.tree)
 	l.tools.Treehouse.AddTree(l.repo, l.tree)
-	l.script("herdr", fakeHerdr(dir))
 	t.Setenv("DISPATCH_PLUGIN_ROOT", "/plugin")
 	t.Setenv("DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT", "1")
 	return l
-}
-
-// fakeHerdr logs what it is asked and answers from files in dir. A file named
-// like a step (open-works, tab-works, start-works) lets that step succeed.
-// wait-fails holds how many waits for a running agent time out.
-func fakeHerdr(dir string) string {
-	return `d="` + dir + `"
-[ -f "$d/herdr-down" ] && exit 1
-case "$1 $2" in
-"workspace list") if [ -f "$d/workspaces.json" ]; then cat "$d/workspaces.json"; else echo '{"result":{"workspaces":[]}}'; fi ;;
-"worktree open")
-  echo "$*" >> "$d/opens.log"
-  [ -f "$d/open-works" ] || { echo '{"error":{"code":"refused","message":"no"}}'; exit 1; }
-  echo '{"result":{"worktree":{"open_workspace_id":"w9"}}}' ;;
-"tab create")
-  [ -f "$d/tab-works" ] || { echo '{"error":{"code":"refused","message":"no"}}'; exit 1; }
-  echo "$*" >> "$d/tabs.log"
-  echo '{"result":{"root_pane":{"pane_id":"w9:p1"}}}' ;;
-"tab close") echo "$*" >> "$d/tab-closes.log" ;;
-"pane list") if [ -f "$d/panes.json" ]; then cat "$d/panes.json"; else echo '{"result":{"panes":[]}}'; fi ;;
-"pane read") echo '$ ' ;;
-"pane run") echo "$3 $4" >> "$d/runs.log" ;;
-"pane send-keys") echo "$*" >> "$d/keys.log" ;;
-"agent list") if [ -f "$d/agents.json" ]; then cat "$d/agents.json"; else echo '{"result":{"agents":[]}}'; fi ;;
-"agent start")
-  echo "$*" >> "$d/starts.log"
-  [ -f "$d/start-works" ] && [ ! -f "$d/start-fails" ] && exit 0
-  exit 1 ;;
-"agent read")
-  n=$(cat "$d/reads" 2>/dev/null || echo 0); echo $((n+1)) > "$d/reads"
-  f="$d/screens/$n"; [ -f "$f" ] || f="$d/screens/last"
-  if [ -f "$f" ]; then cat "$f"; else echo '❯'; fi ;;
-"agent wait")
-  case "$*" in *working*)
-    left=$(cat "$d/wait-fails" 2>/dev/null || echo 0)
-    if [ "$left" -gt 0 ]; then echo $((left-1)) > "$d/wait-fails"; exit 1; fi ;;
-  esac ;;
-"workspace close") [ -f "$d/close-fails" ] && exit 1; echo "$*" >> "$d/closes.log" ;;
-*) exit 2 ;;
-esac`
-}
-
-// workerStarts lets the workspace, tab and agent steps succeed.
-func (l *launchHarness) workerStarts() {
-	l.writeFile("open-works", "")
-	l.writeFile("tab-works", "")
-	l.writeFile("start-works", "")
-}
-
-// screens sets what the worker's screen shows on each read, the last one
-// repeating. Without it the screen always shows an empty input box.
-func (l *launchHarness) screens(texts ...string) {
-	require.NoError(l.t, os.MkdirAll(filepath.Join(l.dir, "screens"), 0o755))
-	for i, text := range texts {
-		name := strconv.Itoa(i)
-		if i == len(texts)-1 {
-			name = "last"
-		}
-		l.writeFile(filepath.Join("screens", name), text+"\n")
-	}
 }
 
 func (l *launchHarness) launch(ticket, branch string, flags ...string) launchOutput {
@@ -996,7 +678,7 @@ func (l *launchHarness) launchWith(opts dispatch.Options, args ...string) launch
 		dir = l.dirOverride
 	}
 	opts.Dir = dir
-	opts.HerdrCommand = filepath.Join(l.bin, "herdr")
+	opts.Herdr = l.tools.Herdr
 	opts.Treehouse = l.tools.Treehouse
 	opts.LaunchPace = time.Millisecond
 	opts.Stdout = &stdout
@@ -1007,15 +689,15 @@ func (l *launchHarness) launchWith(opts dispatch.Options, args ...string) launch
 	return out
 }
 
+// callIndex is the position of the first call to the tool's operation in the
+// order the fakes saw them, or -1 when there was none.
+func (l *launchHarness) callIndex(tool, name string) int {
+	return slices.IndexFunc(l.tools.Journal.Calls(), func(c journal.Call) bool { return c.Tool == tool && c.Name == name })
+}
+
 // returns lists the treehouse return calls, as "<repo>|<tree>|<holder>".
 func (l *launchHarness) returns() []string {
 	return l.tools.Calls("treehouse", "return")
-}
-
-func (l *launchHarness) readFile(name string) string {
-	b, err := os.ReadFile(filepath.Join(l.dir, name))
-	require.NoError(l.t, err)
-	return string(b)
 }
 
 func (l *launchHarness) git(dir string, args ...string) {
@@ -1035,18 +717,8 @@ func (l *launchHarness) branchIn(dir string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func (l *launchHarness) script(name, body string) {
-	writeFake(l.t, filepath.Join(l.bin, name), l.dir, body)
-}
-
 func (l *launchHarness) writeFile(name, content string) {
 	require.NoError(l.t, os.WriteFile(filepath.Join(l.dir, name), []byte(content), 0o644))
-}
-
-func (l *launchHarness) writeJSON(name string, v any) {
-	b, err := json.Marshal(v)
-	require.NoError(l.t, err)
-	l.writeFile(name, string(b))
 }
 
 func TestClaudeShimRestoresWorkerFlagsWithoutAName(t *testing.T) {
