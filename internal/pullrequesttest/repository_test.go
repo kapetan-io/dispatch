@@ -60,6 +60,23 @@ func TestRepositoryRefusesToMergeAPRWhoseHeadMoved(t *testing.T) {
 	assert.Equal(t, "a2", pr.Head)
 }
 
+func TestRepositoryRefusesToMergeADraft(t *testing.T) {
+	ctx := context.Background()
+	repo := pullrequesttest.New(&journal.Journal{})
+	draft := page("a1", false)
+	draft["data"].(map[string]any)["repository"].(map[string]any)["pullRequests"].(map[string]any)["nodes"].([]any)[0].(map[string]any)["isDraft"] = true
+	repo.Respond("b", "", draft)
+
+	err := repo.Merge(ctx, prURL, "a1")
+
+	require.ErrorContains(t, err, "still a draft")
+	assert.Empty(t, repo.Merged())
+	pr, found, err := repo.Read(ctx, "/repo", "b")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, pr.Draft)
+}
+
 func TestRepositoryRefusesAPRThatIsNotOpen(t *testing.T) {
 	repo := pullrequesttest.New(&journal.Journal{})
 

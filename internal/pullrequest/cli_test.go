@@ -105,6 +105,16 @@ func TestCLIReadAsksGHForTheBranchsOpenPRs(t *testing.T) {
 	assert.NotContains(t, call, "after=")
 }
 
+func TestCLIReadReportsADraft(t *testing.T) {
+	exe, _ := standIn(t, `{"data":{"repository":{"pullRequests":{"nodes":[{"number":7,"url":"https://github.com/o/r/pull/7","isDraft":true,"headRefOid":"a1","mergeable":"MERGEABLE","reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}]}}}}`, "", "0")
+
+	pr, found, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b")
+
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, pr.Draft)
+}
+
 func TestCLIReadFollowsTheCursorToTheNextPage(t *testing.T) {
 	const fork = `{"data":{"repository":{"pullRequests":{"pageInfo":{"hasNextPage":true,"endCursor":"c1"},"nodes":[{"number":9,"url":"https://github.com/o/r/pull/9","isCrossRepository":true,"headRefOid":"evil"}]}}}}`
 	exe, args := standIn(t, fork, "", "0")
