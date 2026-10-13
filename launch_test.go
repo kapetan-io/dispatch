@@ -943,3 +943,28 @@ func TestClaudeShimNamesAStaleDispatchBinary(t *testing.T) {
 	assert.Contains(t, string(out), "go install ./cmd/dispatch")
 	assert.NoFileExists(t, filepath.Join(dir, "ran"))
 }
+
+func TestClaudeShimRunsTheDispatchThatLaunchedIt(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
+		[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
+	stale := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(stale, "dispatch"), []byte("#!/usr/bin/env bash\nexit 1\n"), 0o755))
+	shims, err := filepath.Abs("scripts/shims")
+	require.NoError(t, err)
+	bin := buildDispatch(t)
+
+	// The stale dispatch comes first on PATH, as after a git pull before go install.
+	cmd := exec.Command(filepath.Join(shims, "claude"), "--resume")
+	cmd.Env = append(os.Environ(),
+		"PATH="+strings.Join([]string{shims, stale, dir, os.Getenv("PATH")}, ":"),
+		"DISPATCH_BIN="+filepath.Join(bin, "dispatch"),
+		"AUTONOMOUS_WORKER=", "DISPATCH_PLUGIN_ROOT=",
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	argv, err := os.ReadFile(filepath.Join(dir, "argv"))
+	require.NoError(t, err)
+	assert.Equal(t, "--resume\n", string(argv))
+}

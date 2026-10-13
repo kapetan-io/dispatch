@@ -236,6 +236,9 @@ func TestStartWorkerStampsTheTabAndStartsClaudeInIt(t *testing.T) {
 	assert.Contains(t, tabs[0], "--env PATH=/plugin/scripts/shims:")
 	assert.Contains(t, tabs[0], "--env AUTONOMOUS_WORKER=1")
 	assert.Contains(t, tabs[0], "--env DISPATCH_PLUGIN_ROOT=/plugin")
+	exe, err := os.Executable()
+	require.NoError(t, err)
+	assert.Contains(t, tabs[0], "--env DISPATCH_BIN="+exe)
 	assert.Equal(t, []string{"agent start eng-1 --kind claude --pane w9:p1 --timeout 90000 -- --model sonnet --plugin-dir /plugin --disallowedTools EnterPlanMode,ExitPlanMode --dangerously-skip-permissions"},
 		s.callsStarting("agent start"))
 }

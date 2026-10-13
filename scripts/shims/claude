@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # claude shim for dispatch workers. `dispatch launch` puts this dir first on the
 # worker's PATH, and herdr replays that PATH when it restarts the worker.
-command -v dispatch >/dev/null || { echo "claude shim: dispatch is not on PATH" >&2; exit 127; }
-dispatch claude-shim --dispatch-check 2>/dev/null || {
-  echo "claude shim: $(command -v dispatch) is older than this plugin and has no claude-shim command. Run go install ./cmd/dispatch in the plugin checkout." >&2
+bin=${DISPATCH_BIN:-dispatch}
+command -v "$bin" >/dev/null || { echo "claude shim: dispatch is not on PATH" >&2; exit 127; }
+"$bin" claude-shim --dispatch-check 2>/dev/null || {
+  echo "claude shim: $(command -v "$bin") is older than this plugin and has no claude-shim command. Run go install ./cmd/dispatch in the plugin checkout." >&2
   exit 127
 }
-exec dispatch claude-shim "$@"
+exec "$bin" claude-shim "$@"

@@ -98,11 +98,16 @@ func (c *CLI) StartWorker(ctx context.Context, w Worker) (Started, error) {
 	// does, so the worker runs in a fresh stamped tab and the agent-less tabs
 	// the workspace opened with are closed.
 	shims := filepath.Join(w.PluginRoot, "scripts", "shims")
-	out, _ := c.combined(ctx, "tab", "create", "--workspace", w.Workspace, "--cwd", w.Dir, "--label", w.Label,
-		"--env", "PATH="+shims+":"+os.Getenv("PATH"),
+	args := []string{"tab", "create", "--workspace", w.Workspace, "--cwd", w.Dir, "--label", w.Label,
+		"--env", "PATH=" + shims + ":" + os.Getenv("PATH"),
 		"--env", "AUTONOMOUS_WORKER=1",
-		"--env", "DISPATCH_PLUGIN_ROOT="+w.PluginRoot,
-		"--no-focus")
+		"--env", "DISPATCH_PLUGIN_ROOT=" + w.PluginRoot}
+	// The shim runs this binary, so a dispatch on PATH that is older than the
+	// plugin, or absent, cannot break the worker's start or restart.
+	if exe, err := os.Executable(); err == nil {
+		args = append(args, "--env", "DISPATCH_BIN="+exe)
+	}
+	out, _ := c.combined(ctx, append(args, "--no-focus")...)
 	var created struct {
 		Result struct {
 			RootPane struct {
