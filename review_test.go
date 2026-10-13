@@ -38,6 +38,8 @@ type prState struct {
 	changesOn []string
 	// fork marks a PR opened from a fork.
 	fork bool
+	// draft marks a PR that has not been opened for review.
+	draft bool
 	// threads are the newest comments of unresolved review threads.
 	threads []activity
 	// reviews and comments are the PR's activity, oldest first.
@@ -102,6 +104,7 @@ func (h *harness) pr(ticket string, p prState) {
 		"isCrossRepository":        p.fork,
 		"headRefOid":               p.head,
 		"mergeable":                p.mergeable,
+		"isDraft":                  p.draft,
 		"reviewDecision":           p.decision,
 		"commits":                  map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]string{"state": p.checks}}}}},
 		"latestOpinionatedReviews": map[string]any{"nodes": reviews},
