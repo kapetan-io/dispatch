@@ -71,7 +71,7 @@ func TestRepositoryRefusesToMergeADraft(t *testing.T) {
 
 	require.ErrorContains(t, err, "still a draft")
 	assert.Empty(t, repo.Merged())
-	pr, found, err := repo.Read(ctx, "/repo", "b")
+	pr, found, err := repo.Read(ctx, "/repo", "b", pullrequest.Rules{})
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.True(t, pr.Draft)

@@ -108,7 +108,7 @@ func TestCLIReadAsksGHForTheBranchsOpenPRs(t *testing.T) {
 func TestCLIReadReportsADraft(t *testing.T) {
 	exe, _ := standIn(t, `{"data":{"repository":{"pullRequests":{"nodes":[{"number":7,"url":"https://github.com/o/r/pull/7","isDraft":true,"headRefOid":"a1","mergeable":"MERGEABLE","reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}]}}}}`, "", "0")
 
-	pr, found, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b")
+	pr, found, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b", pullrequest.Rules{})
 
 	require.NoError(t, err)
 	require.True(t, found)
