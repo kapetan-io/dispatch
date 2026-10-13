@@ -102,7 +102,7 @@ auto_merge = true
 |---|---|---|
 | `path` | required | The local clone dispatch launches workers from. The clone needs a `treehouse.toml`. Two repos can't share a path. |
 | `open_pr_as` | `"open"` | `"open"` or `"draft"`. Validated and printed by `dispatch repo-settings` today. Opening PRs as drafts ships in a later change. |
-| `ignore_comment_authors` | `[]` | GitHub logins whose comments and reviews dispatch and the worker are to ignore. Validated and printed today. Ignoring them ships in a later change. |
+| `ignore_comment_authors` | `[]` | GitHub logins, matched without regard to case, whose comments, reviews, approvals, change requests and review threads dispatch and the worker ignore. They draw no nudge, never keep a PR from being ready, and never count as an approval. A thread still counts when one of its last 20 comments is from someone else. |
 | `ignore_optional_checks` | `false` | When `true`, only checks GitHub requires for merging count. Validated and printed today. Counting only required checks ships in a later change. |
 | `auto_merge` | `false` | Merge a ready PR once a review approves its head commit. See [Auto-merge](#auto-merge). |
 
