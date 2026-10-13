@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch/internal/journal"
+	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/pullrequesttest"
 )
 
@@ -32,7 +33,7 @@ func TestRepositoryMergesThePRWhoseHeadMatches(t *testing.T) {
 
 	require.NoError(t, repo.Merge(ctx, prURL, "a1"))
 
-	_, found, err := repo.Read(ctx, "/repo", "b")
+	_, found, err := repo.Read(ctx, "/repo", "b", pullrequest.Rules{})
 	require.NoError(t, err)
 	assert.False(t, found)
 	assert.Equal(t, []string{prURL + "|a1"}, repo.Merged())
@@ -42,18 +43,18 @@ func TestRepositoryRefusesToMergeAPRWhoseHeadMoved(t *testing.T) {
 	ctx := context.Background()
 	repo := pullrequesttest.New(&journal.Journal{})
 	repo.Respond("b", "", page("a1", false))
-	pr, found, err := repo.Read(ctx, "/repo", "b")
+	pr, found, err := repo.Read(ctx, "/repo", "b", pullrequest.Rules{})
 	require.NoError(t, err)
 	require.True(t, found)
 	repo.PushAfterRead("b", "a2")
 
-	_, _, err = repo.Read(ctx, "/repo", "b")
+	_, _, err = repo.Read(ctx, "/repo", "b", pullrequest.Rules{})
 	require.NoError(t, err)
 	err = repo.Merge(ctx, prURL, pr.Head)
 
 	require.ErrorContains(t, err, "Head branch was modified")
 	assert.Empty(t, repo.Merged())
-	pr, found, err = repo.Read(ctx, "/repo", "b")
+	pr, found, err = repo.Read(ctx, "/repo", "b", pullrequest.Rules{})
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, "a2", pr.Head)
@@ -70,7 +71,7 @@ func TestRepositoryRefusesToMergeADraft(t *testing.T) {
 
 	require.ErrorContains(t, err, "still a draft")
 	assert.Empty(t, repo.Merged())
-	pr, found, err := repo.Read(ctx, "/repo", "b")
+	pr, found, err := repo.Read(ctx, "/repo", "b", pullrequest.Rules{})
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.True(t, pr.Draft)
@@ -103,7 +104,7 @@ func TestRepositoryInjectedFailuresDoNotChangeWhatItAccepts(t *testing.T) {
 	require.ErrorContains(t, repo.Merge(ctx, prURL, "a1"), "outage")
 	repo.FailMerge(nil)
 	repo.PushAfterRead("b", "a2")
-	_, _, err := repo.Read(ctx, "/repo", "b")
+	_, _, err := repo.Read(ctx, "/repo", "b", pullrequest.Rules{})
 	require.NoError(t, err)
 
 	require.ErrorContains(t, repo.Merge(ctx, prURL, "a1"), "Head branch was modified")
@@ -116,10 +117,10 @@ func TestRepositoryKeepsAPushQueuedUntilAReadFindsThePR(t *testing.T) {
 	repo.PushAfterRead("b", "a2")
 
 	repo.FailRead(errors.New("outage"))
-	_, _, err := repo.Read(ctx, "/repo", "b")
+	_, _, err := repo.Read(ctx, "/repo", "b", pullrequest.Rules{})
 	require.Error(t, err)
 	repo.FailRead(nil)
-	pr, found, err := repo.Read(ctx, "/repo", "b")
+	pr, found, err := repo.Read(ctx, "/repo", "b", pullrequest.Rules{})
 
 	require.NoError(t, err)
 	require.True(t, found)

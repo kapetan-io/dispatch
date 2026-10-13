@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 )
@@ -17,12 +18,25 @@ import (
 // at most one open pull request.
 type Repository interface {
 	// Read finds the open PR whose head branch is branch in the repo cloned at
-	// repoDir. It returns false when the branch has no open PR from this repo.
-	Read(ctx context.Context, repoDir, branch string) (PullRequest, bool, error)
+	// repoDir, as judged by rules. It returns false when the branch has no open
+	// PR from this repo.
+	Read(ctx context.Context, repoDir, branch string, rules Rules) (PullRequest, bool, error)
 	// Merge merges the PR at prURL with a merge commit. It refuses, and merges
 	// nothing, when the PR's head is no longer head, so a push after the
 	// approval was read is never merged unreviewed.
 	Merge(ctx context.Context, prURL, head string) error
+}
+
+// Rules say which of a PR's items count. The zero value judges everything as
+// GitHub reports it.
+type Rules struct {
+	// IgnoreAuthors are GitHub logins, matched without regard to case, whose
+	// reviews, comments, approvals and change requests count for nothing.
+	IgnoreAuthors []string
+}
+
+func (r Rules) ignores(a *author) bool {
+	return a != nil && slices.ContainsFunc(r.IgnoreAuthors, func(login string) bool { return strings.EqualFold(login, a.Login) })
 }
 
 // PullRequest is an open pull request and what is wrong with it.
@@ -83,6 +97,12 @@ func (p PullRequest) Problem() string {
 	return strings.Join(p.Problems[:last], ", ") + " and " + p.Problems[last]
 }
 
+// Kinds of PR item Source.Older pages through.
+const (
+	kindReviews  = "reviews"
+	kindComments = "comments"
+)
+
 // maxThreads is the review thread page size. A second page is an error, because
 // an unresolved thread beyond the first page would go unnoticed.
 const maxThreads = 100
@@ -99,14 +119,67 @@ const query = `query PullRequest($owner: String!, $repo: String!, $branch: Strin
       nodes {
         number url isCrossRepository isDraft headRefOid mergeable
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-        reviewThreads(first: $threads) { nodes { isResolved comments(last: 1) { nodes { createdAt author { login } } } } pageInfo { hasNextPage } }
-        latestOpinionatedReviews(first: 100) { nodes { state commit { oid } } }
-        reviews(last: 30) { nodes { state body createdAt submittedAt author { login } } }
-        comments(last: 30) { nodes { createdAt author { login } } }
+        reviewThreads(first: $threads) { nodes { isResolved comments(last: 20) { nodes { createdAt author { login } } } } pageInfo { hasNextPage } }
+        latestOpinionatedReviews(first: 100) { nodes { state commit { oid } author { login } } }
+        reviews(last: 100) { nodes { state body createdAt submittedAt author { login } } pageInfo { hasPreviousPage startCursor } }
+        comments(last: 100) { nodes { createdAt author { login } } pageInfo { hasPreviousPage startCursor } }
       }
     }
   }
 }`
+
+const olderReviewsQuery = `query OlderReviews($owner: String!, $repo: String!, $number: Int!, $before: String!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviews(last: 100, before: $before) { nodes { state body createdAt submittedAt author { login } } pageInfo { hasPreviousPage startCursor } }
+    }
+  }
+}`
+
+const olderCommentsQuery = `query OlderComments($owner: String!, $repo: String!, $number: Int!, $before: String!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      comments(last: 100, before: $before) { nodes { createdAt author { login } } pageInfo { hasPreviousPage startCursor } }
+    }
+  }
+}`
+
+type reviewNode struct {
+	State       string  `json:"state"`
+	Body        string  `json:"body"`
+	CreatedAt   string  `json:"createdAt"`
+	SubmittedAt string  `json:"submittedAt"`
+	Author      *author `json:"author"`
+}
+
+type opinionNode struct {
+	State  string `json:"state"`
+	Commit struct {
+		Oid string `json:"oid"`
+	} `json:"commit"`
+	Author *author `json:"author"`
+}
+
+// asksForNothing is true of a review that gives the worker nothing to read. A
+// draft review is the token owner's own, and createdAt is when it was started,
+// not when it was submitted.
+func (r reviewNode) asksForNothing() bool {
+	return r.State == "DISMISSED" || r.State == "PENDING" || (r.State == "APPROVED" && strings.TrimSpace(r.Body) == "")
+}
+
+type commentNode struct {
+	CreatedAt string  `json:"createdAt"`
+	Author    *author `json:"author"`
+}
+
+// page is a newest-last window of items. PageInfo says whether older ones exist.
+type page[T any] struct {
+	Nodes    []T `json:"nodes"`
+	PageInfo struct {
+		HasPreviousPage bool   `json:"hasPreviousPage"`
+		StartCursor     string `json:"startCursor"`
+	} `json:"pageInfo"`
+}
 
 type prNode struct {
 	Number            int    `json:"number"`
@@ -125,36 +198,15 @@ type prNode struct {
 		} `json:"nodes"`
 	} `json:"commits"`
 	LatestOpinionatedReviews struct {
-		Nodes []struct {
-			State  string `json:"state"`
-			Commit struct {
-				Oid string `json:"oid"`
-			} `json:"commit"`
-		} `json:"nodes"`
+		Nodes []opinionNode `json:"nodes"`
 	} `json:"latestOpinionatedReviews"`
-	Reviews struct {
-		Nodes []struct {
-			State       string  `json:"state"`
-			Body        string  `json:"body"`
-			CreatedAt   string  `json:"createdAt"`
-			SubmittedAt string  `json:"submittedAt"`
-			Author      *author `json:"author"`
-		} `json:"nodes"`
-	} `json:"reviews"`
-	Comments struct {
-		Nodes []struct {
-			CreatedAt string  `json:"createdAt"`
-			Author    *author `json:"author"`
-		} `json:"nodes"`
-	} `json:"comments"`
+	Reviews       page[reviewNode]  `json:"reviews"`
+	Comments      page[commentNode] `json:"comments"`
 	ReviewThreads struct {
 		Nodes []struct {
 			IsResolved bool `json:"isResolved"`
 			Comments   struct {
-				Nodes []struct {
-					CreatedAt string  `json:"createdAt"`
-					Author    *author `json:"author"`
-				} `json:"nodes"`
+				Nodes []commentNode `json:"nodes"`
 			} `json:"comments"`
 		} `json:"nodes"`
 		PageInfo struct {
@@ -177,15 +229,59 @@ type prPage struct {
 	} `json:"data"`
 }
 
-// Fetch returns one page of GitHub's answer to the PR query for a branch, the
-// page after cursor when cursor is not empty.
-type Fetch func(ctx context.Context, branch, cursor string) ([]byte, error)
+type olderPage struct {
+	Data struct {
+		Repository struct {
+			PullRequest struct {
+				Reviews  page[reviewNode]  `json:"reviews"`
+				Comments page[commentNode] `json:"comments"`
+			} `json:"pullRequest"`
+		} `json:"repository"`
+	} `json:"data"`
+}
 
-// Find walks the pages fetch returns for branch and picks the open PR from this
+// Source is where Find gets GitHub's answers, as the JSON gh prints.
+type Source interface {
+	// PRPage returns one page of the answer to the PR query for a branch, the
+	// page after cursor when cursor is not empty.
+	PRPage(ctx context.Context, branch, cursor string) ([]byte, error)
+	// Older returns the page of PR number's reviews or comments (kind is
+	// kindReviews or kindComments) that ends before the cursor.
+	Older(ctx context.Context, number int, kind, before string) ([]byte, error)
+}
+
+// widen returns the items keep accepts, reading older pages until the window
+// holds one or reaches the oldest, so the number of ignored items never decides
+// anything.
+func widen[T any](ctx context.Context, src Source, number int, kind string, newest page[T], keep func(T) bool, pick func(olderPage) page[T]) ([]T, error) {
+	items, prev := newest.Nodes, newest.PageInfo
+	for prev.HasPreviousPage && !slices.ContainsFunc(items, keep) {
+		if prev.StartCursor == "" {
+			return nil, fmt.Errorf("GitHub reports older %s on PR %d but gave no cursor", kind, number)
+		}
+		b, err := src.Older(ctx, number, kind, prev.StartCursor)
+		if err != nil {
+			return nil, err
+		}
+		var resp olderPage
+		if err := json.Unmarshal(b, &resp); err != nil {
+			return nil, fmt.Errorf("while reading gh output for older %s of PR %d: %w", kind, number, err)
+		}
+		got := pick(resp)
+		if got.PageInfo.HasPreviousPage && got.PageInfo.StartCursor == prev.StartCursor {
+			return nil, fmt.Errorf("older %s of PR %d did not advance past cursor %s", kind, number, prev.StartCursor)
+		}
+		items, prev = append(slices.Clone(got.Nodes), items...), got.PageInfo
+	}
+	return slices.DeleteFunc(slices.Clone(items), func(item T) bool { return !keep(item) }), nil
+}
+
+// Find walks the pages src returns for branch and picks the open PR from this
 // repo, since a fork PR can share the branch name. It returns false when the
 // branch has no such PR, and an error when the PR has more than maxThreads
-// review threads.
-func Find(ctx context.Context, branch string, fetch Fetch) (PullRequest, bool, error) {
+// review threads. Rules filter every item once, before anything is derived
+// from them, so a field added later is filtered too.
+func Find(ctx context.Context, branch string, src Source, rules Rules) (PullRequest, bool, error) {
 	// headRefName matches fork PRs too, and anyone can open one on a branch
 	// name Linear makes predictable. Only a PR from this repo is the worker's.
 	var n prNode
@@ -194,7 +290,7 @@ func Find(ctx context.Context, branch string, fetch Fetch) (PullRequest, bool, e
 		if page == prPages {
 			return PullRequest{}, false, fmt.Errorf("branch %s has more than %d PRs and none from this repo in the first %d pages", branch, prPages*20, prPages)
 		}
-		b, err := fetch(ctx, branch, after)
+		b, err := src.PRPage(ctx, branch, after)
 		if err != nil {
 			return PullRequest{}, false, err
 		}
@@ -221,12 +317,21 @@ func Find(ctx context.Context, branch string, fetch Fetch) (PullRequest, bool, e
 	if n.ReviewThreads.PageInfo.HasNextPage {
 		return PullRequest{}, false, fmt.Errorf("PR %s has more than %d review threads; dispatch reads one page and would miss unresolved ones", n.URL, maxThreads)
 	}
+	reviews, err := widen(ctx, src, n.Number, kindReviews, n.Reviews, func(r reviewNode) bool { return !rules.ignores(r.Author) && !r.asksForNothing() }, func(o olderPage) page[reviewNode] { return o.Data.Repository.PullRequest.Reviews })
+	if err != nil {
+		return PullRequest{}, false, err
+	}
+	comments, err := widen(ctx, src, n.Number, kindComments, n.Comments, func(c commentNode) bool { return !rules.ignores(c.Author) }, func(o olderPage) page[commentNode] { return o.Data.Repository.PullRequest.Comments })
+	if err != nil {
+		return PullRequest{}, false, err
+	}
+	opinions := slices.DeleteFunc(slices.Clone(n.LatestOpinionatedReviews.Nodes), func(r opinionNode) bool { return rules.ignores(r.Author) })
 	checksPassed, checksRunning := true, false
 	pr := PullRequest{Number: n.Number, URL: n.URL, Head: n.HeadRefOid, Draft: n.IsDraft}
 	// GitHub's reviewDecision is empty on an unprotected branch and can't say
 	// which commit a request is on, so the reviews are read directly. One
 	// reviewer's standing request vetoes another's approval.
-	for _, r := range n.LatestOpinionatedReviews.Nodes {
+	for _, r := range opinions {
 		if r.State == "APPROVED" && r.Commit.Oid == n.HeadRefOid {
 			pr.Approved = true
 		}
@@ -234,7 +339,7 @@ func Find(ctx context.Context, branch string, fetch Fetch) (PullRequest, bool, e
 	// A request on an older commit is the worker's to have answered by pushing,
 	// so only one on the head counts.
 	changesRequested := false
-	for _, r := range n.LatestOpinionatedReviews.Nodes {
+	for _, r := range opinions {
 		if r.State == "CHANGES_REQUESTED" {
 			pr.Approved = false
 			changesRequested = changesRequested || r.Commit.Oid == n.HeadRefOid
@@ -252,21 +357,16 @@ func Find(ctx context.Context, branch string, fetch Fetch) (PullRequest, bool, e
 		}
 	}
 	// RFC 3339 UTC times sort as strings, and only the newest item matters, so
-	// the newest 30 of each are enough.
+	// widen reads far enough back to find the newest unlisted one.
 	note := func(at, summary string) {
 		if at > pr.ActivityAt {
 			pr.ActivityAt, pr.ActivitySummary = at, summary
 		}
 	}
-	for _, r := range n.Reviews.Nodes {
-		// A draft review is the token owner's own, and createdAt is when it was
-		// started, not when it was submitted.
-		if r.State == "DISMISSED" || r.State == "PENDING" || (r.State == "APPROVED" && strings.TrimSpace(r.Body) == "") {
-			continue
-		}
+	for _, r := range reviews {
 		note(cmp.Or(r.SubmittedAt, r.CreatedAt), "a review by "+r.Author.name())
 	}
-	for _, c := range n.Comments.Nodes {
+	for _, c := range comments {
 		note(c.CreatedAt, "a comment by "+c.Author.name())
 	}
 	// A review bot still checking the head may be about to answer the request.
@@ -277,8 +377,13 @@ func Find(ctx context.Context, branch string, fetch Fetch) (PullRequest, bool, e
 		if t.IsResolved {
 			continue
 		}
+		// A thread whose answer carries no comments still counts.
+		kept := slices.DeleteFunc(slices.Clone(t.Comments.Nodes), func(c commentNode) bool { return rules.ignores(c.Author) })
+		if len(kept) == 0 && len(t.Comments.Nodes) > 0 {
+			continue
+		}
 		pr.UnresolvedThreads = true
-		for _, c := range t.Comments.Nodes {
+		for _, c := range kept {
 			pr.ThreadAt = max(pr.ThreadAt, c.CreatedAt)
 			note(c.CreatedAt, "a review thread comment by "+c.Author.name())
 		}
@@ -328,31 +433,53 @@ func NewCLI(bin string, opts ...Option) *CLI {
 	return c
 }
 
-// Read makes one `gh api graphql` call per page of same-named PRs.
-func (c *CLI) Read(ctx context.Context, repoDir, branch string) (PullRequest, bool, error) {
-	return Find(ctx, branch, func(ctx context.Context, branch, after string) ([]byte, error) {
-		ctx, cancel := context.WithTimeout(ctx, c.timeout)
-		defer cancel()
-		args := []string{"api", "graphql",
-			"-F", "owner={owner}", "-F", "repo={repo}", "-f", "branch=" + branch,
-			"-F", fmt.Sprintf("threads=%d", maxThreads), "-f", "query=" + query}
-		if after != "" {
-			args = append(args, "-f", "after="+after)
+// Read makes one `gh api graphql` call per page of same-named PRs, and more
+// only to reach older reviews or comments when rules ignore every newer one.
+func (c *CLI) Read(ctx context.Context, repoDir, branch string, rules Rules) (PullRequest, bool, error) {
+	return Find(ctx, branch, cliSource{c, repoDir}, rules)
+}
+
+type cliSource struct {
+	cli *CLI
+	dir string
+}
+
+func (s cliSource) PRPage(ctx context.Context, branch, after string) ([]byte, error) {
+	args := []string{"api", "graphql",
+		"-F", "owner={owner}", "-F", "repo={repo}", "-f", "branch=" + branch,
+		"-F", fmt.Sprintf("threads=%d", maxThreads), "-f", "query=" + query}
+	if after != "" {
+		args = append(args, "-f", "after="+after)
+	}
+	return s.cli.graphql(ctx, s.dir, args)
+}
+
+func (s cliSource) Older(ctx context.Context, number int, kind, before string) ([]byte, error) {
+	q := olderCommentsQuery
+	if kind == kindReviews {
+		q = olderReviewsQuery
+	}
+	return s.cli.graphql(ctx, s.dir, []string{"api", "graphql",
+		"-F", "owner={owner}", "-F", "repo={repo}", "-F", fmt.Sprintf("number=%d", number),
+		"-f", "before=" + before, "-f", "query=" + q})
+}
+
+func (c *CLI) graphql(ctx context.Context, dir string, args []string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.bin, args...)
+	cmd.Dir = dir
+	// A child that inherits gh's pipes must not keep Output waiting after the kill.
+	cmd.WaitDelay = time.Second
+	b, err := cmd.Output()
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return nil, fmt.Errorf("while running gh in %s: %w: %s", dir, err, strings.TrimSpace(string(exit.Stderr)))
 		}
-		cmd := exec.CommandContext(ctx, c.bin, args...)
-		cmd.Dir = repoDir
-		// A child that inherits gh's pipes must not keep Output waiting after the kill.
-		cmd.WaitDelay = time.Second
-		b, err := cmd.Output()
-		if err != nil {
-			var exit *exec.ExitError
-			if errors.As(err, &exit) {
-				return nil, fmt.Errorf("while running gh in %s: %w: %s", repoDir, err, strings.TrimSpace(string(exit.Stderr)))
-			}
-			return nil, fmt.Errorf("while running gh in %s: %w", repoDir, err)
-		}
-		return b, nil
-	})
+		return nil, fmt.Errorf("while running gh in %s: %w", dir, err)
+	}
+	return b, nil
 }
 
 // Merge names the PR by URL, so gh needs no remote to resolve, and passes the

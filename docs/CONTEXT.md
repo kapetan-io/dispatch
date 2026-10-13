@@ -27,7 +27,7 @@ A `[repos.<label>]` table in `config.toml`, holding a repo's `path` and every pe
 _Avoid_: repo config, repo entry
 
 **Listed author**:
-A GitHub login in a repo's `ignore_comment_authors`. Dispatch and the worker act as if nothing it posts exists. Planned: the setting loads today, and ENG-370 makes it take effect.
+A GitHub login in a repo's `ignore_comment_authors`. Dispatch and the worker act as if nothing it posts exists.
 _Avoid_: bot, ignored bot (some bots, such as CodeRabbit, are not listed and still count)
 
 **Optional check**:

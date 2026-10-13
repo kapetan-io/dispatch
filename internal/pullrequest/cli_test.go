@@ -95,7 +95,7 @@ func TestCLIMergeRefusedCarriesGHsMessage(t *testing.T) {
 func TestCLIReadAsksGHForTheBranchsOpenPRs(t *testing.T) {
 	exe, args := standIn(t, onePage, "", "0")
 
-	pr, found, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "thrawn01/eng-1")
+	pr, found, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "thrawn01/eng-1", pullrequest.Rules{})
 
 	require.NoError(t, err)
 	require.True(t, found)
@@ -108,7 +108,7 @@ func TestCLIReadAsksGHForTheBranchsOpenPRs(t *testing.T) {
 func TestCLIReadReportsADraft(t *testing.T) {
 	exe, _ := standIn(t, `{"data":{"repository":{"pullRequests":{"nodes":[{"number":7,"url":"https://github.com/o/r/pull/7","isDraft":true,"headRefOid":"a1","mergeable":"MERGEABLE","reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}]}}}}`, "", "0")
 
-	pr, found, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b")
+	pr, found, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b", pullrequest.Rules{})
 
 	require.NoError(t, err)
 	require.True(t, found)
@@ -121,7 +121,7 @@ func TestCLIReadFollowsTheCursorToTheNextPage(t *testing.T) {
 	repo := t.TempDir()
 
 	// The stand-in answers every call alike, so the walk stops at the page limit.
-	_, _, err := pullrequest.NewCLI(exe).Read(context.Background(), repo, "b")
+	_, _, err := pullrequest.NewCLI(exe).Read(context.Background(), repo, "b", pullrequest.Rules{})
 
 	require.ErrorContains(t, err, "none from this repo")
 	calls := recorded(t, args)
@@ -144,7 +144,7 @@ func TestCLIReadsWhatGHSaysWhenItFails(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			exe, _ := standIn(t, test.stdout, test.stderr, test.exit)
 
-			_, _, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b")
+			_, _, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b", pullrequest.Rules{})
 
 			require.ErrorContains(t, err, test.wantErr)
 		})
@@ -157,10 +157,45 @@ func TestCLICutsOffACallThatHangs(t *testing.T) {
 	cli := pullrequest.NewCLI(exe, pullrequest.WithTimeout(300*time.Millisecond))
 	start := time.Now()
 
-	_, _, readErr := cli.Read(context.Background(), t.TempDir(), "b")
+	_, _, readErr := cli.Read(context.Background(), t.TempDir(), "b", pullrequest.Rules{})
 	mergeErr := cli.Merge(context.Background(), "https://github.com/o/r/pull/7", "a1")
 
 	assert.Less(t, time.Since(start), 5*time.Second)
 	require.Error(t, readErr)
 	require.Error(t, mergeErr)
+}
+
+func TestCLIReadAsksForOlderCommentsWhenRulesIgnoreTheNewest(t *testing.T) {
+	const newest = `{"data":{"repository":{"pullRequests":{"nodes":[{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"a1","mergeable":"MERGEABLE","comments":{"nodes":[{"createdAt":"2026-10-09T12:00:00Z","author":{"login":"Bot"}}],"pageInfo":{"hasPreviousPage":true,"startCursor":"c9"}},"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}]}}}}`
+	exe, args := standIn(t, newest, "", "0")
+
+	// The stand-in answers every call alike, so the older page it gets back is empty.
+	_, _, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b", pullrequest.Rules{IgnoreAuthors: []string{"bot"}})
+
+	require.NoError(t, err)
+	calls := recorded(t, args)
+	require.Len(t, calls, 2)
+	assert.True(t, strings.HasPrefix(calls[1], "api graphql -F owner={owner} -F repo={repo} -F number=7 -f before=c9 -f query=..."), calls[1])
+}
+
+func TestCLIReadAsksForOlderReviewsWhenRulesIgnoreTheNewest(t *testing.T) {
+	const newest = `{"data":{"repository":{"pullRequests":{"nodes":[{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"a1","mergeable":"MERGEABLE","reviews":{"nodes":[{"state":"COMMENTED","body":"x","createdAt":"2026-10-09T12:00:00Z","author":{"login":"Bot"}}],"pageInfo":{"hasPreviousPage":true,"startCursor":"r9"}},"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}]}}}}`
+	exe, args := standIn(t, newest, "", "0")
+
+	_, _, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b", pullrequest.Rules{IgnoreAuthors: []string{"BOT"}})
+
+	require.NoError(t, err)
+	calls := recorded(t, args)
+	require.Len(t, calls, 2)
+	assert.True(t, strings.HasPrefix(calls[1], "api graphql -F owner={owner} -F repo={repo} -F number=7 -f before=r9 -f query=..."), calls[1])
+}
+
+func TestCLIReadAsksForNoOlderPagesWhenAnUnlistedItemIsNewest(t *testing.T) {
+	const newest = `{"data":{"repository":{"pullRequests":{"nodes":[{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"a1","mergeable":"MERGEABLE","comments":{"nodes":[{"createdAt":"2026-10-09T12:00:00Z","author":{"login":"alice"}}],"pageInfo":{"hasPreviousPage":true,"startCursor":"c9"}},"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}]}}}}`
+	exe, args := standIn(t, newest, "", "0")
+
+	_, _, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b", pullrequest.Rules{IgnoreAuthors: []string{"bot"}})
+
+	require.NoError(t, err)
+	assert.Len(t, recorded(t, args), 1)
 }

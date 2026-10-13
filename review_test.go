@@ -45,6 +45,18 @@ type prState struct {
 	// reviews and comments are the PR's activity, oldest first.
 	reviews  []activity
 	comments []activity
+	// opinions are the reviewers' latest approvals and change requests, with who wrote them.
+	opinions []opinion
+	// conversations are unresolved review threads with several comments, oldest first.
+	conversations [][]activity
+	// reviewsBefore and commentsBefore are the cursors of older pages, "" when
+	// the window reaches the start.
+	reviewsBefore, commentsBefore string
+}
+
+// opinion is a reviewer's latest approval or change request on a commit.
+type opinion struct {
+	state, commit, author string
 }
 
 // activity is a review (with a state) or a conversation comment.
@@ -57,7 +69,7 @@ type activity struct {
 	submitted string
 }
 
-func activityNodes(list []activity) map[string]any {
+func activityNodes(list []activity, before string) map[string]any {
 	out := []map[string]any{}
 	for _, a := range list {
 		n := map[string]any{"createdAt": a.at, "author": map[string]string{"login": a.author}}
@@ -68,7 +80,7 @@ func activityNodes(list []activity) map[string]any {
 		}
 		out = append(out, n)
 	}
-	return map[string]any{"nodes": out}
+	return map[string]any{"nodes": out, "pageInfo": map[string]any{"hasPreviousPage": before != "", "startCursor": before}}
 }
 
 func cleanPR(head string) prState {
@@ -82,7 +94,10 @@ func (h *harness) pr(ticket string, p prState) {
 		threads = append(threads, map[string]any{"isResolved": false})
 	}
 	for _, a := range p.threads {
-		threads = append(threads, map[string]any{"isResolved": false, "comments": activityNodes([]activity{a})})
+		threads = append(threads, map[string]any{"isResolved": false, "comments": activityNodes([]activity{a}, "")})
+	}
+	for _, c := range p.conversations {
+		threads = append(threads, map[string]any{"isResolved": false, "comments": activityNodes(c, "")})
 	}
 	for range p.resolved {
 		threads = append(threads, map[string]any{"isResolved": true})
@@ -98,6 +113,9 @@ func (h *harness) pr(ticket string, p prState) {
 	for _, oid := range changesOn {
 		reviews = append(reviews, map[string]any{"state": "CHANGES_REQUESTED", "commit": map[string]string{"oid": oid}})
 	}
+	for _, o := range p.opinions {
+		reviews = append(reviews, map[string]any{"state": o.state, "commit": map[string]string{"oid": o.commit}, "author": map[string]string{"login": o.author}})
+	}
 	h.respond(ticket, "", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
 		"number":                   7,
 		"url":                      prURL1,
@@ -108,10 +126,16 @@ func (h *harness) pr(ticket string, p prState) {
 		"reviewDecision":           p.decision,
 		"commits":                  map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]string{"state": p.checks}}}}},
 		"latestOpinionatedReviews": map[string]any{"nodes": reviews},
-		"reviews":                  activityNodes(p.reviews),
-		"comments":                 activityNodes(p.comments),
+		"reviews":                  activityNodes(p.reviews, p.reviewsBefore),
+		"comments":                 activityNodes(p.comments, p.commentsBefore),
 		"reviewThreads":            map[string]any{"nodes": threads, "pageInfo": map[string]bool{"hasNextPage": p.moreThreads}},
 	}}}}}})
+}
+
+// respondOlder sets what GitHub answers for the page of the PR's reviews or
+// comments that ends before the cursor. kind is "reviews" or "comments".
+func (h *harness) respondOlder(kind, before string, items []activity, earlier string) {
+	h.tools.PullRequests.RespondOlder(7, kind, before, map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequest": map[string]any{kind: activityNodes(items, earlier)}}}})
 }
 
 // prBranch is the branch Linear names for a ticket.

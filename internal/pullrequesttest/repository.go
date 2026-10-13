@@ -31,6 +31,7 @@ type Repository struct {
 
 	mu        sync.Mutex
 	pages     map[string]map[string]map[string]any
+	older     map[string]map[string]any
 	pushes    map[string]string
 	merged    []string
 	readFail  error
@@ -42,6 +43,7 @@ func New(j *journal.Journal) *Repository {
 	return &Repository{
 		journal: j,
 		pages:   map[string]map[string]map[string]any{},
+		older:   map[string]map[string]any{},
 		pushes:  map[string]string{},
 	}
 }
@@ -64,6 +66,24 @@ func (r *Repository) Respond(branch, cursor string, response any) {
 		r.pages[branch] = map[string]map[string]any{}
 	}
 	r.pages[branch][cursor] = page
+}
+
+// RespondOlder sets what GitHub answers when asked for the page of PR number's
+// reviews or comments (kind is "reviews" or "comments") that ends before the
+// cursor. A page that was not set fails the read, because asking for it was a
+// call the real tool would have made.
+func (r *Repository) RespondOlder(number int, kind, before string, response any) {
+	b, err := json.Marshal(response)
+	if err != nil {
+		panic(err)
+	}
+	var page map[string]any
+	if err := json.Unmarshal(b, &page); err != nil {
+		panic(err)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.older[fmt.Sprintf("%d|%s|%s", number, kind, before)] = page
 }
 
 // Close closes the open pull requests of branch without merging them.
@@ -121,23 +141,8 @@ func (r *Repository) FailMerge(err error) {
 	r.mergeFail = err
 }
 
-func (r *Repository) Read(ctx context.Context, repoDir, branch string) (pullrequest.PullRequest, bool, error) {
-	pr, found, err := pullrequest.Find(ctx, branch, func(ctx context.Context, branch, cursor string) ([]byte, error) {
-		r.journal.Record("pullrequest", "read", branch, cursor)
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		if r.readFail != nil {
-			return nil, r.readFail
-		}
-		page, ok := r.pages[branch][cursor]
-		if !ok {
-			page = map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{}}}}}
-		}
-		return json.Marshal(page)
-	})
+func (r *Repository) Read(ctx context.Context, repoDir, branch string, rules pullrequest.Rules) (pullrequest.PullRequest, bool, error) {
+	pr, found, err := pullrequest.Find(ctx, branch, source{r, branch}, rules)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if head, ok := r.pushes[branch]; ok && err == nil && found {
@@ -145,6 +150,48 @@ func (r *Repository) Read(ctx context.Context, repoDir, branch string) (pullrequ
 		delete(r.pushes, branch)
 	}
 	return pr, found, err
+}
+
+// source answers Find from the pages the test set.
+type source struct {
+	repo   *Repository
+	branch string
+}
+
+func (s source) PRPage(ctx context.Context, branch, cursor string) ([]byte, error) {
+	r := s.repo
+	r.journal.Record("pullrequest", "read", branch, cursor)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.readFail != nil {
+		return nil, r.readFail
+	}
+	page, ok := r.pages[branch][cursor]
+	if !ok {
+		page = map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{}}}}}
+	}
+	return json.Marshal(page)
+}
+
+func (s source) Older(ctx context.Context, number int, kind, before string) ([]byte, error) {
+	r := s.repo
+	r.journal.Record("pullrequest", "older", fmt.Sprint(number), kind, before)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.readFail != nil {
+		return nil, r.readFail
+	}
+	page, ok := r.older[fmt.Sprintf("%d|%s|%s", number, kind, before)]
+	if !ok {
+		return nil, fmt.Errorf("no %s page of PR %d before %s was set", kind, number, before)
+	}
+	return json.Marshal(page)
 }
 
 func (r *Repository) Merge(ctx context.Context, prURL, head string) error {
