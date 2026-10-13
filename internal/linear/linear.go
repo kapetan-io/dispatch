@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -486,6 +487,9 @@ func (c Client) Comment(ctx context.Context, ticketID, body string) error {
 	return nil
 }
 
+// ErrUnauthorized means Linear rejected the API key.
+var ErrUnauthorized = errors.New("Linear rejected the API key")
+
 // Viewer is the user who owns the client's API key.
 type Viewer struct {
 	ID   string `json:"id"`
@@ -526,6 +530,9 @@ func (c Client) do(ctx context.Context, operation, query string, variables map[s
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("while reading Linear %s: %w", operation, err)
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("linear %s: HTTP %d: %w", operation, resp.StatusCode, ErrUnauthorized)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("linear %s: HTTP %d: %s", operation, resp.StatusCode, strings.TrimSpace(string(raw)))

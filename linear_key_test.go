@@ -144,3 +144,67 @@ func TestLinearViewerFailsWithoutAKey(t *testing.T) {
 	require.ErrorContains(t, err, "api_key_command")
 	assert.Empty(t, out)
 }
+
+func TestApiKeyCommandRotationIsPickedUpAfterLinearRejectsTheKey(t *testing.T) {
+	h := newHarness(t)
+	h.useConfiguredKey(t)
+	command, counter := keyScript(t, h.dir, `if [ "$(wc -l < `+filepath.Join(h.dir, "runs")+`)" -le 1 ]; then echo bad; else echo test-key; fi`)
+	h.config("[linear]\napi_key_command = \"" + command + "\"\n")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := h.runWith(ctx, dispatch.Options{}, "run", "--interval", "20ms")
+		done <- err
+	}()
+
+	// Linear answers 401 to the first key, so only the rerun's key can reach it.
+	require.Eventually(t, func() bool { return h.linear.calls() >= 2 }, 5*time.Second, 10*time.Millisecond)
+	stop()
+	require.NoError(t, <-done)
+	assert.Equal(t, 2, runCount(t, counter))
+}
+
+func TestApiKeyCommandStopsWhenRunIsCancelled(t *testing.T) {
+	h := newHarness(t)
+	h.useConfiguredKey(t)
+	// The sleep is a grandchild of the shell that holds the command's stdout.
+	command, counter := keyScript(t, h.dir, "sleep 30")
+	h.config("[linear]\napi_key_command = \"" + command + "\"\n")
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := h.runWith(ctx, dispatch.Options{}, "run", "--interval", "20ms")
+		done <- err
+	}()
+	require.Eventually(t, func() bool { return runCount(t, counter) == 1 }, 5*time.Second, 10*time.Millisecond)
+	stop()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("dispatch run did not return within 3s of cancel")
+	}
+}
+
+func TestApiKeyCommandThatBlocksTimesOutAndTheNextTickRetries(t *testing.T) {
+	h := newHarness(t)
+	h.useConfiguredKey(t)
+	command, counter := keyScript(t, h.dir, `if [ "$(wc -l < `+filepath.Join(h.dir, "runs")+`)" -le 1 ]; then sleep 30; fi; echo test-key`)
+	h.config("[linear]\napi_key_command = \"" + command + "\"\n")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	_, _, err := h.runWith(context.Background(), dispatch.Options{KeyCommandTimeout: time.Second}, "tick")
+
+	require.ErrorContains(t, err, command)
+	require.ErrorContains(t, err, "timed out after 1s")
+	out, _, err := h.runWith(context.Background(), dispatch.Options{KeyCommandTimeout: time.Second}, "tick", "--dry-run")
+	require.NoError(t, err)
+	assert.Equal(t, "launch ENG-1\n", out)
+	assert.Equal(t, 2, runCount(t, counter))
+}

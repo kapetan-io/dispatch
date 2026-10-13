@@ -45,6 +45,9 @@ type Options struct {
 	LinearURL string
 	// LinearKey overrides LINEAR_API_KEY, the config's api_key_command and its keychain entry.
 	LinearKey string
+	// KeyCommandTimeout cuts off an api_key_command that never returns, such as a
+	// password manager waiting on an unlock prompt. Defaults to 1 minute.
+	KeyCommandTimeout time.Duration
 	// Herdr is the workspace manager that hosts the workers. Defaults to the installed herdr.
 	Herdr herdr.Herdr
 	// Treehouse is the pool of worktrees. Defaults to the installed treehouse.
@@ -298,6 +301,12 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck,
 	if err != nil {
 		return sum, err
 	}
+	// A rotated key is picked up by running the command again on the next tick.
+	defer func() {
+		if errors.Is(err, linear.ErrUnauthorized) {
+			keys.fromCommand = ""
+		}
+	}()
 	var stats linear.Stats
 	defer func() { sum.linear = stats }()
 	lin := linear.Client{URL: opts.LinearURL, Key: key, Stats: &stats}
@@ -875,9 +884,20 @@ func (k *keyLookup) find(ctx context.Context, opts Options, cfg config.Config) (
 // keyFromCommand runs command in a shell. Its stderr goes to the user so an
 // unlock prompt is visible, and its stdout is never echoed into an error.
 func keyFromCommand(ctx context.Context, opts Options, command string) (string, error) {
+	timeout := opts.KeyCommandTimeout
+	if timeout <= 0 {
+		timeout = time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	cmd.Stderr = opts.Stderr
+	// A process the command started can hold stdout open after sh is killed.
+	cmd.WaitDelay = time.Second
 	out, err := cmd.Output()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return "", fmt.Errorf("no Linear API key: api_key_command %q timed out after %s", command, timeout)
+	}
 	if err != nil {
 		return "", fmt.Errorf("no Linear API key: api_key_command %q failed: %w", command, err)
 	}
