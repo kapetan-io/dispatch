@@ -27,15 +27,15 @@ A `[repos.<label>]` table in `config.toml`, holding a repo's `path` and every pe
 _Avoid_: repo config, repo entry
 
 **Listed author**:
-A GitHub login in a repo's `ignore_comment_authors`. Dispatch and the worker act as if nothing it posts exists.
+A GitHub login in a repo's `ignore_comment_authors`. Dispatch and the worker act as if nothing it posts exists. Planned: the setting loads today, and ENG-370 makes it take effect.
 _Avoid_: bot, ignored bot (some bots, such as CodeRabbit, are not listed and still count)
 
 **Optional check**:
-A check GitHub does not mark required for merging the PR. It never counts in a repo with `ignore_optional_checks = true`.
+A check GitHub does not mark required for merging the PR. It never counts in a repo with `ignore_optional_checks = true`. Planned: the setting loads today, and ENG-373 makes it take effect.
 _Avoid_: non-blocking check, flaky check
 
 **PR phase**:
-Draft or open, read from GitHub's `isDraft` on every tick. Each phase has its own ready notification.
+Draft or open, read from GitHub's `isDraft` on every tick. Each phase has its own ready notification. Planned: dispatch does not read the phase yet, and ENG-371 adds it.
 _Avoid_: PR state (GitHub's `state` is OPEN for a draft too)
 
 **Review question**:
