@@ -25,6 +25,7 @@ Run `dispatch watch <ticket>` for each ticket you file or are asked to follow, a
 
 - After a ticket moves, whether you or the user moved it, run `dispatch tick`.
 - After posting review findings on a worker's PR, run `dispatch tick` so the nudge reaches the worker now instead of at the next timer tick.
+- Before moving a ticket, read its status from Linear, not from memory. A merged PR has already moved its ticket to Done, so ask the user before moving a ticket out of Done.
 - To type into a worker by hand, run `dispatch tell <ticket> "<text>"`. It fails when the worker is blocked on a question or absent.
 
 ### Breaking down and starting work
