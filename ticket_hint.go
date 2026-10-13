@@ -28,18 +28,38 @@ func ticketHint(ctx context.Context, opts Options) error {
 		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
 		return nil
 	}
-	clone, ok := cloneRoot(ctx, "")
-	if !ok {
-		return nil
-	}
-	for _, dir := range cfg.Repos {
-		resolved, err := filepath.EvalSymlinks(dir)
-		if err == nil && resolved == clone {
-			_, _ = fmt.Fprintln(opts.Stdout, ticketHintText)
-			return nil
-		}
+	if _, _, ok := repoAt(ctx, cfg, ""); ok {
+		_, _ = fmt.Fprintln(opts.Stdout, ticketHintText)
 	}
 	return nil
+}
+
+// repoAt returns the label and settings of the configured repo whose clone
+// holds dir, or the working directory when dir is empty. A worktree of the
+// clone counts as inside it. Two repos that resolve to one clone match nothing.
+func repoAt(ctx context.Context, cfg config.Config, dir string) (string, config.Repo, bool) {
+	labels, _ := reposAt(ctx, cfg, dir)
+	if len(labels) != 1 {
+		return "", config.Repo{}, false
+	}
+	return labels[0], cfg.Repos[labels[0]], true
+}
+
+// reposAt returns every label whose path resolves to the clone holding dir, and
+// that clone.
+func reposAt(ctx context.Context, cfg config.Config, dir string) ([]string, string) {
+	clone, ok := cloneRoot(ctx, dir)
+	if !ok {
+		return nil, ""
+	}
+	var labels []string
+	for _, label := range cfg.Repos.Labels() {
+		resolved, err := filepath.EvalSymlinks(cfg.Repos[label].Path)
+		if err == nil && resolved == clone {
+			labels = append(labels, label)
+		}
+	}
+	return labels, clone
 }
 
 // cloneRoot returns the directory holding the .git of the repo containing dir,

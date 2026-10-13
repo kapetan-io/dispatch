@@ -190,7 +190,7 @@ func TestTickNamesNewActivityInALaterNudgeWhenAPRProblemComesFirst(t *testing.T)
 
 func TestTickHoldsAutoMergeForNewPRActivity(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	p := approvedPR("a1")
@@ -421,7 +421,7 @@ func TestTickHoldsTheReadyNoticeWhileAThreadStaysOpenAfterItsNudge(t *testing.T)
 
 func TestTickDoesNotAutoMergeWhileAThreadStaysOpenAfterItsNudge(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	p := approvedPR("a1")

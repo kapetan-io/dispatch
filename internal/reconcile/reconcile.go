@@ -5,10 +5,10 @@ package reconcile
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/cache"
+	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/stops"
@@ -204,9 +204,6 @@ type Input struct {
 	// RenotifyTicks is how many ticks pass between notifications for a worker
 	// that stays blocked.
 	RenotifyTicks int
-	// AutoMerge holds the lowercased owner/name of each repo where an approved,
-	// ready PR is merged.
-	AutoMerge map[string]bool
 	// PRs maps an In Review ticket identifier to its open PR. Tickets whose PR
 	// was not read, or that have none, are absent.
 	PRs map[string]pullrequest.PullRequest
@@ -216,8 +213,8 @@ type Input struct {
 	// Cache is last tick's state. Plan only reads it.
 	Cache          cache.Cache
 	RepoLabelGroup string
-	// Repos maps a repo label to its local clone.
-	Repos map[string]string
+	// Repos maps a repo label to its settings.
+	Repos map[string]config.Repo
 	// UnreadRepos are repo labels whose treehouse pool could not be read this
 	// tick. Their tickets' workers are unknown, not absent.
 	UnreadRepos map[string]bool
@@ -309,7 +306,8 @@ func Plan(in Input) []Action {
 			actions = append(actions, Action{Kind: Wait, Ticket: t, Reason: fmt.Sprintf("the %s pool could not be read this tick", repo)})
 			continue
 		}
-		dir, ok := in.Repos[repo]
+		settings, ok := in.Repos[repo]
+		dir := settings.Path
 		if !ok {
 			actions = append(actions, Action{Kind: Escalate, Ticket: t, Reason: fmt.Sprintf("its repo %q is not in the dispatcher's config. Add it under [repos] and move the ticket back to In Progress.", repo)})
 			continue
@@ -532,7 +530,7 @@ func (in Input) inReviewIdle(t linear.Ticket, w worker.Worker, prev cache.Entry)
 	}
 	// An approval can land after the ready notification, so this runs before
 	// the once-per-head check. A head whose merge failed waits for a push.
-	if ok && pr.Ready && pr.Approved && in.AutoMerge[strings.ToLower(pr.Repo)] {
+	if label, _ := t.LabelIn(in.RepoLabelGroup); ok && pr.Ready && pr.Approved && in.Repos[label].AutoMerge {
 		if prev.MergeFailedHead == pr.Head {
 			return Action{}, false
 		}

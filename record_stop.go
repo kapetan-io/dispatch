@@ -52,13 +52,7 @@ func recordStop(ctx context.Context, opts Options) error {
 	if !ok || clone == tree {
 		return nil
 	}
-	managed := false
-	for _, dir := range cfg.Repos {
-		if resolved, err := filepath.EvalSymlinks(dir); err == nil && resolved == clone {
-			managed = true
-		}
-	}
-	if !managed {
+	if _, _, managed := repoAt(ctx, cfg, in.CWD); !managed {
 		return nil
 	}
 	rec := stops.Record{At: opts.Now().UTC(), Reported: in.BackgroundTasks != nil}

@@ -212,7 +212,7 @@ func TestTickMessagesEveryFollowerOfATicket(t *testing.T) {
 
 func TestTickMessagesFollowersAboutAMerge(t *testing.T) {
 	h := newHarness(t)
-	h.config(autoMergeConfig)
+	h.repoSettings("dispatch", autoMergeSetting)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", approvedPR("a1"))
@@ -299,7 +299,7 @@ func TestTickDryRunPrintsEscalationAndMergeMessages(t *testing.T) {
 		{
 			name: "Merge",
 			setup: func(h *harness) {
-				h.config(autoMergeConfig)
+				h.repoSettings("dispatch", autoMergeSetting)
 				h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 				h.worker("ENG-1", "idle")
 				h.pr("ENG-1", approvedPR("a1"))
@@ -343,7 +343,7 @@ func TestTickTellsFollowersAboutAMergeWhenTheAlertFails(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
-			h.config(autoMergeConfig)
+			h.repoSettings("dispatch", autoMergeSetting)
 			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 			h.worker("ENG-1", "idle")
 			h.pr("ENG-1", approvedPR("a1"))

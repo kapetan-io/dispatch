@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os/exec"
 	"strings"
 	"time"
@@ -24,8 +23,6 @@ type Repository interface {
 	// nothing, when the PR's head is no longer head, so a push after the
 	// approval was read is never merged unreviewed.
 	Merge(ctx context.Context, prURL, head string) error
-	// RepoName returns the owner/name of the repo cloned at repoDir.
-	RepoName(ctx context.Context, repoDir string) (string, error)
 }
 
 // PullRequest is an open pull request and what is wrong with it.
@@ -34,9 +31,6 @@ type PullRequest struct {
 	URL    string
 	// Head is the SHA of the PR's head commit. A push moves it.
 	Head string
-	// Repo is the GitHub repo the PR belongs to, as owner/name, read from the
-	// PR's own URL so it is right whichever remote gh resolved.
-	Repo string
 	// Approved means a reviewer's latest review approves the head commit and no
 	// reviewer's latest review requests changes. An approval of an earlier
 	// commit does not count, so a push clears it.
@@ -224,7 +218,7 @@ func Find(ctx context.Context, branch string, fetch Fetch) (PullRequest, bool, e
 		return PullRequest{}, false, fmt.Errorf("PR %s has more than %d review threads; dispatch reads one page and would miss unresolved ones", n.URL, maxThreads)
 	}
 	checksPassed, checksRunning := true, false
-	pr := PullRequest{Number: n.Number, URL: n.URL, Head: n.HeadRefOid, Repo: RepoOf(n.URL)}
+	pr := PullRequest{Number: n.Number, URL: n.URL, Head: n.HeadRefOid}
 	// GitHub's reviewDecision is empty on an unprotected branch and can't say
 	// which commit a request is on, so the reviews are read directly. One
 	// reviewer's standing request vetoes another's approval.
@@ -304,20 +298,6 @@ func (a *author) name() string {
 	return a.Login
 }
 
-// RepoOf returns the owner/name in a PR URL such as
-// https://github.com/owner/name/pull/7, or "" when the URL is not one.
-func RepoOf(prURL string) string {
-	u, err := url.Parse(prURL)
-	if err != nil {
-		return ""
-	}
-	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(parts) < 4 || parts[2] != "pull" {
-		return ""
-	}
-	return parts[0] + "/" + parts[1]
-}
-
 // CLI is the Repository that runs the installed gh command.
 type CLI struct {
 	bin     string
@@ -383,25 +363,6 @@ func (c *CLI) Merge(ctx context.Context, prURL, head string) error {
 		return fmt.Errorf("while running gh pr merge %s: %w: %s", prURL, err, strings.TrimSpace(string(out)))
 	}
 	return nil
-}
-
-// RepoName returns the owner/name that gh resolves for the repo cloned at
-// repoDir, which is the repo Read looks for PRs in.
-func (c *CLI) RepoName(ctx context.Context, repoDir string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, c.bin, "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner")
-	cmd.Dir = repoDir
-	cmd.WaitDelay = time.Second
-	b, err := cmd.Output()
-	if err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			return "", fmt.Errorf("while running gh repo view in %s: %w: %s", repoDir, err, strings.TrimSpace(string(exit.Stderr)))
-		}
-		return "", fmt.Errorf("while running gh repo view in %s: %w", repoDir, err)
-	}
-	return strings.TrimSpace(string(b)), nil
 }
 
 var _ Repository = (*CLI)(nil)

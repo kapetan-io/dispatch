@@ -100,7 +100,6 @@ func TestCLIReadAsksGHForTheBranchsOpenPRs(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, "a1", pr.Head)
-	assert.Equal(t, "o/r", pr.Repo)
 	call := recorded(t, args)[0]
 	assert.True(t, strings.HasPrefix(call, "api graphql -F owner={owner} -F repo={repo} -f branch=thrawn01/eng-1 -F threads=100 -f query=..."), call)
 	assert.NotContains(t, call, "after=")
@@ -150,20 +149,8 @@ func TestCLICutsOffACallThatHangs(t *testing.T) {
 
 	_, _, readErr := cli.Read(context.Background(), t.TempDir(), "b")
 	mergeErr := cli.Merge(context.Background(), "https://github.com/o/r/pull/7", "a1")
-	_, nameErr := cli.RepoName(context.Background(), t.TempDir())
 
 	assert.Less(t, time.Since(start), 5*time.Second)
 	require.Error(t, readErr)
 	require.Error(t, mergeErr)
-	require.Error(t, nameErr)
-}
-
-func TestCLIRepoNameTrimsGHsAnswer(t *testing.T) {
-	exe, args := standIn(t, "kapetan-io/dispatch\n", "", "0")
-
-	name, err := pullrequest.NewCLI(exe).RepoName(context.Background(), t.TempDir())
-
-	require.NoError(t, err)
-	assert.Equal(t, "kapetan-io/dispatch", name)
-	assert.Equal(t, []string{"repo view --json nameWithOwner -q .nameWithOwner"}, recorded(t, args))
 }

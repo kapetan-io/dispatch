@@ -22,7 +22,6 @@ blocked_renotify_ticks = 3
 plugin_root = "~/Development/dispatch"
 worker_model = "sonnet"
 design_model = "opus"
-auto_merge = []
 
 [linear]
 api_key_command = ""
@@ -41,11 +40,15 @@ blocker_done = "Done"
 done = ["Done", "Canceled", "Duplicate"]
 paused = ["Backlog", "Todo"]
 
-[repos]
-dispatch = "~/Development/dispatch"
+[repos.dispatch]
+path = "~/Development/dispatch"
+open_pr_as = "open"
+ignore_comment_authors = []
+ignore_optional_checks = false
+auto_merge = false
 ```
 
-`[repos]` has no default. Without it, every In Progress ticket escalates to Needs Human because its repo isn't configured. A leading `~` in `plugin_root` and in every `[repos]` path expands to your home directory.
+Repos have no default, so the block shows one repo with every setting at its default, and `path` is required. Without any `[repos.<label>]` table, every In Progress ticket escalates to Needs Human because its repo isn't configured. A leading `~` in `plugin_root` and in every repo's `path` expands to your home directory.
 
 ## Top-level settings
 
@@ -59,26 +62,6 @@ dispatch = "~/Development/dispatch"
 | `plugin_root` | `~/Development/dispatch` | Your checkout of this repo. Workers get `scripts/shims` first on their PATH and load the plugin with `--plugin-dir`, both from it. The shim runs the `dispatch` binary that launched the worker (the worker's `DISPATCH_BIN`), so a `dispatch` on PATH that is missing or older does not matter for launches. |
 | `worker_model` | `sonnet` | The model name passed to `claude --model` for every build worker. |
 | `design_model` | `opus` | The model name passed to `claude --model` for the worker of a `design` or `design-review` ticket. |
-| `auto_merge` | `[]` | GitHub repos, as `owner/name`, where dispatch merges a ready PR itself once a review approves its head commit. See [Auto-merge](#auto-merge). An entry that isn't `owner/name` fails the config load. |
-
-## Auto-merge
-
-`auto_merge` names repos by their GitHub `owner/name`, not by a `[repos]` label or a path on disk, because the same repo can be cloned anywhere. Matching ignores case.
-
-```toml
-auto_merge = ["kapetan-io/dispatch"]
-```
-
-In a listed repo, a tick that finds an In Review ticket's PR ready (the same test as the ready-for-review notification, with the worker idle) and approved by a review on its head commit runs `gh pr merge <PR URL> --merge --match-head-commit <head>`. It prints `merge ENG-1: PR approved` and sends a macOS notification, `ENG-1 was approved and merged: <PR URL>`, in place of the ready-for-review one. Any reviewer's approval counts, which today means CodeRabbit's, unless another reviewer's latest review requests changes. The merge only goes through for the commit that was approved.
-
-- An approval of an earlier commit doesn't count, so a push after approval waits for a new one.
-- A ready PR with no approval on its head gets the ready-for-review notification as before. If the approval arrives later, the next tick merges it.
-- A failed merge, such as branch protection refusing it, prints the error to stderr and sends one notification. The next ticks skip that head, and a push makes the PR eligible again.
-- `dispatch tick --dry-run` prints the `merge` line without merging.
-- dispatch reads the file on every tick, so adding or removing a repo takes effect on the next tick of a running `dispatch run`.
-- An entry that matches no repo under `[repos]` is reported once per `dispatch run` as a warning on stderr. It is not an error.
-
-The PR's repo is read from the PR's own URL, but the PR is found through the repo `gh` resolves for the clone. A clone with two remotes (`origin` plus a fork as `upstream`) can resolve to the wrong one, and `gh repo view` then names the fork. Run `gh repo set-default owner/name` in that clone.
 
 ## `[linear]`
 
@@ -88,7 +71,7 @@ The PR's repo is read from the PR's own URL, but the PR is found through the rep
 | `api_key_keychain` | `dispatch-linear-api-key` | The macOS keychain service holding your Linear API key. The `LINEAR_API_KEY` environment variable wins when set. |
 | `teams` | `["ENG"]` | Team keys dispatch manages. A ticket in another team is ignored, and a promoted child must be in one of these. |
 | `ai_label` | `ai` | The label that opts a ticket in. dispatch touches only tickets assigned to the owner of the API key that carry it. |
-| `repo_label_group` | `repo` | The Linear label group whose labels name a ticket's repo. A ticket's repo label must match a key in `[repos]`. |
+| `repo_label_group` | `repo` | The Linear label group whose labels name a ticket's repo. A ticket's repo label must match a `[repos.<label>]` table. |
 
 ## `[linear.statuses]`
 
@@ -105,14 +88,51 @@ Each value is the exact name of a workflow status in your Linear team. dispatch 
 | `done` | `["Done", "Canceled", "Duplicate"]` | Statuses of a finished ticket. Its worker is stopped and its tree returned, unless the tree holds modified or staged tracked files, or unpushed commits. Untracked files are deleted first. A parent closes when every child is in one of these. |
 | `paused` | `["Backlog", "Todo"]` | Statuses of a ticket you parked. Its worker is stopped and its tree kept. |
 
-## `[repos]`
+## `[repos.<label>]`
 
-Maps a repo label to the local clone dispatch launches workers from. The clone needs a `treehouse.toml`. The key is the label's name inside the `repo_label_group` label group.
+One table per repo. The label is the repo's name inside the `repo_label_group` label group, and the table holds the repo's settings. A repo with only `path` behaves as dispatch always has.
 
 ```toml
-[repos]
-dispatch = "~/Development/dispatch"
+[repos.dispatch]
+path = "~/Development/dispatch"
+auto_merge = true
 ```
+
+| Setting | Default | What it does |
+|---|---|---|
+| `path` | required | The local clone dispatch launches workers from. The clone needs a `treehouse.toml`. Two repos can't share a path. |
+| `open_pr_as` | `"open"` | `"open"` or `"draft"`. Validated and printed by `dispatch repo-settings` today. Opening PRs as drafts ships in a later change. |
+| `ignore_comment_authors` | `[]` | GitHub logins whose comments and reviews dispatch and the worker are to ignore. Validated and printed today. Ignoring them ships in a later change. |
+| `ignore_optional_checks` | `false` | When `true`, only checks GitHub requires for merging count. Validated and printed today. Counting only required checks ships in a later change. |
+| `auto_merge` | `false` | Merge a ready PR once a review approves its head commit. See [Auto-merge](#auto-merge). |
+
+The load fails, naming the repo and the fix, on a `label = "path"` entry under `[repos]`, a table without `path`, two tables with one `path`, an unknown key in a table, an `open_pr_as` other than `"open"` or `"draft"`, and a top-level `auto_merge`.
+
+Inside a configured repo's clone or a worktree of it, `dispatch repo-settings` prints that repo's table with every setting at its effective value, in a form the config accepts:
+
+```
+$ dispatch repo-settings
+[repos.dispatch]
+path = "/Users/you/Development/dispatch"
+open_pr_as = "open"
+ignore_comment_authors = []
+ignore_optional_checks = false
+auto_merge = true
+```
+
+Anywhere else it fails with `dispatch: /tmp is not inside a repo under [repos] in /Users/you/.config/dispatch/config.toml`.
+
+## Auto-merge
+
+In a repo with `auto_merge = true`, a tick that finds an In Review ticket's PR ready (the same test as the ready-for-review notification, with the worker idle) and approved by a review on its head commit runs `gh pr merge <PR URL> --merge --match-head-commit <head>`. It prints `merge ENG-1: PR approved` and sends a macOS notification, `ENG-1 was approved and merged: <PR URL>`, in place of the ready-for-review one. Any reviewer's approval counts, which today means CodeRabbit's, unless another reviewer's latest review requests changes. The merge only goes through for the commit that was approved.
+
+- An approval of an earlier commit doesn't count, so a push after approval waits for a new one.
+- A ready PR with no approval on its head gets the ready-for-review notification as before. If the approval arrives later, the next tick merges it.
+- A failed merge, such as branch protection refusing it, prints the error to stderr and sends one notification. The next ticks skip that head, and a push makes the PR eligible again.
+- `dispatch tick --dry-run` prints the `merge` line without merging.
+- dispatch reads the file on every tick, so changing a repo's `auto_merge` takes effect on the next tick of a running `dispatch run`.
+
+The PR is found through the repo `gh` resolves for the clone. A clone with two remotes (`origin` plus a fork as `upstream`) can resolve to the wrong one. Run `gh repo set-default owner/name` in that clone.
 
 ## Examples
 
@@ -121,8 +141,8 @@ dispatch = "~/Development/dispatch"
 The smallest useful file. Linear has an `ENG` team, an `ai` label, a `repo` label group with a `dispatch` label, and a `Needs Human` status.
 
 ```toml
-[repos]
-dispatch = "~/Development/dispatch"
+[repos.dispatch]
+path = "~/Development/dispatch"
 ```
 
 ### Several repos and teams
@@ -136,10 +156,15 @@ max_in_progress = 6
 [linear]
 teams = ["ENG", "OPS"]
 
-[repos]
-dispatch = "~/Development/dispatch"
-webapp = "~/src/webapp"
-infra = "/work/infra"
+[repos.dispatch]
+path = "~/Development/dispatch"
+
+[repos.webapp]
+path = "~/src/webapp"
+auto_merge = true
+
+[repos.infra]
+path = "/work/infra"
 ```
 
 Each of `dispatch`, `webapp` and `infra` must exist as a label in the `repo` label group, and each clone needs a `treehouse.toml`.
@@ -166,8 +191,8 @@ blocker_done = "Shipped"
 done = ["Shipped", "Won't do"]
 paused = ["Backlog", "Ready"]
 
-[repos]
-platform = "~/src/platform"
+[repos.platform]
+path = "~/src/platform"
 ```
 
 Keep every status you park tickets in inside `paused`. A ticket moved to a status listed in neither `paused` nor `done` keeps its running worker.
