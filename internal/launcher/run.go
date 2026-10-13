@@ -168,7 +168,7 @@ func (l *launch) run(ctx context.Context) Result {
 		_ = l.opts.Herdr.CloseWorkspace(context.WithoutCancel(ctx), l.workspace)
 		detail := "Claude started but herdr"
 		if errors.Is(err, herdr.ErrClaudeNeverStarted) {
-			detail = "Claude never started, because its launch command sat unrun at the shell prompt, and herdr"
+			detail = "Claude never started, because its launch command still showed at the shell prompt after Enter was pressed on it, and herdr"
 		}
 		return Result{
 			Status:    StatusInjectionUnconfirmed,

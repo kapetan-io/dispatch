@@ -237,6 +237,7 @@ func (c *CLI) Kickoff(ctx context.Context, pane, text string) error {
 		// that command line.
 		if shellCommand.MatchString(screen) {
 			unrun = true
+			c.record("enter", "launch command at the shell prompt")
 			_ = c.run(ctx, "pane", "send-keys", pane, "Enter")
 			c.sleep(ctx, c.pace)
 			continue

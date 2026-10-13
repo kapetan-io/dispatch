@@ -727,13 +727,14 @@ func TestClaudeShimRestoresWorkerFlagsWithoutAName(t *testing.T) {
 		[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
 	shims, err := filepath.Abs("scripts/shims")
 	require.NoError(t, err)
+	bin := buildDispatch(t)
 
 	// herdr restarts a worker with a bare `claude --resume` and replays its
 	// env, which for workers launched before --name was dropped still holds
 	// DISPATCH_WORKER_NAME.
 	cmd := exec.Command(filepath.Join(shims, "claude"), "--resume")
 	cmd.Env = append(os.Environ(),
-		"PATH="+shims+":"+dir+":"+os.Getenv("PATH"),
+		"PATH="+shims+":"+bin+":"+dir+":"+os.Getenv("PATH"),
 		"AUTONOMOUS_WORKER=1",
 		"DISPATCH_PLUGIN_ROOT=/plugin",
 		"DISPATCH_WORKER_NAME=eng-1",
@@ -744,4 +745,170 @@ func TestClaudeShimRestoresWorkerFlagsWithoutAName(t *testing.T) {
 	argv, err := os.ReadFile(filepath.Join(dir, "argv"))
 	require.NoError(t, err)
 	assert.Equal(t, "--resume --plugin-dir /plugin --disallowedTools EnterPlanMode,ExitPlanMode --dangerously-skip-permissions\n", string(argv))
+}
+
+func TestClaudeShimSkipsEveryShimDirectoryOnPath(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
+		[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
+	shims, err := filepath.Abs("scripts/shims")
+	require.NoError(t, err)
+	bin := buildDispatch(t)
+
+	// A launch from inside a worker or a plugin session already has one shim
+	// directory on PATH when the launcher stamps its own in front.
+	other := filepath.Join(t.TempDir(), "scripts", "shims")
+	require.NoError(t, os.MkdirAll(other, 0o755))
+	body, err := os.ReadFile(filepath.Join(shims, "claude"))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(other, "claude"), body, 0o755))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, filepath.Join(shims, "claude"), "--resume")
+	cmd.Env = append(os.Environ(),
+		"PATH="+strings.Join([]string{shims, other, bin, dir, os.Getenv("PATH")}, ":"),
+		"AUTONOMOUS_WORKER=1",
+		"DISPATCH_PLUGIN_ROOT=/plugin",
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	argv, err := os.ReadFile(filepath.Join(dir, "argv"))
+	require.NoError(t, err)
+	assert.Equal(t, "--resume --plugin-dir /plugin --disallowedTools EnterPlanMode,ExitPlanMode --dangerously-skip-permissions\n", string(argv))
+}
+
+func buildDispatch(t *testing.T) string {
+	t.Helper()
+	bin := t.TempDir()
+	out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "dispatch"), "./cmd/dispatch").CombinedOutput()
+	require.NoError(t, err, string(out))
+	return bin
+}
+
+func TestClaudeShimFlags(t *testing.T) {
+	shims, err := filepath.Abs("scripts/shims")
+	require.NoError(t, err)
+	bin := buildDispatch(t)
+
+	for _, test := range []struct {
+		name string
+		args []string
+		env  []string
+		want string
+	}{
+		{
+			name: "PlainSessionGetsOnlyThePlugin",
+			args: []string{"--resume"},
+			env:  []string{"DISPATCH_PLUGIN_ROOT=/plugin", "DISPATCH_WORKER_NAME=eng-1"},
+			want: "--resume --plugin-dir /plugin\n",
+		},
+		{
+			name: "NoEnvAddsNothing",
+			args: []string{"--resume"},
+			want: "--resume\n",
+		},
+		{
+			name: "WorkerFlagsOnlyWhenAutonomous",
+			args: []string{"--resume"},
+			env:  []string{"AUTONOMOUS_WORKER=0", "DISPATCH_PLUGIN_ROOT=/plugin"},
+			want: "--resume --plugin-dir /plugin\n",
+		},
+		{
+			name: "ShortPrintPassesThroughUntouched",
+			args: []string{"-p", "hi"},
+			env:  []string{"AUTONOMOUS_WORKER=1", "DISPATCH_PLUGIN_ROOT=/plugin"},
+			want: "-p hi\n",
+		},
+		{
+			name: "LongPrintPassesThroughUntouched",
+			args: []string{"--print", "hi"},
+			env:  []string{"AUTONOMOUS_WORKER=1", "DISPATCH_PLUGIN_ROOT=/plugin"},
+			want: "--print hi\n",
+		},
+		{
+			name: "PresentFlagsAreNotRepeated",
+			args: []string{"--plugin-dir", "/mine", "--disallowedTools", "Bash", "--dangerously-skip-permissions"},
+			env:  []string{"AUTONOMOUS_WORKER=1", "DISPATCH_PLUGIN_ROOT=/plugin"},
+			want: "--plugin-dir /mine --disallowedTools Bash --dangerously-skip-permissions\n",
+		},
+		{
+			name: "KebabDisallowedToolsIsNotRepeated",
+			args: []string{"--disallowed-tools", "Bash"},
+			env:  []string{"AUTONOMOUS_WORKER=1"},
+			want: "--disallowed-tools Bash --dangerously-skip-permissions\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
+				[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
+
+			cmd := exec.Command(filepath.Join(shims, "claude"), test.args...)
+			cmd.Env = append(append(os.Environ(), "AUTONOMOUS_WORKER=", "DISPATCH_PLUGIN_ROOT=", "DISPATCH_WORKER_NAME="), test.env...)
+			cmd.Env = append(cmd.Env, "PATH="+shims+":"+bin+":"+dir+":"+os.Getenv("PATH"))
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+
+			argv, err := os.ReadFile(filepath.Join(dir, "argv"))
+			require.NoError(t, err)
+			assert.Equal(t, test.want, string(argv))
+		})
+	}
+}
+
+func TestClaudeShimWithNoRealClaudeFailsClearly(t *testing.T) {
+	shims, err := filepath.Abs("scripts/shims")
+	require.NoError(t, err)
+	bin := buildDispatch(t)
+
+	// A claude without the execute bit is not a claude.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\n"), 0o644))
+
+	cmd := exec.Command(filepath.Join(bin, "dispatch"), "claude-shim", "--resume")
+	cmd.Env = append(os.Environ(), "PATH="+shims+":"+dir)
+	out, err := cmd.CombinedOutput()
+
+	var exit *exec.ExitError
+	require.ErrorAs(t, err, &exit)
+	assert.NotZero(t, exit.ExitCode())
+	assert.Contains(t, string(out), "no real claude found on PATH")
+}
+
+func TestClaudeShimNamesTheMissingDispatchWhenItIsNotOnPath(t *testing.T) {
+	shims, err := filepath.Abs("scripts/shims")
+	require.NoError(t, err)
+
+	cmd := exec.Command(filepath.Join(shims, "claude"), "--resume")
+	cmd.Env = []string{"PATH=" + shims + ":/usr/bin:/bin"}
+	out, err := cmd.CombinedOutput()
+
+	var exit *exec.ExitError
+	require.ErrorAs(t, err, &exit)
+	assert.Equal(t, 127, exit.ExitCode())
+	assert.Contains(t, string(out), "dispatch is not on PATH")
+}
+
+func TestClaudeShimSkipsAShimDirectoryReachedThroughASymlink(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
+		[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
+	shims, err := filepath.Abs("scripts/shims")
+	require.NoError(t, err)
+	bin := buildDispatch(t)
+	link := filepath.Join(t.TempDir(), "plugin-shims")
+	require.NoError(t, os.Symlink(shims, link))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, filepath.Join(shims, "claude"), "--resume")
+	cmd.Env = append(os.Environ(), "PATH="+strings.Join([]string{link, bin, dir, os.Getenv("PATH")}, ":"), "AUTONOMOUS_WORKER=", "DISPATCH_PLUGIN_ROOT=")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	argv, err := os.ReadFile(filepath.Join(dir, "argv"))
+	require.NoError(t, err)
+	assert.Equal(t, "--resume\n", string(argv))
 }

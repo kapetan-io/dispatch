@@ -1,34 +1,5 @@
 #!/usr/bin/env bash
 # claude shim for dispatch workers. `dispatch launch` puts this dir first on the
-# worker's PATH and sets DISPATCH_PLUGIN_ROOT in its env, which herdr replays
-# on restart. herdr restarts a worker with a bare `claude --resume` and does
-# not replay argv, so this shim re-adds this plugin and the worker flags.
-# Print-mode runs (-p) pass through untouched. It never adds --name: Claude
-# draws the name below an open question, and herdr then misses the question.
-set -u
-args=("$@")
-has_plugin=0 has_disallowed=0 has_skip=0 print_mode=0
-for a in "$@"; do
-  case $a in
-    --plugin-dir) has_plugin=1 ;;
-    --disallowedTools|--disallowed-tools) has_disallowed=1 ;;
-    --dangerously-skip-permissions) has_skip=1 ;;
-    -p|--print) print_mode=1 ;;
-  esac
-done
-if [ "$print_mode" = 0 ]; then
-  [ "$has_plugin" = 0 ] && [ -n "${DISPATCH_PLUGIN_ROOT:-}" ] && args+=(--plugin-dir "$DISPATCH_PLUGIN_ROOT")
-  if [ "${AUTONOMOUS_WORKER:-}" = 1 ]; then
-    [ "$has_disallowed" = 0 ] && args+=(--disallowedTools "EnterPlanMode,ExitPlanMode")
-    [ "$has_skip" = 0 ] && args+=(--dangerously-skip-permissions)
-  fi
-fi
-# exec the next `claude` on PATH beyond this shim
-self_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-real=""
-while IFS= read -r cand; do
-  [ "$cand" = "$self_dir/claude" ] && continue
-  real=$cand; break
-done < <(type -ap claude)
-[ -n "$real" ] || { echo "dispatch claude shim: no real claude found on PATH" >&2; exit 127; }
-exec "$real" "${args[@]}"
+# worker's PATH, and herdr replays that PATH when it restarts the worker.
+command -v dispatch >/dev/null || { echo "claude shim: dispatch is not on PATH" >&2; exit 127; }
+exec dispatch claude-shim "$@"

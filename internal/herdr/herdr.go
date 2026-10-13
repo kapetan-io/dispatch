@@ -122,8 +122,8 @@ type Started struct {
 var (
 	// ErrKickoffUnconfirmed means Claude was up but herdr never showed it running the kickoff.
 	ErrKickoffUnconfirmed = errors.New("herdr never showed the kickoff running")
-	// ErrClaudeNeverStarted means the command that starts Claude sat unrun at the shell prompt.
-	ErrClaudeNeverStarted = errors.New("Claude never started, because its launch command sat unrun at the shell prompt")
+	// ErrClaudeNeverStarted means the command that starts Claude still showed at the shell prompt after Enter was pressed on it.
+	ErrClaudeNeverStarted = errors.New("Claude never started, because its launch command still showed at the shell prompt after Enter was pressed on it")
 )
 
 // ErrAgentBlocked is the refusal of a prompt to an agent that waits on a

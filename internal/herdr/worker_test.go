@@ -457,3 +457,17 @@ func TestKickoffRecordsTheScreensItReadsWhenTraced(t *testing.T) {
 	assert.Contains(t, string(b), "dialogs")
 	assert.Contains(t, string(b), "typing")
 }
+
+func TestKickoffTraceShowsEachEnterPressedAtAStrandedCommand(t *testing.T) {
+	s := newStatefulHerdr(t)
+	trace := filepath.Join(s.dir, "trace.log")
+	s.cli.WithTrace(trace)
+	s.screens("❯ claude --model opus --plugin-dir /plugin")
+
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1")
+
+	require.ErrorIs(t, err, herdr.ErrClaudeNeverStarted)
+	b, err := os.ReadFile(trace)
+	require.NoError(t, err)
+	assert.Equal(t, 30, strings.Count(string(b), " enter\n"))
+}
