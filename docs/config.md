@@ -25,6 +25,7 @@ design_model = "opus"
 auto_merge = []
 
 [linear]
+api_key_command = ""
 api_key_keychain = "dispatch-linear-api-key"
 teams = ["ENG"]
 ai_label = "ai"
@@ -83,6 +84,7 @@ The PR's repo is read from the PR's own URL, but the PR is found through the rep
 
 | Setting | Default | What it does |
 |---|---|---|
+| `api_key_command` | none | A shell command that prints your Linear API key, such as `op read op://Work/linear/credential`. dispatch looks for the key in this order and stops at the first hit: the `LINEAR_API_KEY` environment variable, this command, then the keychain entry in `api_key_keychain`. With the command set, the keychain is never read. `dispatch run` runs the command once and keeps the key until Linear rejects it or the process exits, so a password manager that prompts to unlock asks once and a rotated key is picked up on the next tick. A command that fails or prints nothing stops the tick with an error naming the command and its exit status. One that runs longer than a minute, such as a password manager waiting on an unlock prompt, is killed and the error says it timed out. The next tick runs it again. |
 | `api_key_keychain` | `dispatch-linear-api-key` | The macOS keychain service holding your Linear API key. The `LINEAR_API_KEY` environment variable wins when set. |
 | `teams` | `["ENG"]` | Team keys dispatch manages. A ticket in another team is ignored, and a promoted child must be in one of these. |
 | `ai_label` | `ai` | The label that opts a ticket in. dispatch touches only tickets assigned to the owner of the API key that carry it. |

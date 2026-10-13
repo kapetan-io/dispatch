@@ -29,7 +29,7 @@ Put `$GOBIN` (default `~/go/bin`) on your PATH. `bin/dispatch-launch` runs `disp
 security add-generic-password -s dispatch-linear-api-key -a "$USER" -w
 ```
 
-The command prompts for the key. Setting `LINEAR_API_KEY` in the environment overrides the keychain, and `api_key_keychain` in the config names a different service. dispatch manages only tickets assigned to the owner of this key.
+The command prompts for the key. Setting `LINEAR_API_KEY` in the environment overrides the keychain, and `api_key_keychain` in the config names a different service. If the keychain is off limits, set `api_key_command` in the `[linear]` config to a command that prints the key, such as `op read op://Work/linear/credential`, and skip the keychain. dispatch manages only tickets assigned to the owner of this key.
 
 **3. Prepare Linear.** dispatch finds your tickets by status and label, so each team in your config needs:
 
@@ -175,7 +175,7 @@ It fails when the ticket's worker is blocked on a question or absent.
 
 ## Troubleshooting
 
-**A tick fails with `no Linear API key`.** `LINEAR_API_KEY` is unset and the keychain has no entry under the configured service. Redo step 2, and check the entry exists with `security find-generic-password -s dispatch-linear-api-key >/dev/null && echo found`, which reports the entry without printing the key. `dispatch run` goes on ticking after a failed tick, so fix the cause and the next tick recovers.
+**A tick fails with `no Linear API key`.** `LINEAR_API_KEY` is unset and the keychain has no entry under the configured service. When `api_key_command` is set, the error instead names that command and its exit status, so run the command yourself. Otherwise redo step 2, and check the entry exists with `security find-generic-password -s dispatch-linear-api-key >/dev/null && echo found`, which reports the entry without printing the key. `dispatch run` goes on ticking after a failed tick, so fix the cause and the next tick recovers.
 
 **A tick fails with `unknown setting`.** The config has a key dispatch doesn't know, and the message names it and the file. The usual causes are a typo and an example copied from an old design document. See the [config reference](config.md).
 

@@ -445,14 +445,15 @@ const (
 // fakes in tools (herdr, treehouse, pull requests, notifications, launcher),
 // all rooted in one temp directory.
 type harness struct {
-	t      *testing.T
-	dir    string
-	repo   string
-	state  string
-	extra  string
-	repos  string
-	linear *fakeLinear
-	tools  *tooltest.Tools
+	t             *testing.T
+	configuredKey bool
+	dir           string
+	repo          string
+	state         string
+	extra         string
+	repos         string
+	linear        *fakeLinear
+	tools         *tooltest.Tools
 	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
 	// with the launcher built into dispatch, over tools.Herdr and tools.Treehouse.
 	builtinLauncher bool
@@ -476,6 +477,13 @@ func newHarness(t *testing.T) *harness {
 	}
 	require.NoError(t, os.MkdirAll(h.repo, 0o755))
 	return h
+}
+
+// useConfiguredKey makes runs find the Linear key the way a user's machine
+// does, instead of through Options.LinearKey.
+func (h *harness) useConfiguredKey(t *testing.T) {
+	h.configuredKey = true
+	t.Setenv("LINEAR_API_KEY", "")
 }
 
 func (h *harness) config(extra string) {
@@ -504,7 +512,9 @@ func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...s
 	extra.StateDir = h.state
 	extra.Now = func() time.Time { return h.clock }
 	extra.LinearURL = h.linear.server.URL
-	extra.LinearKey = "test-key"
+	if !h.configuredKey {
+		extra.LinearKey = "test-key"
+	}
 	extra.Herdr = h.tools.Herdr
 	extra.Treehouse = h.tools.Treehouse
 	extra.PullRequests = h.tools.PullRequests
@@ -735,6 +745,7 @@ type fakeLinear struct {
 	noComments        bool
 	morePages         bool
 	lookupCalls       int
+	requests          int
 	noLookups         bool
 	children          []fakeTicket
 	childReads        [][]any
@@ -822,6 +833,12 @@ func (f *fakeLinear) setElsewhere(nodes ...fakeTicket) {
 	f.elsewhere = nodes
 }
 
+func (f *fakeLinear) calls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.requests
+}
+
 func (f *fakeLinear) lookups() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -851,8 +868,11 @@ func (f *fakeLinear) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.requests++
 	var data any
 	switch req.OperationName {
+	case "Viewer":
+		data = map[string]any{"viewer": map[string]string{"id": viewerID, "name": "Ada Lovelace"}}
 	case "ManagedTickets":
 		data = map[string]any{"viewer": map[string]any{"assignedIssues": map[string]any{
 			"nodes":    f.nodes,
