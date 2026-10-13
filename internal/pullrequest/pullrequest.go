@@ -33,6 +33,9 @@ type Rules struct {
 	// IgnoreAuthors are GitHub logins, matched without regard to case, whose
 	// reviews, comments, approvals and change requests count for nothing.
 	IgnoreAuthors []string
+	// RequiredChecksOnly makes only the checks GitHub requires for merging the
+	// PR count. A branch that requires none has no check that counts.
+	RequiredChecksOnly bool
 }
 
 func (r Rules) ignores(a *author) bool {
@@ -144,6 +147,104 @@ const olderCommentsQuery = `query OlderComments($owner: String!, $repo: String!,
   }
 }`
 
+const checksQuery = `query Checks($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
+        pageInfo { hasNextPage }
+        nodes {
+          __typename
+          ... on CheckRun { name status conclusion isRequired(pullRequestNumber: $number) }
+          ... on StatusContext { context state isRequired(pullRequestNumber: $number) }
+        }
+      } } } } }
+    }
+  }
+}`
+
+// checkContext is a CheckRun or a StatusContext. A CheckRun has a status and,
+// once COMPLETED, a conclusion. A StatusContext has only a state.
+type checkContext struct {
+	Typename   string `json:"__typename"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+	State      string `json:"state"`
+	IsRequired bool   `json:"isRequired"`
+}
+
+type checksPage struct {
+	Data struct {
+		Repository struct {
+			PullRequest struct {
+				Commits struct {
+					Nodes []struct {
+						Commit struct {
+							StatusCheckRollup *struct {
+								Contexts struct {
+									Nodes    []checkContext `json:"nodes"`
+									PageInfo struct {
+										HasNextPage bool `json:"hasNextPage"`
+									} `json:"pageInfo"`
+								} `json:"contexts"`
+							} `json:"statusCheckRollup"`
+						} `json:"commit"`
+					} `json:"nodes"`
+				} `json:"commits"`
+			} `json:"pullRequest"`
+		} `json:"repository"`
+	} `json:"data"`
+}
+
+// rollupState is the state GitHub's rollup would have if only the required
+// checks counted: SUCCESS when none is required, FAILURE when a required check
+// failed, PENDING while one has not finished.
+func rollupState(contexts []checkContext) string {
+	running := false
+	for _, c := range contexts {
+		if !c.IsRequired {
+			continue
+		}
+		switch {
+		case c.Typename == "StatusContext" && (c.State == "FAILURE" || c.State == "ERROR"):
+			return "FAILURE"
+		case c.Typename == "StatusContext" && c.State != "SUCCESS":
+			running = true
+		case c.Typename != "StatusContext" && c.Status != "COMPLETED":
+			running = true
+		case c.Typename != "StatusContext" && !slices.Contains([]string{"SUCCESS", "NEUTRAL", "SKIPPED"}, c.Conclusion):
+			return "FAILURE"
+		}
+	}
+	if running {
+		return "PENDING"
+	}
+	return "SUCCESS"
+}
+
+// requiredRollupState reads the checks behind PR number and returns the rollup
+// state of the required ones. A second page of checks is an error, because a
+// required failure beyond the first page would go unnoticed.
+func requiredRollupState(ctx context.Context, src Source, number int) (string, error) {
+	b, err := src.Checks(ctx, number)
+	if err != nil {
+		return "", err
+	}
+	var resp checksPage
+	if err := json.Unmarshal(b, &resp); err != nil {
+		return "", fmt.Errorf("while reading gh output for the checks of PR %d: %w", number, err)
+	}
+	for _, c := range resp.Data.Repository.PullRequest.Commits.Nodes {
+		if r := c.Commit.StatusCheckRollup; r != nil {
+			if r.Contexts.PageInfo.HasNextPage {
+				return "", fmt.Errorf("PR %d has more than 100 checks; dispatch reads one page and would miss required ones", number)
+			}
+			return rollupState(r.Contexts.Nodes), nil
+		}
+	}
+	return "SUCCESS", nil
+}
+
 type reviewNode struct {
 	State       string  `json:"state"`
 	Body        string  `json:"body"`
@@ -248,6 +349,10 @@ type Source interface {
 	// Older returns the page of PR number's reviews or comments (kind is
 	// kindReviews or kindComments) that ends before the cursor.
 	Older(ctx context.Context, number int, kind, before string) ([]byte, error)
+	// Checks returns the answer to the query for the checks behind PR number's
+	// head, each with whether the PR requires it. GitHub answers that only for
+	// a PR number, so the branch query can't carry it.
+	Checks(ctx context.Context, number int) ([]byte, error)
 }
 
 // widen returns the items keep accepts, reading older pages until the window
@@ -348,12 +453,24 @@ func Find(ctx context.Context, branch string, src Source, rules Rules) (PullRequ
 	// PENDING and EXPECTED are not failures, because the worker has nothing to
 	// fix yet, but they are not passed either, so the PR is not ready.
 	for _, c := range n.Commits.Nodes {
-		if r := c.Commit.StatusCheckRollup; r != nil && (r.State == "FAILURE" || r.State == "ERROR") {
+		r := c.Commit.StatusCheckRollup
+		if r == nil {
+			continue
+		}
+		state := r.State
+		// An EXPECTED rollup is a required check that has not started, which
+		// stays not ready, so it needs no look at which checks are required.
+		if rules.RequiredChecksOnly && (state == "FAILURE" || state == "ERROR" || state == "PENDING") {
+			if state, err = requiredRollupState(ctx, src, n.Number); err != nil {
+				return PullRequest{}, false, err
+			}
+		}
+		if state == "FAILURE" || state == "ERROR" {
 			pr.Problems = append(pr.Problems, "a failed check")
 		}
-		if r := c.Commit.StatusCheckRollup; r != nil && r.State != "SUCCESS" {
+		if state != "SUCCESS" {
 			checksPassed = false
-			checksRunning = checksRunning || r.State == "PENDING" || r.State == "EXPECTED"
+			checksRunning = checksRunning || state == "PENDING" || state == "EXPECTED"
 		}
 	}
 	// RFC 3339 UTC times sort as strings, and only the newest item matters, so
@@ -462,6 +579,12 @@ func (s cliSource) Older(ctx context.Context, number int, kind, before string) (
 	return s.cli.graphql(ctx, s.dir, []string{"api", "graphql",
 		"-F", "owner={owner}", "-F", "repo={repo}", "-F", fmt.Sprintf("number=%d", number),
 		"-f", "before=" + before, "-f", "query=" + q})
+}
+
+func (s cliSource) Checks(ctx context.Context, number int) ([]byte, error) {
+	return s.cli.graphql(ctx, s.dir, []string{"api", "graphql",
+		"-F", "owner={owner}", "-F", "repo={repo}", "-F", fmt.Sprintf("number=%d", number),
+		"-f", "query=" + checksQuery})
 }
 
 func (c *CLI) graphql(ctx context.Context, dir string, args []string) ([]byte, error) {

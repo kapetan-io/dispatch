@@ -31,7 +31,7 @@ A GitHub login in a repo's `ignore_comment_authors`. Dispatch and the worker act
 _Avoid_: bot, ignored bot (some bots, such as CodeRabbit, are not listed and still count)
 
 **Optional check**:
-A check GitHub does not mark required for merging the PR. It never counts in a repo with `ignore_optional_checks = true`. Planned: the setting loads today, and ENG-373 makes it take effect.
+A check GitHub does not mark required for merging the PR. It never counts in a repo with `ignore_optional_checks = true`.
 _Avoid_: non-blocking check, flaky check
 
 **PR phase**:
