@@ -6,6 +6,7 @@ package delivery
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
@@ -17,14 +18,14 @@ import (
 // would answer the question, so no route is tried.
 var ErrBlocked = errors.New("worker is blocked on a question")
 
-// Post delivers messages. Herdr and Osascript are the commands to run.
-// StateDir holds the list of sessions following each ticket that Notify also
-// messages, and Stderr is where a failed or dropped watcher message is reported.
+// Post delivers messages through Herdr and Alerts. StateDir holds the list of
+// sessions following each ticket that Notify also messages, and Stderr is where
+// a failed or dropped watcher message is reported.
 type Post struct {
-	Herdr     string
-	Osascript string
-	StateDir  string
-	Stderr    io.Writer
+	Herdr    herdr.Herdr
+	Alerts   Alerts
+	StateDir string
+	Stderr   io.Writer
 }
 
 // Event is something the user should hear about.
@@ -41,7 +42,10 @@ func (p Post) Nudge(ctx context.Context, w worker.Worker, text string) error {
 	if w.State == worker.Blocked {
 		return ErrBlocked
 	}
-	return herdr.Prompt(ctx, p.Herdr, w.PaneID, text)
+	if err := p.Herdr.Prompt(ctx, w.PaneID, text); err != nil {
+		return fmt.Errorf("while prompting herdr pane %s: %w", w.PaneID, err)
+	}
+	return nil
 }
 
 // Notify tells the user, then every session following the event's ticket. The
@@ -50,7 +54,7 @@ func (p Post) Nudge(ctx context.Context, w worker.Worker, text string) error {
 // alert's alone, and a watcher that can't be reached never makes the caller
 // retry.
 func (p Post) Notify(ctx context.Context, ev Event) error {
-	if err := alert(ctx, p.Osascript, ev.Text); err != nil {
+	if err := alert(ctx, p.Alerts, ev.Text); err != nil {
 		return err
 	}
 	p.tellWatchers(ctx, ev)
@@ -61,7 +65,7 @@ func (p Post) Notify(ctx context.Context, ev Event) error {
 // merge, which is already recorded when the alert goes out. Watchers hear it
 // whether or not the alert showed, because no retry will carry it.
 func (p Post) NotifyOnce(ctx context.Context, ev Event) error {
-	err := alert(ctx, p.Osascript, ev.Text)
+	err := alert(ctx, p.Alerts, ev.Text)
 	p.tellWatchers(ctx, ev)
 	return err
 }

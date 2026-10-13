@@ -9,7 +9,6 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/delivery"
-	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/worker"
 )
@@ -21,7 +20,7 @@ func tell(ctx context.Context, opts Options, ticket, text string) error {
 	if err != nil {
 		return err
 	}
-	snap, err := herdr.Read(ctx, opts.Herdr)
+	snap, err := opts.Herdr.Read(ctx)
 	if err != nil {
 		return err
 	}

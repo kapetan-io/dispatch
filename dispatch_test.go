@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch"
+	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/tooltest"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
@@ -441,8 +442,9 @@ const (
 	viewerID     = "viewer-1"
 )
 
-// harness runs the dispatcher against a fake Linear server and fake herdr,
-// treehouse and launcher commands, all rooted in one temp directory.
+// harness runs the dispatcher against a fake Linear server, the in-process
+// fakes in tools (herdr, treehouse, notifications) and gh and launcher scripts,
+// all rooted in one temp directory.
 type harness struct {
 	t      *testing.T
 	dir    string
@@ -453,7 +455,8 @@ type harness struct {
 	linear *fakeLinear
 	tools  *tooltest.Tools
 	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
-	// with the launcher built into dispatch.
+	// with the launcher built into dispatch. That launcher still runs the herdr
+	// script from fakeHerdr, so it shares no state with tools.Herdr.
 	builtinLauncher bool
 	// clock is the time every command sees, and moves only through advance.
 	clock time.Time
@@ -474,35 +477,7 @@ func newHarness(t *testing.T) *harness {
 		pages:  map[string][]byte{},
 	}
 	require.NoError(t, os.MkdirAll(h.repo, 0o755))
-	h.writeFile("workspaces.json", `{"result":{"workspaces":[]}}`)
-	h.writeFile("agents.json", `{"result":{"agents":[]}}`)
-	h.writeFile("tabs.json", `{"result":{"tabs":[]}}`)
 	h.writeFile("launch.json", `{"status":"ok"}`)
-	h.script("herdr", `case "$1 $2" in
-"workspace list") cat "`+dir+`/workspaces.json" ;;
-"workspace close")
-  [ -f "`+dir+`/close-fails" ] && exit 1
-  echo "$3" >> "`+dir+`/closes.log"
-  jq --arg id "$3" '.result.workspaces |= map(select(.workspace_id != $id))' "`+dir+`/workspaces.json" > "`+dir+`/workspaces.tmp"
-  mv "`+dir+`/workspaces.tmp" "`+dir+`/workspaces.json" ;;
-"workspace rename")
-  echo "$3|$4" >> "`+dir+`/renames.log"
-  jq --arg id "$3" --arg name "$4" '.result.workspaces |= map(if .workspace_id == $id then .label = $name else . end)' "`+dir+`/workspaces.json" > "`+dir+`/workspaces.tmp"
-  mv "`+dir+`/workspaces.tmp" "`+dir+`/workspaces.json" ;;
-"tab list") cat "`+dir+`/tabs.json" ;;
-"tab rename")
-  echo "$3|$4" >> "`+dir+`/tab-renames.log"
-  jq --arg id "$3" --arg name "$4" '.result.tabs |= map(if .tab_id == $id then .label = $name else . end)' "`+dir+`/tabs.json" > "`+dir+`/tabs.tmp"
-  mv "`+dir+`/tabs.tmp" "`+dir+`/tabs.json" ;;
-"agent list") cat "`+dir+`/agents.json" ;;
-"agent prompt")
-  [ -f "`+dir+`/prompt-fails" ] && { echo '{"error":{"code":"agent_blocked"}}'; exit 1; }
-  echo "$3|$4" >> "`+dir+`/prompts.log" ;;
-*) exit 2 ;;
-esac`)
-	// The notification message and title are osascript's last two arguments.
-	h.script("osascript", `[ -f "`+dir+`/notify-fails" ] && exit 1
-echo "${@: -2:1}|${@: -1}" >> "`+dir+`/notifications.log"`)
 	h.script("launcher", `echo "$PWD $*" >> "`+dir+`/launches.log"
 cat "`+dir+`/launch.json"`)
 	return h
@@ -535,10 +510,11 @@ func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...s
 	extra.Now = func() time.Time { return h.clock }
 	extra.LinearURL = h.linear.server.URL
 	extra.LinearKey = "test-key"
-	extra.Herdr = filepath.Join(h.dir, "herdr")
+	extra.Herdr = h.tools.Herdr
+	extra.HerdrCommand = filepath.Join(h.dir, "herdr")
 	extra.Treehouse = h.tools.Treehouse
 	extra.PullRequests = h.tools.PullRequests
-	extra.Osascript = filepath.Join(h.dir, "osascript")
+	extra.Alerts = h.tools.Alerts
 	if !h.builtinLauncher {
 		extra.Launcher = filepath.Join(h.dir, "launcher")
 	}
@@ -575,89 +551,45 @@ func (h *harness) worker(ticket, status string) {
 func (h *harness) workerOn(ticket, tree, id, status string) {
 	h.tools.Treehouse.Seed(h.repo, treehouse.Tree{Path: tree, Status: "leased", LeaseHolder: ticket})
 
-	var ws struct {
-		Result struct {
-			Workspaces []map[string]any `json:"workspaces"`
-		} `json:"result"`
-	}
-	require.NoError(h.t, json.Unmarshal(h.readFile("workspaces.json"), &ws))
-	ws.Result.Workspaces = append(ws.Result.Workspaces, map[string]any{
-		"workspace_id": id,
-		"label":        ticket,
-		"worktree":     map[string]string{"checkout_path": tree},
-	})
-	h.writeJSON("workspaces.json", ws)
-
+	h.tools.Herdr.AddWorkspace(herdr.Workspace{ID: id, Label: ticket, CheckoutPath: tree})
 	if status == "" {
 		return
 	}
-	var agents struct {
-		Result struct {
-			Agents []map[string]any `json:"agents"`
-		} `json:"result"`
-	}
-	require.NoError(h.t, json.Unmarshal(h.readFile("agents.json"), &agents))
-	agents.Result.Agents = append(agents.Result.Agents, map[string]any{
-		"agent":         "claude",
-		"agent_status":  status,
-		"agent_session": map[string]string{"value": "worker"},
-		"pane_id":       id + ":p1",
-		"tab_id":        id + ":t1",
-		"workspace_id":  id,
-	})
-	h.writeJSON("agents.json", agents)
-
-	var tabs struct {
-		Result struct {
-			Tabs []map[string]string `json:"tabs"`
-		} `json:"result"`
-	}
-	require.NoError(h.t, json.Unmarshal(h.readFile("tabs.json"), &tabs))
-	tabs.Result.Tabs = append(tabs.Result.Tabs, map[string]string{"tab_id": id + ":t1", "label": ticket, "workspace_id": id})
-	h.writeJSON("tabs.json", tabs)
+	h.tools.Herdr.AddTab(herdr.Tab{ID: id + ":t1", Label: ticket, WorkspaceID: id})
+	h.tools.Herdr.AddPane(herdr.Pane{ID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
+	h.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: status, Session: "worker", PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
 }
 
 // setWorkerStatus changes the herdr status of a worker added with worker.
 func (h *harness) setWorkerStatus(ticket, status string) {
-	var agents struct {
-		Result struct {
-			Agents []map[string]any `json:"agents"`
-		} `json:"result"`
-	}
-	require.NoError(h.t, json.Unmarshal(h.readFile("agents.json"), &agents))
-	for _, a := range agents.Result.Agents {
-		if a["workspace_id"] == "w-"+ticket {
-			a["agent_status"] = status
-		}
-	}
-	h.writeJSON("agents.json", agents)
+	h.tools.Herdr.SetStatus("w-"+ticket+":p1", status)
 }
 
 // setWorkerSession changes the Claude session id herdr reports for a worker
 // added with worker, as a relaunch does.
 func (h *harness) setWorkerSession(ticket, session string) {
-	var agents struct {
-		Result struct {
-			Agents []map[string]any `json:"agents"`
-		} `json:"result"`
-	}
-	require.NoError(h.t, json.Unmarshal(h.readFile("agents.json"), &agents))
-	for _, a := range agents.Result.Agents {
-		if a["workspace_id"] == "w-"+ticket {
-			a["agent_session"] = map[string]string{"value": session}
-		}
-	}
-	h.writeJSON("agents.json", agents)
+	h.tools.Herdr.SetSession("w-"+ticket+":p1", session)
+}
+
+// blockAfterSnapshot has the worker stop to ask a question after dispatch's
+// snapshot, so herdr refuses a prompt the snapshot says is fine.
+func (h *harness) blockAfterSnapshot(ticket string) {
+	h.tools.Herdr.BlockAfterSnapshot("w-" + ticket + ":p1")
+}
+
+// unblock undoes blockAfterSnapshot.
+func (h *harness) unblock(ticket string) {
+	h.tools.Herdr.Unblock("w-" + ticket + ":p1")
 }
 
 // prompts lists what was typed into workers, as "<pane>|<text>".
 func (h *harness) prompts() []string {
-	return h.lines("prompts.log")
+	return h.tools.Herdr.Prompted()
 }
 
-// notifications lists the macOS notifications shown, as "<message>|<title>".
+// notifications lists the macOS notification texts shown.
 func (h *harness) notifications() []string {
-	return h.lines("notifications.log")
+	return h.tools.Alerts.Shown()
 }
 
 func (h *harness) lines(name string) []string {
@@ -671,49 +603,27 @@ func (h *harness) lines(name string) []string {
 
 // labelWorkspace sets the label herdr reports for a workspace.
 func (h *harness) labelWorkspace(id, label string) {
-	var ws struct {
-		Result struct {
-			Workspaces []map[string]any `json:"workspaces"`
-		} `json:"result"`
-	}
-	require.NoError(h.t, json.Unmarshal(h.readFile("workspaces.json"), &ws))
-	for _, w := range ws.Result.Workspaces {
-		if w["workspace_id"] == id {
-			w["label"] = label
-		}
-	}
-	h.writeJSON("workspaces.json", ws)
+	h.tools.Herdr.SetWorkspaceLabel(id, label)
 }
 
 // renames lists the workspace renames, as "<workspace>|<label>".
 func (h *harness) renames() []string {
-	return h.lines("renames.log")
+	return h.tools.Herdr.WorkspaceRenames()
 }
 
 // tabRenames lists the tab renames, as "<tab>|<label>".
 func (h *harness) tabRenames() []string {
-	return h.lines("tab-renames.log")
+	return h.tools.Herdr.TabRenames()
 }
 
 // labelTab sets the label herdr reports for a worker's tab.
 func (h *harness) labelTab(ticket, label string) {
-	var tabs struct {
-		Result struct {
-			Tabs []map[string]string `json:"tabs"`
-		} `json:"result"`
-	}
-	require.NoError(h.t, json.Unmarshal(h.readFile("tabs.json"), &tabs))
-	for _, tab := range tabs.Result.Tabs {
-		if tab["tab_id"] == "w-"+ticket+":t1" {
-			tab["label"] = label
-		}
-	}
-	h.writeJSON("tabs.json", tabs)
+	h.tools.Herdr.SetTabLabel("w-"+ticket+":t1", label)
 }
 
 // closes lists the herdr workspaces that were closed.
 func (h *harness) closes() []string {
-	return h.lines("closes.log")
+	return h.tools.Herdr.ClosedWorkspaces()
 }
 
 // returns lists the treehouse return calls, as "<repo>|<tree>|<holder>".

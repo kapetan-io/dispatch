@@ -37,7 +37,7 @@ func TestTickMergesAnApprovedReadyPRInAListedRepo(t *testing.T) {
 
 	assert.Equal(t, "merge ENG-1: PR approved\n", out)
 	assert.Equal(t, []string{mergeCall1}, h.merges())
-	assert.Equal(t, []string{mergedText1 + "|dispatch"}, h.notifications())
+	assert.Equal(t, []string{mergedText1}, h.notifications())
 	assert.Empty(t, h.prompts())
 
 	// The merged PR is no longer open, so later ticks do nothing.
@@ -81,7 +81,7 @@ func TestTickDoesNotMergeInARepoThatIsNotListed(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
-			assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+			assert.Equal(t, []string{readyText1}, h.notifications())
 			assert.Empty(t, h.merges())
 		})
 	}
@@ -145,7 +145,7 @@ func TestTickMergesAfterAnApprovalArrivesOnAnAlreadyAnnouncedHead(t *testing.T) 
 
 	_, err := h.run("tick")
 	require.NoError(t, err)
-	assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+	assert.Equal(t, []string{readyText1}, h.notifications())
 
 	h.pr("ENG-1", approvedPR("a1"))
 	out, err := h.run("tick")
@@ -153,7 +153,7 @@ func TestTickMergesAfterAnApprovalArrivesOnAnAlreadyAnnouncedHead(t *testing.T) 
 
 	assert.Equal(t, "merge ENG-1: PR approved\n", out)
 	assert.Equal(t, []string{mergeCall1}, h.merges())
-	assert.Equal(t, []string{readyText1 + "|dispatch", mergedText1 + "|dispatch"}, h.notifications())
+	assert.Equal(t, []string{readyText1, mergedText1}, h.notifications())
 }
 
 func TestTickWaitsForANewApprovalAfterAPush(t *testing.T) {

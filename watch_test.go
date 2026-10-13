@@ -105,7 +105,7 @@ func TestTickMessagesFollowersAboutAReadyPR(t *testing.T) {
 	assert.Contains(t, got, "ENG-1 is ready for review")
 	assert.Contains(t, got, prURL1)
 	assert.Contains(t, got, "https://linear.app/team/issue/ENG-1")
-	assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+	assert.Equal(t, []string{readyText1}, h.notifications())
 
 	// The next tick has nothing new to say.
 	_, err = h.run("tick")
@@ -227,7 +227,7 @@ func TestTickMessagesFollowersAboutAMerge(t *testing.T) {
 	got := next(t, lines)
 	assert.Contains(t, got, mergedText1)
 	assert.Contains(t, got, "https://linear.app/team/issue/ENG-1")
-	assert.Equal(t, []string{mergedText1 + "|dispatch"}, h.notifications())
+	assert.Equal(t, []string{mergedText1}, h.notifications())
 }
 
 func TestTickMessagesFollowersAboutAnUnresponsiveWorker(t *testing.T) {
@@ -351,7 +351,7 @@ func TestTickTellsFollowersAboutAMergeWhenTheAlertFails(t *testing.T) {
 			t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
 			_, err := h.run("watch", "ENG-1")
 			require.NoError(t, err)
-			h.writeFile("notify-fails", "")
+			h.tools.Alerts.Fail(errors.New("exit status 1"))
 			if test.fails {
 				h.tools.PullRequests.FailMerge(errors.New("while running gh pr merge " + prURL1 + ": exit status 1: " + mergeRefused))
 			}
@@ -446,7 +446,7 @@ func TestTickRaisesTheAlertForATicketNobodyFollows(t *testing.T) {
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{readyText1 + "|dispatch"}, h.notifications())
+	assert.Equal(t, []string{readyText1}, h.notifications())
 	assert.Empty(t, lines)
 }
 

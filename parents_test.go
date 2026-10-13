@@ -510,7 +510,7 @@ func TestTickNotifiesOnceWhenAParentEntersNeedsHuman(t *testing.T) {
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1|dispatch"}, h.notifications())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
 	assert.Empty(t, h.linear.childReadParents())
 }
 

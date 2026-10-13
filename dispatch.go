@@ -44,16 +44,20 @@ type Options struct {
 	LinearURL string
 	// LinearKey overrides LINEAR_API_KEY and the keychain entry named in config.
 	LinearKey string
-	// Herdr is the command to run. Defaults to "herdr".
-	Herdr string
+	// Herdr is the workspace manager that hosts the workers. Defaults to the installed herdr.
+	Herdr herdr.Herdr
+	// HerdrCommand is the herdr binary the built-in launcher runs directly. The
+	// launcher does not go through Herdr yet, so setting only Herdr leaves it
+	// on the installed herdr. Defaults to "herdr".
+	HerdrCommand string
 	// Treehouse is the pool of worktrees. Defaults to the installed treehouse.
 	Treehouse treehouse.Pool
 	// PullRequests is the GitHub repo's pull requests. Defaults to the installed
 	// gh, which cuts each call off after 30 seconds so a stalled network can't
 	// hold the tick lock.
 	PullRequests pullrequest.Repository
-	// Osascript is the command that shows notifications. Defaults to "osascript".
-	Osascript string
+	// Alerts shows notifications. Defaults to macOS notifications through osascript.
+	Alerts delivery.Alerts
 	// Launcher, when set, is an external program run in place of the built-in launcher. Tests use it to fake launches.
 	Launcher string
 	// Dir is where `dispatch launch` looks for the target repo. Defaults to the
@@ -157,8 +161,11 @@ func withDefaults(o Options) Options {
 	if o.LinearURL == "" {
 		o.LinearURL = linear.DefaultURL
 	}
-	if o.Herdr == "" {
-		o.Herdr = "herdr"
+	if o.Herdr == nil {
+		o.Herdr = herdr.NewCLI("herdr")
+	}
+	if o.HerdrCommand == "" {
+		o.HerdrCommand = "herdr"
 	}
 	if o.Treehouse == nil {
 		o.Treehouse = treehouse.NewCLI("treehouse")
@@ -166,8 +173,8 @@ func withDefaults(o Options) Options {
 	if o.PullRequests == nil {
 		o.PullRequests = pullrequest.NewCLI("gh")
 	}
-	if o.Osascript == "" {
-		o.Osascript = "osascript"
+	if o.Alerts == nil {
+		o.Alerts = delivery.NewNotificationCenter("osascript")
 	}
 	if o.Now == nil {
 		o.Now = time.Now
@@ -288,7 +295,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 	defer func() { sum.linear = stats }()
 	lin := linear.Client{URL: opts.LinearURL, Key: key, Stats: &stats}
 
-	snap, err := herdr.Read(ctx, opts.Herdr)
+	snap, err := opts.Herdr.Read(ctx)
 	if err != nil {
 		return sum, err
 	}
@@ -424,15 +431,15 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 	}
 	settle(c, now, tickets, workers, input.PRs, cfg.Linear.Statuses, held, input.PendingComments(), leased)
 
-	post := delivery.Post{Herdr: opts.Herdr, Osascript: opts.Osascript, StateDir: opts.StateDir, Stderr: opts.Stderr}
+	post := delivery.Post{Herdr: opts.Herdr, Alerts: opts.Alerts, StateDir: opts.StateDir, Stderr: opts.Stderr}
 	current := map[string]string{}
 	for _, ws := range snap.Workspaces {
 		current[ws.ID] = ws.Label
 	}
 	// A failed rename is retried next tick, because the label still differs.
 	for _, r := range input.Renames(current) {
-		if err := herdr.RenameWorkspace(ctx, opts.Herdr, r.WorkspaceID, r.Label); err != nil {
-			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: %v\n", err)
+		if err := opts.Herdr.RenameWorkspace(ctx, r.WorkspaceID, r.Label); err != nil {
+			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while renaming herdr workspace %s: %v\n", r.WorkspaceID, err)
 		}
 	}
 	tabs := map[string]string{}
@@ -440,8 +447,8 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 		tabs[tab.ID] = tab.Label
 	}
 	for _, r := range input.TabRenames(tabs) {
-		if err := herdr.RenameTab(ctx, opts.Herdr, r.TabID, r.Label); err != nil {
-			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: %v\n", err)
+		if err := opts.Herdr.RenameTab(ctx, r.TabID, r.Label); err != nil {
+			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while renaming herdr tab %s: %v\n", r.TabID, err)
 		}
 	}
 	nudgeFailed := map[string]bool{}
@@ -485,8 +492,8 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 			}
 			// The renames above ran before this move, and the label must match the new status by the end of the tick.
 			if id := workers[a.Ticket.Identifier].WorkspaceID; id != "" {
-				if err := herdr.RenameWorkspace(ctx, opts.Herdr, id, reconcile.Label(reconcile.EmojiNeedsHuman, a.Ticket)); err != nil {
-					_, _ = fmt.Fprintf(opts.Stderr, "dispatch: %v\n", err)
+				if err := opts.Herdr.RenameWorkspace(ctx, id, reconcile.Label(reconcile.EmojiNeedsHuman, a.Ticket)); err != nil {
+					_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while renaming herdr workspace %s: %v\n", id, err)
 				}
 			}
 			_, _ = fmt.Fprintln(opts.Stdout, a)

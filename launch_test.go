@@ -996,7 +996,7 @@ func (l *launchHarness) launchWith(opts dispatch.Options, args ...string) launch
 		dir = l.dirOverride
 	}
 	opts.Dir = dir
-	opts.Herdr = filepath.Join(l.bin, "herdr")
+	opts.HerdrCommand = filepath.Join(l.bin, "herdr")
 	opts.Treehouse = l.tools.Treehouse
 	opts.LaunchPace = time.Millisecond
 	opts.Stdout = &stdout

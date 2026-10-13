@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kapetan-io/dispatch/internal/herdr"
 )
 
 const prURL1 = "https://github.com/kapetan-io/dispatch/pull/7"
@@ -154,20 +156,9 @@ func (h *harness) prReads() []string {
 
 // setWorkerAgent starts a Claude agent in a workspace made with an empty status.
 func (h *harness) setWorkerAgent(ticket, status string) {
-	var agents struct {
-		Result struct {
-			Agents []map[string]any `json:"agents"`
-		} `json:"result"`
-	}
-	require.NoError(h.t, json.Unmarshal(h.readFile("agents.json"), &agents))
-	agents.Result.Agents = append(agents.Result.Agents, map[string]any{
-		"agent":         "claude",
-		"agent_status":  status,
-		"agent_session": map[string]string{"value": "worker"},
-		"pane_id":       "w-" + ticket + ":p1",
-		"workspace_id":  "w-" + ticket,
-	})
-	h.writeJSON("agents.json", agents)
+	id := "w-" + ticket
+	h.tools.Herdr.AddPane(herdr.Pane{ID: id + ":p1", WorkspaceID: id})
+	h.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: status, Session: "worker", PaneID: id + ":p1", WorkspaceID: id})
 }
 
 func TestTickNudgesAnIdleInReviewWorkerNamingTheProblem(t *testing.T) {
@@ -560,7 +551,7 @@ func TestTickNotifiesOnceWhenAPRNudgeEscalationReachesNeedsHuman(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1|dispatch"}, h.notifications())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
 }
 
 func TestTickReportsAPRWithMoreReviewThreadsThanItReads(t *testing.T) {

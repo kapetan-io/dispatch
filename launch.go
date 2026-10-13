@@ -93,7 +93,7 @@ func launcherOptions(opts Options, root string) launcher.Options {
 	lo := launcher.Options{
 		RepoDir:    opts.Dir,
 		PluginRoot: root,
-		Herdr:      opts.Herdr,
+		Herdr:      opts.HerdrCommand,
 		Treehouse:  opts.Treehouse,
 		Pace:       opts.LaunchPace,
 		// DISPATCH_LAUNCH_TRACE=<file> records every screen the kickoff step reads.

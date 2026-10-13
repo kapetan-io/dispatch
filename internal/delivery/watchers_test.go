@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -15,6 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch/internal/delivery"
+	"github.com/kapetan-io/dispatch/internal/deliverytest"
+	"github.com/kapetan-io/dispatch/internal/journal"
 	"github.com/kapetan-io/dispatch/internal/linear"
 )
 
@@ -95,10 +98,6 @@ func deadSocket(t *testing.T) string {
 	return path
 }
 
-func okAlert(t *testing.T) string {
-	return script(t, "osascript", `exit 0`)
-}
-
 var ready = delivery.Event{
 	Ticket: linear.Ticket{Identifier: "ENG-1", URL: "https://linear.app/x/issue/ENG-1"},
 	Reason: "PR ready for review",
@@ -110,7 +109,7 @@ func TestNotifyMessagesEveryWatcher(t *testing.T) {
 	one, two := newInbox(t, "one.sock"), newInbox(t, "two.sock")
 	require.NoError(t, delivery.Watch(state, "ENG-1", one.path))
 	require.NoError(t, delivery.Watch(state, "ENG-1", two.path))
-	post := delivery.Post{Osascript: okAlert(t), StateDir: state}
+	post := delivery.Post{Alerts: deliverytest.New(&journal.Journal{}), StateDir: state}
 
 	require.NoError(t, post.Notify(context.Background(), ready))
 
@@ -124,12 +123,12 @@ func TestNotifyMessagesEveryWatcher(t *testing.T) {
 }
 
 func TestNotifyShowsTheAlertWithNoWatchers(t *testing.T) {
-	log := filepath.Join(t.TempDir(), "log")
-	post := delivery.Post{Osascript: script(t, "osascript", `echo shown >> `+log), StateDir: t.TempDir()}
+	alerts := deliverytest.New(&journal.Journal{})
+	post := delivery.Post{Alerts: alerts, StateDir: t.TempDir()}
 
 	require.NoError(t, post.Notify(context.Background(), ready))
 
-	assert.FileExists(t, log)
+	assert.Equal(t, []string{ready.Text}, alerts.Shown())
 }
 
 func TestNotifyDropsASocketThatRefuses(t *testing.T) {
@@ -139,7 +138,7 @@ func TestNotifyDropsASocketThatRefuses(t *testing.T) {
 	require.NoError(t, delivery.Watch(state, "ENG-1", dead))
 	require.NoError(t, delivery.Watch(state, "ENG-1", live.path))
 	var stderr bytes.Buffer
-	post := delivery.Post{Osascript: okAlert(t), StateDir: state, Stderr: &stderr}
+	post := delivery.Post{Alerts: deliverytest.New(&journal.Journal{}), StateDir: state, Stderr: &stderr}
 
 	require.NoError(t, post.Notify(context.Background(), ready))
 
@@ -154,7 +153,7 @@ func TestNotifyDropsASocketWhoseFileIsGone(t *testing.T) {
 	state := t.TempDir()
 	missing := filepath.Join(shortDir(t), "gone.sock")
 	require.NoError(t, delivery.Watch(state, "ENG-1", missing))
-	post := delivery.Post{Osascript: okAlert(t), StateDir: state, Stderr: &bytes.Buffer{}}
+	post := delivery.Post{Alerts: deliverytest.New(&journal.Journal{}), StateDir: state, Stderr: &bytes.Buffer{}}
 
 	require.NoError(t, post.Notify(context.Background(), ready))
 
@@ -166,7 +165,7 @@ func TestNotifyDropsASocketWhoseFileIsGone(t *testing.T) {
 func TestNotifyErrorIsTheAlertsAlone(t *testing.T) {
 	state := t.TempDir()
 	require.NoError(t, delivery.Watch(state, "ENG-1", deadSocket(t)))
-	post := delivery.Post{Osascript: okAlert(t), StateDir: state, Stderr: &bytes.Buffer{}}
+	post := delivery.Post{Alerts: deliverytest.New(&journal.Journal{}), StateDir: state, Stderr: &bytes.Buffer{}}
 
 	require.NoError(t, post.Notify(context.Background(), ready))
 }
@@ -175,7 +174,9 @@ func TestNotifyMessagesWatchersOnlyOnceTheAlertShowed(t *testing.T) {
 	state := t.TempDir()
 	live := newInbox(t, "live.sock")
 	require.NoError(t, delivery.Watch(state, "ENG-1", live.path))
-	post := delivery.Post{Osascript: script(t, "osascript", `echo denied >&2; exit 1`), StateDir: state}
+	alerts := deliverytest.New(&journal.Journal{})
+	alerts.Fail(errors.New("exit status 1: denied"))
+	post := delivery.Post{Alerts: alerts, StateDir: state}
 
 	for range 3 {
 		err := post.Notify(context.Background(), ready)
@@ -218,7 +219,9 @@ func TestNotifyOnceMessagesWatchersWhenTheAlertFails(t *testing.T) {
 	state := t.TempDir()
 	live := newInbox(t, "live.sock")
 	require.NoError(t, delivery.Watch(state, "ENG-1", live.path))
-	post := delivery.Post{Osascript: script(t, "osascript", `echo denied >&2; exit 1`), StateDir: state}
+	alerts := deliverytest.New(&journal.Journal{})
+	alerts.Fail(errors.New("exit status 1: denied"))
+	post := delivery.Post{Alerts: alerts, StateDir: state}
 
 	err := post.NotifyOnce(context.Background(), ready)
 

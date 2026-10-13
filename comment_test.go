@@ -120,14 +120,14 @@ func TestTickCommentNudgeRetriesAfterHerdrRefuses(t *testing.T) {
 	_, err := h.run("tick")
 	require.NoError(t, err)
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment2))
-	h.writeFile("prompt-fails", "")
+	h.blockAfterSnapshot("ENG-1")
 
 	_, stderr, err := h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
 	assert.Contains(t, stderr, "while nudging ENG-1")
 	assert.Empty(t, h.prompts())
 
-	require.NoError(t, os.Remove(filepath.Join(h.dir, "prompt-fails")))
+	h.unblock("ENG-1")
 	_, err = h.run("tick")
 	require.NoError(t, err)
 

@@ -1,12 +1,14 @@
 package dispatch_test
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -386,7 +388,7 @@ func TestTickKeepsTheTreeWhenTheWorkspaceWillNotClose(t *testing.T) {
 	h.gitTree("ENG-1")
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-	h.writeFile("close-fails", "")
+	h.tools.Herdr.Fail(herdrtest.OpCloseWorkspace, errors.New("exit status 1"))
 
 	out, stderr, err := h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
@@ -778,7 +780,7 @@ func TestTickClosesTheWorkspaceBeforeItReturnsTheTree(t *testing.T) {
 	// A worker still running in the tree could write to it after the return.
 	var order []string
 	h.tools.Treehouse.BeforeReturn(func(string) {
-		if strings.Contains(string(h.readFile("workspaces.json")), `"w-ENG-1"`) {
+		if h.tools.Herdr.HasWorkspace("w-ENG-1") {
 			order = append(order, "open")
 		} else {
 			order = append(order, "closed")
@@ -792,24 +794,38 @@ func TestTickClosesTheWorkspaceBeforeItReturnsTheTree(t *testing.T) {
 	assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 }
 
+func TestTickLeavesNoTabPaneOrAgentOfAClosedWorkspace(t *testing.T) {
+	h := newHarness(t)
+	h.gitTree("ENG-1")
+	h.worker("ENG-1", "idle")
+	h.worker("ENG-2", "working")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	snap, err := h.tools.Herdr.Read(t.Context())
+	require.NoError(t, err)
+	require.Len(t, snap.Workspaces, 1)
+	assert.Equal(t, "w-ENG-2", snap.Workspaces[0].ID)
+	require.Len(t, snap.Tabs, 1)
+	assert.Equal(t, "w-ENG-2:t1", snap.Tabs[0].ID)
+	require.Len(t, snap.Panes, 1)
+	assert.Equal(t, "w-ENG-2:p1", snap.Panes[0].ID)
+	require.Len(t, snap.Agents, 1)
+	assert.Equal(t, "w-ENG-2:p1", snap.Agents[0].PaneID)
+}
+
 func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
 	h := newHarness(t)
 	path := h.gitTree("ENG-1")
 	h.worker("ENG-1", "working")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 	// The plan saw a clean tree, and the worker writes a file as it is killed.
-	h.script("herdr", `case "$1 $2" in
-"workspace list") cat "`+h.dir+`/workspaces.json" ;;
-"workspace close")
-  echo "$3" >> "`+h.dir+`/closes.log"
-  echo late > "`+path+`/late.txt"
-  git -C "`+path+`" add late.txt
-  jq --arg id "$3" '.result.workspaces |= map(select(.workspace_id != $id))' "`+h.dir+`/workspaces.json" > "`+h.dir+`/workspaces.tmp"
-  mv "`+h.dir+`/workspaces.tmp" "`+h.dir+`/workspaces.json" ;;
-"tab list") cat "`+h.dir+`/tabs.json" ;;
-"agent list") cat "`+h.dir+`/agents.json" ;;
-*) exit 2 ;;
-esac`)
+	h.tools.Herdr.BeforeCloseWorkspace(func(string) {
+		require.NoError(t, os.WriteFile(filepath.Join(path, "late.txt"), []byte("late\n"), 0o644))
+		require.NoError(t, exec.Command("git", "-C", path, "add", "late.txt").Run())
+	})
 
 	out, err := h.run("tick")
 	require.NoError(t, err)

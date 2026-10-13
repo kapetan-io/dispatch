@@ -77,8 +77,8 @@ func heldFinished(in reconcile.Input) map[string]bool {
 // before the return, so the log names what was actually removed.
 func teardown(ctx context.Context, opts Options, a reconcile.Action) error {
 	if a.WorkspaceID != "" {
-		if err := herdr.CloseWorkspace(ctx, opts.Herdr, a.WorkspaceID); err != nil {
-			return err
+		if err := opts.Herdr.CloseWorkspace(ctx, a.WorkspaceID); err != nil {
+			return fmt.Errorf("while closing herdr workspace %s: %w", a.WorkspaceID, err)
 		}
 	}
 	why, err := treehouse.Unfinished(ctx, a.TreePath)
@@ -118,8 +118,8 @@ func teardown(ctx context.Context, opts Options, a reconcile.Action) error {
 
 // stop closes the workspace of a paused ticket's worker. The tree stays leased.
 func stop(ctx context.Context, opts Options, a reconcile.Action) error {
-	if err := herdr.CloseWorkspace(ctx, opts.Herdr, a.WorkspaceID); err != nil {
-		return err
+	if err := opts.Herdr.CloseWorkspace(ctx, a.WorkspaceID); err != nil {
+		return fmt.Errorf("while closing herdr workspace %s: %w", a.WorkspaceID, err)
 	}
 	_, _ = fmt.Fprintln(opts.Stdout, a)
 	return nil
@@ -130,8 +130,8 @@ func stop(ctx context.Context, opts Options, a reconcile.Action) error {
 // failed one is retried and a posted one never repeats.
 func keep(ctx context.Context, opts Options, lin linear.Client, c cache.Cache, a reconcile.Action) error {
 	if a.WorkspaceID != "" {
-		if err := herdr.CloseWorkspace(ctx, opts.Herdr, a.WorkspaceID); err != nil {
-			return err
+		if err := opts.Herdr.CloseWorkspace(ctx, a.WorkspaceID); err != nil {
+			return fmt.Errorf("while closing herdr workspace %s: %w", a.WorkspaceID, err)
 		}
 	}
 	if a.Text != "" {
