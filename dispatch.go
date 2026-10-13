@@ -613,14 +613,18 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 				_, _ = fmt.Fprintln(opts.Stdout, a)
 				continue
 			}
-			if a.Reason == reconcile.ReasonReady {
+			if a.Reason == reconcile.ReasonReady || a.Reason == reconcile.ReasonDraftReady || a.Reason == reconcile.ReasonReviewsHandled {
 				// A failed alert leaves the head unrecorded, so the next tick sends it again.
 				if err := post.Notify(ctx, delivery.Event{Ticket: a.Ticket, Reason: a.Reason, Text: a.Text}); err != nil {
 					_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while notifying about %s: %v\n", a.Ticket.Identifier, err)
 					continue
 				}
 				e := c[a.Ticket.Identifier]
-				e.ReadyHead = a.Head
+				if a.Reason == reconcile.ReasonDraftReady {
+					e.DraftReadyHead = a.Head
+				} else {
+					e.ReadyHead = a.Head
+				}
 				c[a.Ticket.Identifier] = e
 				_, _ = fmt.Fprintln(opts.Stdout, a)
 				continue
@@ -774,6 +778,7 @@ func settle(c cache.Cache, now time.Time, tickets []linear.Ticket, workers map[s
 			kept.CommentSeen = e.CommentSeen
 			// Without it, a worker relaunched on the kept tree would announce a PR head twice.
 			kept.ReadyHead = e.ReadyHead
+			kept.DraftReadyHead = e.DraftReadyHead
 			kept.PRActivitySeen = e.PRActivitySeen
 			kept.MergeFailedHead = e.MergeFailedHead
 		}

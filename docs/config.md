@@ -101,7 +101,7 @@ auto_merge = true
 | Setting | Default | What it does |
 |---|---|---|
 | `path` | required | The local clone dispatch launches workers from. The clone needs a `treehouse.toml`. Two repos can't share a path. |
-| `open_pr_as` | `"open"` | `"open"` or `"draft"`. Validated and printed by `dispatch repo-settings` today. Opening PRs as drafts ships in a later change. |
+| `open_pr_as` | `"open"` | `"open"` or `"draft"`. With `"draft"`, workers open the PR as a draft and never mark it open, and a ready PR gets one notification per commit in each phase, "ENG-1's draft is ready for your review" while it is a draft and "ENG-1's reviews are handled" once you open it. Dispatch never merges a draft in any repo. |
 | `ignore_comment_authors` | `[]` | GitHub logins whose comments and reviews dispatch and the worker are to ignore. Validated and printed today. Ignoring them ships in a later change. |
 | `ignore_optional_checks` | `false` | When `true`, only checks GitHub requires for merging count. Validated and printed today. Counting only required checks ships in a later change. |
 | `auto_merge` | `false` | Merge a ready PR once a review approves its head commit. See [Auto-merge](#auto-merge). |
@@ -126,6 +126,7 @@ Anywhere else it fails with `dispatch: /tmp is not inside a repo under [repos] i
 
 In a repo with `auto_merge = true`, a tick that finds an In Review ticket's PR ready (the same test as the ready-for-review notification, with the worker idle) and approved by a review on its head commit runs `gh pr merge <PR URL> --merge --match-head-commit <head>`. It prints `merge ENG-1: PR approved` and sends a macOS notification, `ENG-1 was approved and merged: <PR URL>`, in place of the ready-for-review one. Any reviewer's approval counts, which today means CodeRabbit's, unless another reviewer's latest review requests changes. The merge only goes through for the commit that was approved.
 
+- A draft is never merged. In a repo with `open_pr_as = "draft"`, an approved PR you open merges on the next tick when it is ready, without the "reviews are handled" notification.
 - An approval of an earlier commit doesn't count, so a push after approval waits for a new one.
 - A ready PR with no approval on its head gets the ready-for-review notification as before. If the approval arrives later, the next tick merges it.
 - A failed merge, such as branch protection refusing it, prints the error to stderr and sends one notification. The next ticks skip that head, and a push makes the PR eligible again.

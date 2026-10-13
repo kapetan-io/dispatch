@@ -19,6 +19,9 @@ import (
 // the head of the pull request.
 const headMoved = "Head branch was modified. Review and try the merge again."
 
+// isDraft is gh's refusal of a merge of a pull request still in draft.
+const isDraft = "Pull request is still a draft"
+
 // Repository is a pullrequest.Repository backed by memory. Its refusals come
 // only from pull request state. Failures that don't come from that state (an
 // outage, bad credentials) go through FailRead and FailMerge, and
@@ -162,6 +165,9 @@ func (r *Repository) Merge(ctx context.Context, prURL, head string) error {
 				}
 				if node["headRefOid"] != head {
 					return fmt.Errorf("while running gh pr merge %s: exit status 1: %s", prURL, headMoved)
+				}
+				if draft, _ := node["isDraft"].(bool); draft {
+					return fmt.Errorf("while running gh pr merge %s: exit status 1: %s", prURL, isDraft)
 				}
 				// A merged PR leaves the branch with no open PR; a fork PR on the
 				// same name would not matter, since Find skips it either way.
