@@ -6,11 +6,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/launcher"
 )
 
@@ -46,19 +48,22 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 	case len(positional) > 2:
 		res = launcher.Result{Status: launcher.StatusUsageError, Detail: "unknown argument: " + positional[2]}
 	default:
-		req := launcher.Request{Base: *base, Title: *title, Model: *model, Kickoff: *kickoff}
+		req := launcher.Request{RepoDir: opts.Dir, Base: *base, Title: *title, Model: *model, Kickoff: *kickoff}
 		if len(positional) > 0 {
 			req.Ticket = positional[0]
 		}
 		if len(positional) > 1 {
 			req.Branch = positional[1]
 		}
-		if root, err := pluginRoot(opts); err != nil {
+		root, err := pluginRoot(opts)
+		if err != nil && opts.Launcher == nil {
 			res = launcher.Result{Status: launcher.StatusUsageError, Detail: err.Error()}
 		} else {
-			lo := launcherOptions(opts, root)
-			lo.Stderr = opts.Stderr
-			res = launcher.Run(ctx, req, lo)
+			// A launch run by hand shows its progress. A tick's launches stay quiet.
+			if cli, ok := opts.Herdr.(*herdr.CLI); ok {
+				cli.WithProgress(opts.Stderr)
+			}
+			res = launcherFor(opts, root, opts.Stderr).Launch(ctx, req)
 		}
 	}
 	enc := json.NewEncoder(opts.Stdout)
@@ -89,20 +94,23 @@ func pluginRoot(opts Options) (string, error) {
 	return cfg.PluginRoot, nil
 }
 
-func launcherOptions(opts Options, root string) launcher.Options {
+// launcherFor is the launcher a launch goes through, which is Options.Launcher
+// when a test or caller set one. Progress goes to the writer given, and nil discards it.
+func launcherFor(opts Options, root string, progress io.Writer) launcher.Launcher {
+	if opts.Launcher != nil {
+		return opts.Launcher
+	}
 	lo := launcher.Options{
-		RepoDir:    opts.Dir,
 		PluginRoot: root,
-		Herdr:      opts.HerdrCommand,
+		Herdr:      opts.Herdr,
 		Treehouse:  opts.Treehouse,
 		Pace:       opts.LaunchPace,
-		// DISPATCH_LAUNCH_TRACE=<file> records every screen the kickoff step reads.
-		Trace: os.Getenv("DISPATCH_LAUNCH_TRACE"),
+		Stderr:     progress,
 	}
 	// DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT=<seconds> bounds the wait for the herdr
 	// server. Zero fails at once, so it becomes the smallest nonzero wait.
 	if secs, err := strconv.Atoi(os.Getenv("DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT")); err == nil {
 		lo.PreflightTimeout = max(time.Duration(secs)*time.Second, time.Nanosecond)
 	}
-	return lo
+	return launcher.New(lo)
 }

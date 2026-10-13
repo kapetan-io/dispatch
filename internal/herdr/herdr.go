@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Snapshot is herdr's view of every workspace, tab, pane and agent at one moment.
@@ -70,7 +72,59 @@ type Herdr interface {
 	CloseWorkspace(ctx context.Context, id string) error
 	// CloseTab closes a tab and removes its panes and agents.
 	CloseTab(ctx context.Context, id string) error
+	// OpenWorkspace returns the workspace showing the checkout, opening one
+	// nested under the repo when none shows it yet.
+	OpenWorkspace(ctx context.Context, w NewWorkspace) (workspaceID string, err error)
+	// StartWorker gives the workspace a new tab holding a running Claude agent,
+	// answering nothing yet. The workspace's agent-less tabs are closed. A failure
+	// after the tab came up still returns its pane, so the caller can tell a
+	// missing tab from a Claude that would not start.
+	StartWorker(ctx context.Context, w Worker) (Started, error)
+	// Kickoff types text into the Claude in pane, answering its startup dialogs
+	// first, and returns once herdr shows the agent running it. It fails with
+	// ErrClaudeNeverStarted or ErrKickoffUnconfirmed when the agent never runs it.
+	Kickoff(ctx context.Context, pane, text string) error
 }
+
+// NewWorkspace is a checkout to show in a workspace.
+type NewWorkspace struct {
+	// Repo is the repo's main checkout, which herdr nests the workspace under.
+	Repo string
+	// Path is the checkout the workspace shows.
+	Path string
+	// Label is what the workspace is called until the dispatcher renames it.
+	Label string
+}
+
+// Worker is a Claude agent to start in a workspace.
+type Worker struct {
+	Workspace string
+	// Dir is where the agent runs.
+	Dir string
+	// Label is the new tab's label.
+	Label string
+	// Name is the agent's name. When herdr already has an agent by that name, the
+	// worker gets a suffix.
+	Name  string
+	Model string
+	// PluginRoot holds the plugin the worker loads and the shims that put its
+	// flags back when herdr restarts it.
+	PluginRoot string
+}
+
+// Started is a worker's pane and the name its agent got.
+type Started struct {
+	Pane  string
+	Agent string
+}
+
+// Reasons Kickoff gives up.
+var (
+	// ErrKickoffUnconfirmed means Claude was up but herdr never showed it running the kickoff.
+	ErrKickoffUnconfirmed = errors.New("herdr never showed the kickoff running")
+	// ErrClaudeNeverStarted means the command that starts Claude sat unrun at the shell prompt.
+	ErrClaudeNeverStarted = errors.New("Claude never started, because its launch command sat unrun at the shell prompt")
+)
 
 // ErrAgentBlocked is the refusal of a prompt to an agent that waits on a
 // question.
@@ -112,13 +166,41 @@ func (r *Refusal) Is(target error) bool {
 
 // CLI is the Herdr that runs the installed herdr command.
 type CLI struct {
-	bin    string
-	global []string
+	bin      string
+	global   []string
+	pace     time.Duration
+	trace    string
+	progress io.Writer
 }
 
 // NewCLI returns a Herdr that runs bin. Arguments in global come before every
 // subcommand, such as "--session", "name" to act on a named session.
-func NewCLI(bin string, global ...string) *CLI { return &CLI{bin: bin, global: global} }
+func NewCLI(bin string, global ...string) *CLI {
+	return &CLI{bin: bin, global: global, pace: time.Second, progress: io.Discard}
+}
+
+// WithPace sets the unit of waiting between polls while a worker starts. The
+// default is 1s.
+func (c *CLI) WithPace(d time.Duration) *CLI {
+	if d > 0 {
+		c.pace = d
+	}
+	return c
+}
+
+// WithTrace appends every screen Kickoff reads to the file at path.
+func (c *CLI) WithTrace(path string) *CLI {
+	c.trace = path
+	return c
+}
+
+// WithProgress sends a line to w for each wait and failure while a worker starts.
+func (c *CLI) WithProgress(w io.Writer) *CLI {
+	if w != nil {
+		c.progress = w
+	}
+	return c
+}
 
 func (c *CLI) Read(ctx context.Context) (Snapshot, error) {
 	var workspaces struct {

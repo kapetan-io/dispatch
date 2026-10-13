@@ -27,7 +27,9 @@ func TestHerdrKeepsTheHerdrContract(t *testing.T) {
 			}
 			tabs, started := map[string]int{}, map[string]bool{}
 			scenario.Run(t, herdrtest.Subject{
-				Herdr: fake,
+				Herdr:      fake,
+				PluginRoot: "/plugin",
+				Checkout:   func() (string, string) { return herdrtest.NewCheckout(t) },
 				Workspace: func(label string) herdrtest.Layout {
 					workspaces++
 					id := fmt.Sprintf("w%d", workspaces)

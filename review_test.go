@@ -413,7 +413,7 @@ func TestTickRelaunchesAnInReviewWorkerThatIsGoneThenNudgesItOnceIdle(t *testing
 	require.NoError(t, err)
 
 	assert.Equal(t, "launch ENG-1: PR needs work: changes requested: ok\n", out)
-	assert.Equal(t, []string{h.repo + " ENG-1 thrawn01/eng-1 --model sonnet --no-focus"}, h.launches())
+	assert.Equal(t, []string{h.repo + " ENG-1 thrawn01/eng-1 --model sonnet"}, h.launches())
 	assert.Empty(t, h.prompts())
 	assert.Empty(t, h.linear.mutations())
 
@@ -442,7 +442,7 @@ func TestTickRelaunchesAnInReviewWorkerWhenTheWorkerCapIsFull(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "launch ENG-2: PR needs work: a failed check: ok\n", out)
-	assert.Equal(t, []string{h.repo + " ENG-2 thrawn01/eng-2 --model sonnet --no-focus"}, h.launches())
+	assert.Equal(t, []string{h.repo + " ENG-2 thrawn01/eng-2 --model sonnet"}, h.launches())
 }
 
 func TestTickEscalatesAnInReviewTicketWhoseRelaunchKeepsFailing(t *testing.T) {

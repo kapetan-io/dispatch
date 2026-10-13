@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -52,6 +54,39 @@ func StartSession(t testing.TB) *Session {
 
 	require.Eventually(t, func() bool { return s.Run("workspace", "list") == nil }, 20*time.Second, 100*time.Millisecond)
 	return s
+}
+
+// Socket is the path of the socket the session's server listens on.
+func (s *Session) Socket() (string, error) {
+	out, err := exec.Command(s.bin, "session", "list").Output()
+	if err != nil {
+		return "", fmt.Errorf("while listing herdr sessions: %w", err)
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if fields := strings.Fields(line); len(fields) >= 4 && fields[0] == s.Name {
+			return fields[len(fields)-1], nil
+		}
+	}
+	return "", fmt.Errorf("herdr does not list session %s", s.Name)
+}
+
+// Env is the environment that points a herdr command run by a subprocess at
+// the session instead of the maintainer's own. The test proves it reaches the
+// session before it lets anything act through it.
+func (s *Session) Env(t testing.TB) []string {
+	t.Helper()
+	socket, err := s.Socket()
+	require.NoError(t, err)
+	env := append(os.Environ(), "HERDR_SOCKET_PATH="+socket)
+
+	_, err = s.Output(context.Background(), "workspace", "create", "--cwd", t.TempDir(), "--label", "marker", "--no-focus")
+	require.NoError(t, err)
+	cmd := exec.Command(s.bin, "workspace", "list")
+	cmd.Env = env
+	out, err := cmd.Output()
+	require.NoError(t, err)
+	require.Contains(t, string(out), `"marker"`)
+	return env
 }
 
 // CLI is the real herdr adapter pointed at the session.
@@ -125,4 +160,29 @@ func sessions(bin string) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+var (
+	standInOnce sync.Once
+	standInDir  string
+	standInErr  error
+)
+
+// StandInClaude builds the stand-in Claude as a program named claude and
+// returns the directory holding it. The build runs once per test run.
+func StandInClaude(t testing.TB) string {
+	t.Helper()
+	standInOnce.Do(func() {
+		standInDir, standInErr = os.MkdirTemp("", "dispatch-standin-")
+		if standInErr != nil {
+			return
+		}
+		pkg := "github.com/kapetan-io/dispatch/internal/herdrtest/standinclaude"
+		out, err := exec.Command("go", "build", "-o", filepath.Join(standInDir, "claude"), pkg).CombinedOutput()
+		if err != nil {
+			standInErr = fmt.Errorf("while building the stand-in Claude: %w: %s", err, out)
+		}
+	})
+	require.NoError(t, standInErr)
+	return standInDir
 }

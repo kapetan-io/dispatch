@@ -46,10 +46,6 @@ type Options struct {
 	LinearKey string
 	// Herdr is the workspace manager that hosts the workers. Defaults to the installed herdr.
 	Herdr herdr.Herdr
-	// HerdrCommand is the herdr binary the built-in launcher runs directly. The
-	// launcher does not go through Herdr yet, so setting only Herdr leaves it
-	// on the installed herdr. Defaults to "herdr".
-	HerdrCommand string
 	// Treehouse is the pool of worktrees. Defaults to the installed treehouse.
 	Treehouse treehouse.Pool
 	// PullRequests is the GitHub repo's pull requests. Defaults to the installed
@@ -58,8 +54,9 @@ type Options struct {
 	PullRequests pullrequest.Repository
 	// Alerts shows notifications. Defaults to macOS notifications through osascript.
 	Alerts delivery.Alerts
-	// Launcher, when set, is an external program run in place of the built-in launcher. Tests use it to fake launches.
-	Launcher string
+	// Launcher starts the workers. Defaults to leasing a tree from Treehouse and
+	// starting the worker in Herdr.
+	Launcher launcher.Launcher
 	// Dir is where `dispatch launch` looks for the target repo. Defaults to the
 	// working directory.
 	Dir string
@@ -161,12 +158,6 @@ func withDefaults(o Options) Options {
 	if o.LinearURL == "" {
 		o.LinearURL = linear.DefaultURL
 	}
-	if o.Herdr == nil {
-		o.Herdr = herdr.NewCLI("herdr")
-	}
-	if o.HerdrCommand == "" {
-		o.HerdrCommand = "herdr"
-	}
 	if o.Treehouse == nil {
 		o.Treehouse = treehouse.NewCLI("treehouse")
 	}
@@ -187,6 +178,10 @@ func withDefaults(o Options) Options {
 	}
 	if o.Stderr == nil {
 		o.Stderr = os.Stderr
+	}
+	if o.Herdr == nil {
+		// DISPATCH_LAUNCH_TRACE=<file> records every screen the kickoff step reads.
+		o.Herdr = herdr.NewCLI("herdr").WithPace(o.LaunchPace).WithTrace(os.Getenv("DISPATCH_LAUNCH_TRACE"))
 	}
 	return o
 }
@@ -457,12 +452,9 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 		if name := a.Skill.Name(); name != "" {
 			model, kickoff = cfg.DesignModel, "/dispatch:"+name+" "+a.Ticket.Identifier
 		}
-		if opts.Launcher != "" {
-			return launcher.Launch(ctx, opts.Launcher, a.RepoDir, a.Ticket.Identifier, a.Ticket.Branch, model, kickoff)
-		}
-		lo := launcherOptions(opts, cfg.PluginRoot)
-		lo.RepoDir = a.RepoDir
-		return launcher.Run(ctx, launcher.Request{Ticket: a.Ticket.Identifier, Title: a.Ticket.Title, Branch: a.Ticket.Branch, Model: model, Kickoff: kickoff}, lo)
+		return launcherFor(opts, cfg.PluginRoot, nil).Launch(ctx, launcher.Request{
+			RepoDir: a.RepoDir, Ticket: a.Ticket.Identifier, Title: a.Ticket.Title, Branch: a.Ticket.Branch, Model: model, Kickoff: kickoff,
+		})
 	}
 	// Only a ticket that stopped waiting gets a fresh comment later. A pool that
 	// couldn't be read this tick says nothing about its blockers.
