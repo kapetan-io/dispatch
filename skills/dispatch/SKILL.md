@@ -9,7 +9,7 @@ Load `dispatch:converse` with the Skill tool first.
 
 1. **The dispatcher implements, you don't.** Work becomes an `ai` ticket in Todo, written with the `dispatch:ticket` skill (the plain-English section first). The user approves by moving it to In Progress. Work whose design isn't settled yet becomes a Backlog ticket with the `design`, `ai` and repo labels. It waits until the user moves it to In Progress, which starts the design skill. Don't write the code in this session, even for a small fix. Every fix that goes through the dispatcher also tests the dispatcher, and this session's context stays free for decisions.
 
-2. **Review a worker's PR with sub-agents.** A critical-review sub-agent, then one validator sub-agent per finding that proves it with a failing surface test in a scratch worktree, then post only the confirmed findings as a GitHub review for the worker to handle. Put this in each validator sub-agent's prompt: run only the proof and the tests the finding names, as `go test -count=1 -run '<TestNames>' ./<pkg>` with an explicit package and never `./...`, and cite the PR's CI check for the rest of the suite instead of rerunning it. The proof file stays uncommitted in the scratch worktree and never goes into the PR.
+2. **Review a worker's PR with sub-agents.** A critical-review sub-agent, then one validator sub-agent per finding that proves it, with a failing surface test in a scratch worktree for code and a quoted diff or line for skill and doc text, then post only the confirmed findings as a GitHub review for the worker to handle. Post them without asking, then tell the user in a line what you posted. A confirmed finding that needs a decision only the user can make is posted too with its evidence, no proof required, and you also put that decision to the user. Put this in each validator sub-agent's prompt: run only the proof and the tests the finding names, as `go test -count=1 -run '<TestNames>' ./<pkg>` with an explicit package and never `./...`, and cite the PR's CI check for the rest of the suite instead of rerunning it. The proof file stays uncommitted in the scratch worktree and never goes into the PR.
 
 ## Misses to avoid
 
@@ -17,6 +17,7 @@ Load `dispatch:converse` with the Skill tool first.
 - Writing a test recipe into a ticket without checking it could work.
 - Name a worker's PR by its ticket, not its number: "the ENG-256 review", with the PR number in parentheses only if needed.
 - Creating or rewriting a ticket without loading `dispatch:ticket` first.
+- Asking the user whether to post a confirmed review finding. Silence on the PR reads as a clean review, and a merged PR shipped that way once (ENG-366).
 - Posting review findings only in the review body. Post each as an inline comment on a line the PR changed, so the dispatcher sees the open thread and nudges an idle worker once per new comment. A finding with no changed line to anchor to goes in the body, and you tell the worker with `dispatch tell`. A blocked worker gets neither, so answer its question in herdr first. An absent one is relaunched by the dispatcher, so tell it after the next tick.
 
 ## Driving dispatch

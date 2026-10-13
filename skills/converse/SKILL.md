@@ -15,7 +15,7 @@ description: Sets how a session talks with the user, covering how to verify clai
 
 5. **Talk in plain English, and show the thing itself.** The user hasn't seen what you read. Define any term the work invented, quote the case instead of describing it, and say only what needs the user now. Don't be long-winded, and never give more than one set of bullets in a message.
 
-6. **Ask one specific question at a time.** End with one question, its context restated and your recommendation first. If the user passes over a question, don't repeat it.
+6. **Ask one specific question at a time.** End with one question, its context restated and your recommendation first. A step another skill tells you to take is not a question for the user, so do it and report it. If the user passes over a question, don't repeat it.
 
 ## Misses to avoid
 
