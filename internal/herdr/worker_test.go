@@ -96,7 +96,12 @@ func runStatefulStandIn(dir string, args []string) int {
 				return 1
 			}
 		}
-	case "tab close", "pane run", "pane send-keys":
+	case "pane send-keys":
+		if exists("send-keys-fails") {
+			fmt.Println(herdrNoWay)
+			return 1
+		}
+	case "tab close", "pane run":
 	default:
 		return 2
 	}
@@ -231,6 +236,9 @@ func TestStartWorkerStampsTheTabAndStartsClaudeInIt(t *testing.T) {
 	assert.Contains(t, tabs[0], "--env PATH=/plugin/scripts/shims:")
 	assert.Contains(t, tabs[0], "--env AUTONOMOUS_WORKER=1")
 	assert.Contains(t, tabs[0], "--env DISPATCH_PLUGIN_ROOT=/plugin")
+	exe, err := os.Executable()
+	require.NoError(t, err)
+	assert.Contains(t, tabs[0], "--env DISPATCH_BIN="+exe)
 	assert.Equal(t, []string{"agent start eng-1 --kind claude --pane w9:p1 --timeout 90000 -- --model sonnet --plugin-dir /plugin --disallowedTools EnterPlanMode,ExitPlanMode --dangerously-skip-permissions"},
 		s.callsStarting("agent start"))
 }
@@ -456,4 +464,35 @@ func TestKickoffRecordsTheScreensItReadsWhenTraced(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(b), "dialogs")
 	assert.Contains(t, string(b), "typing")
+}
+
+func TestKickoffTraceShowsEachEnterPressedAtAStrandedCommand(t *testing.T) {
+	s := newStatefulHerdr(t)
+	trace := filepath.Join(s.dir, "trace.log")
+	s.cli.WithTrace(trace)
+	s.screens("❯ claude --model opus --plugin-dir /plugin")
+
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1")
+
+	require.ErrorIs(t, err, herdr.ErrClaudeNeverStarted)
+	b, err := os.ReadFile(trace)
+	require.NoError(t, err)
+	assert.Equal(t, 30, strings.Count(string(b), " enter\n"))
+}
+
+func TestKickoffTraceShowsEnterHerdrRefusedToSend(t *testing.T) {
+	s := newStatefulHerdr(t)
+	trace := filepath.Join(s.dir, "trace.log")
+	s.cli.WithTrace(trace)
+	s.screens("❯ claude --model opus --plugin-dir /plugin")
+	s.write("send-keys-fails", "")
+
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1")
+
+	require.ErrorIs(t, err, herdr.ErrEnterNotSent)
+	assert.NotErrorIs(t, err, herdr.ErrClaudeNeverStarted)
+	b, err := os.ReadFile(trace)
+	require.NoError(t, err)
+	assert.Equal(t, 0, strings.Count(string(b), " enter\n"))
+	assert.Equal(t, 30, strings.Count(string(b), " enter-failed\n"))
 }

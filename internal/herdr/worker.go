@@ -98,11 +98,16 @@ func (c *CLI) StartWorker(ctx context.Context, w Worker) (Started, error) {
 	// does, so the worker runs in a fresh stamped tab and the agent-less tabs
 	// the workspace opened with are closed.
 	shims := filepath.Join(w.PluginRoot, "scripts", "shims")
-	out, _ := c.combined(ctx, "tab", "create", "--workspace", w.Workspace, "--cwd", w.Dir, "--label", w.Label,
-		"--env", "PATH="+shims+":"+os.Getenv("PATH"),
+	args := []string{"tab", "create", "--workspace", w.Workspace, "--cwd", w.Dir, "--label", w.Label,
+		"--env", "PATH=" + shims + ":" + os.Getenv("PATH"),
 		"--env", "AUTONOMOUS_WORKER=1",
-		"--env", "DISPATCH_PLUGIN_ROOT="+w.PluginRoot,
-		"--no-focus")
+		"--env", "DISPATCH_PLUGIN_ROOT=" + w.PluginRoot}
+	// The shim runs this binary, so a dispatch on PATH that is older than the
+	// plugin, or absent, cannot break the worker's start or restart.
+	if exe, err := os.Executable(); err == nil {
+		args = append(args, "--env", "DISPATCH_BIN="+exe)
+	}
+	out, _ := c.combined(ctx, append(args, "--no-focus")...)
 	var created struct {
 		Result struct {
 			RootPane struct {
@@ -205,6 +210,7 @@ func (c *CLI) Kickoff(ctx context.Context, pane, text string) error {
 	_ = c.run(ctx, "agent", "wait", pane, "--until", "idle", "--timeout", "15000")
 	ready := false
 	unrun := false // the launch command was last seen unexecuted at the shell prompt
+	entered := 0   // Enters herdr accepted while the launch command showed at the shell prompt
 	consentTry := 0
 	for range 30 {
 		screen := visible()
@@ -237,7 +243,12 @@ func (c *CLI) Kickoff(ctx context.Context, pane, text string) error {
 		// that command line.
 		if shellCommand.MatchString(screen) {
 			unrun = true
-			_ = c.run(ctx, "pane", "send-keys", pane, "Enter")
+			if err := c.run(ctx, "pane", "send-keys", pane, "Enter"); err != nil {
+				c.record("enter-failed", err.Error())
+			} else {
+				entered++
+				c.record("enter", "launch command at the shell prompt")
+			}
 			c.sleep(ctx, c.pace)
 			continue
 		}
@@ -249,7 +260,7 @@ func (c *CLI) Kickoff(ctx context.Context, pane, text string) error {
 		c.sleep(ctx, c.pace)
 	}
 	if !ready {
-		return c.unconfirmed(unrun)
+		return c.unconfirmed(unrun, entered)
 	}
 	wait := func() bool {
 		return c.run(ctx, "agent", "wait", pane, "--until", "working", "--until", "blocked", "--timeout", "15000") == nil
@@ -278,7 +289,7 @@ func (c *CLI) Kickoff(ctx context.Context, pane, text string) error {
 		case "working", "blocked", "done":
 			return nil
 		default:
-			return c.unconfirmed(unrun)
+			return c.unconfirmed(unrun, entered)
 		}
 		// Typed but never submitted, so press Enter rather than type it twice.
 		if strings.Contains(screen, probe) {
@@ -286,13 +297,16 @@ func (c *CLI) Kickoff(ctx context.Context, pane, text string) error {
 			if wait() {
 				return nil
 			}
-			return c.unconfirmed(unrun)
+			return c.unconfirmed(unrun, entered)
 		}
 	}
-	return c.unconfirmed(unrun)
+	return c.unconfirmed(unrun, entered)
 }
 
-func (c *CLI) unconfirmed(unrun bool) error {
+func (c *CLI) unconfirmed(unrun bool, entered int) error {
+	if unrun && entered == 0 {
+		return ErrEnterNotSent
+	}
 	if unrun {
 		return ErrClaudeNeverStarted
 	}
