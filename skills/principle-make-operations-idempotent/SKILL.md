@@ -1,16 +1,25 @@
 ---
 name: principle-make-operations-idempotent
-description: "Apply when designing commands, lifecycle steps or loops that run amid crashes, restarts and retries. Converge to the same end state however many times they run."
+description: "Apply when designing commands, lifecycle steps, or processing loops that run amid crashes, restarts, and retries. Converge to the same end state regardless of partial prior runs."
 ---
 
 # Make Operations Idempotent
 
-Retries and restarts are normal, so a state change must not depend on what a previous run left behind. For each one ask:
+Design operations so they converge to the correct state regardless of how many times they run or where they start from. Every state-mutating operation should answer: "What happens if this runs twice? What happens if the previous run crashed halfway?"
 
+**Why:** Commands, lifecycle operations, and processing loops run where crashes, restarts, and retries are normal. If partial state changes the next run's outcome, every restart becomes a debugging session.
+
+**The pattern:**
+- Convergent startup: scan for existing state, clean stale artifacts, adopt live sessions
+- Content-based cleanup: compare by content equivalence, not creation order
+- Self-healing locks: use PID-based stale lock detection
+- Idempotent scheduling: failed work respawns cleanly, fresh input regenerated after each cycle
+
+**The test:**
 1. What happens if this runs twice in a row?
 2. What happens if the previous run crashed at every possible point?
-3. Does re-running converge to the same end state?
+3. Does re-execution converge to the same end state?
 
-If any answer is "it depends on what state was left behind", add a reconciliation step. Scan for existing state, then clean up or adopt it, instead of assuming a fresh start.
+If any answer is "it depends on what state was left behind," the operation needs a reconciliation step.
 
-Adapted from pstack by Lauren Tan (MIT). Notice in `principles/LICENSE-pstack`.
+Adapted from pstack by Lauren Tan (MIT). Notice in `../principles/LICENSE-pstack`.

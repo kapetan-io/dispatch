@@ -1,16 +1,39 @@
 ---
 name: principle-boundary-discipline
-description: "Apply when wiring validation, error handling, or adapters. Guard at system boundaries, trust internal types, keep business logic in pure functions."
+description: "Apply when wiring validation, error handling, or framework adapters. Concentrate guards at system boundaries (CLI, config, network, external APIs); trust internal types and keep business logic in pure functions."
 ---
 
 # Boundary Discipline
 
-Validate, narrow types and handle errors at system boundaries (CLI args, config, network, external APIs). Inside, trust the types and propagate errors. Business logic lives in pure functions the thin shell calls.
+Place validation, type narrowing, and error handling at system boundaries. Trust internal code unconditionally. Business logic lives in pure functions. The shell is thin and mechanical.
 
-- Parse raw data into domain types at the boundary.
-- Expose domain concepts, not the boundary's transport, storage or wire types. Keep general mechanism inside and special-purpose policy at the edge.
+**Why:** Scattered validation is noisy, redundant, and gives a false sense of safety. Keep logic out of framework wiring so it can be tested without the framework.
+
+**The pattern:**
+- **At boundaries** (CLI args, config files, external APIs, network protocols): validate, return errors, handle defensively.
+- **Inside the system:** typed data, error propagation, no re-validation. Trust the types.
+- **Across the boundary.** Expose domain concepts, not the boundary's private representation. Keep general-purpose mechanism inside and special-purpose policy at the edge.
+
+**Applications:**
+
+Validation and error handling:
+- Validate config at parse time (the boundary), not inside business logic
+- Parse raw data into domain types at the boundary
+- Do not re-export transport, storage, framework, or wire types through the public surface
+- No redundant nil checks deep in call chains if the boundary already validated
+
+Code organization:
+- Business logic in pure functions with no framework dependencies
+- Parse functions: pure transforms from raw bytes to typed state
+- Prompt construction: structured state in, string out
+- Scoring and assessment: pure transforms from state to results
+
+**The tests:**
+- "Is this data crossing a system boundary right now?" If not, validation is redundant.
+- "Can this be a pure function that the shell just calls?" If yes, extract it.
+
+## Added by dispatch
+
 - Production callers hold domain types, and dependencies are injected as domain types.
 
-**Tests:** Is this data crossing a boundary right now? If not, the check is redundant. Can this be a pure function the shell just calls? If yes, extract it.
-
-Adapted from pstack by Lauren Tan (MIT). Notice in `principles/LICENSE-pstack`.
+Adapted from pstack by Lauren Tan (MIT). Notice in `../principles/LICENSE-pstack`.
