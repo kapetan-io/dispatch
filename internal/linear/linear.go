@@ -486,6 +486,20 @@ func (c Client) Comment(ctx context.Context, ticketID, body string) error {
 	return nil
 }
 
+// Viewer is the user who owns the client's API key.
+type Viewer struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func (c Client) Viewer(ctx context.Context) (Viewer, error) {
+	var out struct {
+		Viewer Viewer `json:"viewer"`
+	}
+	err := c.do(ctx, "Viewer", `query Viewer { viewer { id name } }`, nil, &out)
+	return out.Viewer, err
+}
+
 func (c Client) do(ctx context.Context, operation, query string, variables map[string]any, out any) error {
 	body, err := json.Marshal(map[string]any{"operationName": operation, "query": query, "variables": variables})
 	if err != nil {

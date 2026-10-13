@@ -8,6 +8,7 @@ package dispatch
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -42,7 +43,7 @@ type Options struct {
 	StateDir string
 	// LinearURL defaults to Linear's GraphQL endpoint.
 	LinearURL string
-	// LinearKey overrides LINEAR_API_KEY and the keychain entry named in config.
+	// LinearKey overrides LINEAR_API_KEY, the config's api_key_command and its keychain entry.
 	LinearKey string
 	// Herdr is the workspace manager that hosts the workers. Defaults to the installed herdr.
 	Herdr herdr.Herdr
@@ -73,6 +74,7 @@ const usage = `usage: dispatch tick [--dry-run]
        dispatch run [--interval DURATION]
        dispatch tell <ticket> "<text>"
        dispatch ticket-hint
+       dispatch linear-viewer
        dispatch launch <ticket> <branch> [--base REF] [--model NAME] [--kickoff TEXT] [--title TEXT]
        dispatch claude-shim [CLAUDE ARGS]
        dispatch record-stop
@@ -88,6 +90,8 @@ const usage = `usage: dispatch tick [--dry-run]
   ticket-hint  print a reminder to use the dispatch:ticket skill when run in a repo listed under
                [repos] in the config, or a worktree of one; prints nothing elsewhere.
                The plugin's SessionStart hook runs it
+  linear-viewer  print the id and name of the Linear user who owns dispatch's API key, as one JSON
+               object, found the way tick finds the key
   launch       lease a tree, open a herdr workspace and start a worker typed --kickoff, which
                defaults to "/dispatch:build <ticket>". Run it from inside the repo. Prints one
                JSON result and exits 0 only when a worker is running
@@ -117,7 +121,7 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		_, err := tick(ctx, opts, *dryRun, &autoMergeCheck{})
+		_, err := tick(ctx, opts, *dryRun, &autoMergeCheck{}, &keyLookup{})
 		return err
 	case "tell":
 		if len(args) != 3 {
@@ -127,6 +131,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		return tell(ctx, opts, args[1], args[2])
 	case "ticket-hint":
 		return ticketHint(ctx, opts)
+	case "linear-viewer":
+		return linearViewer(ctx, opts)
 	case "launch":
 		return launchWorker(ctx, opts, args[1:])
 	case "claude-shim":
@@ -208,9 +214,10 @@ func run(ctx context.Context, opts Options, interval time.Duration) error {
 	}
 	_, _ = fmt.Fprintf(opts.Stdout, "dispatch: ticking every %s, Ctrl-C to stop\n", interval)
 	check := &autoMergeCheck{}
+	keys := &keyLookup{}
 	for {
 		start := time.Now()
-		sum, err := tick(ctx, opts, false, check)
+		sum, err := tick(ctx, opts, false, check, keys)
 		took := time.Since(start).Round(time.Millisecond)
 		switch {
 		case ctx.Err() != nil:
@@ -253,7 +260,7 @@ func count(n int, noun string) string {
 	return fmt.Sprintf("%d %ss", n, noun)
 }
 
-func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck) (sum tickSummary, err error) {
+func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck, keys *keyLookup) (sum tickSummary, err error) {
 	if err := os.MkdirAll(opts.StateDir, 0o755); err != nil {
 		return sum, fmt.Errorf("while creating state dir: %w", err)
 	}
@@ -287,7 +294,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, check *autoMergeCheck)
 			err = serr
 		}
 	}()
-	key, err := linearKey(ctx, opts, cfg)
+	key, err := keys.find(ctx, opts, cfg)
 	if err != nil {
 		return sum, err
 	}
@@ -832,18 +839,71 @@ func escalate(ctx context.Context, lin linear.Client, cfg config.Config, c cache
 	return nil
 }
 
-func linearKey(ctx context.Context, opts Options, cfg config.Config) (string, error) {
+// keyLookup finds the Linear API key. A key printed by api_key_command is kept
+// for the life of the process, so a password manager that prompts to unlock
+// asks once per `dispatch run` instead of on every tick.
+type keyLookup struct {
+	fromCommand string
+}
+
+// find tries, in order, Options.LinearKey, LINEAR_API_KEY, the config's
+// api_key_command, and the keychain entry named in the config.
+func (k *keyLookup) find(ctx context.Context, opts Options, cfg config.Config) (string, error) {
 	if opts.LinearKey != "" {
 		return opts.LinearKey, nil
 	}
-	if k := os.Getenv("LINEAR_API_KEY"); k != "" {
-		return k, nil
+	if env := os.Getenv("LINEAR_API_KEY"); env != "" {
+		return env, nil
+	}
+	if cmd := cfg.Linear.APIKeyCommand; cmd != "" {
+		if k.fromCommand == "" {
+			key, err := keyFromCommand(ctx, opts, cmd)
+			if err != nil {
+				return "", err
+			}
+			k.fromCommand = key
+		}
+		return k.fromCommand, nil
 	}
 	out, err := exec.CommandContext(ctx, "security", "find-generic-password", "-s", cfg.Linear.APIKeyKeychain, "-w").Output()
 	if err != nil {
 		return "", fmt.Errorf("no Linear API key: LINEAR_API_KEY is unset and the keychain has no %q entry", cfg.Linear.APIKeyKeychain)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// keyFromCommand runs command in a shell. Its stderr goes to the user so an
+// unlock prompt is visible, and its stdout is never echoed into an error.
+func keyFromCommand(ctx context.Context, opts Options, command string) (string, error) {
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd.Stderr = opts.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("no Linear API key: api_key_command %q failed: %w", command, err)
+	}
+	key := strings.TrimSpace(string(out))
+	if key == "" {
+		return "", fmt.Errorf("no Linear API key: api_key_command %q printed nothing (exit status 0)", command)
+	}
+	return key, nil
+}
+
+// linearViewer prints the owner of the API key, so skills can assign tickets
+// without handling the key.
+func linearViewer(ctx context.Context, opts Options) error {
+	cfg, err := config.Load(opts.ConfigPath)
+	if err != nil {
+		return err
+	}
+	key, err := (&keyLookup{}).find(ctx, opts, cfg)
+	if err != nil {
+		return err
+	}
+	viewer, err := linear.Client{URL: opts.LinearURL, Key: key}.Viewer(ctx)
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(opts.Stdout).Encode(viewer)
 }
 
 // eventOf is the event a tick raises for a, for the dry run's preview. A live
