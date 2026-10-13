@@ -18,7 +18,7 @@ You need a Mac with these on your PATH. dispatch shells out to all of them.
 **1. Clone this repo and install the CLI.** The clone is also the plugin workers load. `~/Development/dispatch` is the default location. If you clone elsewhere, set `plugin_root` in step 5.
 
 ```sh
-git clone git@github.com:kapetan-io/dispatch.git ~/Development/dispatch
+gh repo clone kapetan-io/dispatch ~/Development/dispatch
 cd ~/Development/dispatch && go install ./cmd/dispatch
 ```
 
@@ -51,7 +51,7 @@ dispatch = "~/Development/dispatch"
 
 The [config reference](config.md) lists every other setting and has examples for several repos and renamed statuses. dispatch fails on a setting it doesn't know.
 
-**6. Load the plugin in your own Claude sessions.** Workers get the plugin from `plugin_root` on their own. Your session, the one that files tickets and supervises workers, needs it too, for `/dispatch:dispatch` and `dispatch:ticket`. The repo is its own marketplace, so install it once from your clone:
+**6. Load the plugin in your own Claude sessions.** Workers get the plugin from `plugin_root` on their own. Your session, the one that files tickets and supervises workers, needs it too, for `/dispatch:dispatch` and `dispatch:ticket`. The repo is its own marketplace, so install it once from your clone. Use your clone's path where the commands show `~/Development/dispatch`:
 
 ```sh
 claude plugin marketplace add ~/Development/dispatch
