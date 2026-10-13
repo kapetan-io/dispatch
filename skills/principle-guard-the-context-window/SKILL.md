@@ -1,13 +1,17 @@
 ---
 name: principle-guard-the-context-window
-description: "Apply when context is filling up from large outputs, long files or repeated reads. Send bulk work to sub-agents and keep summaries, not raw payloads, in the main thread."
+description: "Apply when context is filling up: large outputs, long files, repeated reads, fan-out planning. Route bulk to subagents; keep summaries in the main thread, not raw payloads."
 ---
 
 # Guard the Context Window
 
-Context is finite within a session, and overflow degrades reasoning.
+The context window is finite and non-renewable within a session. Every token should be worth its cost.
 
-- Route verbose output, large documents and bulk reads to sub-agents, and keep only their summaries.
-- Size phases and cap the files per phase so one step cannot fill the window.
+**Why:** Context overflow degrades reasoning quality, creates compression artifacts, and halts progress.
 
-Adapted from pstack by Lauren Tan (MIT). Notice in `principles/LICENSE-pstack`.
+**Pattern:**
+- **Isolate large payloads.** Route verbose outputs, screenshots, and large documents to subagents. The main context gets summaries, not raw data.
+- **Keep frequently used content inline.** Templates and references used on every invocation belong in the skill file, not in separate files that cost a read each time.
+- **Size phases and cap scope.** Limit files per phase, set turn budgets, account for mechanism costs.
+
+Adapted from pstack by Lauren Tan (MIT). Notice in `../principles/LICENSE-pstack`.
