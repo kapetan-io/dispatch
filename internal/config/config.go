@@ -236,21 +236,17 @@ func decodeRepo(label string, table map[string]any) (Repo, error) {
 	return repo, nil
 }
 
-// checkPaths fails when two repos share a path. A path that does not exist
-// yet is compared as written.
+// checkPaths fails when two repos share a path, compared as written after
+// cleaning. Symlinks are not resolved, since a path may not exist yet and the
+// same config must load on a machine that hasn't cloned the repos.
 func (r Repos) checkPaths() error {
 	owner := map[string]string{}
 	for _, label := range r.Labels() {
 		path := filepath.Clean(r[label].Path)
-		// A path that exists is compared by where it really points, so a symlink to a clone counts as that clone.
-		real := path
-		if resolved, err := filepath.EvalSymlinks(path); err == nil {
-			real = resolved
-		}
-		if first, ok := owner[real]; ok {
+		if first, ok := owner[path]; ok {
 			return fmt.Errorf("repos.%s and repos.%s have the same path %s: give each repo its own clone", first, label, path)
 		}
-		owner[real] = label
+		owner[path] = label
 	}
 	return nil
 }

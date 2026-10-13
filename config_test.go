@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/kapetan-io/dispatch"
+	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -99,15 +100,17 @@ func TestConfigSamePathIsComparedAfterHomeExpansion(t *testing.T) {
 	require.ErrorContains(t, err, "repos.a and repos.b have the same path "+home+"/src/api")
 }
 
-func TestConfigSamePathIsComparedThroughSymlinks(t *testing.T) {
+func TestConfigLoadsTwoReposWhosePathsAreASymlinkAndItsTarget(t *testing.T) {
 	clone := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
 	require.NoError(t, os.Symlink(clone, link))
 	file := writeHintConfig(t, "[repos.alpha]\npath = \""+link+"\"\n[repos.zeta]\npath = \""+clone+"\"\n")
 
-	err := dispatch.Run(t.Context(), []string{"tell", "ENG-1", "hi"}, dispatch.Options{ConfigPath: file})
+	loaded, err := config.Load(file)
 
-	require.ErrorContains(t, err, "repos.alpha and repos.zeta have the same path")
+	require.NoError(t, err)
+	assert.Equal(t, link, loaded.Repos["alpha"].Path)
+	assert.Equal(t, clone, loaded.Repos["zeta"].Path)
 }
 
 func TestConfigNamesTheKeyOfAWrongTypedSetting(t *testing.T) {
