@@ -35,7 +35,7 @@ A check GitHub does not mark required for merging the PR. It never counts in a r
 _Avoid_: non-blocking check, flaky check
 
 **PR phase**:
-Draft or open, read from GitHub's `isDraft` on every tick. Each phase has its own ready notification. Planned: dispatch does not read the phase yet, and ENG-371 adds it.
+Draft or open, read from GitHub's `isDraft` on every tick. Each phase has its own ready notification.
 _Avoid_: PR state (GitHub's `state` is OPEN for a draft too)
 
 **Review question**:

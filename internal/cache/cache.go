@@ -52,9 +52,13 @@ type Entry struct {
 	// NotifyPending marks a Needs Human notification that failed to show and
 	// is retried each tick until it does.
 	NotifyPending bool `json:"notify_pending,omitempty"`
-	// ReadyHead is the PR head the user was last told was ready for review. A
-	// push moves the head, so a PR that is ready again notifies again.
+	// ReadyHead is the PR head the user was last told was ready for review, or
+	// in a draft repo that its reviews were handled. A push moves the head, so a PR that is ready again notifies again.
 	ReadyHead string `json:"ready_head,omitempty"`
+	// DraftReadyHead is the PR head the user was last told a draft was ready
+	// for review. It is separate from ReadyHead because opening the draft
+	// leaves the head where it was and still earns its own notification.
+	DraftReadyHead string `json:"draft_ready_head,omitempty"`
 	// MergeFailedHead is the PR head whose auto-merge failed. The user was told
 	// once, and inReviewIdle does not retry that head. A push moves it.
 	MergeFailedHead string `json:"merge_failed_head,omitempty"`

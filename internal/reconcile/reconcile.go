@@ -65,6 +65,8 @@ const (
 	ReasonComment           = "new comment"
 	ReasonActivity          = "new PR activity"
 	ReasonReady             = "PR ready for review"
+	ReasonDraftReady        = "draft ready for review"
+	ReasonReviewsHandled    = "reviews handled"
 	ReasonMerge             = "PR approved"
 	ReasonUnresponsive      = "worker hasn't responded to its nudge in an hour"
 )
@@ -85,6 +87,18 @@ func NeedsHumanText(t linear.Ticket) string {
 // ReadyText is the notification message for a ticket whose PR is ready for review.
 func ReadyText(t linear.Ticket, pr pullrequest.PullRequest) string {
 	return fmt.Sprintf("%s is ready for review: %s", t.Identifier, pr.URL)
+}
+
+// DraftReadyText is the notification message for a draft PR that is ready for
+// the user's review.
+func DraftReadyText(t linear.Ticket, pr pullrequest.PullRequest) string {
+	return fmt.Sprintf("%s's draft is ready for your review: %s", t.Identifier, pr.URL)
+}
+
+// ReviewsHandledText is the notification message for a PR the user opened
+// from a draft once the other reviewers' comments are handled.
+func ReviewsHandledText(t linear.Ticket, pr pullrequest.PullRequest) string {
+	return fmt.Sprintf("%s's reviews are handled: %s", t.Identifier, pr.URL)
 }
 
 // MergedText is the notification message for a PR dispatch merged.
@@ -516,7 +530,8 @@ func (in Input) threadOwed(t linear.Ticket, pr pullrequest.PullRequest) bool {
 // is nudged first, so a merge or ready notice never outruns a review nobody has
 // read. A ready PR
 // notifies once per head, or merges when its repo is in auto_merge and a review
-// approves its head. A PR that needs work gets a nudge. A push resets the
+// approves its head. A draft is never merged, and in an open_pr_as = "draft"
+// repo each phase notifies once per head on its own. A PR that needs work gets a nudge. A push resets the
 // count, so a review that arrives days later starts a fresh one.
 func (in Input) inReviewIdle(t linear.Ticket, w worker.Worker, prev cache.Entry) (Action, bool) {
 	pr, ok := in.PRs[t.Identifier]
@@ -530,14 +545,23 @@ func (in Input) inReviewIdle(t linear.Ticket, w worker.Worker, prev cache.Entry)
 	}
 	// An approval can land after the ready notification, so this runs before
 	// the once-per-head check. A head whose merge failed waits for a push.
-	if label, _ := t.LabelIn(in.RepoLabelGroup); ok && pr.Ready && pr.Approved && in.Repos[label].AutoMerge {
+	label, _ := t.LabelIn(in.RepoLabelGroup)
+	repo := in.Repos[label]
+	if ok && pr.Ready && pr.Approved && repo.AutoMerge && !pr.Draft {
 		if prev.MergeFailedHead == pr.Head {
 			return Action{}, false
 		}
 		return Action{Kind: Merge, Ticket: t, Reason: ReasonMerge, Text: MergedText(t, pr), Head: pr.Head, PRURL: pr.URL}, true
 	}
-	if ok && pr.Ready && prev.ReadyHead != pr.Head {
-		return Action{Kind: Notify, Ticket: t, Reason: ReasonReady, Text: ReadyText(t, pr), Head: pr.Head}, true
+	if ok && pr.Ready {
+		switch {
+		case repo.OpenPRAs == config.OpenPRAsDraft && pr.Draft && prev.DraftReadyHead != pr.Head:
+			return Action{Kind: Notify, Ticket: t, Reason: ReasonDraftReady, Text: DraftReadyText(t, pr), Head: pr.Head}, true
+		case repo.OpenPRAs == config.OpenPRAsDraft && !pr.Draft && prev.ReadyHead != pr.Head:
+			return Action{Kind: Notify, Ticket: t, Reason: ReasonReviewsHandled, Text: ReviewsHandledText(t, pr), Head: pr.Head}, true
+		case repo.OpenPRAs != config.OpenPRAsDraft && prev.ReadyHead != pr.Head:
+			return Action{Kind: Notify, Ticket: t, Reason: ReasonReady, Text: ReadyText(t, pr), Head: pr.Head}, true
+		}
 	}
 	if !ok || !pr.NeedsWork() {
 		return Action{}, false

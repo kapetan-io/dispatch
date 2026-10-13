@@ -31,6 +31,9 @@ type PullRequest struct {
 	URL    string
 	// Head is the SHA of the PR's head commit. A push moves it.
 	Head string
+	// Draft means the PR has not been opened for review. GitHub refuses to
+	// merge one.
+	Draft bool
 	// Approved means a reviewer's latest review approves the head commit and no
 	// reviewer's latest review requests changes. An approval of an earlier
 	// commit does not count, so a push clears it.
@@ -94,7 +97,7 @@ const query = `query PullRequest($owner: String!, $repo: String!, $branch: Strin
     pullRequests(headRefName: $branch, states: OPEN, first: 20, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number url isCrossRepository headRefOid mergeable
+        number url isCrossRepository isDraft headRefOid mergeable
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
         reviewThreads(first: $threads) { nodes { isResolved comments(last: 1) { nodes { createdAt author { login } } } } pageInfo { hasNextPage } }
         latestOpinionatedReviews(first: 100) { nodes { state commit { oid } } }
@@ -108,6 +111,7 @@ const query = `query PullRequest($owner: String!, $repo: String!, $branch: Strin
 type prNode struct {
 	Number            int    `json:"number"`
 	IsCrossRepository bool   `json:"isCrossRepository"`
+	IsDraft           bool   `json:"isDraft"`
 	URL               string `json:"url"`
 	HeadRefOid        string `json:"headRefOid"`
 	Mergeable         string `json:"mergeable"`
@@ -218,7 +222,7 @@ func Find(ctx context.Context, branch string, fetch Fetch) (PullRequest, bool, e
 		return PullRequest{}, false, fmt.Errorf("PR %s has more than %d review threads; dispatch reads one page and would miss unresolved ones", n.URL, maxThreads)
 	}
 	checksPassed, checksRunning := true, false
-	pr := PullRequest{Number: n.Number, URL: n.URL, Head: n.HeadRefOid}
+	pr := PullRequest{Number: n.Number, URL: n.URL, Head: n.HeadRefOid, Draft: n.IsDraft}
 	// GitHub's reviewDecision is empty on an unprotected branch and can't say
 	// which commit a request is on, so the reviews are read directly. One
 	// reviewer's standing request vetoes another's approval.
