@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kapetan-io/dispatch/internal/lineartest"
+
 	"github.com/kapetan-io/dispatch/internal/herdr"
 )
 
@@ -375,10 +377,10 @@ func TestTickEscalatesAnInReviewTicketAfterTwoPRNudgesWithNoPush(t *testing.T) {
 	assert.Len(t, h.prompts(), 2)
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 2)
-	assert.Equal(t, "MoveTicket", mutations[0].operation)
-	assert.Equal(t, needsHumanID, mutations[0].variables["state"])
-	assert.Equal(t, "CommentTicket", mutations[1].operation)
-	assert.Contains(t, mutations[1].variables["body"], "stayed idle through 2 nudges")
+	assert.Equal(t, lineartest.Move, mutations[0].Kind)
+	assert.Equal(t, needsHumanID, mutations[0].StateID)
+	assert.Equal(t, lineartest.Comment, mutations[1].Kind)
+	assert.Contains(t, mutations[1].Body, "stayed idle through 2 nudges")
 
 	// The ticket now reads Needs Human, so the dispatcher stays quiet.
 	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))

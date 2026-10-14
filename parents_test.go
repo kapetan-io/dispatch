@@ -6,6 +6,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kapetan-io/dispatch/internal/lineartest"
+
+	"github.com/kapetan-io/dispatch/internal/linear"
 )
 
 const (
@@ -17,15 +21,10 @@ const (
 // its status.
 func child(id, parent, status string, blockedBy ...[2]string) fakeTicket {
 	t := ticket(id, status, "dispatch")
-	t["parent"] = map[string]string{"identifier": parent}
-	relations := []map[string]any{}
+	t.Parent = parent
 	for _, b := range blockedBy {
-		relations = append(relations, map[string]any{
-			"type":  "blocks",
-			"issue": map[string]any{"identifier": b[0], "state": map[string]string{"name": b[1], "type": stateType(b[1])}},
-		})
+		t.Blockers = append(t.Blockers, linear.Blocker{Identifier: b[0], Status: b[1], Abandoned: stateType(b[1]) == "canceled"})
 	}
-	t["inverseRelations"] = map[string]any{"nodes": relations, "pageInfo": map[string]bool{"hasNextPage": false}}
 	return t
 }
 
@@ -54,10 +53,10 @@ func TestTickPromotesAnUnblockedChildAndHoldsTheBlockedOne(t *testing.T) {
 	assert.Equal(t, "promote ENG-2: child of ENG-1\nskip ENG-1: has sub-issues, and a parent never gets a worker\n", out)
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
-	assert.Equal(t, "MoveTicket", mutations[0].operation)
-	assert.Equal(t, "uuid-ENG-2", mutations[0].variables["id"])
-	assert.Equal(t, inProgressID, mutations[0].variables["state"])
-	assert.Equal(t, [][]any{{"uuid-ENG-1"}}, h.linear.childReadParents())
+	assert.Equal(t, lineartest.Move, mutations[0].Kind)
+	assert.Equal(t, "uuid-ENG-2", mutations[0].TicketID)
+	assert.Equal(t, inProgressID, mutations[0].StateID)
+	assert.Equal(t, [][]string{{"uuid-ENG-1"}}, h.linear.childReadParents())
 	assert.Empty(t, h.launches())
 }
 
@@ -110,7 +109,7 @@ func TestTickPromotesABlockedChildOnTheFirstTickAfterItsBlockerIsDone(t *testing
 			}
 			assert.Contains(t, out, test.want)
 			require.Len(t, h.linear.mutations(), 1)
-			assert.Equal(t, "uuid-ENG-3", h.linear.mutations()[0].variables["id"])
+			assert.Equal(t, "uuid-ENG-3", h.linear.mutations()[0].TicketID)
 		})
 	}
 }
@@ -132,11 +131,11 @@ func TestTickEscalatesAChildWhoseBlockerWasAbandoned(t *testing.T) {
 			assert.NotContains(t, out, "promote")
 			mutations := h.linear.mutations()
 			require.Len(t, mutations, 2)
-			assert.Equal(t, "uuid-ENG-3", mutations[0].variables["id"])
-			assert.Equal(t, needsHumanID, mutations[0].variables["state"])
-			assert.Equal(t, "uuid-ENG-3", mutations[1].variables["id"])
-			assert.Contains(t, mutations[1].variables["body"], "ENG-2 is "+status)
-			assert.Contains(t, mutations[1].variables["body"], "Remove the blocker relation")
+			assert.Equal(t, "uuid-ENG-3", mutations[0].TicketID)
+			assert.Equal(t, needsHumanID, mutations[0].StateID)
+			assert.Equal(t, "uuid-ENG-3", mutations[1].TicketID)
+			assert.Contains(t, mutations[1].Body, "ENG-2 is "+status)
+			assert.Contains(t, mutations[1].Body, "Remove the blocker relation")
 			assert.Empty(t, h.launches())
 		})
 	}
@@ -199,9 +198,9 @@ func TestTickEscalatesOnlyChildrenOfYoursThatCarryTheAILabel(t *testing.T) {
 	h.tickets(parent("ENG-1", "In Progress"))
 	blocker := [2]string{"ENG-9", "Canceled"}
 	someoneElses := child("ENG-2", "ENG-1", "Todo", blocker)
-	someoneElses["assignee"] = map[string]string{"id": "someone-else"}
+	someoneElses.Assignee = "someone-else"
 	unlabeled := child("ENG-3", "ENG-1", "Todo", blocker)
-	unlabeled["labels"] = map[string]any{"nodes": []map[string]any{{"name": "dispatch", "parent": map[string]string{"name": "repo"}}}}
+	unlabeled.Labels = []linear.Label{{Name: "dispatch", Group: "repo"}}
 	leased := child("ENG-4", "ENG-1", "Todo", blocker)
 	h.worker("ENG-4", "")
 	h.linear.setElsewhere(child("ENG-4", "ENG-1", "Todo", blocker))
@@ -245,7 +244,7 @@ func TestTickHoldsAChildWhoseBlockersWereCutShort(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(parent("ENG-1", "In Progress"))
 	cut := child("ENG-2", "ENG-1", "Todo")
-	cut["inverseRelations"].(map[string]any)["pageInfo"] = map[string]bool{"hasNextPage": true}
+	cut.BlockersTruncated = true
 	h.linear.setChildren(cut)
 
 	_, err := h.run("tick")
@@ -296,7 +295,7 @@ func TestTickDoesNotCountATicketWithTruncatedLabelsAgainstTheCap(t *testing.T) {
 	h := newHarness(t)
 	h.config("max_in_progress = 1\n")
 	cut := ticket("ENG-3", "In Progress", "dispatch")
-	cut["labels"].(map[string]any)["pageInfo"] = map[string]bool{"hasNextPage": true}
+	cut.LabelsTruncated = true
 	h.tickets(parent("ENG-1", "In Progress"), cut)
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
 
@@ -321,8 +320,8 @@ func TestTickClosesAParentWhoseChildrenAreAllFinished(t *testing.T) {
 	assert.Equal(t, "close ENG-1: every child is finished\nskip ENG-1: has sub-issues, and a parent never gets a worker\n", out)
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-1", mutations[0].variables["id"])
-	assert.Equal(t, doneID, mutations[0].variables["state"])
+	assert.Equal(t, "uuid-ENG-1", mutations[0].TicketID)
+	assert.Equal(t, doneID, mutations[0].StateID)
 }
 
 func TestTickKeepsAParentOpenWhileAnyChildIsUnfinished(t *testing.T) {
@@ -340,7 +339,9 @@ func TestTickKeepsAParentOpenWhileAnyChildIsUnfinished(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.NotContains(t, out, "close ENG-1")
-			assert.Empty(t, h.linear.mutations())
+			for _, change := range h.linear.mutations() {
+				assert.NotEqual(t, lineartest.Move, change.Kind)
+			}
 		})
 	}
 }
@@ -350,7 +351,7 @@ func TestTickCountsEveryChildBeforeClosingAParent(t *testing.T) {
 	h.tickets(parent("ENG-1", "In Progress"))
 	// A child without the ai label or your assignment is still the parent's child.
 	stranger := child("ENG-3", "ENG-1", "Todo")
-	stranger["assignee"] = map[string]string{"id": "someone-else"}
+	stranger.Assignee = "someone-else"
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Done"), stranger)
 
 	out, err := h.run("tick")
@@ -374,9 +375,9 @@ func TestTickPromotesOnlyChildrenOfYoursThatCarryTheAILabel(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(parent("ENG-1", "In Progress"))
 	someoneElses := child("ENG-2", "ENG-1", "Todo")
-	someoneElses["assignee"] = map[string]string{"id": "someone-else"}
+	someoneElses.Assignee = "someone-else"
 	unlabeled := child("ENG-3", "ENG-1", "Todo")
-	unlabeled["labels"] = map[string]any{"nodes": []map[string]any{{"name": "dispatch", "parent": map[string]string{"name": "repo"}}}}
+	unlabeled.Labels = []linear.Label{{Name: "dispatch", Group: "repo"}}
 	backlog := child("ENG-4", "ENG-1", "Backlog")
 	h.linear.setChildren(someoneElses, unlabeled, backlog, child("ENG-5", "ENG-1", "Todo"))
 
@@ -385,7 +386,7 @@ func TestTickPromotesOnlyChildrenOfYoursThatCarryTheAILabel(t *testing.T) {
 
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-5", mutations[0].variables["id"])
+	assert.Equal(t, "uuid-ENG-5", mutations[0].TicketID)
 }
 
 func TestTickNeverPromotesPastTheWorkerCap(t *testing.T) {
@@ -402,7 +403,7 @@ func TestTickNeverPromotesPastTheWorkerCap(t *testing.T) {
 	assert.Contains(t, out, "wait ENG-3: 2 of 2 In Progress tickets already\n")
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-2", mutations[0].variables["id"])
+	assert.Equal(t, "uuid-ENG-2", mutations[0].TicketID)
 }
 
 func TestTickPromotesAWaitingChildOnceASlotFrees(t *testing.T) {
@@ -424,7 +425,7 @@ func TestTickPromotesAWaitingChildOnceASlotFrees(t *testing.T) {
 
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-2", mutations[0].variables["id"])
+	assert.Equal(t, "uuid-ENG-2", mutations[0].TicketID)
 }
 
 func TestTickCountsInProgressTicketsStillWaitingForAWorker(t *testing.T) {
@@ -465,7 +466,7 @@ func TestTickNeverPromotesAChildThatHoldsALease(t *testing.T) {
 
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-3", mutations[0].variables["id"])
+	assert.Equal(t, "uuid-ENG-3", mutations[0].TicketID)
 }
 
 func TestTickStopsAChildYouPausedWithoutPromotingItAgain(t *testing.T) {
@@ -572,10 +573,7 @@ func TestTickHoldsAChildWhoseRepoPoolCannotBeRead(t *testing.T) {
 	h.addRepo("tiger", h.dir+"/moved")
 	h.tickets(parent("ENG-1", "In Progress"))
 	tiger := child("ENG-2", "ENG-1", "Todo")
-	tiger["labels"] = map[string]any{"nodes": []map[string]any{
-		{"name": "ai", "parent": nil},
-		{"name": "tiger", "parent": map[string]string{"name": "repo"}},
-	}}
+	tiger.Labels = []linear.Label{{Name: "ai"}, {Name: "tiger", Group: "repo"}}
 	h.linear.setChildren(tiger)
 
 	out, _, err := h.runContext(t.Context(), "tick")
@@ -591,10 +589,7 @@ func TestTickDoesNotEscalateAChildWhoseRepoPoolCannotBeRead(t *testing.T) {
 	h.addRepo("tiger", h.dir+"/moved")
 	h.tickets(parent("ENG-1", "In Progress"))
 	tiger := child("ENG-2", "ENG-1", "Todo", [2]string{"ENG-9", "Canceled"})
-	tiger["labels"] = map[string]any{"nodes": []map[string]any{
-		{"name": "ai", "parent": nil},
-		{"name": "tiger", "parent": map[string]string{"name": "repo"}},
-	}}
+	tiger.Labels = []linear.Label{{Name: "ai"}, {Name: "tiger", Group: "repo"}}
 	h.linear.setChildren(tiger)
 
 	_, err := h.run("tick")
@@ -632,7 +627,7 @@ func TestTickSharesTheWorkerCapAcrossParents(t *testing.T) {
 	assert.Contains(t, out, "wait ENG-5: 1 of 1 In Progress tickets already\n")
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-2", mutations[0].variables["id"])
+	assert.Equal(t, "uuid-ENG-2", mutations[0].TicketID)
 }
 
 func TestTickClosesOneParentAndPromotesForAnotherInTheSameTick(t *testing.T) {
@@ -647,8 +642,8 @@ func TestTickClosesOneParentAndPromotesForAnotherInTheSameTick(t *testing.T) {
 	require.Len(t, mutations, 2)
 	states := map[any]any{}
 	for _, m := range mutations {
-		assert.Equal(t, "MoveTicket", m.operation)
-		states[m.variables["id"]] = m.variables["state"]
+		assert.Equal(t, lineartest.Move, m.Kind)
+		states[m.TicketID] = m.StateID
 	}
 	assert.Equal(t, map[any]any{"uuid-ENG-1": doneID, "uuid-ENG-5": inProgressID}, states)
 }
@@ -672,6 +667,7 @@ func TestTickNeverGivesAParentAWorkerOrANudge(t *testing.T) {
 		h := newHarness(t)
 		h.tickets(parent("ENG-1", "In Progress"))
 		h.worker("ENG-1", "idle")
+		h.worker("ENG-2", "working")
 		h.linear.setChildren(child("ENG-2", "ENG-1", "In Progress"))
 
 		_, err := h.run("tick")
@@ -703,8 +699,8 @@ func TestTickPromotesTheOldestChildFirstWhenOneSlotIsFree(t *testing.T) {
 	h.config("max_in_progress = 1\n")
 	h.tickets(parent("ENG-1", "In Progress"))
 	older, newer := child("ENG-2", "ENG-1", "Todo"), child("ENG-3", "ENG-1", "Todo")
-	older["createdAt"] = "2026-10-01T09:00:00.000Z"
-	newer["createdAt"] = "2026-10-02T09:00:00.000Z"
+	older.CreatedAt = "2026-10-01T09:00:00.000Z"
+	newer.CreatedAt = "2026-10-02T09:00:00.000Z"
 	// Linear may return either order.
 	h.linear.setChildren(newer, older)
 
@@ -714,14 +710,14 @@ func TestTickPromotesTheOldestChildFirstWhenOneSlotIsFree(t *testing.T) {
 	assert.Contains(t, out, "wait ENG-3: 1 of 1 In Progress tickets already")
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-2", mutations[0].variables["id"])
+	assert.Equal(t, "uuid-ENG-2", mutations[0].TicketID)
 }
 
 func TestTickNeverPromotesAChildOutsideTheConfiguredTeams(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(parent("ENG-1", "In Progress"))
 	other := child("OTH-2", "ENG-1", "Todo")
-	other["team"] = map[string]string{"key": "OTH"}
+	other.Team = "OTH"
 	h.linear.setChildren(other)
 
 	_, err := h.run("tick")
@@ -734,7 +730,7 @@ func TestTickPromotesAChildWithNoRepoLabelAndTheNextTickEscalatesIt(t *testing.T
 	h := newHarness(t)
 	h.tickets(parent("ENG-1", "In Progress"))
 	lost := child("ENG-2", "ENG-1", "Todo")
-	lost["labels"] = map[string]any{"nodes": []map[string]any{{"name": "ai", "parent": nil}}}
+	lost.Labels = []linear.Label{{Name: "ai"}}
 	h.linear.setChildren(lost)
 
 	out, err := h.run("tick")
@@ -750,8 +746,8 @@ func TestTickPromotesAChildWithNoRepoLabelAndTheNextTickEscalatesIt(t *testing.T
 
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 3)
-	assert.Equal(t, needsHumanID, mutations[1].variables["state"])
-	assert.Contains(t, mutations[2].variables["body"], `has no "repo" label`)
+	assert.Equal(t, needsHumanID, mutations[1].StateID)
+	assert.Contains(t, mutations[2].Body, `has no "repo" label`)
 }
 
 func TestTickReleasesAChildWhenItsBlockerIsDoneWhateverCloseParentIs(t *testing.T) {
@@ -781,6 +777,7 @@ func TestTickReleasesAChildOnTheConfiguredBlockerStatus(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
 			h.config("[linear.statuses]\nblocker_done = \"Released\"\n")
+			h.tools.Linear.AddState("Released", "completed")
 			h.tickets(parent("ENG-1", "In Progress"))
 			h.linear.setChildren(
 				child("ENG-2", "ENG-1", test.blocker),

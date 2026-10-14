@@ -12,6 +12,8 @@ import (
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kapetan-io/dispatch/internal/lineartest"
 )
 
 func TestTickReturnsTheTreeOfAFinishedTicket(t *testing.T) {
@@ -135,10 +137,10 @@ func TestTickKeepsTheTreeOfAFinishedTicketThatHoldsWork(t *testing.T) {
 			assert.Empty(t, h.returns())
 			mutations := h.linear.mutations()
 			require.Len(t, mutations, 1)
-			assert.Equal(t, "CommentTicket", mutations[0].operation)
-			assert.Equal(t, "uuid-ENG-1", mutations[0].variables["id"])
-			assert.Contains(t, mutations[0].variables["body"], "`"+path+"` has "+test.work+".")
-			assert.Contains(t, mutations[0].variables["body"], "kept this ticket's tree leased")
+			assert.Equal(t, lineartest.Comment, mutations[0].Kind)
+			assert.Equal(t, "uuid-ENG-1", mutations[0].TicketID)
+			assert.Contains(t, mutations[0].Body, "`"+path+"` has "+test.work+".")
+			assert.Contains(t, mutations[0].Body, "kept this ticket's tree leased")
 
 			// Later ticks neither comment again nor close anything else, but still name the held tree.
 			for range 2 {
@@ -432,8 +434,8 @@ func TestTickTearsDownOneTreeAndKeepsAnotherOfTheSameTicket(t *testing.T) {
 	assert.Equal(t, []string{h.repo + "|" + clean + "|ENG-1"}, h.returns())
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
-	assert.Contains(t, mutations[0].variables["body"], stranded)
-	assert.NotContains(t, mutations[0].variables["body"], clean)
+	assert.Contains(t, mutations[0].Body, stranded)
+	assert.NotContains(t, mutations[0].Body, clean)
 }
 
 func TestTickDryRunNamesEachHeldTreeOfOneTicket(t *testing.T) {
@@ -505,7 +507,7 @@ func TestTickReturnsTheTreeOfAFinishedTicketWhoseLabelsDidNotFitOnePage(t *testi
 	path := h.gitTree("ENG-1")
 	h.worker("ENG-1", "idle")
 	cut := ticket("ENG-1", "Done", "dispatch")
-	cut["labels"].(map[string]any)["pageInfo"] = map[string]bool{"hasNextPage": true}
+	cut.LabelsTruncated = true
 	h.linear.setElsewhere(cut)
 
 	out, err := h.run("tick")
@@ -753,6 +755,8 @@ func TestTickTeardownFreesATreeForALaunchInTheSameTick(t *testing.T) {
 func TestTickReadsDoneAndPausedStatusesFromConfig(t *testing.T) {
 	h := newHarness(t)
 	h.config("[linear.statuses]\ndone = [\"Shipped\"]\npaused = [\"Parked\"]\n")
+	h.tools.Linear.AddState("Shipped", "completed")
+	h.tools.Linear.AddState("Parked", "backlog")
 	h.gitTree("ENG-1")
 	h.gitTree("ENG-2")
 	h.gitTree("ENG-3")
@@ -938,8 +942,8 @@ func TestTickPostsOneCommentForSeveralKeptTrees(t *testing.T) {
 	assert.Empty(t, h.returns())
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
-	assert.Contains(t, mutations[0].variables["body"], "`"+first+"` has uncommitted changes")
-	assert.Contains(t, mutations[0].variables["body"], "`"+second+"` has 1 commit that no remote has")
+	assert.Contains(t, mutations[0].Body, "`"+first+"` has uncommitted changes")
+	assert.Contains(t, mutations[0].Body, "`"+second+"` has 1 commit that no remote has")
 
 	_, err = h.run("tick")
 	require.NoError(t, err)
@@ -1091,11 +1095,11 @@ func (h *harness) git(dir string, args ...string) {
 }
 
 func assignedTo(t fakeTicket, user string) fakeTicket {
-	t["assignee"] = map[string]string{"id": user}
+	t.Assignee = user
 	return t
 }
 
 func withoutLabels(t fakeTicket) fakeTicket {
-	t["labels"] = map[string]any{"nodes": []map[string]any{}}
+	t.Labels = nil
 	return t
 }

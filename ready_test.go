@@ -190,7 +190,7 @@ func TestTickRelabelsWhenTheStatusChanges(t *testing.T) {
 func TestTickLeavesTheTitleOutOfTheLabel(t *testing.T) {
 	h := newHarness(t)
 	long := ticket("ENG-1", "In Progress", "dispatch")
-	long["title"] = strings.Repeat("word ", 30)
+	long.Title = strings.Repeat("word ", 30)
 	h.tickets(long)
 	h.worker("ENG-1", "working")
 
@@ -678,14 +678,14 @@ func TestTickNamesAWorkersTabByTicketAndTitle(t *testing.T) {
 func TestTickKeepsTheFullTitleInATabName(t *testing.T) {
 	h := newHarness(t)
 	long := ticket("ENG-1", "In Progress", "dispatch")
-	long["title"] = strings.TrimSpace(strings.Repeat("word ", 21))
+	long.Title = strings.TrimSpace(strings.Repeat("word ", 21))
 	h.tickets(long)
 	h.worker("ENG-1", "working")
 
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"w-ENG-1:t1|ENG-1 " + long["title"].(string)}, h.tabRenames())
+	assert.Equal(t, []string{"w-ENG-1:t1|ENG-1 " + long.Title}, h.tabRenames())
 }
 
 func TestTickRenamesATabWhenTheTitleChanges(t *testing.T) {
@@ -696,7 +696,7 @@ func TestTickRenamesATabWhenTheTitleChanges(t *testing.T) {
 	require.NoError(t, err)
 
 	renamed := ticket("ENG-1", "In Progress", "dispatch")
-	renamed["title"] = "new title"
+	renamed.Title = "new title"
 	h.tickets(renamed)
 	_, err = h.run("tick")
 	require.NoError(t, err)
