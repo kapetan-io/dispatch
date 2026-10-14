@@ -22,7 +22,7 @@ Load `dispatch:converse` with the Skill tool first.
 
 ## Driving dispatch
 
-Run `dispatch watch <ticket>` for each ticket you file or are asked to follow, and check that it printed `watching <ticket>`. The dispatcher then sends that ticket's events here as messages. Run `dispatch unwatch <ticket>` once its PR merges or the ticket closes. If watching fails, say so and carry on, since events then arrive only as macOS notifications.
+Run `dispatch watch <ticket>` when you move a ticket to In Progress, when you take over a ticket whose worker is running, or when asked to follow one, but not for a ticket you only filed. Check that it printed `watching <ticket>`. The dispatcher then sends that ticket's events here as messages. Run `dispatch unwatch <ticket>` once its PR merges or the ticket closes. If watching fails, say so and carry on, since events then arrive only as macOS notifications.
 
 - After a ticket moves, whether you or the user moved it, run `dispatch tick`.
 - After posting review findings on a worker's PR, run `dispatch tick` so the nudge reaches the worker now instead of at the next timer tick.
