@@ -58,7 +58,7 @@ var Scenarios = []Scenario{
 	{Name: "AMissingKeyIsRefused", Run: func(t *testing.T, s Subject) {
 		_, err := s.Connect("").ManagedTickets(context.Background(), "ai", []string{s.Team})
 
-		require.Error(t, err)
+		require.ErrorIs(t, err, linear.ErrUnauthorized)
 	}},
 	{Name: "StateIDFindsAStatusTheTeamHas", Run: func(t *testing.T, s Subject) {
 		id, err := s.Connect(s.Key).StateID(context.Background(), s.Team, "Todo")
@@ -82,28 +82,46 @@ var Scenarios = []Scenario{
 		require.NoError(t, err)
 		assert.Empty(t, found)
 	}},
+	// The client returns before sending a request, so this checks the client
+	// and not Linear.
 	{Name: "LeasedTicketsIgnoresIdentifiersItCannotPlace", Run: func(t *testing.T, s Subject) {
 		found, err := s.Connect(s.Key).LeasedTickets(context.Background(), "ai", []string{s.Team}, []string{"NOSUCHTEAM-1", "garbage", s.Team + "-0"})
 
 		require.NoError(t, err)
 		assert.Empty(t, found)
 	}},
-	{Name: "LeasedTicketsReturnsOnlyTheTicketsNamed", Run: func(t *testing.T, s Subject) {
-		if s.Seed != nil {
-			s.Seed(
-				owned(s, 1, "Done"), owned(s, 2, "Done"), owned(s, 3, "Done"), owned(s, 4, "In Progress"),
-			)
-		}
-
-		found, err := s.Connect(s.Key).LeasedTickets(context.Background(), "ai", []string{s.Team}, []string{s.Team + "-1", s.Team + "-2"})
+	{Name: "LeasedTicketsOfATicketThatDoesNotExistIsEmpty", Run: func(t *testing.T, s Subject) {
+		found, err := s.Connect(s.Key).LeasedTickets(context.Background(), "ai", []string{s.Team}, []string{s.Team + "-999999999"})
 
 		require.NoError(t, err)
-		for _, ticket := range found {
-			assert.Contains(t, []string{s.Team + "-1", s.Team + "-2"}, ticket.Identifier)
-		}
+		assert.Empty(t, found)
+	}},
+	{Name: "LeasedTicketsReturnsExactlyTheTicketsNamed", Run: func(t *testing.T, s Subject) {
 		if s.Seed != nil {
-			assert.Len(t, found, 2)
+			s.Seed(
+				owned(s, 1, "In Progress"), owned(s, 2, "In Progress"), owned(s, 3, "In Progress"), owned(s, 4, "Done"),
+			)
 		}
+		work := s.Connect(s.Key)
+		// The real workspace can't be seeded, so the tickets to name are the key
+		// owner's own tracked ones. Naming fewer than exist is what shows a filter
+		// that matches nothing or everything.
+		tracked, err := work.ManagedTickets(context.Background(), "ai", []string{s.Team})
+		require.NoError(t, err)
+		require.NotEmpty(t, tracked)
+		var named []string
+		for _, ticket := range tracked[:min(len(tracked), 2)] {
+			named = append(named, ticket.Identifier)
+		}
+
+		found, err := work.LeasedTickets(context.Background(), "ai", []string{s.Team}, named)
+
+		require.NoError(t, err)
+		var got []string
+		for _, ticket := range found {
+			got = append(got, ticket.Identifier)
+		}
+		assert.ElementsMatch(t, named, got)
 	}},
 	{Name: "ParentChildrenOfAnUnknownParentIsEmpty", Run: func(t *testing.T, s Subject) {
 		children, err := s.Connect(s.Key).ParentChildren(context.Background(), []string{missingTicket})

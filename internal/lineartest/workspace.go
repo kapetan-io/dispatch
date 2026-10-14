@@ -37,6 +37,9 @@ type Issue struct {
 	Assignee string
 	// Parent is the identifier of the ticket's parent, if it has one.
 	Parent string
+	// Archived hides the ticket from every read except LeasedTickets, which
+	// asks Linear for archived tickets too.
+	Archived bool
 }
 
 // Change is a move or a comment that the workspace accepted.
@@ -116,13 +119,18 @@ func (w *Workspace) AddState(name, stateType string) {
 }
 
 // Seed replaces the tickets in the workspace. It panics on a status the team
-// doesn't have, so a test can't hold a ticket Linear couldn't.
+// doesn't have and on a ticket flagged HasChildren that no seeded ticket names
+// as its parent, so a test can't hold a ticket Linear couldn't. A test that
+// needs a failed children read uses FailOn(OnChildren).
 func (w *Workspace) Seed(issues ...Issue) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	for _, issue := range issues {
 		if w.stateOf(issue.Status) == nil {
 			panic(fmt.Sprintf("lineartest: %s has status %q, which team %s lacks", issue.Identifier, issue.Status, w.team))
+		}
+		if issue.HasChildren && !slices.ContainsFunc(issues, func(other Issue) bool { return other.Parent == issue.Identifier }) {
+			panic(fmt.Sprintf("lineartest: %s is flagged HasChildren, but no seeded ticket has it as its parent", issue.Identifier))
 		}
 	}
 	w.issues = slices.Clone(issues)
@@ -255,7 +263,7 @@ func (s *session) ManagedTickets(_ context.Context, label string, teams []string
 	var found []linear.Ticket
 	for _, issue := range s.w.issues {
 		state := s.w.stateOf(issue.Status)
-		if issue.Assignee != s.w.viewer.ID || state.Type != "started" || !issue.HasLabel(label) || !slices.Contains(teams, issue.Team) {
+		if issue.Archived || issue.Assignee != s.w.viewer.ID || state.Type != "started" || !issue.HasLabel(label) || !slices.Contains(teams, issue.Team) {
 			continue
 		}
 		// Fields the real query leaves out come back zero, so a caller that reads
@@ -285,8 +293,14 @@ func (s *session) LeasedTickets(_ context.Context, label string, teams, identifi
 	}
 	defer s.w.mu.Unlock()
 	var found []linear.Ticket
+	named := 0
 	for _, issue := range s.w.issues {
-		if !slices.Contains(asked, issue.Identifier) || issue.Assignee != s.w.viewer.ID {
+		if !slices.Contains(asked, issue.Identifier) {
+			continue
+		}
+		// Linear pages the query's own filter, which names only team and number.
+		named++
+		if issue.Assignee != s.w.viewer.ID {
 			continue
 		}
 		if !issue.LabelsTruncated && !issue.HasLabel(label) {
@@ -295,7 +309,7 @@ func (s *session) LeasedTickets(_ context.Context, label string, teams, identifi
 		issue.LastComment, issue.Mine, issue.CreatedAt, issue.Blockers, issue.BlockersTruncated = "", false, "", nil, false
 		found = append(found, s.w.withChildren(issue))
 	}
-	if len(found) > linear.PageSize {
+	if named > linear.PageSize {
 		return nil, linear.LeasedOverflow()
 	}
 	return found, nil
@@ -319,7 +333,7 @@ func (s *session) ParentChildren(_ context.Context, parents []string) (map[strin
 	children := map[string][]linear.Ticket{}
 	total := 0
 	for _, issue := range s.w.issues {
-		if !slices.Contains(identifiers, issue.Parent) {
+		if issue.Archived || !slices.Contains(identifiers, issue.Parent) {
 			continue
 		}
 		total++

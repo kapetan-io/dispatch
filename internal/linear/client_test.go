@@ -23,19 +23,22 @@ type wire struct {
 	status    int
 	envelope  map[string]any
 	variables map[string]map[string]any
+	queries   map[string]string
 	auth      string
 }
 
 func newWire(t *testing.T) *wire {
-	w := &wire{answers: map[string]any{}, variables: map[string]map[string]any{}}
+	w := &wire{answers: map[string]any{}, variables: map[string]map[string]any{}, queries: map[string]string{}}
 	w.server = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		var req struct {
 			OperationName string         `json:"operationName"`
+			Query         string         `json:"query"`
 			Variables     map[string]any `json:"variables"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		w.auth = r.Header.Get("Authorization")
 		w.variables[req.OperationName] = req.Variables
+		w.queries[req.OperationName] = req.Query
 		rw.Header().Set("X-RateLimit-Requests-Limit", "2500")
 		rw.Header().Set("X-RateLimit-Requests-Remaining", "2400")
 		if w.status != 0 {
@@ -139,6 +142,27 @@ func TestClientAsksForLeasedTicketsInAFormLinearApplies(t *testing.T) {
 		{"and":[{"team":{"key":{"eq":"ENG"}}},{"number":{"eq":1}}]},
 		{"and":[{"team":{"key":{"eq":"ENG"}}},{"number":{"eq":22}}]}
 	]}`, string(filter))
+}
+
+// A finished or paused ticket that still holds a tree may be archived, and
+// Linear leaves archived tickets out unless asked.
+func TestClientAsksForArchivedTicketsOnlyWhenLookingUpLeasedOnes(t *testing.T) {
+	w := newWire(t)
+	w.answers["LeasedTickets"] = map[string]any{
+		"viewer": map[string]string{"id": "u1"},
+		"issues": map[string]any{"nodes": []any{}, "pageInfo": map[string]bool{"hasNextPage": false}},
+	}
+	w.answers["ManagedTickets"] = map[string]any{
+		"viewer": map[string]any{"assignedIssues": map[string]any{"nodes": []any{}, "pageInfo": map[string]bool{"hasNextPage": false}}},
+	}
+
+	_, err := w.client().LeasedTickets(context.Background(), "ai", []string{"ENG"}, []string{"ENG-1"})
+	require.NoError(t, err)
+	_, err = w.client().ManagedTickets(context.Background(), "ai", []string{"ENG"})
+	require.NoError(t, err)
+
+	assert.Contains(t, w.queries["LeasedTickets"], "includeArchived: true")
+	assert.NotContains(t, w.queries["ManagedTickets"], "includeArchived")
 }
 
 func TestClientMakesNoCallToLookUpTicketsItCannotPlace(t *testing.T) {
