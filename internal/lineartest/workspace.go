@@ -56,7 +56,7 @@ type State struct{ Name, Type string }
 // Workspace is a linear.Workspace backed by memory. Its refusals come from the
 // state it holds: a status the team lacks, a ticket that doesn't exist, a key it
 // doesn't accept, a read that overflows a page. Failures that don't come from
-// that state go through the Fail methods and never change what it accepts.
+// that state are injected with FailOn and never change what it accepts.
 type Workspace struct {
 	journal *journal.Journal
 	// Now stamps the comments the workspace accepts.
@@ -96,7 +96,8 @@ func New(j *journal.Journal) *Workspace {
 // Viewer is the account the workspace belongs to.
 func (w *Workspace) Viewer() linear.Viewer { return w.viewer }
 
-// StateID is the id the workspace gives the named status.
+// StateID is the id the workspace gives the named status. Ids derive from
+// names so a test can predict them.
 func StateID(name string) string {
 	return "state-" + strings.ReplaceAll(strings.ToLower(name), " ", "-")
 }
@@ -120,7 +121,7 @@ func (w *Workspace) Seed(issues ...Issue) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	for _, issue := range issues {
-		if issue.Status != "" && w.stateOf(issue.Status) == nil {
+		if w.stateOf(issue.Status) == nil {
 			panic(fmt.Sprintf("lineartest: %s has status %q, which team %s lacks", issue.Identifier, issue.Status, w.team))
 		}
 	}
@@ -166,8 +167,11 @@ const (
 	OnChildren = "ParentChildren"
 	OnMove     = "MoveTicket"
 	OnComment  = "CommentTicket"
-	// OnUnsuccessfulMove makes Linear answer a move with success:false.
-	OnUnsuccessfulMove = "MoveTicket/success:false"
+	// OnUnsuccessfulMove and OnUnsuccessfulComment are not operations. They make
+	// a move or comment that reaches Linear come back with success:false, and
+	// CallsTo does not count them.
+	OnUnsuccessfulMove    = "MoveTicket/success:false"
+	OnUnsuccessfulComment = "CommentTicket/success:false"
 )
 
 // FailOn makes the operation fail like a Linear outage until FailOn is called
@@ -187,6 +191,15 @@ func (w *Workspace) stateOf(name string) *State {
 	return nil
 }
 
+// withChildren is the ticket with HasChildren set when any ticket in the
+// workspace names it as its parent, as Linear derives it.
+func (w *Workspace) withChildren(issue Issue) linear.Ticket {
+	if slices.ContainsFunc(w.issues, func(other Issue) bool { return other.Parent == issue.Identifier }) {
+		issue.HasChildren = true
+	}
+	return issue.Ticket
+}
+
 func (w *Workspace) find(id string) int {
 	return slices.IndexFunc(w.issues, func(i Issue) bool { return i.ID == id })
 }
@@ -203,21 +216,27 @@ func (s *session) Usage() linear.Stats {
 	return linear.Stats{Calls: s.calls, RequestsRemaining: RequestsRemaining, RequestsLimit: RequestsLimit}
 }
 
-// request counts the call and fails it when the key is wrong or the operation
-// has been made to fail. It returns with the workspace locked on success.
+// request fails the call when the key is wrong or the operation has been made
+// to fail, and otherwise counts it. A rejected key counts nothing, so a test
+// can wait for the first call the right key makes. It returns with the workspace locked on success.
 func (s *session) request(operation string) error {
 	s.w.mu.Lock()
-	s.w.calls[operation]++
-	s.calls++
 	if s.key != s.w.key {
 		s.w.mu.Unlock()
 		return fmt.Errorf("linear %s: HTTP 401: %w", operation, linear.ErrUnauthorized)
 	}
+	s.w.calls[operation]++
+	s.calls++
 	if s.w.failed[operation] {
 		s.w.mu.Unlock()
 		return fmt.Errorf("linear %s: HTTP 500: %s refused", operation, operation)
 	}
 	return nil
+}
+
+// notFound is Linear's refusal of an id that names nothing.
+func notFound(operation, entity string) error {
+	return fmt.Errorf("linear %s: Entity not found: %s - Could not find referenced %s.", operation, entity, entity)
 }
 
 func (s *session) Viewer(context.Context) (linear.Viewer, error) {
@@ -239,9 +258,11 @@ func (s *session) ManagedTickets(_ context.Context, label string, teams []string
 		if issue.Assignee != s.w.viewer.ID || state.Type != "started" || !issue.HasLabel(label) || !slices.Contains(teams, issue.Team) {
 			continue
 		}
-		// Linear's query for managed tickets doesn't ask for these.
+		// Fields the real query leaves out come back zero, so a caller that reads
+		// one fails here as it would against Linear. LeasedTickets and
+		// ParentChildren do the same.
 		issue.Mine, issue.CreatedAt = false, ""
-		found = append(found, issue.Ticket)
+		found = append(found, s.w.withChildren(issue))
 	}
 	if len(found) > linear.PageSize {
 		return nil, linear.ManagedOverflow(label)
@@ -271,9 +292,8 @@ func (s *session) LeasedTickets(_ context.Context, label string, teams, identifi
 		if !issue.LabelsTruncated && !issue.HasLabel(label) {
 			continue
 		}
-		// Linear's query for leased tickets doesn't ask for these.
 		issue.LastComment, issue.Mine, issue.CreatedAt, issue.Blockers, issue.BlockersTruncated = "", false, "", nil, false
-		found = append(found, issue.Ticket)
+		found = append(found, s.w.withChildren(issue))
 	}
 	if len(found) > linear.PageSize {
 		return nil, linear.LeasedOverflow()
@@ -303,9 +323,8 @@ func (s *session) ParentChildren(_ context.Context, parents []string) (map[strin
 			continue
 		}
 		total++
-		// Linear's query for children doesn't ask for these.
 		issue.Mine, issue.URL, issue.LastComment = issue.Assignee == s.w.viewer.ID, "", ""
-		children[issue.Parent] = append(children[issue.Parent], issue.Ticket)
+		children[issue.Parent] = append(children[issue.Parent], s.w.withChildren(issue))
 	}
 	if total > linear.PageSize {
 		return nil, linear.ChildrenOverflow()
@@ -333,18 +352,18 @@ func (s *session) Move(_ context.Context, ticketID, stateID string) error {
 		return err
 	}
 	defer s.w.mu.Unlock()
-	i := s.w.find(ticketID)
-	if i < 0 {
-		return fmt.Errorf("linear MoveTicket: Entity not found: Issue - Could not find referenced Issue.")
+	ticket := s.w.find(ticketID)
+	if ticket < 0 {
+		return notFound("MoveTicket", "Issue")
 	}
-	i2 := slices.IndexFunc(s.w.states, func(st State) bool { return StateID(st.Name) == stateID })
-	if i2 < 0 {
-		return fmt.Errorf("linear MoveTicket: Entity not found: WorkflowState - Could not find referenced WorkflowState.")
+	state := slices.IndexFunc(s.w.states, func(st State) bool { return StateID(st.Name) == stateID })
+	if state < 0 {
+		return notFound("MoveTicket", "WorkflowState")
 	}
 	if s.w.failed[OnUnsuccessfulMove] {
 		return linear.Unsuccessful("MoveTicket", ticketID)
 	}
-	s.w.issues[i].Status = s.w.states[i2].Name
+	s.w.issues[ticket].Status = s.w.states[state].Name
 	s.w.changes = append(s.w.changes, Change{Kind: Move, TicketID: ticketID, StateID: stateID})
 	s.w.journal.Record("linear", "move", ticketID, stateID)
 	return nil
@@ -355,11 +374,14 @@ func (s *session) Comment(_ context.Context, ticketID, body string) error {
 		return err
 	}
 	defer s.w.mu.Unlock()
-	i := s.w.find(ticketID)
-	if i < 0 {
-		return fmt.Errorf("linear CommentTicket: Entity not found: Issue - Could not find referenced Issue.")
+	ticket := s.w.find(ticketID)
+	if ticket < 0 {
+		return notFound("CommentTicket", "Issue")
 	}
-	s.w.issues[i].LastComment = s.w.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+	if s.w.failed[OnUnsuccessfulComment] {
+		return linear.Unsuccessful("CommentTicket", ticketID)
+	}
+	s.w.issues[ticket].LastComment = s.w.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 	s.w.changes = append(s.w.changes, Change{Kind: Comment, TicketID: ticketID, Body: body})
 	s.w.journal.Record("linear", "comment", ticketID, body)
 	return nil

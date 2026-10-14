@@ -206,3 +206,189 @@ func TestClientListsTheOldestChildFirst(t *testing.T) {
 	}
 	assert.Equal(t, []string{"ENG-2true", "ENG-3true"}, order)
 }
+
+func page(nodes ...any) map[string]any {
+	return map[string]any{"nodes": nodes, "pageInfo": map[string]bool{"hasNextPage": false}}
+}
+
+func node(identifier, assignee string, labels ...string) map[string]any {
+	var names []any
+	for _, name := range labels {
+		names = append(names, map[string]any{"name": name})
+	}
+	n := map[string]any{
+		"id": "id-" + identifier, "identifier": identifier,
+		"state": map[string]string{"name": "Todo"}, "team": map[string]string{"key": "ENG"},
+		"labels": page(names...),
+	}
+	if assignee != "" {
+		n["assignee"] = map[string]string{"id": assignee}
+	}
+	return n
+}
+
+func TestClientFailsWhenLeasedTicketsNeedASecondPage(t *testing.T) {
+	w := newWire(t)
+	w.answers["LeasedTickets"] = map[string]any{
+		"viewer": map[string]string{"id": "u1"},
+		"issues": map[string]any{"nodes": []any{}, "pageInfo": map[string]bool{"hasNextPage": true}},
+	}
+
+	_, err := w.client().LeasedTickets(context.Background(), "ai", []string{"ENG"}, []string{"ENG-1"})
+
+	require.EqualError(t, err, linear.LeasedOverflow().Error())
+}
+
+func TestClientFailsWhenChildrenNeedASecondPage(t *testing.T) {
+	w := newWire(t)
+	w.answers["ParentChildren"] = map[string]any{
+		"viewer": map[string]string{"id": "u1"},
+		"issues": map[string]any{"nodes": []any{}, "pageInfo": map[string]bool{"hasNextPage": true}},
+	}
+
+	_, err := w.client().ParentChildren(context.Background(), []string{"id1"})
+
+	require.EqualError(t, err, linear.ChildrenOverflow().Error())
+}
+
+func TestClientKeepsLeasedTicketsAssignedToTheOwnerWithTheLabelOrCutShortLabels(t *testing.T) {
+	w := newWire(t)
+	truncated := node("ENG-3", "u1")
+	truncated["labels"] = map[string]any{"nodes": []any{}, "pageInfo": map[string]bool{"hasNextPage": true}}
+	w.answers["LeasedTickets"] = map[string]any{
+		"viewer": map[string]string{"id": "u1"},
+		"issues": page(
+			node("ENG-1", "u1", "ai"), node("ENG-2", "u1", "other"), truncated,
+			node("ENG-4", "u2", "ai"), node("ENG-5", "", "ai"),
+		),
+	}
+
+	found, err := w.client().LeasedTickets(context.Background(), "ai", []string{"ENG"}, []string{"ENG-1"})
+
+	require.NoError(t, err)
+	var got []string
+	for _, ticket := range found {
+		got = append(got, ticket.Identifier)
+	}
+	assert.Equal(t, []string{"ENG-1", "ENG-3"}, got)
+}
+
+func TestClientDropsManagedTicketsOutsideTheTeams(t *testing.T) {
+	w := newWire(t)
+	other := node("OTHER-1", "")
+	other["team"] = map[string]string{"key": "OTHER"}
+	w.answers["ManagedTickets"] = map[string]any{"viewer": map[string]any{"assignedIssues": page(node("ENG-1", ""), other)}}
+
+	found, err := w.client().ManagedTickets(context.Background(), "ai", []string{"ENG"})
+
+	require.NoError(t, err)
+	require.Len(t, found, 1)
+	assert.Equal(t, "ENG-1", found[0].Identifier)
+}
+
+func TestClientSendsTheLabelAndTeamsAndPageSizeForManagedTickets(t *testing.T) {
+	w := newWire(t)
+	w.answers["ManagedTickets"] = map[string]any{"viewer": map[string]any{"assignedIssues": page()}}
+
+	_, err := w.client().ManagedTickets(context.Background(), "ai", []string{"ENG", "OPS"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "ai", w.variables["ManagedTickets"]["label"])
+	assert.Equal(t, []any{"ENG", "OPS"}, w.variables["ManagedTickets"]["teams"])
+	assert.EqualValues(t, linear.PageSize, w.variables["ManagedTickets"]["first"])
+}
+
+func TestClientReadsChildrenMineParentAndBlockers(t *testing.T) {
+	w := newWire(t)
+	mine, theirs, orphan := node("ENG-2", "u1"), node("ENG-3", "u2"), node("ENG-4", "u1")
+	mine["parent"] = map[string]string{"identifier": "ENG-1"}
+	theirs["parent"] = map[string]string{"identifier": "ENG-1"}
+	mine["createdAt"] = "2026-10-01"
+	mine["inverseRelations"] = map[string]any{"nodes": []any{map[string]any{
+		"type": "blocks", "issue": map[string]any{"identifier": "ENG-9", "state": map[string]string{"name": "Todo", "type": "unstarted"}},
+	}}, "pageInfo": map[string]bool{"hasNextPage": true}}
+	w.answers["ParentChildren"] = map[string]any{"viewer": map[string]string{"id": "u1"}, "issues": page(mine, theirs, orphan)}
+
+	children, err := w.client().ParentChildren(context.Background(), []string{"id1"})
+
+	require.NoError(t, err)
+	require.Len(t, children, 1)
+	require.Len(t, children["ENG-1"], 2)
+	assert.True(t, children["ENG-1"][1].Mine)
+	assert.False(t, children["ENG-1"][0].Mine)
+	assert.Equal(t, "2026-10-01", children["ENG-1"][1].CreatedAt)
+	assert.Equal(t, []linear.Blocker{{Identifier: "ENG-9", Status: "Todo"}}, children["ENG-1"][1].Blockers)
+	assert.True(t, children["ENG-1"][1].BlockersTruncated)
+}
+
+func TestClientMakesNoCallForNoParents(t *testing.T) {
+	w := newWire(t)
+	client := w.client()
+
+	children, err := client.ParentChildren(context.Background(), nil)
+
+	require.NoError(t, err)
+	assert.Empty(t, children)
+	assert.Zero(t, client.Usage().Calls)
+}
+
+func TestClientFindsAStatusByTeamAndName(t *testing.T) {
+	w := newWire(t)
+	team := func(key, id string) map[string]any {
+		return map[string]any{"key": key, "states": map[string]any{"nodes": []any{map[string]string{"id": id, "name": "Done"}}}}
+	}
+	w.answers["TeamStates"] = map[string]any{"teams": map[string]any{"nodes": []any{team("OPS", "ops-done"), team("ENG", "eng-done")}}}
+
+	id, err := w.client().StateID(context.Background(), "ENG", "Done")
+	require.NoError(t, err)
+	assert.Equal(t, "eng-done", id)
+
+	_, err = w.client().StateID(context.Background(), "ENG", "Nope")
+	require.EqualError(t, err, linear.NoStatus("ENG", "Nope").Error())
+
+	_, err = w.client().StateID(context.Background(), "NONE", "Done")
+	require.EqualError(t, err, linear.NoStatus("NONE", "Done").Error())
+}
+
+func TestClientReportsAnUnexpectedHTTPStatus(t *testing.T) {
+	w := newWire(t)
+	w.status = http.StatusInternalServerError
+
+	_, err := w.client().ManagedTickets(context.Background(), "ai", []string{"ENG"})
+
+	require.ErrorContains(t, err, "linear ManagedTickets: HTTP 500: refused")
+	assert.NotErrorIs(t, err, linear.ErrUnauthorized)
+}
+
+func TestClientSendsAMissingKeyAsEmptyAndReportsWhatLinearAnswers(t *testing.T) {
+	w := newWire(t)
+	w.status = http.StatusUnauthorized
+
+	_, err := linear.NewClient(w.server.URL, "").ManagedTickets(context.Background(), "ai", []string{"ENG"})
+
+	require.ErrorIs(t, err, linear.ErrUnauthorized)
+	assert.Empty(t, w.auth)
+}
+
+func TestClientCountsFailedCallsInItsUsage(t *testing.T) {
+	w := newWire(t)
+	w.status = http.StatusUnauthorized
+	client := w.client()
+
+	_, _ = client.Viewer(context.Background())
+	_, _ = client.Viewer(context.Background())
+
+	assert.Equal(t, 2, client.Usage().Calls)
+}
+
+func TestClientSendsTheMutationVariables(t *testing.T) {
+	w := newWire(t)
+	w.answers["MoveTicket"] = map[string]any{"issueUpdate": map[string]bool{"success": true}}
+	w.answers["CommentTicket"] = map[string]any{"commentCreate": map[string]bool{"success": true}}
+
+	require.NoError(t, w.client().Move(context.Background(), "t1", "s1"))
+	require.NoError(t, w.client().Comment(context.Background(), "t1", "hi"))
+
+	assert.Equal(t, map[string]any{"id": "t1", "state": "s1"}, w.variables["MoveTicket"])
+	assert.Equal(t, map[string]any{"id": "t1", "body": "hi"}, w.variables["CommentTicket"])
+}

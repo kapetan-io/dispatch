@@ -341,6 +341,7 @@ func TestTickKeepsAParentOpenWhileAnyChildIsUnfinished(t *testing.T) {
 			assert.NotContains(t, out, "close ENG-1")
 			for _, change := range h.linear.mutations() {
 				assert.NotEqual(t, lineartest.Move, change.Kind)
+				assert.NotEqual(t, "uuid-ENG-1", change.TicketID)
 			}
 		})
 	}

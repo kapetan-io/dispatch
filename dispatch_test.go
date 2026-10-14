@@ -230,6 +230,7 @@ func TestTickNeverCommentsWhenLinearRefusesTheMove(t *testing.T) {
 
 	assert.Empty(t, out)
 	assert.Contains(t, stderr, "while escalating ENG-1: linear MoveTicket: Linear reported success=false")
+	assert.Equal(t, 1, h.linear.CallsTo(lineartest.OnMove))
 	assert.Empty(t, h.linear.mutations())
 }
 
@@ -307,6 +308,20 @@ func TestTickPostsAnEscalationCommentThatFailedOnAnEarlierTick(t *testing.T) {
 	_, err = h.run("tick")
 	require.NoError(t, err)
 	assert.Len(t, h.linear.mutations(), 2)
+}
+
+func TestTickRetriesAnEscalationCommentThatLinearAnsweredWithSuccessFalse(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", ""))
+	h.linear.unsuccessfulComments()
+
+	_, stderr, err := h.runContext(context.Background(), "tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "moved to Needs Human, but the comment failed")
+	assert.Contains(t, stderr, "Linear reported success=false")
+	require.Len(t, h.linear.mutations(), 1)
+	assert.Equal(t, lineartest.Move, h.linear.mutations()[0].Kind)
 }
 
 func TestTickEscalatesATicketWhoseLabelsDidNotFitOnePage(t *testing.T) {
@@ -804,12 +819,13 @@ func (l *linearHarness) lookups() int { return l.CallsTo(lineartest.OnLeased) }
 // childReadParents lists the parent ids each children read asked for.
 func (l *linearHarness) childReadParents() [][]string { return l.Reads() }
 
-func (l *linearHarness) failMoves()           { l.FailOn(lineartest.OnMove, true) }
-func (l *linearHarness) unsuccessfulMoves()   { l.FailOn(lineartest.OnUnsuccessfulMove, true) }
-func (l *linearHarness) failComments(on bool) { l.FailOn(lineartest.OnComment, on) }
-func (l *linearHarness) failLookups()         { l.FailOn(lineartest.OnLeased, true) }
-func (l *linearHarness) allowLookups()        { l.FailOn(lineartest.OnLeased, false) }
-func (l *linearHarness) failChildren()        { l.FailOn(lineartest.OnChildren, true) }
+func (l *linearHarness) failMoves()            { l.FailOn(lineartest.OnMove, true) }
+func (l *linearHarness) unsuccessfulMoves()    { l.FailOn(lineartest.OnUnsuccessfulMove, true) }
+func (l *linearHarness) unsuccessfulComments() { l.FailOn(lineartest.OnUnsuccessfulComment, true) }
+func (l *linearHarness) failComments(on bool)  { l.FailOn(lineartest.OnComment, on) }
+func (l *linearHarness) failLookups()          { l.FailOn(lineartest.OnLeased, true) }
+func (l *linearHarness) allowLookups()         { l.FailOn(lineartest.OnLeased, false) }
+func (l *linearHarness) failChildren()         { l.FailOn(lineartest.OnChildren, true) }
 
 // overflowManaged adds enough started tickets to push a read of managed
 // tickets onto a second page.

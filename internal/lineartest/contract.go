@@ -23,7 +23,8 @@ type Subject struct {
 	// Team is the key of a team the key's owner belongs to.
 	Team string
 	// Seed replaces the workspace's tickets with these. It is nil for the real
-	// Linear, whose workspace the drift check must not change.
+	// Linear, whose workspace the drift check must not change. An unseeded
+	// scenario may still seed when it can, and then asserts more.
 	Seed func(issues ...Issue)
 	// Viewer is the account the key belongs to.
 	Viewer linear.Viewer
@@ -148,7 +149,7 @@ var Scenarios = []Scenario{
 
 		_, err := s.Connect(s.Key).ManagedTickets(context.Background(), "ai", []string{s.Team})
 
-		require.ErrorContains(t, err, "more than 100 started")
+		require.EqualError(t, err, linear.ManagedOverflow("ai").Error())
 	}},
 	{Name: "MoveChangesTheStatus", Seeded: true, Run: func(t *testing.T, s Subject) {
 		work := s.Connect(s.Key)

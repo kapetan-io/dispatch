@@ -15,7 +15,7 @@ One situation run against both a tool fake and the real adapter, which must give
 _Avoid_: shared test, conformance test
 
 **Drift check**:
-The contract scenarios run under `-tags drift` against the installed herdr and treehouse, in a throwaway `dispatch-drift-*` session and pool. Linear has no throwaway workspace, so its drift check only reads the workspace `LINEAR_API_KEY` belongs to, and aims moves and comments at a ticket that does not exist. It skips the scenarios that need seeded tickets.
+The contract scenarios run under `-tags drift` against the installed herdr and treehouse, in a throwaway `dispatch-drift-*` session and pool. Linear is the exception. It has no throwaway workspace, so its drift check runs only the unseeded scenarios, reading the workspace `LINEAR_API_KEY` belongs to and aiming moves and comments at a ticket that does not exist.
 _Avoid_: integration test, live test
 
 **Stand-in claude**:
