@@ -41,8 +41,9 @@ type Options struct {
 	ConfigPath string
 	// StateDir holds cache.json, tick.lock and the Stop records. Defaults to ~/.local/state/dispatch.
 	StateDir string
-	// LinearURL defaults to Linear's GraphQL endpoint.
-	LinearURL string
+	// Linear opens the Linear workspace for an API key. Defaults to Linear's
+	// GraphQL API.
+	Linear linear.Connect
 	// LinearKey overrides LINEAR_API_KEY, the config's api_key_command and its keychain entry.
 	LinearKey string
 	// KeyCommandTimeout cuts off an api_key_command that never returns, such as a
@@ -175,8 +176,8 @@ func withDefaults(o Options) Options {
 	if o.StateDir == "" {
 		o.StateDir = config.ExpandHome("~/.local/state/dispatch")
 	}
-	if o.LinearURL == "" {
-		o.LinearURL = linear.DefaultURL
+	if o.Linear == nil {
+		o.Linear = func(key string) linear.Workspace { return linear.NewClient(linear.DefaultURL, key) }
 	}
 	if o.Treehouse == nil {
 		o.Treehouse = treehouse.NewCLI("treehouse")
@@ -311,9 +312,8 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 			keys.fromCommand = ""
 		}
 	}()
-	var stats linear.Stats
-	defer func() { sum.linear = stats }()
-	lin := linear.Client{URL: opts.LinearURL, Key: key, Stats: &stats}
+	lin := opts.Linear(key)
+	defer func() { sum.linear = lin.Usage() }()
 
 	snap, err := opts.Herdr.Read(ctx)
 	if err != nil {
@@ -818,7 +818,7 @@ func readPRs(ctx context.Context, opts Options, in reconcile.Input) (prs map[str
 }
 
 // move sets a ticket's status by name.
-func move(ctx context.Context, lin linear.Client, t linear.Ticket, status string) error {
+func move(ctx context.Context, lin linear.Workspace, t linear.Ticket, status string) error {
 	state, err := lin.StateID(ctx, t.Team, status)
 	if err != nil {
 		return err
@@ -827,7 +827,7 @@ func move(ctx context.Context, lin linear.Client, t linear.Ticket, status string
 }
 
 // escalate moves a ticket to Needs Human with one comment saying why.
-func escalate(ctx context.Context, lin linear.Client, cfg config.Config, c cache.Cache, post delivery.Post, t linear.Ticket, reason string) error {
+func escalate(ctx context.Context, lin linear.Workspace, cfg config.Config, c cache.Cache, post delivery.Post, t linear.Ticket, reason string) error {
 	state, err := lin.StateID(ctx, t.Team, cfg.Linear.Statuses.NeedsHuman)
 	if err != nil {
 		return err
@@ -928,7 +928,7 @@ func linearViewer(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	viewer, err := linear.Client{URL: opts.LinearURL, Key: key}.Viewer(ctx)
+	viewer, err := opts.Linear(key).Viewer(ctx)
 	if err != nil {
 		return err
 	}

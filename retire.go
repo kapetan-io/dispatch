@@ -18,7 +18,7 @@ import (
 // leaseHolders reads the tickets that hold a tree but are not among the
 // managed ones, which is how finished and paused tickets are found. It makes
 // no call when every lease belongs to a managed ticket.
-func leaseHolders(ctx context.Context, lin linear.Client, cfg config.Config, trees []treehouse.Tree, managed []linear.Ticket) ([]linear.Ticket, error) {
+func leaseHolders(ctx context.Context, lin linear.Workspace, cfg config.Config, trees []treehouse.Tree, managed []linear.Ticket) ([]linear.Ticket, error) {
 	var holders []string
 	for _, tree := range trees {
 		if tree.LeaseHolder == "" || slices.Contains(holders, tree.LeaseHolder) {
@@ -128,7 +128,7 @@ func stop(ctx context.Context, opts Options, a reconcile.Action) error {
 // keep stops the worker on a tree that holds work, then posts the one comment
 // that says so. The comment is marked done only once Linear accepts it, so a
 // failed one is retried and a posted one never repeats.
-func keep(ctx context.Context, opts Options, lin linear.Client, c cache.Cache, a reconcile.Action) error {
+func keep(ctx context.Context, opts Options, lin linear.Workspace, c cache.Cache, a reconcile.Action) error {
 	if a.WorkspaceID != "" {
 		if err := opts.Herdr.CloseWorkspace(ctx, a.WorkspaceID); err != nil {
 			return fmt.Errorf("while closing herdr workspace %s: %w", a.WorkspaceID, err)

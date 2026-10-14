@@ -17,7 +17,7 @@ const (
 )
 
 func withComment(t fakeTicket, createdAt string) fakeTicket {
-	t["comments"] = map[string]any{"nodes": []any{map[string]string{"createdAt": createdAt}}}
+	t.LastComment = createdAt
 	return t
 }
 

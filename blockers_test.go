@@ -7,26 +7,27 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kapetan-io/dispatch/internal/lineartest"
+
+	"github.com/kapetan-io/dispatch/internal/linear"
 )
 
 // blockedBy gives a standalone ticket blockers, each a blocker identifier and status.
 func blockedBy(t fakeTicket, more bool, blockers ...[2]string) fakeTicket {
-	relations := []map[string]any{}
+	t.Blockers = nil
 	for _, b := range blockers {
-		relations = append(relations, map[string]any{
-			"type":  "blocks",
-			"issue": map[string]any{"identifier": b[0], "state": map[string]string{"name": b[1], "type": stateType(b[1])}},
-		})
+		t.Blockers = append(t.Blockers, linear.Blocker{Identifier: b[0], Status: b[1], Abandoned: stateType(b[1]) == "canceled"})
 	}
-	t["inverseRelations"] = map[string]any{"nodes": relations, "pageInfo": map[string]bool{"hasNextPage": more}}
+	t.BlockersTruncated = more
 	return t
 }
 
 func comments(h *harness) []string {
 	var bodies []string
 	for _, m := range h.linear.mutations() {
-		if m.operation == "CommentTicket" {
-			bodies = append(bodies, m.variables["body"].(string))
+		if m.Kind == lineartest.Comment {
+			bodies = append(bodies, m.Body)
 		}
 	}
 	return bodies
@@ -102,8 +103,8 @@ func TestTickSendsAHeldTicketWithACanceledBlockerToNeedsHuman(t *testing.T) {
 	assert.Contains(t, out, "escalate ENG-2: its blocker ENG-1 is Canceled")
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 2)
-	assert.Equal(t, "MoveTicket", mutations[0].operation)
-	assert.Equal(t, needsHumanID, mutations[0].variables["state"])
+	assert.Equal(t, lineartest.Move, mutations[0].Kind)
+	assert.Equal(t, needsHumanID, mutations[0].StateID)
 	assert.Empty(t, h.launches())
 }
 

@@ -90,16 +90,52 @@ func (t Ticket) LabelIn(group string) (string, bool) {
 	return "", false
 }
 
-// Client talks to one Linear workspace as the API key's owner.
+// Workspace is a Linear workspace as its API key's owner sees it. Client is
+// the real one, and lineartest.Workspace is the in-memory fake.
+type Workspace interface {
+	// ManagedTickets returns the started tickets assigned to the key's owner
+	// that carry label, limited to teams.
+	ManagedTickets(ctx context.Context, label string, teams []string) ([]Ticket, error)
+	// LeasedTickets returns the tickets named by identifiers in any status,
+	// archived ones included, limited to the key owner's own.
+	LeasedTickets(ctx context.Context, label string, teams, identifiers []string) ([]Ticket, error)
+	// ParentChildren returns every child, in every status, of the parents with
+	// these Linear ids, keyed by the parent's identifier.
+	ParentChildren(ctx context.Context, parents []string) (map[string][]Ticket, error)
+	// StateID returns the id of the named workflow status on a team.
+	StateID(ctx context.Context, team, name string) (string, error)
+	// Move sets a ticket's status.
+	Move(ctx context.Context, ticketID, stateID string) error
+	// Comment adds a comment to a ticket.
+	Comment(ctx context.Context, ticketID, body string) error
+	// Viewer returns the user who owns the API key.
+	Viewer(ctx context.Context) (Viewer, error)
+	// Usage reports the calls made so far.
+	Usage() Stats
+}
+
+// Connect opens the workspace that key belongs to.
+type Connect func(key string) Workspace
+
+// Client is the Workspace that calls Linear's GraphQL API as the API key's owner.
 type Client struct {
 	URL  string
 	Key  string
 	HTTP *http.Client
-	// Stats, when set, records every call this client makes.
-	Stats *Stats
+	// stats records every call this client makes.
+	stats Stats
 }
 
-// Stats counts a client's calls to Linear and keeps the hourly request budget
+var _ Workspace = (*Client)(nil)
+
+// NewClient returns a Workspace that calls the Linear API at url with key.
+func NewClient(url, key string) *Client { return &Client{URL: url, Key: key} }
+
+// Usage reports the calls this client has made and the request budget Linear
+// last reported.
+func (c *Client) Usage() Stats { return c.stats }
+
+// Stats counts a workspace's calls to Linear and keeps the hourly request budget
 // Linear reported on the last response. The budget fields stay zero until a
 // response carries them.
 type Stats struct {
@@ -126,10 +162,26 @@ func (s *Stats) record(start time.Time, resp *http.Response) {
 	}
 }
 
-// maxManaged is the page size for managed tickets. A second page is an error
-// rather than a loop: tickets left off it would go unlaunched, and their live
-// workers uncounted against max_in_progress.
-const maxManaged = 100
+// PageSize is how many tickets one read asks Linear for. A second page is an
+// error rather than a loop: tickets left off it would go unlaunched, their
+// live workers uncounted against max_in_progress, and a parent with an
+// unfinished child could close.
+const PageSize = 100
+
+// ManagedOverflow is the error for more started tickets with label than fit on a page.
+func ManagedOverflow(label string) error {
+	return fmt.Errorf("more than %d started %q tickets are assigned to you; dispatch reads one page and would miss the rest", PageSize, label)
+}
+
+// LeasedOverflow is the error for more leased tickets than fit on a page.
+func LeasedOverflow() error {
+	return fmt.Errorf("more than %d tickets hold treehouse leases; dispatch reads one page and would miss the rest", PageSize)
+}
+
+// ChildrenOverflow is the error for more children than fit on a page.
+func ChildrenOverflow() error {
+	return fmt.Errorf("the open parents have more than %d children between them; dispatch reads one page and could close a parent that still has unfinished children", PageSize)
+}
 
 // The nested connections are capped because Linear charges a query by its
 // page sizes, and only the presence of a child matters. Linear lists comments
@@ -243,7 +295,7 @@ func (n issueNode) ticket() Ticket {
 // ManagedTickets returns the started tickets assigned to the key's owner that
 // carry label, limited to teams. In Progress, In Review and Needs Human are
 // all started statuses.
-func (c Client) ManagedTickets(ctx context.Context, label string, teams []string) ([]Ticket, error) {
+func (c *Client) ManagedTickets(ctx context.Context, label string, teams []string) ([]Ticket, error) {
 	var resp struct {
 		Viewer struct {
 			AssignedIssues struct {
@@ -254,11 +306,11 @@ func (c Client) ManagedTickets(ctx context.Context, label string, teams []string
 			} `json:"assignedIssues"`
 		} `json:"viewer"`
 	}
-	if err := c.do(ctx, "ManagedTickets", managedTickets, map[string]any{"label": label, "teams": teams, "first": maxManaged}, &resp); err != nil {
+	if err := c.do(ctx, "ManagedTickets", managedTickets, map[string]any{"label": label, "teams": teams, "first": PageSize}, &resp); err != nil {
 		return nil, err
 	}
 	if resp.Viewer.AssignedIssues.PageInfo.HasNextPage {
-		return nil, fmt.Errorf("more than %d started %q tickets are assigned to you; dispatch reads one page and would miss the rest", maxManaged, label)
+		return nil, ManagedOverflow(label)
 	}
 	var tickets []Ticket
 	for _, n := range resp.Viewer.AssignedIssues.Nodes {
@@ -291,10 +343,10 @@ const leasedTickets = `query LeasedTickets($filter: IssueFilter!, $first: Int!) 
 // come back, and of those the ones that carry label, plus any whose labels were
 // cut short, because the caller can't tell whether they do. Identifiers outside
 // teams, or not shaped like a ticket id, are ignored.
-func (c Client) LeasedTickets(ctx context.Context, label string, teams, identifiers []string) ([]Ticket, error) {
+func (c *Client) LeasedTickets(ctx context.Context, label string, teams, identifiers []string) ([]Ticket, error) {
 	var filters []map[string]any
 	for _, id := range identifiers {
-		team, number, ok := splitIdentifier(id)
+		team, number, ok := SplitIdentifier(id)
 		if !ok || !contains(teams, team) {
 			continue
 		}
@@ -319,12 +371,12 @@ func (c Client) LeasedTickets(ctx context.Context, label string, teams, identifi
 			} `json:"pageInfo"`
 		} `json:"issues"`
 	}
-	vars := map[string]any{"filter": map[string]any{"or": filters}, "first": maxManaged}
+	vars := map[string]any{"filter": map[string]any{"or": filters}, "first": PageSize}
 	if err := c.do(ctx, "LeasedTickets", leasedTickets, vars, &resp); err != nil {
 		return nil, err
 	}
 	if resp.Issues.PageInfo.HasNextPage {
-		return nil, fmt.Errorf("more than %d tickets hold treehouse leases; dispatch reads one page and would miss the rest", maxManaged)
+		return nil, LeasedOverflow()
 	}
 	var tickets []Ticket
 	for _, n := range resp.Issues.Nodes {
@@ -360,7 +412,7 @@ const parentChildren = `query ParentChildren($parents: [ID!], $first: Int!) {
 // every status, keyed by the parent's identifier. A parent closes only when all
 // its children are finished, so the finished ones come back too. A second page
 // is an error, because a child left off it could be the unfinished one.
-func (c Client) ParentChildren(ctx context.Context, parents []string) (map[string][]Ticket, error) {
+func (c *Client) ParentChildren(ctx context.Context, parents []string) (map[string][]Ticket, error) {
 	if len(parents) == 0 {
 		return nil, nil
 	}
@@ -375,11 +427,11 @@ func (c Client) ParentChildren(ctx context.Context, parents []string) (map[strin
 			} `json:"pageInfo"`
 		} `json:"issues"`
 	}
-	if err := c.do(ctx, "ParentChildren", parentChildren, map[string]any{"parents": parents, "first": maxManaged}, &resp); err != nil {
+	if err := c.do(ctx, "ParentChildren", parentChildren, map[string]any{"parents": parents, "first": PageSize}, &resp); err != nil {
 		return nil, err
 	}
 	if resp.Issues.PageInfo.HasNextPage {
-		return nil, fmt.Errorf("the open parents have more than %d children between them; dispatch reads one page and could close a parent that still has unfinished children", maxManaged)
+		return nil, ChildrenOverflow()
 	}
 	children := map[string][]Ticket{}
 	for _, n := range resp.Issues.Nodes {
@@ -399,8 +451,8 @@ func (c Client) ParentChildren(ctx context.Context, parents []string) (map[strin
 	return children, nil
 }
 
-// splitIdentifier splits "ENG-123" into its team key and number.
-func splitIdentifier(id string) (team string, number int, ok bool) {
+// SplitIdentifier splits "ENG-123" into its team key and number.
+func SplitIdentifier(id string) (team string, number int, ok bool) {
 	i := strings.LastIndex(id, "-")
 	if i <= 0 {
 		return "", 0, false
@@ -417,7 +469,7 @@ const teamStates = `query TeamStates {
 }`
 
 // StateID returns the id of the named workflow status on a team.
-func (c Client) StateID(ctx context.Context, team, name string) (string, error) {
+func (c *Client) StateID(ctx context.Context, team, name string) (string, error) {
 	var resp struct {
 		Teams struct {
 			Nodes []struct {
@@ -444,7 +496,7 @@ func (c Client) StateID(ctx context.Context, team, name string) (string, error) 
 			}
 		}
 	}
-	return "", fmt.Errorf("team %s has no %q status", team, name)
+	return "", NoStatus(team, name)
 }
 
 const moveTicket = `mutation MoveTicket($id: String!, $state: String!) {
@@ -452,7 +504,7 @@ const moveTicket = `mutation MoveTicket($id: String!, $state: String!) {
 }`
 
 // Move sets a ticket's status.
-func (c Client) Move(ctx context.Context, ticketID, stateID string) error {
+func (c *Client) Move(ctx context.Context, ticketID, stateID string) error {
 	var out struct {
 		IssueUpdate struct {
 			Success bool `json:"success"`
@@ -462,7 +514,7 @@ func (c Client) Move(ctx context.Context, ticketID, stateID string) error {
 		return err
 	}
 	if !out.IssueUpdate.Success {
-		return fmt.Errorf("linear MoveTicket: Linear reported success=false for %s", ticketID)
+		return Unsuccessful("MoveTicket", ticketID)
 	}
 	return nil
 }
@@ -472,7 +524,7 @@ const commentTicket = `mutation CommentTicket($id: String!, $body: String!) {
 }`
 
 // Comment adds a comment to a ticket.
-func (c Client) Comment(ctx context.Context, ticketID, body string) error {
+func (c *Client) Comment(ctx context.Context, ticketID, body string) error {
 	var out struct {
 		CommentCreate struct {
 			Success bool `json:"success"`
@@ -482,9 +534,19 @@ func (c Client) Comment(ctx context.Context, ticketID, body string) error {
 		return err
 	}
 	if !out.CommentCreate.Success {
-		return fmt.Errorf("linear CommentTicket: Linear reported success=false for %s", ticketID)
+		return Unsuccessful("CommentTicket", ticketID)
 	}
 	return nil
+}
+
+// NoStatus is the error for a status name the team doesn't have.
+func NoStatus(team, name string) error {
+	return fmt.Errorf("team %s has no %q status", team, name)
+}
+
+// Unsuccessful is the error for a mutation Linear answered with success:false.
+func Unsuccessful(operation, ticketID string) error {
+	return fmt.Errorf("linear %s: Linear reported success=false for %s", operation, ticketID)
 }
 
 // ErrUnauthorized means Linear rejected the API key.
@@ -496,7 +558,8 @@ type Viewer struct {
 	Name string `json:"name"`
 }
 
-func (c Client) Viewer(ctx context.Context) (Viewer, error) {
+// Viewer returns the user who owns the API key.
+func (c *Client) Viewer(ctx context.Context) (Viewer, error) {
 	var out struct {
 		Viewer Viewer `json:"viewer"`
 	}
@@ -504,7 +567,7 @@ func (c Client) Viewer(ctx context.Context) (Viewer, error) {
 	return out.Viewer, err
 }
 
-func (c Client) do(ctx context.Context, operation, query string, variables map[string]any, out any) error {
+func (c *Client) do(ctx context.Context, operation, query string, variables map[string]any, out any) error {
 	body, err := json.Marshal(map[string]any{"operationName": operation, "query": query, "variables": variables})
 	if err != nil {
 		return err
@@ -522,7 +585,7 @@ func (c Client) do(ctx context.Context, operation, query string, variables map[s
 	}
 	start := time.Now()
 	resp, err := httpc.Do(req)
-	c.Stats.record(start, resp)
+	c.stats.record(start, resp)
 	if err != nil {
 		return fmt.Errorf("while calling Linear %s: %w", operation, err)
 	}

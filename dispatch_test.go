@@ -6,14 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -24,6 +21,8 @@ import (
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/launcher"
+	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/lineartest"
 	"github.com/kapetan-io/dispatch/internal/tooltest"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
@@ -121,10 +120,10 @@ func TestTickEscalatesAfterRepeatedLaunchFailures(t *testing.T) {
 	assert.Contains(t, out, "escalate ENG-1: launch failed 2 times")
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 2)
-	assert.Equal(t, "MoveTicket", mutations[0].operation)
-	assert.Equal(t, needsHumanID, mutations[0].variables["state"])
-	assert.Equal(t, "CommentTicket", mutations[1].operation)
-	assert.Contains(t, mutations[1].variables["body"], "treehouse lease failed")
+	assert.Equal(t, lineartest.Move, mutations[0].Kind)
+	assert.Equal(t, needsHumanID, mutations[0].StateID)
+	assert.Equal(t, lineartest.Comment, mutations[1].Kind)
+	assert.Contains(t, mutations[1].Body, "treehouse lease failed")
 }
 
 func TestTickNeverEscalatesForAFullPool(t *testing.T) {
@@ -197,8 +196,8 @@ func TestTickEscalatesTicketItCannotPlaceInARepo(t *testing.T) {
 			assert.Empty(t, h.launches())
 			mutations := h.linear.mutations()
 			require.Len(t, mutations, 2)
-			assert.Equal(t, needsHumanID, mutations[0].variables["state"])
-			assert.Contains(t, mutations[1].variables["body"], test.wantBody)
+			assert.Equal(t, needsHumanID, mutations[0].StateID)
+			assert.Contains(t, mutations[1].Body, test.wantBody)
 		})
 	}
 }
@@ -231,15 +230,14 @@ func TestTickNeverCommentsWhenLinearRefusesTheMove(t *testing.T) {
 
 	assert.Empty(t, out)
 	assert.Contains(t, stderr, "while escalating ENG-1: linear MoveTicket: Linear reported success=false")
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 1)
-	assert.Equal(t, "MoveTicket", mutations[0].operation)
+	assert.Equal(t, 1, h.linear.CallsTo(lineartest.OnMove))
+	assert.Empty(t, h.linear.mutations())
 }
 
 func TestTickFailsWhenManagedTicketsSpanMoreThanOnePage(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.linear.hasMorePages()
+	h.linear.overflowManaged()
 
 	_, err := h.run("tick")
 
@@ -294,6 +292,7 @@ func TestTickPostsAnEscalationCommentThatFailedOnAnEarlierTick(t *testing.T) {
 	// The ticket has since left the started states the dispatcher reads, so
 	// the retry can't depend on finding it among managed tickets.
 	h.tickets()
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 	h.linear.failComments(false)
 
 	_, err = h.run("tick")
@@ -301,14 +300,28 @@ func TestTickPostsAnEscalationCommentThatFailedOnAnEarlierTick(t *testing.T) {
 
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 2)
-	assert.Equal(t, "MoveTicket", mutations[0].operation)
-	assert.Equal(t, "CommentTicket", mutations[1].operation)
-	assert.Contains(t, mutations[1].variables["body"], `has no "repo" label`)
-	assert.Equal(t, "uuid-ENG-1", mutations[1].variables["id"])
+	assert.Equal(t, lineartest.Move, mutations[0].Kind)
+	assert.Equal(t, lineartest.Comment, mutations[1].Kind)
+	assert.Contains(t, mutations[1].Body, `has no "repo" label`)
+	assert.Equal(t, "uuid-ENG-1", mutations[1].TicketID)
 
 	_, err = h.run("tick")
 	require.NoError(t, err)
 	assert.Len(t, h.linear.mutations(), 2)
+}
+
+func TestTickRetriesAnEscalationCommentThatLinearAnsweredWithSuccessFalse(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", ""))
+	h.linear.unsuccessfulComments()
+
+	_, stderr, err := h.runContext(context.Background(), "tick")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "moved to Needs Human, but the comment failed")
+	assert.Contains(t, stderr, "Linear reported success=false")
+	require.Len(t, h.linear.mutations(), 1)
+	assert.Equal(t, lineartest.Move, h.linear.mutations()[0].Kind)
 }
 
 func TestTickEscalatesATicketWhoseLabelsDidNotFitOnePage(t *testing.T) {
@@ -316,7 +329,7 @@ func TestTickEscalatesATicketWhoseLabelsDidNotFitOnePage(t *testing.T) {
 	// The design label may be among the labels Linear left off the page, so
 	// this ticket must not be launched as a build.
 	cut := ticket("ENG-1", "In Progress", "dispatch")
-	cut["labels"].(map[string]any)["pageInfo"] = map[string]bool{"hasNextPage": true}
+	cut.LabelsTruncated = true
 	h.tickets(cut)
 
 	out, err := h.run("tick")
@@ -326,7 +339,7 @@ func TestTickEscalatesATicketWhoseLabelsDidNotFitOnePage(t *testing.T) {
 	assert.Empty(t, h.launches())
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 2)
-	assert.Equal(t, needsHumanID, mutations[0].variables["state"])
+	assert.Equal(t, needsHumanID, mutations[0].StateID)
 }
 
 func TestTickExitsWhenAnotherTickHoldsTheLock(t *testing.T) {
@@ -452,7 +465,7 @@ type harness struct {
 	state         string
 	extra         string
 	repos         []repoEntry
-	linear        *fakeLinear
+	linear        *linearHarness
 	tools         *tooltest.Tools
 	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
 	// with the launcher built into dispatch, over tools.Herdr and tools.Treehouse.
@@ -466,15 +479,16 @@ type harness struct {
 func newHarness(t *testing.T) *harness {
 	dir := t.TempDir()
 	h := &harness{
-		t:      t,
-		dir:    dir,
-		repo:   filepath.Join(dir, "repo"),
-		state:  filepath.Join(dir, "state"),
-		linear: newFakeLinear(t),
-		tools:  tooltest.New(t),
-		clock:  time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC),
-		pages:  map[string][]byte{},
+		t:     t,
+		dir:   dir,
+		repo:  filepath.Join(dir, "repo"),
+		state: filepath.Join(dir, "state"),
+		tools: tooltest.New(t),
+		clock: time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC),
+		pages: map[string][]byte{},
 	}
+	h.linear = &linearHarness{Workspace: h.tools.Linear}
+	h.tools.Linear.Now = func() time.Time { return h.clock }
 	require.NoError(t, os.MkdirAll(h.repo, 0o755))
 	h.addRepo("dispatch", h.repo)
 	return h
@@ -537,9 +551,9 @@ func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...s
 	extra.ConfigPath = filepath.Join(h.dir, "config.toml")
 	extra.StateDir = h.state
 	extra.Now = func() time.Time { return h.clock }
-	extra.LinearURL = h.linear.server.URL
+	extra.Linear = h.linear.Connect
 	if !h.configuredKey {
-		extra.LinearKey = "test-key"
+		extra.LinearKey = lineartest.Key
 	}
 	extra.Herdr = h.tools.Herdr
 	extra.Treehouse = h.tools.Treehouse
@@ -718,261 +732,106 @@ func (h *harness) readFile(name string) []byte {
 	return b
 }
 
-// fakeTicket is one node of Linear's assignedIssues response.
-type fakeTicket map[string]any
+// fakeTicket is one ticket in the Linear workspace.
+type fakeTicket = lineartest.Issue
 
 // ticket builds an ai-labeled ENG ticket in status, labeled with repo when
 // repo is not empty.
 func ticket(id, status, repo string) fakeTicket {
-	labels := []map[string]any{{"name": "ai", "parent": nil}}
+	labels := []linear.Label{{Name: "ai"}}
 	if repo != "" {
-		labels = append(labels, map[string]any{"name": repo, "parent": map[string]string{"name": "repo"}})
+		labels = append(labels, linear.Label{Name: repo, Group: "repo"})
 	}
 	return fakeTicket{
-		"id":         "uuid-" + id,
-		"identifier": id,
-		"title":      "ticket " + id,
-		"url":        "https://linear.app/team/issue/" + id,
-		"branchName": "thrawn01/" + strings.ToLower(id),
-		"state":      map[string]string{"name": status},
-		"assignee":   map[string]string{"id": viewerID},
-		"team":       map[string]string{"key": "ENG"},
-		"labels":     map[string]any{"nodes": labels},
-		"children":   map[string]any{"nodes": []any{}},
+		Ticket: linear.Ticket{
+			ID:         "uuid-" + id,
+			Identifier: id,
+			Title:      "ticket " + id,
+			URL:        "https://linear.app/team/issue/" + id,
+			Branch:     "thrawn01/" + strings.ToLower(id),
+			Status:     status,
+			Team:       "ENG",
+			Labels:     labels,
+		},
+		Assignee: viewerID,
 	}
 }
 
 func withChildren(t fakeTicket) fakeTicket {
-	t["children"] = map[string]any{"nodes": []any{map[string]string{"id": "child"}}}
+	t.HasChildren = true
 	return t
 }
 
 func withLabel(t fakeTicket, name string) fakeTicket {
-	labels := t["labels"].(map[string]any)["nodes"].([]map[string]any)
-	t["labels"] = map[string]any{"nodes": append(labels, map[string]any{"name": name, "parent": nil})}
+	t.Labels = append(slices.Clone(t.Labels), linear.Label{Name: name})
 	return t
 }
 
-type mutation struct {
-	operation string
-	variables map[string]any
+// linearHarness seeds the Linear workspace from three groups of tickets, so a
+// test can replace one group without restating the others.
+type linearHarness struct {
+	*lineartest.Workspace
+	managed, elsewhere, children []fakeTicket
 }
 
-// fakeLinear answers the dispatcher's GraphQL operations by name and records
-// every mutation.
-type fakeLinear struct {
-	server            *httptest.Server
-	mu                sync.Mutex
-	nodes             []fakeTicket
-	elsewhere         []fakeTicket
-	changes           []mutation
-	noMoves           bool
-	movesUnsuccessful bool
-	noComments        bool
-	morePages         bool
-	lookupCalls       int
-	requests          int
-	noLookups         bool
-	children          []fakeTicket
-	childReads        [][]any
-	noChildren        bool
+func (l *linearHarness) seed() {
+	var all []fakeTicket
+	seen := map[string]bool{}
+	for _, group := range [][]fakeTicket{l.managed, l.elsewhere, l.children} {
+		for _, t := range group {
+			if !seen[t.Identifier] {
+				seen[t.Identifier] = true
+				all = append(all, t)
+			}
+		}
+	}
+	l.Seed(all...)
 }
 
-// setChildren sets the children Linear returns for open parents.
-func (f *fakeLinear) setChildren(children ...fakeTicket) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.children = children
-}
-
-// failChildren makes Linear refuse the read of a parent's children.
-func (f *fakeLinear) failChildren() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.noChildren = true
-}
-
-// childReadParents lists the parent ids each children read asked for.
-func (f *fakeLinear) childReadParents() [][]any {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([][]any(nil), f.childReads...)
-}
-
-// failLookups makes Linear refuse the lookup of tickets by identifier.
-func (f *fakeLinear) failLookups() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.noLookups = true
-}
-
-// allowLookups undoes failLookups.
-func (f *fakeLinear) allowLookups() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.noLookups = false
-}
-
-// unsuccessfulMoves makes Linear answer a move with HTTP 200 and success:false.
-func (f *fakeLinear) unsuccessfulMoves() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.movesUnsuccessful = true
-}
-
-func (f *fakeLinear) failComments(on bool) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.noComments = on
-}
-
-func (f *fakeLinear) hasMorePages() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.morePages = true
-}
-
-func (f *fakeLinear) failMoves() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.noMoves = true
-}
-
-func newFakeLinear(t *testing.T) *fakeLinear {
-	f := &fakeLinear{}
-	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
-	t.Cleanup(f.server.Close)
-	return f
-}
-
-func (f *fakeLinear) setTickets(nodes []fakeTicket) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.nodes = nodes
+// setTickets sets the tickets that are started and assigned to the key's owner.
+func (l *linearHarness) setTickets(tickets []fakeTicket) {
+	l.managed = tickets
+	l.seed()
 }
 
 // setElsewhere sets the tickets Linear knows that are not started, such as a
 // Done or Todo ticket, which only a lookup by identifier finds.
-func (f *fakeLinear) setElsewhere(nodes ...fakeTicket) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.elsewhere = nodes
+func (l *linearHarness) setElsewhere(tickets ...fakeTicket) {
+	l.elsewhere = tickets
+	l.seed()
 }
 
-func (f *fakeLinear) calls() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.requests
+// setChildren sets the children Linear returns for open parents.
+func (l *linearHarness) setChildren(tickets ...fakeTicket) {
+	l.children = tickets
+	l.seed()
 }
 
-func (f *fakeLinear) lookups() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.lookupCalls
-}
+// mutations lists the moves and comments Linear accepted.
+func (l *linearHarness) mutations() []lineartest.Change { return l.Changes() }
 
-func (f *fakeLinear) mutations() []mutation {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]mutation(nil), f.changes...)
-}
+// calls counts the requests Linear answered.
+func (l *linearHarness) calls() int { return l.Calls() }
 
-func (f *fakeLinear) serve(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		OperationName string         `json:"operationName"`
-		Variables     map[string]any `json:"variables"`
+// lookups counts the lookups of tickets by identifier.
+func (l *linearHarness) lookups() int { return l.CallsTo(lineartest.OnLeased) }
+
+// childReadParents lists the parent ids each children read asked for.
+func (l *linearHarness) childReadParents() [][]string { return l.Reads() }
+
+func (l *linearHarness) failMoves()            { l.FailOn(lineartest.OnMove, true) }
+func (l *linearHarness) unsuccessfulMoves()    { l.FailOn(lineartest.OnUnsuccessfulMove, true) }
+func (l *linearHarness) unsuccessfulComments() { l.FailOn(lineartest.OnUnsuccessfulComment, true) }
+func (l *linearHarness) failComments(on bool)  { l.FailOn(lineartest.OnComment, on) }
+func (l *linearHarness) failLookups()          { l.FailOn(lineartest.OnLeased, true) }
+func (l *linearHarness) allowLookups()         { l.FailOn(lineartest.OnLeased, false) }
+func (l *linearHarness) failChildren()         { l.FailOn(lineartest.OnChildren, true) }
+
+// overflowManaged adds enough started tickets to push a read of managed
+// tickets onto a second page.
+func (l *linearHarness) overflowManaged() {
+	for n := range linear.PageSize {
+		l.managed = append(l.managed, ticket(fmt.Sprintf("ENG-%d", 1000+n), "In Progress", "dispatch"))
 	}
-	w.Header().Set("X-RateLimit-Requests-Limit", "2500")
-	w.Header().Set("X-RateLimit-Requests-Remaining", "2400")
-	if r.Header.Get("Authorization") != "test-key" {
-		http.Error(w, "bad key", http.StatusUnauthorized)
-		return
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.requests++
-	var data any
-	switch req.OperationName {
-	case "Viewer":
-		data = map[string]any{"viewer": map[string]string{"id": viewerID, "name": "Ada Lovelace"}}
-	case "ManagedTickets":
-		data = map[string]any{"viewer": map[string]any{"assignedIssues": map[string]any{
-			"nodes":    f.nodes,
-			"pageInfo": map[string]bool{"hasNextPage": f.morePages},
-		}}}
-	case "LeasedTickets":
-		f.lookupCalls++
-		if f.noLookups {
-			http.Error(w, "lookup refused", http.StatusInternalServerError)
-			return
-		}
-		// Answer like Linear: an "or" element that is not a lone "and" of
-		// two filters is ignored and matches every ticket.
-		var asked []string
-		ignored := false
-		filter, _ := req.Variables["filter"].(map[string]any)
-		for _, c := range filter["or"].([]any) {
-			c := c.(map[string]any)
-			clauses, ok := c["and"].([]any)
-			if len(c) != 1 || !ok || len(clauses) != 2 {
-				ignored = true
-				continue
-			}
-			key := clauses[0].(map[string]any)["team"].(map[string]any)["key"].(map[string]any)["eq"].(string)
-			asked = append(asked, fmt.Sprintf("%s-%v", key, clauses[1].(map[string]any)["number"].(map[string]any)["eq"]))
-		}
-		found := []fakeTicket{}
-		for _, n := range f.elsewhere {
-			if ignored || slices.Contains(asked, n["identifier"].(string)) {
-				found = append(found, n)
-			}
-		}
-		data = map[string]any{
-			"viewer": map[string]string{"id": viewerID},
-			"issues": map[string]any{"nodes": found, "pageInfo": map[string]bool{"hasNextPage": ignored}},
-		}
-	case "ParentChildren":
-		if f.noChildren {
-			http.Error(w, "children refused", http.StatusInternalServerError)
-			return
-		}
-		asked, _ := req.Variables["parents"].([]any)
-		f.childReads = append(f.childReads, asked)
-		data = map[string]any{
-			"viewer": map[string]string{"id": viewerID},
-			"issues": map[string]any{"nodes": f.children, "pageInfo": map[string]bool{"hasNextPage": false}},
-		}
-	case "TeamStates":
-		data = map[string]any{"teams": map[string]any{"nodes": []any{map[string]any{
-			"key": "ENG",
-			"states": map[string]any{"nodes": []any{
-				map[string]string{"id": "state-todo", "name": "Todo"},
-				map[string]string{"id": "state-in-progress", "name": "In Progress"},
-				map[string]string{"id": "state-done", "name": "Done"},
-				map[string]string{"id": needsHumanID, "name": "Needs Human"},
-			}},
-		}}}}
-	case "MoveTicket":
-		if f.noMoves {
-			http.Error(w, "move refused", http.StatusInternalServerError)
-			return
-		}
-		f.changes = append(f.changes, mutation{operation: req.OperationName, variables: req.Variables})
-		data = map[string]any{"issueUpdate": map[string]bool{"success": !f.movesUnsuccessful}}
-	case "CommentTicket":
-		if f.noComments {
-			http.Error(w, "comment refused", http.StatusInternalServerError)
-			return
-		}
-		f.changes = append(f.changes, mutation{operation: req.OperationName, variables: req.Variables})
-		data = map[string]any{"commentCreate": map[string]bool{"success": true}}
-	default:
-		http.Error(w, "unknown operation "+req.OperationName, http.StatusBadRequest)
-		return
-	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"data": data})
+	l.seed()
 }

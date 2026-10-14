@@ -3,7 +3,7 @@
 Terms dispatch's tests and docs use for the tools it drives. herdr, treehouse and kickoff keep their definitions from `design/decision-log.md`.
 
 **Tool fake**:
-An in-process Go state model of herdr, treehouse, gh or osascript that refuses what the real tool refuses.
+An in-process Go state model of herdr, treehouse, gh, Linear or osascript that refuses what the real tool refuses.
 _Avoid_: shell fake, mock, stub
 
 **Real adapter**:
@@ -15,7 +15,7 @@ One situation run against both a tool fake and the real adapter, which must give
 _Avoid_: shared test, conformance test
 
 **Drift check**:
-The contract scenarios run under `-tags drift` against the installed herdr and treehouse, in a throwaway `dispatch-drift-*` session and pool.
+The contract scenarios run under `-tags drift` against the installed herdr and treehouse, in a throwaway `dispatch-drift-*` session and pool. Linear is the exception. It has no throwaway workspace, so its drift check runs only the unseeded scenarios, reading the workspace `LINEAR_API_KEY` belongs to and aiming moves and comments at a ticket that does not exist.
 _Avoid_: integration test, live test
 
 **Stand-in claude**:
