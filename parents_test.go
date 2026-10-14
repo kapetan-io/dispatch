@@ -339,9 +339,10 @@ func TestTickKeepsAParentOpenWhileAnyChildIsUnfinished(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.NotContains(t, out, "close ENG-1")
+			// An In Progress child with no worker gets the blocked comment and nothing else.
 			for _, change := range h.linear.mutations() {
-				assert.NotEqual(t, lineartest.Move, change.Kind)
-				assert.NotEqual(t, "uuid-ENG-1", change.TicketID)
+				assert.Equal(t, lineartest.Comment, change.Kind)
+				assert.Equal(t, "uuid-ENG-3", change.TicketID)
 			}
 		})
 	}
