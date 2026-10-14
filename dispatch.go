@@ -804,7 +804,7 @@ func readPRs(ctx context.Context, opts Options, in reconcile.Input) (prs map[str
 		if !ok || dir == "" {
 			continue
 		}
-		pr, found, err := opts.PullRequests.Read(ctx, dir, t.Branch, pullrequest.Rules{IgnoreAuthors: in.Repos[repo].IgnoreCommentAuthors})
+		pr, found, err := opts.PullRequests.Read(ctx, dir, t.Branch, pullrequest.Rules{IgnoreAuthors: in.Repos[repo].IgnoreCommentAuthors, RequiredChecksOnly: in.Repos[repo].IgnoreOptionalChecks})
 		if err != nil {
 			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, err)
 			failed[t.Identifier] = true

@@ -52,6 +52,17 @@ type prState struct {
 	// reviewsBefore and commentsBefore are the cursors of older pages, "" when
 	// the window reaches the start.
 	reviewsBefore, commentsBefore string
+	// contexts are the checks behind the rollup, which GitHub reports only when
+	// asked by PR number. A PR with none leaves the checks answer unset, so a
+	// read that asks for it fails.
+	contexts []checkContext
+}
+
+// checkContext is one check on the head: a CheckRun with a state of
+// "SUCCESS", "FAILURE" or "IN_PROGRESS", or a StatusContext with any rollup state.
+type checkContext struct {
+	name, state string
+	required    bool
 }
 
 // opinion is a reviewer's latest approval or change request on a commit.
@@ -89,6 +100,9 @@ func cleanPR(head string) prState {
 
 // pr makes the ticket's branch have an open PR in this state.
 func (h *harness) pr(ticket string, p prState) {
+	if p.contexts != nil {
+		h.respondChecks(p.head, p.contexts, false)
+	}
 	threads := []map[string]any{}
 	for range p.unresolved {
 		threads = append(threads, map[string]any{"isResolved": false})
@@ -130,6 +144,22 @@ func (h *harness) pr(ticket string, p prState) {
 		"comments":                 activityNodes(p.comments, p.commentsBefore),
 		"reviewThreads":            map[string]any{"nodes": threads, "pageInfo": map[string]bool{"hasNextPage": p.moreThreads}},
 	}}}}}})
+}
+
+// respondChecks sets what GitHub answers when asked for the checks behind PR 7's rollup.
+func (h *harness) respondChecks(head string, contexts []checkContext, more bool) {
+	nodes := []map[string]any{}
+	for _, c := range contexts {
+		node := map[string]any{"__typename": "CheckRun", "name": c.name, "isRequired": c.required, "status": "COMPLETED", "conclusion": c.state}
+		switch c.state {
+		case "IN_PROGRESS":
+			node["status"], node["conclusion"] = "IN_PROGRESS", nil
+		case "EXPECTED":
+			node = map[string]any{"__typename": "StatusContext", "context": c.name, "isRequired": c.required, "state": "EXPECTED"}
+		}
+		nodes = append(nodes, node)
+	}
+	h.tools.PullRequests.RespondChecks(7, map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequest": map[string]any{"commits": map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"oid": head, "statusCheckRollup": map[string]any{"contexts": map[string]any{"nodes": nodes, "pageInfo": map[string]bool{"hasNextPage": more}}}}}}}}}}})
 }
 
 // respondOlder sets what GitHub answers for the page of the PR's reviews or

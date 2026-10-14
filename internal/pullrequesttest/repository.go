@@ -32,6 +32,7 @@ type Repository struct {
 	mu        sync.Mutex
 	pages     map[string]map[string]map[string]any
 	older     map[string]map[string]any
+	checks    map[int]map[string]any
 	pushes    map[string]string
 	merged    []string
 	readFail  error
@@ -44,6 +45,7 @@ func New(j *journal.Journal) *Repository {
 		journal: j,
 		pages:   map[string]map[string]map[string]any{},
 		older:   map[string]map[string]any{},
+		checks:  map[int]map[string]any{},
 		pushes:  map[string]string{},
 	}
 }
@@ -84,6 +86,24 @@ func (r *Repository) RespondOlder(number int, kind, before string, response any)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.older[fmt.Sprintf("%d|%s|%s", number, kind, before)] = page
+}
+
+// RespondChecks sets what GitHub answers when asked for the checks behind PR
+// number's head. A read that asks without one set, or for a number that is not
+// the PR on the branch it is reading, fails, because the real tool would have
+// been asked for a PR that does not exist or one the caller did not look at.
+func (r *Repository) RespondChecks(number int, response any) {
+	b, err := json.Marshal(response)
+	if err != nil {
+		panic(err)
+	}
+	var page map[string]any
+	if err := json.Unmarshal(b, &page); err != nil {
+		panic(err)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.checks[number] = page
 }
 
 // Close closes the open pull requests of branch without merging them.
@@ -192,6 +212,42 @@ func (s source) Older(ctx context.Context, number int, kind, before string) ([]b
 		return nil, fmt.Errorf("no %s page of PR %d before %s was set", kind, number, before)
 	}
 	return json.Marshal(page)
+}
+
+func (s source) Checks(ctx context.Context, number int) ([]byte, error) {
+	r := s.repo
+	r.journal.Record("pullrequest", "checks", fmt.Sprint(number))
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.readFail != nil {
+		return nil, r.readFail
+	}
+	if !r.hasPR(s.branch, number) {
+		return nil, fmt.Errorf("PR %d is not on branch %s", number, s.branch)
+	}
+	page, ok := r.checks[number]
+	if !ok {
+		return nil, fmt.Errorf("no checks of PR %d were set", number)
+	}
+	return json.Marshal(page)
+}
+
+// hasPR reports whether the worker's own PR on branch has this number.
+func (r *Repository) hasPR(branch string, number int) bool {
+	for _, page := range r.pages[branch] {
+		for _, node := range nodes(page) {
+			if cross, _ := node["isCrossRepository"].(bool); cross {
+				continue
+			}
+			if n, _ := node["number"].(float64); int(n) == number {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (r *Repository) Merge(ctx context.Context, prURL, head string) error {

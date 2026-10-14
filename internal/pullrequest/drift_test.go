@@ -49,3 +49,18 @@ func TestGitHubStillAcceptsThePRQuery(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, found)
 }
+
+// TestGitHubStillAnswersWhichChecksAreRequired reads the checks of dispatch's
+// own PR 76 through the installed gh, which is read-only. It fails when GitHub
+// stops accepting isRequired(pullRequestNumber:), and when the check that
+// branch protection requires there is no longer reported as required.
+func TestGitHubStillAnswersWhichChecksAreRequired(t *testing.T) {
+	bin, err := exec.LookPath("gh")
+	require.NoError(t, err)
+
+	out, err := exec.Command(bin, "api", "graphql", "-F", "owner=kapetan-io", "-F", "repo=dispatch", "-F", "number=76", "-f", "query="+pullrequest.ChecksQuery).CombinedOutput()
+
+	require.NoError(t, err, string(out))
+	require.Contains(t, string(out), `"name":"test"`)
+	require.Contains(t, string(out), `"isRequired":true`)
+}
