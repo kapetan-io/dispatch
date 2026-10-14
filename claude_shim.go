@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+
+	"github.com/kapetan-io/dispatch/internal/herdr"
 )
 
 // checkFlag lets the shim script ask whether the dispatch on PATH is new enough
@@ -41,6 +43,9 @@ func shimArgs(args []string, getenv func(string) string) []string {
 	if getenv("AUTONOMOUS_WORKER") == "1" {
 		if !slices.Contains(args, "--disallowedTools") && !slices.Contains(args, "--disallowed-tools") {
 			out = append(out, "--disallowedTools", "EnterPlanMode,ExitPlanMode")
+		}
+		if !slices.Contains(args, "--settings") {
+			out = append(out, "--settings", herdr.WorkerSettings)
 		}
 		if !slices.Contains(args, "--dangerously-skip-permissions") {
 			out = append(out, "--dangerously-skip-permissions")

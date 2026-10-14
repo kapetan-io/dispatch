@@ -755,7 +755,7 @@ func TestClaudeShimRestoresWorkerFlagsWithoutAName(t *testing.T) {
 
 	argv, err := os.ReadFile(filepath.Join(dir, "argv"))
 	require.NoError(t, err)
-	assert.Equal(t, "--resume --plugin-dir /plugin --disallowedTools EnterPlanMode,ExitPlanMode --dangerously-skip-permissions\n", string(argv))
+	assert.Equal(t, "--resume --plugin-dir /plugin --disallowedTools EnterPlanMode,ExitPlanMode --settings {\"crossSessionInbound\":\"accept\"} --dangerously-skip-permissions\n", string(argv))
 }
 
 func TestClaudeShimSkipsEveryShimDirectoryOnPath(t *testing.T) {
@@ -787,7 +787,7 @@ func TestClaudeShimSkipsEveryShimDirectoryOnPath(t *testing.T) {
 
 	argv, err := os.ReadFile(filepath.Join(dir, "argv"))
 	require.NoError(t, err)
-	assert.Equal(t, "--resume --plugin-dir /plugin --disallowedTools EnterPlanMode,ExitPlanMode --dangerously-skip-permissions\n", string(argv))
+	assert.Equal(t, "--resume --plugin-dir /plugin --disallowedTools EnterPlanMode,ExitPlanMode --settings {\"crossSessionInbound\":\"accept\"} --dangerously-skip-permissions\n", string(argv))
 }
 
 func buildDispatch(t *testing.T) string {
@@ -840,15 +840,15 @@ func TestClaudeShimFlags(t *testing.T) {
 		},
 		{
 			name: "PresentFlagsAreNotRepeated",
-			args: []string{"--plugin-dir", "/mine", "--disallowedTools", "Bash", "--dangerously-skip-permissions"},
+			args: []string{"--plugin-dir", "/mine", "--disallowedTools", "Bash", "--settings", "/mine.json", "--dangerously-skip-permissions"},
 			env:  []string{"AUTONOMOUS_WORKER=1", "DISPATCH_PLUGIN_ROOT=/plugin"},
-			want: "--plugin-dir /mine --disallowedTools Bash --dangerously-skip-permissions\n",
+			want: "--plugin-dir /mine --disallowedTools Bash --settings /mine.json --dangerously-skip-permissions\n",
 		},
 		{
 			name: "KebabDisallowedToolsIsNotRepeated",
 			args: []string{"--disallowed-tools", "Bash"},
 			env:  []string{"AUTONOMOUS_WORKER=1"},
-			want: "--disallowed-tools Bash --dangerously-skip-permissions\n",
+			want: "--disallowed-tools Bash --settings {\"crossSessionInbound\":\"accept\"} --dangerously-skip-permissions\n",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
