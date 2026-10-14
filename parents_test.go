@@ -340,6 +340,11 @@ func TestTickKeepsAParentOpenWhileAnyChildIsUnfinished(t *testing.T) {
 
 			assert.NotContains(t, out, "close ENG-1")
 			// An In Progress child with no worker gets the blocked comment and nothing else.
+			want := 0
+			if status == "In Progress" {
+				want = 1
+			}
+			assert.Len(t, h.linear.mutations(), want)
 			for _, change := range h.linear.mutations() {
 				assert.Equal(t, lineartest.Comment, change.Kind)
 				assert.Equal(t, "uuid-ENG-3", change.TicketID)
