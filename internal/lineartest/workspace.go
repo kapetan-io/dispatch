@@ -216,17 +216,17 @@ func (s *session) Usage() linear.Stats {
 	return linear.Stats{Calls: s.calls, RequestsRemaining: RequestsRemaining, RequestsLimit: RequestsLimit}
 }
 
-// request fails the call when the key is wrong or the operation has been made
-// to fail, and otherwise counts it. A rejected key counts nothing, so a test
-// can wait for the first call the right key makes. It returns with the workspace locked on success.
+// request counts the call, as the real client does for every attempt, then
+// fails it when the key is wrong or the operation has been made to fail. It
+// returns with the workspace locked on success.
 func (s *session) request(operation string) error {
 	s.w.mu.Lock()
+	s.w.calls[operation]++
+	s.calls++
 	if s.key != s.w.key {
 		s.w.mu.Unlock()
 		return fmt.Errorf("linear %s: HTTP 401: %w", operation, linear.ErrUnauthorized)
 	}
-	s.w.calls[operation]++
-	s.calls++
 	if s.w.failed[operation] {
 		s.w.mu.Unlock()
 		return fmt.Errorf("linear %s: HTTP 500: %s refused", operation, operation)

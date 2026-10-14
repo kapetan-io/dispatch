@@ -307,7 +307,7 @@ func TestMoveAndCommentRecordChangesAndJournal(t *testing.T) {
 	assert.Equal(t, "2026-10-09T01:02:03.000Z", found[0].LastComment)
 }
 
-func TestUsageCountsEachSessionApartAndIgnoresARejectedKey(t *testing.T) {
+func TestUsageCountsEachSessionApartAndIncludesARejectedKey(t *testing.T) {
 	workspace := lineartest.New(&journal.Journal{})
 	good, bad := workspace.Connect(lineartest.Key), workspace.Connect("lin_api_rejected")
 
@@ -319,8 +319,8 @@ func TestUsageCountsEachSessionApartAndIgnoresARejectedKey(t *testing.T) {
 	require.ErrorIs(t, err, linear.ErrUnauthorized)
 
 	assert.Equal(t, linear.Stats{Calls: 2, RequestsRemaining: lineartest.RequestsRemaining, RequestsLimit: lineartest.RequestsLimit}, good.Usage())
-	assert.Zero(t, bad.Usage().Calls)
-	assert.Equal(t, 2, workspace.Calls())
+	assert.Equal(t, 1, bad.Usage().Calls)
+	assert.Equal(t, 3, workspace.Calls())
 	assert.Equal(t, 1, workspace.CallsTo(lineartest.OnManaged))
 }
 

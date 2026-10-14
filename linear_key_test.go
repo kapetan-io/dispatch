@@ -161,7 +161,7 @@ func TestApiKeyCommandRotationIsPickedUpAfterLinearRejectsTheKey(t *testing.T) {
 	}()
 
 	// Linear answers 401 to the first key, so only the rerun's key can reach it.
-	require.Eventually(t, func() bool { return h.linear.calls() >= 2 }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return len(h.launches()) >= 1 }, 5*time.Second, 10*time.Millisecond)
 	stop()
 	require.NoError(t, <-done)
 	assert.Equal(t, 2, runCount(t, counter))
