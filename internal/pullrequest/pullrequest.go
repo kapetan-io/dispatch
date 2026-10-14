@@ -75,7 +75,7 @@ type PullRequest struct {
 	// Problems are the reasons the PR needs work, phrased to follow "has".
 	Problems []string
 	// Ready means the PR needs no work, has no open review thread and nothing is still running: every check
-	// has passed (a PR with no checks counts as passed) and GitHub says it
+	// (every required one, under Rules.RequiredChecksOnly) has passed (a PR with no checks counts as passed) and GitHub says it
 	// merges cleanly. A running check, such as a bot review still in progress,
 	// or a merge state GitHub has not computed yet, is not ready.
 	Ready bool
@@ -150,7 +150,7 @@ const olderCommentsQuery = `query OlderComments($owner: String!, $repo: String!,
 const checksQuery = `query Checks($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
+      commits(last: 1) { nodes { commit { oid statusCheckRollup { contexts(first: 100) {
         pageInfo { hasNextPage }
         nodes {
           __typename
@@ -166,7 +166,6 @@ const checksQuery = `query Checks($owner: String!, $repo: String!, $number: Int!
 // once COMPLETED, a conclusion. A StatusContext has only a state.
 type checkContext struct {
 	Typename   string `json:"__typename"`
-	Name       string `json:"name"`
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion"`
 	State      string `json:"state"`
@@ -180,6 +179,7 @@ type checksPage struct {
 				Commits struct {
 					Nodes []struct {
 						Commit struct {
+							Oid               string `json:"oid"`
 							StatusCheckRollup *struct {
 								Contexts struct {
 									Nodes    []checkContext `json:"nodes"`
@@ -224,8 +224,10 @@ func rollupState(contexts []checkContext) string {
 
 // requiredRollupState reads the checks behind PR number and returns the rollup
 // state of the required ones. A second page of checks is an error, because a
-// required failure beyond the first page would go unnoticed.
-func requiredRollupState(ctx context.Context, src Source, number int) (string, error) {
+// required failure beyond the first page would go unnoticed. Checks of any
+// commit but head, which a push between the two reads causes, are PENDING, so
+// the PR is not ready until the next read agrees with itself.
+func requiredRollupState(ctx context.Context, src Source, number int, head string) (string, error) {
 	b, err := src.Checks(ctx, number)
 	if err != nil {
 		return "", err
@@ -235,6 +237,9 @@ func requiredRollupState(ctx context.Context, src Source, number int) (string, e
 		return "", fmt.Errorf("while reading gh output for the checks of PR %d: %w", number, err)
 	}
 	for _, c := range resp.Data.Repository.PullRequest.Commits.Nodes {
+		if c.Commit.Oid != head {
+			return "PENDING", nil
+		}
 		if r := c.Commit.StatusCheckRollup; r != nil {
 			if r.Contexts.PageInfo.HasNextPage {
 				return "", fmt.Errorf("PR %d has more than 100 checks; dispatch reads one page and would miss required ones", number)
@@ -242,7 +247,8 @@ func requiredRollupState(ctx context.Context, src Source, number int) (string, e
 			return rollupState(r.Contexts.Nodes), nil
 		}
 	}
-	return "SUCCESS", nil
+	// The rollup the branch query saw has vanished, so this read can't vouch for it.
+	return "PENDING", nil
 }
 
 type reviewNode struct {
@@ -461,7 +467,7 @@ func Find(ctx context.Context, branch string, src Source, rules Rules) (PullRequ
 		// An EXPECTED rollup is a required check that has not started, which
 		// stays not ready, so it needs no look at which checks are required.
 		if rules.RequiredChecksOnly && (state == "FAILURE" || state == "ERROR" || state == "PENDING") {
-			if state, err = requiredRollupState(ctx, src, n.Number); err != nil {
+			if state, err = requiredRollupState(ctx, src, n.Number, n.HeadRefOid); err != nil {
 				return PullRequest{}, false, err
 			}
 		}

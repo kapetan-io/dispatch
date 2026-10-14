@@ -204,12 +204,12 @@ func TestCLIReadAsksForTheChecksByNumberWhenOnlyRequiredOnesCount(t *testing.T) 
 	const failing = `{"data":{"repository":{"pullRequests":{"nodes":[{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"a1","mergeable":"MERGEABLE","commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"FAILURE"}}}]},"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}]}}}}`
 	exe, args := standIn(t, failing, "", "0")
 
-	// The stand-in answers the checks query with the PR page, which lists no checks.
+	// The stand-in answers the checks query with the PR page, which names no commit.
 	pr, found, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b", pullrequest.Rules{RequiredChecksOnly: true})
 
 	require.NoError(t, err)
 	require.True(t, found)
-	assert.True(t, pr.Ready)
+	assert.False(t, pr.Ready)
 	calls := recorded(t, args)
 	require.Len(t, calls, 2)
 	assert.Equal(t, "api graphql -F owner={owner} -F repo={repo} -F number=7 -f query=...", calls[1])
