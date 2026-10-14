@@ -239,7 +239,7 @@ func TestStartWorkerStampsTheTabAndStartsClaudeInIt(t *testing.T) {
 	exe, err := os.Executable()
 	require.NoError(t, err)
 	assert.Contains(t, tabs[0], "--env DISPATCH_BIN="+exe)
-	assert.Equal(t, []string{"agent start eng-1 --kind claude --pane w9:p1 --timeout 90000 -- --model sonnet --plugin-dir /plugin --disallowedTools EnterPlanMode,ExitPlanMode --dangerously-skip-permissions"},
+	assert.Equal(t, []string{"agent start eng-1 --kind claude --pane w9:p1 --timeout 90000 -- --model sonnet --plugin-dir /plugin --disallowedTools EnterPlanMode,ExitPlanMode --settings {\"crossSessionInbound\":\"accept\"} --dangerously-skip-permissions"},
 		s.callsStarting("agent start"))
 }
 

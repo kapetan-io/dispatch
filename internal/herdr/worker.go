@@ -13,6 +13,10 @@ import (
 	"time"
 )
 
+// WorkerSettings makes a worker deliver messages from other sessions instead of
+// holding them for review, whatever the user's own settings say.
+const WorkerSettings = `{"crossSessionInbound":"accept"}`
+
 func (c *CLI) OpenWorkspace(ctx context.Context, w NewWorkspace) (string, error) {
 	var list struct {
 		Result struct {
@@ -175,7 +179,8 @@ func (c *CLI) startAgent(ctx context.Context, w Worker, started *Started) bool {
 	}
 	out, err := c.combined(ctx, "agent", "start", started.Agent, "--kind", "claude", "--pane", started.Pane, "--timeout", "90000", "--",
 		"--model", w.Model, "--plugin-dir", w.PluginRoot,
-		"--disallowedTools", "EnterPlanMode,ExitPlanMode", "--dangerously-skip-permissions")
+		"--disallowedTools", "EnterPlanMode,ExitPlanMode", "--settings", WorkerSettings,
+		"--dangerously-skip-permissions")
 	if err != nil {
 		c.log("agent start failed: %s", out)
 		return false
