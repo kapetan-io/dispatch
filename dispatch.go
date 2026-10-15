@@ -397,7 +397,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 	if lookupFailed || len(unread) > 0 {
 		held = nil
 	}
-	settle(c, now, tickets, workers, input.PRs, cfg.Plugins.Linear.Statuses, held, input.PendingComments(), leased)
+	settle(c, now, tickets, workers, input.PRs, cfg.Plugins.Linear.Statuses, held, leased)
 
 	post := delivery.Post{Herdr: opts.Herdr, Alerts: opts.Alerts, StateDir: opts.StateDir, Stderr: opts.Stderr}
 	current := map[string]string{}
@@ -472,8 +472,6 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 			}
 			e := c[a.Ticket.Identifier]
 			switch {
-			case a.Reason == reconcile.ReasonComment:
-				e.CommentSeen = a.Ticket.LastComment
 			case a.ActivityAt != "":
 				e.PRActivitySeen = a.ActivityAt
 			case a.Reason == reconcile.ReasonStall:
@@ -645,10 +643,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 // leases could not be read this tick, and no dirty-tree warning is dropped.
 //
 // leased names the tickets that hold a treehouse lease.
-//
-// pending holds back a ticket's comment time (see Input.PendingComments), so
-// its nudge is retried instead of lost. A successful nudge advances it.
-func settle(c cache.Cache, now time.Time, tickets []linear.Ticket, workers map[string]worker.Worker, prs map[string]pullrequest.PullRequest, statuses config.Statuses, held, pending, leased map[string]bool) {
+func settle(c cache.Cache, now time.Time, tickets []linear.Ticket, workers map[string]worker.Worker, prs map[string]pullrequest.PullRequest, statuses config.Statuses, held, leased map[string]bool) {
 	seen := map[string]bool{}
 	for _, t := range tickets {
 		e := c[t.Identifier]
@@ -673,13 +668,6 @@ func settle(c cache.Cache, now time.Time, tickets []linear.Ticket, workers map[s
 			}
 		} else {
 			e.IdleSince = time.Time{}
-		}
-		if e.CommentSeen == "" || !pending[t.Identifier] {
-			// "0" sorts before any RFC 3339 time and, unlike "", marks the ticket seen.
-			e.CommentSeen = "0"
-			if t.LastComment != "" {
-				e.CommentSeen = t.LastComment
-			}
 		}
 		if workers[t.Identifier].State == worker.Blocked {
 			e.BlockedTicks++
@@ -720,10 +708,7 @@ func settle(c cache.Cache, now time.Time, tickets []linear.Ticket, workers map[s
 		// and the warning goes once the tree is returned. A nil held means the
 		// leases could not be read this tick, so no warning is dropped.
 		kept := cache.Entry{LaunchFailures: e.LaunchFailures, PendingComment: e.PendingComment, TicketID: e.TicketID, TeardownWarned: e.TeardownWarned && (held == nil || held[id])}
-		// A worker that outlives its ticket's absence must still hear about a
-		// comment posted meanwhile, so the comment time stays while a tree is leased.
 		if leased[id] {
-			kept.CommentSeen = e.CommentSeen
 			// Without it, a worker relaunched on the kept tree would announce a PR head twice.
 			kept.ReadyHead = e.ReadyHead
 			kept.DraftReadyHead = e.DraftReadyHead

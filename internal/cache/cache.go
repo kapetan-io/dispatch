@@ -1,8 +1,7 @@
 // Package cache holds the per-ticket counters a tick carries to the next one.
 // Deleting the cache loses little: counters reset, a last-seen status may
-// repeat one notification, a comment posted meanwhile gets no nudge because
-// the first tick only re-records the newest comment time, and an escalation
-// comment Linear has not yet accepted is never posted.
+// repeat one notification, and an escalation comment Linear has not yet
+// accepted is never posted.
 package cache
 
 import (
@@ -70,11 +69,6 @@ type Entry struct {
 	PendingComment string `json:"pending_comment,omitempty"`
 	// TicketID is Linear's internal id for the ticket a pending comment goes on.
 	TicketID string `json:"ticket_id,omitempty"`
-	// CommentSeen is the creation time of the newest comment dispatch has
-	// accounted for, "0" when the ticket had none. Empty means the ticket was
-	// never seen, so its first sighting records a time without nudging. It
-	// stays put while a nudge is owed or the worker can't take one yet.
-	CommentSeen string `json:"comment_seen,omitempty"`
 	// PRActivitySeen is the time of the newest PR review, conversation comment or open review thread comment already put
 	// to the worker, or "0" for a ticket that entered In Review owing it all of
 	// the PR's activity. Empty means no baseline yet, and ActivityBaseline says

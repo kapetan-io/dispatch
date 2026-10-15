@@ -1,20 +1,12 @@
 import { whenever, minutes } from "dispatch";
-import { nudgeable, resumeOwed, commentNudgeOwed, heard, prNudges, escalate, stoppedSinceLastNudge, nudgeLimit } from "./shared";
-import { STALL_NUDGE, RESUME_NUDGE, COMMENT_NUDGE, ACTIVITY_NUDGE, PR_NUDGE } from "./texts";
+import { nudgeable, resumeOwed, heard, prNudges, escalate, stoppedSinceLastNudge, nudgeLimit } from "./shared";
+import { STALL_NUDGE, RESUME_NUDGE, ACTIVITY_NUDGE, PR_NUDGE } from "./texts";
 
 // Each nudge's once key names what it told the worker, in the source's own time, such
-// as the comment time, the PR activity time or the Stop it answered. A nudge is owed while
-// there's something newer, so a comment that arrives while the worker is stuck in a
-// question dialog is still owed when the dialog closes. A worker gets one nudge at a
-// time, and the comment nudge goes first, as today. No nudge of any kind goes out until
-// the worker has stopped since the last one (stoppedSinceLastNudge).
-
-whenever({
-  name: "nudge-comment",
-  each: "linear.ticket",
-  if:   (t, ctx) => commentNudgeOwed(t, ctx) && stoppedSinceLastNudge(t, ctx),  // stands back for the resume nudge
-  then: (t, ctx) => ctx.herdr.queueNudge(t, COMMENT_NUDGE(t), { once: ["comment", t.lastHumanComment!.at] }),
-});
+// as the PR activity time or the Stop it answered. A nudge is owed while there's something
+// newer, so activity that arrives while the worker is stuck in a question dialog is still
+// owed when the dialog closes. No nudge of any kind goes out until the worker has stopped
+// since the last one (stoppedSinceLastNudge).
 
 // Once per move back from Needs Human. It also tells the worker to read the comments.
 whenever({
@@ -34,7 +26,7 @@ whenever({
   if:   (t, ctx) => {
     const w = ctx.herdr.worker(t);
     return t.status === "in_progress" && nudgeable(t) && w.state === "idle" && !w.busy
-        && w.lastStop !== undefined && !resumeOwed(t, ctx) && !commentNudgeOwed(t, ctx)
+        && w.lastStop !== undefined && !resumeOwed(t, ctx)
         && stoppedSinceLastNudge(t, ctx);
   },
   then: (t, ctx) => ctx.herdr.queueNudge(t, STALL_NUDGE(t), { once: ["stall", ctx.herdr.worker(t).lastStop!.at] }),
@@ -45,7 +37,7 @@ whenever({
   name: "nudge-pr-activity",
   each: "github.pr",
   if:   (pr, ctx) => !pr.closed && pr.ticket.status === "in_review" && nudgeable(pr.ticket) && !pr.needsWork
-           && ctx.herdr.worker(pr.ticket).state === "idle" && !commentNudgeOwed(pr.ticket, ctx)
+           && ctx.herdr.worker(pr.ticket).state === "idle"
            && !heard(pr.ticket, "activity", pr.lastActivity, ctx) && stoppedSinceLastNudge(pr.ticket, ctx),
   then: (pr, ctx) => ctx.herdr.queueNudge(pr.ticket, ACTIVITY_NUDGE(pr), { once: ["activity", pr.lastActivity!.at] }),
 });
@@ -59,7 +51,7 @@ whenever({
   name: "nudge-pr-needs-work",
   each: "github.pr",
   if:   (pr, ctx) => !pr.closed && pr.needsWork && pr.ticket.status === "in_review" && nudgeable(pr.ticket)
-           && ctx.herdr.worker(pr.ticket).state === "idle" && !commentNudgeOwed(pr.ticket, ctx)
+           && ctx.herdr.worker(pr.ticket).state === "idle"
            && stoppedSinceLastNudge(pr.ticket, ctx),
   then: (pr, ctx) => {
     const w = ctx.herdr.worker(pr.ticket);
