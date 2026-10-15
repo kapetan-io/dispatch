@@ -44,7 +44,7 @@ The request succeeded but the work is asynchronous. That is a design gap, so wor
 
 ## Substituting external dependencies
 
-Fake only what sits outside the deployment unit: object stores, brokers, payment gateways, other services in the repo, command-line tools. Use the real dependency whenever you can run it, and fake it only for speed or because it is flaky or not always reachable. Anything inside the surface runs for real, including internal services and domain logic. An assertion like `verify { repository.save(any()) }` tests implementation, so don't write one.
+Fake only what sits outside the deployment unit: object stores, brokers, payment gateways, other services in the repo, command-line tools. Use the real dependency whenever you can run it. Consider a fake when running it makes the suite slow or flaky, or it isn't always reachable. Anything inside the surface runs for real, including internal services and domain logic. An assertion like `verify { repository.save(any()) }` tests implementation, so don't write one.
 
 A fake encodes someone's understanding of the real tool, and it drifts. A fake `treehouse return` that ignored the lease holder passed tests the real tool failed. For a service with a wire protocol, prefer substitutes in this order. Each of the first three runs the real protocol, and the earlier ones are faster.
 
@@ -57,7 +57,7 @@ A fake encodes someone's understanding of the real tool, and it drifts. A fake `
 
 ### Repositories and gateways
 
-When tests use a dependency only as passive state or somewhere to send work, put it behind a domain interface named for its role (`OrderRepository` for a collection of domain objects, a gateway for any other external system). The real adapter talks to the dependency, and a fake stands in for it where the dependency is too slow or unreliable to run. The interface is the edge of the deployment unit, so substituting it breaks no rule above.
+When tests use a dependency only as passive state or somewhere to send work, put it behind a domain interface named for its role (`OrderRepository` for a collection of domain objects, a gateway for any other external system). The real adapter talks to the dependency, and a fake stands in for it where running the dependency makes tests slow or flaky. The interface is the edge of the deployment unit, so substituting it breaks no rule above.
 
 A fake needs contract tests, one set of scenarios run against both the fake and the real dependency. Never delete or skip them to get a build green. When the real dependency's behavior changes, update the scenarios and the fake together, and never edit a scenario only so the fake passes. Gating the real side behind a build tag or flag is fine. Removing it, or letting it pass without running, is not. The real-dependency run is what catches drift, so run it as often as you can and state in the PR where it runs. Faking at this level has a cost. Root tests no longer exercise command lines or JSON parsing, so adapter tests must cover them.
 
