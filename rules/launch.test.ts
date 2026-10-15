@@ -94,6 +94,13 @@ scenario(rules, "launch-worker stops after launch_failure_limit failures and esc
   s.expect([["escalate-launch-failures", "linear.escalate", "ENG-1"]]);
 });
 
+scenario(rules, "launches a crash closed don't count toward the failure limit", s => {
+  s.given(ticket("ENG-1", build));
+  s.land("herdr.launch", "ENG-1", { outcome: "failed", detail: "crashed" });
+  s.land("herdr.launch", "ENG-1", { outcome: "failed", detail: "crashed" });
+  s.expect([["launch-worker", "herdr.launch", "ENG-1"]]);
+});
+
 scenario(rules, "launch_failure_limit comes from the config", s => {
   s.config({ rules: { launch_failure_limit: 3 } });
   s.given(ticket("ENG-1", build));
