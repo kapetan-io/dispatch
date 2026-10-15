@@ -5,6 +5,8 @@ description: Write surface tests that exercise the system through its surface, t
 
 # Surface Testing
 
+Worked Go and Kotlin examples are in [references/examples.md](references/examples.md). They are one way to apply these rules. Read them only if they help, and use your own approach where it is better.
+
 A test should change only when the system's requirements change. Refactors, new features and bug fixes must leave existing tests green, and only a behavior change should break one. Tests that enter through the surface verify behavior and survive a rewrite. Tests that reach into internals verify implementation and die with it.
 
 > **The MIME parser.** A parser gathered 3,000 tests against its public `Parse()` over years of real-world edge cases. A rewrite from recursive descent to a stateful non-recursive design was validated by those same tests, which proved correctness and a speedup. Tests of the recursive internals would have been thrown away with the recursion.
