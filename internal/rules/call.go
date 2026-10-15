@@ -483,6 +483,9 @@ func (c *call) linearAPI() *sobek.Object {
 	})
 	_ = o.Set("waitingSince", func(call sobek.FunctionCall) sobek.Value {
 		t := ticket(call.Argument(0))
+		if since, ok := s.waiting[t.id]; ok {
+			return rt.ToValue(since)
+		}
 		return rt.ToValue(t.v.Interface().(*Ticket).StatusSince.Value)
 	})
 	return o

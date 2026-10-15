@@ -99,9 +99,12 @@ type State struct {
 	// childrenUnread holds the reason a parent's children weren't read.
 	childrenUnread map[string]string
 	blockers       map[string]blockers
-	workers        map[string]*record
-	workersByTree  map[string]*record
-	pools          map[string]pool
+	// waiting holds when each ticket's current stretch of waiting on blockers
+	// began. A ticket without an entry has waited since its status began.
+	waiting       map[string]int64
+	workers       map[string]*record
+	workersByTree map[string]*record
+	pools         map[string]pool
 	// leased holds the tickets that hold a tree. leasedUnread holds the reason
 	// a ticket's lease can't be told, per ticket.
 	leased       map[string]bool
@@ -120,7 +123,7 @@ func NewState(cfg config.Config, now time.Time) *State {
 		Now: now, Config: cfg, Ledger: &ledger.Ledger{},
 		kinds: map[string][]*record{}, index: map[string]*record{},
 		parents: map[string]string{}, children: map[string][]string{}, childrenUnread: map[string]string{},
-		blockers: map[string]blockers{}, workers: map[string]*record{}, workersByTree: map[string]*record{},
+		blockers: map[string]blockers{}, waiting: map[string]int64{}, workers: map[string]*record{}, workersByTree: map[string]*record{},
 		pools: map[string]pool{}, leased: map[string]bool{}, leasedUnread: map[string]string{},
 		maxInProgress: cfg.Dispatch.MaxInProgress, started: now,
 	}

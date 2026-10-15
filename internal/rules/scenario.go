@@ -334,6 +334,7 @@ func (s *scenario) cycle() {
 }
 
 func (s *scenario) state() *State {
+	s.trackWaiting()
 	w := s.world()
 	if s.herdrUnread {
 		w.HerdrErr = errors.New("scenario marked it unread")

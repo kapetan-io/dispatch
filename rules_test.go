@@ -15,6 +15,7 @@ import (
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
+	"github.com/kapetan-io/dispatch/internal/lineartest"
 	"github.com/kapetan-io/dispatch/internal/rules"
 )
 
@@ -558,4 +559,139 @@ func TestConfigSchemaNamesEveryTableTheLoaderReads(t *testing.T) {
 	assert.ElementsMatch(t, []string{"dispatch", "history", "repos", "plugins", "http", "rules"}, tables)
 	assert.False(t, schema.AdditionalProperties)
 	assert.Equal(t, true, schema.Properties["rules"].AdditionalProperties)
+}
+
+func TestRulesCheckClosesAParentWhoseChildrenAreFinished(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(parent("ENG-1", "In Progress"))
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Done"))
+
+	out, err := h.rules(repoRules, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `close-parent +whenever +linear\.ticket +wants move now for ENG-1\n`, out)
+	assert.Empty(t, h.linear.mutations())
+}
+
+func TestRulesCheckHoldsAParentWhoseChildrenCannotBeRead(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(parent("ENG-1", "In Progress"))
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Done"))
+	h.linear.FailOn(lineartest.OnChildren, true)
+
+	out, err := h.rules(repoRules, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `close-parent +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, out)
+	assert.Empty(t, h.linear.mutations())
+}
+
+func TestRulesCheckHoldsTheRulesOfAPRThatCannotBeRead(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.repoSettings("dispatch", "auto_merge = true\n")
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", approvedPR("a1"))
+	h.tools.PullRequests.FailRead(errors.New("exit status 1"))
+
+	out, err := h.rules(repoRules, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `auto-merge +whenever +github\.pr +wants nothing now; held for ENG-1\n`, out)
+	assert.Regexp(t, `notify-ready-for-review +whenever +github\.pr +wants nothing now; held for ENG-1\n`, out)
+	assert.Empty(t, h.merges())
+}
+
+func TestRulesCheckHoldsTheTearDownOfATreeItCannotRead(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	// The tree's directory is gone, so git can't say whether it held work.
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	out, err := h.rules(repoRules, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `teardown-clean-tree +whenever +treehouse\.tree +wants nothing now; held for ENG-1\n`, out)
+	assert.Regexp(t, `comment-kept-tree +whenever +treehouse\.tree +wants nothing now; held for ENG-1\n`, out)
+	assert.Empty(t, h.returns())
+	assert.Empty(t, h.linear.mutations())
+}
+
+func TestRulesCheckReturnsNothingButWantsTheTearDownOfACleanTree(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	path := h.gitTree("ENG-1")
+	h.lease("ENG-1", path)
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	out, err := h.rules(repoRules, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `teardown-clean-tree +whenever +treehouse\.tree +wants return now for ENG-1\n`, out)
+	assert.Empty(t, h.returns())
+}
+
+func TestRulesCheckStopsAnIfAfterOneSecondByDefault(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `whenever({ name: "loops", each: "linear.ticket", if: () => { for (;;) {} }, then: () => {} });`)
+	start := time.Now()
+
+	out, err := h.rules(dir, "check")
+
+	require.ErrorContains(t, err, "1 problems found")
+	assert.Contains(t, out, "finding: loops ran out of time in its if for ENG-1")
+	assert.GreaterOrEqual(t, time.Since(start), time.Second)
+	assert.Less(t, time.Since(start), 10*time.Second)
+}
+
+func TestRulesCheckStopsAThenThatRunsOutOfTimeAndKeepsTheOthers(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `
+whenever({ name: "slow", each: "linear.ticket", if: () => true, then: (t, ctx) => { ctx.herdr.queueNudge(t, "x", { once: ["slow"] }); for (;;) {} } });
+whenever({ name: "fine", each: "linear.ticket", if: () => true, then: (t, ctx) => ctx.herdr.queueNudge(t, "y", { once: ["fine"] }) });`)
+
+	out, _, err := h.runWith(context.Background(), dispatch.Options{RulesDir: dir, RuleTimeout: dispatch.RuleTimeout{Then: 50 * time.Millisecond}}, "rules", "check")
+
+	require.ErrorContains(t, err, "1 problems found")
+	assert.Contains(t, out, "finding: slow ran out of time in its then for ENG-1")
+	assert.Regexp(t, `slow +whenever +linear\.ticket +wants nothing now\n`, out)
+	assert.Regexp(t, `fine +whenever +linear\.ticket +wants nudge now for ENG-1\n`, out)
+}
+
+func TestRulesCheckGivesEachRuleCallAFreshRuntime(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
+	dir := oneRule(t, `
+let calls = 0;
+whenever({ name: "counts", each: "linear.ticket", if: () => { calls++; return calls === 1; },
+  then: (t, ctx) => ctx.linear.queueComment(t, "first", { once: ["counts", t.id] }) });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `counts +whenever +linear\.ticket +wants comment now for ENG-1, ENG-2\n`, out)
+}
+
+func TestRulesCheckHoldsARecordWhoseReadFailedEvenWhenTheRuleCatchesIt(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tools.Treehouse.FailTrees(errors.New("exit status 1"))
+	dir := oneRule(t, `
+whenever({ name: "catches", each: "linear.ticket", if: (t, ctx) => true,
+  then: (t, ctx) => { try { ctx.treehouse.pool(t.repo); } catch (e) {} return ctx.linear.queueComment(t, "x", { once: ["c", t.id] }); } });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `catches +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, out)
 }

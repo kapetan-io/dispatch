@@ -21,6 +21,10 @@ type stamp struct {
 	status, seen, gone, idle, blocked, comment, activity, thread int64
 	previous                                                     string
 	lastStop                                                     int64
+	// waiting is when the ticket's current stretch of waiting on blockers
+	// began, and waitingNow whether it waits now.
+	waiting    int64
+	waitingNow bool
 }
 
 // treeModel is a tree in a scenario.
@@ -410,10 +414,31 @@ func (s *scenario) world() world.World {
 	return w
 }
 
+// trackWaiting starts a new stretch of waiting for each ticket that has
+// open blockers now and had none at the last cycle.
+func (s *scenario) trackWaiting() {
+	m := s.model()
+	done := s.cfg.Plugins.Linear.Statuses.BlockerDone
+	for id, t := range m.tickets {
+		open := t.BlockersTruncated
+		for _, b := range t.Blockers {
+			open = open || b.Status != done
+		}
+		st := m.stamp(id)
+		if open && !st.waitingNow {
+			st.waiting = s.ms()
+		}
+		st.waitingNow = open
+	}
+}
+
 // stamped applies the first-seen times the scenario kept to a freshly built state.
 func (s *scenario) stamped(state *State) {
 	m := s.model()
 	for id, st := range m.stamps {
+		if st.waiting != 0 {
+			state.waiting[id] = st.waiting
+		}
 		if r, ok := state.lookup("linear.ticket", id); ok {
 			t := r.v.Interface().(*Ticket)
 			if st.status != 0 {
