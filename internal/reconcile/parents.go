@@ -13,13 +13,7 @@ import (
 // that are known not to be design tickets, since the design worker and the review own
 // the children and close of those. The tick reads the children of these only.
 func (in Input) Parents() []linear.Ticket {
-	var parents []linear.Ticket
-	for _, t := range in.Tickets {
-		if t.Status == in.InProgress && t.HasChildren && in.notDesign(t) {
-			parents = append(parents, t)
-		}
-	}
-	return parents
+	return in.scope().Parents(in.Tickets)
 }
 
 // planParents closes each parent whose children are all finished, then

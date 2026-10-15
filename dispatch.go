@@ -29,10 +29,13 @@ import (
 	"github.com/kapetan-io/dispatch/internal/lock"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/reconcile"
-	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/worker"
+	"github.com/kapetan-io/dispatch/internal/world"
 )
+
+// RuleTimeout bounds how long one call of a rule's if and then may run.
+type RuleTimeout struct{ If, Then time.Duration }
 
 // Options points the dispatcher at its config, its state and the tools it
 // drives. Zero values take the defaults.
@@ -67,6 +70,11 @@ type Options struct {
 	Dir string
 	// LaunchPace is the pause between launcher polls of herdr. Defaults to 1 second.
 	LaunchPace time.Duration
+	// RulesDir overrides [dispatch].rules, so tests run the repo's rules/ directory.
+	RulesDir string
+	// RuleTimeout cuts off a rule call on the wall clock. Zero means 1 second for
+	// an if and 30 seconds for a then.
+	RuleTimeout RuleTimeout
 	// Now is the clock. Defaults to time.Now.
 	Now    func() time.Time
 	Stdin  io.Reader
@@ -77,6 +85,7 @@ type Options struct {
 const usage = `usage: dispatch tick [--dry-run]
        dispatch run [--interval DURATION]
        dispatch tell <ticket> "<text>"
+       dispatch rules init|check|test [dir]
        dispatch ticket-hint
        dispatch repo-settings
        dispatch linear-viewer
@@ -90,8 +99,10 @@ const usage = `usage: dispatch tick [--dry-run]
                and clean up after finished and paused tickets
   --dry-run    print the actions a tick would take, one per line, without acting
   run          tick now and then once per interval until interrupted (Ctrl-C)
-  --interval   time between ticks; defaults to the config's interval_minutes
+  --interval   time between ticks; defaults to the config's [dispatch].resync
   tell         type text into the ticket's worker; fails when the worker is blocked or absent
+  rules        init writes the shipped TypeScript rules, check lints them and prints what each wants
+               now, and test runs their *.test.ts scenarios. Nothing acts on them yet
   ticket-hint  print a reminder to use the dispatch:ticket skill when run in a repo listed under
                [repos] in the config, or a worktree of one; prints nothing elsewhere.
                The plugin's SessionStart hook runs it
@@ -131,6 +142,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		}
 		_, err := tick(ctx, opts, *dryRun, &keyLookup{})
 		return err
+	case "rules":
+		return rulesCommand(ctx, opts, args[1:])
 	case "tell":
 		if len(args) != 3 {
 			_, _ = fmt.Fprintln(opts.Stderr, usage)
@@ -217,7 +230,7 @@ func run(ctx context.Context, opts Options, interval time.Duration) error {
 		if err != nil {
 			return err
 		}
-		interval = time.Duration(cfg.IntervalMinutes) * time.Minute
+		interval = time.Duration(cfg.Dispatch.Resync)
 	}
 	if interval <= 0 {
 		return fmt.Errorf("interval must be positive, got %s", interval)
@@ -315,101 +328,36 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 	lin := opts.Linear(key)
 	defer func() { sum.linear = lin.Usage() }()
 
-	snap, err := opts.Herdr.Read(ctx)
-	if err != nil {
-		return sum, err
-	}
-	// A repo whose pool can't be read holds back only its own tickets, so one
-	// moved clone doesn't stop launches in every other repo.
-	var trees []treehouse.Tree
-	readErrs := map[string]error{}
-	for label, repo := range cfg.Repos {
-		dir := repo.Path
-		t, err := opts.Treehouse.Trees(ctx, dir)
-		if err != nil {
-			err = treehouse.StatusError(dir, err)
-			readErrs[label] = err
-			continue
-		}
-		trees = append(trees, t...)
-	}
-	unread := map[string]bool{}
-	for label, err := range readErrs {
-		if len(readErrs) == len(cfg.Repos) {
-			return sum, err
-		}
-		_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the %s pool: %v\n", label, err)
-		unread[label] = true
-	}
-	tickets, err := lin.ManagedTickets(ctx, cfg.Linear.AILabel, cfg.Linear.Teams)
-	if err != nil {
-		return sum, err
-	}
-
-	// A failed lease lookup skips teardown only; launches and nudges still run.
-	holders, err := leaseHolders(ctx, lin, cfg, trees, tickets)
-	lookupFailed := err != nil
-	if lookupFailed {
-		_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the tickets that hold trees: %v\n", err)
-	}
-	leased := map[string]bool{}
-	for _, tree := range trees {
-		if tree.LeaseHolder != "" {
-			leased[tree.LeaseHolder] = true
-		}
-	}
 	now := opts.Now()
-	workers := map[string]worker.Worker{}
-	lastStops := map[string]stops.Record{}
-	for _, t := range tickets {
-		w := worker.Find(t.Identifier, trees, snap)
-		workers[t.Identifier] = w
-		if w.State == worker.Idle && t.Status == cfg.Linear.Statuses.InProgress {
-			if rec, ok := stops.Read(opts.StateDir, w.TreePath, w.Session); ok {
-				lastStops[t.Identifier] = rec
-			}
-		}
+	w, err := world.Read(ctx, world.Sources{
+		Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
+		StateDir: opts.StateDir, Stderr: opts.Stderr,
+	}, world.ScopeOf(cfg), now)
+	if err != nil {
+		return sum, err
 	}
+	snap, tickets, workers, unread, leased := w.Snapshot, w.Tickets, w.Workers, w.UnreadRepos, w.Leased
+	lookupFailed := w.HoldersErr != nil
 	sum.tickets = len(tickets)
 	input := reconcile.Input{
-		Tickets:        tickets,
-		Workers:        workers,
-		InProgress:     cfg.Linear.Statuses.InProgress,
-		InReview:       cfg.Linear.Statuses.InReview,
-		NeedsHuman:     cfg.Linear.Statuses.NeedsHuman,
-		MaxInProgress:  cfg.MaxInProgress,
-		NudgeLimit:     cfg.NudgeLimit,
+		World:          w,
+		InProgress:     cfg.Plugins.Linear.Statuses.InProgress,
+		InReview:       cfg.Plugins.Linear.Statuses.InReview,
+		NeedsHuman:     cfg.Plugins.Linear.Statuses.NeedsHuman,
+		MaxInProgress:  cfg.Dispatch.MaxInProgress,
+		NudgeLimit:     cfg.NudgeLimit(),
 		Now:            now,
-		Stops:          lastStops,
-		RenotifyTicks:  cfg.BlockedRenotifyTicks,
+		RenotifyTicks:  cfg.BlockedRenotifyTicks(),
 		Cache:          c,
-		RepoLabelGroup: cfg.Linear.RepoLabelGroup,
+		RepoLabelGroup: cfg.Plugins.Linear.RepoLabelGroup,
 		Repos:          cfg.Repos,
-		UnreadRepos:    unread,
-		Done:           cfg.Linear.Statuses.Done,
-		Paused:         cfg.Linear.Statuses.Paused,
-		LeaseHolders:   holders,
-		Leases:         leaseWorkers(holders, trees, snap),
-		Todo:           cfg.Linear.Statuses.Todo,
-		AILabel:        cfg.Linear.AILabel,
-		Teams:          cfg.Linear.Teams,
-		BlockerDone:    cfg.Linear.Statuses.BlockerDone,
-		Leased:         leased,
+		Done:           cfg.Plugins.Linear.Statuses.Finished,
+		Paused:         cfg.Plugins.Linear.Statuses.Paused,
+		Todo:           cfg.Plugins.Linear.Statuses.Todo,
+		AILabel:        cfg.Plugins.Linear.AILabel,
+		Teams:          cfg.Plugins.Linear.Teams,
+		BlockerDone:    cfg.Plugins.Linear.Statuses.BlockerDone,
 	}
-	// Only promotion and closing wait on the children, so a failed read holds
-	// back those two and nothing else.
-	if parents := input.Parents(); len(parents) > 0 {
-		ids := make([]string, len(parents))
-		for i, parent := range parents {
-			ids[i] = parent.ID
-		}
-		var readErr error
-		if input.Children, readErr = lin.ParentChildren(ctx, ids); readErr != nil {
-			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the children of open parents: %v\n", readErr)
-		}
-	}
-	input.Unfinished, input.CheckErrors, input.Untracked = inspectTrees(ctx, input)
-	input.PRs, input.PRReadFailed = readPRs(ctx, opts, input)
 	actions := reconcile.Plan(input)
 
 	sum.actions = len(actions)
@@ -449,7 +397,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 	if lookupFailed || len(unread) > 0 {
 		held = nil
 	}
-	settle(c, now, tickets, workers, input.PRs, cfg.Linear.Statuses, held, input.PendingComments(), leased)
+	settle(c, now, tickets, workers, input.PRs, cfg.Plugins.Linear.Statuses, held, input.PendingComments(), leased)
 
 	post := delivery.Post{Herdr: opts.Herdr, Alerts: opts.Alerts, StateDir: opts.StateDir, Stderr: opts.Stderr}
 	current := map[string]string{}
@@ -473,11 +421,11 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 	}
 	nudgeFailed := map[string]bool{}
 	launch := func(a reconcile.Action) launcher.Result {
-		model, kickoff := cfg.WorkerModel, ""
+		model, kickoff := cfg.WorkerModel(), ""
 		if name := a.Skill.Name(); name != "" {
-			model, kickoff = cfg.DesignModel, "/dispatch:"+name+" "+a.Ticket.Identifier
+			model, kickoff = cfg.DesignModel(), "/dispatch:"+name+" "+a.Ticket.Identifier
 		}
-		return launcherFor(opts, cfg.PluginRoot, nil).Launch(ctx, launcher.Request{
+		return launcherFor(opts, cfg.Plugins.Herdr.PluginRoot, nil).Launch(ctx, launcher.Request{
 			RepoDir: a.RepoDir, Ticket: a.Ticket.Identifier, Title: a.Ticket.Title, Branch: a.Ticket.Branch, Model: model, Kickoff: kickoff,
 		})
 	}
@@ -557,13 +505,13 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while keeping the tree of %s: %v\n", a.Ticket.Identifier, err)
 			}
 		case reconcile.Promote:
-			if err := move(ctx, lin, a.Ticket, cfg.Linear.Statuses.InProgress); err != nil {
+			if err := move(ctx, lin, a.Ticket, cfg.Plugins.Linear.Statuses.InProgress); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while promoting %s: %v\n", a.Ticket.Identifier, err)
 				continue
 			}
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Close:
-			if err := move(ctx, lin, a.Ticket, cfg.Linear.Statuses.CloseParent); err != nil {
+			if err := move(ctx, lin, a.Ticket, cfg.Plugins.Linear.Statuses.CloseParent); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while closing %s: %v\n", a.Ticket.Identifier, err)
 				continue
 			}
@@ -651,7 +599,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 				if r.Status == launcher.StatusOK && a.ActivityAt != "" {
 					e.PRActivitySeen = a.ActivityAt
 				}
-				if r.Status == launcher.StatusOK && a.Ticket.Status == cfg.Linear.Statuses.InReview && !a.ThreadOnly {
+				if r.Status == launcher.StatusOK && a.Ticket.Status == cfg.Plugins.Linear.Statuses.InReview && !a.ThreadOnly {
 					e.Relaunches++
 				}
 				c[a.Ticket.Identifier] = e
@@ -666,8 +614,8 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 			}
 			e.LaunchFailures++
 			c[a.Ticket.Identifier] = e
-			_, _ = fmt.Fprintf(opts.Stdout, "%s: %s (failure %d of %d) %s\n", a, r.Status, e.LaunchFailures, cfg.LaunchFailureLimit, r.Detail)
-			if e.LaunchFailures < cfg.LaunchFailureLimit {
+			_, _ = fmt.Fprintf(opts.Stdout, "%s: %s (failure %d of %d) %s\n", a, r.Status, e.LaunchFailures, cfg.LaunchFailureLimit(), r.Detail)
+			if e.LaunchFailures < cfg.LaunchFailureLimit() {
 				continue
 			}
 			reason := fmt.Sprintf("its worker failed to launch %d times in a row. The launcher said `%s`: %s", e.LaunchFailures, r.Status, r.Detail)
@@ -678,7 +626,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 			e = c[a.Ticket.Identifier]
 			e.LaunchFailures = 0
 			c[a.Ticket.Identifier] = e
-			_, _ = fmt.Fprintf(opts.Stdout, "escalate %s: launch failed %d times\n", a.Ticket.Identifier, cfg.LaunchFailureLimit)
+			_, _ = fmt.Fprintf(opts.Stdout, "escalate %s: launch failed %d times\n", a.Ticket.Identifier, cfg.LaunchFailureLimit())
 		}
 	}
 	return sum, nil
@@ -789,34 +737,6 @@ func settle(c cache.Cache, now time.Time, tickets []linear.Ticket, workers map[s
 	}
 }
 
-// readPRs reads the open PR of each ticket for which in.ReadsPR is true. A PR
-// that can't be read is reported and left out, so it holds back only its own
-// ticket, and its ticket is named in failed to tell it from a ticket with no
-// open PR.
-func readPRs(ctx context.Context, opts Options, in reconcile.Input) (prs map[string]pullrequest.PullRequest, failed map[string]bool) {
-	prs, failed = map[string]pullrequest.PullRequest{}, map[string]bool{}
-	for _, t := range in.Tickets {
-		if !in.ReadsPR(t) {
-			continue
-		}
-		repo, ok := t.LabelIn(in.RepoLabelGroup)
-		dir := in.Repos[repo].Path
-		if !ok || dir == "" {
-			continue
-		}
-		pr, found, err := opts.PullRequests.Read(ctx, dir, t.Branch, pullrequest.Rules{IgnoreAuthors: in.Repos[repo].IgnoreCommentAuthors, RequiredChecksOnly: in.Repos[repo].IgnoreOptionalChecks})
-		if err != nil {
-			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, err)
-			failed[t.Identifier] = true
-			continue
-		}
-		if found {
-			prs[t.Identifier] = pr
-		}
-	}
-	return prs, failed
-}
-
 // move sets a ticket's status by name.
 func move(ctx context.Context, lin linear.Workspace, t linear.Ticket, status string) error {
 	state, err := lin.StateID(ctx, t.Team, status)
@@ -828,7 +748,7 @@ func move(ctx context.Context, lin linear.Workspace, t linear.Ticket, status str
 
 // escalate moves a ticket to Needs Human with one comment saying why.
 func escalate(ctx context.Context, lin linear.Workspace, cfg config.Config, c cache.Cache, post delivery.Post, t linear.Ticket, reason string) error {
-	state, err := lin.StateID(ctx, t.Team, cfg.Linear.Statuses.NeedsHuman)
+	state, err := lin.StateID(ctx, t.Team, cfg.Plugins.Linear.Statuses.NeedsHuman)
 	if err != nil {
 		return err
 	}
@@ -841,7 +761,7 @@ func escalate(ctx context.Context, lin linear.Workspace, cfg config.Config, c ca
 	// what keeps the next tick's Plan from notifying a second time, and a
 	// failed alert marks the notification pending so the next tick retries it.
 	e := c[t.Identifier]
-	e.LastStatus = cfg.Linear.Statuses.NeedsHuman
+	e.LastStatus = cfg.Plugins.Linear.Statuses.NeedsHuman
 	e.Nudges = 0
 	e.Relaunches = 0
 	e.NotifyPending = post.Notify(ctx, delivery.Event{Ticket: t, Text: reconcile.NeedsHumanText(t)}) != nil
@@ -873,7 +793,7 @@ func (k *keyLookup) find(ctx context.Context, opts Options, cfg config.Config) (
 	if env := os.Getenv("LINEAR_API_KEY"); env != "" {
 		return env, nil
 	}
-	if cmd := cfg.Linear.APIKeyCommand; cmd != "" {
+	if cmd := cfg.Plugins.Linear.APIKeyCommand; cmd != "" {
 		if k.fromCommand == "" {
 			key, err := keyFromCommand(ctx, opts, cmd)
 			if err != nil {
@@ -883,9 +803,9 @@ func (k *keyLookup) find(ctx context.Context, opts Options, cfg config.Config) (
 		}
 		return k.fromCommand, nil
 	}
-	out, err := exec.CommandContext(ctx, "security", "find-generic-password", "-s", cfg.Linear.APIKeyKeychain, "-w").Output()
+	out, err := exec.CommandContext(ctx, "security", "find-generic-password", "-s", cfg.Plugins.Linear.APIKeyKeychain, "-w").Output()
 	if err != nil {
-		return "", fmt.Errorf("no Linear API key: LINEAR_API_KEY is unset and the keychain has no %q entry", cfg.Linear.APIKeyKeychain)
+		return "", fmt.Errorf("no Linear API key: LINEAR_API_KEY is unset and the keychain has no %q entry", cfg.Plugins.Linear.APIKeyKeychain)
 	}
 	return strings.TrimSpace(string(out)), nil
 }

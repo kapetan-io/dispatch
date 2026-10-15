@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "dispatch": {
+      "additionalProperties": false,
+      "properties": {
+        "max_in_progress": {
+          "type": "integer"
+        },
+        "resync": {
+          "description": "A duration such as \"5m\" or \"7d\".",
+          "pattern": "^(\\d+d)?([0-9.]+(ns|us|µs|ms|s|m|h))*$",
+          "type": "string"
+        },
+        "rules": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "history": {
+      "additionalProperties": false,
+      "properties": {
+        "dir": {
+          "type": "string"
+        },
+        "keep": {
+          "description": "A duration such as \"5m\" or \"7d\".",
+          "pattern": "^(\\d+d)?([0-9.]+(ns|us|µs|ms|s|m|h))*$",
+          "type": "string"
+        },
+        "rotate": {
+          "description": "A duration such as \"5m\" or \"7d\".",
+          "pattern": "^(\\d+d)?([0-9.]+(ns|us|µs|ms|s|m|h))*$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "http": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "base_url": {
+            "type": "string"
+          },
+          "token_command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_url"
+        ],
+        "type": "object"
+      },
+      "type": "object"
+    },
+    "plugins": {
+      "additionalProperties": false,
+      "properties": {
+        "github": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "herdr": {
+          "additionalProperties": false,
+          "properties": {
+            "plugin_root": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "linear": {
+          "additionalProperties": false,
+          "properties": {
+            "ai_label": {
+              "type": "string"
+            },
+            "api_key_command": {
+              "type": "string"
+            },
+            "api_key_keychain": {
+              "type": "string"
+            },
+            "repo_label_group": {
+              "type": "string"
+            },
+            "statuses": {
+              "additionalProperties": false,
+              "properties": {
+                "blocker_done": {
+                  "type": "string"
+                },
+                "close_parent": {
+                  "type": "string"
+                },
+                "finished": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "in_progress": {
+                  "type": "string"
+                },
+                "in_review": {
+                  "type": "string"
+                },
+                "needs_human": {
+                  "type": "string"
+                },
+                "paused": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "todo": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "teams": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "notify": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "treehouse": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "repos": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_merge": {
+            "type": "boolean"
+          },
+          "ignore_comment_authors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ignore_optional_checks": {
+            "type": "boolean"
+          },
+          "open_pr_as": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "type": "object"
+    },
+    "rules": {
+      "additionalProperties": true,
+      "description": "Your own settings, read by rules as ctx.config.rules. Dispatch reads only the five keys the shipped rules use.",
+      "type": "object"
+    }
+  },
+  "title": "dispatch config.toml",
+  "type": "object"
+}

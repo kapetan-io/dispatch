@@ -180,7 +180,7 @@ func TestClientReadsEveryFieldOfAManagedTicket(t *testing.T) {
 	w := newWire(t)
 	w.answers["ManagedTickets"] = map[string]any{"viewer": map[string]any{"assignedIssues": map[string]any{
 		"nodes": []any{map[string]any{
-			"id": "id1", "identifier": "ENG-1", "title": "t", "url": "https://x/ENG-1", "branchName": "b",
+			"id": "id1", "identifier": "ENG-1", "title": "t", "url": "https://x/ENG-1", "branchName": "b", "createdAt": "2026-10-01T00:00:00.000Z",
 			"state":    map[string]string{"name": "In Progress"},
 			"team":     map[string]string{"key": "ENG"},
 			"labels":   map[string]any{"nodes": []any{map[string]any{"name": "dispatch", "parent": map[string]string{"name": "repo"}}}, "pageInfo": map[string]bool{"hasNextPage": true}},
@@ -202,8 +202,8 @@ func TestClientReadsEveryFieldOfAManagedTicket(t *testing.T) {
 		ID: "id1", Identifier: "ENG-1", Title: "t", URL: "https://x/ENG-1", Branch: "b",
 		Status: "In Progress", Team: "ENG", HasChildren: true, LabelsTruncated: true,
 		Labels:      []linear.Label{{Name: "dispatch", Group: "repo"}},
-		LastComment: "2026-10-09T00:09:00.000Z",
-		Blockers:    []linear.Blocker{{Identifier: "ENG-9", Status: "Canceled", Abandoned: true}},
+		LastComment: "2026-10-09T00:09:00.000Z", CreatedAt: "2026-10-01T00:00:00.000Z",
+		Blockers: []linear.Blocker{{Identifier: "ENG-9", Status: "Canceled", Abandoned: true}},
 	}, found[0])
 }
 

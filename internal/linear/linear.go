@@ -44,8 +44,8 @@ type Ticket struct {
 	// Mine means the ticket is assigned to the key's owner. Only ParentChildren
 	// sets it, because ManagedTickets returns nothing else.
 	Mine bool
-	// CreatedAt is Linear's RFC 3339 creation time, which sorts as text. Only
-	// ParentChildren fills it in.
+	// CreatedAt is Linear's RFC 3339 creation time, which sorts as text.
+	// ManagedTickets and ParentChildren fill it in.
 	CreatedAt string
 	// Blockers are the tickets that block this one. ManagedTickets and
 	// ParentChildren fill them in.
@@ -190,7 +190,7 @@ const managedTickets = `query ManagedTickets($label: String!, $teams: [String!],
   viewer {
     assignedIssues(first: $first, filter: {labels: {name: {eq: $label}}, state: {type: {eq: "started"}}, team: {key: {in: $teams}}}) {
       nodes {
-        id identifier title url branchName
+        id identifier title url branchName createdAt
         state { name }
         team { key }
         labels(first: 25) { nodes { name parent { name } } pageInfo { hasNextPage } }
@@ -317,7 +317,9 @@ func (c *Client) ManagedTickets(ctx context.Context, label string, teams []strin
 		if !contains(teams, n.Team.Key) {
 			continue
 		}
-		tickets = append(tickets, n.ticket())
+		t := n.ticket()
+		t.CreatedAt = n.CreatedAt
+		tickets = append(tickets, t)
 	}
 	return tickets, nil
 }

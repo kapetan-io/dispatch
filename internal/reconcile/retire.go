@@ -9,19 +9,20 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/worker"
+	"github.com/kapetan-io/dispatch/internal/world"
 )
 
 // Retires reports whether Plan will tear down this lease holder's trees: its
 // status is a finished one. The tick reads the git state of those trees only.
 func (in Input) Retires(t linear.Ticket) bool {
-	return slices.Contains(in.Done, t.Status)
+	return in.scope().Retires(t)
 }
 
 // notDesign reports whether the ticket is known not to be a design or review
 // ticket, whose children are never promoted. A ticket whose labels were cut
 // short might be one.
 func (in Input) notDesign(t linear.Ticket) bool {
-	return !t.LabelsTruncated && !slices.ContainsFunc(designLabels, t.HasLabel)
+	return world.NotDesign(t)
 }
 
 // retire plans the cleanup of lease holders that are finished or paused. A

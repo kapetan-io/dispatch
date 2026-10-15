@@ -6,58 +6,11 @@ import (
 	"slices"
 
 	"github.com/kapetan-io/dispatch/internal/cache"
-	"github.com/kapetan-io/dispatch/internal/config"
-	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/reconcile"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
-	"github.com/kapetan-io/dispatch/internal/worker"
 )
-
-// leaseHolders reads the tickets that hold a tree but are not among the
-// managed ones, which is how finished and paused tickets are found. It makes
-// no call when every lease belongs to a managed ticket.
-func leaseHolders(ctx context.Context, lin linear.Workspace, cfg config.Config, trees []treehouse.Tree, managed []linear.Ticket) ([]linear.Ticket, error) {
-	var holders []string
-	for _, tree := range trees {
-		if tree.LeaseHolder == "" || slices.Contains(holders, tree.LeaseHolder) {
-			continue
-		}
-		if !slices.ContainsFunc(managed, func(t linear.Ticket) bool { return t.Identifier == tree.LeaseHolder }) {
-			holders = append(holders, tree.LeaseHolder)
-		}
-	}
-	if len(holders) == 0 {
-		return nil, nil
-	}
-	return lin.LeasedTickets(ctx, cfg.Linear.AILabel, cfg.Linear.Teams, holders)
-}
-
-// inspectTrees reads the git state of each tree Plan may return. An unreadable
-// tree is reported and kept leased.
-func inspectTrees(ctx context.Context, in reconcile.Input) (unfinished map[string]string, failed map[string]error, untracked map[string][]string) {
-	unfinished, failed, untracked = map[string]string{}, map[string]error{}, map[string][]string{}
-	for _, t := range in.LeaseHolders {
-		if !in.Retires(t) {
-			continue
-		}
-		for _, w := range in.Leases[t.Identifier] {
-			why, err := treehouse.Unfinished(ctx, w.TreePath)
-			if err != nil {
-				failed[w.TreePath] = err
-				continue
-			}
-			files, err := treehouse.Untracked(ctx, w.TreePath)
-			if err != nil {
-				failed[w.TreePath] = err
-				continue
-			}
-			unfinished[w.TreePath], untracked[w.TreePath] = why, files
-		}
-	}
-	return unfinished, failed, untracked
-}
 
 // heldFinished lists the finished tickets that still hold a lease.
 func heldFinished(in reconcile.Input) map[string]bool {
@@ -144,13 +97,4 @@ func keep(ctx context.Context, opts Options, lin linear.Workspace, c cache.Cache
 	}
 	_, _ = fmt.Fprintln(opts.Stdout, a)
 	return nil
-}
-
-// leaseWorkers finds a worker for each tree each lease holder holds.
-func leaseWorkers(holders []linear.Ticket, trees []treehouse.Tree, snap herdr.Snapshot) map[string][]worker.Worker {
-	leases := map[string][]worker.Worker{}
-	for _, t := range holders {
-		leases[t.Identifier] = worker.FindAll(t.Identifier, trees, snap)
-	}
-	return leases
 }

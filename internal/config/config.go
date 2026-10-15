@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -27,18 +28,60 @@ const (
 
 // Config mirrors ~/.config/dispatch/config.toml. docs/config.md documents every field.
 type Config struct {
-	IntervalMinutes    int `toml:"interval_minutes"`
-	MaxInProgress      int `toml:"max_in_progress"`
-	LaunchFailureLimit int `toml:"launch_failure_limit"`
-	NudgeLimit         int `toml:"nudge_limit"`
-	// BlockedRenotifyTicks is how many ticks pass between notifications for a
-	// worker that stays blocked on a question.
-	BlockedRenotifyTicks int    `toml:"blocked_renotify_ticks"`
-	PluginRoot           string `toml:"plugin_root"`
-	WorkerModel          string `toml:"worker_model"`
-	DesignModel          string `toml:"design_model"`
-	Linear               Linear `toml:"linear"`
-	Repos                Repos  `toml:"repos"`
+	Dispatch Dispatch               `toml:"dispatch"`
+	History  History                `toml:"history"`
+	Repos    Repos                  `toml:"repos"`
+	Plugins  Plugins                `toml:"plugins"`
+	HTTP     map[string]HTTPService `toml:"http"`
+	// Rules is the user's own table. Dispatch never interprets it, apart from
+	// the five keys today's tick reads (see the accessors below).
+	Rules Rules `toml:"rules"`
+}
+
+// Dispatch holds the settings of the dispatcher itself.
+type Dispatch struct {
+	// Rules is the directory of TypeScript rules.
+	Rules         string   `toml:"rules"`
+	MaxInProgress int      `toml:"max_in_progress"`
+	Resync        Duration `toml:"resync"`
+}
+
+// History holds where and how long dispatch keeps its events.
+type History struct {
+	Dir    string   `toml:"dir"`
+	Rotate Duration `toml:"rotate"`
+	Keep   Duration `toml:"keep"`
+}
+
+// Plugins holds one table per plugin.
+type Plugins struct {
+	Linear    Linear    `toml:"linear"`
+	Herdr     Herdr     `toml:"herdr"`
+	GitHub    GitHub    `toml:"github"`
+	Treehouse Treehouse `toml:"treehouse"`
+	Notify    Notify    `toml:"notify"`
+}
+
+// Herdr is the herdr plugin's table.
+type Herdr struct {
+	// PluginRoot is the checkout of this repo that workers load their plugin from.
+	PluginRoot string `toml:"plugin_root"`
+}
+
+// GitHub is the GitHub plugin's table. It has no settings yet.
+type GitHub struct{}
+
+// Treehouse is the treehouse plugin's table. It has no settings yet.
+type Treehouse struct{}
+
+// Notify is the notify plugin's table. It has no settings yet.
+type Notify struct{}
+
+// HTTPService is a service named for rules to call. Dispatch loads and checks the
+// table, and no rule can call it yet.
+type HTTPService struct {
+	BaseURL      string `toml:"base_url"`
+	TokenCommand string `toml:"token_command"`
 }
 
 // Repo is the settings table of one repo, keyed by its Linear repo label.
@@ -79,37 +122,42 @@ type Statuses struct {
 	InProgress  string `toml:"in_progress"`
 	InReview    string `toml:"in_review"`
 	NeedsHuman  string `toml:"needs_human"`
-	// Done lists the statuses of a finished ticket, whose worker and tree are
+	// Finished lists the statuses of a finished ticket, whose worker and tree are
 	// cleaned up. Paused lists the statuses of a ticket whose worker is stopped
 	// and whose tree is kept.
-	Done   []string `toml:"done"`
-	Paused []string `toml:"paused"`
+	Finished []string `toml:"finished"`
+	Paused   []string `toml:"paused"`
 }
 
 func defaults() Config {
 	return Config{
-		IntervalMinutes:      5,
-		MaxInProgress:        4,
-		LaunchFailureLimit:   2,
-		NudgeLimit:           2,
-		BlockedRenotifyTicks: 3,
-		PluginRoot:           "~/Development/dispatch",
-		WorkerModel:          "sonnet",
-		DesignModel:          "opus",
-		Linear: Linear{
-			APIKeyKeychain: "dispatch-linear-api-key",
-			Teams:          []string{"ENG"},
-			AILabel:        "ai",
-			RepoLabelGroup: "repo",
-			Statuses: Statuses{
-				Todo:        "Todo",
-				CloseParent: "Done",
-				BlockerDone: "Done",
-				InProgress:  "In Progress",
-				InReview:    "In Review",
-				NeedsHuman:  "Needs Human",
-				Done:        []string{"Done", "Canceled", "Duplicate"},
-				Paused:      []string{"Backlog", "Todo"},
+		Dispatch: Dispatch{
+			Rules:         "~/Development/dispatch/rules",
+			MaxInProgress: 4,
+			Resync:        Duration(5 * time.Minute),
+		},
+		History: History{
+			Dir:    "~/.local/state/dispatch/events",
+			Rotate: Duration(6 * time.Hour),
+			Keep:   Duration(24 * time.Hour),
+		},
+		Plugins: Plugins{
+			Herdr: Herdr{PluginRoot: "~/Development/dispatch"},
+			Linear: Linear{
+				APIKeyKeychain: "dispatch-linear-api-key",
+				Teams:          []string{"ENG"},
+				AILabel:        "ai",
+				RepoLabelGroup: "repo",
+				Statuses: Statuses{
+					Todo:        "Todo",
+					CloseParent: "Done",
+					BlockerDone: "Done",
+					InProgress:  "In Progress",
+					InReview:    "In Review",
+					NeedsHuman:  "Needs Human",
+					Finished:    []string{"Done", "Canceled", "Duplicate"},
+					Paused:      []string{"Backlog", "Todo"},
+				},
 			},
 		},
 	}
@@ -130,17 +178,23 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("while reading config %s: auto_merge moved into each repo's table: set auto_merge = true under [repos.<label>]", path)
 	}
 	// A misspelled key would otherwise fall back to its default without a word.
-	// Repos validates its own keys while decoding, so its subkeys never count.
+	// Repos validates its own keys while decoding, and [rules] is the user's
+	// own table, so neither's subkeys count.
 	var unknown []string
 	for _, key := range meta.Undecoded() {
-		if key[0] != "repos" {
+		if key[0] != "repos" && key[0] != "rules" {
 			unknown = append(unknown, key.String())
 		}
 	}
 	if len(unknown) > 0 {
 		return Config{}, fmt.Errorf("while reading config %s: unknown setting %s", path, strings.Join(unknown, ", "))
 	}
-	c.PluginRoot = ExpandHome(c.PluginRoot)
+	if err := c.check(); err != nil {
+		return Config{}, fmt.Errorf("while reading config %s: %w", path, err)
+	}
+	c.Plugins.Herdr.PluginRoot = ExpandHome(c.Plugins.Herdr.PluginRoot)
+	c.Dispatch.Rules = ExpandHome(c.Dispatch.Rules)
+	c.History.Dir = ExpandHome(c.History.Dir)
 	for _, label := range c.Repos.Labels() {
 		repo := c.Repos[label]
 		repo.Path = ExpandHome(repo.Path)
@@ -150,6 +204,19 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("while reading config %s: %w", path, err)
 	}
 	return c, nil
+}
+
+// check rejects values that decode but make no sense.
+func (c Config) check() error {
+	if c.History.Rotate <= 0 || c.History.Keep <= 0 {
+		return errors.New("history.rotate and history.keep must be above zero")
+	}
+	for name, service := range c.HTTP {
+		if service.BaseURL == "" {
+			return fmt.Errorf("http.%s has no base_url", name)
+		}
+	}
+	return c.Rules.check()
 }
 
 // repoProblem extracts the message of a problem Repos found in a repo table.

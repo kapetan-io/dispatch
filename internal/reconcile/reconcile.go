@@ -11,8 +11,8 @@ import (
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
-	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/worker"
+	"github.com/kapetan-io/dispatch/internal/world"
 )
 
 // Kind names what an action does.
@@ -200,11 +200,10 @@ func (a Action) String() string {
 	return s
 }
 
-// Input is everything Plan reads.
+// Input is everything Plan reads: what the world says, and the settings and
+// the cache that say what to make of it.
 type Input struct {
-	Tickets []linear.Ticket
-	// Workers maps a ticket identifier to what the lookup found.
-	Workers       map[string]worker.Worker
+	world.World
 	InProgress    string
 	InReview      string
 	NeedsHuman    string
@@ -212,26 +211,14 @@ type Input struct {
 	NudgeLimit    int
 	// Now is the time of this tick.
 	Now time.Time
-	// Stops maps an In Progress ticket identifier to its worker's latest Stop.
-	// Tickets without a record are absent.
-	Stops map[string]stops.Record
 	// RenotifyTicks is how many ticks pass between notifications for a worker
 	// that stays blocked.
 	RenotifyTicks int
-	// PRs maps an In Review ticket identifier to its open PR. Tickets whose PR
-	// was not read, or that have none, are absent.
-	PRs map[string]pullrequest.PullRequest
-	// PRReadFailed holds the In Review tickets whose PR read errored, as opposed
-	// to finding no open PR.
-	PRReadFailed map[string]bool
 	// Cache is last tick's state. Plan only reads it.
 	Cache          cache.Cache
 	RepoLabelGroup string
 	// Repos maps a repo label to its settings.
 	Repos map[string]config.Repo
-	// UnreadRepos are repo labels whose treehouse pool could not be read this
-	// tick. Their tickets' workers are unknown, not absent.
-	UnreadRepos map[string]bool
 	// Done and Paused are the statuses of a finished and a paused ticket.
 	Done   []string
 	Paused []string
@@ -243,29 +230,7 @@ type Input struct {
 	BlockerDone string
 	// Teams are the team keys the dispatcher manages.
 	Teams []string
-	// Children maps an In Progress parent's identifier to all its children, in
-	// every status. A parent absent from the map had its children unread.
-	Children map[string][]linear.Ticket
-	// Leased holds every ticket identifier that holds a treehouse lease.
-	Leased map[string]bool
-	// LeaseHolders holds the managed tickets that hold a lease and are not in
-	// Tickets, which is how finished and paused tickets are found.
-	LeaseHolders []linear.Ticket
-	// Leases maps a lease holder to a worker for each tree it holds.
-	Leases map[string][]worker.Worker
-	// Unfinished maps a tree path to what returning it would destroy, empty for
-	// a pushed tree with no tracked changes. A path in neither map was not inspected and is never
-	// returned. CheckErrors holds the trees that could not be read. Both cover
-	// only the trees of tickets for which Retires is true.
-	Unfinished  map[string]string
-	CheckErrors map[string]error
-	// Untracked maps a tree path to the untracked files in it. They are not
-	// work, so they never keep a finished ticket's tree.
-	Untracked map[string][]string
 }
-
-// designLabels mark tickets whose sessions the dispatcher never nudges.
-var designLabels = []string{"design", "design-review"}
 
 // Plan returns the actions for one tick, launches last, in ticket order.
 func Plan(in Input) []Action {
@@ -495,16 +460,17 @@ func (in Input) commentNudge(t linear.Ticket, w worker.Worker, prev cache.Entry)
 	return Action{Kind: Nudge, Ticket: t, Reason: ReasonComment, Text: fmt.Sprintf(CommentNudge, t.Identifier)}, true
 }
 
-// ReadsPR reports whether Plan will use this In Review ticket's PR. Working and
-// blocked workers are skipped so their PRs cost no call, and so are tickets
-// whose labels or children make Plan unsure they are build tickets. PRs holds
-// only tickets for which this is true.
+// ReadsPR reports whether Plan will use this In Review ticket's PR.
 func (in Input) ReadsPR(t linear.Ticket) bool {
-	if t.Status != in.InReview || t.LabelsTruncated || t.HasChildren || t.HasLabel("design") || t.HasLabel("design-review") {
-		return false
+	return in.scope().ReadsPR(t, in.Workers[t.Identifier].State)
+}
+
+// scope is the part of the settings the world was read with.
+func (in Input) scope() world.Scope {
+	return world.Scope{
+		Statuses: config.Statuses{InProgress: in.InProgress, InReview: in.InReview, Finished: in.Done},
+		Repos:    in.Repos, RepoLabelGroup: in.RepoLabelGroup,
 	}
-	state := in.Workers[t.Identifier].State
-	return state == worker.None || state == worker.Idle
 }
 
 // prRelaunch returns the PR of an In Review ticket that has no worker and whose

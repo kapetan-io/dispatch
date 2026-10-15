@@ -488,7 +488,7 @@ func TestTickRelaunchesAnInReviewWorkerThatIsGoneThenNudgesItOnceIdle(t *testing
 
 func TestTickRelaunchesAnInReviewWorkerWhenTheWorkerCapIsFull(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.tickets(
 		ticket("ENG-1", "In Progress", "dispatch"),
 		ticket("ENG-2", "In Review", "dispatch"),

@@ -25,7 +25,7 @@ func TestTickCommentNudgeSkipsCommentsSeenOnTheFirstTick(t *testing.T) {
 	for _, status := range []string{"working", "idle"} {
 		t.Run(status, func(t *testing.T) {
 			h := newHarness(t)
-			h.config("nudge_limit = 9\n")
+			h.config("[rules]\nnudge_limit = 9\n")
 			h.worker("ENG-1", status)
 			h.tickets(withComment(ticket("ENG-1", "In Review", "dispatch"), comment1))
 
@@ -51,7 +51,7 @@ func TestTickCommentNudgeReachesBusyAndIdleWorkersOncePerComment(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
-			h.config("nudge_limit = 9\n")
+			h.config("[rules]\nnudge_limit = 9\n")
 			h.worker("ENG-1", "working")
 			h.tickets(withComment(ticket("ENG-1", test.ticket, "dispatch"), comment1))
 			_, err := h.run("tick")
@@ -136,7 +136,7 @@ func TestTickCommentNudgeRetriesAfterHerdrRefuses(t *testing.T) {
 
 func TestTickCommentNudgeDoesNotCountTowardTheStallLimit(t *testing.T) {
 	h := newHarness(t)
-	h.config("nudge_limit = 1\n")
+	h.config("[rules]\nnudge_limit = 1\n")
 	h.worker("ENG-1", "idle")
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
 	_, err := h.run("tick")
@@ -176,7 +176,7 @@ func TestTickCommentNudgeIgnoresWorkerlessAndNeedsHumanTickets(t *testing.T) {
 func TestTickCommentNudgeYieldsToTheResumeNudge(t *testing.T) {
 	h := newHarness(t)
 	h.worker("ENG-1", "idle")
-	h.config("nudge_limit = 9\n")
+	h.config("[rules]\nnudge_limit = 9\n")
 	h.tickets(withComment(ticket("ENG-1", "Needs Human", "dispatch"), comment1))
 	_, err := h.run("tick")
 	require.NoError(t, err)
@@ -191,7 +191,7 @@ func TestTickCommentNudgeYieldsToTheResumeNudge(t *testing.T) {
 
 func TestTickCommentNudgeSkipsOldCommentsWhenTheCacheIsGone(t *testing.T) {
 	h := newHarness(t)
-	h.config("nudge_limit = 9\n")
+	h.config("[rules]\nnudge_limit = 9\n")
 	h.worker("ENG-1", "working")
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
 	_, err := h.run("tick")
@@ -214,7 +214,7 @@ func TestTickCommentNudgeSkipsOldCommentsWhenTheCacheIsGone(t *testing.T) {
 
 func TestTickCommentNudgeMakesNoExtraLinearCall(t *testing.T) {
 	h := newHarness(t)
-	h.config("nudge_limit = 9\n")
+	h.config("[rules]\nnudge_limit = 9\n")
 	h.worker("ENG-1", "working")
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
 	_, err := h.run("tick")
@@ -262,7 +262,7 @@ func TestTickCommentNudgeDoesNotCountTowardThePRLimit(t *testing.T) {
 
 func TestTickCommentNudgeNeverEscalatesTheTicket(t *testing.T) {
 	h := newHarness(t)
-	h.config("nudge_limit = 1\n")
+	h.config("[rules]\nnudge_limit = 1\n")
 	h.worker("ENG-1", "working")
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
 	_, err := h.run("tick")
@@ -339,7 +339,7 @@ func TestTickCommentNudgeFiresForACommentPostedWhileTheTicketWasAway(t *testing.
 	for _, status := range []string{"working", "idle"} {
 		t.Run(status, func(t *testing.T) {
 			h := newHarness(t)
-			h.config("nudge_limit = 9\n")
+			h.config("[rules]\nnudge_limit = 9\n")
 			h.worker("ENG-1", "working")
 			h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
 			_, err := h.run("tick")

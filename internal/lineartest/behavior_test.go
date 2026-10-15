@@ -40,7 +40,7 @@ func TestManagedTicketsDropFieldsLinearDoesNotSend(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, found, 1)
 	assert.False(t, found[0].Mine)
-	assert.Empty(t, found[0].CreatedAt)
+	assert.Equal(t, "2026-10-01T00:00:00.000Z", found[0].CreatedAt)
 	assert.Equal(t, "2026-10-01T00:00:00.000Z", found[0].LastComment)
 	assert.Equal(t, "https://x/ENG-1", found[0].URL)
 	assert.Equal(t, []linear.Blocker{{Identifier: "ENG-99"}}, found[0].Blockers)

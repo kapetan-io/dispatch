@@ -40,7 +40,7 @@ func TestTickLaunchesADesignTicketWithTheDesignKickoff(t *testing.T) {
 
 func TestTickRunsTheDesignOnTheConfiguredModel(t *testing.T) {
 	h := newHarness(t)
-	h.config("design_model = \"fable\"\n")
+	h.config("[rules]\ndesign_model = \"fable\"\n")
 	h.tickets(designTicket("ENG-1", "In Progress"))
 
 	_, err := h.run("tick")
@@ -116,7 +116,7 @@ func TestTickKeepsTheDesignWorkerOnceItHasChildren(t *testing.T) {
 
 func TestTickCountsADesignTicketAgainstTheWorkerCap(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.tickets(designTicket("ENG-1", "In Progress"), ticket("ENG-2", "In Progress", "dispatch"))
 	h.worker("ENG-1", "idle")
 
@@ -129,7 +129,7 @@ func TestTickCountsADesignTicketAgainstTheWorkerCap(t *testing.T) {
 
 func TestTickHoldsAPromotionForADesignTicketAboutToLaunch(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.tickets(parent("ENG-1", "In Progress"), designTicket("ENG-3", "In Progress"))
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
 
@@ -142,7 +142,7 @@ func TestTickHoldsAPromotionForADesignTicketAboutToLaunch(t *testing.T) {
 
 func TestTickLaunchesADesignReviewTicketOnTheDesignModel(t *testing.T) {
 	h := newHarness(t)
-	h.config("design_model = \"haiku\"\n")
+	h.config("[rules]\ndesign_model = \"haiku\"\n")
 	h.tickets(withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"))
 
 	out, err := h.run("tick")
@@ -168,7 +168,7 @@ func TestTickLaunchesADesignReviewTicketThatAlsoCarriesDesignAsAReview(t *testin
 
 func TestTickCountsADesignReviewAgainstMaxInProgress(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.tickets(
 		withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"),
 		ticket("ENG-2", "In Progress", "dispatch"),
@@ -184,7 +184,7 @@ func TestTickCountsADesignReviewAgainstMaxInProgress(t *testing.T) {
 
 func TestTickHoldsAPromotionWhileADesignReviewTakesTheLastSlot(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.tickets(parent("ENG-1", "In Progress"), withLabel(ticket("ENG-3", "In Progress", "dispatch"), "design-review"))
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
 
@@ -196,7 +196,7 @@ func TestTickHoldsAPromotionWhileADesignReviewTakesTheLastSlot(t *testing.T) {
 
 func TestTickHoldsAPromotionForADesignParentInAnUnreadRepo(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.addRepo("tiger", filepath.Join(h.dir, "moved"))
 	h.tickets(parent("ENG-1", "In Progress"), withLabel(ticket("ENG-3", "In Progress", "tiger"), "design"))
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-4", "ENG-3", "Backlog"))
