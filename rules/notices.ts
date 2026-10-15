@@ -55,7 +55,7 @@ whenever({
 // Its own rule rather than a step after the stall nudge, so a failed notification
 // is retried while the count still stands.
 const stallNudges = (t: Ticket, ctx: Ctx) => ctx.ledger.receipts(t, { kind: "nudge", topic: "stall" })
-  .filter(r => sent(r) && r.started > t.statusSince).length;
+  .filter(r => sent(r) && r.started >= t.statusSince).length;
 whenever({
   name: "notify-stall-count",
   each: "linear.ticket",

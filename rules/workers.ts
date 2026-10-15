@@ -37,7 +37,8 @@ whenever({
            && launchFailures(pr.ticket, ctx) < launchFailureLimit(ctx),
   then: (pr, ctx) => ctx.herdr.queueLaunch(pr.ticket, {
            ...launchAs(pr.ticket, ctx), uncapped: true,
-           once: [pr.needsWork ? "relaunch" : "relaunch-thread", pr.head, ctx.herdr.worker(pr.ticket).goneSince],
+           once: [pr.needsWork ? "relaunch" : "relaunch-thread", pr.head, ctx.herdr.worker(pr.ticket).goneSince,
+                  ctx.treehouse.pool(pr.ticket.repo).returns],
          }),
 });
 

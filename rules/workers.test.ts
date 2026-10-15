@@ -1,4 +1,4 @@
-import { scenario, ticket, worker, pool, comment, rulesFrom } from "dispatch/testing";
+import { scenario, ticket, worker, pool, pr, comment, rulesFrom } from "dispatch/testing";
 
 const rules = rulesFrom("./dispatch");
 
@@ -41,6 +41,17 @@ scenario(rules, "a full pool is retried only after a tree comes back", s => {
   s.expect([]);                                  // same key, same full pool
   s.see(pool("dispatch", { free: 1, returns: 1 })); // a tree came back
   s.expect([["launch-worker", "herdr.launch", "ENG-1"]]);
+});
+
+scenario(rules, "an In Review relaunch into a full pool is retried only after a tree comes back", s => {
+  s.given(ticket("ENG-1", { status: "in_review", optedIn: true, repo: "dispatch" }),
+          pr("ENG-1", { head: "h1", problems: ["a failed check"] }), pool("dispatch", { free: 0 }));
+  s.expect([["relaunch-for-pr", "herdr.launch", "ENG-1"]]);
+  s.land("herdr.launch", "ENG-1", { outcome: "refused", detail: "pool_exhausted" });
+  s.resync();
+  s.expect([]);
+  s.see(pool("dispatch", { free: 1, returns: 1 }));
+  s.expect([["relaunch-for-pr", "herdr.launch", "ENG-1"]]);
 });
 
 scenario(rules, "a comment while blocked is delivered once unblocked", s => {

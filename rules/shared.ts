@@ -63,8 +63,8 @@ export const heard = (t: Ticket, topic: "comment" | "activity", item: Seen | und
   const w = ctx.herdr.worker(t);
   if (w.state !== "none" && w.seenAt >= item.seenAt) return true;
   return ctx.ledger.receipts(t, { kind: ["launch", "nudge"] }).some(r => told(r) && (
-    r.kind === "launch"                              ? r.started > item.seenAt
-    : r.once[0] === "resume" && topic === "comment"  ? r.started > item.seenAt
+    r.kind === "launch"                              ? r.started >= item.seenAt
+    : r.once[0] === "resume" && topic === "comment"  ? r.started >= item.seenAt
     :                                                  r.once[0] === topic && String(r.once[1]) >= item.at));
 };
 
@@ -91,7 +91,7 @@ export const commentNudgeOwed = (t: Ticket, ctx: Ctx) => {
 // flagged reset was never sent, so neither holds anything back.
 export const stoppedSinceLastNudge = (t: Ticket, ctx: Ctx) => {
   const w = ctx.herdr.worker(t);
-  const last = ctx.ledger.receipts(t, { kind: "nudge" }).find(r => sent(r) && r.started > w.seenAt);  // newest first
+  const last = ctx.ledger.receipts(t, { kind: "nudge" }).find(r => sent(r) && r.started >= w.seenAt);  // newest first
   return last === undefined || (w.lastStop !== undefined && w.lastStop.at > last.started);
 };
 
@@ -114,12 +114,12 @@ export const launchFailures = (t: Ticket, ctx: Ctx) => {
 // Nudges about a PR that needs work, at this head, since the ticket's last status change.
 export const prNudges = (t: Ticket, head: string, ctx: Ctx) =>
   ctx.ledger.receipts(t, { kind: "nudge", topic: "pr" })
-    .filter(r => sent(r) && r.once[1] === head && r.started > t.statusSince).length;
+    .filter(r => sent(r) && r.once[1] === head && r.started >= t.statusSince).length;
 
 // Relaunches for a PR that needed work, at this head, since the ticket's last status change.
 export const relaunches = (t: Ticket, head: string, ctx: Ctx) =>
   ctx.ledger.receipts(t, { kind: "launch", topic: "relaunch" })
-    .filter(r => r.outcome === "done" && r.once[1] === head && r.started > t.statusSince).length;
+    .filter(r => r.outcome === "done" && r.once[1] === head && r.started >= t.statusSince).length;
 
 // Moves the ticket to Needs Human and comments why. The receipt keeps the two steps
 // apart, so retry-escalation-comment can finish a comment that failed after the move.
