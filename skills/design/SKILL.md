@@ -22,8 +22,9 @@ Load `dispatch:converse` with the Skill tool. Open a todolist with one entry per
 5. Agree on the contract sketch
 6. Discuss the rest of the technical half, then run the correctness and testability passes
 7. Write the blueprint
-8. Review or break down
-9. Hand off
+8. Audit the transcript
+9. Review or break down
+10. Hand off
 
 ### Orient
 
@@ -134,6 +135,18 @@ Objective, Mental Model, User Stories, Correctness Constraints (State Invariants
 Keep PII as its own section. Mark anything unresolved with `TODO:` and a line on what is missing. Keep it short, since a section that drives no decision is noise. Write for a reader who was not in the discussion, with no "the option we discussed". "We considered X but chose Y because Z" is useful. If the feature has an OpenAPI spec, the contract sketch becomes a second document on the ticket, as a fenced YAML block.
 
 If the discussion resolved domain terms, write them to the right `docs/CONTEXT.md` in one pass. Do not commit. The tree is returned at hand-off, which discards the change, so the hand-off uploads it.
+
+## Audit the transcript
+
+A design runs for hours and several compactions, and early decisions get lost or reworded by the time the blueprint is written. Have a fresh sub-agent compare the blueprint with what the user said.
+
+Give it the blueprint and this session's transcript, `~/.claude/projects/<project>/<session-id>.jsonl`. Tell it to keep scratch files in the scratchpad and run Python with `-I`, and to do this:
+
+- Ignore system wrapper entries. Read each user message with the assistant text before it, because "yes" only means something next to the question it answers.
+- List every decision the user made that the blueprint should reflect (scope, constraints, rejected options, names) as **PRESENT**, **SUPERSEDED** (the user later changed it), **CHANGED** (the blueprint words it differently) or **MISSING**, each with the user's words and time, checked against the blueprint and its decision log.
+- List section dependencies: which parts must be built before which.
+
+Check each CHANGED, MISSING and SUPERSEDED finding against the transcript yourself. Fix the confirmed ones in the blueprint, and put to the user any where the right answer isn't clear. The decision log is also the blueprint's last section, so a fix that changes a decision goes in both its section and the log. Add the section dependencies to the blueprint, where the reviewer and `dispatch:breakdown` will read them.
 
 ## Review or break down
 
