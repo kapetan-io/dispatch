@@ -47,7 +47,9 @@ scenario(rules, "teardown-clean-tree is covered by a failed return only until it
   s.given(ticket("ENG-1", finished), tree("/trees/ENG-1", { holder: "ENG-1" }));
   s.land("treehouse.return", "ENG-1", { outcome: "failed", detail: "busy" });
   s.expect([["teardown-clean-tree", "treehouse.return", "ENG-1"]]);
-  s.land("treehouse.return", "ENG-1", { outcome: "refused", detail: "work found" });
+  s.land("treehouse.return", "ENG-1", { outcome: "refused", detail: "kept: work found" });
+  s.expect([["comment-kept-tree", "linear.comment", "ENG-1"]]);   // the refusal says why the tree stays
+  s.land("linear.comment", "ENG-1");
   s.expect([]);
 });
 

@@ -128,11 +128,12 @@ func (l *Ledger) Done(subject string, once Once) bool {
 // Add appends a receipt.
 func (l *Ledger) Add(r Receipt) { l.Entries = append(l.Entries, r) }
 
-// Upsert replaces the receipt with r's key that started when r did, which is how
-// an attempt gains its outcome, and appends r when there is none.
+// Upsert replaces the attempt with r's key that started when r did, which is how
+// an attempt gains its outcome, and appends r when there is none. A receipt that
+// already has an outcome is never replaced, so a retry is a new receipt.
 func (l *Ledger) Upsert(r Receipt) {
 	for i := range l.Entries {
-		if l.Entries[i].Started == r.Started && l.Entries[i].Key() == r.Key() {
+		if l.Entries[i].Outcome == "" && l.Entries[i].Started == r.Started && l.Entries[i].Key() == r.Key() {
 			l.Entries[i] = r
 			return
 		}

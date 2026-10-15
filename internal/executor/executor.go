@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/delivery"
@@ -404,12 +406,17 @@ func (e *Executor) workspaceOn(path string, wd world.World) string {
 	return ""
 }
 
-// NameList names up to three files and counts the rest.
+// nameList joins file names with spaces and quotes a name that holds whitespace
+// or a control character, so a list never reads ambiguously.
 func nameList(names []string) string {
-	if len(names) <= 3 {
-		return strings.Join(names, ", ")
+	quoted := make([]string, len(names))
+	for i, name := range names {
+		quoted[i] = name
+		if strings.ContainsFunc(name, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
+			quoted[i] = strconv.Quote(name)
+		}
 	}
-	return fmt.Sprintf("%s and %d more", strings.Join(names[:3], ", "), len(names)-3)
+	return strings.Join(quoted, " ")
 }
 
 // merge merges the PR at the head the rule saw. GitHub refuses a head that moved,
