@@ -365,7 +365,7 @@ func (c *call) parseOnce(v sobek.Value) (ledger.Once, error) {
 	}
 	arr, ok := v.Export().([]any)
 	if !ok || len(arr) == 0 {
-		return nil, fmt.Errorf("once must be a list that starts with a topic, such as [\"comment\", t.lastHumanComment.at]")
+		return nil, fmt.Errorf("once must be a list that starts with a topic, such as [\"activity\", pr.lastActivity.at]")
 	}
 	topic, ok := arr[0].(string)
 	if !ok || topic == "" {

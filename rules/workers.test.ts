@@ -1,4 +1,4 @@
-import { scenario, ticket, worker, pool, pr, comment, rulesFrom } from "dispatch/testing";
+import { scenario, ticket, worker, pool, pr, rulesFrom } from "dispatch/testing";
 
 const rules = rulesFrom("./dispatch");
 
@@ -52,16 +52,4 @@ scenario(rules, "an In Review relaunch into a full pool is retried only after a 
   s.expect([]);
   s.see(pool("dispatch", { free: 1, returns: 1 }));
   s.expect([["relaunch-for-pr", "herdr.launch", "ENG-1"]]);
-});
-
-scenario(rules, "a comment while blocked is delivered once unblocked", s => {
-  s.given(ticket("ENG-1", { status: "in_progress" }), worker("ENG-1", "blocked"));
-  s.see(comment("ENG-1", { body: "use the v2 API", at: "10:00" }));
-  s.expect([["notify-blocked", "notify.send", "ENG-1"]]);   // a blocked worker is never typed into
-  s.land("notify.send", "ENG-1");
-  s.see(worker("ENG-1", "idle"));
-  s.expect([["nudge-comment", "herdr.nudge", "ENG-1"]]);
-  s.land("herdr.nudge", "ENG-1");
-  s.restart();
-  s.expect([]);                                  // once per comment time, across a restart
 });

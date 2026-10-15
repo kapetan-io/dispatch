@@ -6,6 +6,10 @@ Terms dispatch's tests and docs use for the tools it drives. herdr, treehouse an
 An in-process Go state model of herdr, treehouse, gh, Linear or osascript that refuses what the real tool refuses.
 _Avoid_: shell fake, mock, stub
 
+**Port**:
+An interface dispatch owns and names for a tool's role (`treehouse.Pool`, `herdr.Herdr`), implemented by a real adapter and a tool fake.
+_Avoid_: domain interface (ADR 0001 and older designs use it for the same thing), client interface
+
 **Real adapter**:
 The production implementation of a tool's port, which invokes the installed tool.
 _Avoid_: CLI wrapper, client

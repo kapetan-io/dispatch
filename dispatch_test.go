@@ -388,7 +388,7 @@ func TestRunStartsActsAndStopsCleanlyOnCancel(t *testing.T) {
 	cancel()
 
 	require.NoError(t, <-done)
-	assert.Contains(t, out, "start: 1 tracked ticket, 28 rules")
+	assert.Contains(t, out, "start: 1 tracked ticket, 27 rules")
 	assert.Contains(t, out, "launch ENG-1 ok")
 }
 

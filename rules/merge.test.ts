@@ -87,22 +87,11 @@ scenario(rules, "auto-merge waits until the worker has heard of the latest revie
   s.expect([["auto-merge", "github.merge", "ENG-1"]]);
 });
 
-scenario(rules, "auto-merge waits until the worker has heard of the latest comment", s => {
+scenario(rules, "auto-merge is not held back by a ticket comment", s => {
   s.config({ repos: { dispatch: { autoMerge: true } } });
   s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", approved));
   s.see(comment("ENG-1", { body: "don't merge yet", at: "10:00" }));
-  s.expect([["nudge-comment", "herdr.nudge", "ENG-1"]]);
-  s.land("herdr.nudge", "ENG-1");
   s.expect([["auto-merge", "github.merge", "ENG-1"]]);
-});
-
-scenario(rules, "auto-merge waits behind an owed comment even while the nudge waits for a Stop", s => {
-  s.config({ repos: { dispatch: { autoMerge: true } } });
-  s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", { ready: true, head: "h1" }));
-  s.see(comment("ENG-1", { at: "10:00" }));
-  s.land("herdr.nudge", "ENG-1");
-  s.see(comment("ENG-1", { at: "11:00" }), pr("ENG-1", { approved: true }));
-  s.expect([]);
 });
 
 scenario(rules, "auto-merge leaves a ticket not in review", s => {

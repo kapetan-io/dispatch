@@ -1,6 +1,6 @@
 import { whenever, known, minutes, hours } from "dispatch";
 import type { Ctx, PR, Ticket } from "dispatch";
-import { nudgeable, skill, heard, sent, commentNudgeOwed, STALL_NOTIFY_EVERY } from "./shared";
+import { nudgeable, skill, heard, sent, STALL_NOTIFY_EVERY } from "./shared";
 
 // Notifications go to macOS and to every session following the ticket. A design
 // worker waits on you by design, so its ticket doesn't notify. A review does.
@@ -47,7 +47,6 @@ whenever({
   each: "github.pr",
   if:   (pr, ctx) => !pr.closed && pr.ready && pr.ticket.status === "in_review" && nudgeable(pr.ticket)
            && ctx.herdr.worker(pr.ticket).state === "idle" && heard(pr.ticket, "activity", pr.lastActivity, ctx)
-           && !commentNudgeOwed(pr.ticket, ctx)            // the comment nudge goes first, as today
            && !(pr.approved && pr.autoMerge && !pr.draft),
   then: (pr, ctx) => ctx.notify.queueSend(pr.ticket, readyNotice(pr).text, { once: [readyNotice(pr).topic, pr.head] }),
 });

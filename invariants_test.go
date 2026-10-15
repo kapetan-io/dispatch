@@ -156,44 +156,6 @@ func TestInvariantANudgeToldBeforeARestartIsNotToldAgain(t *testing.T) {
 	assert.Len(t, h.receipts("nudge", "ENG-1"), 1)
 }
 
-func TestInvariantACommentTheWorkerWasToldAboutIsNotToldAgainAfterARestart(t *testing.T) {
-	h := newHarness(t)
-	h.config("[rules]\nnudge_limit = 9\n")
-	h.worker("ENG-1", "working")
-	h.tickets(withComment(ticket("ENG-1", "In Review", "dispatch"), comment1))
-	h.tick()
-	h.advance(time.Second)
-	h.tickets(withComment(ticket("ENG-1", "In Review", "dispatch"), comment2))
-	h.tick()
-	require.Equal(t, []string{commentPrompt1}, h.prompts())
-
-	h.restart()
-	h.advance(time.Hour)
-	h.tick()
-	require.NoError(t, h.stopLoop())
-	h.advance(time.Hour)
-	h.restart()
-	h.tick()
-
-	assert.Equal(t, []string{commentPrompt1}, h.prompts())
-}
-
-func TestInvariantOneNudgeIsSentWhenAStallAndACommentAreBothOwed(t *testing.T) {
-	h := newHarness(t)
-	h.config("[rules]\nnudge_limit = 9\n")
-	h.worker("ENG-1", "working")
-	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
-	h.tick()
-	h.advance(time.Second)
-	h.recordStop("ENG-1", noTasks)
-	h.setWorkerStatus("ENG-1", "idle")
-	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment2))
-
-	h.tick()
-
-	assert.Len(t, h.prompts(), 1)
-}
-
 func TestInvariantAWakeFromSleepActsOnFreshLinearFacts(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))

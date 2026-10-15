@@ -79,7 +79,7 @@ func TestRulesCheckListsEveryShippedRule(t *testing.T) {
 		"launch-worker", "relaunch-for-pr", "stop-paused-worker", "teardown-clean-tree", "stop-worker-on-kept-tree",
 		"comment-kept-tree", "close-parent", "promote-child", "escalate-launch-failures", "escalate-relaunch-limit",
 		"escalate-truncated-labels", "escalate-missing-repo", "escalate-abandoned-blocker", "escalate-abandoned-blocker-child",
-		"note-blocker-hold", "retry-escalation-comment", "nudge-comment", "nudge-resume", "nudge-stall", "nudge-pr-activity",
+		"note-blocker-hold", "retry-escalation-comment", "nudge-resume", "nudge-stall", "nudge-pr-activity",
 		"nudge-pr-needs-work", "notify-needs-human", "notify-blocked", "notify-ready-for-review", "notify-stall-count",
 		"notify-unresponsive", "notify-merge-failed", "auto-merge",
 	} {

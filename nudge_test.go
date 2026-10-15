@@ -666,26 +666,22 @@ func TestTickRenotifyIntervalIsTheConfiguredMinutes(t *testing.T) {
 
 func TestTickNudgedWorkerGetsNoStallNudgeBeforeTheNextResync(t *testing.T) {
 	h := newHarness(t)
-	h.worker("ENG-1", "working")
-	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
-	h.tick()
-	h.advance(time.Second)
-	h.setWorkerStatus("ENG-1", "idle")
-	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment2))
-	h.tick()
-	require.Equal(t, []string{commentPrompt1}, h.prompts())
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.restart()
+	require.Equal(t, []string{stallPrompt}, h.prompts())
 
 	// herdr still reports the nudged worker idle a second later. A tell reads herdr
 	// without a resync, and the worker must still count as busy.
 	h.advance(time.Second)
 	_, err := h.run("tell", "ENG-1", "check the logs")
 	require.NoError(t, err)
-	assert.Equal(t, []string{commentPrompt1, "w-ENG-1:p1|check the logs"}, h.prompts())
+	assert.Equal(t, []string{stallPrompt, "w-ENG-1:p1|check the logs"}, h.prompts())
 
 	// The next resync believes herdr again, and a worker still idle then gets its stall nudge.
 	h.advance(time.Second)
 	h.tick()
-	assert.Equal(t, []string{commentPrompt1, "w-ENG-1:p1|check the logs", stallPrompt}, h.prompts())
+	assert.Equal(t, []string{stallPrompt, "w-ENG-1:p1|check the logs", stallPrompt}, h.prompts())
 }
 
 func TestTickWorkerWithNoStopRecordIsNudgedAgainOnlyAtAResync(t *testing.T) {
@@ -731,19 +727,20 @@ func TestTickReadyNoticeAndMergeWaitWhileANudgedWorkerShowsAsWorking(t *testing.
 			h := newHarness(t)
 			h.repoSettings("dispatch", test.settings)
 			h.worker("ENG-1", "working")
-			h.tickets(withComment(ticket("ENG-1", "In Review", "dispatch"), comment1))
+			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 			pr := cleanPR("a1")
 			pr.approved = []string{"a1"}
 			h.pr("ENG-1", pr)
 			h.tick()
 			require.Zero(t, test.done(h))
 
-			// The worker goes idle as a comment lands, so the comment nudge goes first.
+			// The worker goes idle as a review lands, so the activity nudge goes first.
 			h.advance(time.Second)
 			h.setWorkerStatus("ENG-1", "idle")
-			h.tickets(withComment(ticket("ENG-1", "In Review", "dispatch"), comment2))
+			pr.reviews = []activity{{"COMMENTED", time2, "alice", "", ""}}
+			h.pr("ENG-1", pr)
 			h.tick()
-			assert.Equal(t, []string{commentPrompt1}, h.prompts())
+			assert.Equal(t, []string{activityPrompt("a review by alice")}, h.prompts())
 			assert.Zero(t, test.done(h))
 
 			// Once a resync finds the nudged worker idle again, the notice and the merge follow.
