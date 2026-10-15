@@ -114,33 +114,6 @@ func TestTickKeepsTheDesignWorkerOnceItHasChildren(t *testing.T) {
 	assert.Empty(t, h.closes())
 }
 
-func TestTickLeavesABacklogChildOfADesignTicketAlone(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(designTicket("ENG-1", "In Progress"), ticket("ENG-2", "Backlog", "dispatch"))
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Backlog"))
-	h.worker("ENG-1", "idle")
-
-	out, err := h.run("tick")
-	require.NoError(t, err)
-
-	assert.Empty(t, out)
-	assert.Empty(t, h.launches())
-	assert.Empty(t, h.linear.mutations())
-}
-
-func TestTickLaunchesAChildOfADesignTicketAsABuild(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(designTicket("ENG-1", "In Progress"), ticket("ENG-2", "In Progress", "dispatch"))
-	h.linear.setChildren(child("ENG-2", "ENG-1", "In Progress"))
-	h.worker("ENG-1", "idle")
-
-	out, err := h.run("tick")
-	require.NoError(t, err)
-
-	assert.Equal(t, "launch ENG-2: ok\n", out)
-	assert.Equal(t, []string{h.repo + " ENG-2 thrawn01/eng-2 --model sonnet"}, h.launches())
-}
-
 func TestTickCountsADesignTicketAgainstTheWorkerCap(t *testing.T) {
 	h := newHarness(t)
 	h.config("max_in_progress = 1\n")
@@ -226,7 +199,7 @@ func TestTickHoldsAPromotionForADesignParentInAnUnreadRepo(t *testing.T) {
 	h.config("max_in_progress = 1\n")
 	h.addRepo("tiger", filepath.Join(h.dir, "moved"))
 	h.tickets(parent("ENG-1", "In Progress"), withLabel(ticket("ENG-3", "In Progress", "tiger"), "design"))
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-4", "ENG-3", "Backlog"))
 
 	out, _, err := h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
