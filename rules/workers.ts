@@ -47,5 +47,5 @@ whenever({
   name: "stop-paused-worker",
   each: "herdr.worker",
   if:   (w) => w.state !== "none" && w.ticket.paused,
-  then: (w, ctx) => ctx.herdr.queueClose(w, { once: ["close", w.seenAt] }),
+  then: (w, ctx) => ctx.herdr.queueClose(w, { once: ["close", w.tree, w.seenAt] }),
 });

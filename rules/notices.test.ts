@@ -240,3 +240,12 @@ scenario(rules, "notify-merge-failed is held when the PR could not be read", s =
   s.expect([]);
   s.expectHeld("notify-merge-failed", "ENG-1");
 });
+
+scenario(rules, "notify-blocked with blocked_renotify_minutes = 0 notifies in every cycle", s => {
+  s.config({ rules: { blocked_renotify_minutes: 0 } });
+  s.given(ticket("ENG-1", { status: "in_progress" }), worker("ENG-1", "blocked"));
+  s.expect([["notify-blocked", "notify.send", "ENG-1"]]);
+  s.land("notify.send", "ENG-1");
+  s.resync();
+  s.expect([["notify-blocked", "notify.send", "ENG-1"]]);
+});

@@ -41,6 +41,9 @@ type call struct {
 	reads   []string
 	queue   []*queued
 	objects map[string]*sobek.Object
+	// handles maps the object a queue method returned to its place in queue, so a
+	// then can only return actions it queued, and reading one runs no rule code.
+	handles map[*sobek.Object]int
 }
 
 func (c *call) throwUnknown(reason string) {
@@ -433,7 +436,7 @@ func (c *call) queueFn(spec ActionSpec) func(sobek.FunctionCall) sobek.Value {
 		c.queue = append(c.queue, q)
 		handle := c.rt.NewObject()
 		_ = handle.Set("queued", true)
-		_ = handle.Set("__id", q.id)
+		c.handles[handle] = q.id
 		return handle
 	}
 }
@@ -588,8 +591,8 @@ func (o *configObject) Get(key string) sobek.Value {
 	}
 	v, ok := o.value[key]
 	if !ok {
-		if o.path == "rules" {
-			c.throwError("config.toml has no [rules] key %q. Add %s = ... under [rules]", key, key)
+		if o.path == "rules" || strings.HasPrefix(o.path, "rules.") {
+			c.throwError("config.toml has no [%s] key %q. Add %s = ... under [%s]", o.path, key, key, o.path)
 		}
 		return nil
 	}

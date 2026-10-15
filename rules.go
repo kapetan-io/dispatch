@@ -280,6 +280,9 @@ func printCheck(opts Options, cfg config.Config, state *rules.State, loaded *rul
 				desc = "wants " + wants
 			}
 		}
+		if waiting := waitingSummary(result, def.Name); waiting != "" {
+			desc += "; " + waiting
+		}
 		if held := heldSummary(result, def.Name); held != "" {
 			desc += "; " + held
 		}
@@ -306,6 +309,20 @@ func wantSummary(wants []rules.Want, rule string) string {
 		parts = append(parts, fmt.Sprintf("%s now for %s", verb, strings.Join(by[verb], ", ")))
 	}
 	return strings.Join(parts, "; ")
+}
+
+// waitingSummary names what a rule wants that waits, such as "waiting: launch for ENG-5 (4 of 4 in progress, 1st in line)".
+func waitingSummary(result rules.Result, rule string) string {
+	var waiting []string
+	for _, w := range result.Waiting {
+		if w.Rule == rule {
+			waiting = append(waiting, fmt.Sprintf("%s for %s (%s)", w.Receipt, w.Subject, w.Reason))
+		}
+	}
+	if len(waiting) == 0 {
+		return ""
+	}
+	return "waiting: " + strings.Join(waiting, ", ")
 }
 
 func heldSummary(result rules.Result, rule string) string {

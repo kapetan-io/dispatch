@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/grafana/sobek"
@@ -264,12 +265,12 @@ func (r *Rules) evaluate(res *Result, state *State, def *ruleDef, rec *record, e
 	if out := r.verdict(res, c, def, recordName, subject, verdict, key); out != nil {
 		return nil
 	}
-	wants, err := r.collect(state, def, rec, c, verdict.value)
-	if err != nil {
-		res.Throws = append(res.Throws, Throw{Rule: def.name, Record: recordName, Subject: subject, Error: err.Error(), Phase: phaseThen})
+	if verdict.shape != nil {
+		res.Throws = append(res.Throws, Throw{Rule: def.name, Record: recordName, Subject: subject, Error: verdict.shape.Error(), Phase: phaseThen})
 		res.Reads[key] = c.reads
 		return nil
 	}
+	wants := r.collect(state, def, c, verdict.ordered)
 	res.Reads[key] = c.reads
 	return wants
 }
@@ -300,6 +301,10 @@ func unique(in []string) []string {
 }
 
 type callResult struct {
+	// ordered lists the actions a then returned, in the order it returned them.
+	ordered []int
+	// shape is set when a then returned something other than its own actions.
+	shape   error
 	ok      bool
 	value   sobek.Value
 	err     error
@@ -309,7 +314,7 @@ type callResult struct {
 // run calls the rule's if or then in a fresh runtime.
 func (r *Rules) run(state *State, def *ruleDef, phase string, rec *record, ev *Event) (callResult, *call) {
 	rt := newRuntime(state.ms())
-	c := &call{state: state, rt: rt, phase: phase, objects: map[string]*sobek.Object{}}
+	c := &call{state: state, rt: rt, phase: phase, objects: map[string]*sobek.Object{}, handles: map[*sobek.Object]int{}}
 	reg := &registry{}
 	if err := reg.install(rt, c.known); err != nil {
 		return callResult{err: err}, c
@@ -335,7 +340,8 @@ func (r *Rules) run(state *State, def *ruleDef, phase string, rec *record, ev *E
 		arg = c.toJS(reflect.ValueOf(ev.Payload), "")
 	}
 	var out sobek.Value
-	var err error
+	var err, shape error
+	var ordered []int
 	func() {
 		defer func() {
 			if p := recover(); p != nil {
@@ -347,8 +353,14 @@ func (r *Rules) run(state *State, def *ruleDef, phase string, rec *record, ev *E
 			}
 		}()
 		out, err = fn(sobek.Undefined(), arg, c.ctx())
+		// Reading the returned value stays inside the time budget and the guard.
+		if err == nil && phase == phaseThen {
+			ordered, shape = c.returned(out)
+		}
 	}()
-	return interpret(c, out, err), c
+	res := interpret(c, out, err)
+	res.ordered, res.shape = ordered, shape
+	return res, c
 }
 
 // interpret turns a call's outcome into a verdict. An Unknown error is not a
@@ -384,38 +396,40 @@ func interpret(c *call, out sobek.Value, err error) callResult {
 	return callResult{err: err}
 }
 
-// collect turns what a then queued into wants.
-func (r *Rules) collect(state *State, def *ruleDef, rec *record, c *call, ret sobek.Value) ([]Want, error) {
-	var ordered []int
-	switch {
-	case ret == nil || sobek.IsUndefined(ret) || sobek.IsNull(ret):
-	default:
-		if _, isBool := ret.Export().(bool); isBool {
-			return nil, errors.New("then returned a boolean. That looks like a swap with if, because then queues actions and returns nothing or the actions it queued")
-		}
-		obj, ok := ret.(*sobek.Object)
-		if !ok {
-			return nil, errors.New("then returned something other than an action or a list of actions")
-		}
-		handles := []sobek.Value{obj}
-		if arr, ok := obj.Export().([]any); ok {
-			handles = handles[:0]
-			for i := range arr {
-				handles = append(handles, obj.Get(fmt.Sprint(i)))
-			}
-		}
-		for _, h := range handles {
-			ho, ok := h.(*sobek.Object)
-			if !ok || ho.Get("__id") == nil {
-				return nil, errors.New("then returned something that isn't an action a queue method gave back")
-			}
-			id, isInt := ho.Get("__id").Export().(int64)
-			if !isInt || id < 0 || id >= int64(len(c.queue)) || slices.Contains(ordered, int(id)) {
-				return nil, errors.New("then returned something that isn't an action a queue method gave back, or returned one twice")
-			}
-			ordered = append(ordered, int(id))
+// returned reads what a then returned: nothing, one action it queued, or a list of them.
+func (c *call) returned(ret sobek.Value) ([]int, error) {
+	notAction := errors.New("then returned something that isn't an action a queue method gave back, or returned one twice")
+	if ret == nil || sobek.IsUndefined(ret) || sobek.IsNull(ret) {
+		return nil, nil
+	}
+	if _, isBool := ret.Export().(bool); isBool {
+		return nil, errors.New("then returned a boolean. That looks like a swap with if, because then queues actions and returns nothing or the actions it queued")
+	}
+	obj, ok := ret.(*sobek.Object)
+	if !ok {
+		return nil, errors.New("then returned something other than an action or a list of actions")
+	}
+	items := []sobek.Value{obj}
+	if obj.ClassName() == "Array" {
+		items = items[:0]
+		for i := range obj.Get("length").ToInteger() {
+			items = append(items, obj.Get(strconv.FormatInt(i, 10)))
 		}
 	}
+	var ordered []int
+	for _, item := range items {
+		ho, ok := item.(*sobek.Object)
+		id, queued := c.handles[ho]
+		if !ok || !queued || slices.Contains(ordered, id) {
+			return nil, notAction
+		}
+		ordered = append(ordered, id)
+	}
+	return ordered, nil
+}
+
+// collect turns what a then queued into wants.
+func (r *Rules) collect(state *State, def *ruleDef, c *call, ordered []int) []Want {
 	after := map[int]string{}
 	var prev *queued
 	for _, id := range ordered {
@@ -436,7 +450,7 @@ func (r *Rules) collect(state *State, def *ruleDef, rec *record, c *call, ret so
 		}
 		wants = append(wants, w)
 	}
-	return wants, nil
+	return wants
 }
 
 // describeThrown names what a rule threw as "Name: message", without the stack.

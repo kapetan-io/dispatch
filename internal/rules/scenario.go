@@ -158,9 +158,11 @@ type scenario struct {
 	poolUnread  map[string]bool
 	prUnread    map[string]bool
 	events      []Event
-	last        Result
-	dirty       bool
-	ran         bool
+	// thrown holds the rules expectThrew has acknowledged.
+	thrown map[string]bool
+	last   Result
+	dirty  bool
+	ran    bool
 }
 
 func newScenario(h *scenarioHost, rules *Rules) *scenario {
@@ -178,8 +180,8 @@ func newScenario(h *scenarioHost, rules *Rules) *scenario {
 	}
 	return &scenario{
 		host: h, rules: rules, cfg: cfg, led: &ledger.Ledger{}, now: scenarioStart, dirty: true,
-		m:     newModel(),
-		pools: map[string]int{}, poolUnread: map[string]bool{}, prUnread: map[string]bool{},
+		m:      newModel(),
+		thrown: map[string]bool{}, pools: map[string]int{}, poolUnread: map[string]bool{}, prUnread: map[string]bool{},
 	}
 }
 
@@ -266,11 +268,13 @@ func (s *scenario) object() *sobek.Object {
 	})
 	set("expect", func(call sobek.FunctionCall) sobek.Value {
 		s.ensureCycle()
+		s.noStrayThrows()
 		s.expect(call.Argument(0).Export())
 		return sobek.Undefined()
 	})
 	set("expectHeld", func(call sobek.FunctionCall) sobek.Value {
 		s.ensureCycle()
+		s.noStrayThrows()
 		rule, subject := call.Argument(0).String(), call.Argument(1).String()
 		reason := ""
 		if v := call.Argument(2); !sobek.IsUndefined(v) {
@@ -286,6 +290,7 @@ func (s *scenario) object() *sobek.Object {
 	})
 	set("expectWaiting", func(call sobek.FunctionCall) sobek.Value {
 		s.ensureCycle()
+		s.noStrayThrows()
 		rule, subject := call.Argument(0).String(), call.Argument(1).String()
 		for _, w := range s.last.Waiting {
 			if w.Rule == rule && w.Subject == subject {
@@ -300,6 +305,7 @@ func (s *scenario) object() *sobek.Object {
 		rule := call.Argument(0).String()
 		for _, t := range s.last.Throws {
 			if t.Rule == rule {
+				s.thrown[rule] = true
 				return sobek.Undefined()
 			}
 		}
@@ -323,6 +329,16 @@ func describeHeld(r Result) string {
 func (s *scenario) ensureCycle() {
 	if s.dirty {
 		s.cycle()
+	}
+}
+
+// noStrayThrows fails the scenario when a rule threw or ran out of time, so a
+// broken rule can't pass a scenario that expects it to want nothing.
+func (s *scenario) noStrayThrows() {
+	for _, t := range s.last.Throws {
+		if !s.thrown[t.Rule] {
+			s.fail("%s threw in its %s for %s: %s. Use expectThrew(%q) if that is what the scenario is about", t.Rule, t.Phase, t.Subject, t.Error, t.Rule)
+		}
 	}
 }
 

@@ -81,11 +81,12 @@ func (c Config) NudgeLimit() int { return c.Rules.integer("nudge_limit", Default
 // stays blocked, rounded up from [rules].blocked_renotify_minutes. Zero notifies on every tick.
 func (c Config) BlockedRenotifyTicks() int {
 	minutes := c.Rules.integer("blocked_renotify_minutes", DefaultBlockedRenotifyMinutes)
-	resync := int(time.Duration(c.Dispatch.Resync) / time.Minute)
+	resync := time.Duration(c.Dispatch.Resync)
 	if minutes <= 0 || resync <= 0 {
 		return 0
 	}
-	return (minutes + resync - 1) / resync
+	period := time.Duration(minutes) * time.Minute
+	return int((period + resync - 1) / resync)
 }
 
 // Duration is a time.Duration that reads from TOML text such as "5m" or "7d".

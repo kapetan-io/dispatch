@@ -363,7 +363,7 @@ func TestRulesCheckListsTheOrderedStepsOfAMerge(t *testing.T) {
 	out, err := h.rules(repoRules, "check")
 
 	require.NoError(t, err)
-	assert.Regexp(t, `auto-merge +whenever +github\.pr +wants merge now for ENG-1\n`, out)
+	assert.Regexp(t, `auto-merge +whenever +github\.pr +wants merge now for ENG-1; waiting: notify for ENG-1 \(after the step before it lands\)\n`, out)
 }
 
 func TestRulesInitWritesTheShippedRules(t *testing.T) {
@@ -806,4 +806,69 @@ func TestRulesCheckRefusesAHandleThatIsNotAnActionOrIsReturnedTwice(t *testing.T
 			assert.Contains(t, out, "finding: forges threw in its then for ENG-1: then returned something that isn't an action")
 		})
 	}
+}
+
+func TestRulesCheckStopsAGetterInAReturnedObjectWithinTheBudget(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `whenever({ name: "getter", each: "linear.ticket", if: () => true, then: () => ({ get queued() { for (;;) {} } }) as any });
+whenever({ name: "healthy", each: "linear.ticket", if: () => true, then: (t, ctx) => ctx.linear.queueComment(t, "ok", { once: ["h", t.id] }) });`)
+
+	start := time.Now()
+	out, _, err := h.runWith(context.Background(), dispatch.Options{RulesDir: dir, RuleTimeout: dispatch.RuleTimeout{Then: 100 * time.Millisecond}}, "rules", "check")
+
+	require.ErrorContains(t, err, "problems found")
+	assert.Less(t, time.Since(start), 5*time.Second)
+	assert.Contains(t, out, "finding: getter")
+	assert.Regexp(t, `healthy +whenever +linear\.ticket +wants comment now for ENG-1`, out)
+}
+
+func TestRulesCheckNamesAMissingKeyInANestedRulesTable(t *testing.T) {
+	h := newHarness(t)
+	h.config("[rules.slack]\nchannel = \"#eng\"\n")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `whenever({ name: "nested", each: "linear.ticket", if: (t, ctx) => ctx.config.rules.slack.channel === "#eng" && ctx.config.rules.slack.token === "x", then: () => {} });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.ErrorContains(t, err, "problems found")
+	assert.Contains(t, out, `config.toml has no [rules.slack] key "token"`)
+}
+
+func TestRulesCheckShowsWhatWaitsForAWorkerSlot(t *testing.T) {
+	h := newHarness(t)
+	h.config("[dispatch]\nmax_in_progress = 1\n" + shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
+
+	out, err := h.rules(repoRules, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `launch-worker +whenever +linear\.ticket +wants launch now for ENG-\d; waiting: launch for ENG-\d \(0 of 1 in progress, 1st in line\)\n`, out)
+}
+
+func TestRulesTestFailsAScenarioWhenARuleThrowsUnlessItExpectsTheThrow(t *testing.T) {
+	h := newHarness(t)
+	dir := rulesDir(t, map[string]string{
+		"dispatch.ts": `import { whenever } from "dispatch";
+whenever({ name: "broken", each: "linear.ticket", if: (t) => t.nothing.deeper === 1, then: () => {} });`,
+		"broken.test.ts": `import { scenario, ticket, rulesFrom } from "dispatch/testing";
+const rules = rulesFrom("./dispatch");
+scenario(rules, "expects nothing from a broken rule", s => {
+  s.given(ticket("ENG-1", { status: "in_progress" }));
+  s.expect([]);
+});
+scenario(rules, "expects the break", s => {
+  s.given(ticket("ENG-1", { status: "in_progress" }));
+  s.expectThrew("broken");
+  s.expect([]);
+});`,
+	})
+
+	out, err := h.rules(dir, "test")
+
+	require.ErrorContains(t, err, "1 of 2 scenarios failed")
+	assert.Contains(t, out, "FAIL broken.test.ts: expects nothing from a broken rule")
+	assert.Contains(t, out, "broken threw in its if for ENG-1")
+	assert.Contains(t, out, "ok   broken.test.ts: expects the break")
 }

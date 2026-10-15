@@ -670,3 +670,20 @@ func TestTickDropsAPendingResumeWhenTheTicketIsPaused(t *testing.T) {
 
 	assert.Equal(t, "nudge ENG-1: stall\n", out)
 }
+
+func TestTickRenotifyIntervalIsDividedByTheResyncInSeconds(t *testing.T) {
+	h := newHarness(t)
+	h.config("[dispatch]\nresync = \"30s\"\n[rules]\nblocked_renotify_minutes = 1\n")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "blocked")
+
+	var counts []int
+	for range 4 {
+		_, err := h.run("tick")
+		require.NoError(t, err)
+		counts = append(counts, len(h.notifications()))
+	}
+
+	// A minute is two 30-second resyncs: the first blocked tick, then every second one.
+	assert.Equal(t, []int{1, 1, 2, 2}, counts)
+}

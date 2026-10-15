@@ -10,7 +10,7 @@ whenever({
   name: "teardown-clean-tree",
   each: "treehouse.tree",
   if:   (tree) => tree.leased && tree.holder.finished && safeToReturn(tree),
-  then: (tree, ctx) => ctx.treehouse.queueReturn(tree, { once: ["return", tree.leasedSince] }),
+  then: (tree, ctx) => ctx.treehouse.queueReturn(tree, { once: ["return", tree.path, tree.leasedSince] }),
   // Closes the tree's workspace, inspects the tree again, deletes untracked files, then
   // returns it. Work found on the second look keeps the tree, and the receipt says why.
 });
@@ -21,7 +21,7 @@ whenever({
   each: "treehouse.tree",
   if:   (tree, ctx) => tree.leased && tree.holder.finished && !safeToReturn(tree)
            && ctx.herdr.workerIn(tree).state !== "none",
-  then: (tree, ctx) => ctx.herdr.queueClose(ctx.herdr.workerIn(tree), { once: ["close", ctx.herdr.workerIn(tree).seenAt] }),
+  then: (tree, ctx) => ctx.herdr.queueClose(ctx.herdr.workerIn(tree), { once: ["close", tree.path, ctx.herdr.workerIn(tree).seenAt] }),
 });
 
 // One comment per lease says why the tree was kept. When you push, treehouse reports

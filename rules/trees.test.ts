@@ -89,3 +89,11 @@ scenario(rules, "comment-kept-tree stays silent for a ticket still in progress",
           tree("/trees/ENG-1", { holder: "ENG-1", pushed: false }));
   s.expect([]);
 });
+
+scenario(rules, "teardown-clean-tree returns every tree a finished ticket holds, not only the first", s => {
+  s.given(ticket("ENG-1", { status: "done" }),
+          tree("/trees/a", { holder: "ENG-1", pushed: true }), tree("/trees/b", { holder: "ENG-1", pushed: true }));
+  s.expect([["teardown-clean-tree", "treehouse.return", "ENG-1"], ["teardown-clean-tree", "treehouse.return", "ENG-1"]]);
+  s.land("treehouse.return", "ENG-1");
+  s.expect([["teardown-clean-tree", "treehouse.return", "ENG-1"]]);
+});
