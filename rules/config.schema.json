@@ -178,7 +178,7 @@
     },
     "rules": {
       "additionalProperties": true,
-      "description": "Your own settings. Dispatch never interprets them, and rules read them as ctx.config.rules.",
+      "description": "Your own settings, read by rules as ctx.config.rules. Dispatch reads only the five keys the shipped rules use.",
       "type": "object"
     }
   },
