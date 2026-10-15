@@ -314,8 +314,11 @@ func (r *Rules) run(state *State, def *ruleDef, phase string, rec *record, ev *E
 	if err := reg.install(rt, c.known); err != nil {
 		return callResult{err: err}, c
 	}
+	// The top level of a rule file runs on every call, so a loop there is bounded too.
+	stop := timeLimit(rt, r.timeouts.forPhase(phase))
+	defer stop()
 	if _, err := rt.RunProgram(r.program); err != nil {
-		return callResult{err: err}, c
+		return interpret(c, nil, err), c
 	}
 	fns, ok := reg.fns[def.name]
 	if !ok {
@@ -331,7 +334,6 @@ func (r *Rules) run(state *State, def *ruleDef, phase string, rec *record, ev *E
 	} else {
 		arg = c.toJS(reflect.ValueOf(ev.Payload), "")
 	}
-	stop := timeLimit(rt, r.timeouts.forPhase(phase))
 	var out sobek.Value
 	var err error
 	func() {
@@ -346,7 +348,6 @@ func (r *Rules) run(state *State, def *ruleDef, phase string, rec *record, ev *E
 		}()
 		out, err = fn(sobek.Undefined(), arg, c.ctx())
 	}()
-	stop()
 	return interpret(c, out, err), c
 }
 
@@ -408,7 +409,11 @@ func (r *Rules) collect(state *State, def *ruleDef, rec *record, c *call, ret so
 			if !ok || ho.Get("__id") == nil {
 				return nil, errors.New("then returned something that isn't an action a queue method gave back")
 			}
-			ordered = append(ordered, int(ho.Get("__id").ToInteger()))
+			id := ho.Get("__id").ToInteger()
+			if id < 0 || id >= int64(len(c.queue)) {
+				return nil, errors.New("then returned something that isn't an action a queue method gave back")
+			}
+			ordered = append(ordered, int(id))
 		}
 	}
 	after := map[int]string{}
@@ -424,7 +429,7 @@ func (r *Rules) collect(state *State, def *ruleDef, rec *record, c *call, ret so
 	for _, q := range c.queue {
 		w := Want{
 			Rule: def.name, Kind: q.spec.Kind, Receipt: q.spec.Receipt, Subject: q.subject.subject, Once: q.once, Args: q.args, Options: q.opts,
-			Record: q.subject.String(), Shadow: def.shadow, After: after[q.id], Capped: q.spec.Capped,
+			Record: q.subject.String(), Shadow: def.shadow, After: after[q.id], Capped: q.takesSlot(),
 		}
 		if t, ok := state.lookup("linear.ticket", q.subject.subject); ok {
 			w.Created, w.seq = t.created, t.seq

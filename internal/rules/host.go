@@ -2,7 +2,6 @@ package rules
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -122,12 +121,15 @@ func compile(dir, code string, timeouts Timeouts) (*Rules, error) {
 	if err := reg.install(rt, nil); err != nil {
 		return nil, err
 	}
-	if _, err := rt.RunProgram(program); err != nil {
+	stop := timeLimit(rt, timeouts.forPhase(phaseThen))
+	_, err = rt.RunProgram(program)
+	stop()
+	if err != nil {
 		problems = append(problems, "while loading: "+firstLine(err.Error()))
 	}
 	problems = append(problems, reg.problems...)
 	if len(problems) > 0 {
-		return nil, &LoadError{Problems: dedupe(problems)}
+		return nil, &LoadError{Problems: unique(problems)}
 	}
 	r.defs = reg.defs
 	return r, nil
@@ -136,16 +138,6 @@ func compile(dir, code string, timeouts Timeouts) (*Rules, error) {
 func firstLine(s string) string {
 	line, _, _ := strings.Cut(s, "\n")
 	return line
-}
-
-func dedupe(in []string) []string {
-	var out []string
-	for _, s := range in {
-		if !slices.Contains(out, s) {
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 // bundle compiles a TypeScript entry file and everything it imports into one
@@ -218,6 +210,7 @@ const prelude = `
     return args.length === 0 ? new RealDate(NOW) : new RealDate(...args);
   }
   PinnedDate.prototype = RealDate.prototype;
+  Object.defineProperty(RealDate.prototype, "constructor", { value: PinnedDate, writable: true, configurable: true });
   PinnedDate.now = () => NOW;
   PinnedDate.parse = RealDate.parse;
   PinnedDate.UTC = RealDate.UTC;
@@ -367,10 +360,4 @@ func eventNames() []string {
 		names[i] = e.Name
 	}
 	return names
-}
-
-// readRulesFile returns the text of a file under dir.
-func readRulesFile(dir, name string) (string, error) {
-	b, err := os.ReadFile(filepath.Join(dir, name))
-	return string(b), err
 }

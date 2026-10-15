@@ -187,3 +187,9 @@ scenario(rules, "note-blocker-hold stays quiet once the worker is running", s =>
   s.given(ticket("ENG-1", { ...build, blockers: [{ id: "ENG-8", status: "in_progress" }] }), worker("ENG-1", "working"));
   s.expect([]);
 });
+
+scenario(rules, "escalate-truncated-labels leaves a parent alone, because a parent never gets a worker", s => {
+  s.given(ticket("ENG-1", { status: "in_progress", optedIn: true, repo: "dispatch", labelsTruncated: true }),
+          ticket("ENG-2", { parent: "ENG-1", status: "todo" }));
+  s.expect([]);
+});

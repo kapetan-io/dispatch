@@ -199,3 +199,21 @@ scenario(rules, "stop-paused-worker is held when herdr is unread", s => {
   s.unread("herdr");
   s.expect([]);
 });
+
+scenario(rules, "relaunch-for-pr still answers a review thread after nudge_limit relaunches for the head", s => {
+  s.given(ticket("ENG-1", { status: "in_review", optedIn: true, repo: "dispatch" }),
+          pr("ENG-1", { head: "h1", problems: ["a failed check"] }));
+  s.land("herdr.launch", "ENG-1");
+  s.see(worker("ENG-1", "working"));
+  s.see(worker("ENG-1", "none"));
+  s.land("herdr.launch", "ENG-1");
+  s.see(worker("ENG-1", "working"));
+  s.see(worker("ENG-1", "none"), pr("ENG-1", { problems: [], threadAt: "11:00" }));
+  s.expect([["relaunch-for-pr", "herdr.launch", "ENG-1"]]);
+});
+
+scenario(rules, "relaunch-for-pr does not start a worker in a repo the config lacks", s => {
+  s.given(ticket("ENG-1", { status: "in_review", optedIn: true, repo: "elsewhere" }),
+          pr("ENG-1", { problems: ["a failed check"] }));
+  s.expect([]);
+});

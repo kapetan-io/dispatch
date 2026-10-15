@@ -43,7 +43,7 @@ export const abandonedBlocker = (t: Ticket, ctx: Ctx) => ctx.linear.blockersRead
 // crash, an attempt with no outcome may have landed, so it is never sent again.
 export const told = (r: Receipt) => r.outcome === undefined || r.outcome === "done";
 
-// A message dispatch actually sent. `dispatch state reset` writes Done receipts it never
+// A message dispatch actually sent. A Done receipt flagged reset stands for a message dispatch never
 // sent, flagged as reset, so counts skip them.
 export const sent = (r: Receipt) => told(r) && !r.reset;
 
@@ -88,7 +88,7 @@ export const commentNudgeOwed = (t: Ticket, ctx: Ctx) => {
 // lastStop from when dispatch saw this stretch of idling begin. A nudged worker shows as
 // working until the next resync, so that stretch starts after the nudge and the worker
 // isn't stranded. Only nudges sent to this worker count, and a Done receipt from
-// `dispatch state reset` was never sent, so neither holds anything back.
+// flagged reset was never sent, so neither holds anything back.
 export const stoppedSinceLastNudge = (t: Ticket, ctx: Ctx) => {
   const w = ctx.herdr.worker(t);
   const last = ctx.ledger.receipts(t, { kind: "nudge" }).find(r => sent(r) && r.started > w.seenAt);  // newest first

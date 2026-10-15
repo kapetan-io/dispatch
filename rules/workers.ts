@@ -30,9 +30,10 @@ whenever({
   name: "relaunch-for-pr",
   each: "github.pr",
   if:   (pr, ctx) => !pr.closed && pr.ticket.status === "in_review" && nudgeable(pr.ticket)
+           && ctx.config.hasRepo(pr.ticket.repo)
            && ctx.herdr.worker(pr.ticket).state === "none"
            && (pr.needsWork || !heard(pr.ticket, "activity", pr.lastThread, ctx))
-           && relaunches(pr.ticket, pr.head, ctx) < nudgeLimit(ctx)
+           && (!pr.needsWork || relaunches(pr.ticket, pr.head, ctx) < nudgeLimit(ctx))
            && launchFailures(pr.ticket, ctx) < launchFailureLimit(ctx),
   then: (pr, ctx) => ctx.herdr.queueLaunch(pr.ticket, {
            ...launchAs(pr.ticket, ctx), uncapped: true,

@@ -32,6 +32,9 @@ type call struct {
 	phase string
 	// knownDepth counts the known() calls the rule is inside.
 	knownDepth int
+	// sawUnknown is set when an unknown read threw, even if the rule caught
+	// the error, so known() can tell that the value was not read.
+	sawUnknown bool
 	// unknown holds the reason of each unknown read outside known(). The host
 	// holds the call when it is not empty, even if the rule caught the error.
 	unknown []string
@@ -41,6 +44,7 @@ type call struct {
 }
 
 func (c *call) throwUnknown(reason string) {
+	c.sawUnknown = true
 	obj, err := c.rt.New(c.rt.Get("Unknown"), c.rt.ToValue(reason))
 	if err != nil {
 		panic(err)
@@ -56,8 +60,8 @@ func (c *call) throwError(format string, args ...any) {
 	panic(obj)
 }
 
-// read notes that the rule looked at a value, for dispatch trace.
-func (c *call) read(r *record, name string, v any) {
+// read notes that the rule looked at a value, so a check can show what it decided from.
+func (c *call) read(name string, v any) {
 	text := fmt.Sprintf("%s=%s", name, short(v))
 	if !slices.Contains(c.reads, text) {
 		c.reads = append(c.reads, text)
@@ -108,11 +112,11 @@ func (o *recordObject) Get(key string) sobek.Value {
 		if c.knownDepth == 0 {
 			c.unknown = append(c.unknown, reason)
 		}
-		c.read(r, key, "unknown")
+		c.read(key, "unknown")
 		c.throwUnknown(reason)
 	}
 	value := f.FieldByName("Value")
-	c.read(r, key, exportable(value))
+	c.read(key, exportable(value))
 	return c.toJS(value, tagOf(r, key, "ref"))
 }
 
@@ -128,12 +132,12 @@ func (c *call) hasLabel(r *record, name string) sobek.Value {
 		if c.knownDepth == 0 {
 			c.unknown = append(c.unknown, reason)
 		}
-		c.read(r, "labels", "unknown")
+		c.read("labels", "unknown")
 		c.throwUnknown(reason)
 	}
 	labels := f.FieldByName("Value").Interface().([]Label)
 	has := slices.ContainsFunc(labels, func(l Label) bool { return l.Name == name })
-	c.read(r, "hasLabel("+name+")", has)
+	c.read("hasLabel("+name+")", has)
 	return c.rt.ToValue(has)
 }
 
@@ -233,10 +237,12 @@ func (c *call) known(call sobek.FunctionCall) sobek.Value {
 		panic(c.rt.NewTypeError("known() takes a function that reads the value"))
 	}
 	c.knownDepth++
-	defer func() { c.knownDepth-- }()
+	outer := c.sawUnknown
+	c.sawUnknown = false
+	defer func() { c.knownDepth--; c.sawUnknown = outer }()
 	_, err := fn(sobek.Undefined())
 	if err == nil {
-		return c.rt.ToValue(true)
+		return c.rt.ToValue(!c.sawUnknown)
 	}
 	if ex, ok := err.(*sobek.Exception); ok {
 		if obj, ok := ex.Value().(*sobek.Object); ok && obj.Get("name") != nil && obj.Get("name").String() == "Unknown" {
@@ -255,7 +261,7 @@ func (c *call) ctx() sobek.Value {
 	_ = ctx.Set("now", now)
 	_ = ctx.Set("every", func(call sobek.FunctionCall) sobek.Value {
 		period, since := call.Argument(0).ToFloat(), call.Argument(1).ToFloat()
-		if period <= 0 {
+		if !(period > 0) {
 			c.throwError("every() needs a period above zero")
 		}
 		return rt.ToValue(int64(math.Floor((float64(now) - since) / period)))
@@ -345,6 +351,9 @@ func (c *call) subjectOf(v sobek.Value) string {
 }
 
 func (c *call) parseOnce(v sobek.Value) (ledger.Once, error) {
+	if v == nil {
+		return nil, fmt.Errorf("once is missing. Every action needs once: [topic, ...values]")
+	}
 	arr, ok := v.Export().([]any)
 	if !ok || len(arr) == 0 {
 		return nil, fmt.Errorf("once must be a list that starts with a topic, such as [\"comment\", t.lastHumanComment.at]")
@@ -475,7 +484,7 @@ func (c *call) linearAPI() *sobek.Object {
 		if b.truncated {
 			c.unknownRead(t.id + " has more relations than dispatch reads, so a blocker may be missing")
 		}
-		c.read(t, "blockers", len(b.read))
+		c.read("blockers", len(b.read))
 		return blockerList(b.read)
 	})
 	_ = o.Set("blockersRead", func(call sobek.FunctionCall) sobek.Value {

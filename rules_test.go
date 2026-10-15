@@ -15,6 +15,7 @@ import (
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
+	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/lineartest"
 	"github.com/kapetan-io/dispatch/internal/rules"
 )
@@ -694,4 +695,92 @@ whenever({ name: "catches", each: "linear.ticket", if: (t, ctx) => true,
 
 	require.NoError(t, err)
 	assert.Regexp(t, `catches +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, out)
+}
+
+func TestRulesCheckHoldsALeaseQuestionAboutAChildWhenTheRepoLabelGroupIsCustom(t *testing.T) {
+	h := newHarness(t)
+	h.config("[plugins.linear]\nrepo_label_group = \"project\"\n" + shippedRulesConfig)
+	regroup := func(tk fakeTicket) fakeTicket {
+		tk.Labels = []linear.Label{{Name: "ai"}, {Name: "dispatch", Group: "project"}}
+		return tk
+	}
+	h.tickets(regroup(parent("ENG-1", "In Progress")))
+	h.linear.setChildren(regroup(child("ENG-2", "ENG-1", "Todo")))
+	h.tools.Treehouse.FailTrees(errors.New("exit status 1"))
+	dir := oneRule(t, `whenever({ name: "asks", each: "linear.ticket", if: (t, ctx) => t.status === "todo" && !ctx.treehouse.leased(t),
+  then: (t, ctx) => ctx.linear.queueComment(t, "free", { once: ["asks", t.id] }) });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `asks +whenever +linear\.ticket +wants nothing now; held for ENG-2\n`, out)
+}
+
+func TestRulesCheckHoldsARuleWhoseKnownCallbackCatchesTheUnknownRead(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tools.Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
+	dir := oneRule(t, `whenever({ name: "swallows", each: "linear.ticket",
+  if: (t, ctx) => known(() => { try { return ctx.herdr.worker(t).state; } catch (e) { return 0; } }),
+  then: (t, ctx) => ctx.linear.queueComment(t, "acted", { once: ["swallows", t.id] }) });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `swallows +whenever +linear\.ticket +wants nothing now`, out)
+}
+
+func TestRulesCheckRecordsAForgedActionHandleAsAThrow(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `whenever({ name: "forges", each: "linear.ticket", if: () => true, then: () => ({ queued: true, __id: 99 }) as any });
+whenever({ name: "healthy", each: "linear.ticket", if: () => true, then: (t, ctx) => ctx.linear.queueComment(t, "ok", { once: ["h", t.id] }) });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.ErrorContains(t, err, "problems found")
+	assert.Contains(t, out, "finding: forges threw in its then for ENG-1: then returned something that isn't an action")
+	assert.Regexp(t, `healthy +whenever +linear\.ticket +wants comment now for ENG-1`, out)
+}
+
+func TestRulesCheckNamesAMissingOnceKeyThatTheLintCouldNotSee(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `whenever({ name: "computed", each: "linear.ticket", if: () => true,
+  then: (t, ctx) => ctx.linear.queueComment(t, "hi", (t.id === "ENG-1" ? {} : { once: ["x"] }) as any) });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.ErrorContains(t, err, "problems found")
+	assert.Contains(t, out, "once is missing. Every action needs once")
+}
+
+func TestRulesCheckStopsALoopAtTheTopOfARuleFile(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `for (;;) {}`)
+
+	start := time.Now()
+	_, _, err := h.runWith(context.Background(), dispatch.Options{RulesDir: dir, RuleTimeout: dispatch.RuleTimeout{Then: 100 * time.Millisecond}}, "rules", "check")
+
+	require.Error(t, err)
+	assert.Less(t, time.Since(start), 5*time.Second)
+}
+
+func TestRulesCheckCannotReachTheRealClockThroughDate(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `whenever({ name: "clock", each: "linear.ticket",
+  if: (t, ctx) => new (new Date().constructor as any)().getTime() === ctx.now,
+  then: (t, ctx) => ctx.linear.queueComment(t, "pinned", { once: ["c", t.id] }) });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `clock +whenever +linear\.ticket +wants comment now for ENG-1`, out)
 }

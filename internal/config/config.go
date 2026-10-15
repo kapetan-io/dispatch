@@ -77,7 +77,8 @@ type Treehouse struct{}
 // Notify is the notify plugin's table. It has no settings yet.
 type Notify struct{}
 
-// HTTPService is a service a rule may call through ctx.http.
+// HTTPService is a service named for rules to call. Dispatch loads and checks the
+// table, and no rule can call it yet.
 type HTTPService struct {
 	BaseURL      string `toml:"base_url"`
 	TokenCommand string `toml:"token_command"`

@@ -65,7 +65,7 @@ func (r *record) fact(name string) (reflect.Value, bool) {
 func (r *record) unknownAll(reason string) {
 	for i := range r.v.Elem().NumField() {
 		f := r.v.Elem().Field(i)
-		if f.Kind() == reflect.Struct && f.NumField() == 3 {
+		if f.Kind() == reflect.Struct && strings.HasPrefix(f.Type().Name(), "Fact[") {
 			f.FieldByName("Unknown").SetString(reason)
 		}
 	}
@@ -312,11 +312,10 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 	for holder := range w.Leased {
 		s.leased[holder] = true
 	}
-	for _, t := range w.Tickets {
-		s.leasedUnknown(w, t)
-	}
-	for _, t := range s.kinds["linear.ticket"] {
-		s.leasedUnknown(w, ticketOf(t))
+	for _, t := range s.index {
+		if t.kind == "linear.ticket" {
+			s.leasedUnknown(w, t)
+		}
 	}
 	s.treeRecords(w)
 	s.prRecords(w)
@@ -348,18 +347,8 @@ func (s *State) ticketRecordHidden(t linear.Ticket) {
 	s.ticketRecord(t).hidden = true
 }
 
-// ticketOf returns the linear.Ticket facts a record was built from, just
-// enough to tell its repo.
-func ticketOf(r *record) linear.Ticket {
-	t := r.v.Interface().(*Ticket)
-	out := linear.Ticket{Identifier: r.id}
-	if t.Repo.Unknown == "" && t.Repo.Value != nil {
-		out.Labels = []linear.Label{{Name: *t.Repo.Value, Group: "repo"}}
-	}
-	return out
-}
-
-func (s *State) repoOf(r *record) (string, bool) {
+// repoOf is the repo label of a ticket record, when it could be read.
+func repoOf(r *record) (string, bool) {
 	t := r.v.Interface().(*Ticket)
 	if t.Repo.Unknown != "" || t.Repo.Value == nil {
 		return "", false
@@ -368,11 +357,9 @@ func (s *State) repoOf(r *record) (string, bool) {
 }
 
 // leasedUnknown notes that a ticket's lease can't be told when its repo's pool wasn't read.
-func (s *State) leasedUnknown(w world.World, t linear.Ticket) {
-	for _, label := range t.Labels {
-		if label.Group == s.Config.Plugins.Linear.RepoLabelGroup && w.UnreadRepos[label.Name] {
-			s.leasedUnread[t.Identifier] = "treehouse pool " + label.Name + " unread"
-		}
+func (s *State) leasedUnknown(w world.World, r *record) {
+	if repo, ok := repoOf(r); ok && w.UnreadRepos[repo] {
+		s.leasedUnread[r.id] = "treehouse pool " + repo + " unread"
 	}
 }
 
@@ -409,7 +396,7 @@ func (s *State) workerRecord(w world.World, id string, wk worker.Worker, stop st
 		r.unknownAll(s.herdrUnread)
 	} else if wk.State == worker.None {
 		if t, ok := s.lookup("linear.ticket", subject); ok {
-			if repo, ok := s.repoOf(t); ok && w.UnreadRepos[repo] {
+			if repo, ok := repoOf(t); ok && w.UnreadRepos[repo] {
 				r.unknownAll(s.pools[repo].unknown)
 			}
 		}
@@ -531,10 +518,10 @@ func (s *State) prRecords(w world.World) {
 	}
 }
 
-// Subjects of a record, as plans and receipts name them.
+// String names a record as "kind/id", the way plans and traces do.
 func (r *record) String() string { return r.kind + "/" + r.id }
 
-// ReceiptEscalations adds an escalation record for each escalate receipt in the ledger.
+// addEscalations adds an escalation record for each escalate receipt in the ledger.
 func (s *State) addEscalations() {
 	at := s.ms()
 	for _, rc := range s.Ledger.Entries {

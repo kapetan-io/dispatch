@@ -32,7 +32,7 @@ whenever({
 whenever({
   name: "escalate-truncated-labels",
   each: "linear.ticket",
-  if:   (t, ctx) => t.status === "in_progress" && !known(() => t.labels) && ctx.herdr.worker(t).state === "none",
+  if:   (t, ctx) => t.status === "in_progress" && !t.hasChildren && !known(() => t.labels) && ctx.herdr.worker(t).state === "none",
   then: (t, ctx) => escalate(t, ctx,
            "it has more labels than the dispatcher reads, so it can't tell its repo or whether it is a design ticket. Remove some labels and move it back to In Progress.",
            ["truncated-labels", t.statusSince]),

@@ -26,7 +26,7 @@ func schemaOf(t reflect.Type) map[string]any {
 	case reflect.TypeFor[Duration]():
 		return map[string]any{"type": "string", "pattern": `^(\d+d)?([0-9.]+(ns|us|µs|ms|s|m|h))*$`, "description": `A duration such as "5m" or "7d".`}
 	case reflect.TypeFor[Rules]():
-		return map[string]any{"type": "object", "description": "Your own settings. Dispatch never interprets them, and rules read them as ctx.config.rules.", "additionalProperties": true}
+		return map[string]any{"type": "object", "description": "Your own settings, read by rules as ctx.config.rules. Dispatch reads only the five keys the shipped rules use.", "additionalProperties": true}
 	}
 	switch t.Kind() {
 	case reflect.String:

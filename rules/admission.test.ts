@@ -90,3 +90,20 @@ scenario(rules, "escalations and notices are not held by the cap", s => {
           ticket("ENG-2", { status: "needs_human" }));
   s.expect([["escalate-missing-repo", "linear.escalate", "ENG-1"], ["notify-needs-human", "notify.send", "ENG-2"]]);
 });
+
+scenario(rules, "closing a parent takes no worker slot, so a full cap does not hold it", s => {
+  s.config({ maxInProgress: 1 });
+  s.given(ticket("ENG-9", { status: "in_progress", optedIn: true, repo: "dispatch" }), worker("ENG-9", "working"),
+          ticket("ENG-1", { status: "in_progress", optedIn: true, repo: "dispatch" }),
+          ticket("ENG-2", { parent: "ENG-1", status: "done" }));
+  s.expect([["close-parent", "linear.move", "ENG-1", "close_parent"]]);
+});
+
+scenario(rules, "closing a parent does not take the slot a waiting launch needs", s => {
+  s.config({ maxInProgress: 2 });
+  s.given(ticket("ENG-9", { status: "in_progress", optedIn: true, repo: "dispatch" }), worker("ENG-9", "working"),
+          ticket("ENG-1", { status: "in_progress", optedIn: true, repo: "dispatch" }),
+          ticket("ENG-2", { parent: "ENG-1", status: "done" }),
+          ticket("ENG-3", { status: "in_progress", optedIn: true, repo: "dispatch", createdAt: "2026-10-01" }));
+  s.expect([["close-parent", "linear.move", "ENG-1", "close_parent"], ["launch-worker", "herdr.launch", "ENG-3"]]);
+});

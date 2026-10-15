@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strings"
 	"text/tabwriter"
-	"time"
 
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/rules"
@@ -121,7 +120,11 @@ func rulesInit(opts Options, arg string) error {
 		}
 	}
 	if len(exist) > 0 {
-		return fmt.Errorf("%s already has %s. rules init never overwrites a file, so move them or pick another directory", dir, strings.Join(exist, ", "))
+		shown := exist
+		if len(shown) > 5 {
+			shown = append(slices.Clone(shown[:5]), fmt.Sprintf("and %d more", len(exist)-5))
+		}
+		return fmt.Errorf("%s already has %s. rules init never overwrites a file, so move them or pick another directory", dir, strings.Join(shown, ", "))
 	}
 	for _, name := range names {
 		path := filepath.Join(dir, name)
@@ -319,18 +322,15 @@ func heldSummary(result rules.Result, rule string) string {
 }
 
 func rulesTest(opts Options, arg string) error {
-	cfg := config.Config{}
-	loaded, err := config.Load(opts.ConfigPath)
 	var cfgPtr *config.Config
-	if err == nil {
-		cfg, cfgPtr = loaded, &loaded
+	if loaded, err := config.Load(opts.ConfigPath); err == nil {
+		cfgPtr = &loaded
 	}
-	_ = cfg
 	dir, err := rulesDir(opts, arg, cfgPtr)
 	if err != nil {
 		return err
 	}
-	summary, err := rules.RunScenarios(dir, rules.Timeouts(opts.RuleTimeout), time.Now)
+	summary, err := rules.RunScenarios(dir, rules.Timeouts(opts.RuleTimeout))
 	for _, line := range summary.Lines {
 		_, _ = fmt.Fprintln(opts.Stdout, line)
 	}

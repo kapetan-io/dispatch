@@ -40,7 +40,7 @@ type Receipt struct {
 	// Steps are the separate parts of an action that has several, such as an
 	// escalation's move and comment, each with its own outcome.
 	Steps []Step `json:"steps,omitempty"`
-	// Reset marks a receipt `dispatch state reset` wrote for something never sent.
+	// Reset marks a Done receipt written for something that was never sent, so counts and waits skip it.
 	Reset bool `json:"reset,omitempty"`
 }
 

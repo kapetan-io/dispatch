@@ -27,7 +27,7 @@ var scenarioStart = time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
 
 // RunScenarios runs each *.test.ts file under dir in the sobek runtime a live
 // run uses. A failed scenario is reported, and the rest still run.
-func RunScenarios(dir string, timeouts Timeouts, _ func() time.Time) (Summary, error) {
+func RunScenarios(dir string, timeouts Timeouts) (Summary, error) {
 	files, err := filepath.Glob(filepath.Join(dir, "*.test.ts"))
 	if err != nil {
 		return Summary{}, err

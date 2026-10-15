@@ -22,8 +22,17 @@ type ActionSpec struct {
 	// Options is the TypeScript of the options beyond once.
 	Options string
 	// Capped marks an action that takes a worker slot under max_in_progress
-	// unless its options say uncapped: true.
+	// unless its options say uncapped: true. A move takes one only when it
+	// moves a ticket into In Progress, because that is what starts a worker.
 	Capped bool
+}
+
+// takesSlot reports whether the queued action counts against max_in_progress.
+func (q *queued) takesSlot() bool {
+	if q.spec.Kind == kindLinearMove {
+		return q.spec.Capped && q.args["status"] == "in_progress"
+	}
+	return q.spec.Capped
 }
 
 const (
@@ -38,7 +47,9 @@ const (
 	kindNotifySend     = "notify.send"
 )
 
-// Actions lists every action a rule can queue.
+// Actions lists every action a rule can queue. Adding one also takes a subject
+// kind in queueFn (call.go) and, for a new plugin, a case in ctxPlugins (declarations.go)
+// and in ctx (call.go); the generated declarations then follow from this table.
 var Actions = []ActionSpec{
 	{Plugin: "linear", Method: "queueMove", Kind: kindLinearMove, Receipt: "move", Subject: Param{"t", "Ticket"},
 		Params: []Param{{"status", "string"}, {"why", "string"}}, Options: "uncapped?: boolean", Capped: true},
