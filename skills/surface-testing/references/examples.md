@@ -332,6 +332,7 @@ The contract tests run one set of scenarios against each implementation.
 
 ```go
 func TestOrderRepositoryContract(t *testing.T) {
+    ctx := context.Background()
     for _, impl := range []struct {
         name string
         repo func(t *testing.T) orders.OrderRepository
@@ -346,9 +347,12 @@ func TestOrderRepositoryContract(t *testing.T) {
             // The real repository rejects a duplicate ID, so the fake must too.
             require.Error(t, repo.Save(ctx, orders.Order{ID: "o1", Status: orders.Pending}))
 
+            require.NoError(t, repo.Save(ctx, orders.Order{ID: "o2", Status: orders.Pending}))
+
             pending, err := repo.ListPending(ctx)
             require.NoError(t, err)
-            assert.Len(t, pending, 1)
+            require.Len(t, pending, 2)
+            assert.ElementsMatch(t, []string{"o1", "o2"}, []string{pending[0].ID, pending[1].ID})
         })
     }
 }
