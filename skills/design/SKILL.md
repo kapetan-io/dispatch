@@ -146,7 +146,7 @@ Give it the blueprint and this session's transcript, `~/.claude/projects/<projec
 - List every decision the user made that the blueprint should reflect (scope, constraints, rejected options, names) as **PRESENT**, **SUPERSEDED** (the user later changed it), **CHANGED** (the blueprint words it differently) or **MISSING**, each with the user's words and time, checked against the blueprint and its decision log.
 - List section dependencies: which parts must be built before which.
 
-Check each CHANGED, MISSING and SUPERSEDED finding against the transcript yourself. Fix the confirmed ones in the blueprint, and put to the user any where the right answer isn't clear. The decision log is also the blueprint's last section, so a fix that changes a decision goes in both its section and the log. Add the section dependencies to the blueprint, where the reviewer and `dispatch:breakdown` will read them.
+Check each CHANGED, MISSING and SUPERSEDED finding against the transcript yourself. Fix the confirmed ones in the blueprint, and put to the user any where the right answer isn't clear. The decision log is also the blueprint's last section, so a fix that changes a decision goes in both its section and the log. Add the section dependencies to the blueprint, where the reviewer and `dispatch:breakdown` will read them. Breakdown takes each piece's "builds on" from them.
 
 ## Review or break down
 
