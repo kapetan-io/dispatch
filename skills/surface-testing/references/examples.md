@@ -144,6 +144,7 @@ The async work resulted in a billing record. That's observable through the publi
 
 The dependency runs in-process, and only its own externals are substituted.
 
+```go
 func TestOrderWithPayments(t *testing.T) {
     // Given: the payments service running embedded — real code, real handlers
     payments := paymentssvc.NewEmbedded(paymentssvc.EmbeddedOptions{
@@ -168,6 +169,7 @@ This is higher fidelity than any fake: the *real* payments code runs, using its 
 
 `gofakes3` speaks the real S3 protocol, so the client, codec and connection handling all run.
 
+```go
 func TestImageUpload(t *testing.T) {
     // Given: an in-process S3 fake
     backend := s3mem.New()
@@ -201,6 +203,7 @@ func TestImageUpload(t *testing.T) {
 
 Same test shape as the in-process fake, with a container for the endpoint.
 
+```go
 container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
     ContainerRequest: testcontainers.ContainerRequest{
         Image:        "sculley/fake-s3",
@@ -246,12 +249,13 @@ class OrderControllerTest {
 
 `@MockBean` here replaces an *external* dependency — the event broker is a system boundary. The full application context still boots, the request still goes through HTTP, and all internal services run for real. `await().atMost()` (Awaitility) is the Kotlin equivalent of Go's `require.Eventually`.
 
-**Never use `@MockBean` for internal components.** `@MockBean(UserService::class)` or `@MockBean(OrderRepository::class)` means you are testing implementation, not behavior. Either `@MockBean` or `@Replaces` works — the rule is the same: only substitute *external* boundaries.
+**Never use `@MockBean` for internal components.** `@MockBean(UserService::class)` skips internal behavior. Either `@MockBean` or `@Replaces` may install a working fake at an external boundary, including an `OrderRepository` fake checked by contract tests. Assert on outcomes, not on which repository methods were called.
 
 ## Frozen clock
 
 A provider you freeze, inject through the options struct and advance.
 
+```go
 func TestRetryAfterBackoff(t *testing.T) {
     // Given: a frozen clock provider to inject into the service
     clk := clock.NewProvider()
@@ -280,6 +284,7 @@ func TestRetryAfterBackoff(t *testing.T) {
 
 `Stats()` is useful to an operator too, so it isn't test-only code.
 
+```go
 type Stats struct {
     WALWriteCount     int64
     WALLastWriteTime  time.Time
@@ -312,6 +317,7 @@ func TestWALPeriodicWrite(t *testing.T) {
 
 Both implementations satisfy one interface. Contract tests keep them behaving the same.
 
+```go
 type OrderRepository interface {
     Save(ctx context.Context, order Order) error
     Get(ctx context.Context, id string) (Order, error)
