@@ -388,3 +388,68 @@ func TestATicketWithAChildHasChildren(t *testing.T) {
 	assert.True(t, found[0].HasChildren)
 	assert.False(t, found[1].HasChildren)
 }
+
+func TestOnlyLeasedTicketsReturnArchivedTickets(t *testing.T) {
+	workspace := lineartest.New(&journal.Journal{})
+	parent, archived := issue(1, "In Progress"), issue(2, "In Progress")
+	archived.Parent, archived.Archived = parent.Identifier, true
+	workspace.Seed(parent, archived)
+	work := workspace.Connect(lineartest.Key)
+
+	leased, err := work.LeasedTickets(context.Background(), "ai", []string{"ENG"}, []string{"ENG-2"})
+	require.NoError(t, err)
+	managed, err := work.ManagedTickets(context.Background(), "ai", []string{"ENG"})
+	require.NoError(t, err)
+	children, err := work.ParentChildren(context.Background(), []string{parent.ID})
+	require.NoError(t, err)
+
+	require.Len(t, leased, 1)
+	assert.Equal(t, "ENG-2", leased[0].Identifier)
+	require.Len(t, managed, 1)
+	assert.Equal(t, "ENG-1", managed[0].Identifier)
+	assert.Empty(t, children)
+}
+
+func TestLeasedTicketsOverflowCountsEveryNamedTicketBeforeTheAssigneeFilter(t *testing.T) {
+	workspace := lineartest.New(&journal.Journal{})
+	var issues []lineartest.Issue
+	var named []string
+	for n := range linear.PageSize + 1 {
+		stranger := issue(n+1, "Done")
+		stranger.Assignee = "someone-else"
+		issues = append(issues, stranger)
+		named = append(named, stranger.Identifier)
+	}
+	workspace.Seed(issues...)
+
+	_, err := workspace.Connect(lineartest.Key).LeasedTickets(context.Background(), "ai", []string{"ENG"}, named)
+
+	require.EqualError(t, err, linear.LeasedOverflow().Error())
+}
+
+func TestSeedRefusesAParentFlaggedWithoutAChild(t *testing.T) {
+	workspace := lineartest.New(&journal.Journal{})
+	lonely := issue(1, "In Progress")
+	lonely.HasChildren = true
+
+	assert.PanicsWithValue(t, "lineartest: ENG-1 is flagged HasChildren, but no unarchived seeded ticket has it as its parent", func() {
+		workspace.Seed(lonely)
+	})
+}
+
+func TestATicketWhoseOnlyChildIsArchivedHasNoChildren(t *testing.T) {
+	workspace := lineartest.New(&journal.Journal{})
+	parent, archived := issue(1, "In Progress"), issue(2, "Done")
+	archived.Parent, archived.Archived = parent.Identifier, true
+	workspace.Seed(parent, archived)
+	work := workspace.Connect(lineartest.Key)
+
+	managed, err := work.ManagedTickets(context.Background(), "ai", []string{"ENG"})
+	require.NoError(t, err)
+	children, err := work.ParentChildren(context.Background(), []string{parent.ID})
+	require.NoError(t, err)
+
+	require.Len(t, managed, 1)
+	assert.False(t, managed[0].HasChildren)
+	assert.Empty(t, children)
+}

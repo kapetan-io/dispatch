@@ -629,7 +629,8 @@ func TestTickReportsAPRWithMoreReviewThreadsThanItReads(t *testing.T) {
 
 func TestTickIgnoresInReviewParentTickets(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(withChildren(ticket("ENG-1", "In Review", "dispatch")))
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Backlog"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 

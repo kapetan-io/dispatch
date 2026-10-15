@@ -35,8 +35,10 @@ func stateType(status string) string {
 	return "started"
 }
 
+// parent builds a ticket that becomes a parent once a test gives it children
+// with setChildren, as Linear derives it.
 func parent(id, status string) fakeTicket {
-	return withChildren(ticket(id, status, "dispatch"))
+	return ticket(id, status, "dispatch")
 }
 
 func TestTickPromotesAnUnblockedChildAndHoldsTheBlockedOne(t *testing.T) {
@@ -69,7 +71,7 @@ func TestTickLaunchesAPromotedChildOnTheNextTick(t *testing.T) {
 	require.Empty(t, h.launches())
 
 	// Linear now reports the promoted child as In Progress.
-	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-2", "In Progress", "dispatch"))
+	h.tickets(parent("ENG-1", "In Progress"), child("ENG-2", "ENG-1", "In Progress"))
 	h.linear.setChildren(child("ENG-2", "ENG-1", "In Progress"))
 	out, err := h.run("tick")
 	require.NoError(t, err)
@@ -371,8 +373,10 @@ func TestTickCountsEveryChildBeforeClosingAParent(t *testing.T) {
 func TestTickNeverClosesAParentWhoseChildrenWereNotReturned(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(parent("ENG-1", "In Progress"))
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Done"))
+	h.linear.failChildren()
 
-	_, err := h.run("tick")
+	_, _, err := h.runContext(t.Context(), "tick")
 	require.NoError(t, err)
 
 	assert.Empty(t, h.linear.mutations())
@@ -452,7 +456,7 @@ func TestTickDoesNotCountParentsAgainstTheWorkerCap(t *testing.T) {
 	h := newHarness(t)
 	h.config("max_in_progress = 1\n")
 	h.tickets(parent("ENG-1", "In Progress"), parent("ENG-8", "In Progress"))
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-9", "ENG-8", "Backlog"))
 
 	_, err := h.run("tick")
 	require.NoError(t, err)
@@ -551,6 +555,7 @@ func TestTickReadsNoChildrenWhenNoParentIsInProgress(t *testing.T) {
 func TestTickKeepsLaunchingWhenTheChildrenCannotBeRead(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-2", "In Progress", "dispatch"))
+	h.linear.setChildren(child("ENG-3", "ENG-1", "Backlog"))
 	h.linear.failChildren()
 
 	out, stderr, err := h.runContext(t.Context(), "tick")

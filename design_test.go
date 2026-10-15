@@ -96,7 +96,7 @@ func TestTickNeverNudgesOrEscalatesADesignWorker(t *testing.T) {
 
 func TestTickKeepsTheDesignWorkerOnceItHasChildren(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(withChildren(designTicket("ENG-1", "In Progress")))
+	h.tickets(designTicket("ENG-1", "In Progress"))
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Backlog"))
 	h.worker("ENG-1", "idle")
 
@@ -116,7 +116,7 @@ func TestTickKeepsTheDesignWorkerOnceItHasChildren(t *testing.T) {
 
 func TestTickLeavesABacklogChildOfADesignTicketAlone(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(withChildren(designTicket("ENG-1", "In Progress")), ticket("ENG-2", "Backlog", "dispatch"))
+	h.tickets(designTicket("ENG-1", "In Progress"), ticket("ENG-2", "Backlog", "dispatch"))
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Backlog"))
 	h.worker("ENG-1", "idle")
 
@@ -130,7 +130,7 @@ func TestTickLeavesABacklogChildOfADesignTicketAlone(t *testing.T) {
 
 func TestTickLaunchesAChildOfADesignTicketAsABuild(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(withChildren(designTicket("ENG-1", "In Progress")), ticket("ENG-2", "In Progress", "dispatch"))
+	h.tickets(designTicket("ENG-1", "In Progress"), ticket("ENG-2", "In Progress", "dispatch"))
 	h.linear.setChildren(child("ENG-2", "ENG-1", "In Progress"))
 	h.worker("ENG-1", "idle")
 
@@ -225,7 +225,7 @@ func TestTickHoldsAPromotionForADesignParentInAnUnreadRepo(t *testing.T) {
 	h := newHarness(t)
 	h.config("max_in_progress = 1\n")
 	h.addRepo("tiger", filepath.Join(h.dir, "moved"))
-	h.tickets(parent("ENG-1", "In Progress"), withChildren(withLabel(ticket("ENG-3", "In Progress", "tiger"), "design")))
+	h.tickets(parent("ENG-1", "In Progress"), withLabel(ticket("ENG-3", "In Progress", "tiger"), "design"))
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
 
 	out, _, err := h.runContext(t.Context(), "tick")

@@ -145,19 +145,22 @@ func TestTickNeverEscalatesForAFullPool(t *testing.T) {
 
 func TestTickSkipsTicketsItNeverLaunches(t *testing.T) {
 	for _, test := range []struct {
-		name   string
-		ticket fakeTicket
-		want   string
+		name     string
+		ticket   fakeTicket
+		children []fakeTicket
+		want     string
 	}{
 		{
-			name:   "ParentTicket",
-			ticket: withChildren(ticket("ENG-1", "In Progress", "dispatch")),
-			want:   "skip ENG-1: has sub-issues, and a parent never gets a worker\n",
+			name:     "ParentTicket",
+			ticket:   ticket("ENG-1", "In Progress", "dispatch"),
+			children: []fakeTicket{child("ENG-2", "ENG-1", "Backlog")},
+			want:     "skip ENG-1: has sub-issues, and a parent never gets a worker\n",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
 			h.tickets(test.ticket)
+			h.linear.setChildren(test.children...)
 
 			out, err := h.run("tick")
 			require.NoError(t, err)
@@ -755,11 +758,6 @@ func ticket(id, status, repo string) fakeTicket {
 		},
 		Assignee: viewerID,
 	}
-}
-
-func withChildren(t fakeTicket) fakeTicket {
-	t.HasChildren = true
-	return t
 }
 
 func withLabel(t fakeTicket, name string) fakeTicket {
