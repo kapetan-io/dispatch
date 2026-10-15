@@ -222,7 +222,7 @@ server := api.NewServer(api.ServerOptions{S3Endpoint: endpoint})
 
 ## Kotlin substitute at the DI boundary
 
-`@MockBean` replaces an external dependency. The application still boots, and internal services run for real. `FakeEventBroker` stands for an in-memory fake that refuses what the real broker refuses, as `SKILL.md` describes under "A fake you write". It is not a recorder that accepts every call.
+`@MockBean` replaces an external dependency. The application still boots, and internal services run for real. `FakeEventBroker` stands for an in-memory fake that refuses what the real broker refuses, as `SKILL.md` describes under "A fake you write". It is not a spy that accepts every call.
 
 ```kotlin
 @MicronautTest
@@ -328,9 +328,35 @@ type PostgresOrderRepository struct { /* real adapter */ }
 type InMemoryOrderRepository struct { /* map-backed fake */ }
 ```
 
+The contract tests run one set of scenarios against each implementation.
+
+```go
+func TestOrderRepositoryContract(t *testing.T) {
+    for _, impl := range []struct {
+        name string
+        repo func(t *testing.T) orders.OrderRepository
+    }{
+        {"memory", newMemoryRepository},
+        {"postgres", newPostgresRepository}, // fails, not skips, when Postgres is unreachable
+    } {
+        t.Run(impl.name, func(t *testing.T) {
+            repo := impl.repo(t)
+            require.NoError(t, repo.Save(ctx, orders.Order{ID: "o1", Status: orders.Pending}))
+
+            // The real repository rejects a duplicate ID, so the fake must too.
+            require.Error(t, repo.Save(ctx, orders.Order{ID: "o1", Status: orders.Pending}))
+
+            pending, err := repo.ListPending(ctx)
+            require.NoError(t, err)
+            assert.Len(t, pending, 1)
+        })
+    }
+}
+```
+
 ## Tests derived from correctness claims
 
-An invariant violation, a behavioral constraint under a fault, and a boundary precondition. `FakeEventBroker` in the second test stands for an in-memory fake that refuses what the real broker refuses, as `SKILL.md` describes under "A fake you write". It is not a recorder that accepts every call.
+An invariant violation, a behavioral constraint under a fault, and a boundary precondition. `FakeEventBroker` in the second test is the same refusing fake as in the Kotlin example.
 
 ```go
 func TestTransferRejectsNegativeBalance(t *testing.T) {
@@ -375,7 +401,7 @@ func TestMessageNeverSilentlyDropped(t *testing.T) {
 }
 ```
 
-### Boundary Contract Tests
+### Boundary Precondition Tests
 
 For each component boundary with explicit preconditions/postconditions in the spec, write a test that violates a precondition and verifies the violation is rejected cleanly.
 

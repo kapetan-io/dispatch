@@ -44,24 +44,24 @@ The request succeeded but the work is asynchronous. That is a design gap, so wor
 
 ## Substituting external dependencies
 
-Substitute only what sits outside the deployment unit: object stores, brokers, payment gateways, other services in the repo, command-line tools. Anything inside the surface runs for real, including internal services and domain logic. An assertion like `verify { repository.save(any()) }` tests implementation, so don't write one.
+Fake only what sits outside the deployment unit: object stores, brokers, payment gateways, other services in the repo, command-line tools. Use the real dependency whenever you can run it, and fake it only for speed or because it is flaky or not always reachable. Anything inside the surface runs for real, including internal services and domain logic. An assertion like `verify { repository.save(any()) }` tests implementation, so don't write one.
 
 A fake encodes someone's understanding of the real tool, and it drifts. A fake `treehouse return` that ignored the lease holder passed tests the real tool failed. For a service with a wire protocol, prefer substitutes in this order. Each of the first three runs the real protocol, and the earlier ones are faster.
 
 1. **The real service, embedded.** When the dependency is in your language and ships an in-process constructor, boot it from the test and substitute only its own externals. A service other services consume should ship such a constructor.
 2. **A published in-process fake** that speaks the real protocol, such as `gofakes3` for S3. Your client, codec and connection handling all run.
 3. **A published fake in a container** (testcontainers). Same protocol over a real network hop, slower to start.
-4. **A fake you write**, behind a domain interface (next section). For an external command-line tool there is usually no published substitute, so this is the default. It has to refuse what the real tool refuses. A recorder that accepts every call and stores it proves your handler calls your fake, nothing more. Give it the real tool's state and rules, and make it return the errors the real tool returns.
+4. **A fake you write**, behind a domain interface (next section). For an external command-line tool there is usually no published substitute, so this is the default. It has to refuse what the real tool refuses. A spy that accepts every call and records it proves your handler calls your fake, nothing more. Give it the real tool's state and rules, and make it return the errors the real tool returns.
 
 > **The DNS server.** A team ran a real Go DNS server in tests and the service made actual lookups against it. A new Go version changed resolver behavior and the suite caught it before deploy. A mocked resolver would have shipped the bug.
 
 ### Repositories and gateways
 
-When tests use a dependency only as passive state or somewhere to send work, put it behind a domain interface named for its role (`OrderRepository` for a collection of domain objects, a gateway for any other external system). The real adapter talks to the dependency and an in-memory fake stands in for it. The interface is the edge of the deployment unit, so substituting it breaks no rule above.
+When tests use a dependency only as passive state or somewhere to send work, put it behind a domain interface named for its role (`OrderRepository` for a collection of domain objects, a gateway for any other external system). The real adapter talks to the dependency, and a fake stands in for it where the dependency is too slow or unreliable to run. The interface is the edge of the deployment unit, so substituting it breaks no rule above.
 
-A second implementation will drift from the first, so verify it with contract tests, one set of scenarios run against both. Faking at this level has a cost. Root tests no longer exercise command lines or JSON parsing, so adapter tests must cover them.
+A fake needs contract tests, one set of scenarios run against both the fake and the real dependency. Never delete or skip them to get a build green, and when the fake's behavior changes, change the shared scenarios so both sides still pass. The real-dependency run is what catches drift, so run it as often as you can and state in the PR where it runs. Faking at this level has a cost. Root tests no longer exercise command lines or JSON parsing, so adapter tests must cover them.
 
-- **Dedicated contract tests** when the fake only speeds up tests. Feature tests use the fake and trust the contract tests to catch drift.
+- **Contract tests as their own suite** when the fake only speeds up tests. Feature tests use the fake and trust the contract tests to catch drift.
 - **The whole suite against both** when the fake is also a deployment target (embedded, end-to-end or local-development mode), because then it is production code.
 
 ### Databases
