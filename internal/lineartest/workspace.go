@@ -119,7 +119,7 @@ func (w *Workspace) AddState(name, stateType string) {
 }
 
 // Seed replaces the tickets in the workspace. It panics on a status the team
-// doesn't have and on a ticket flagged HasChildren that no seeded ticket names
+// doesn't have and on a ticket flagged HasChildren that no unarchived seeded ticket names
 // as its parent, so a test can't hold a ticket Linear couldn't. A test that
 // needs a failed children read uses FailOn(OnChildren).
 func (w *Workspace) Seed(issues ...Issue) {
@@ -129,8 +129,8 @@ func (w *Workspace) Seed(issues ...Issue) {
 		if w.stateOf(issue.Status) == nil {
 			panic(fmt.Sprintf("lineartest: %s has status %q, which team %s lacks", issue.Identifier, issue.Status, w.team))
 		}
-		if issue.HasChildren && !slices.ContainsFunc(issues, func(other Issue) bool { return other.Parent == issue.Identifier }) {
-			panic(fmt.Sprintf("lineartest: %s is flagged HasChildren, but no seeded ticket has it as its parent", issue.Identifier))
+		if issue.HasChildren && !slices.ContainsFunc(issues, func(other Issue) bool { return !other.Archived && other.Parent == issue.Identifier }) {
+			panic(fmt.Sprintf("lineartest: %s is flagged HasChildren, but no unarchived seeded ticket has it as its parent", issue.Identifier))
 		}
 	}
 	w.issues = slices.Clone(issues)
@@ -200,9 +200,10 @@ func (w *Workspace) stateOf(name string) *State {
 }
 
 // withChildren is the ticket with HasChildren set when any ticket in the
-// workspace names it as its parent, as Linear derives it.
+// workspace names it as its parent, as Linear derives it. An archived child
+// doesn't count, as in ParentChildren.
 func (w *Workspace) withChildren(issue Issue) linear.Ticket {
-	if slices.ContainsFunc(w.issues, func(other Issue) bool { return other.Parent == issue.Identifier }) {
+	if slices.ContainsFunc(w.issues, func(other Issue) bool { return !other.Archived && other.Parent == issue.Identifier }) {
 		issue.HasChildren = true
 	}
 	return issue.Ticket

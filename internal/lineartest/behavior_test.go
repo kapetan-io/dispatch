@@ -432,7 +432,24 @@ func TestSeedRefusesAParentFlaggedWithoutAChild(t *testing.T) {
 	lonely := issue(1, "In Progress")
 	lonely.HasChildren = true
 
-	assert.PanicsWithValue(t, "lineartest: ENG-1 is flagged HasChildren, but no seeded ticket has it as its parent", func() {
+	assert.PanicsWithValue(t, "lineartest: ENG-1 is flagged HasChildren, but no unarchived seeded ticket has it as its parent", func() {
 		workspace.Seed(lonely)
 	})
+}
+
+func TestATicketWhoseOnlyChildIsArchivedHasNoChildren(t *testing.T) {
+	workspace := lineartest.New(&journal.Journal{})
+	parent, archived := issue(1, "In Progress"), issue(2, "Done")
+	archived.Parent, archived.Archived = parent.Identifier, true
+	workspace.Seed(parent, archived)
+	work := workspace.Connect(lineartest.Key)
+
+	managed, err := work.ManagedTickets(context.Background(), "ai", []string{"ENG"})
+	require.NoError(t, err)
+	children, err := work.ParentChildren(context.Background(), []string{parent.ID})
+	require.NoError(t, err)
+
+	require.Len(t, managed, 1)
+	assert.False(t, managed[0].HasChildren)
+	assert.Empty(t, children)
 }
