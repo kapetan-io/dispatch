@@ -149,6 +149,14 @@ func Start(dir string, at time.Time, h Header, snap Snapshot) (*Writer, error) {
 		return nil, fmt.Errorf("while creating history dir: %w", err)
 	}
 	t := at.UTC().Truncate(time.Second)
+	// A clock that stepped back must not name this segment before an older run's, or the
+	// next start would load the older state.
+	if existing, _ := Segments(dir); len(existing) > 0 {
+		name := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(existing[len(existing)-1]), segmentPrefix), segmentSuffix)
+		if newest, err := time.Parse(timeLayout, name); err == nil && !t.After(newest) {
+			t = newest.Add(time.Second)
+		}
+	}
 	var f *os.File
 	var path string
 	for {
@@ -248,7 +256,7 @@ func Latest(dir string) (Segment, bool, error) {
 	// between leaves one with neither, which holds nothing, so the one before it is the state.
 	for i := len(paths) - 1; i >= 0; i-- {
 		seg, err := Read(paths[i])
-		if errors.Is(err, errIncomplete) && i > 0 {
+		if errors.Is(err, errIncomplete) {
 			continue
 		}
 		return seg, err == nil, err

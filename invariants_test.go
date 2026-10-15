@@ -348,3 +348,34 @@ func TestInvariantARestartDuringALinearOutageKeepsEveryWait(t *testing.T) {
 
 	assert.Len(t, h.notifications(), 1)
 }
+
+// A first run that crashed before its segment had a header leaves a file with nothing in it.
+func TestInvariantAnEmptyFirstSegmentIsNoHistory(t *testing.T) {
+	h := newHarness(t)
+	events := filepath.Join(h.state, "events")
+	require.NoError(t, os.MkdirAll(events, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(events, "events-20260101T000000Z.jsonl"), nil, 0o600))
+
+	_, err := h.run("tick")
+
+	require.NoError(t, err)
+}
+
+// A clock that stepped back must not make a newer run's history look older than an earlier run's.
+func TestInvariantAClockThatSteppedBackStillLoadsTheNewestRun(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	future := h.clock.Now().Add(48 * time.Hour)
+	w, err := history.Start(filepath.Join(h.state, "events"), future,
+		history.Header{Why: "start", At: future.UnixMilli()}, history.Snapshot{At: future.UnixMilli()})
+	require.NoError(t, err)
+	require.NoError(t, w.Close(true))
+	h.tick()
+	require.Len(t, h.launches(), 1)
+
+	h.restart()
+	h.tick()
+
+	assert.Len(t, h.launches(), 1)
+	assert.NotEmpty(t, loopReceipts(h, "launch", "ENG-1"))
+}

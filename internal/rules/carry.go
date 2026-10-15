@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"slices"
+	"strings"
 
 	"github.com/kapetan-io/dispatch/internal/world"
 )
@@ -231,10 +232,10 @@ func (s *State) carryPools(mem, next *world.Memory) {
 }
 
 // keepWhileUnread keeps what dispatch remembered about records a failed read left out,
-// because no record exists to carry it. While Linear can't be read no ticket exists, and
-// while a pool can't be read its trees and the tickets that hold them don't either.
-// Without this a restart during an outage would forget every wait, and the keys built
-// on them would change.
+// because no record exists to carry it. While Linear can't be read no ticket exists, so
+// every wait is kept. While a pool can't be read its trees don't exist, nor do the
+// tickets that hold them, so those are kept. Without this a restart during an outage
+// would forget every wait, and the keys built on them would change.
 func (s *State) keepWhileUnread(mem, next *world.Memory) {
 	poolUnread := false
 	for _, p := range s.pools {
@@ -243,18 +244,38 @@ func (s *State) keepWhileUnread(mem, next *world.Memory) {
 	if s.linearUnread == "" && !poolUnread {
 		return
 	}
+	holders := map[string]bool{}
+	if poolUnread {
+		for key, old := range mem.Facts {
+			var holder Ref
+			if strings.HasPrefix(key, "treehouse.tree/") && strings.HasSuffix(key, "/holder") && json.Unmarshal(old.Value, &holder) == nil {
+				holders[holder.ID] = true
+			}
+		}
+	}
+	keep := func(key string) bool {
+		if s.linearUnread != "" || strings.HasPrefix(key, "treehouse.tree/") {
+			return true
+		}
+		for id := range holders {
+			if strings.HasPrefix(key, "linear.ticket/"+id+"/") || strings.HasPrefix(key, "herdr.worker/"+id+"/") || strings.HasPrefix(key, "herdr.worker/"+id+"@") {
+				return true
+			}
+		}
+		return false
+	}
 	for key, old := range mem.Facts {
-		if _, ok := next.Facts[key]; !ok {
+		if _, ok := next.Facts[key]; !ok && keep(key) {
 			next.Facts[key] = old
 		}
 	}
 	for id, v := range mem.PreviousStatus {
-		if _, ok := next.PreviousStatus[id]; !ok {
+		if _, ok := next.PreviousStatus[id]; !ok && (s.linearUnread != "" || holders[id]) {
 			next.PreviousStatus[id] = v
 		}
 	}
 	for id, v := range mem.Waiting {
-		if _, ok := next.Waiting[id]; !ok {
+		if _, ok := next.Waiting[id]; !ok && (s.linearUnread != "" || holders[id]) {
 			next.Waiting[id] = v
 		}
 	}
