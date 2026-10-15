@@ -47,20 +47,24 @@ func (a *Alerts) Shown() []string {
 	return slices.Clone(a.shown)
 }
 
+// Show records the call once its outcome is decided, so a test that sees the call knows
+// whether it failed or was shown.
 func (a *Alerts) Show(ctx context.Context, text string) error {
-	a.journal.Record("alerts", "show", text)
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	a.mu.Lock()
 	stall := a.stall
 	a.mu.Unlock()
 	if stall {
 		<-ctx.Done()
+		a.journal.Record("alerts", "show", text)
 		return ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		a.journal.Record("alerts", "show", text)
+		return err
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.journal.Record("alerts", "show", text)
 	if a.fail != nil {
 		return a.fail
 	}
