@@ -119,7 +119,7 @@ func (p Post) tellWatchers(ctx context.Context, ev Event) {
 	}
 }
 
-// warn reports a watcher failure without failing the tick.
+// warn reports a watcher failure without failing the action.
 func (p Post) warn(format string, args ...any) {
 	if p.Stderr != nil {
 		_, _ = fmt.Fprintf(p.Stderr, "dispatch: "+format+"\n", args...)
@@ -164,7 +164,7 @@ func send(ctx context.Context, socket, text string) error {
 	return err
 }
 
-// updateWatchers rewrites the list under a lock, because a tick dropping a
+// updateWatchers rewrites the list under a lock, because the loop dropping a
 // dead socket can overlap a session watching a ticket.
 func updateWatchers(stateDir string, change func([]string) []string) error {
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {

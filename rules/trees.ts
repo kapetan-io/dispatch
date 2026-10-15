@@ -34,8 +34,8 @@ const refusedReturn = (tree: Tree, ctx: Ctx) =>
     .find(r => r.outcome === "refused" && r.once[1] === tree.path && r.once[2] === tree.leasedSince);
 
 // One comment per lease says why the tree was kept, and another when a reopened ticket
-// finishes again: the key carries the holder's statusSince, which changes when it does. When you push, treehouse reports the tree clean, and teardown-clean-tree
-// returns it.
+// finishes again: the key carries the holder's statusSince, which changes when it does.
+// When you push, treehouse reports the tree clean, and teardown-clean-tree returns it.
 whenever({
   name: "comment-kept-tree",
   each: "treehouse.tree",

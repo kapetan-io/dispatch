@@ -53,13 +53,12 @@ export const recentlySent = (t: Ticket, topic: string, window: number, ctx: Ctx)
   ctx.ledger.receipts(t, { kind: ["nudge", "notify", "comment"], topic })
     .some(r => sent(r) && r.started > ctx.now - window);
 
-// The comparisons against a time dispatch first saw something are >=, not >: a launch or a nudge
-// from the cycle that first saw the item already covers it, and that cycle shares its millisecond.
 // Whether a ticket's worker has heard about a comment or PR activity. A worker dispatch
 // first saw after the item started out knowing it, and a launch's kickoff tells it
 // everything dispatch had seen. A resume nudge tells it to read every comment. Otherwise
 // a nudge tells what its once key names, such as ["comment", at] or ["activity", at],
-// in the source's own time.
+// in the source's own time. A launch or nudge started in the very cycle that first saw the item
+// counts, because that cycle shares the item's millisecond (so >=, not >).
 export const heard = (t: Ticket, topic: "comment" | "activity", item: Seen | undefined, ctx: Ctx) => {
   if (item === undefined) return true;
   const w = ctx.herdr.worker(t);

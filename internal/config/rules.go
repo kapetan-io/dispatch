@@ -7,11 +7,10 @@ import (
 	"time"
 )
 
-// Rules is the [rules] table. Rules read it as ctx.config.rules, and today's
-// tick reads the five keys listed in the accessors until the rules replace it.
+// Rules is the [rules] table. Rules read it as ctx.config.rules.
 type Rules map[string]any
 
-// Defaults of the five keys the tick reads, which `dispatch rules init` writes.
+// Defaults of the five keys `dispatch rules init` writes.
 const (
 	DefaultWorkerModel            = "sonnet"
 	DefaultDesignModel            = "opus"
@@ -65,29 +64,6 @@ func (r Rules) text(key, fallback string) string {
 
 // WorkerModel is the model build workers start with.
 func (c Config) WorkerModel() string { return c.Rules.text("worker_model", DefaultWorkerModel) }
-
-// DesignModel is the model design and design-review workers start with.
-func (c Config) DesignModel() string { return c.Rules.text("design_model", DefaultDesignModel) }
-
-// LaunchFailureLimit is how many launches in a row may fail before the ticket escalates.
-func (c Config) LaunchFailureLimit() int {
-	return c.Rules.integer("launch_failure_limit", DefaultLaunchFailureLimit)
-}
-
-// NudgeLimit is how many PR nudges or relaunches a PR head gets before the ticket escalates.
-func (c Config) NudgeLimit() int { return c.Rules.integer("nudge_limit", DefaultNudgeLimit) }
-
-// BlockedRenotifyTicks is how many ticks pass between notices for a worker that
-// stays blocked, rounded up from [rules].blocked_renotify_minutes. Zero notifies on every tick.
-func (c Config) BlockedRenotifyTicks() int {
-	minutes := c.Rules.integer("blocked_renotify_minutes", DefaultBlockedRenotifyMinutes)
-	resync := time.Duration(c.Dispatch.Resync)
-	if minutes <= 0 || resync <= 0 {
-		return 0
-	}
-	period := time.Duration(minutes) * time.Minute
-	return int((period + resync - 1) / resync)
-}
 
 // Duration is a time.Duration that reads from TOML text such as "5m" or "7d".
 type Duration time.Duration

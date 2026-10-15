@@ -49,7 +49,7 @@ func (p Post) Nudge(ctx context.Context, w world.Worker, text string) error {
 }
 
 // Notify tells the user, then every session following the event's ticket. The
-// caller retries a failed alert next tick, so watchers hear only once it has
+// caller retries a failed alert at the next resync, so watchers hear only once it has
 // shown, or a broken alert would wake them on every retry. The error is the
 // alert's alone, and a watcher that can't be reached never makes the caller
 // retry.

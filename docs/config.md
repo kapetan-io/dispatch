@@ -177,7 +177,7 @@ In a repo with `auto_merge = true`, a cycle that finds an In Review ticket's PR 
 - An approval of an earlier commit doesn't count, so a push after approval waits for a new one.
 - A ready PR with no approval on its head gets the ready-for-review notification as before. If the approval arrives later, the next cycle merges it.
 - A failed merge, such as branch protection refusing it, prints the error to stderr and sends one notification. Later cycles skip that head, and a push makes the PR eligible again.
-- There is no dry run. `dispatch rules check` shows whether the `merge` action is wanted now and takes no action.
+- `dispatch rules check` shows whether the `merge` action is wanted now and takes no action.
 - dispatch reads the config once, when `dispatch run` starts, so a change to a repo's `auto_merge` takes effect when you stop `dispatch run` and start it again.
 
 The PR is found through the repo `gh` resolves for the clone. A clone with two remotes (`origin` plus a fork as `upstream`) can resolve to the wrong one. Run `gh repo set-default owner/name` in that clone.

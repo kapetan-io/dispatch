@@ -63,8 +63,6 @@ type Result struct {
 	Reread world.Part
 	// Nudged is the ticket whose worker was typed into.
 	Nudged string
-	// Status is the status a Linear write moved a ticket to.
-	Status string
 }
 
 // Executor runs actions.
@@ -264,7 +262,7 @@ func (e *Executor) move(ctx context.Context, w rules.Want, wd world.World) Resul
 		return failed("%v", err)
 	}
 	why, _ := w.Args["why"].(string)
-	return Result{Outcome: ledger.Done, Detail: name + ": " + why, Reread: world.FromLinear, Status: name}
+	return Result{Outcome: ledger.Done, Detail: name + ": " + why, Reread: world.FromLinear}
 }
 
 // moveTo sets a ticket's status when it still has the status the cycle saw.
@@ -319,16 +317,18 @@ func (e *Executor) escalate(ctx context.Context, w rules.Want, wd world.World) R
 	why, _ := w.Args["why"].(string)
 	res := Result{Detail: why, TicketID: t.ID, Steps: []ledger.Step{{Name: "move"}, {Name: "comment"}}}
 	if err := e.moveTo(ctx, t, e.Config.Plugins.Linear.Statuses.NeedsHuman); err != nil {
-		res.Outcome, res.Detail = ledger.Failed, fmt.Sprintf("%v", err)
+		res.Outcome, res.Detail = ledger.Failed, err.Error()
 		res.Steps[0].Outcome = ledger.Failed
 		return res
 	}
-	res.Steps[0].Outcome, res.Reread, res.Status = ledger.Done, world.FromLinear, e.Config.Plugins.Linear.Statuses.NeedsHuman
+	res.Steps[0].Outcome, res.Reread = ledger.Done, world.FromLinear
 	res.Outcome = ledger.Done
 	body := "The dispatcher moved this ticket to Needs Human because " + why
 	if err := e.Linear().Comment(ctx, t.ID, body); err != nil {
 		res.Steps[1].Outcome = ledger.Failed
-		fmt.Fprintf(e.Stderr, "dispatch: while commenting on %s: %v\n", t.Identifier, err)
+		if e.Stderr != nil {
+			_, _ = fmt.Fprintf(e.Stderr, "dispatch: while commenting on %s: %v\n", t.Identifier, err)
+		}
 		return res
 	}
 	res.Steps[1].Outcome = ledger.Done
@@ -435,12 +435,13 @@ func (e *Executor) merge(ctx context.Context, w rules.Want, wd world.World) Resu
 	if err != nil {
 		return failed("%v", err)
 	}
-	for _, now := range tickets {
-		if now.Identifier == t.Identifier && (now.LastComment != t.LastComment || now.Status != t.Status) {
-			res := failed("%s changed in Linear since the cycle, so the merge waits for a new decision", t.Identifier)
-			res.Reread = world.FromLinear
-			return res
-		}
+	unchanged := slices.ContainsFunc(tickets, func(now linear.Ticket) bool {
+		return now.Identifier == t.Identifier && now.LastComment == t.LastComment && now.Status == t.Status
+	})
+	if !unchanged {
+		res := failed("%s changed in Linear since the cycle, so the merge waits for a new decision", t.Identifier)
+		res.Reread = world.FromLinear
+		return res
 	}
 	if err := e.PullRequests.Merge(ctx, url, head); err != nil {
 		msg, _, _ := strings.Cut(err.Error(), "\n")

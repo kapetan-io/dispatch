@@ -1,6 +1,6 @@
 // Package stops keeps the record of each worker's latest Stop, the moment
-// Claude Code ended a turn. The plugin's Stop hook writes it and the tick
-// reads it, because the hook is the only place Claude Code says whether an
+// Claude Code ended a turn. The plugin's Stop hook writes it and the rules
+// read it, because the hook is the only place Claude Code says whether an
 // idle session is waiting on background work.
 package stops
 
@@ -43,7 +43,7 @@ func Dir(stateDir string) string {
 
 // treeDir holds the records of the worker in tree, one file for each Claude
 // session that stopped there. Any session whose working directory is the tree
-// fires the hook, so the tick must pick the worker's own session out. Two
+// fires the hook, so the reader must pick the worker's own session out. Two
 // spellings of one tree must share records, so the tree is resolved first.
 func treeDir(stateDir, tree string) string {
 	if resolved, err := filepath.EvalSymlinks(tree); err == nil {
@@ -85,7 +85,7 @@ func Write(stateDir, tree, session string, r Record) error {
 
 // Read returns the latest Stop of session in the tree. With no session known,
 // it returns the latest Stop of any session there. A missing or unreadable
-// record is reported as absent, because the tick treats both as unknown.
+// record is reported as absent, because the rules treat both as unknown.
 func Read(stateDir, tree, session string) (Record, bool) {
 	dir := treeDir(stateDir, tree)
 	if session != "" {

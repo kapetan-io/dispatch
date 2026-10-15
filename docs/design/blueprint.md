@@ -1,5 +1,7 @@
 # Autonomous Build (Phase 2)
 
+> This is the Phase 2 design. The dispatcher has since become a reconcile loop that events wake, so the tick, `cache.json`, `--dry-run` and `interval_minutes` described below are gone. `docs/guide.md` describes what runs now.
+>
 > Parts of this blueprint are superseded. Read "Dispatcher blueprint edits owed" in `decision-log.md` before treating any rule here as current.
 
 Once you approve a ticket in Linear, it reaches a merged PR without anyone driving it. A stateless dispatcher makes herdr workers and treehouse worktrees match what Linear says should be happening, and each worker owns its own ticket's progress.

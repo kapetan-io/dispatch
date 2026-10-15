@@ -38,7 +38,7 @@ func (c *CLI) OpenWorkspace(ctx context.Context, w NewWorkspace) (string, error)
 	// The checkout opens as a worktree so its workspace nests under the repo in
 	// herdr's sidebar. There is no bare-workspace fallback, since herdr reports
 	// a bare workspace with no worktree path, so the dispatcher could never find
-	// its worker and would launch another one on every tick.
+	// its worker and would launch another one on every cycle.
 	out, _ := c.combined(ctx, "worktree", "open", "--cwd", w.Repo, "--path", w.Path, "--label", w.Label, "--no-focus", "--json")
 	var opened struct {
 		Result struct {

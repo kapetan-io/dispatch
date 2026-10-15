@@ -275,7 +275,9 @@ func tickCommand(ctx context.Context, opts Options, args []string) error {
 	case errors.Is(err, loop.ErrNotRunning):
 		return notRunning()
 	case err != nil && ctx.Err() == nil && (tctx.Err() != nil || errors.Is(err, os.ErrDeadlineExceeded)):
-		pending, perr := loop.Ask(context.Background(), opts.StateDir, loop.Request{Op: loop.OpPending})
+		askCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stop()
+		pending, perr := loop.Ask(askCtx, opts.StateDir, loop.Request{Op: loop.OpPending})
 		if perr == nil {
 			for _, line := range pending.Lines {
 				_, _ = fmt.Fprintln(opts.Stdout, line)

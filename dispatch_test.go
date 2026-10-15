@@ -822,7 +822,7 @@ func (c *fakeClock) Now() time.Time {
 func (c *fakeClock) NewTimer(d time.Duration) dispatch.Timer {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	t := &fakeTimer{c: make(chan time.Time, 1), at: c.now.Add(d)}
+	t := &fakeTimer{clock: c, c: make(chan time.Time, 1), at: c.now.Add(d)}
 	c.timers = append(c.timers, t)
 	return t
 }
@@ -851,14 +851,17 @@ func (c *fakeClock) Advance(d time.Duration) int {
 }
 
 type fakeTimer struct {
-	c    chan time.Time
-	at   time.Time
-	done bool
+	clock *fakeClock
+	c     chan time.Time
+	at    time.Time
+	done  bool
 }
 
 func (t *fakeTimer) C() <-chan time.Time { return t.c }
 
 func (t *fakeTimer) Stop() bool {
+	t.clock.mu.Lock()
+	defer t.clock.mu.Unlock()
 	was := !t.done
 	t.done = true
 	return was

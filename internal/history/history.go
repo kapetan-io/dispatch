@@ -309,6 +309,9 @@ func Read(path string) (Segment, error) {
 		}
 		n++
 	}
+	if err := sc.Err(); err != nil {
+		return seg, fmt.Errorf("while reading %s: %w", path, err)
+	}
 	if n < 2 {
 		return seg, fmt.Errorf("%s %w", path, errIncomplete)
 	}
@@ -358,7 +361,7 @@ func (s Segment) Load() (State, error) {
 			if err := json.Unmarshal(raw, &e); err != nil {
 				return st, err
 			}
-			if e.Type == "dispatch.resync" {
+			if e.Type == "dispatch.resync" || e.Type == "dispatch.tick" {
 				st.Resync++
 			}
 		}
@@ -428,7 +431,7 @@ func poolsEqual(a, b map[string]world.Pool) bool {
 	return bytes.Equal(x, y)
 }
 
-// Prune deletes the segments that ended more than keep ago, never the one at current.
+// Prune deletes the segments that began more than keep ago, never the one at current.
 func Prune(dir string, now time.Time, keep time.Duration, current string) error {
 	paths, err := Segments(dir)
 	if err != nil {

@@ -34,7 +34,7 @@ type Config struct {
 	Plugins  Plugins                `toml:"plugins"`
 	HTTP     map[string]HTTPService `toml:"http"`
 	// Rules is the user's own table. Dispatch never interprets it, apart from
-	// the five keys today's tick reads (see the accessors below).
+	// the five keys `dispatch rules init` writes (see the accessors below).
 	Rules Rules `toml:"rules"`
 }
 
