@@ -71,11 +71,13 @@ type Loop struct {
 	lastCycle *history.Cycle
 	cycleDue  bool
 
-	inbox   chan any
+	inbox chan any
+	// stopped closes when the loop has ended, so a client waiting on it hears so.
+	stopped chan struct{}
 	reading bool
 	pending world.Part
 	// afterRead runs once the read in flight lands.
-	afterRead []func()
+	afterRead []func() error
 
 	flights   map[string]*flight
 	launching map[string]bool
@@ -90,9 +92,13 @@ type Loop struct {
 	// nextResync is when the resync timer is due. An event that finds the clock past it
 	// means the machine slept through the resync.
 	nextResync time.Time
+	// rearm asks Run to set the resync timer again, a full interval from now.
+	rearm bool
 	// lastResync is when the previous resync line printed.
 	lastResync time.Time
 	listener   *listener
+	// nudgeEpoch counts the times a resync cleared the nudge overlay.
+	nudgeEpoch int
 	// nudgedDuring holds the tickets nudged while a read was in flight.
 	nudgedDuring map[string]bool
 	// actions counts the actions started since the last resync line.
@@ -100,7 +106,7 @@ type Loop struct {
 	linearCalls int
 	tells       int
 	// log lists the actions that ended, in order, so a tick reports only its own.
-	log []logged
+	ended []logged
 }
 
 type logged struct {
@@ -116,6 +122,7 @@ type flight struct {
 }
 
 type readDone struct {
+	epoch int
 	parts world.Part
 	w     world.World
 	err   error
@@ -144,7 +151,7 @@ func New(o Options) *Loop {
 	}
 	return &Loop{
 		o: o, clock: o.Clock, scope: world.ScopeOf(o.Config),
-		inbox: make(chan any, 256), flights: map[string]*flight{}, launching: map[string]bool{}, threw: map[string]bool{},
+		inbox: make(chan any, 256), stopped: make(chan struct{}), flights: map[string]*flight{}, launching: map[string]bool{}, threw: map[string]bool{},
 		renaming: map[string]string{},
 	}
 }
@@ -169,17 +176,24 @@ func (l *Loop) stamp() time.Time { return time.UnixMilli(l.ingest()) }
 // or when it cannot go on. A failure to start or to write history is returned.
 func (l *Loop) Run(ctx context.Context) (err error) {
 	l.started = l.ingest()
-	if err := l.start(ctx); err != nil {
-		return err
-	}
-	ln, err := listen(l.o.StateDir, l.inbox)
+	// The socket is checked before anything acts, so a state directory that can't hold one
+	// fails the start with nothing launched. Requests wait in the inbox until the start is done.
+	ln, err := listen(l.o.StateDir, l.inbox, l.stopped)
 	if err != nil {
-		_ = l.hist.Close(false)
 		return err
 	}
 	l.listener = ln
 	defer func() {
+		close(l.stopped)
 		ln.close()
+	}()
+	if err := l.start(ctx); err != nil {
+		if l.hist != nil {
+			_ = l.hist.Close(false)
+		}
+		return err
+	}
+	defer func() {
 		if cerr := l.hist.Close(err == nil); cerr != nil && err == nil {
 			err = cerr
 		}
@@ -199,8 +213,8 @@ func (l *Loop) Run(ctx context.Context) (err error) {
 				err = l.handle(m)
 			}
 		case <-timer.C():
-			timer = l.clock.NewTimer(interval)
 			// A wake already ran this resync when an event got there first.
+			l.rearm = true
 			if !l.clock.Now().Before(l.nextResync) {
 				err = l.onResync("dispatch.resync")
 			}
@@ -209,6 +223,11 @@ func (l *Loop) Run(ctx context.Context) (err error) {
 			if err = l.wakeIfLate(); err == nil {
 				err = l.handle(<-l.inbox)
 			}
+		}
+		if l.rearm {
+			timer.Stop()
+			timer = l.clock.NewTimer(interval)
+			l.rearm = false
 		}
 		if err == nil {
 			err = l.settle()
@@ -304,8 +323,7 @@ func (l *Loop) start(ctx context.Context) error {
 	if err := l.cycle("start"); err != nil {
 		return err
 	}
-	l.resumeRest()
-	return nil
+	return l.resumeRest()
 }
 
 // closeCrashed settles the attempts a crash left without an outcome. A message may
@@ -360,14 +378,16 @@ func (l *Loop) onResync(typ string) error {
 	l.resync++
 	if typ == "dispatch.resync" {
 		l.nextResync = time.UnixMilli(at).Add(time.Duration(l.o.Config.Dispatch.Resync))
+		l.rearm = true
 	}
 	if err := l.write(history.Event{Line: history.LineEvent, Ingest: at, Source: "dispatch", Type: typ}); err != nil {
 		return err
 	}
-	l.wd.Nudged = nil
+	l.wd.Nudged, l.nudgedDuring = nil, nil
+	l.nudgeEpoch++
 	l.readAgain(world.Everything)
 	if typ == "dispatch.resync" {
-		l.afterRead = append(l.afterRead, l.printResync)
+		l.afterRead = append(l.afterRead, func() error { l.printResync(); return nil })
 	}
 	return l.rotate()
 }
@@ -444,12 +464,12 @@ func (l *Loop) startRead() {
 	if l.reading || l.pending == 0 {
 		return
 	}
-	parts, prev := l.pending, l.wd
+	parts, prev, epoch := l.pending, l.wd, l.nudgeEpoch
 	l.pending, l.reading, l.nudgedDuring = 0, true, nil
 	at := l.stamp()
 	go func() {
 		w, err := world.Refresh(context.Background(), l.o.Sources, l.scope, prev, parts, at)
-		l.inbox <- readDone{parts: parts, w: w, err: err}
+		l.inbox <- readDone{parts: parts, w: w, err: err, epoch: epoch}
 	}()
 }
 
@@ -457,10 +477,22 @@ func (l *Loop) onRead(m readDone) error {
 	l.reading = false
 	if m.err != nil {
 		_, _ = fmt.Fprintf(l.o.Err, "%s dispatch: while reading: %v\n", l.clock.Now().Format(time.TimeOnly), m.err)
+		callbacks := l.afterRead
+		l.afterRead = nil
+		for _, f := range callbacks {
+			if err := f(); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	nudged := l.wd.Nudged
 	l.wd = m.w
+	// A resync that landed while this read was in flight cleared the overlay, and the read
+	// still carries the old one.
+	if m.epoch != l.nudgeEpoch {
+		l.wd.Nudged = nil
+	}
 	// Herdr was read before a nudge that landed during this read, so the worker still
 	// shows idle in it, and the overlay for that nudge has to survive it.
 	if len(l.nudgedDuring) > 0 {
@@ -488,11 +520,14 @@ func (l *Loop) onRead(m readDone) error {
 	if m.w.LinearErr != nil && errors.Is(m.w.LinearErr, linear.ErrUnauthorized) && l.o.Unauthorized != nil {
 		l.o.Unauthorized()
 	}
-	for _, f := range l.afterRead {
-		f()
-	}
+	callbacks := l.afterRead
 	l.afterRead = nil
 	l.cycleDue = true
+	for _, f := range callbacks {
+		if err := f(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -527,7 +562,7 @@ func (l *Loop) cycle(why string) error {
 	l.wd.At = time.UnixMilli(now)
 	state := rules.FromWorld(l.wd, l.o.Config, l.led, l.o.Viewer)
 	for _, f := range l.flights {
-		if f.want.Capped {
+		if f.want.Capped && f.want.Options["uncapped"] != true {
 			state.Reserve(f.want.Subject)
 		}
 	}
@@ -674,7 +709,7 @@ func (l *Loop) onAction(m actionDone) error {
 		return err
 	}
 	l.led.Upsert(rc)
-	l.log = append(l.log, logged{seq: len(l.log) + 1, rc: rc})
+	l.ended = append(l.ended, logged{seq: len(l.ended) + 1, rc: rc})
 	note := res.Detail
 	if res.Note != "" {
 		note = res.Note
@@ -735,12 +770,15 @@ func (l *Loop) hasReceipt(key string) bool {
 }
 
 // resumeRest starts the steps a crash left unrun after a step that is Done.
-func (l *Loop) resumeRest() {
+func (l *Loop) resumeRest() error {
 	for _, rc := range slices.Clone(l.led.Entries) {
 		if rc.Outcome == ledger.Done && len(rc.Rest) > 0 {
-			_ = l.runNext(rc)
+			if err := l.runNext(rc); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 // linearID is Linear's id for a ticket an escalation moved, from its receipt, so a lost

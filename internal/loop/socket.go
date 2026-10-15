@@ -26,7 +26,7 @@ type listener struct {
 	done chan struct{}
 }
 
-func listen(stateDir string, inbox chan<- any) (*listener, error) {
+func listen(stateDir string, inbox chan<- any, stopped <-chan struct{}) (*listener, error) {
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		return nil, fmt.Errorf("while creating state dir: %w", err)
 	}
@@ -49,7 +49,7 @@ func listen(stateDir string, inbox chan<- any) (*listener, error) {
 			if err != nil {
 				return
 			}
-			go serve(conn, inbox)
+			go serve(conn, inbox, stopped)
 		}
 	}()
 	return ln, nil
@@ -61,15 +61,26 @@ func (ln *listener) close() {
 	_ = os.Remove(ln.path)
 }
 
-func serve(conn net.Conn, inbox chan<- any) {
+func serve(conn net.Conn, inbox chan<- any, stopped <-chan struct{}) {
 	defer func() { _ = conn.Close() }()
 	var req Request
 	if err := json.NewDecoder(conn).Decode(&req); err != nil {
 		return
 	}
 	reply := make(chan Response, 1)
-	inbox <- request{Request: req, reply: reply}
-	_ = json.NewEncoder(conn).Encode(<-reply)
+	select {
+	case inbox <- request{Request: req, reply: reply}:
+	case <-stopped:
+		_ = json.NewEncoder(conn).Encode(Response{Code: CodeFailed, Error: "dispatch is stopping"})
+		return
+	}
+	// A loop that stops answers no one, so the client hears that instead of waiting.
+	select {
+	case resp := <-reply:
+		_ = json.NewEncoder(conn).Encode(resp)
+	case <-stopped:
+		_ = json.NewEncoder(conn).Encode(Response{Code: CodeFailed, Error: "dispatch is stopping"})
+	}
 }
 
 // ErrNotRunning means no loop answers on the state directory's socket.

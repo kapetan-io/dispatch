@@ -230,11 +230,17 @@ func (s *State) carryPools(mem, next *world.Memory) {
 	}
 }
 
-// keepWhileUnread keeps everything dispatch remembered about tickets and the records
-// that hang off them while the tickets can't be read, because no record exists to carry
-// it. Without it a restart during a Linear outage would forget every wait.
+// keepWhileUnread keeps what dispatch remembered about records a failed read left out,
+// because no record exists to carry it. While Linear can't be read no ticket exists, and
+// while a pool can't be read its trees and the tickets that hold them don't either.
+// Without this a restart during an outage would forget every wait, and the keys built
+// on them would change.
 func (s *State) keepWhileUnread(mem, next *world.Memory) {
-	if s.linearUnread == "" {
+	poolUnread := false
+	for _, p := range s.pools {
+		poolUnread = poolUnread || p.unknown != ""
+	}
+	if s.linearUnread == "" && !poolUnread {
 		return
 	}
 	for key, old := range mem.Facts {

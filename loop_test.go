@@ -412,3 +412,41 @@ func TestStoppingTheLoopAnswersATickThatIsWaiting(t *testing.T) {
 	}
 	require.NoError(t, <-done)
 }
+
+func TestAStateDirectoryThatCannotHoldTheSocketLaunchesNothing(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	long := filepath.Join(h.state, strings.Repeat("x", 100))
+	require.NoError(t, os.MkdirAll(long, 0o700))
+	opts := h.options(dispatch.Options{})
+	opts.StateDir = long
+	opts.Stdout, opts.Stderr = &bytes.Buffer{}, &bytes.Buffer{}
+
+	err := dispatch.Run(t.Context(), []string{"run"}, opts)
+
+	require.ErrorContains(t, err, "Use a shorter state directory")
+	assert.Empty(t, h.launches())
+}
+
+func TestStoppingTheLoopAnswersATellThatIsWaitingOnARead(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.tick()
+	h.tools.Treehouse.DelayTrees(2 * time.Second)
+	told := make(chan error, 1)
+	go func() {
+		_, err := h.run("tell", "ENG-1", "hello")
+		told <- err
+	}()
+	time.Sleep(300 * time.Millisecond)
+
+	require.NoError(t, h.stopLoop())
+
+	select {
+	case err := <-told:
+		require.ErrorContains(t, err, "stopping")
+	case <-time.After(15 * time.Second):
+		t.Fatal("the tell was never answered")
+	}
+}

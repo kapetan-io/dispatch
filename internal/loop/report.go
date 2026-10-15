@@ -76,14 +76,14 @@ func (l *Loop) onRequest(r request) error {
 			l.release()
 		}
 	case OpTick:
-		seen := len(l.log)
+		seen := len(l.ended)
 		if err := l.onResync("dispatch.tick"); err != nil {
 			return err
 		}
 		l.waiters = append(l.waiters, &waiter{ticket: strings.ToUpper(r.Ticket), reply: r.reply, seen: seen})
 	case OpTell:
 		l.readAgain(world.FromLocal)
-		l.afterRead = append(l.afterRead, func() { l.tell(r) })
+		l.afterRead = append(l.afterRead, func() error { return l.tell(r) })
 	default:
 		r.reply <- Response{Code: CodeFailed, Error: fmt.Sprintf("unknown request %q", r.Op)}
 	}
@@ -121,7 +121,7 @@ var verbs = map[string]string{
 func (l *Loop) report(w *waiter) Response {
 	var lines, failures []string
 	code := CodeSettled
-	for _, e := range l.log[w.seen:] {
+	for _, e := range l.ended[w.seen:] {
 		rc := e.rc
 		if w.ticket != "" && rc.Subject != w.ticket {
 			continue
@@ -187,11 +187,11 @@ func tellResponse(w rules.Want, rc ledger.Receipt) Response {
 
 // tell types text into a ticket's worker through the nudge path, so it is
 // receipted like any other nudge and counts as the last one.
-func (l *Loop) tell(r request) {
+func (l *Loop) tell(r request) error {
 	ticket := strings.ToUpper(r.Ticket)
 	if l.wd.HerdrErr != nil {
 		r.reply <- Response{Code: CodeFailed, Error: l.wd.HerdrErr.Error()}
-		return
+		return nil
 	}
 	wk := workerOf(l.wd, ticket)
 	switch wk {
@@ -206,10 +206,10 @@ func (l *Loop) tell(r request) {
 			msg += "; could not read the pool of " + strings.Join(unread, ", ")
 		}
 		r.reply <- Response{Code: CodeFailed, Error: msg}
-		return
+		return nil
 	case "blocked":
 		r.reply <- Response{Code: CodeFailed, Error: fmt.Sprintf("%s's worker is blocked on a question; answer it in its herdr workspace", ticket)}
-		return
+		return nil
 	}
 	l.tells++
 	want := rules.Want{
@@ -217,7 +217,8 @@ func (l *Loop) tell(r request) {
 		Once: ledger.Once{"tell", l.ingest(), l.tells}, Args: map[string]any{"text": r.Text},
 	}
 	if err := l.begin(want, nil, r.reply); err != nil {
-		l.fatal(err)
 		r.reply <- Response{Code: CodeFailed, Error: err.Error()}
+		return err
 	}
+	return nil
 }

@@ -1149,3 +1149,22 @@ func withoutLabels(t fakeTicket) fakeTicket {
 	t.Labels = nil
 	return t
 }
+
+func TestTickDoesNotRepeatTheKeptTreeCommentAfterOnePoolReadFails(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.dirty(path)
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	h.tick()
+	require.Len(t, h.linear.mutations(), 1)
+
+	// FailTrees fails only the next read of the pool.
+	h.tools.Treehouse.FailTrees(errors.New("treehouse is busy"))
+	h.advance(time.Minute)
+	h.tick()
+	h.advance(time.Minute)
+	h.tick()
+
+	assert.Len(t, h.linear.mutations(), 1)
+}
