@@ -214,12 +214,19 @@ func runCommand(ctx context.Context, opts Options) error {
 	lin := &keyedLinear{opts: opts, cfg: cfg, keys: &keyLookup{}}
 	// No key, or a key Linear rejects, can't be fixed by waiting. A network that is down at
 	// boot can, and the loop reads Linear again at every resync.
+	// Ctrl-C while the key is still being read is a clean stop, as it is once the loop runs.
 	if _, err := lin.workspace(ctx); err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
 		return err
 	}
 	viewer, err := lin.Viewer(ctx)
 	if errors.Is(err, linear.ErrUnauthorized) {
 		return err
+	}
+	if ctx.Err() != nil {
+		return nil
 	}
 	if err != nil {
 		_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while asking Linear who owns the key: %v\n", err)

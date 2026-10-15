@@ -57,10 +57,10 @@ whenever({
     const w = ctx.herdr.worker(pr.ticket);
     const sent = prNudges(pr.ticket, pr.head, ctx);
     if (sent < nudgeLimit(ctx)) {
-      ctx.herdr.queueNudge(pr.ticket, PR_NUDGE(pr),
+      return ctx.herdr.queueNudge(pr.ticket, PR_NUDGE(pr),
         { once: ["pr", pr.head, w.idleSince!, ctx.every(minutes(5), w.idleSince!)] });
     } else {
-      escalate(pr.ticket, ctx, `its worker stayed idle through ${sent} nudges about ${pr.url} without pushing. Look at its herdr workspace.`,
+      return escalate(pr.ticket, ctx, `its worker stayed idle through ${sent} nudges about ${pr.url} without pushing. Look at its herdr workspace.`,
         ["pr-ignored", pr.head, pr.ticket.statusSince]);
     }
   },

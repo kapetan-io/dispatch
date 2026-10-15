@@ -101,7 +101,7 @@ func TestTickMessagesFollowersAboutAReadyPR(t *testing.T) {
 
 	got := next(t, lines)
 	assert.Contains(t, got, `"type":"user"`)
-	assert.Contains(t, got, "ENG-1 is ready for review")
+	assert.Contains(t, got, "dispatch event (PR ready for review): ENG-1 is ready for review")
 	assert.Contains(t, got, prURL1)
 	assert.Contains(t, got, "https://linear.app/team/issue/ENG-1")
 	assert.Equal(t, []string{readyText1}, h.notifications())
@@ -112,6 +112,19 @@ func TestTickMessagesFollowersAboutAReadyPR(t *testing.T) {
 	assert.Empty(t, lines)
 }
 
+func TestTickMessagesFollowersThatReviewsAreHandledNotThatAPRIsReady(t *testing.T) {
+	h := draftHarness(t)
+	h.pr("ENG-1", cleanPR("a1"))
+	socket, lines := sessionSocket(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
+	_, err := h.run("watch", "ENG-1")
+	require.NoError(t, err)
+
+	h.tick()
+
+	assert.Contains(t, next(t, lines), "dispatch event (reviews handled): ENG-1's reviews are handled")
+}
+
 func TestTickMessagesFollowersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -119,8 +132,8 @@ func TestTickMessagesFollowersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
 		worker string
 		want   string
 	}{
-		{name: "NeedsHuman", status: "Needs Human", worker: "working", want: "ENG-1 is in Needs Human"},
-		{name: "Blocked", status: "In Progress", worker: "blocked", want: "ENG-1 is waiting on your answer"},
+		{name: "NeedsHuman", status: "Needs Human", worker: "working", want: "dispatch event (entered Needs Human): ENG-1 is in Needs Human"},
+		{name: "Blocked", status: "In Progress", worker: "blocked", want: "dispatch event (worker is blocked on a question): ENG-1 is waiting on your answer"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)

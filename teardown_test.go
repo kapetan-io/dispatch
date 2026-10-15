@@ -668,6 +668,8 @@ func TestTickDoesNotTouchTreesOfTicketsInReviewOrNeedsHuman(t *testing.T) {
 
 func TestTickTeardownFreesATreeForALaunchInTheSameTick(t *testing.T) {
 	h := newHarness(t)
+	// The real launcher leaves a workspace behind, as production does, so one launch is one worker.
+	parentsRealLauncher(h)
 	h.gitTree("ENG-1")
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
@@ -676,9 +678,9 @@ func TestTickTeardownFreesATreeForALaunchInTheSameTick(t *testing.T) {
 	h.tick()
 
 	assert.Len(t, h.returns(), 1)
-	// A return changes the launch rule's once key, and the fake launcher opens no workspace, so
-	// the launch runs again after it. A real launch would leave a worker behind.
-	assert.NotEmpty(t, h.launches())
+	launched := h.receipts("launch", "ENG-2")
+	require.Len(t, launched, 1)
+	assert.Equal(t, ledger.Done, launched[0].Outcome)
 }
 
 func TestTickReadsDoneAndPausedStatusesFromConfig(t *testing.T) {
@@ -1057,8 +1059,8 @@ func TestTickKeepsATreeThatGainedANestedRepoAfterTheCycleDecidedToReturnIt(t *te
 	assert.Equal(t, ledger.Refused, returned[0].Outcome)
 	assert.Equal(t, "kept: untracked nested/ in "+path+" survived git clean", returned[0].Detail)
 
-	// A kept tree is never returned later by this lease, however many ticks follow, and a
-	// comment tells the user why it is still leased.
+	// While the nested repository stays, the tree is not returned however many ticks follow,
+	// and a comment tells the user why it is still leased.
 	h.advance(time.Second)
 	h.tick()
 	assert.Empty(t, h.returns())
@@ -1066,6 +1068,12 @@ func TestTickKeepsATreeThatGainedANestedRepoAfterTheCycleDecidedToReturnIt(t *te
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
 	assert.Contains(t, mutations[0].Body, "nested/")
+
+	// Removing the nested repository frees the slot, though nothing tracked changed.
+	require.NoError(t, os.RemoveAll(filepath.Join(path, "nested")))
+	h.advance(time.Second)
+	h.tick()
+	assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 }
 
 func TestTickDoesNotReturnATreeWhoseGitFailsAfterTheCycleDecidedToReturnIt(t *testing.T) {

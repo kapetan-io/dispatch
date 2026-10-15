@@ -109,6 +109,8 @@ type Loop struct {
 	tells       int
 	// log lists the actions that ended, in order, so a tick reports only its own.
 	ended []logged
+	// overflowAlerted is true while Linear has more tickets than one page and the user knows.
+	overflowAlerted bool
 	// endedBefore counts the actions dropped from ended, so a tick's seen stays a position in the whole run.
 	endedBefore int
 }
@@ -394,6 +396,9 @@ func (l *Loop) onResync(typ string) error {
 	l.wd.Nudged, l.nudgedDuring = nil, nil
 	l.nudgeEpoch++
 	l.readAgain(world.Everything)
+	// A step that failed after the one before it landed is not wanted again by its rule,
+	// because the first step made the rule's condition false.
+	l.afterRead = append(l.afterRead, l.resumeRest)
 	if typ == "dispatch.resync" {
 		l.afterRead = append(l.afterRead, func() error { l.printResync(); return nil })
 	}
@@ -500,6 +505,7 @@ func (l *Loop) onRead(m readDone) error {
 		return nil
 	}
 	nudged := l.wd.Nudged
+	freed := l.workersGoneIdle(l.wd, m.w)
 	l.wd = m.w
 	// A resync that landed while this read was in flight cleared the overlay, and the read
 	// still carries the old one.
@@ -530,6 +536,12 @@ func (l *Loop) onRead(m readDone) error {
 	if m.parts&world.FromLocal != 0 {
 		l.renaming = map[string]string{}
 	}
+	// A PR is read for a worker that is idle or gone, so one that just became so has its PR
+	// read now instead of at the next resync (the design's "PR reads" decision).
+	if freed && m.parts&world.FromGitHub == 0 {
+		l.readAgain(world.FromGitHub)
+	}
+	l.alertOverflow(m)
 	if m.w.LinearErr != nil && errors.Is(m.w.LinearErr, linear.ErrUnauthorized) && l.o.Unauthorized != nil {
 		l.o.Unauthorized()
 	}
@@ -597,6 +609,40 @@ func (l *Loop) cycle(why string) error {
 	}
 	l.alertThrows(res)
 	return l.act(res)
+}
+
+// alertOverflow tells the user once per stretch of reads that Linear has more tickets than
+// one page, because every ticket is unknown then and dispatch does nothing.
+// workersGoneIdle is true when a worker that was working, blocked or not yet seen is idle or
+// gone in the new read, for a ticket whose PR is read in that state.
+func (l *Loop) workersGoneIdle(old, now world.World) bool {
+	if old.At.IsZero() {
+		return false
+	}
+	for id, wk := range now.Workers {
+		if wk.State != world.Idle && wk.State != world.NoWorker {
+			continue
+		}
+		if was, ok := old.Workers[id]; ok && was.State != world.Idle && was.State != world.NoWorker {
+			return true
+		}
+	}
+	return false
+}
+
+func (l *Loop) alertOverflow(m readDone) {
+	switch {
+	case errors.Is(m.w.LinearErr, linear.ErrOverflow):
+		if l.overflowAlerted {
+			return
+		}
+		l.overflowAlerted = true
+		if l.o.Alerts != nil {
+			_ = l.o.Alerts.Show(context.Background(), "dispatch: "+m.w.LinearErr.Error())
+		}
+	case m.w.LinearErr == nil && m.parts&world.FromLinear != 0:
+		l.overflowAlerted = false
+	}
 }
 
 func (l *Loop) alertThrows(res rules.Result) {
@@ -767,15 +813,17 @@ func (l *Loop) runNext(rc ledger.Receipt) error {
 		return nil
 	}
 	next := rest[0]
-	if l.hasReceipt(next.Key()) {
+	if l.hasReceipt(next.Key()) || l.flights[next.Key()] != nil {
 		return nil
 	}
 	return l.begin(next, rest[1:], nil)
 }
 
+// hasReceipt is true for a step that landed, was refused or may have landed. A Failed step
+// is tried again, as the cycle does for a rule's own action.
 func (l *Loop) hasReceipt(key string) bool {
 	for _, rc := range l.led.Entries {
-		if rc.Key() == key {
+		if rc.Key() == key && rc.Outcome != ledger.Failed {
 			return true
 		}
 	}

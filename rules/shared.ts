@@ -1,3 +1,4 @@
+import { known } from "dispatch";
 import type { Ticket, Ctx, Receipt, Seen, Once } from "dispatch";
 
 // A worker gets launch_failure_limit launch attempts in a row, and nudge_limit nudges or
@@ -107,5 +108,10 @@ export const relaunches = (t: Ticket, head: string, ctx: Ctx) =>
 
 // Moves the ticket to Needs Human and comments why. The receipt keeps the two steps
 // apart, so retry-escalation-comment can finish a comment that failed after the move.
-export const escalate = (t: Ticket, ctx: Ctx, why: string, once: Once) =>
-  ctx.linear.queueEscalate(t, why, { once });
+// notify-needs-human leaves a design ticket alone, so the notice for one dispatch moved itself
+// follows the move. The list is ordered, so a move that fails announces nothing.
+export const escalate = (t: Ticket, ctx: Ctx, why: string, once: Once) => {
+  const move = ctx.linear.queueEscalate(t, why, { once });
+  return !known(() => t.labels) || skill(t) === "build" ? move
+    : [move, ctx.notify.queueSend(t, `${t.id} is in Needs Human: ${t.title}`, { once: ["needs-human-escalated", ...once] })];
+};

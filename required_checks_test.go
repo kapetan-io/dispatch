@@ -83,6 +83,7 @@ func TestTickWaitsOnARequiredCheckThatHasNotFinished(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.Empty(t, h.notifications())
+			assert.Empty(t, h.prompts())
 		})
 	}
 }
@@ -94,6 +95,7 @@ func TestTickLeavesAnExpectedRollupNotReadyWithoutAskingForChecks(t *testing.T) 
 	require.NoError(t, err)
 
 	assert.Empty(t, h.notifications())
+	assert.Empty(t, h.prompts())
 	assert.Empty(t, h.tools.Calls("pullrequest", "checks"))
 }
 

@@ -175,14 +175,22 @@ func (s *Stats) record(start time.Time, resp *http.Response) {
 // unfinished child could close.
 const PageSize = 100
 
+// ErrOverflow matches the errors for a read with more tickets than fit on a page.
+var ErrOverflow = errors.New("more tickets than fit on one page")
+
+type overflow string
+
+func (e overflow) Error() string        { return string(e) }
+func (e overflow) Is(target error) bool { return target == ErrOverflow }
+
 // ManagedOverflow is the error for more started tickets with label than fit on a page.
 func ManagedOverflow(label string) error {
-	return fmt.Errorf("more than %d started %q tickets are assigned to you; dispatch reads one page and would miss the rest", PageSize, label)
+	return overflow(fmt.Sprintf("more than %d started %q tickets are assigned to you; dispatch reads one page and would miss the rest", PageSize, label))
 }
 
 // LeasedOverflow is the error for more leased tickets than fit on a page.
 func LeasedOverflow() error {
-	return fmt.Errorf("more than %d tickets hold treehouse leases; dispatch reads one page and would miss the rest", PageSize)
+	return overflow(fmt.Sprintf("more than %d tickets hold treehouse leases; dispatch reads one page and would miss the rest", PageSize))
 }
 
 // ChildrenOverflow is the error for more children than fit on a page.

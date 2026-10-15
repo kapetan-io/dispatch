@@ -341,3 +341,33 @@ func TestInvariantAClockThatSteppedBackStillLoadsTheNewestRun(t *testing.T) {
 	assert.Len(t, h.launches(), 1)
 	assert.NotEmpty(t, h.receipts("launch", "ENG-1"))
 }
+
+func TestInvariantAnOrderedStepThatFailedIsTriedAgainAtTheNextResync(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "working")
+	// The first step makes the rule's own condition false, so only the loop can run the second again.
+	dir := invariantRulesWith(t, h, `import { whenever } from "dispatch";
+whenever({
+  name: "ordered-pair",
+  each: "linear.ticket",
+  if:   (t, ctx) => t.status === "in_progress" && ctx.ledger.receipts(t, { kind: "nudge", topic: "ordered-a" }).length === 0,
+  then: (t, ctx) => [
+    ctx.herdr.queueNudge(t, "ordered first", { once: ["ordered-a"] }),
+    ctx.linear.queueComment(t, "ordered second", { once: ["ordered-b"] }),
+  ],
+});
+`)
+	h.linear.failComments(true)
+	_, _, err := h.runWith(t.Context(), dispatch.Options{RulesDir: dir}, "tick")
+	require.ErrorContains(t, err, "ENG-1 comment failed")
+	require.Empty(t, h.linear.mutations())
+
+	h.linear.failComments(false)
+	h.advance(time.Second)
+	h.tick()
+
+	mutations := h.linear.mutations()
+	require.Len(t, mutations, 1)
+	assert.Equal(t, "ordered second", mutations[0].Body)
+}

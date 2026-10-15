@@ -120,8 +120,11 @@ type Tree struct {
 	Pushed         Fact[bool]   `js:"pushed"`
 	TrackedChanges Fact[bool]   `js:"trackedChanges"`
 	Unfinished     Fact[string] `js:"unfinished"`
+	// Untracked lists the files git has never seen in the tree, one per line. Returning a
+	// tree deletes them, but a nested repository survives that and keeps the return refused.
+	Untracked Fact[string] `js:"untracked"`
 	// CleanSince is when the tree last became safe to return, so a return refused for
-	// late work is tried again once the work is pushed.
+	// late work or a nested repository is tried again once that is gone.
 	CleanSince Fact[int64] `js:"cleanSince"`
 }
 

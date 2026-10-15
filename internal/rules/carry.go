@@ -141,8 +141,8 @@ func (s *State) deriveTimes(r *record, mem, next *world.Memory, started int64) {
 		if rec.Holder.Unknown == "" {
 			set("leasedSince", rec.Holder.Since, rec.Holder.Since)
 		}
-		if rec.Pushed.Unknown == "" && rec.TrackedChanges.Unknown == "" {
-			since := max(rec.Pushed.Since, rec.TrackedChanges.Since)
+		if rec.Pushed.Unknown == "" && rec.TrackedChanges.Unknown == "" && rec.Untracked.Unknown == "" {
+			since := max(rec.Pushed.Since, rec.TrackedChanges.Since, rec.Untracked.Since)
 			set("cleanSince", since, since)
 		}
 	case *Dispatch:

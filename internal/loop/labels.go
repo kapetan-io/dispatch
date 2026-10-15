@@ -1,11 +1,13 @@
 package loop
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/kapetan-io/dispatch/internal/executor"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -134,7 +136,8 @@ func (l *Loop) renameWorkspaces() {
 	}
 	l.renames++
 	go func() {
-		ctx := l.runCtx
+		ctx, cancel := context.WithTimeout(l.runCtx, executor.DefaultDeadline)
+		defer cancel()
 		for _, r := range workspaces {
 			if err := l.o.Herdr.RenameWorkspace(ctx, r.id, r.label); err != nil {
 				_, _ = fmt.Fprintf(l.o.Err, "dispatch: while renaming herdr workspace %s: %v\n", r.id, err)

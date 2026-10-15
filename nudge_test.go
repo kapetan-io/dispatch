@@ -697,6 +697,7 @@ func TestTickWorkerWithNoStopRecordIsNudgedAgainOnlyAtAResync(t *testing.T) {
 		h.tick()
 
 		assert.Len(t, h.prompts(), 1)
+		assert.Empty(t, h.notifications())
 	})
 
 	t.Run("ResyncPasses", func(t *testing.T) {
@@ -711,6 +712,7 @@ func TestTickWorkerWithNoStopRecordIsNudgedAgainOnlyAtAResync(t *testing.T) {
 		assert.Len(t, h.prompts(), 2)
 		h.advance(5 * time.Minute)
 		assert.Len(t, h.prompts(), 3)
+		assert.Empty(t, h.notifications())
 	})
 }
 

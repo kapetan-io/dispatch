@@ -480,27 +480,33 @@ func (e *Executor) notify(ctx context.Context, w rules.Want, wd world.World) Res
 	return Result{Outcome: ledger.Done}
 }
 
-// Reason names why a notice went out, the way followers read it.
+// Reason names why a notice went out, the way followers read it. The sessions that follow
+// tickets key on these words (skills/dispatch/SKILL.md).
 func Reason(w rules.Want) string {
 	topic := ""
 	if len(w.Once) > 0 {
 		topic, _ = w.Once[0].(string)
 	}
 	switch topic {
-	case "needs-human":
+	case "needs-human", "needs-human-escalated":
 		return "entered Needs Human"
 	case "blocked":
-		return "blocked"
+		return "worker is blocked on a question"
 	case "ready":
-		return "ready for review"
+		return "PR ready for review"
+	case "reviews-handled":
+		return "reviews handled"
 	case "draft-ready":
-		return "draft ready"
+		return "draft ready for review"
 	case "stall-count":
-		return "stalled"
+		if len(w.Once) > 2 {
+			return fmt.Sprintf("%v stall nudges with no status change", w.Once[2])
+		}
+		return "stall nudges with no status change"
 	case "unresponsive":
-		return "unresponsive"
+		return "worker hasn't responded to its nudge in an hour"
 	case "merged", "merge-failed":
-		return "merge"
+		return "PR approved"
 	}
 	return topic
 }

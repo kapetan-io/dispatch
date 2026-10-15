@@ -181,6 +181,16 @@ func TestTickSkipsTicketsItNeverLaunches(t *testing.T) {
 	}
 }
 
+func TestTickAlertsWhenItEscalatesADesignTicket(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(withLabel(ticket("ENG-1", "In Progress", ""), "design"))
+
+	h.tick()
+
+	require.Len(t, h.linear.mutations(), 2)
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
+}
+
 func TestTickEscalatesTicketItCannotPlaceInARepo(t *testing.T) {
 	for _, test := range []struct {
 		name     string
@@ -257,6 +267,12 @@ func TestTickReadsNothingWhenManagedTicketsSpanMoreThanOnePage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, h.loopErr(), "more than 100 started \"ai\" tickets are assigned to you")
 	assert.Empty(t, h.launches())
+
+	// The user hears of it once, however many resyncs find the same overflow.
+	h.advance(time.Hour)
+	h.advance(time.Hour)
+	require.Len(t, h.notifications(), 1)
+	assert.Contains(t, h.notifications()[0], "more than 100 started \"ai\" tickets are assigned to you")
 }
 
 func TestTickHoldsBackOnlyTheRepoWhosePoolCannotBeRead(t *testing.T) {

@@ -474,3 +474,20 @@ func TestRotatingHistoryKeepsAnEscalationCommentThatStillHasToBePosted(t *testin
 	h.advance(6 * time.Minute)
 	assert.Empty(t, h.receipts("escalate", "ENG-1"))
 }
+
+func TestAWorkerThatGoesIdleHasItsPRReadWithoutWaitingForTheResync(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "working")
+	h.pr("ENG-1", cleanPR("a1"))
+	h.tick()
+	require.Empty(t, h.tools.Calls("pullrequest", "read"))
+
+	// A tell reads herdr without a resync, and finds the worker idle.
+	h.advance(time.Second)
+	h.setWorkerStatus("ENG-1", "idle")
+	_, err := h.run("tell", "ENG-1", "hello")
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, h.tools.Calls("pullrequest", "read"))
+}

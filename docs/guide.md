@@ -30,11 +30,11 @@ Put `$GOBIN` (default `~/go/bin`) on your PATH. `bin/dispatch-launch` runs `disp
 security add-generic-password -s dispatch-linear-api-key -a "$USER" -w
 ```
 
-The command prompts for the key. Setting `LINEAR_API_KEY` in the environment overrides the keychain, and `api_key_keychain` in the config names a different service. If the keychain is off limits, set `api_key_command` in the `[linear]` config to a command that prints the key, such as `op read op://Work/linear/credential`, and skip the keychain. dispatch manages only tickets assigned to the owner of this key.
+The command prompts for the key. Setting `LINEAR_API_KEY` in the environment overrides the keychain, and `api_key_keychain` in the config names a different service. If the keychain is off limits, set `api_key_command` in the `[plugins.linear]` config to a command that prints the key, such as `op read op://Work/linear/credential`, and skip the keychain. dispatch manages only tickets assigned to the owner of this key.
 
 **3. Prepare Linear.** dispatch finds your tickets by status and label, so each team in your config needs:
 
-- the statuses Todo, In Progress, In Review, Done, Canceled, Duplicate and Backlog, which a default Linear team has, and a **Needs Human** status, which it doesn't. Create it in the team's workflow settings, in the Started category. dispatch reads only tickets whose status is of type Started, so a Needs Human status in any other category is never seen, and its tickets get no notification and no resume nudge. A name that differs from these goes in `[linear.statuses]`.
+- the statuses Todo, In Progress, In Review, Done, Canceled, Duplicate and Backlog, which a default Linear team has, and a **Needs Human** status, which it doesn't. Create it in the team's workflow settings, in the Started category. dispatch reads only tickets whose status is of type Started, so a Needs Human status in any other category is never seen, and its tickets get no notification and no resume nudge. A name that differs from these goes in `[plugins.linear.statuses]`.
 - an `ai` label. Only tickets assigned to you that carry it are managed.
 - a label group named `repo` with one label per repository, such as `dispatch`. A ticket's repo label tells dispatch which clone to build in.
 
@@ -154,14 +154,14 @@ A feature that needs a design goes through four steps, and you decide two of the
 Move a parent ticket to In Progress and the dispatcher starts its children for you. Each cycle it reads every child of an In Progress parent and acts in this order.
 
 - **Close.** A parent whose children are all Done, Canceled or Duplicate is moved to `close_parent` (default Done). A parent whose children couldn't be read is never closed.
-- **Promote.** A child in `todo` (default Todo) that is assigned to you, carries the `ai` label, belongs to a team in `[linear].teams`, is not a `design` or `design-review` ticket and has no unfinished blocker moves to In Progress, and the next cycle launches its worker. A child waits until every blocker reaches `blocker_done` (default Done), A blocker that is Canceled or Duplicate (any status of Linear's canceled type) never gets there, so the child moves to Needs Human with one comment naming the blocker. It is escalated again if you move it back to Todo with that blocker still attached. A child that holds a treehouse lease was paused with its tree kept, so it stays in Todo until you move it to In Progress yourself. A child whose blocker list ran past one page waits too.
+- **Promote.** A child in `todo` (default Todo) that is assigned to you, carries the `ai` label, belongs to a team in `[plugins.linear].teams`, is not a `design` or `design-review` ticket and has no unfinished blocker moves to In Progress, and the next cycle launches its worker. A child waits until every blocker reaches `blocker_done` (default Done), A blocker that is Canceled or Duplicate (any status of Linear's canceled type) never gets there, so the child moves to Needs Human with one comment naming the blocker. It is escalated again if you move it back to Todo with that blocker still attached. A child that holds a treehouse lease was paused with its tree kept, so it stays in Todo until you move it to In Progress yourself. A child whose blocker list ran past one page waits too.
 - **Cap.** Promotion stops when the In Progress tickets other than parents (a `design` parent with a live design worker counts) reach `max_in_progress`. A child waiting for a slot is promoted on a later cycle, and `dispatch plan` lists it as `waiting` meanwhile.
 
 A parent never gets a worker, whatever its status. A parent labeled `design` keeps the design worker it already has, which is never nudged or escalated. A parent labeled `design-review` is left alone too, and neither kind has its children promoted or the parent closed. If the children can't be read, the parent shows as `held` in `dispatch plan`, nothing is promoted or closed, and everything else runs as usual. Promotion is the only way the dispatcher moves a ticket to In Progress.
 
 ## Teardown and pausing
 
-Each cycle also looks at every tree held by a ticket assigned to you with the `ai` label, whatever the ticket's status. Statuses come from `[linear.statuses]`: `done` (default Done, Canceled, Duplicate) and `paused` (default Backlog, Todo).
+Each cycle also looks at every tree held by a ticket assigned to you with the `ai` label, whatever the ticket's status. Statuses come from `[plugins.linear.statuses]`: `finished` (default Done, Canceled, Duplicate) and `paused` (default Backlog, Todo).
 
 - A finished ticket whose tree has no tracked changes and is fully pushed has its herdr workspace closed, its untracked files deleted (`git clean -f -d`, which leaves ignored files alone), and its tree returned with `treehouse return --force`, so `treehouse status` shows the slot available.
 - A finished ticket whose tree has modified or staged tracked files, or commits that no remote has, keeps its tree. Its worker's workspace is closed, and the ticket gets one comment saying what the tree holds. Push or discard the work and the next resync returns the tree.
@@ -178,13 +178,13 @@ A `design` ticket is torn down and paused like a build, since its design worker 
 ```
 16:05:07 start: 12 tracked tickets, 27 rules, ledger 31 receipts from events-20261015T160507Z.jsonl
 16:05:08 launch ENG-9 (launch-worker)
-16:05:31 launch ENG-9 done
+16:05:31 launch ENG-9 ok: workspace w3
 16:05:32 launch ENG-4 (launch-worker)
 16:05:33 launch ENG-4 refused: pool_exhausted: all 4/4 pool trees are taken: ...
 16:10:07 resync: 12 tickets, 2 actions since 16:05:07, Linear 3 calls (2497 of 2500 left this hour)
 ```
 
-The start line says how many tickets and rules it loaded, and which history segment its ledger came from. An action's start line names its kind, the ticket and the rule that wanted it. Its end line says `done`, or `refused` or `failed` with the reason. A resync line says how many tickets it read, how many actions started since the last resync line, and how many Linear API calls it made with the hourly request allowance left. Errors go to stderr, such as `dispatch: while reading: ...` when a source can't be read.
+The start line says how many tickets and rules it loaded, and which history segment its ledger came from. An action's start line names its kind, the ticket and the rule that wanted it. Its end line says what a successful action did, such as `ok: workspace w3`, or `done` when there is nothing more to say, or `refused` or `failed` with the reason. A resync line says how many tickets it read, how many actions started since the last resync line, and how many Linear API calls it made with the hourly request allowance left. Errors go to stderr, such as `dispatch: while reading: ...` when a source can't be read.
 
 The resync is the only clock the rules wait on, so a wait ends up to `resync` after its deadline. To re-read now instead of waiting:
 
@@ -222,7 +222,7 @@ It needs the running loop, and exits 3 with `dispatch: not running` without one.
 
 **A source can't be read.** The loop prints `dispatch: while reading: ...` and goes on. A ticket whose rule needs the unreadable fact is held, not decided on a guess, and shows as `held` in `dispatch plan` with the reason. The next resync reads again, and the ticket is decided as soon as the read works.
 
-**The run window prints `escalate ENG-4 failed: team ENG has no "Needs Human" status`.** The escalation fails and the ticket keeps its old status. The team lacks that status or calls it something else. Create it in Linear (Started category) or set `needs_human` under `[linear.statuses]`, then restart `dispatch run`, since it reads the config once. A missing `in_progress` or `close_parent` status fails the same way. A failed action is tried again at the next resync.
+**The run window prints `escalate ENG-4 failed: team ENG has no "Needs Human" status`.** The escalation fails and the ticket keeps its old status. The team lacks that status or calls it something else. Create it in Linear (Started category) or set `needs_human` under `[plugins.linear.statuses]`, then restart `dispatch run`, since it reads the config once. A missing `in_progress` or `close_parent` status fails the same way. A failed action is tried again at the next resync.
 
 **An In Progress ticket never launches.** Run `dispatch plan`. The ticket is skipped or escalated when it has no `repo` label, when its label has no `[repos.<label>]` table, or when it has sub-issues (a parent never gets a worker). A `design` ticket launches too, as a design session rather than a build, and a `design-review` ticket as a review session. A ticket that isn't assigned to you or lacks the `ai` label doesn't appear at all. `waiting` means the cap (`max_in_progress`) is reached, and `held` that the repo's pool couldn't be read. A full treehouse pool shows only when the launch runs, as `launch ENG-1 refused: pool_exhausted: all 4/4 pool trees are taken: ...` in the run window and in `dispatch tick`, naming who holds every tree. A `not_pooled` launch means the repo has no `treehouse.toml`.
 

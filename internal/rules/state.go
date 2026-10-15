@@ -469,16 +469,16 @@ func (s *State) treeRecords(w world.World) {
 		case w.CheckErrors[tree.Path] != nil:
 			reason := fmt.Sprintf("can't tell whether %s holds unpushed work: %v", tree.Path, w.CheckErrors[tree.Path])
 			rec.Pushed, rec.TrackedChanges, rec.Unfinished = Unread[bool](reason), Unread[bool](reason), Unread[string](reason)
-			rec.CleanSince = Unread[int64](reason)
+			rec.Untracked, rec.CleanSince = Unread[string](reason), Unread[int64](reason)
 		case !tried:
 			reason := tree.Path + " was not inspected, because its ticket isn't finished"
 			rec.Pushed, rec.TrackedChanges, rec.Unfinished = Unread[bool](reason), Unread[bool](reason), Unread[string](reason)
-			rec.CleanSince = Unread[int64](reason)
+			rec.Untracked, rec.CleanSince = Unread[string](reason), Unread[int64](reason)
 		default:
 			rec.Pushed = Known(inspected.Unpushed == 0, at)
 			rec.TrackedChanges = Known(inspected.TrackedChanges, at)
 			rec.Unfinished = Known(w.Unfinished[tree.Path], at)
-			rec.CleanSince = Known(at, at)
+			rec.Untracked, rec.CleanSince = Known(strings.Join(w.Untracked[tree.Path], "\n"), at), Known(at, at)
 		}
 		r := newRecord("treehouse.tree", tree.Path, holder, rec)
 		if holder == "" {

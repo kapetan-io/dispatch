@@ -176,7 +176,7 @@ func TestApiKeyCommandStopsWhenRunIsCancelled(t *testing.T) {
 
 	select {
 	case err := <-done:
-		require.Error(t, err)
+		require.NoError(t, err)
 	case <-time.After(3 * time.Second):
 		t.Fatal("dispatch run did not return within 3s of cancel")
 	}
