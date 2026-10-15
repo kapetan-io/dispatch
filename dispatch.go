@@ -90,7 +90,7 @@ const usage = `usage: dispatch tick [--dry-run]
                and clean up after finished and paused tickets
   --dry-run    print the actions a tick would take, one per line, without acting
   run          tick now and then once per interval until interrupted (Ctrl-C)
-  --interval   time between ticks; defaults to the config's interval_minutes
+  --interval   time between ticks; defaults to the config's [dispatch].resync
   tell         type text into the ticket's worker; fails when the worker is blocked or absent
   ticket-hint  print a reminder to use the dispatch:ticket skill when run in a repo listed under
                [repos] in the config, or a worktree of one; prints nothing elsewhere.
@@ -217,7 +217,7 @@ func run(ctx context.Context, opts Options, interval time.Duration) error {
 		if err != nil {
 			return err
 		}
-		interval = time.Duration(cfg.IntervalMinutes) * time.Minute
+		interval = time.Duration(cfg.Dispatch.Resync)
 	}
 	if interval <= 0 {
 		return fmt.Errorf("interval must be positive, got %s", interval)
@@ -341,7 +341,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 		_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the %s pool: %v\n", label, err)
 		unread[label] = true
 	}
-	tickets, err := lin.ManagedTickets(ctx, cfg.Linear.AILabel, cfg.Linear.Teams)
+	tickets, err := lin.ManagedTickets(ctx, cfg.Plugins.Linear.AILabel, cfg.Plugins.Linear.Teams)
 	if err != nil {
 		return sum, err
 	}
@@ -364,7 +364,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 	for _, t := range tickets {
 		w := worker.Find(t.Identifier, trees, snap)
 		workers[t.Identifier] = w
-		if w.State == worker.Idle && t.Status == cfg.Linear.Statuses.InProgress {
+		if w.State == worker.Idle && t.Status == cfg.Plugins.Linear.Statuses.InProgress {
 			if rec, ok := stops.Read(opts.StateDir, w.TreePath, w.Session); ok {
 				lastStops[t.Identifier] = rec
 			}
@@ -374,26 +374,26 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 	input := reconcile.Input{
 		Tickets:        tickets,
 		Workers:        workers,
-		InProgress:     cfg.Linear.Statuses.InProgress,
-		InReview:       cfg.Linear.Statuses.InReview,
-		NeedsHuman:     cfg.Linear.Statuses.NeedsHuman,
-		MaxInProgress:  cfg.MaxInProgress,
-		NudgeLimit:     cfg.NudgeLimit,
+		InProgress:     cfg.Plugins.Linear.Statuses.InProgress,
+		InReview:       cfg.Plugins.Linear.Statuses.InReview,
+		NeedsHuman:     cfg.Plugins.Linear.Statuses.NeedsHuman,
+		MaxInProgress:  cfg.Dispatch.MaxInProgress,
+		NudgeLimit:     cfg.NudgeLimit(),
 		Now:            now,
 		Stops:          lastStops,
-		RenotifyTicks:  cfg.BlockedRenotifyTicks,
+		RenotifyTicks:  cfg.BlockedRenotifyTicks(),
 		Cache:          c,
-		RepoLabelGroup: cfg.Linear.RepoLabelGroup,
+		RepoLabelGroup: cfg.Plugins.Linear.RepoLabelGroup,
 		Repos:          cfg.Repos,
 		UnreadRepos:    unread,
-		Done:           cfg.Linear.Statuses.Done,
-		Paused:         cfg.Linear.Statuses.Paused,
+		Done:           cfg.Plugins.Linear.Statuses.Finished,
+		Paused:         cfg.Plugins.Linear.Statuses.Paused,
 		LeaseHolders:   holders,
 		Leases:         leaseWorkers(holders, trees, snap),
-		Todo:           cfg.Linear.Statuses.Todo,
-		AILabel:        cfg.Linear.AILabel,
-		Teams:          cfg.Linear.Teams,
-		BlockerDone:    cfg.Linear.Statuses.BlockerDone,
+		Todo:           cfg.Plugins.Linear.Statuses.Todo,
+		AILabel:        cfg.Plugins.Linear.AILabel,
+		Teams:          cfg.Plugins.Linear.Teams,
+		BlockerDone:    cfg.Plugins.Linear.Statuses.BlockerDone,
 		Leased:         leased,
 	}
 	// Only promotion and closing wait on the children, so a failed read holds
@@ -449,7 +449,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 	if lookupFailed || len(unread) > 0 {
 		held = nil
 	}
-	settle(c, now, tickets, workers, input.PRs, cfg.Linear.Statuses, held, input.PendingComments(), leased)
+	settle(c, now, tickets, workers, input.PRs, cfg.Plugins.Linear.Statuses, held, input.PendingComments(), leased)
 
 	post := delivery.Post{Herdr: opts.Herdr, Alerts: opts.Alerts, StateDir: opts.StateDir, Stderr: opts.Stderr}
 	current := map[string]string{}
@@ -473,11 +473,11 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 	}
 	nudgeFailed := map[string]bool{}
 	launch := func(a reconcile.Action) launcher.Result {
-		model, kickoff := cfg.WorkerModel, ""
+		model, kickoff := cfg.WorkerModel(), ""
 		if name := a.Skill.Name(); name != "" {
-			model, kickoff = cfg.DesignModel, "/dispatch:"+name+" "+a.Ticket.Identifier
+			model, kickoff = cfg.DesignModel(), "/dispatch:"+name+" "+a.Ticket.Identifier
 		}
-		return launcherFor(opts, cfg.PluginRoot, nil).Launch(ctx, launcher.Request{
+		return launcherFor(opts, cfg.Plugins.Herdr.PluginRoot, nil).Launch(ctx, launcher.Request{
 			RepoDir: a.RepoDir, Ticket: a.Ticket.Identifier, Title: a.Ticket.Title, Branch: a.Ticket.Branch, Model: model, Kickoff: kickoff,
 		})
 	}
@@ -557,13 +557,13 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while keeping the tree of %s: %v\n", a.Ticket.Identifier, err)
 			}
 		case reconcile.Promote:
-			if err := move(ctx, lin, a.Ticket, cfg.Linear.Statuses.InProgress); err != nil {
+			if err := move(ctx, lin, a.Ticket, cfg.Plugins.Linear.Statuses.InProgress); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while promoting %s: %v\n", a.Ticket.Identifier, err)
 				continue
 			}
 			_, _ = fmt.Fprintln(opts.Stdout, a)
 		case reconcile.Close:
-			if err := move(ctx, lin, a.Ticket, cfg.Linear.Statuses.CloseParent); err != nil {
+			if err := move(ctx, lin, a.Ticket, cfg.Plugins.Linear.Statuses.CloseParent); err != nil {
 				_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while closing %s: %v\n", a.Ticket.Identifier, err)
 				continue
 			}
@@ -651,7 +651,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 				if r.Status == launcher.StatusOK && a.ActivityAt != "" {
 					e.PRActivitySeen = a.ActivityAt
 				}
-				if r.Status == launcher.StatusOK && a.Ticket.Status == cfg.Linear.Statuses.InReview && !a.ThreadOnly {
+				if r.Status == launcher.StatusOK && a.Ticket.Status == cfg.Plugins.Linear.Statuses.InReview && !a.ThreadOnly {
 					e.Relaunches++
 				}
 				c[a.Ticket.Identifier] = e
@@ -666,8 +666,8 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 			}
 			e.LaunchFailures++
 			c[a.Ticket.Identifier] = e
-			_, _ = fmt.Fprintf(opts.Stdout, "%s: %s (failure %d of %d) %s\n", a, r.Status, e.LaunchFailures, cfg.LaunchFailureLimit, r.Detail)
-			if e.LaunchFailures < cfg.LaunchFailureLimit {
+			_, _ = fmt.Fprintf(opts.Stdout, "%s: %s (failure %d of %d) %s\n", a, r.Status, e.LaunchFailures, cfg.LaunchFailureLimit(), r.Detail)
+			if e.LaunchFailures < cfg.LaunchFailureLimit() {
 				continue
 			}
 			reason := fmt.Sprintf("its worker failed to launch %d times in a row. The launcher said `%s`: %s", e.LaunchFailures, r.Status, r.Detail)
@@ -678,7 +678,7 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 			e = c[a.Ticket.Identifier]
 			e.LaunchFailures = 0
 			c[a.Ticket.Identifier] = e
-			_, _ = fmt.Fprintf(opts.Stdout, "escalate %s: launch failed %d times\n", a.Ticket.Identifier, cfg.LaunchFailureLimit)
+			_, _ = fmt.Fprintf(opts.Stdout, "escalate %s: launch failed %d times\n", a.Ticket.Identifier, cfg.LaunchFailureLimit())
 		}
 	}
 	return sum, nil
@@ -828,7 +828,7 @@ func move(ctx context.Context, lin linear.Workspace, t linear.Ticket, status str
 
 // escalate moves a ticket to Needs Human with one comment saying why.
 func escalate(ctx context.Context, lin linear.Workspace, cfg config.Config, c cache.Cache, post delivery.Post, t linear.Ticket, reason string) error {
-	state, err := lin.StateID(ctx, t.Team, cfg.Linear.Statuses.NeedsHuman)
+	state, err := lin.StateID(ctx, t.Team, cfg.Plugins.Linear.Statuses.NeedsHuman)
 	if err != nil {
 		return err
 	}
@@ -841,7 +841,7 @@ func escalate(ctx context.Context, lin linear.Workspace, cfg config.Config, c ca
 	// what keeps the next tick's Plan from notifying a second time, and a
 	// failed alert marks the notification pending so the next tick retries it.
 	e := c[t.Identifier]
-	e.LastStatus = cfg.Linear.Statuses.NeedsHuman
+	e.LastStatus = cfg.Plugins.Linear.Statuses.NeedsHuman
 	e.Nudges = 0
 	e.Relaunches = 0
 	e.NotifyPending = post.Notify(ctx, delivery.Event{Ticket: t, Text: reconcile.NeedsHumanText(t)}) != nil
@@ -873,7 +873,7 @@ func (k *keyLookup) find(ctx context.Context, opts Options, cfg config.Config) (
 	if env := os.Getenv("LINEAR_API_KEY"); env != "" {
 		return env, nil
 	}
-	if cmd := cfg.Linear.APIKeyCommand; cmd != "" {
+	if cmd := cfg.Plugins.Linear.APIKeyCommand; cmd != "" {
 		if k.fromCommand == "" {
 			key, err := keyFromCommand(ctx, opts, cmd)
 			if err != nil {
@@ -883,9 +883,9 @@ func (k *keyLookup) find(ctx context.Context, opts Options, cfg config.Config) (
 		}
 		return k.fromCommand, nil
 	}
-	out, err := exec.CommandContext(ctx, "security", "find-generic-password", "-s", cfg.Linear.APIKeyKeychain, "-w").Output()
+	out, err := exec.CommandContext(ctx, "security", "find-generic-password", "-s", cfg.Plugins.Linear.APIKeyKeychain, "-w").Output()
 	if err != nil {
-		return "", fmt.Errorf("no Linear API key: LINEAR_API_KEY is unset and the keychain has no %q entry", cfg.Linear.APIKeyKeychain)
+		return "", fmt.Errorf("no Linear API key: LINEAR_API_KEY is unset and the keychain has no %q entry", cfg.Plugins.Linear.APIKeyKeychain)
 	}
 	return strings.TrimSpace(string(out)), nil
 }

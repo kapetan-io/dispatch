@@ -754,7 +754,7 @@ func TestTickTeardownFreesATreeForALaunchInTheSameTick(t *testing.T) {
 
 func TestTickReadsDoneAndPausedStatusesFromConfig(t *testing.T) {
 	h := newHarness(t)
-	h.config("[linear.statuses]\ndone = [\"Shipped\"]\npaused = [\"Parked\"]\n")
+	h.config("[plugins.linear.statuses]\nfinished = [\"Shipped\"]\npaused = [\"Parked\"]\n")
 	h.tools.Linear.AddState("Shipped", "completed")
 	h.tools.Linear.AddState("Parked", "backlog")
 	h.gitTree("ENG-1")

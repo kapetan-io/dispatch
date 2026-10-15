@@ -149,7 +149,7 @@ func TestTickNeverEscalatesAnInProgressWorkerForStalling(t *testing.T) {
 
 func TestTickIgnoresNudgeLimitForInProgressTickets(t *testing.T) {
 	h := newHarness(t)
-	h.config("nudge_limit = 1\n")
+	h.config("[rules]\nnudge_limit = 1\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.worker("ENG-1", "idle")
 

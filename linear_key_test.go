@@ -37,7 +37,7 @@ func TestApiKeyCommandSuppliesTheLinearKey(t *testing.T) {
 	h := newHarness(t)
 	h.useConfiguredKey(t)
 	command, _ := keyScript(t, h.dir, "echo test-key")
-	h.config("[linear]\napi_key_command = \"" + command + "\"\n")
+	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	out, err := h.run("tick", "--dry-run")
@@ -50,7 +50,7 @@ func TestApiKeyCommandWinsOverTheKeychain(t *testing.T) {
 	h := newHarness(t)
 	h.useConfiguredKey(t)
 	command, counter := keyScript(t, h.dir, "echo test-key")
-	h.config("[linear]\napi_key_command = \"" + command + "\"\napi_key_keychain = \"no-such-service\"\n")
+	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\napi_key_keychain = \"no-such-service\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	_, err := h.run("tick", "--dry-run")
@@ -64,7 +64,7 @@ func TestApiKeyCommandYieldsToTheEnvironmentKey(t *testing.T) {
 	h.useConfiguredKey(t)
 	t.Setenv("LINEAR_API_KEY", "test-key")
 	command, counter := keyScript(t, h.dir, "echo other-key")
-	h.config("[linear]\napi_key_command = \"" + command + "\"\n")
+	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	_, err := h.run("tick", "--dry-run")
@@ -87,7 +87,7 @@ func TestApiKeyCommandFailureNamesCommandAndStatus(t *testing.T) {
 			h := newHarness(t)
 			h.useConfiguredKey(t)
 			command, _ := keyScript(t, h.dir, test.body)
-			h.config("[linear]\napi_key_command = \"" + command + "\"\n")
+			h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\n")
 
 			_, err := h.run("tick")
 
@@ -103,7 +103,7 @@ func TestApiKeyCommandRunsOncePerRunProcess(t *testing.T) {
 	h := newHarness(t)
 	h.useConfiguredKey(t)
 	command, counter := keyScript(t, h.dir, "echo test-key")
-	h.config("[linear]\napi_key_command = \"" + command + "\"\n")
+	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
@@ -125,7 +125,7 @@ func TestLinearViewerPrintsTheKeyOwner(t *testing.T) {
 	h := newHarness(t)
 	h.useConfiguredKey(t)
 	command, _ := keyScript(t, h.dir, "echo test-key")
-	h.config("[linear]\napi_key_command = \"" + command + "\"\n")
+	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\n")
 
 	out, err := h.run("linear-viewer")
 
@@ -137,7 +137,7 @@ func TestLinearViewerFailsWithoutAKey(t *testing.T) {
 	h := newHarness(t)
 	h.useConfiguredKey(t)
 	command, _ := keyScript(t, h.dir, "exit 1")
-	h.config("[linear]\napi_key_command = \"" + command + "\"\n")
+	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\n")
 
 	out, err := h.run("linear-viewer")
 
@@ -149,7 +149,7 @@ func TestApiKeyCommandRotationIsPickedUpAfterLinearRejectsTheKey(t *testing.T) {
 	h := newHarness(t)
 	h.useConfiguredKey(t)
 	command, counter := keyScript(t, h.dir, `if [ "$(wc -l < `+filepath.Join(h.dir, "runs")+`)" -le 1 ]; then echo bad; else echo test-key; fi`)
-	h.config("[linear]\napi_key_command = \"" + command + "\"\n")
+	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
@@ -172,7 +172,7 @@ func TestApiKeyCommandStopsWhenRunIsCancelled(t *testing.T) {
 	h.useConfiguredKey(t)
 	// The sleep is a grandchild of the shell that holds the command's stdout.
 	command, counter := keyScript(t, h.dir, "sleep 30")
-	h.config("[linear]\napi_key_command = \"" + command + "\"\n")
+	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\n")
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
 
@@ -196,7 +196,7 @@ func TestApiKeyCommandThatBlocksTimesOutAndTheNextTickRetries(t *testing.T) {
 	h := newHarness(t)
 	h.useConfiguredKey(t)
 	command, counter := keyScript(t, h.dir, `if [ "$(wc -l < `+filepath.Join(h.dir, "runs")+`)" -le 1 ]; then sleep 30; fi; echo test-key`)
-	h.config("[linear]\napi_key_command = \"" + command + "\"\n")
+	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	_, _, err := h.runWith(context.Background(), dispatch.Options{KeyCommandTimeout: time.Second}, "tick")

@@ -217,7 +217,7 @@ func TestTickEscalatesOnlyChildrenOfYoursThatCarryTheAILabel(t *testing.T) {
 func TestTickEscalatesAnAbandonedBlockerEvenAtTheWorkerCap(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(parent("ENG-1", "In Progress"))
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-5", "In Progress", "dispatch"))
 	h.linear.setChildren(child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Canceled"}))
 
@@ -295,7 +295,7 @@ func TestTickClosesAParentOnceItsDoneReviewChildAndBuildChildrenAreFinished(t *t
 
 func TestTickDoesNotCountATicketWithTruncatedLabelsAgainstTheCap(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	cut := ticket("ENG-3", "In Progress", "dispatch")
 	cut.LabelsTruncated = true
 	h.tickets(parent("ENG-1", "In Progress"), cut)
@@ -402,7 +402,7 @@ func TestTickPromotesOnlyChildrenOfYoursThatCarryTheAILabel(t *testing.T) {
 
 func TestTickNeverPromotesPastTheWorkerCap(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 2\n")
+	h.config("[dispatch]\nmax_in_progress = 2\n")
 	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
 	h.worker("ENG-9", "working")
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-3", "ENG-1", "Todo"))
@@ -419,7 +419,7 @@ func TestTickNeverPromotesPastTheWorkerCap(t *testing.T) {
 
 func TestTickPromotesAWaitingChildOnceASlotFrees(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
 	h.worker("ENG-9", "working")
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
@@ -441,7 +441,7 @@ func TestTickPromotesAWaitingChildOnceASlotFrees(t *testing.T) {
 
 func TestTickCountsInProgressTicketsStillWaitingForAWorker(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	// ENG-9 is In Progress but has no worker yet, since its launch waits.
 	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
@@ -454,7 +454,7 @@ func TestTickCountsInProgressTicketsStillWaitingForAWorker(t *testing.T) {
 
 func TestTickDoesNotCountParentsAgainstTheWorkerCap(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.tickets(parent("ENG-1", "In Progress"), parent("ENG-8", "In Progress"))
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-9", "ENG-8", "Backlog"))
 
@@ -613,7 +613,7 @@ func TestTickDoesNotEscalateAChildWhoseRepoPoolCannotBeRead(t *testing.T) {
 
 func TestTickDoesNotEscalateAChildWhoseBlockerIsDoneButNotBlockerDone(t *testing.T) {
 	h := newHarness(t)
-	h.config("[linear.statuses]\nblocker_done = \"Released\"\n")
+	h.config("[plugins.linear.statuses]\nblocker_done = \"Released\"\n")
 	h.tickets(parent("ENG-1", "In Progress"))
 	h.linear.setChildren(
 		child("ENG-2", "ENG-1", "Done"),
@@ -628,7 +628,7 @@ func TestTickDoesNotEscalateAChildWhoseBlockerIsDoneButNotBlockerDone(t *testing
 
 func TestTickSharesTheWorkerCapAcrossParents(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.tickets(parent("ENG-1", "In Progress"), parent("ENG-4", "In Progress"))
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-5", "ENG-4", "Todo"))
 
@@ -708,7 +708,7 @@ func TestTickPromotesNothingForAParentThatIsNotInProgress(t *testing.T) {
 
 func TestTickPromotesTheOldestChildFirstWhenOneSlotIsFree(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.tickets(parent("ENG-1", "In Progress"))
 	older, newer := child("ENG-2", "ENG-1", "Todo"), child("ENG-3", "ENG-1", "Todo")
 	older.CreatedAt = "2026-10-01T09:00:00.000Z"
@@ -764,7 +764,7 @@ func TestTickPromotesAChildWithNoRepoLabelAndTheNextTickEscalatesIt(t *testing.T
 
 func TestTickReleasesAChildWhenItsBlockerIsDoneWhateverCloseParentIs(t *testing.T) {
 	h := newHarness(t)
-	h.config("[linear.statuses]\nclose_parent = \"Closed\"\n")
+	h.config("[plugins.linear.statuses]\nclose_parent = \"Closed\"\n")
 	h.tickets(parent("ENG-1", "In Progress"))
 	h.linear.setChildren(
 		child("ENG-2", "ENG-1", "Done"),
@@ -788,7 +788,7 @@ func TestTickReleasesAChildOnTheConfiguredBlockerStatus(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
-			h.config("[linear.statuses]\nblocker_done = \"Released\"\n")
+			h.config("[plugins.linear.statuses]\nblocker_done = \"Released\"\n")
 			h.tools.Linear.AddState("Released", "completed")
 			h.tickets(parent("ENG-1", "In Progress"))
 			h.linear.setChildren(

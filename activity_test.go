@@ -148,7 +148,7 @@ func TestTickHoldsPRActivityUntilTheWorkerIsIdle(t *testing.T) {
 
 func TestTickActivityNudgeDoesNotCountTowardThePRLimit(t *testing.T) {
 	h := newHarness(t)
-	h.config("nudge_limit = 1\n")
+	h.config("[rules]\nnudge_limit = 1\n")
 	before := cleanPR("a1")
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")

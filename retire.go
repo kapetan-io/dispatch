@@ -31,7 +31,7 @@ func leaseHolders(ctx context.Context, lin linear.Workspace, cfg config.Config, 
 	if len(holders) == 0 {
 		return nil, nil
 	}
-	return lin.LeasedTickets(ctx, cfg.Linear.AILabel, cfg.Linear.Teams, holders)
+	return lin.LeasedTickets(ctx, cfg.Plugins.Linear.AILabel, cfg.Plugins.Linear.Teams, holders)
 }
 
 // inspectTrees reads the git state of each tree Plan may return. An unreadable

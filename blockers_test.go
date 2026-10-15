@@ -135,7 +135,7 @@ func TestTickHoldsATicketWhoseBlockersWereCutShort(t *testing.T) {
 
 func TestTickDoesNotLetAHeldTicketTakeAPromotionSlot(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.tickets(
 		parent("ENG-1", "In Progress"),
 		blockedBy(ticket("ENG-5", "In Progress", "dispatch"), false, [2]string{"ENG-4", "Todo"}),

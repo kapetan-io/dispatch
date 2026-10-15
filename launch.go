@@ -88,10 +88,10 @@ func pluginRoot(opts Options) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("no plugin root: set DISPATCH_PLUGIN_ROOT or plugin_root in the config: %w", err)
 	}
-	if cfg.PluginRoot == "" {
+	if cfg.Plugins.Herdr.PluginRoot == "" {
 		return "", errors.New("no plugin root: set DISPATCH_PLUGIN_ROOT or plugin_root in the config")
 	}
-	return cfg.PluginRoot, nil
+	return cfg.Plugins.Herdr.PluginRoot, nil
 }
 
 // launcherFor is the launcher a launch goes through, which is Options.Launcher

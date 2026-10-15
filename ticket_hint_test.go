@@ -48,7 +48,7 @@ func TestTicketHintExpandsTildeInRepoPaths(t *testing.T) {
 func TestTicketHintStaysSilentOutsideManagedRepos(t *testing.T) {
 	managed := newHintRepo(t)
 	other := newHintRepo(t)
-	config := writeHintConfig(t, "[linear]\nteams = [\"ENG\"]\n\n[repos.dispatch]\npath = \""+managed+"\"\n")
+	config := writeHintConfig(t, "[plugins.linear]\nteams = [\"ENG\"]\n\n[repos.dispatch]\npath = \""+managed+"\"\n")
 
 	assert.Empty(t, runTicketHint(t, other, config))
 	assert.Empty(t, runTicketHint(t, t.TempDir(), config))
@@ -56,7 +56,7 @@ func TestTicketHintStaysSilentOutsideManagedRepos(t *testing.T) {
 
 func TestTicketHintIgnoresPathsListedOutsideTheReposTable(t *testing.T) {
 	clone := newHintRepo(t)
-	config := writeHintConfig(t, "plugin_root = \""+clone+"\"\n\n[linear]\nother = \""+clone+"\"\n")
+	config := writeHintConfig(t, "[plugins.herdr]\nplugin_root = \""+clone+"\"\n\n[plugins.linear]\nother = \""+clone+"\"\n")
 
 	assert.Empty(t, runTicketHint(t, clone, config))
 }

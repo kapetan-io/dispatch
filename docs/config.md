@@ -14,31 +14,39 @@ Every `toml` block in the docs is loaded by a test through the same loader, so t
 
 ```toml
 # every setting at its default
-interval_minutes = 5
+[dispatch]
+rules = "~/Development/dispatch/rules"
 max_in_progress = 4
-launch_failure_limit = 2
-nudge_limit = 2
-blocked_renotify_ticks = 3
-plugin_root = "~/Development/dispatch"
-worker_model = "sonnet"
-design_model = "opus"
+resync = "5m"
 
-[linear]
+[history]
+dir = "~/.local/state/dispatch/events"
+rotate = "6h"
+keep = "1d"
+
+[plugins.linear]
 api_key_command = ""
 api_key_keychain = "dispatch-linear-api-key"
 teams = ["ENG"]
 ai_label = "ai"
 repo_label_group = "repo"
 
-[linear.statuses]
+[plugins.linear.statuses]
 todo = "Todo"
 in_progress = "In Progress"
 in_review = "In Review"
 needs_human = "Needs Human"
 close_parent = "Done"
 blocker_done = "Done"
-done = ["Done", "Canceled", "Duplicate"]
+finished = ["Done", "Canceled", "Duplicate"]
 paused = ["Backlog", "Todo"]
+
+[plugins.herdr]
+plugin_root = "~/Development/dispatch"
+
+[plugins.github]
+[plugins.treehouse]
+[plugins.notify]
 
 [repos.dispatch]
 path = "~/Development/dispatch"
@@ -48,22 +56,61 @@ ignore_optional_checks = false
 auto_merge = false
 ```
 
-Repos have no default, so the block shows one repo with every setting at its default, and `path` is required. Without any `[repos.<label>]` table, every In Progress ticket escalates to Needs Human because its repo isn't configured. A leading `~` in `plugin_root` and in every repo's `path` expands to your home directory.
+Repos have no default, so the block shows one repo with every setting at its default, and `path` is required. Without any `[repos.<label>]` table, every In Progress ticket escalates to Needs Human because its repo isn't configured. A leading `~` in `dispatch.rules`, `history.dir`, `plugins.herdr.plugin_root` and in every repo's `path` expands to your home directory.
 
-## Top-level settings
+## `[dispatch]`
 
 | Setting | Default | What it does |
 |---|---|---|
-| `interval_minutes` | `5` | Minutes between ticks of `dispatch run`. `dispatch run --interval 30s` overrides it. It must be above zero. |
+| `rules` | `~/Development/dispatch/rules` | The directory of TypeScript rules that `dispatch rules check` and `dispatch rules test` read. `dispatch rules init` writes the shipped rules there. |
 | `max_in_progress` | `4` | The most workers running at once. Caps running workers, and In Review and Needs Human tickets don't count. A launch counts In Progress tickets that have a worker, plus those in a repo whose pool couldn't be read this tick, and waits with `wait <ticket>: N of M workers already running`. Promoting a parent's children counts every In Progress ticket that isn't a parent, `design` tickets included, with or without a worker. A `design` ticket whose design worker has made children counts too, while its worker lives, and waits with `wait <ticket>: N of M In Progress tickets already`. |
-| `launch_failure_limit` | `2` | Failed launches in a row before the ticket goes to Needs Human with the launcher's error. A full treehouse pool (`pool_exhausted`) never counts. |
-| `nudge_limit` | `2` | PR nudges to an idle In Review worker with no push before the ticket goes to Needs Human. The count resets when a push moves the PR head, and it also caps relaunches of a gone worker that never pushes. In Progress tickets never read it, since an idle In Progress worker is nudged once per Stop and never escalated. |
-| `blocked_renotify_ticks` | `3` | Ticks between macOS notifications for a worker that stays blocked on a question. The first notification comes on the first blocked tick. `0` notifies on every blocked tick. |
-| `plugin_root` | `~/Development/dispatch` | Your checkout of this repo. Workers get `scripts/shims` first on their PATH and load the plugin with `--plugin-dir`, both from it. The shim runs the `dispatch` binary that launched the worker (the worker's `DISPATCH_BIN`), so a `dispatch` on PATH that is missing or older does not matter for launches. |
+| `resync` | `5m` | Time between ticks of `dispatch run`, such as `30s` or `5m`. `dispatch run --interval 30s` overrides it. It must be above zero. |
+
+## `[history]`
+
+| Setting | Default | What it does |
+|---|---|---|
+| `dir` | `~/.local/state/dispatch/events` | Where dispatch will keep its history. Nothing writes there yet. |
+| `rotate` | `6h` | How often history starts a new segment. |
+| `keep` | `1d` | How long old segments are kept. Days are written `7d`. |
+
+## `[rules]`
+
+Your own table. Dispatch never interprets it, and a rule reads a key as `ctx.config.rules.<key>`. A rule that reads a key the file lacks fails `dispatch rules check`, naming the key. `dispatch rules init` writes the five keys the shipped rules read, with today's values. Until the rules replace the tick, `dispatch tick` and `dispatch run` read the same five keys, and take the default shown here when one is missing.
+
+| Key | Default | What it does |
+|---|---|---|
 | `worker_model` | `sonnet` | The model name passed to `claude --model` for every build worker. |
 | `design_model` | `opus` | The model name passed to `claude --model` for the worker of a `design` or `design-review` ticket. |
+| `launch_failure_limit` | `2` | Failed launches in a row before the ticket goes to Needs Human with the launcher's error. A full treehouse pool (`pool_exhausted`) never counts. |
+| `nudge_limit` | `2` | PR nudges to an idle In Review worker with no push before the ticket goes to Needs Human. The count resets when a push moves the PR head, and it also caps relaunches of a gone worker that never pushes. In Progress tickets never read it, since an idle In Progress worker is nudged once per Stop and never escalated. |
+| `blocked_renotify_minutes` | `15` | Minutes between macOS notifications for a worker that stays blocked on a question, rounded up to whole `resync` periods. The first notification comes on the first blocked tick. `0` notifies on every blocked tick. |
 
-## `[linear]`
+```toml
+[rules]
+worker_model = "opus"
+nudge_limit = 3
+```
+
+## `[http.<name>]`
+
+A service a rule may call. Each table needs a `base_url`. `token_command` prints the service's token. Dispatch loads these tables and checks them, and no rule can call a service yet.
+
+```toml
+[http.sentry]
+base_url = "https://sentry.io/api/0"
+token_command = "op read op://dev/sentry/token"
+```
+
+## `[plugins.herdr]`
+
+| Setting | Default | What it does |
+|---|---|---|
+| `plugin_root` | `~/Development/dispatch` | Your checkout of this repo. Workers get `scripts/shims` first on their PATH and load the plugin with `--plugin-dir`, both from it. The shim runs the `dispatch` binary that launched the worker (the worker's `DISPATCH_BIN`), so a `dispatch` on PATH that is missing or older does not matter for launches. |
+
+`[plugins.github]`, `[plugins.treehouse]` and `[plugins.notify]` take no settings yet. Write the empty table to say the plugin is on.
+
+## `[plugins.linear]`
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -73,7 +120,7 @@ Repos have no default, so the block shows one repo with every setting at its def
 | `ai_label` | `ai` | The label that opts a ticket in. dispatch touches only tickets assigned to the owner of the API key that carry it. |
 | `repo_label_group` | `repo` | The Linear label group whose labels name a ticket's repo. A ticket's repo label must match a `[repos.<label>]` table. |
 
-## `[linear.statuses]`
+## `[plugins.linear.statuses]`
 
 Each value is the exact name of a workflow status in your Linear team. dispatch writes only `in_progress` (promoting a child), `needs_human` (escalating) and `close_parent`. The rest it reads.
 
@@ -85,7 +132,7 @@ Each value is the exact name of a workflow status in your Linear team. dispatch 
 | `needs_human` | `Needs Human` | The worker or dispatcher needs you. Every team in `teams` must have this status in the Started category, because dispatch looks it up by name when it escalates and reads only tickets in Started statuses. |
 | `close_parent` | `Done` | What a parent becomes when all its children are finished. |
 | `blocker_done` | `Done` | What a blocker must reach before its child is promoted. A Canceled or Duplicate blocker moves its child to Needs Human instead. |
-| `done` | `["Done", "Canceled", "Duplicate"]` | Statuses of a finished ticket. Its worker is stopped and its tree returned, unless the tree holds modified or staged tracked files, or unpushed commits. Untracked files are deleted first. A parent closes when every child is in one of these. |
+| `finished` | `["Done", "Canceled", "Duplicate"]` | Statuses of a finished ticket. Its worker is stopped and its tree returned, unless the tree holds modified or staged tracked files, or unpushed commits. Untracked files are deleted first. A parent closes when every child is in one of these. |
 | `paused` | `["Backlog", "Todo"]` | Statuses of a ticket you parked. Its worker is stopped and its tree kept. |
 
 ## `[repos.<label>]`
@@ -151,10 +198,11 @@ path = "~/Development/dispatch"
 Two teams share one dispatcher. The cap is raised to 6, and ticks run every 10 minutes.
 
 ```toml
-interval_minutes = 10
+[dispatch]
 max_in_progress = 6
+resync = "10m"
 
-[linear]
+[plugins.linear]
 teams = ["ENG", "OPS"]
 
 [repos.dispatch]
@@ -175,25 +223,26 @@ Each of `dispatch`, `webapp` and `infra` must exist as a label in the `repo` lab
 A workspace that says "Backlog" for parked work, "Doing" for work in progress, "Blocked on me" for questions, and "Shipped" or "Won't do" for finished work. The label group is `project`, the opt-in label is `bot`, and the key lives in a different keychain entry.
 
 ```toml
+[rules]
 worker_model = "opus"
 
-[linear]
+[plugins.linear]
 api_key_keychain = "acme-linear-key"
 ai_label = "bot"
 repo_label_group = "project"
 
-[linear.statuses]
+[plugins.linear.statuses]
 todo = "Ready"
 in_progress = "Doing"
 in_review = "In Review"
 needs_human = "Blocked on me"
 close_parent = "Shipped"
 blocker_done = "Shipped"
-done = ["Shipped", "Won't do"]
+finished = ["Shipped", "Won't do"]
 paused = ["Backlog", "Ready"]
 
 [repos.platform]
 path = "~/src/platform"
 ```
 
-Keep every status you park tickets in inside `paused`. A ticket moved to a status listed in neither `paused` nor `done` keeps its running worker.
+Keep every status you park tickets in inside `paused`. A ticket moved to a status listed in neither `paused` nor `finished` keeps its running worker.

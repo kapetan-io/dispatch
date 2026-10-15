@@ -15,7 +15,7 @@ You need a Mac with these on your PATH. dispatch shells out to all of them.
 | `git` | Used by `dispatch launch` to create the ticket's branch in its tree. |
 | `go` | Builds the `dispatch` CLI. |
 
-**1. Clone this repo and install the CLI.** The clone is also the plugin workers load. `~/Development/dispatch` is the default location. If you clone elsewhere, set `plugin_root` in step 5.
+**1. Clone this repo and install the CLI.** The clone is also the plugin workers load. `~/Development/dispatch` is the default location. If you clone elsewhere, set `plugin_root` under `[plugins.herdr]` in step 5.
 
 ```sh
 gh repo clone kapetan-io/dispatch ~/Development/dispatch
@@ -51,7 +51,7 @@ path = "~/Development/dispatch"
 
 The [config reference](config.md) lists every other setting and has examples for several repos and renamed statuses. dispatch fails on a setting it doesn't know.
 
-**6. Load the plugin in your own Claude sessions.** Workers get the plugin from `plugin_root` on their own. Your session, the one that files tickets and supervises workers, needs it too, for `/dispatch:dispatch` and `dispatch:ticket`. The repo is its own marketplace, so install it once from your clone. Use your clone's path where the commands show `~/Development/dispatch`:
+**6. Load the plugin in your own Claude sessions.** Workers get the plugin from `[plugins.herdr].plugin_root` on their own. Your session, the one that files tickets and supervises workers, needs it too, for `/dispatch:dispatch` and `dispatch:ticket`. The repo is its own marketplace, so install it once from your clone. Use your clone's path where the commands show `~/Development/dispatch`:
 
 ```sh
 claude plugin marketplace add ~/Development/dispatch
@@ -82,7 +82,7 @@ If every check passes, the setup is complete. Troubleshooting at the end of this
 dispatch run
 ```
 
-It ticks now and every `interval_minutes` after, until you press Ctrl-C. It does not survive a reboot or a herdr restart, so start it again after either.
+It ticks now and every `resync` period after, until you press Ctrl-C. It does not survive a reboot or a herdr restart, so start it again after either.
 
 ## How a ticket flows
 
@@ -146,7 +146,7 @@ A workspace is renamed only when its label differs from the one its ticket's sta
 
 A feature that needs a design goes through four steps, and you decide two of them.
 
-1. **Design.** A ticket labeled `design` (with the `ai` and repo labels) waits in Backlog. Move it to In Progress and the next tick launches a worker typed `/dispatch:design <ticket>` on `design_model` (default `opus`), where builds use `worker_model`. The worker designs with you and saves the blueprint as a Linear document on the feature ticket. It is never nudged about a stall, a comment or a PR, never escalated, and stopped only when you move the ticket out of In Progress, because a design waiting on you is normal. It holds a tree, so it counts toward `max_in_progress`.
+1. **Design.** A ticket labeled `design` (with the `ai` and repo labels) waits in Backlog. Move it to In Progress and the next tick launches a worker typed `/dispatch:design <ticket>` on `[rules].design_model` (default `opus`), where builds use `[rules].worker_model`. The worker designs with you and saves the blueprint as a Linear document on the feature ticket. It is never nudged about a stall, a comment or a PR, never escalated, and stopped only when you move the ticket out of In Progress, because a design waiting on you is normal. It holds a tree, so it counts toward `max_in_progress`.
 2. **Review, or not.** At the end the design worker asks whether the design gets a review. Choosing review files a `design-review` child of the feature ticket, moves it to In Progress and runs a tick. The next tick launches a worker typed `/dispatch:design-review <ticket>` on `design_model`. It reviews the blueprint with you in its window, audits it against the repo's ADRs, then runs `dispatch:breakdown`. A review that is still failing after 5 rounds comments its blockers, moves to Needs Human and files nothing. Like a design worker it holds a tree, counts toward `max_in_progress` and is never nudged. It ends Done whether you start the work or hold it, and the next tick returns its tree like a build's. Choosing no review makes the design worker break the design down itself. A design that ends with nothing filed leaves its feature ticket in Backlog, so no new design worker starts.
 3. **Break down.** `dispatch:breakdown` sizes the design. A design that fits one PR gets one build ticket, and a larger one gets one per piece. Each is a Todo child of the feature ticket with the `ai` and repo labels, blocked by the first piece and by the pieces it builds on, and its body cites the blueprint instead of copying it. A rerun files no second ticket for a piece. You can ask any session or worker to break down a design or a ticket. A worker breaking down its own ticket keeps the first piece and its branch, and files the other pieces as new tickets blocked by it.
 4. **Start or hold.** Whichever step files the tickets asks whether to start the work now or hold it. The feature ticket keeps `design` until the work starts, and the dispatcher never promotes the children of a `design` parent, so nothing starts early. Starting removes `design` from an In Progress feature ticket. It is then an ordinary [parent](#parent-tickets), whose first piece is promoted on the next tick. Held work starts when you tell any session "start ENG-N's work".

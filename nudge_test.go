@@ -191,7 +191,7 @@ func TestTickNotifiesAgainWhileAWorkerStaysBlocked(t *testing.T) {
 
 func TestTickRenotifyIntervalComesFromConfig(t *testing.T) {
 	h := newHarness(t)
-	h.config("blocked_renotify_ticks = 1\n")
+	h.config("[rules]\nblocked_renotify_minutes = 5\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.worker("ENG-1", "blocked")
 

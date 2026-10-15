@@ -611,7 +611,7 @@ func TestLaunchGivesUpAtOnceWhenThePreflightTimeoutIsZero(t *testing.T) {
 func TestLaunchRefusesAnEmptyPluginRoot(t *testing.T) {
 	l := newLaunchHarness(t)
 	t.Setenv("DISPATCH_PLUGIN_ROOT", "")
-	l.writeFile("config.toml", "plugin_root = \"\"\n")
+	l.writeFile("config.toml", "[plugins.herdr]\nplugin_root = \"\"\n")
 
 	out := l.launchWith(dispatch.Options{ConfigPath: filepath.Join(l.dir, "config.toml")}, "ENG-1", "thrawn01/eng-1")
 
@@ -623,7 +623,7 @@ func TestLaunchRefusesAnEmptyPluginRoot(t *testing.T) {
 func TestTickRefusesAnEmptyPluginRoot(t *testing.T) {
 	h := newHarness(t)
 	h.builtinLauncher = true
-	h.extra = "plugin_root = \"\"\n"
+	h.extra = "[plugins.herdr]\nplugin_root = \"\"\n"
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	require.NoError(t, os.WriteFile(filepath.Join(h.repo, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
 	out, err := exec.Command("git", "-C", h.repo, "init", "-q", "-b", "main").CombinedOutput()

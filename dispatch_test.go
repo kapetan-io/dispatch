@@ -77,7 +77,7 @@ func TestTickRelaunchesWhenWorkspaceHasNoClaude(t *testing.T) {
 
 func TestTickWaitsWhenWorkerCapIsFull(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.tickets(
 		ticket("ENG-1", "In Progress", "dispatch"),
 		ticket("ENG-2", "In Progress", "dispatch"),
@@ -268,7 +268,7 @@ func TestTickHoldsBackOnlyTheRepoWhosePoolCannotBeRead(t *testing.T) {
 
 func TestTickCountsTicketsInAnUnreadRepoAgainstTheWorkerCap(t *testing.T) {
 	h := newHarness(t)
-	h.config("max_in_progress = 1\n")
+	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.addRepo("tiger", filepath.Join(h.dir, "moved"))
 	h.tickets(
 		ticket("ENG-1", "In Progress", "dispatch"),
@@ -441,7 +441,7 @@ func TestRunKeepsTickingAfterAFailedTick(t *testing.T) {
 
 func TestRunRejectsANonPositiveInterval(t *testing.T) {
 	h := newHarness(t)
-	h.config("interval_minutes = 0\n")
+	h.config("[dispatch]\nresync = \"0s\"\n")
 
 	_, err := h.run("run")
 
