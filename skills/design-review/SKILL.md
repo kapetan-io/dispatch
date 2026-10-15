@@ -80,11 +80,11 @@ Give it the findings, the blueprint path, the glossary path, the ADR list and th
 
 ## Phase 3: Skeptic agent
 
-Skip when Phase 2 confirmed nothing. Give the confirmed findings to an agent that tries to disprove each, reading the blueprint itself and verifying every quote. Verdicts are **Upheld**, **Downgraded to false positive**, **Downgraded to clarification**, or **Dismissed as implementation detail**. Its tests are buildability (would an engineer get stuck?), requirement tracing (does the product half require this?), not-a-tutorial (does it ask for how rather than what?) and diminishing returns (does it lengthen the document without removing an ambiguity?). It downgrades inflated priorities and misquotes, and upholds what is genuinely correct.
+Skip when Phase 2 confirmed nothing. Give the confirmed findings and the blueprint path to an agent that tries to disprove each, reading the blueprint itself and verifying every quote. Verdicts are **Upheld**, **Downgraded to false positive**, **Downgraded to clarification**, or **Dismissed as implementation detail**. Its tests are buildability (would an engineer get stuck?), requirement tracing (does the product half require this?), not-a-tutorial (does it ask for how rather than what?) and diminishing returns (does it lengthen the document without removing an ambiguity?). It downgrades inflated priorities and misquotes, and upholds what is genuinely correct.
 
 ## Phase 4: Fix proposal agent
 
-Drop false positives and implementation details. With no survivors, skip to Phase 6. Give the survivors to an agent that proposes 2 to 3 concrete patch options per finding with a recommendation, and a **Routing** of auto-apply or surface-to-user. Fixes stay short, expand no scope, and read without the review's context. Tightly coupled findings get one combined fix.
+Drop false positives and implementation details. With no survivors, skip to Phase 6. Give the survivors and the blueprint path to an agent that proposes 2 to 3 concrete patch options per finding with a recommendation, and a **Routing** of auto-apply or surface-to-user. Fixes stay short, expand no scope, and read without the review's context. Tightly coupled findings get one combined fix.
 
 **auto-apply** (no product or design decision, no new scope): stale soft flags; implementation leakage; drift where the code is authoritative; a product/technical inconsistency the technical half resolved in the only reasonable way; clear-cut story corrections the blueprint already specifies. Never auto-apply anything that adds requirements, features, segments or integrations, or narrows product scope.
 
