@@ -107,7 +107,7 @@ export const resumeOwed = (t: Ticket, ctx: Ctx) =>
 // Launches and In Review relaunches count alike, as today.
 export const launchFailures = (t: Ticket, ctx: Ctx) => {
   const r = ctx.ledger.receipts(t, { kind: ["launch", "escalate"] });          // newest first
-  const reset = r.findIndex(x => x.kind === "escalate" || x.outcome === "done" || x.detail === "pool_exhausted");
+  const reset = r.findIndex(x => x.kind === "escalate" || x.outcome === "done" || ["already_running", "pool_exhausted"].includes(x.detail));
   return r.slice(0, reset < 0 ? r.length : reset).filter(x => x.outcome === "failed").length;
 };
 

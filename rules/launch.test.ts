@@ -231,3 +231,17 @@ scenario(rules, "a launch that landed done resets the failure count, whatever it
   s.see(worker("ENG-1", "none"));
   s.expect([["launch-worker", "herdr.launch", "ENG-1"]]);
 });
+
+scenario(rules, "a refused launch that found the worker already running resets the failure count", s => {
+  s.given(ticket("ENG-1", build));
+  s.land("herdr.launch", "ENG-1", { outcome: "failed", detail: "boom" });
+  s.see(worker("ENG-1", "working"));
+  s.see(worker("ENG-1", "none"));
+  s.land("herdr.launch", "ENG-1", { outcome: "refused", detail: "already_running" });
+  s.see(worker("ENG-1", "working"));
+  s.see(worker("ENG-1", "none"));
+  s.land("herdr.launch", "ENG-1", { outcome: "failed", detail: "boom" });
+  s.see(worker("ENG-1", "working"));
+  s.see(worker("ENG-1", "none"));
+  s.expect([["launch-worker", "herdr.launch", "ENG-1"]]);
+});

@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -891,13 +893,44 @@ whenever({ name: "huge-once", each: "linear.ticket", if: () => true,
 	assert.Contains(t, out, "once has more than 32 items")
 }
 
-// fakeTSC puts a tsc on PATH that records its arguments and the config it was given.
+// The test binary doubles as the tsc these tests put on PATH: a symlink named tsc
+// points at it, and TestMain runs fakeTSCMain when it is started under that name.
+func TestMain(m *testing.M) {
+	if filepath.Base(os.Args[0]) == "tsc" {
+		os.Exit(fakeTSCMain(os.Args[1:]))
+	}
+	os.Exit(m.Run())
+}
+
+// fakeTSCMain records its arguments and the config named by -p, prints what the
+// test asked for, and exits with the code the test asked for.
+func fakeTSCMain(args []string) int {
+	record := os.Getenv("FAKE_TSC_RECORD")
+	out := strings.Join(args, " ") + "\n"
+	if len(args) == 2 {
+		if conf, err := os.ReadFile(args[1]); err == nil {
+			out += string(conf)
+		}
+	}
+	if err := os.WriteFile(record, []byte(out), 0o644); err != nil {
+		return 99
+	}
+	fmt.Print(os.Getenv("FAKE_TSC_OUTPUT"))
+	code, _ := strconv.Atoi(os.Getenv("FAKE_TSC_EXIT"))
+	return code
+}
+
+// fakeTSC puts a tsc on PATH and returns the file it records its arguments in.
 func fakeTSC(t *testing.T, exit int, output string) (record string) {
 	t.Helper()
+	exe, err := os.Executable()
+	require.NoError(t, err)
 	bin := t.TempDir()
+	require.NoError(t, os.Symlink(exe, filepath.Join(bin, "tsc")))
 	record = filepath.Join(t.TempDir(), "args")
-	script := "#!/bin/sh\necho \"$@\" > " + record + "\ncat \"$2\" >> " + record + "\n" + "echo '" + output + "'\nexit " + strconv.Itoa(exit) + "\n"
-	require.NoError(t, os.WriteFile(filepath.Join(bin, "tsc"), []byte(script), 0o755))
+	t.Setenv("FAKE_TSC_RECORD", record)
+	t.Setenv("FAKE_TSC_OUTPUT", output)
+	t.Setenv("FAKE_TSC_EXIT", strconv.Itoa(exit))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return record
 }
