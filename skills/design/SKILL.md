@@ -138,15 +138,13 @@ If the discussion resolved domain terms, write them to the right `docs/CONTEXT.m
 
 ## Audit the transcript
 
-A design runs for hours and several compactions, and early decisions get lost or reworded by the time the blueprint is written. Have a fresh sub-agent compare the blueprint with what the user said.
+Compactions lose early decisions and reword others, so have a fresh sub-agent check the blueprint against what the user said.
 
-Give it the blueprint and this session's transcript as an absolute path. It is the newest `*.jsonl` in `~/.claude/projects/<tree path with / and . replaced by ->/`, where the tree path is `git rev-parse --show-toplevel`. Confirm it by grepping the file for the feature ticket id. Tell it to keep scratch files in the scratchpad and run Python with `-I`, and to do this:
+Give it the blueprint and this session's transcript, the newest `*.jsonl` in `~/.claude/projects/<tree path with / and . as ->/` (confirm by grepping for the feature ticket id). It keeps scratch in the scratchpad and runs Python with `-I`. It reads each user message with the assistant text before it, since "yes" only means something next to its question.
 
-- Ignore system wrapper entries. Read each user message with the assistant text before it, because "yes" only means something next to the question it answers.
-- List every decision the user made that the blueprint should reflect (scope, constraints, rejected options, names) as **PRESENT**, **SUPERSEDED** (the user later changed it), **CHANGED** (the blueprint words it differently) or **MISSING**, each with the user's words and time, checked against the blueprint and its decision log.
-- List section dependencies: which parts must be built before which.
+It lists the decisions the user made that the blueprint should reflect as PRESENT, SUPERSEDED, CHANGED or MISSING, each with the user's words and time, and which sections must be built before which.
 
-Check each CHANGED, MISSING and SUPERSEDED finding against the transcript yourself. Fix the confirmed ones in the blueprint, and put to the user any where the right answer isn't clear. The decision log is also the blueprint's last section, so a fix that changes a decision goes in both its section and the log. Add the section dependencies to the blueprint as a build-order list under Dependencies and Constraints, which the reviewer and `dispatch:breakdown` can use.
+Verify CHANGED, MISSING and SUPERSEDED against the transcript, fix what holds, and ask the user where the answer isn't clear. A decision fix goes in its section and the decision log. Put the dependencies under Dependencies and Constraints as a build-order list for the reviewer and `dispatch:breakdown`.
 
 ## Review or break down
 
