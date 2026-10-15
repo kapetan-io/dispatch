@@ -13,7 +13,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/config"
@@ -88,19 +87,16 @@ type Loop struct {
 	renaming map[string]string
 	renames  int
 
-	resyncLine   resyncLine
-	listener     *listener
-	cycles       int
-	sinceResync  int
-	linearCalls  int
-	linearAlerts bool
-	wg           sync.WaitGroup
-	tells        int
+	// lastResync is when the previous resync line printed.
+	lastResync time.Time
+	listener   *listener
+	// actions counts the actions started since the last resync line.
+	actions     int
+	linearCalls int
+	tells       int
 	// log lists the actions that ended, in order, so a tick reports only its own.
 	log []logged
 }
-
-type resyncLine struct{ at time.Time }
 
 type logged struct {
 	seq int
@@ -334,12 +330,11 @@ func (l *Loop) handle(m any) error {
 func (l *Loop) onResync(typ string) error {
 	at := l.ingest()
 	l.resync++
-	l.sinceResync = 0
 	if err := l.write(history.Event{Line: history.LineEvent, Ingest: at, Source: "dispatch", Type: typ}); err != nil {
 		return err
 	}
 	l.wd.Nudged = nil
-	l.want(world.Everything)
+	l.readAgain(world.Everything)
 	if typ == "dispatch.resync" {
 		l.afterRead = append(l.afterRead, l.printResync)
 	}
@@ -348,9 +343,9 @@ func (l *Loop) onResync(typ string) error {
 
 func (l *Loop) printResync() {
 	now := l.clock.Now()
-	line := fmt.Sprintf("%s resync: %s, %s since %s", now.Format(time.TimeOnly), count(len(l.wd.Tickets), "ticket"), count(l.cycles, "action"), l.resyncLine.at.Format(time.TimeOnly))
-	if l.resyncLine.at.IsZero() {
-		line = fmt.Sprintf("%s resync: %s, %s", now.Format(time.TimeOnly), count(len(l.wd.Tickets), "ticket"), count(l.cycles, "action"))
+	line := fmt.Sprintf("%s resync: %s, %s since %s", now.Format(time.TimeOnly), count(len(l.wd.Tickets), "ticket"), count(l.actions, "action"), l.lastResync.Format(time.TimeOnly))
+	if l.lastResync.IsZero() {
+		line = fmt.Sprintf("%s resync: %s, %s", now.Format(time.TimeOnly), count(len(l.wd.Tickets), "ticket"), count(l.actions, "action"))
 	}
 	if l.o.Usage != nil {
 		s := l.o.Usage()
@@ -360,7 +355,7 @@ func (l *Loop) printResync() {
 		}
 		l.linearCalls = s.Calls
 	}
-	l.cycles, l.resyncLine.at = 0, now
+	l.actions, l.lastResync = 0, now
 	_, _ = fmt.Fprintln(l.o.Out, line)
 }
 
@@ -408,8 +403,8 @@ func (l *Loop) flightFor(subject string) bool {
 	return false
 }
 
-// want asks for the sources in parts to be read, off the loop goroutine.
-func (l *Loop) want(parts world.Part) {
+// readAgain asks for the sources in parts to be read, off the loop goroutine.
+func (l *Loop) readAgain(parts world.Part) {
 	l.pending |= parts
 	l.cycleDue = true
 }
@@ -540,7 +535,7 @@ func (l *Loop) act(res rules.Result) error {
 		if w.Kind == "herdr.launch" && l.launching[w.Subject] {
 			continue
 		}
-		if why := l.o.Executor.Guard(w, l.wd); why != "" {
+		if why := l.o.Executor.WhyNotLaunch(w, l.wd); why != "" {
 			_, _ = fmt.Fprintf(l.o.Err, "%s dispatch: not launching %s: %s\n", l.clock.Now().Format(time.TimeOnly), w.Subject, why)
 			continue
 		}
@@ -607,12 +602,10 @@ func (l *Loop) begin(w rules.Want, rest []rules.Want, reply chan Response) error
 	if w.Kind == "herdr.launch" {
 		l.launching[w.Subject] = true
 	}
-	l.cycles++
+	l.actions++
 	_, _ = fmt.Fprintf(l.o.Out, "%s %s %s (%s)\n", l.clock.Now().Format(time.TimeOnly), w.Receipt, w.Subject, w.Rule)
 	wd := l.wd
-	l.wg.Add(1)
 	go func() {
-		defer l.wg.Done()
 		res := l.o.Executor.Run(context.Background(), w, wd)
 		l.inbox <- actionDone{f: f, res: res}
 	}()
@@ -641,7 +634,7 @@ func (l *Loop) onAction(m actionDone) error {
 	}
 	switch {
 	case res.Outcome == ledger.Done:
-		_, _ = fmt.Fprintf(l.o.Out, "%s %s %s %s\n", l.clock.Now().Format(time.TimeOnly), f.want.Receipt, f.want.Subject, orStr(note, "done"))
+		_, _ = fmt.Fprintf(l.o.Out, "%s %s %s %s\n", l.clock.Now().Format(time.TimeOnly), f.want.Receipt, f.want.Subject, orDefault(note, "done"))
 	default:
 		_, _ = fmt.Fprintf(l.o.Out, "%s %s %s %s: %s\n", l.clock.Now().Format(time.TimeOnly), f.want.Receipt, f.want.Subject, res.Outcome, note)
 	}
@@ -653,7 +646,7 @@ func (l *Loop) onAction(m actionDone) error {
 		l.wd.Nudged = nudged
 	}
 	if res.Reread != 0 {
-		l.want(res.Reread)
+		l.readAgain(res.Reread)
 	}
 	l.cycleDue = true
 	if f.reply != nil {
@@ -708,7 +701,7 @@ func (l *Loop) linearID(subject string) string {
 	return ""
 }
 
-func orStr(s, def string) string {
+func orDefault(s, def string) string {
 	if s == "" {
 		return def
 	}

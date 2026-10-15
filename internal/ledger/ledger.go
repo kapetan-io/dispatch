@@ -41,7 +41,7 @@ type Receipt struct {
 	// comment can be finished after the ticket has left the tracked set.
 	TicketID string `json:"ticketID,omitempty"`
 	// Rest holds the steps still to run after this one, when a rule returned an
-	// ordered list, as JSON the executor wrote. They run once this one is Done,
+	// ordered list, as JSON the loop wrote. They run once this one is Done,
 	// even after it made the rule's condition false.
 	Rest json.RawMessage `json:"rest,omitempty"`
 	// Steps are the separate parts of an action that has several, such as an

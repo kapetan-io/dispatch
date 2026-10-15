@@ -82,7 +82,7 @@ func (l *Loop) onRequest(r request) error {
 		}
 		l.waiters = append(l.waiters, &waiter{ticket: strings.ToUpper(r.Ticket), reply: r.reply, seen: seen})
 	case OpTell:
-		l.want(world.FromLocal)
+		l.readAgain(world.FromLocal)
 		l.afterRead = append(l.afterRead, func() { l.tell(r) })
 	default:
 		r.reply <- Response{Code: CodeFailed, Error: fmt.Sprintf("unknown request %q", r.Op)}

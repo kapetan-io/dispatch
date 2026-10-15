@@ -1,7 +1,7 @@
 // Package executor carries out the actions a cycle wants. Each action checks the
 // source right before it acts, so a decision made on a stale read fails instead
-// of landing, and ends as a receipt outcome the ledger keeps. It never decides
-// anything: whether an action runs at all is the cycle's and the loop's call.
+// of landing, and ends as a receipt outcome the ledger keeps. The cycle decides
+// what is wanted; the only veto here is a launch beside a worker that is present or unknown.
 package executor
 
 import (
@@ -28,9 +28,8 @@ import (
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
-// Deadlines. A launch has to end before the loop's own 30 second patience, and a
-// launch that lands after its deadline shows up as a worker, which makes the
-// launch rule false.
+// Deadlines. A launch takes 8 to 13 seconds when it works. One that lands after its
+// deadline shows up as a worker on the next read, which makes the launch rule false.
 const (
 	LaunchDeadline  = 25 * time.Second
 	DefaultDeadline = time.Minute
@@ -74,9 +73,9 @@ type Executor struct{ Env }
 // New returns an executor over env.
 func New(env Env) *Executor { return &Executor{Env: env} }
 
-// Guard says why a launch must not start whatever the rule asked, or "" when it
+// WhyNotLaunch says why a launch must not start whatever the rule asked, or "" when it
 // may. A worker that is present or unknown means a second one could start beside it.
-func (e *Executor) Guard(w rules.Want, wd world.World) string {
+func (e *Executor) WhyNotLaunch(w rules.Want, wd world.World) string {
 	if w.Kind != "herdr.launch" {
 		return ""
 	}
@@ -361,6 +360,7 @@ func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World)
 		return failed("%v", err)
 	}
 	if why != "" {
+		// The "kept: " prefix is read back by comment-kept-tree in rules/trees.ts.
 		res.Outcome, res.Detail = ledger.Refused, "kept: the worker left "+why+" in "+path
 		return res
 	}
@@ -425,11 +425,7 @@ func nameList(names []string) string {
 // and the ticket is read again first so a comment posted since the last read is
 // seen before anything merges.
 func (e *Executor) merge(ctx context.Context, w rules.Want, wd world.World) Result {
-	head, _ := w.Once[len(w.Once)-1].(string)
-	if len(w.Once) > 1 {
-		head, _ = w.Once[1].(string)
-	}
-	url := w.Target["url"]
+	head, url := w.Target["head"], w.Target["url"]
 	t, ok := ticketOf(wd, w.Subject)
 	if !ok {
 		return failed("%s was not read", w.Subject)

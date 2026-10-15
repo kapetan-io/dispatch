@@ -28,13 +28,13 @@ whenever({
 
 // A return the executor refused, because the second look found work or an untracked
 // nested repo that git clean left, has no fact on the tree to point at, so the receipt
-// says why.
+// says why. Its detail is "kept: <reason>", which treehouse.return in internal/executor writes.
 const refusedReturn = (tree: Tree, ctx: Ctx) =>
   ctx.ledger.receipts(tree.holder!, { kind: "return" })
     .find(r => r.outcome === "refused" && r.once[1] === tree.path && r.once[2] === tree.leasedSince);
 
 // One comment per lease says why the tree was kept, and another when a reopened ticket
-// finishes again. When you push, treehouse reports the tree clean, and teardown-clean-tree
+// finishes again: the key carries the holder's statusSince, which changes when it does. When you push, treehouse reports the tree clean, and teardown-clean-tree
 // returns it.
 whenever({
   name: "comment-kept-tree",

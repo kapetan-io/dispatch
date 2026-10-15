@@ -592,15 +592,9 @@ func (s *State) target(r *record) map[string]string {
 		if rec.Workspace.Unknown == "" && rec.Workspace.Value != nil {
 			out["workspace"] = *rec.Workspace.Value
 		}
-		if rec.Tree.Unknown == "" && rec.Tree.Value != nil {
-			out["tree"] = *rec.Tree.Value
-		}
 	case *Tree:
 		out["path"] = rec.Path.Value
 		out["holder"] = rec.Holder.Value.ID
-		if label, ok := s.treeRepo[r.id]; ok {
-			out["repo"] = label
-		}
 	case *PR:
 		out["url"] = rec.URL.Value
 		out["head"] = rec.Head.Value

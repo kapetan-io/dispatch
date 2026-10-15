@@ -218,7 +218,7 @@ func withDefaults(o Options) Options {
 
 // keyLookup finds the Linear API key. A key printed by api_key_command is kept
 // for the life of the process, so a password manager that prompts to unlock
-// asks once per `dispatch run` instead of on every tick.
+// asks once per `dispatch run` instead of on every read.
 type keyLookup struct {
 	fromCommand string
 }

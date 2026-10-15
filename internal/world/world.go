@@ -30,8 +30,7 @@ type Sources struct {
 	// Stderr receives one line for each read that failed without stopping the read.
 	Stderr io.Writer
 	// Tolerant keeps going when herdr, or every pool, can't be read, and
-	// records them as unread. Without it Read returns that failure, which is
-	// what a tick that acts must do.
+	// records them as unread. Without it the read returns that failure.
 	Tolerant bool
 	// Resilient records a failed Linear read in World.LinearErr and goes on,
 	// where without it Read returns that failure.

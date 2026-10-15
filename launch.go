@@ -59,7 +59,7 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 		if err != nil && opts.Launcher == nil {
 			res = launcher.Result{Status: launcher.StatusUsageError, Detail: err.Error()}
 		} else {
-			// A launch run by hand shows its progress. A tick's launches stay quiet.
+			// A launch run by hand shows its progress. Launches the loop starts stay quiet.
 			if cli, ok := opts.Herdr.(*herdr.CLI); ok {
 				cli.WithProgress(opts.Stderr)
 			}

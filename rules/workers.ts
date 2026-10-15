@@ -25,7 +25,8 @@ whenever({
 // An In Review PR with no worker gets one back when the PR needs work or has a review
 // thread the worker hasn't seen. In Review never waits for a slot. Only a relaunch for
 // a PR that needs work counts toward the relaunch limit, so its key's topic says which
-// it is. Failed relaunches count toward launchFailures like any launch.
+// it is. Failed relaunches count toward launchFailures like any launch. The key carries the
+// pool's returns, as launch-worker's does, so a full pool is retried only after a tree comes back.
 whenever({
   name: "relaunch-for-pr",
   each: "github.pr",

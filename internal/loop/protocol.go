@@ -3,8 +3,8 @@ package loop
 // Operations a client asks of the running loop over its socket.
 const (
 	OpTick = "tick"
-	// OpSettle waits for the loop to settle and reports every action since it started,
-	// without reading anything again. A test that starts the loop and ticks once uses it.
+	// OpSettle waits until the loop is idle and reports every action since it started,
+	// without forcing a read.
 	OpSettle  = "settle"
 	OpTell    = "tell"
 	OpIdle    = "idle"
