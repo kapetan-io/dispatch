@@ -31,6 +31,9 @@ type Timer = loop.Timer
 // lockName is the file whose lock allows one `dispatch run` per state directory.
 const lockName = "dispatch.lock"
 
+// startupDeadline bounds the one Linear read that runs before the loop starts.
+const startupDeadline = 30 * time.Second
+
 // exitError is a failure that ends the process with a code other than 1.
 type exitError struct {
 	code int
@@ -221,7 +224,10 @@ func runCommand(ctx context.Context, opts Options) error {
 		}
 		return err
 	}
-	viewer, err := lin.Viewer(ctx)
+	// Linear can accept the connection and stop answering, and nothing else has started yet.
+	viewCtx, cancelView := context.WithTimeout(ctx, startupDeadline)
+	viewer, err := lin.Viewer(viewCtx)
+	cancelView()
 	if errors.Is(err, linear.ErrUnauthorized) {
 		return err
 	}

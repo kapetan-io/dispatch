@@ -108,10 +108,10 @@ export const relaunches = (t: Ticket, head: string, ctx: Ctx) =>
 
 // Moves the ticket to Needs Human and comments why. The receipt keeps the two steps
 // apart, so retry-escalation-comment can finish a comment that failed after the move.
-// notify-needs-human leaves a design ticket alone, so the notice for one dispatch moved itself
+// notify-needs-human leaves a design ticket alone (a review ticket it covers), so the notice for one dispatch moved itself
 // follows the move. The list is ordered, so a move that fails announces nothing.
 export const escalate = (t: Ticket, ctx: Ctx, why: string, once: Once) => {
   const move = ctx.linear.queueEscalate(t, why, { once });
-  return !known(() => t.labels) || skill(t) === "build" ? move
+  return !known(() => t.labels) || skill(t) !== "design" ? move
     : [move, ctx.notify.queueSend(t, `${t.id} is in Needs Human: ${t.title}`, { once: ["needs-human-escalated", ...once] })];
 };

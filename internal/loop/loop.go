@@ -111,6 +111,8 @@ type Loop struct {
 	ended []logged
 	// overflowAlerted is true while Linear has more tickets than one page and the user knows.
 	overflowAlerted bool
+	// alerts counts the alerts being shown off the loop.
+	alerts int
 	// endedBefore counts the actions dropped from ended, so a tick's seen stays a position in the whole run.
 	endedBefore int
 }
@@ -140,6 +142,16 @@ type actionDone struct {
 }
 
 type renameDone struct{}
+
+// alertDone reports an alert that finished. The overflow one is shown again after a failure,
+// because the user still has not heard.
+type alertDone struct {
+	overflow bool
+	err      error
+}
+
+// alertDeadline bounds one alert, because osascript can stall and the loop must not wait on it.
+const alertDeadline = 10 * time.Second
 
 type request struct {
 	Request
@@ -262,7 +274,9 @@ func (l *Loop) wakeIfLate() error {
 func (l *Loop) fatal(err error) {
 	_, _ = fmt.Fprintf(l.o.Err, "%s dispatch: stopping: %v\n", l.clock.Now().Format(time.TimeOnly), err)
 	if l.o.Alerts != nil {
-		_ = l.o.Alerts.Show(context.Background(), "dispatch stopped: "+err.Error())
+		ctx, cancel := context.WithTimeout(context.Background(), alertDeadline)
+		defer cancel()
+		_ = l.o.Alerts.Show(ctx, "dispatch stopped: "+err.Error())
 	}
 }
 
@@ -328,6 +342,7 @@ func (l *Loop) start(ctx context.Context) error {
 		return err
 	}
 	l.wd = wd
+	l.alertOverflow(readDone{parts: world.Everything, w: wd})
 	_, _ = fmt.Fprintf(l.o.Out, "%s start: %s, %s, ledger %s from %s\n", at.Format(time.TimeOnly), count(len(l.wd.Tickets), "tracked ticket"),
 		count(len(l.o.Rules.Defs()), "rule"), count(len(l.led.Entries), "receipt"), loaded)
 	if err := l.cycle("start"); err != nil {
@@ -375,6 +390,12 @@ func (l *Loop) handle(m any) error {
 		return l.onAction(m)
 	case renameDone:
 		l.renames--
+		return nil
+	case alertDone:
+		l.alerts--
+		if m.overflow && m.err != nil {
+			l.overflowAlerted = false
+		}
 		return nil
 	case request:
 		return l.onRequest(m)
@@ -577,7 +598,7 @@ func (l *Loop) settle() error {
 
 // busy is true while anything is queued, pending or in flight.
 func (l *Loop) busy() bool {
-	return len(l.inbox) > 0 || l.reading || l.pending != 0 || l.cycleDue || len(l.flights) > 0 || l.renames > 0
+	return len(l.inbox) > 0 || l.reading || l.pending != 0 || l.cycleDue || len(l.flights) > 0 || l.renames > 0 || l.alerts > 0
 }
 
 // cycle runs every rule over the world and the ledger, writes what changed, and
@@ -637,9 +658,7 @@ func (l *Loop) alertOverflow(m readDone) {
 			return
 		}
 		l.overflowAlerted = true
-		if l.o.Alerts != nil {
-			_ = l.o.Alerts.Show(context.Background(), "dispatch: "+m.w.LinearErr.Error())
-		}
+		l.alert("dispatch: "+m.w.LinearErr.Error(), true)
 	case m.w.LinearErr == nil && m.parts&world.FromLinear != 0:
 		l.overflowAlerted = false
 	}
@@ -657,10 +676,25 @@ func (l *Loop) alertThrows(res rules.Result) {
 		}
 		text := fmt.Sprintf("rule %s %s in its %s for %s: %s", t.Rule, how, t.Phase, t.Subject, t.Error)
 		_, _ = fmt.Fprintf(l.o.Err, "%s dispatch: %s\n", l.clock.Now().Format(time.TimeOnly), text)
-		if l.o.Alerts != nil {
-			_ = l.o.Alerts.Show(context.Background(), "dispatch: "+text)
-		}
+		l.alert("dispatch: "+text, false)
 	}
+}
+
+// alert shows text off the loop under a deadline.
+func (l *Loop) alert(text string, overflow bool) {
+	if l.o.Alerts == nil {
+		return
+	}
+	l.alerts++
+	go func() {
+		ctx, cancel := context.WithTimeout(l.runCtx, alertDeadline)
+		defer cancel()
+		err := l.o.Alerts.Show(ctx, text)
+		select {
+		case l.inbox <- alertDone{overflow: overflow, err: err}:
+		case <-l.stopped:
+		}
+	}()
 }
 
 // act starts each wanted action the ledger doesn't cover and nothing is already doing.

@@ -191,6 +191,16 @@ func TestTickAlertsWhenItEscalatesADesignTicket(t *testing.T) {
 	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
 }
 
+func TestTickAlertsOnceWhenItEscalatesADesignReviewTicket(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(withLabel(ticket("ENG-1", "In Progress", ""), "design-review"))
+
+	h.tick()
+
+	require.Len(t, h.linear.mutations(), 2)
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
+}
+
 func TestTickEscalatesTicketItCannotPlaceInARepo(t *testing.T) {
 	for _, test := range []struct {
 		name     string

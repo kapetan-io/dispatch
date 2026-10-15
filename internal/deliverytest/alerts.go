@@ -19,6 +19,7 @@ type Alerts struct {
 	mu    sync.Mutex
 	shown []string
 	fail  error
+	stall bool
 }
 
 // New returns Alerts that record their calls in j.
@@ -32,6 +33,13 @@ func (a *Alerts) Fail(err error) {
 	a.fail = err
 }
 
+// Stall makes every Show wait until its context ends, as osascript does when it hangs.
+func (a *Alerts) Stall(on bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.stall = on
+}
+
 // Shown lists the alerts shown, oldest first.
 func (a *Alerts) Shown() []string {
 	a.mu.Lock()
@@ -43,6 +51,13 @@ func (a *Alerts) Show(ctx context.Context, text string) error {
 	a.journal.Record("alerts", "show", text)
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	a.mu.Lock()
+	stall := a.stall
+	a.mu.Unlock()
+	if stall {
+		<-ctx.Done()
+		return ctx.Err()
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()

@@ -33,7 +33,7 @@ Added after review, none of it in the blueprint:
 - `escalate()` in `rules/shared.ts` returns an ordered `[escalate, notify]` pair for a design ticket, because `notify-needs-human` skips design tickets and the tick alerted on every escalation.
 - Trees carry `untracked` and `cleanSince` facts, and the return key carries `cleanSince`. A return refused for late work or a nested repository is tried again once the work is pushed or the repository removed, and a tree that stays as it was is refused once.
 - A step of an ordered list that failed after the step before it landed is tried again after each resync.
-- More tickets than one Linear page raises one alert per stretch of such reads.
+- More tickets than one Linear page raises one alert per stretch of such reads, shown again after a failed alert. The loop shows every alert off its goroutine under a 10-second deadline, so a stalled `osascript` cannot freeze it.
 - Follower messages keep the tick's reasons ("PR ready for review", "worker is blocked on a question", and so on), and reviews-handled has its own topic.
 - A herdr read that finds a worker newly idle or gone reads its PR at once, as the blueprint's "PR reads" decision says.
 - Source reads and renames have their own deadlines, one minute per call.

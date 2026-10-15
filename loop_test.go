@@ -3,6 +3,7 @@ package dispatch_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -490,4 +491,34 @@ func TestAWorkerThatGoesIdleHasItsPRReadWithoutWaitingForTheResync(t *testing.T)
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, h.tools.Calls("pullrequest", "read"))
+}
+
+func TestAnAlertThatHangsDoesNotStopTheLoopAnswering(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.linear.overflowManaged()
+	h.tools.Alerts.Stall(true)
+
+	require.NoError(t, h.startLoop(dispatch.Options{}))
+
+	// The overflow alert is still hanging, and the loop answers anyway.
+	resp, err := loop.Ask(t.Context(), h.state, loop.Request{Op: loop.OpPending})
+	require.NoError(t, err)
+	assert.Equal(t, loop.CodeFailed, resp.Code)
+}
+
+func TestTheOverflowAlertIsShownAgainAfterItFailed(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.linear.overflowManaged()
+	h.tools.Alerts.Fail(errors.New("notifications are denied"))
+	require.NoError(t, h.startLoop(dispatch.Options{}))
+	require.Eventually(t, func() bool { return len(h.tools.Calls("alerts", "show")) == 1 }, 5*time.Second, 5*time.Millisecond)
+	require.Empty(t, h.notifications())
+
+	h.tools.Alerts.Fail(nil)
+	h.advance(time.Hour)
+
+	require.Len(t, h.notifications(), 1)
+	assert.Contains(t, h.notifications()[0], "more than 100 started")
 }
