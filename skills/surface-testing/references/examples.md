@@ -338,7 +338,7 @@ func TestOrderRepositoryContract(t *testing.T) {
         repo func(t *testing.T) orders.OrderRepository
     }{
         {"memory", newMemoryRepository},
-        {"postgres", newPostgresRepository}, // fails, not skips, when Postgres is unreachable
+        {"postgres", newPostgresRepository}, // in a run that includes it, fails (never skips) when Postgres is unreachable
     } {
         t.Run(impl.name, func(t *testing.T) {
             repo := impl.repo(t)
