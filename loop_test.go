@@ -435,10 +435,9 @@ func TestStoppingTheLoopAnswersATellThatIsWaitingOnARead(t *testing.T) {
 	h.tick()
 	h.tools.Treehouse.DelayTrees(2 * time.Second)
 	told := make(chan error, 1)
-	go func() {
-		_, err := h.run("tell", "ENG-1", "hello")
-		told <- err
-	}()
+	tellOpts := h.options(dispatch.Options{})
+	tellOpts.Stdout, tellOpts.Stderr = &bytes.Buffer{}, &bytes.Buffer{}
+	go func() { told <- dispatch.Run(t.Context(), []string{"tell", "ENG-1", "hello"}, tellOpts) }()
 	time.Sleep(300 * time.Millisecond)
 
 	require.NoError(t, h.stopLoop())
