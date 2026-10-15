@@ -81,7 +81,7 @@ Skip only with a written justification in "Sources Consulted". Two valid reasons
 - **No MCP is available for that category** in this environment. Flag this as a gap, not a choice. Example: "Real-time team chat skipped. No matching MCP available, so the conversational record was not searchable."
 - **The source is provably irrelevant**, not just "probably irrelevant." A high bar. Example: "Error / exception tracking skipped. Target is a build-time script with no runtime code path."
 
-A single-commit target whose PR description already holds the complete answer may be answered inline, saying so explicitly. This should be rare.
+A single-commit target whose PR description already holds the complete answer may be answered inline only after confirming all seven category searches would be redundant, saying so explicitly. This should be rare.
 
 ## Step 4. Synthesize
 

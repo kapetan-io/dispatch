@@ -26,4 +26,6 @@ Before writing the same instruction a second time:
 - **Route to the right layer.** A one-off is fixed in place. A recurring fix becomes a linter rule, or failing that a line in the relevant skill or CLAUDE.md. A design decision becomes an ADR. A systemic issue becomes a principle.
 - **Close the loop.** Don't just record. Apply it now or file a ticket. "I'll keep that in mind" does not persist, and fixing one instance while leaving the pattern intact guarantees a repeat.
 
+**Anti-pattern.** Recording without routing. A note about a linter rule that should exist is wasted unless the rule gets implemented.
+
 Adapted from pstack by Lauren Tan (MIT). Notice in `../principles/LICENSE-pstack`.

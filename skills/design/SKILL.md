@@ -60,6 +60,7 @@ Keep a running decision log, marking each entry "you decided" or "agent assumed"
 
 Tailor to the feature. These are the parts a model skips or does badly.
 
+- **Problem and users.** What problem this solves, why now, and who it is for. Name the primary user when there is more than one.
 - **Core design principles.** What the product will always do and deliberately never do. Surface them early, because they resolve later questions and are ADR candidates.
 - **Correctness constraints.** *State invariants* are always-true statements about data, each with what violates it and what the system does then. An invariant with no enforcement is a comment in dead code. *Behavioral constraints* are things the system must never do, even in failure. Elicit both with three prompts. Concurrency: what happens when two users touch the same resource at once? Reversibility: which operations can be undone? Partial failure: what happens if this succeeds halfway?
 - **Acceptance criteria.** Each one an outcome a user or caller sees, mechanically verifiable, never which test or layer must catch it. Rewrite any that needs human judgment. Cover failure cases explicitly.

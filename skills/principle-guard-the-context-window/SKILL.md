@@ -5,6 +5,8 @@ description: "Apply before reading a large file, pasting bulky output, or fannin
 
 # Guard the Context Window
 
+The context window is finite and non-renewable within a session. Every token should be worth its cost.
+
 **Why:** The window is finite within a session, and overflow degrades reasoning, creates compression artifacts, and halts progress. Decide where bulk goes before it lands, because it cannot be removed afterward.
 
 **Pattern:**

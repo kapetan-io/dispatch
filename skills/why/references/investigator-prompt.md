@@ -15,6 +15,8 @@ Work like a careful, cautious, precise investigator. Don't produce a narrative. 
 - **Quote, don't paraphrase** when the wording matters, with a citation that lets the reader confirm it in seconds.
 - **Record queries verbatim.** An absence is only useful if the reader knows what was looked for.
 - **Resist the story.** If three items line up and a fourth contradicts them, the contradiction is the most interesting finding.
+- **Consider the counterfactual.** Before reporting a finding as strong, ask whether you would expect to find it if your current reading were wrong, and how the evidence would differ.
+- **Preserve uncertainty.** If the evidence is ambiguous, say so. If one reading is more plausible but not certain, say that. Don't collapse ambiguity to look decisive.
 - **Never round up.** Label a partial finding partial.
 
 ## The Question

@@ -20,7 +20,7 @@ Every test interacts with the system the way its end users would. Never call int
 - **HTTP/gRPC service**: boot the application and send real requests. Don't instantiate handlers or services.
 - **CLI**: call `Run(ctx, args, opts)` with arguments and capture output. `main()` stays a thin wrapper around it, so `main` and tests enter the same way.
 - **Library**: call the exported functions as a consumer would.
-- **Internal library boundary**: a package that could be extracted and published without changing its interface. Test it through its exported API only, from `package xxx_test`. Consumers use the real package, so there is nothing to substitute unless it wraps an external tool.
+- **Internal library boundary**: a package that could be extracted and published without changing its interface. In design, implementation and review, recognize or introduce these boundaries at domain edges. Test each through its exported API only, from `package xxx_test`. It is a first-class surface, not an internal seam to cut through when wiring components together. Consumers use the real package, so there is nothing to substitute unless it wraps an external tool.
 
 ```go
 func main() {
@@ -49,7 +49,7 @@ A fake encodes someone's understanding of the real tool, and it drifts. A fake `
 1. **The real service, embedded.** When the dependency is in your language and ships an in-process constructor, boot it from the test and substitute only its own externals. A service other services consume should ship such a constructor.
 2. **A published in-process fake** that speaks the real protocol, such as `gofakes3` for S3. Your client, codec and connection handling all run.
 3. **A published fake in a container** (testcontainers). Same protocol over a real network hop, slower to start.
-4. **A fake you write**, behind a domain interface (next section). For an external program such as `treehouse`, `gh` or `herdr` there is no published substitute, so this is the default. It has to refuse what the real tool refuses. A recorder that accepts every call and stores it proves your handler calls your fake, nothing more. Give it the real tool's state and rules, and make it return the errors the real tool returns.
+4. **A fake you write**, behind a domain interface (next section). For an external command-line tool there is usually no published substitute, so this is the default. It has to refuse what the real tool refuses. A recorder that accepts every call and stores it proves your handler calls your fake, nothing more. Give it the real tool's state and rules, and make it return the errors the real tool returns.
 
 > **The DNS server.** A team ran a real Go DNS server in tests and the service made actual lookups against it. A new Go version changed resolver behavior and the suite caught it before deploy. A mocked resolver would have shipped the bug.
 
@@ -68,7 +68,7 @@ A database fake almost always diverges where it matters: transaction and rollbac
 
 ## Controlling time
 
-Inject a clock so retries, expiries and scheduled flushes are testable without sleeping. For Go, `kapetan-io/tackle/clock` gives a per-test provider you freeze, inject through the options struct and `Advance`. A clock is a global dependency, so injecting one doesn't break the rule against substituting internals.
+Inject a clock so retries, expiries and scheduled flushes are testable without sleeping. For Go, `kapetan-io/tackle/clock` gives a per-test provider you freeze, inject through the options struct and `Advance`. A clock is a global dependency, so injecting one doesn't break the rule against substituting internals. On the JVM, inject a `java.time.Clock` through DI, or use `TestCoroutineScheduler` for coroutine timing.
 
 **Inject consistently, don't capture.** One `time.Now()` call, or a provider captured at construction, escapes the freeze. The test then flakes or quietly relies on wall-clock time.
 
