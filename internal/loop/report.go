@@ -71,10 +71,14 @@ func (l *Loop) onRequest(r request) error {
 	case OpPending:
 		r.reply <- Response{Lines: l.pendingLines(), Code: CodeFailed}
 	case OpTick:
+		seen := len(l.log)
+		if r.All {
+			seen = 0
+		}
 		if err := l.onResync("dispatch.tick"); err != nil {
 			return err
 		}
-		l.waiters = append(l.waiters, &waiter{ticket: strings.ToUpper(r.Ticket), reply: r.reply, seen: len(l.log)})
+		l.waiters = append(l.waiters, &waiter{ticket: strings.ToUpper(r.Ticket), reply: r.reply, seen: seen})
 	case OpTell:
 		l.want(world.FromLocal)
 		l.afterRead = append(l.afterRead, func() { l.tell(r) })

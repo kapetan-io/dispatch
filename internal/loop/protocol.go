@@ -21,6 +21,8 @@ type Request struct {
 	Op     string `json:"op"`
 	Ticket string `json:"ticket,omitempty"`
 	Text   string `json:"text,omitempty"`
+	// All makes a tick report every action since the loop started, not only those after it asked.
+	All bool `json:"all,omitempty"`
 }
 
 // Response is the loop's answer. Lines are printed to stdout, one per ticket.

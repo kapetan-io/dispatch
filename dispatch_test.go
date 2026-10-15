@@ -622,12 +622,37 @@ func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...s
 		if err := h.startLoop(extra); err != nil {
 			return "", "", err
 		}
+		// The loop acted on what it read at start, before this tick asked, so the first
+		// tick of a test asks for everything since the start.
+		if len(args) <= 2 && args[0] == "tick" {
+			return h.tickSinceStart(ctx, args[1:])
+		}
 	}
 	var stdout, stderr bytes.Buffer
 	opts := h.options(extra)
 	opts.Stdout, opts.Stderr = &stdout, &stderr
 	err := dispatch.Run(ctx, args, opts)
 	return stdout.String(), stderr.String(), err
+}
+
+// tickSinceStart is `dispatch tick [ticket]` asking for every action since the loop started.
+func (h *harness) tickSinceStart(ctx context.Context, args []string) (string, string, error) {
+	req := loop.Request{Op: loop.OpTick, All: true}
+	if len(args) == 1 {
+		req.Ticket = strings.ToUpper(args[0])
+	}
+	resp, err := loop.Ask(ctx, h.state, req)
+	if err != nil {
+		return "", "", err
+	}
+	var out strings.Builder
+	for _, line := range resp.Lines {
+		out.WriteString(line + "\n")
+	}
+	if resp.Code != loop.CodeSettled {
+		return out.String(), "", errors.New(resp.Error)
+	}
+	return out.String(), "", nil
 }
 
 // syncBuffer is a buffer the loop writes to while a test reads it.

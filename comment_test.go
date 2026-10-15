@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,10 +30,8 @@ func TestTickCommentNudgeSkipsCommentsSeenOnTheFirstTick(t *testing.T) {
 			h.worker("ENG-1", status)
 			h.tickets(withComment(ticket("ENG-1", "In Review", "dispatch"), comment1))
 
-			out, err := h.run("tick")
-			require.NoError(t, err)
+			h.tick()
 
-			assert.Empty(t, out)
 			assert.Empty(t, h.prompts())
 		})
 	}
@@ -54,22 +53,20 @@ func TestTickCommentNudgeReachesBusyAndIdleWorkersOncePerComment(t *testing.T) {
 			h.config("[rules]\nnudge_limit = 9\n")
 			h.worker("ENG-1", "working")
 			h.tickets(withComment(ticket("ENG-1", test.ticket, "dispatch"), comment1))
-			_, err := h.run("tick")
-			require.NoError(t, err)
+			h.tick()
+			h.advance(time.Second)
 			h.setWorkerStatus("ENG-1", test.status)
 			h.tickets(withComment(ticket("ENG-1", test.ticket, "dispatch"), comment2))
 
-			out, err := h.run("tick")
-			require.NoError(t, err)
+			h.tick()
 
-			assert.Equal(t, "nudge ENG-1: new comment\n", out)
 			assert.Equal(t, []string{commentPrompt1}, h.prompts())
 			assert.Empty(t, h.linear.mutations())
 
 			// No new comment, so no second nudge.
+			h.advance(time.Second)
 			h.setWorkerStatus("ENG-1", "working")
-			_, err = h.run("tick")
-			require.NoError(t, err)
+			h.tick()
 			assert.Len(t, h.prompts(), 1)
 		})
 	}
@@ -79,12 +76,11 @@ func TestTickCommentNudgeFiresForTheFirstCommentOnATicketWithNone(t *testing.T) 
 	h := newHarness(t)
 	h.worker("ENG-1", "working")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
+	h.advance(time.Second)
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
 
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
 	assert.Equal(t, []string{commentPrompt1}, h.prompts())
 }
@@ -93,23 +89,20 @@ func TestTickCommentNudgeWaitsForABlockedWorker(t *testing.T) {
 	h := newHarness(t)
 	h.worker("ENG-1", "working")
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
+	h.advance(time.Second)
 	h.setWorkerStatus("ENG-1", "blocked")
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment2))
 
-	for range 2 {
-		_, err = h.run("tick")
-		require.NoError(t, err)
-	}
+	h.tick()
+	h.tick()
 	assert.Empty(t, h.prompts())
 	assert.NotEmpty(t, h.notifications())
 
+	h.advance(time.Second)
 	h.setWorkerStatus("ENG-1", "working")
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "nudge ENG-1: new comment\n", out)
 	assert.Equal(t, []string{commentPrompt1}, h.prompts())
 }
 
@@ -117,19 +110,17 @@ func TestTickCommentNudgeRetriesAfterHerdrRefuses(t *testing.T) {
 	h := newHarness(t)
 	h.worker("ENG-1", "working")
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
+	h.advance(time.Second)
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment2))
 	h.blockAfterSnapshot("ENG-1")
 
-	_, stderr, err := h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
-	assert.Contains(t, stderr, "while nudging ENG-1")
+	_, err := h.run("tick")
+	require.ErrorContains(t, err, "ENG-1 nudge failed: blocked")
 	assert.Empty(t, h.prompts())
 
 	h.unblock("ENG-1")
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
 	assert.Equal(t, []string{commentPrompt1}, h.prompts())
 }
@@ -139,17 +130,15 @@ func TestTickCommentNudgeDoesNotCountTowardTheStallLimit(t *testing.T) {
 	h.config("[rules]\nnudge_limit = 1\n")
 	h.worker("ENG-1", "idle")
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 	assert.Equal(t, []string{stallPrompt}, h.prompts())
+	h.advance(time.Second)
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment2))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "nudge ENG-1: new comment\n", out)
 	assert.Empty(t, h.linear.mutations())
-	assert.Len(t, h.prompts(), 2)
+	assert.Equal(t, []string{stallPrompt, commentPrompt1}, h.prompts())
 }
 
 func TestTickCommentNudgeIgnoresWorkerlessAndNeedsHumanTickets(t *testing.T) {
@@ -160,15 +149,14 @@ func TestTickCommentNudgeIgnoresWorkerlessAndNeedsHumanTickets(t *testing.T) {
 		withComment(ticket("ENG-1", "Needs Human", "dispatch"), comment1),
 		withComment(withLabel(ticket("ENG-2", "In Progress", "dispatch"), "design-review"), comment1),
 	)
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
+	h.advance(time.Second)
 	h.tickets(
 		withComment(ticket("ENG-1", "Needs Human", "dispatch"), comment2),
 		withComment(withLabel(ticket("ENG-2", "In Progress", "dispatch"), "design-review"), comment2),
 	)
 
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
 	assert.Empty(t, h.prompts())
 }
@@ -178,37 +166,34 @@ func TestTickCommentNudgeYieldsToTheResumeNudge(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.config("[rules]\nnudge_limit = 9\n")
 	h.tickets(withComment(ticket("ENG-1", "Needs Human", "dispatch"), comment1))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
+	h.advance(time.Second)
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment2))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "nudge ENG-1: resume\n", out)
 	assert.Equal(t, []string{"w-ENG-1:p1|" + resumeText1}, h.prompts())
 }
 
-func TestTickCommentNudgeSkipsOldCommentsWhenTheCacheIsGone(t *testing.T) {
+func TestTickCommentNudgeSkipsOldCommentsWhenTheHistoryIsGone(t *testing.T) {
 	h := newHarness(t)
 	h.config("[rules]\nnudge_limit = 9\n")
 	h.worker("ENG-1", "working")
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
+	h.advance(time.Second)
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment2))
-	require.NoError(t, os.Remove(filepath.Join(h.state, "cache.json")))
+	require.NoError(t, h.stopLoop())
+	require.NoError(t, os.RemoveAll(filepath.Join(h.state, "events")))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Empty(t, out)
 	assert.Empty(t, h.prompts())
 
-	// The restarted cache holds comment2, so only a newer comment nudges.
+	// A worker dispatch has no record of starts out knowing the comments waiting, so only a newer comment nudges.
+	h.advance(time.Second)
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), "2026-10-09T00:30:00.000Z"))
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 	assert.Equal(t, []string{commentPrompt1}, h.prompts())
 }
 
@@ -217,16 +202,18 @@ func TestTickCommentNudgeMakesNoExtraLinearCall(t *testing.T) {
 	h.config("[rules]\nnudge_limit = 9\n")
 	h.worker("ENG-1", "working")
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
-	_, err := h.run("tick")
-	require.NoError(t, err)
-	lookups := h.linear.lookups()
+	h.tick()
+	before := h.linear.calls()
+	h.tick()
+	quiet := h.linear.calls() - before
+	h.advance(time.Second)
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment2))
+	before = h.linear.calls()
 
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
 	assert.Equal(t, []string{commentPrompt1}, h.prompts())
-	assert.Equal(t, lookups, h.linear.lookups())
+	assert.Equal(t, quiet, h.linear.calls()-before)
 	assert.Empty(t, h.linear.childReadParents())
 	assert.Empty(t, h.linear.mutations())
 }
@@ -234,30 +221,31 @@ func TestTickCommentNudgeMakesNoExtraLinearCall(t *testing.T) {
 func TestTickCommentNudgeDoesNotCountTowardThePRLimit(t *testing.T) {
 	h := newHarness(t)
 	failing := prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"}
-	h.worker("ENG-1", "idle")
+	h.worker("ENG-1", "working")
 	h.pr("ENG-1", failing)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
+	// A nudge has to come after dispatch saw the worker and the ticket, as it does outside a test.
+	h.advance(time.Second)
+	h.setWorkerStatus("ENG-1", "idle")
+	h.tick()
+	h.advance(time.Second)
 	h.tickets(withComment(ticket("ENG-1", "In Review", "dispatch"), comment1))
-	out, err := h.run("tick")
-	require.NoError(t, err)
-	assert.Equal(t, "nudge ENG-1: new comment\n", out)
+	h.tick()
+	h.advance(time.Second)
 	h.tickets(withComment(ticket("ENG-1", "In Review", "dispatch"), comment2))
-	out, err = h.run("tick")
-	require.NoError(t, err)
-	assert.Equal(t, "nudge ENG-1: new comment\n", out)
+	h.tick()
 	assert.Empty(t, h.linear.mutations())
 
-	// One PR nudge so far; the second still goes out and only the third tick escalates.
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	// Two comment nudges came between two PR nudges, so the second PR nudge still goes out.
+	h.advance(time.Second)
+	h.tick()
 	assert.Equal(t, []string{prPrompt("a failed check"), commentPrompt1, commentPrompt1, prPrompt("a failed check")}, h.prompts())
 	assert.Empty(t, h.linear.mutations())
 
-	out, err = h.run("tick")
-	require.NoError(t, err)
-	assert.Contains(t, out, "escalate ENG-1")
+	h.advance(time.Second)
+	h.tick()
+	assert.Len(t, h.linear.mutations(), 2)
 }
 
 func TestTickCommentNudgeNeverEscalatesTheTicket(t *testing.T) {
@@ -265,97 +253,84 @@ func TestTickCommentNudgeNeverEscalatesTheTicket(t *testing.T) {
 	h.config("[rules]\nnudge_limit = 1\n")
 	h.worker("ENG-1", "working")
 	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
+	// Each comment finds the worker stopped, since a worker is not nudged again before it stops.
 	for _, createdAt := range []string{comment2, "2026-10-09T00:30:00.000Z", "2026-10-09T00:40:00.000Z"} {
+		h.advance(time.Second)
+		h.setWorkerStatus("ENG-1", "idle")
 		h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), createdAt))
-		out, err := h.run("tick")
-		require.NoError(t, err)
-		assert.Equal(t, "nudge ENG-1: new comment\n", out)
+		h.tick()
 	}
 
-	assert.Len(t, h.prompts(), 3)
+	assert.Equal(t, []string{commentPrompt1, commentPrompt1, commentPrompt1}, h.prompts())
 	assert.Empty(t, h.linear.mutations())
 	assert.Empty(t, h.notifications())
-}
-
-func TestTickDryRunNamesTheCommentNudgeWithoutSendingIt(t *testing.T) {
-	h := newHarness(t)
-	h.worker("ENG-1", "working")
-	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
-	_, err := h.run("tick")
-	require.NoError(t, err)
-	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment2))
-
-	out, err := h.run("tick", "--dry-run")
-	require.NoError(t, err)
-
-	assert.Equal(t, "nudge ENG-1: new comment\n", out)
-	assert.Empty(t, h.prompts())
-
-	// The dry run recorded nothing, so a real tick still nudges.
-	_, err = h.run("tick")
-	require.NoError(t, err)
-	assert.Equal(t, []string{commentPrompt1}, h.prompts())
 }
 
 func TestTickCommentNudgeIsOwedWhileTheRepoPoolCannotBeRead(t *testing.T) {
 	h := newHarness(t)
 	h.addRepo("tiger", filepath.Join(h.dir, "moved"))
 	h.tickets(withComment(ticket("ENG-2", "In Progress", "tiger"), comment1))
-	_, _, err := h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
+	h.tick()
+	h.advance(time.Second)
 	h.tickets(withComment(ticket("ENG-2", "In Progress", "tiger"), comment2))
 
-	_, _, err = h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
+	h.tick()
 
-	// The worker may be running unseen, so the new comment stays owed.
-	raw, err := os.ReadFile(filepath.Join(h.state, "cache.json"))
+	// The worker may be running unseen, so nothing is sent and nothing launches.
+	plan, err := h.run("plan")
 	require.NoError(t, err)
-	assert.Contains(t, string(raw), comment1)
-	assert.NotContains(t, string(raw), comment2)
+	assert.Regexp(t, `held\s+ENG-2\s+-\s+nudge-comment`, plan)
+	assert.Empty(t, h.prompts())
+	assert.Empty(t, h.launches())
 }
 
 func TestTickCommentNudgeAbsorbsACommentOnABlockedDesignReviewTicket(t *testing.T) {
 	h := newHarness(t)
 	h.worker("ENG-1", "working")
 	h.tickets(withComment(withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"), comment1))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
+	h.advance(time.Second)
 	h.setWorkerStatus("ENG-1", "blocked")
 	h.tickets(withComment(withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"), comment2))
+	h.tick()
 
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	// The review worker is answered in its workspace, so the comment is never nudged once it is free.
+	h.advance(time.Second)
+	h.setWorkerStatus("ENG-1", "idle")
+	h.tick()
 
-	raw, err := os.ReadFile(filepath.Join(h.state, "cache.json"))
-	require.NoError(t, err)
-	assert.Contains(t, string(raw), comment2)
+	assert.Empty(t, h.prompts())
 }
 
 func TestTickCommentNudgeFiresForACommentPostedWhileTheTicketWasAway(t *testing.T) {
-	for _, status := range []string{"working", "idle"} {
-		t.Run(status, func(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		status string
+		want   string
+	}{
+		{name: "Working", status: "working", want: commentPrompt1},
+		// The resume nudge tells an idle worker to read every comment.
+		{name: "Idle", status: "idle", want: "w-ENG-1:p1|" + resumeText1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
 			h.config("[rules]\nnudge_limit = 9\n")
 			h.worker("ENG-1", "working")
 			h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
-			_, err := h.run("tick")
-			require.NoError(t, err)
-			// The ticket drops out of the read while comment2 is posted.
-			h.tickets()
-			_, err = h.run("tick")
-			require.NoError(t, err)
-			h.setWorkerStatus("ENG-1", status)
+			h.tick()
+			// The ticket waits in Needs Human while comment2 is posted.
+			h.advance(time.Second)
+			h.tickets(withComment(ticket("ENG-1", "Needs Human", "dispatch"), comment2))
+			h.tick()
+			h.advance(time.Second)
+			h.setWorkerStatus("ENG-1", test.status)
 			h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment2))
 
-			out, err := h.run("tick")
-			require.NoError(t, err)
+			h.tick()
 
-			assert.Equal(t, "nudge ENG-1: new comment\n", out)
-			assert.Equal(t, []string{commentPrompt1}, h.prompts())
+			assert.Equal(t, []string{test.want}, h.prompts())
 		})
 	}
 }
