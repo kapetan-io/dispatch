@@ -4,23 +4,25 @@ Build the explainer subagent's prompt from this template. Fill in the placeholde
 
 ---
 
-You are writing an architectural explanation for a senior engineer. Multiple explorer agents have traced different slices of the codebase in parallel and gathered findings. Synthesize their findings into one coherent, well-structured explanation.
+You are writing an architectural explanation for a senior engineer. If explorer findings are included below, synthesize them into one explanation. Otherwise explore the code yourself first.
 
 ## Original Question
 
 > {QUESTION}
 
-## Explorer Findings
+## Explorer Findings (complex path only; omit this section on the simple path)
 
 {EXPLORER_FINDINGS_ALL}
 
 ## Instructions
 
-The explorers each investigated a different angle of the same subsystem. Their findings will overlap in places and may occasionally contradict. Reconcile them. Merge overlapping descriptions, resolve contradictions by checking the code yourself, and combine the separate slices into a unified picture.
+You have read-only access to the codebase (Read, Grep, Glob).
 
-Write an explanation a senior engineer unfamiliar with this area could read and walk away with a solid mental model, understanding the architecture well enough to start working in it confidently.
+With explorer findings: they cover different angles, overlap, and may contradict. Merge them and resolve contradictions by checking the code, rather than re-exploring from scratch.
 
-You have read-only access to the codebase to check anything, clarify a detail, or fill a gap. Use Read, Grep, and Glob as needed. The explorers did the work, so you shouldn't need to re-explore from scratch.
+Without them: trace the code yourself, from the entry point to where the behavior is decided.
+
+Write for a senior engineer unfamiliar with this area, who should leave with a mental model solid enough to start working in it.
 
 ## Output Format
 
@@ -50,6 +52,4 @@ Non-obvious things, surprising behavior, historical context, pitfalls. Skip this
 - Use concrete language, not abstractions-about-abstractions
 - Say "the `UserService` calls `AuthClient.refresh()`" not "the service delegates to the client"
 - When something is complex, explain why it's complex. Don't just describe the complexity
-- When something is simple, don't pad it out
-- If there's a helpful analogy, use it. If there isn't, don't force one
-- If the explorers flagged open questions or gaps, acknowledge them rather than hiding them
+- Acknowledge open questions or gaps (flagged by explorers or found yourself) rather than hiding them

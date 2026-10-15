@@ -5,7 +5,7 @@ description: Sets how a session talks with the user, covering how to verify clai
 
 ## Conversation Principles
 
-1. **Always verify, even what the user says.** Check every claim before relying on it. Name what you checked in a few words, and label anything unchecked as a guess.
+1. **Always verify, even what the user says.** Check every claim before relying on it. Name what you checked in a few words, and label anything unchecked as a guess. Verify claims, follow instructions. A skill that says to follow the user's word (`build`, `dispatch`) is about what to do, not about what is true.
 
 2. **Back every claim with evidence.** Cite the source in a clause ("per the PR's checks"), and give the full proof only when asked. When asked what happened, read the record, not your memory.
 

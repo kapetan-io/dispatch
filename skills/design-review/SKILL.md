@@ -22,7 +22,7 @@ Make the blueprint **buildable**: an engineer can build the right feature from i
 4. **Five rounds without PASS.** Comment the remaining blockers on the review ticket, opening with `## In plain English`, move it to Needs Human, file nothing and stop. The user reads the ticket, not your scrollback.
 5. **ADR audit.** When the repo has `docs/adr/`, run `design-adr-audit` on the blueprint. A fix it causes always gets one more Phase 6 run, even when round 5 already passed, since an unvalidated fix could break the blueprint. That run counts as a round, and if it fails with all 5 used, follow step 4 without a further round. Ask its closing question through AskUserQuestion.
 6. **End steps**, below.
-7. **Break down.** Invoke `dispatch:breakdown` on the feature ticket. Each `Pieces` row also names the ADR and glossary sections its piece commits.
+7. **Break down.** Invoke `dispatch:breakdown` on the feature ticket.
 8. **Finish.** After the user answers start or hold, comment a summary on the review ticket that says how to start held work, then move it to Done. You never move the review to Done before `design` is off on "start now". A crash between the two leaves the review In Progress, and step 1 finishes it. Open the comment with the final summary:
 
 ```
@@ -36,7 +36,7 @@ Blueprint: <document link>
 
 ## Reading and writing the blueprint
 
-Read the blueprint with `get_document` on the feature ticket. Sub-agents can't read Linear, so paste its full text, and `docs/CONTEXT.md` if it exists (the domain glossary), into their prompts. Give them only the list of files in the repo's `docs/adr/`, so they read specific ADRs on demand.
+Read the blueprint with `get_document` on the feature ticket. Sub-agents read it themselves: give each the feature ticket id and tell it to load the Linear tools with ToolSearch and only read. Each round then sees the blueprint as the last patch left it, and the prompt doesn't carry a copy that goes stale. Point them at `docs/CONTEXT.md` (the domain glossary) if it exists, and give only the list of files in `docs/adr/`, so they read specific ADRs on demand.
 
 Linear rewrites markdown on save: bullets come back as `*`, a leading H1 is dropped and lines can gain blanks. Apply each fix as a `save_document` patch whose old text you copied from a fresh `get_document`, and read again before the next patch. Never push the whole document back.
 
@@ -54,11 +54,11 @@ Before the loop, do three things and pass the results to the sub-agents.
 
 Run Phases 1 to 5, then Phase 6, each round on the blueprint as the last round left it. Exit on a Phase 6 PASS, or after 5 rounds. Phase 6 always runs, even after a round with no findings. From round 2, Phase 1 receives only the blockers Phase 6 named, and a deferred list of what the user dismissed, which it must not re-file unless the surrounding text changed.
 
-All sub-agents are foreground and use `model: "sonnet"`. Paste the full blueprint into each prompt, never a link.
+All sub-agents are foreground and use `model: "sonnet"`.
 
 ## Phase 1: Review agent
 
-Prompt: you are reviewing a Blueprint, one document holding a feature's product definition and technical design. Find gaps, inconsistencies and ambiguities that would force product or implementation decisions during the build, and places where the technical half does not satisfy the product intent. Give it the blueprint, the glossary, the ADR file list, the coverage map, the pre-work findings, the round number, and in round 2+ the prior fixes, the deferred list and the blockers.
+Prompt: you are reviewing a Blueprint, one document holding a feature's product definition and technical design. Find gaps, inconsistencies and ambiguities that would force product or implementation decisions during the build, and places where the technical half does not satisfy the product intent. Give it the ticket id, the glossary path, the ADR file list, the coverage map, the pre-work findings, the round number, and in round 2+ the prior fixes, the deferred list and the blockers.
 
 Each finding has a category, half (Product, Technical, Stories, Cross-half), priority, section, evidence, issue and suggested fix, plus authoritativeness for drift. Priorities are P0 (blocks the build), P1 (forces a decision an engineer shouldn't make alone) and P2 (polish). File nothing below P2.
 
@@ -76,7 +76,7 @@ Each finding has a category, half (Product, Technical, Stories, Cross-half), pri
 
 ## Phase 2: Validation agent
 
-Give it the findings, the blueprint, the glossary, the ADR list and the coverage map. For each finding it reads the cited section and answers **Confirmed**, **False positive** (say why: covered elsewhere, an ADR settles it, quoted out of context, same concept in different words) or **Needs clarification** (a real ambiguity only the user can settle). It verifies drift locations, both passages of an inconsistency and the ADR itself. For stories, silence is not a violation, and an unverifiable criterion must truly be unverifiable.
+Give it the findings, the ticket id, the glossary path, the ADR list and the coverage map. For each finding it reads the cited section and answers **Confirmed**, **False positive** (say why: covered elsewhere, an ADR settles it, quoted out of context, same concept in different words) or **Needs clarification** (a real ambiguity only the user can settle). It verifies drift locations, both passages of an inconsistency and the ADR itself. For stories, silence is not a violation, and an unverifiable criterion must truly be unverifiable.
 
 ## Phase 3: Skeptic agent
 
@@ -94,11 +94,11 @@ Drop false positives and implementation details. With no survivors, skip to Phas
 
 Apply each auto-apply fix as a patch, and note it for the step 8 comment.
 
-For each surface-to-user finding, ask through AskUserQuestion, framed "Finding N: <title> (<category>)", with the consequence of leaving it open in the question text, the recommended option first marked "(Recommended)", and trade-offs in each option's description. A clarification finding frames the ambiguity as the question. Before asking about a P0 or P1 finding, score it against the high-impact criteria in the `deliberate` skill. If 2 or more signals fire, run its protocol and let the synthesis replace the options. Apply the answer at once, and log it. If the user says it's already in the blueprint, re-read that section before going on.
+For each surface-to-user finding, ask through AskUserQuestion, framed "Finding N: <title> (<category>)", with the consequence of leaving it open in the question text, the recommended option first marked "(Recommended)", and trade-offs in each option's description. A clarification finding frames the ambiguity as the question. Apply the answer at once, and log it. If the user says it's already in the blueprint, re-read that section before going on.
 
 ## Phase 6: Goal validation
 
-A separate agent reads the blueprint cold, with the glossary and ADR list, and answers one question: could an engineer build the right thing from this tomorrow, or would they get stuck or build the wrong thing? It does not look for improvements. It checks: (1) product intent is clear and acceptance criteria are mechanically verifiable; (2) contracts are unambiguous enough for two engineers to build compatible sides; (3) nothing contradicts, including across the halves; (4) no decision is deferred that an engineer needs before writing code; (5) the technical half covers each product requirement that needs a technical decision; (6) with Correctness Constraints, a reader can see how each invariant is preserved and no invariant rests on an unstated implementation property; (7) with User Stories, each has verifiable criteria and the stories cover the workflows and constraints. Missing detail, brevity and "could be clearer" are not blockers.
+A separate agent reads the blueprint cold, with the glossary path and ADR list, and answers one question: could an engineer build the right thing from this tomorrow, or would they get stuck or build the wrong thing? It does not look for improvements. It checks: (1) product intent is clear and acceptance criteria are mechanically verifiable; (2) contracts are unambiguous enough for two engineers to build compatible sides; (3) nothing contradicts, including across the halves; (4) no decision is deferred that an engineer needs before writing code; (5) the technical half covers each product requirement that needs a technical decision; (6) with Correctness Constraints, a reader can see how each invariant is preserved and no invariant rests on an unstated implementation property; (7) with User Stories, each has verifiable criteria and the stories cover the workflows and constraints. Missing detail, brevity and "could be clearer" are not blockers.
 
 It answers **VERDICT: PASS or FAIL**, one line per criterion, and on FAIL at most 5 blockers naming what is wrong and where. PASS ends the loop. FAIL starts the next round with those blockers, or follows step 4 after round 5.
 
@@ -106,6 +106,6 @@ It answers **VERDICT: PASS or FAIL**, one line per criterion, and on FAIL at mos
 
 After the loop, read the document once more to confirm every resolved finding landed, and apply any that did not. Keep unchanged sections in their order, replace resolved soft flags with the decision, and add nothing for dismissed findings.
 
-1. **Glossary.** Put corrected or new domain terms in a `Glossary changes` section, for the first piece to commit to `docs/CONTEXT.md` (format in [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md)). Your tree is discarded.
-2. **ADRs.** Offer an ADR for a logged decision only if it is hard to reverse, surprising without context, and a real trade-off. Decisions resolved through `deliberate` already pass the first and third, so check only the second, and don't re-offer ones already offered. For each the user approves, add an `ADR: <title>` section in `adr-write`'s format, unnumbered. The first piece that implements it commits it under the next free `NNNN-` number.
-3. **Contract.** If the blueprint defines or changes a consumer-facing contract (endpoints, schemas, error codes), its spec document on the feature ticket must match. Write the spec from its document to a file in your scratchpad, run `duh lint` on it until it passes, patch the result back, read it back and lint again. A design with no such surface skips this.
+1. **Glossary.** Keep the blueprint's `Glossary changes` section current with the terms the review corrected or added (format in [CONTEXT-FORMAT.md](../design/CONTEXT-FORMAT.md)). Your tree is discarded, so `dispatch:breakdown` hands the section to the first piece to commit.
+2. **ADRs.** Offer an ADR for a logged decision only if it is hard to reverse, surprising without context, and a real trade-off. Don't re-offer ones already offered. For each the user approves, add an `ADR: <title>` section in the format of the ADRs already in `docs/adr/`, unnumbered. The first piece that implements it commits it under the next free `NNNN-` number.
+3. **Contract.** If the blueprint defines or changes a consumer-facing contract, its spec document on the feature ticket must list every endpoint, schema and error code the blueprint names, and nothing it doesn't. If `duh` is on PATH, run `duh lint` on the spec until it passes, patching the result back and reading it back before the next lint. A design with no such surface skips this.

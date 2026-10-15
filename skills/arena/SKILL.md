@@ -51,7 +51,7 @@ Read every candidate end to end before picking.
 
 Score each candidate against the rubric criterion by criterion, not on holistic feel. Compare against the cross-judge. Agreement on the base confirms the pick. Disagreement means one of you is biased or the rubric was ambiguous. Read both rationales before deciding.
 
-Pick the base on which candidate a future maintainer can extend most easily without breaking invariants. Prefer the cleaner boundary or smaller API when two feel tied, per the Laziness Protocol. Aim for the most result with the least code and complexity. Make the smallest change that solves the problem.
+Pick the base on which candidate a future maintainer can extend most easily without breaking invariants. When two feel tied, prefer the cleaner boundary or smaller API (`dispatch:principle-laziness-protocol`).
 
 Record the pick and the reason in a short synthesis note alongside the base artifact, including the cross-judge's verdict.
 

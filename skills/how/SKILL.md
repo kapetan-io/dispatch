@@ -5,7 +5,7 @@ description: "Use for \"how does X work\", code walkthroughs before changing som
 
 # How
 
-Explore the codebase to answer "how does X work?" questions. Produce architectural explanations at the level of a senior engineer onboarding onto a subsystem, enough to build a working mental model, not so much that it reads like annotated source code.
+Answer "how does X work?" at the level of a senior engineer onboarding onto a subsystem: a working mental model, not annotated source.
 
 Each spawn below sets the Agent tool's `model` parameter. Valid values are `sonnet`, `opus`, `haiku` and `fable`. Explorers default to `sonnet`, and the explainer defaults to `opus`. If the Agent tool rejects a value, use the closest valid one from its error message.
 
@@ -50,7 +50,7 @@ Build its prompt from `references/explainer-prompt.md` with every explorer's fin
 
 ## Step 4. Present
 
-Present the explainer's output to the user. Light edits for clarity or context from the conversation are fine. Do not substantially rewrite it.
+Present the explainer's output. Light edits are fine; do not substantially rewrite it.
 
 ## Output Format
 

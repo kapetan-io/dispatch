@@ -35,7 +35,7 @@ Load `dispatch:converse` with the Skill tool. Open a todolist with one entry per
 5. Write the full list of product and technical questions the blueprint must settle, tailored to this feature.
 6. Have a fresh sub-agent mark each question **settled** or **ask**. Give it the list, the ticket, the glossary, the relevant ADRs and the code scan, and these rules, and check each reason yourself before accepting it.
    - A technical question is settled by the code, an ADR or standard practice for this stack, with a one-line reason.
-   - A product question is settled only when the ticket or the design it governs states the answer, quoted. An instruction that answers it indirectly counts ("follow `blueprint-review` as written" settles how much the review asks). An inference, a reasonable default or a partial answer does not. Anything under the ticket's "Not decided here" is ask.
+   - A product question is settled only when the ticket or the design it governs states the answer, quoted. An instruction that answers it indirectly counts ("follow `dispatch:design-review` as written" settles how much the review asks). An inference, a reasonable default or a partial answer does not. Anything under the ticket's "Not decided here" is ask.
 7. Show the user the questions marked ask, and the settled product questions with their quoted lines, then start on the first one without asking whether to start. The user can redirect at any point. Record each settled answer in the decision log as "agent assumed", with the quoted line (product) or the one-line reason (technical), so the user can override it.
 
 ## The discussion
@@ -58,17 +58,13 @@ Keep a running decision log, marking each entry "you decided" or "agent assumed"
 
 ### What the product half covers
 
-Tailor to the feature.
+Tailor to the feature. These are the parts a model skips or does badly.
 
-- **Problem and why.** What problem does this solve, why now, and what technical goal follows?
-- **Users.** Who is it for, and which is primary?
-- **Mental model.** For platform and tooling: the core concepts and how they relate.
+- **Problem and users.** What problem this solves, why now, and who it is for. Name the primary user when there is more than one.
 - **Core design principles.** What the product will always do and deliberately never do. Surface them early, because they resolve later questions and are ADR candidates.
-- **Correctness constraints.** Two subsections. *State invariants* are always-true statements about data, each with what violates it and what the system does then. An invariant with no enforcement is a comment in dead code. *Behavioral constraints* are things the system must never do, even in failure. Elicit both with three prompts. Concurrency: what happens when two users touch the same resource at once? Reversibility: which operations can be undone? Partial failure: what happens if this succeeds halfway?
+- **Correctness constraints.** *State invariants* are always-true statements about data, each with what violates it and what the system does then. An invariant with no enforcement is a comment in dead code. *Behavioral constraints* are things the system must never do, even in failure. Elicit both with three prompts. Concurrency: what happens when two users touch the same resource at once? Reversibility: which operations can be undone? Partial failure: what happens if this succeeds halfway?
 - **Acceptance criteria.** Each one an outcome a user or caller sees, mechanically verifiable, never which test or layer must catch it. Rewrite any that needs human judgment. Cover failure cases explicitly.
-- **Scope and non-goals.** What is in the first version and what is out.
-- **Dependencies and constraints.**
-- **User stories.** Only when several personas have divergent workflows, the interactions branch, many discrete behaviors need verifying, or engineers build in parallel. Skip them for infrastructure, simple features, or when the criteria already sit at story granularity. Each story's criteria are mechanically verifiable and trace to the section they come from.
+- **User stories.** Only when several personas have divergent workflows, the interactions branch, many discrete behaviors need verifying, or engineers build in parallel. Each story's criteria are mechanically verifiable and trace to the section they come from.
 - **Success metrics.** Post-ship outcomes only, never a restatement of scope. Omit the section when none exists.
 
 When the product half is done, write the **Objective** and ask the user to approve it. The Objective is the anchor. Every candidate sketch, review round and build ticket is checked against it, so do not move on until the user says it is right. Raise any acceptance criterion that names a mechanism as its own question first, since one "yes" to the whole Objective approves it unread.
@@ -134,7 +130,7 @@ Objective, Mental Model, User Stories, Correctness Constraints (State Invariants
 
 Keep PII as its own section. Mark anything unresolved with `TODO:` and a line on what is missing. Keep it short, since a section that drives no decision is noise. Write for a reader who was not in the discussion, with no "the option we discussed". "We considered X but chose Y because Z" is useful. If the feature has an OpenAPI spec, the contract sketch becomes a second document on the ticket, as a fenced YAML block.
 
-If the discussion resolved domain terms, write them to the right `docs/CONTEXT.md` in one pass. Do not commit. The tree is returned at hand-off, which discards the change, so the hand-off uploads it.
+If the discussion resolved domain terms, add a `Glossary changes` section to the blueprint in the format of [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md), naming the `CONTEXT.md` each term belongs in. Your tree is discarded at hand-off, so the first build piece commits the terms, as `dispatch:breakdown` arranges.
 
 ## Audit the transcript
 
@@ -144,7 +140,7 @@ Using the report from the audit sub-agent, fix confirmed gaps, and ask the user 
 
 ## Review or break down
 
-After the user approves the design, ask whether it gets a review. Recommend one when the design looks larger than one PR or changes a public contract, because only the review writes and lints the formal spec.
+After the user approves the design, ask whether it gets a review. Recommend one when the design looks larger than one PR or changes a public contract, because only the review checks the formal spec against the blueprint.
 
 - **No review.** Load `dispatch:breakdown` with the Skill tool and follow it on the feature ticket. It sizes the design, files the build tickets, and asks whether to start the work or hold it.
 - **Review.** File a child of the feature ticket labeled `ai`, `design-review` and the repo label, never `design`, assigned to the owner of dispatch's Linear API key, with `dispatch:ticket`. Its body links the blueprint. Move it to In Progress and run `dispatch tick`. The next tick launches the review worker, which reviews the blueprint with the user and then runs `dispatch:breakdown`.
@@ -153,5 +149,5 @@ If you end with nothing filed, move the feature ticket to Backlog, since an In P
 
 ## Hand off
 
-1. Upload the experiments worth keeping, the Phase A grounding file, and the glossary change (`git diff -- docs`), to the feature ticket as attachments, so build workers can get them.
+1. Upload the experiments worth keeping and the Phase A grounding file to the feature ticket as attachments, so build workers can get them.
 2. Return the tree with `treehouse return <tree path> --if-lease-holder <feature ticket> --force`, where the tree path is `git rev-parse --show-toplevel`. Do this last. It discards anything uncommitted, including any experiment you did not upload, and it ends the session. A held tree blocks other launches.
