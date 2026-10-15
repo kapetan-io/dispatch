@@ -1,6 +1,6 @@
 # Epistemics
 
-Code doesn't carry its own motivation. You can read what it does, but why it exists lives in commits, PRs, tickets, docs and conversations, all incomplete, biased and sometimes missing. Confident guesses mislead the user, who will act on them.
+Code doesn't carry its own motivation. You can read what it does, but why it exists lives in commits, PRs, tickets, docs, ADRs and conversations, all incomplete, biased and sometimes missing. Confident guesses mislead the user, who will act on them.
 
 ## Confidence Tiers
 
