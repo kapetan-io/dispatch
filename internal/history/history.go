@@ -244,9 +244,19 @@ func Latest(dir string) (Segment, bool, error) {
 	if err != nil || len(paths) == 0 {
 		return Segment{}, false, err
 	}
-	seg, err := Read(paths[len(paths)-1])
-	return seg, err == nil, err
+	// A segment is created, then given its header and snapshot. A crash or a full disk in
+	// between leaves one with neither, which holds nothing, so the one before it is the state.
+	for i := len(paths) - 1; i >= 0; i-- {
+		seg, err := Read(paths[i])
+		if errors.Is(err, errIncomplete) && i > 0 {
+			continue
+		}
+		return seg, err == nil, err
+	}
+	return Segment{}, false, nil
 }
+
+var errIncomplete = errors.New("has no header and snapshot")
 
 // Read reads one segment. A last line that doesn't parse is a crash's torn write
 // and is dropped, and the read stops there.
@@ -300,7 +310,7 @@ func Read(path string) (Segment, error) {
 		n++
 	}
 	if n < 2 {
-		return seg, fmt.Errorf("%s has no header and snapshot", path)
+		return seg, fmt.Errorf("%s %w", path, errIncomplete)
 	}
 	return seg, nil
 }

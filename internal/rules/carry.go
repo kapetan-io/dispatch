@@ -27,7 +27,9 @@ func (s *State) Carry(mem *world.Memory, started int64) *world.Memory {
 	mem.Ready()
 	at := s.ms()
 	next := world.NewMemory()
-	next.Pools = mem.Pools
+	for label, p := range mem.Pools {
+		next.Pools[label] = p
+	}
 	keep := func(key string) {
 		if old, ok := mem.Facts[key]; ok {
 			next.Facts[key] = old
@@ -76,6 +78,7 @@ func (s *State) Carry(mem *world.Memory, started int64) *world.Memory {
 	s.carryPreviousStatus(mem, next)
 	s.carryWaiting(mem, next)
 	s.carryPools(mem, next)
+	s.keepWhileUnread(mem, next)
 	return next
 }
 
@@ -100,6 +103,10 @@ func (s *State) deriveTimes(r *record, mem, next *world.Memory, started int64) {
 		}
 	case *Worker:
 		if rec.State.Unknown != "" {
+			// A failed read deletes nothing, so the worker keeps the presence it had.
+			if old, ok := mem.Facts[r.kind+"/"+r.id+"/presence"]; ok {
+				next.Facts[r.kind+"/"+r.id+"/presence"] = old
+			}
 			return
 		}
 		// Presence is remembered as its own fact, so seenAt and goneSince survive a
@@ -220,5 +227,29 @@ func (s *State) carryPools(mem, next *world.Memory) {
 		next.Pools[label] = world.Pool{Returns: returns, Leases: leases}
 		p.returns = returns
 		s.pools[label] = p
+	}
+}
+
+// keepWhileUnread keeps everything dispatch remembered about tickets and the records
+// that hang off them while the tickets can't be read, because no record exists to carry
+// it. Without it a restart during a Linear outage would forget every wait.
+func (s *State) keepWhileUnread(mem, next *world.Memory) {
+	if s.linearUnread == "" {
+		return
+	}
+	for key, old := range mem.Facts {
+		if _, ok := next.Facts[key]; !ok {
+			next.Facts[key] = old
+		}
+	}
+	for id, v := range mem.PreviousStatus {
+		if _, ok := next.PreviousStatus[id]; !ok {
+			next.PreviousStatus[id] = v
+		}
+	}
+	for id, v := range mem.Waiting {
+		if _, ok := next.Waiting[id]; !ok {
+			next.Waiting[id] = v
+		}
 	}
 }

@@ -13,7 +13,10 @@ import (
 
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
+	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/ledger"
+	"github.com/kapetan-io/dispatch/internal/lineartest"
+	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
 // invariantRulesWith is the shipped rules plus one more rule file.
@@ -269,4 +272,79 @@ func TestInvariantAnEventAfterASleepReadsEverySourceBeforeActing(t *testing.T) {
 
 	assert.Greater(t, h.linear.calls(), before)
 	assert.Equal(t, []string{"w-ENG-1:p1|hello"}, h.prompts()[prompted:])
+}
+
+// Pool returns decide whether a full pool is retried, so a restart must not forget one.
+func TestInvariantATreeReturnedToThePoolIsInHistory(t *testing.T) {
+	h := newHarness(t)
+	tree := filepath.Join(h.dir, "trees", "ENG-9")
+	h.tools.Treehouse.Seed(h.repo, treehouse.Tree{Path: tree, Status: "leased", LeaseHolder: "ENG-9"})
+	h.tick()
+
+	require.NoError(t, h.tools.Treehouse.Return(t.Context(), h.repo, tree, "ENG-9"))
+	h.advance(time.Second)
+	h.tick()
+
+	seg, ok, err := history.Latest(filepath.Join(h.state, "events"))
+	require.NoError(t, err)
+	require.True(t, ok)
+	state, err := seg.Load()
+	require.NoError(t, err)
+	assert.Equal(t, 1, state.Memory.Pools["dispatch"].Returns)
+}
+
+// A tool that fails for one read says nothing about a worker, so what dispatch knew of it stays.
+func TestInvariantAFailedHerdrReadDoesNotMakeAFullPoolRetry(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.launchResult(`{"status":"pool_exhausted","detail":"all 4/4 pool trees are taken"}`)
+	h.tick()
+	require.Len(t, h.launches(), 1)
+
+	h.tools.Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
+	h.advance(time.Second)
+	h.tick()
+	h.tools.Herdr.Fail(herdrtest.OpRead, nil)
+	h.advance(time.Second)
+	h.tick()
+
+	assert.Len(t, h.launches(), 1)
+}
+
+// A segment that was created but never given its snapshot holds nothing, so the one before it is the state.
+func TestInvariantAHalfWrittenSegmentDoesNotStopTheStart(t *testing.T) {
+	h := newHarness(t)
+	h.seedHistory(nil, ledger.Receipt{Kind: "nudge", Subject: "ENG-1", Once: ledger.Once{"stall", float64(1)}, Rule: "nudge-stall", Outcome: ledger.Done, Started: 1})
+	events := filepath.Join(h.state, "events")
+	torn := filepath.Join(events, "events-"+h.clock.Now().Add(-30*time.Minute).UTC().Format("20060102T150405Z")+".jsonl")
+	require.NoError(t, os.WriteFile(torn, []byte(`{"line":"header","why":"start","at":1}`+"\n"), 0o600))
+
+	_, err := h.run("tick")
+
+	require.NoError(t, err)
+	var seeded int
+	for _, rc := range h.ledgerNow() {
+		if rc.Rule == "nudge-stall" && rc.Outcome == ledger.Done {
+			seeded++
+		}
+	}
+	assert.Equal(t, 1, seeded)
+}
+
+// Waits are measured from when dispatch first saw a status, so a start while Linear is down
+// must not forget them, or every notice would be sent again.
+func TestInvariantARestartDuringALinearOutageKeepsEveryWait(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))
+	h.tick()
+	require.Len(t, h.notifications(), 1)
+	h.advance(time.Hour)
+	h.linear.FailOn(lineartest.OnManaged, true)
+	h.restart()
+
+	h.linear.FailOn(lineartest.OnManaged, false)
+	h.advance(5 * time.Minute)
+	h.tick()
+
+	assert.Len(t, h.notifications(), 1)
 }

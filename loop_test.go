@@ -376,3 +376,39 @@ func TestANudgeThatTimesOutCountsAsToldAndIsNeverRepeated(t *testing.T) {
 	assert.Equal(t, ledger.Done, nudges[0].Outcome)
 	assert.Equal(t, "timeout", nudges[0].Detail)
 }
+
+func TestStoppingTheLoopAnswersATickThatIsWaiting(t *testing.T) {
+	h := newHarness(t)
+	h.builtinLauncher = true
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	blocked := loopBlockedLauncher{release: make(chan struct{})}
+	loopCtx, stop := context.WithCancel(context.Background())
+	defer stop()
+	done := make(chan error, 1)
+	opts := h.options(dispatch.Options{Launcher: blocked})
+	opts.Stdout, opts.Stderr = &bytes.Buffer{}, &bytes.Buffer{}
+	go func() { done <- dispatch.Run(loopCtx, []string{"run"}, opts) }()
+	require.Eventually(t, func() bool {
+		_, err := loop.Ask(t.Context(), h.state, loop.Request{Op: loop.OpPending})
+		return err == nil
+	}, 20*time.Second, 5*time.Millisecond)
+	ticked := make(chan error, 1)
+	tickOpts := h.options(dispatch.Options{})
+	tickOpts.Stdout, tickOpts.Stderr = &bytes.Buffer{}, &bytes.Buffer{}
+	go func() { ticked <- dispatch.Run(t.Context(), []string{"tick", "--timeout", "1m"}, tickOpts) }()
+	require.Eventually(t, func() bool {
+		resp, err := loop.Ask(t.Context(), h.state, loop.Request{Op: loop.OpPending})
+		return err == nil && len(resp.Lines) > 0
+	}, 20*time.Second, 5*time.Millisecond)
+
+	stop()
+	close(blocked.release)
+
+	select {
+	case err := <-ticked:
+		require.ErrorContains(t, err, "dispatch is stopping")
+	case <-time.After(20 * time.Second):
+		t.Fatal("the tick was never answered")
+	}
+	require.NoError(t, <-done)
+}

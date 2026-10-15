@@ -93,6 +93,8 @@ type Loop struct {
 	// lastResync is when the previous resync line printed.
 	lastResync time.Time
 	listener   *listener
+	// nudgedDuring holds the tickets nudged while a read was in flight.
+	nudgedDuring map[string]bool
 	// actions counts the actions started since the last resync line.
 	actions     int
 	linearCalls int
@@ -237,6 +239,10 @@ func (l *Loop) fatal(err error) {
 
 // drain waits for the actions in flight, up to their deadlines, then stops.
 func (l *Loop) drain() error {
+	for _, w := range l.waiters {
+		w.reply <- Response{Code: CodeFailed, Error: "dispatch is stopping"}
+	}
+	l.waiters = nil
 	deadline := time.After(executor.DefaultDeadline + 5*time.Second)
 	for len(l.flights) > 0 || l.reading {
 		select {
@@ -439,7 +445,7 @@ func (l *Loop) startRead() {
 		return
 	}
 	parts, prev := l.pending, l.wd
-	l.pending, l.reading = 0, true
+	l.pending, l.reading, l.nudgedDuring = 0, true, nil
 	at := l.stamp()
 	go func() {
 		w, err := world.Refresh(context.Background(), l.o.Sources, l.scope, prev, parts, at)
@@ -455,11 +461,27 @@ func (l *Loop) onRead(m readDone) error {
 	}
 	nudged := l.wd.Nudged
 	l.wd = m.w
+	// Herdr was read before a nudge that landed during this read, so the worker still
+	// shows idle in it, and the overlay for that nudge has to survive it.
+	if len(l.nudgedDuring) > 0 {
+		late := maps.Clone(l.wd.Nudged)
+		if late == nil {
+			late = map[string]bool{}
+		}
+		for id := range l.nudgedDuring {
+			late[id] = true
+		}
+		l.wd.Nudged = late
+	}
 	// A read of herdr that came back after a nudge is the next resync's job to
 	// believe, so the nudge overlay stays until then.
 	if m.parts&world.FromLocal != 0 && nudged != nil && m.parts != world.Everything {
-		l.wd.Nudged = nudged
+		l.wd.Nudged = maps.Clone(nudged)
+		for id := range l.nudgedDuring {
+			l.wd.Nudged[id] = true
+		}
 	}
+	l.nudgedDuring = nil
 	if m.parts&world.FromLocal != 0 {
 		l.renaming = map[string]string{}
 	}
@@ -664,6 +686,12 @@ func (l *Loop) onAction(m actionDone) error {
 		_, _ = fmt.Fprintf(l.o.Out, "%s %s %s %s: %s\n", l.clock.Now().Format(time.TimeOnly), f.want.Receipt, f.want.Subject, res.Outcome, note)
 	}
 	if res.Nudged != "" {
+		if l.reading {
+			if l.nudgedDuring == nil {
+				l.nudgedDuring = map[string]bool{}
+			}
+			l.nudgedDuring[res.Nudged] = true
+		}
 		nudged := map[string]bool{res.Nudged: true}
 		for k := range l.wd.Nudged {
 			nudged[k] = true
