@@ -6,7 +6,7 @@ dispatch reads `~/.config/dispatch/config.toml`. Every setting is optional, and 
 dispatch: while reading config /Users/you/.config/dispatch/config.toml: unknown setting max_in_progres
 ```
 
-`dispatch tick`, `dispatch run` and `dispatch tell` all load the file this way. `dispatch ticket-hint` and `dispatch record-stop` run in every Claude Code session, so they print the error to stderr and exit 0 instead.
+`dispatch run`, `dispatch plan` and `dispatch rules` load the file this way. `dispatch run` reads the file once, at start, and the rules with it, so a change to either takes effect when you stop `dispatch run` and start it again. `dispatch ticket-hint` and `dispatch record-stop` run in every Claude Code session, so they print the error to stderr and exit 0 instead.
 
 Every `toml` block in the docs is loaded by a test through the same loader, so these examples cannot drift from the code.
 
@@ -62,21 +62,21 @@ Repos have no default, so the block shows one repo with every setting at its def
 
 | Setting | Default | What it does |
 |---|---|---|
-| `rules` | `~/Development/dispatch/rules` | The directory of TypeScript rules that `dispatch rules check` and `dispatch rules test` read. `dispatch rules init` writes the shipped rules there. |
-| `max_in_progress` | `4` | The most workers running at once. Caps running workers, and In Review and Needs Human tickets don't count. A launch counts In Progress tickets that have a worker, plus those in a repo whose pool couldn't be read this tick, and waits with `wait <ticket>: N of M workers already running`. Promoting a parent's children counts every In Progress ticket that isn't a parent, `design` tickets included, with or without a worker. A `design` ticket whose design worker has made children counts too, while its worker lives, and waits with `wait <ticket>: N of M In Progress tickets already`. |
-| `resync` | `5m` | Time between ticks of `dispatch run`, such as `30s` or `5m`. `dispatch run --interval 30s` overrides it. It must be above zero. |
+| `rules` | `~/Development/dispatch/rules` | The directory of TypeScript rules that `dispatch run`, `dispatch rules check` and `dispatch rules test` read. `dispatch rules init` writes the shipped rules there. |
+| `max_in_progress` | `4` | The most workers running at once. Caps running workers, and In Review and Needs Human tickets don't count. A launch counts In Progress tickets that have a worker, plus those in a repo whose pool couldn't be read this cycle, and waits with `wait <ticket>: N of M workers already running`. Promoting a parent's children counts every In Progress ticket that isn't a parent, `design` tickets included, with or without a worker. A `design` ticket whose design worker has made children counts too, while its worker lives, and waits with `wait <ticket>: N of M In Progress tickets already`. |
+| `resync` | `5m` | Time between resyncs of `dispatch run`, such as `30s` or `5m`. A resync re-reads every source and runs a cycle, and it is the only clock rules wait on. `dispatch run` refuses a value of zero or less, and takes no flag for it. |
 
 ## `[history]`
 
 | Setting | Default | What it does |
 |---|---|---|
-| `dir` | `~/.local/state/dispatch/events` | Where dispatch will keep its history. Nothing writes there yet. |
-| `rotate` | `6h` | How often history starts a new segment. |
-| `keep` | `1d` | How long old segments are kept. Days are written `7d`. |
+| `dir` | `~/.local/state/dispatch/events` | Where `dispatch run` keeps its history, one `events-<time>.jsonl` segment at a time. It is dispatch's only state, and `dispatch plan` reads it. |
+| `rotate` | `6h` | How old the current segment gets before `dispatch run` starts a new one, which opens with a snapshot of what dispatch knew and did. |
+| `keep` | `1d` | How long old segments are kept before `dispatch run` deletes them. Days are written `7d`. |
 
 ## `[rules]`
 
-Your own table. Dispatch never interprets it, and a rule reads a key as `ctx.config.rules.<key>`. A rule that reads a key the file lacks fails `dispatch rules check`, naming the key. `dispatch rules init` writes the five keys the shipped rules read, with today's values. Until the rules replace the tick, `dispatch tick` and `dispatch run` read the same five keys, and take the default shown here when one is missing.
+Your own table. Dispatch never interprets it, and a rule reads a key as `ctx.config.rules.<key>`. A rule that reads a key the file lacks fails `dispatch rules check`, naming the key. `dispatch rules init` writes the five keys the shipped rules read, with today's values. `dispatch run` and `dispatch rules check` read them from the file when they start.
 
 | Key | Default | What it does |
 |---|---|---|
@@ -84,7 +84,7 @@ Your own table. Dispatch never interprets it, and a rule reads a key as `ctx.con
 | `design_model` | `opus` | The model name passed to `claude --model` for the worker of a `design` or `design-review` ticket. |
 | `launch_failure_limit` | `2` | Failed launches in a row before the ticket goes to Needs Human with the launcher's error. A full treehouse pool (`pool_exhausted`) never counts. |
 | `nudge_limit` | `2` | PR nudges to an idle In Review worker with no push before the ticket goes to Needs Human. The count resets when a push moves the PR head, and it also caps relaunches of a gone worker that never pushes. In Progress tickets never read it, since an idle In Progress worker is nudged once per Stop and never escalated. |
-| `blocked_renotify_minutes` | `15` | Minutes between macOS notifications for a worker that stays blocked on a question, rounded up to whole `resync` periods. The first notification comes on the first blocked tick. `0` notifies on every blocked tick. |
+| `blocked_renotify_minutes` | `15` | Minutes between macOS notifications for a worker that stays blocked on a question, a notification can only go out in a cycle, so it can come later than the period by up to one `resync`. The first notification comes on the first cycle that sees the worker blocked. `0` notifies in every cycle while it is blocked. |
 
 ```toml
 [rules]
@@ -171,14 +171,14 @@ Anywhere else it fails with `dispatch: /tmp is not inside a repo under [repos] i
 
 ## Auto-merge
 
-In a repo with `auto_merge = true`, a tick that finds an In Review ticket's PR ready (the same test as the ready-for-review notification, with the worker idle) and approved by a review on its head commit runs `gh pr merge <PR URL> --merge --match-head-commit <head>`. It prints `merge ENG-1: PR approved` and sends a macOS notification, `ENG-1 was approved and merged: <PR URL>`, in place of the ready-for-review one. Any reviewer's approval counts, which today means CodeRabbit's, unless another reviewer's latest review requests changes. The merge only goes through for the commit that was approved.
+In a repo with `auto_merge = true`, a cycle that finds an In Review ticket's PR ready (the same test as the ready-for-review notification, with the worker idle) and approved by a review on its head commit runs `gh pr merge <PR URL> --merge --match-head-commit <head>`. The run window prints `merge ENG-1 (auto-merge)` when the merge starts and `merge ENG-1 done` when it ends, and dispatch sends a macOS notification, `ENG-1 was approved and merged: <PR URL>`, in place of the ready-for-review one. Any reviewer's approval counts, which today means CodeRabbit's, unless another reviewer's latest review requests changes. The merge only goes through for the commit that was approved.
 
-- A draft is never merged. In a repo with `open_pr_as = "draft"`, an approved PR you open merges on the next tick when it is ready, without the "reviews are handled" notification.
+- A draft is never merged. In a repo with `open_pr_as = "draft"`, an approved PR you open merges in the next cycle when it is ready, without the "reviews are handled" notification.
 - An approval of an earlier commit doesn't count, so a push after approval waits for a new one.
-- A ready PR with no approval on its head gets the ready-for-review notification as before. If the approval arrives later, the next tick merges it.
-- A failed merge, such as branch protection refusing it, prints the error to stderr and sends one notification. The next ticks skip that head, and a push makes the PR eligible again.
-- `dispatch tick --dry-run` prints the `merge` line without merging.
-- dispatch reads the file on every tick, so changing a repo's `auto_merge` takes effect on the next tick of a running `dispatch run`.
+- A ready PR with no approval on its head gets the ready-for-review notification as before. If the approval arrives later, the next cycle merges it.
+- A failed merge, such as branch protection refusing it, prints the error to stderr and sends one notification. Later cycles skip that head, and a push makes the PR eligible again.
+- There is no dry run. `dispatch rules check` shows whether the `merge` action is wanted now and takes no action.
+- dispatch reads the config once, when `dispatch run` starts, so a change to a repo's `auto_merge` takes effect when you stop `dispatch run` and start it again.
 
 The PR is found through the repo `gh` resolves for the clone. A clone with two remotes (`origin` plus a fork as `upstream`) can resolve to the wrong one. Run `gh repo set-default owner/name` in that clone.
 
@@ -195,7 +195,7 @@ path = "~/Development/dispatch"
 
 ### Several repos and teams
 
-Two teams share one dispatcher. The cap is raised to 6, and ticks run every 10 minutes.
+Two teams share one dispatcher. The cap is raised to 6, and resyncs run every 10 minutes.
 
 ```toml
 [dispatch]

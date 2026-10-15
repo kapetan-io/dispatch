@@ -1,6 +1,6 @@
 # Rules
 
-Dispatch's decisions, such as when to start a worker, nudge one or escalate a ticket, are written as TypeScript rules in a directory you own. `dispatch rules` lints them, tests them and shows what each would do right now. Nothing acts on them yet. Today's `dispatch run` and `dispatch tick` still make every decision, and the rules are a readable copy of those decisions that you can change and try out before the loop runs them.
+Dispatch's decisions, such as when to start a worker, nudge one or escalate a ticket, are written as TypeScript rules in a directory you own. `dispatch rules` lints them, tests them and shows what each would do right now. `dispatch run` loads them once at start and runs every one after each event, so they make every decision, and a change to a rule takes effect when you stop `dispatch run` and start it again. `dispatch rules check` and `dispatch rules test` let you try a change first, and `dispatch plan` shows what the latest cycle of a run wanted.
 
 ## Get the rules
 
