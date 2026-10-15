@@ -4,6 +4,40 @@
 >
 > Parts of this blueprint are superseded. Read "Dispatcher blueprint edits owed" in `decision-log.md` before treating any rule here as current.
 
+## Changes from build (ENG-393)
+
+The reconcile loop shipped in ENG-393 differs from the event-driven blueprint in the places below. They are deliberate. Read them before "fixing" the code back to the blueprint. The event-driven blueprint is a Linear document ("Blueprint: event-driven dispatch") and was not edited, so it still describes the first column.
+
+| The blueprint says | What shipped | Why |
+|---|---|---|
+| After a Linear write, read the one ticket. | The loop re-runs the three tracked queries, up to 3 calls per write. Before a move or escalation the executor checks status with `LeasedTickets([id])`. | The `linear.Workspace` port has no single-ticket read. A single-ticket query is a follow-up. |
+| Cycles are capped at one per second. | A cycle runs once per batch of queued events. | The cap only bounds cost, and a fake clock would have to tick for it. |
+| `dispatch tick` is an event. | A tick counts as a resync for retries and clears the nudge overlay. | Tests and users tick to see a failed action retried. |
+| History `world` lines hold the world. | They hold changes to dispatch's memory (first-seen times, previous status, blocker waits, pool returns). The header has `why`, `config` and `at` but not `version` or `rulesCommit`. | The memory is what a restart needs. Every fact is re-read at start. |
+| `on` rules match events such as `linear.comment.posted`. | Only `whenever` rules exist, and nothing emits those events. | The shipped rules are all `whenever`. |
+| `dispatch plan` lists held rows with their action. | A held row shows `-` as its action, and a kept tree is not on the held list. | The cycle's `Held` carries no action, and a kept tree is a false condition. |
+| A merge and its notice survive a crash. | A crash between a merge landing and its notice drops the notice. | An attempted state change becomes Failed, and retrying a merge is unsafe. |
+| A Linear outage at start stops `run`. | Only a missing or rejected key stops it. | The loop reads Linear again at every resync. |
+
+Behavior that differs from the tick, each a result of the rules table:
+
+- A promoted child launches in the same cycle that promotes it.
+- A refused return or merge, and a failed alert or nudge, make `dispatch tick` exit 1.
+- `relaunch-for-pr` is keyed on `goneSince`, so it relaunches once per absence of the worker.
+- `comment-kept-tree` comments once per kept tree, not once per ticket.
+- A worker with no Stop record is nudged again only at a resync and never trips `notify-unresponsive`.
+- An escalation for a PR the worker keeps ignoring comes one tick earlier.
+
+Added after review, none of it in the blueprint:
+
+- `escalate()` in `rules/shared.ts` returns an ordered `[escalate, notify]` pair for a design ticket, because `notify-needs-human` skips design tickets and the tick alerted on every escalation.
+- Trees carry `untracked` and `cleanSince` facts, and the return key carries `cleanSince`. A return refused for late work or a nested repository is tried again once the work is pushed or the repository removed, and a tree that stays as it was is refused once.
+- A step of an ordered list that failed after the step before it landed is tried again after each resync.
+- More tickets than one Linear page raises one alert per stretch of such reads.
+- Follower messages keep the tick's reasons ("PR ready for review", "worker is blocked on a question", and so on), and reviews-handled has its own topic.
+- A herdr read that finds a worker newly idle or gone reads its PR at once, as the blueprint's "PR reads" decision says.
+- Source reads and renames have their own deadlines, one minute per call.
+
 Once you approve a ticket in Linear, it reaches a merged PR without anyone driving it. A stateless dispatcher makes herdr workers and treehouse worktrees match what Linear says should be happening, and each worker owns its own ticket's progress.
 
 This replaces the captain as a coordinator. The captain's launcher and its work-finding survive. Its relay, memory and status reports do not.
