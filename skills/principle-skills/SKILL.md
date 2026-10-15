@@ -1,5 +1,5 @@
 ---
-name: principle-writing-skills
+name: principle-skills
 description: "Apply when creating or changing a skill. Write only what the model wouldn't do unprompted, give reasons over rules, and keep it short."
 ---
 
