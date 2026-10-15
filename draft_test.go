@@ -4,16 +4,16 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 const (
-	draftSetting     = "open_pr_as = \"draft\"\n"
-	draftReadyText1  = "ENG-1's draft is ready for your review: " + prURL1
-	reviewsHandled1  = "ENG-1's reviews are handled: " + prURL1
-	draftReadyReason = "notify ENG-1: draft ready for review\n"
+	draftSetting    = "open_pr_as = \"draft\"\n"
+	draftReadyText1 = "ENG-1's draft is ready for your review: " + prURL1
+	reviewsHandled1 = "ENG-1's reviews are handled: " + prURL1
 )
 
 func draftPR(head string) prState {
@@ -34,22 +34,16 @@ func TestTickNotifiesOncePerHeadWhenADraftIsReady(t *testing.T) {
 	h := draftHarness(t)
 	h.pr("ENG-1", draftPR("a1"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, draftReadyReason, out)
 	assert.Equal(t, []string{draftReadyText1}, h.notifications())
 
-	for range 2 {
-		out, err = h.run("tick")
-		require.NoError(t, err)
-		assert.Empty(t, out)
-	}
+	h.tick()
+	h.tick()
 	assert.Len(t, h.notifications(), 1)
 
 	h.pr("ENG-1", draftPR("a2"))
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 	assert.Equal(t, []string{draftReadyText1, draftReadyText1}, h.notifications())
 }
 
@@ -61,21 +55,16 @@ func TestTickNotifiesAgainWhenTheUserOpensAReadyDraft(t *testing.T) {
 
 	// Opening the draft leaves the head where it was.
 	h.pr("ENG-1", cleanPR("a1"))
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "notify ENG-1: reviews handled\n", out)
 	assert.Equal(t, []string{draftReadyText1, reviewsHandled1}, h.notifications())
 
-	out, err = h.run("tick")
-	require.NoError(t, err)
-	assert.Empty(t, out)
+	h.tick()
+	assert.Len(t, h.notifications(), 2)
 
 	// Moving the PR back to draft at the same head says nothing more.
 	h.pr("ENG-1", draftPR("a1"))
-	out, err = h.run("tick")
-	require.NoError(t, err)
-	assert.Empty(t, out)
+	h.tick()
 	assert.Len(t, h.notifications(), 2)
 }
 
@@ -127,11 +116,13 @@ func TestTickNeverMergesADraft(t *testing.T) {
 			pr.draft = true
 			h.pr("ENG-1", pr)
 
-			_, err := h.run("tick")
-			require.NoError(t, err)
+			h.tick()
+			h.advance(5 * time.Minute)
+			h.tick()
 
 			assert.Empty(t, h.merges())
 			assert.Equal(t, []string{test.text}, h.notifications())
+			assert.Empty(t, automergeReceipts(h, "merge"))
 		})
 	}
 }
@@ -168,19 +159,15 @@ func TestTickNotifiesReviewsHandledOncePerHeadForAnOpenPRInADraftRepo(t *testing
 	h := draftHarness(t)
 	h.pr("ENG-1", cleanPR("a1"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "notify ENG-1: reviews handled\n", out)
 	assert.Equal(t, []string{reviewsHandled1}, h.notifications())
 
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 	assert.Len(t, h.notifications(), 1)
 
 	h.pr("ENG-1", cleanPR("a2"))
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 	assert.Equal(t, []string{reviewsHandled1, reviewsHandled1}, h.notifications())
 }
 
@@ -208,14 +195,12 @@ func TestTickRetriesADraftNotificationThatFailed(t *testing.T) {
 	h.pr("ENG-1", draftPR("a1"))
 	h.tools.Alerts.Fail(errors.New("exit status 1"))
 
-	_, stderr, err := h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
-	assert.Contains(t, stderr, "while notifying about ENG-1")
+	_, err := h.run("tick")
+	require.ErrorContains(t, err, "ENG-1")
 	assert.Empty(t, h.notifications())
 
 	h.tools.Alerts.Fail(nil)
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
 	assert.Equal(t, []string{draftReadyText1}, h.notifications())
 }

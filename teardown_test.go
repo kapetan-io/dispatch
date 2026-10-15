@@ -5,10 +5,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
+	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,19 +37,19 @@ func TestTickReturnsTheTreeOfAFinishedTicket(t *testing.T) {
 			h.worker("ENG-1", test.worker)
 			h.linear.setElsewhere(ticket("ENG-1", test.status, "dispatch"))
 
-			out, err := h.run("tick")
-			require.NoError(t, err)
+			h.tick()
 
-			assert.Equal(t, "teardown ENG-1: "+test.status+", clean and pushed\n", out)
 			assert.Equal(t, []string{"w-ENG-1"}, h.closes())
 			assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 			assert.Empty(t, h.linear.mutations())
 			assert.Empty(t, h.launches())
+			returned := teardownReceipts(h, "return")
+			require.Len(t, returned, 1)
+			assert.Equal(t, ledger.Done, returned[0].Outcome)
+			assert.Equal(t, "returned "+path, returned[0].Detail)
 
 			// The tree is back in the pool, so the next tick has nothing left to do.
-			out, err = h.run("tick")
-			require.NoError(t, err)
-			assert.Empty(t, out)
+			h.tick()
 			assert.Len(t, h.closes(), 1)
 			assert.Len(t, h.returns(), 1)
 		})
@@ -79,21 +82,6 @@ func TestTickReturnsATreeWhoseWorkspaceHoldsNoAgent(t *testing.T) {
 
 	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
 	assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
-}
-
-func TestTickDryRunListsTeardownWithoutActing(t *testing.T) {
-	h := newHarness(t)
-	h.gitTree("ENG-1")
-	h.worker("ENG-1", "idle")
-	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-
-	out, err := h.run("tick", "--dry-run")
-	require.NoError(t, err)
-
-	assert.Equal(t, "teardown ENG-1: Done, clean and pushed\n", out)
-	assert.Empty(t, h.closes())
-	assert.Empty(t, h.returns())
-	assert.NoFileExists(t, filepath.Join(h.state, "cache.json"))
 }
 
 func TestTickKeepsTheTreeOfAFinishedTicketThatHoldsWork(t *testing.T) {
@@ -129,10 +117,8 @@ func TestTickKeepsTheTreeOfAFinishedTicketThatHoldsWork(t *testing.T) {
 			h.worker("ENG-1", "idle")
 			h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 
-			out, err := h.run("tick")
-			require.NoError(t, err)
+			h.tick()
 
-			assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has "+test.work+"\n", out)
 			assert.Equal(t, []string{"w-ENG-1"}, h.closes())
 			assert.Empty(t, h.returns())
 			mutations := h.linear.mutations()
@@ -142,12 +128,9 @@ func TestTickKeepsTheTreeOfAFinishedTicketThatHoldsWork(t *testing.T) {
 			assert.Contains(t, mutations[0].Body, "`"+path+"` has "+test.work+".")
 			assert.Contains(t, mutations[0].Body, "kept this ticket's tree leased")
 
-			// Later ticks neither comment again nor close anything else, but still name the held tree.
-			for range 2 {
-				out, err = h.run("tick")
-				require.NoError(t, err)
-				assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has "+test.work+"\n", out)
-			}
+			// Later ticks neither comment again nor close anything else.
+			h.tick()
+			h.tick()
 			assert.Len(t, h.linear.mutations(), 1)
 			assert.Len(t, h.closes(), 1)
 			assert.Empty(t, h.returns())
@@ -162,32 +145,15 @@ func TestTickRemovesUntrackedFilesBeforeReturningTheTree(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "teardown ENG-1: Done, removed untracked zz_tmp_test.go\n", out)
 	assert.NoFileExists(t, filepath.Join(path, "zz_tmp_test.go"))
 	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
 	assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 	assert.Empty(t, h.linear.mutations())
-}
-
-func TestTickDryRunListsUntrackedFilesWithoutDeletingThem(t *testing.T) {
-	h := newHarness(t)
-	path := h.gitTree("ENG-1")
-	h.untracked(path, "a.txt")
-	h.untracked(path, "b.txt")
-	h.worker("ENG-1", "idle")
-	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-
-	out, err := h.run("tick", "--dry-run")
-	require.NoError(t, err)
-
-	assert.Equal(t, "teardown ENG-1: Done, would remove untracked a.txt b.txt\n", out)
-	assert.FileExists(t, filepath.Join(path, "a.txt"))
-	assert.FileExists(t, filepath.Join(path, "b.txt"))
-	assert.Empty(t, h.closes())
-	assert.Empty(t, h.returns())
+	returned := teardownReceipts(h, "return")
+	require.Len(t, returned, 1)
+	assert.Equal(t, "returned "+path+", removed untracked zz_tmp_test.go", returned[0].Detail)
 }
 
 func TestTickLeavesIgnoredFilesAloneWhenRemovingUntrackedOnes(t *testing.T) {
@@ -203,10 +169,11 @@ func TestTickLeavesIgnoredFilesAloneWhenRemovingUntrackedOnes(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "teardown ENG-1: Done, removed untracked scratch.txt\n", out)
+	returned := teardownReceipts(h, "return")
+	require.Len(t, returned, 1)
+	assert.Equal(t, "returned "+path+", removed untracked scratch.txt", returned[0].Detail)
 	assert.FileExists(t, filepath.Join(path, "build", "out.bin"))
 	assert.Len(t, h.returns(), 1)
 }
@@ -218,10 +185,12 @@ func TestTickQuotesUntrackedFileNamesThatHoldSpaces(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "teardown ENG-1: Done, removed untracked \"sp ace.txt\"\n", out)
+	returned := teardownReceipts(h, "return")
+	require.Len(t, returned, 1)
+	assert.Equal(t, "returned "+path+", removed untracked \"sp ace.txt\"", returned[0].Detail)
+	assert.NoFileExists(t, filepath.Join(path, "sp ace.txt"))
 }
 
 func TestTickKeepsTheTreeWhenGitCleanLeavesANestedRepoBehind(t *testing.T) {
@@ -233,13 +202,17 @@ func TestTickKeepsTheTreeWhenGitCleanLeavesANestedRepoBehind(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	_, err := h.run("tick")
 
-	assert.Equal(t, "keep ENG-1: untracked nested/ in "+path+" survived git clean\n", out)
+	// A kept tree is a refusal the user has to see, not a full pool that frees itself.
+	require.ErrorContains(t, err, "untracked nested/")
 	assert.NoFileExists(t, filepath.Join(path, "scratch.txt"))
 	assert.DirExists(t, filepath.Join(path, "nested"))
 	assert.Empty(t, h.returns())
+	returned := teardownReceipts(h, "return")
+	require.Len(t, returned, 1)
+	assert.Equal(t, ledger.Refused, returned[0].Outcome)
+	assert.Equal(t, "kept: untracked nested/ in "+path+" survived git clean", returned[0].Detail)
 }
 
 func TestTickIgnoresGitLocationVariablesWhenRemovingUntrackedFiles(t *testing.T) {
@@ -254,10 +227,11 @@ func TestTickIgnoresGitLocationVariablesWhenRemovingUntrackedFiles(t *testing.T)
 	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
 	t.Setenv("GIT_WORK_TREE", other)
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "teardown ENG-1: Done, removed untracked scratch.txt\n", out)
+	returned := teardownReceipts(h, "return")
+	require.Len(t, returned, 1)
+	assert.Equal(t, "returned "+path+", removed untracked scratch.txt", returned[0].Detail)
 	assert.NoFileExists(t, filepath.Join(path, "scratch.txt"))
 	assert.FileExists(t, filepath.Join(other, "precious.txt"))
 }
@@ -273,10 +247,11 @@ func TestTickReturnsATreeWhoseOnlyLeftoversAreIgnored(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "teardown ENG-1: Done, clean and pushed\n", out)
+	returned := teardownReceipts(h, "return")
+	require.Len(t, returned, 1)
+	assert.Equal(t, "returned "+path, returned[0].Detail)
 	assert.Len(t, h.returns(), 1)
 }
 
@@ -288,12 +263,13 @@ func TestTickKeepsTheTreeAndItsUntrackedFilesWhenTrackedWorkIsAlsoThere(t *testi
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has uncommitted changes\n", out)
 	assert.FileExists(t, filepath.Join(path, "scratch.txt"))
 	assert.Empty(t, h.returns())
+	mutations := h.linear.mutations()
+	require.Len(t, mutations, 1)
+	assert.Contains(t, mutations[0].Body, "`"+path+"` has uncommitted changes.")
 }
 
 func TestTickKeepsTheTreeWhenATrackedFileIsModifiedButNotStaged(t *testing.T) {
@@ -308,12 +284,13 @@ func TestTickKeepsTheTreeWhenATrackedFileIsModifiedButNotStaged(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has uncommitted changes\n", out)
 	assert.FileExists(t, filepath.Join(path, "scratch.txt"))
 	assert.Empty(t, h.returns())
+	mutations := h.linear.mutations()
+	require.Len(t, mutations, 1)
+	assert.Contains(t, mutations[0].Body, "`"+path+"` has uncommitted changes.")
 }
 
 func TestTickReturnsTheTreeOnceItsWorkIsPushed(t *testing.T) {
@@ -322,23 +299,17 @@ func TestTickReturnsTheTreeOnceItsWorkIsPushed(t *testing.T) {
 	h.commit(path)
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 	require.Empty(t, h.returns())
-	assert.Contains(t, string(h.readFile("state/cache.json")), `"teardown_warned": true`)
 
 	h.push(path)
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "teardown ENG-1: Done, clean and pushed\n", out)
 	assert.Len(t, h.returns(), 1)
 	assert.Len(t, h.linear.mutations(), 1)
-
-	// The warning goes with the lease.
-	_, err = h.run("tick")
-	require.NoError(t, err)
-	assert.NotContains(t, string(h.readFile("state/cache.json")), "teardown_warned")
+	returned := teardownReceipts(h, "return")
+	require.Len(t, returned, 1)
+	assert.Equal(t, ledger.Done, returned[0].Outcome)
 }
 
 func TestTickRetriesADirtyTreeCommentThatLinearRefused(t *testing.T) {
@@ -349,24 +320,21 @@ func TestTickRetriesADirtyTreeCommentThatLinearRefused(t *testing.T) {
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 	h.linear.failComments(true)
 
-	_, stderr, err := h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
-	assert.Contains(t, stderr, "dispatch: while keeping the tree of ENG-1: while commenting on ENG-1:")
+	_, err := h.run("tick")
+	require.ErrorContains(t, err, "while commenting on ENG-1:")
 	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
+	assert.Empty(t, h.linear.mutations())
 
-	// The comment never landed, so it is tried again, now that the workspace is gone.
+	// The comment never landed, so the next tick tries it again.
 	h.linear.failComments(false)
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has uncommitted changes\n", out)
 	assert.Len(t, h.closes(), 1)
-	assert.Len(t, h.linear.mutations(), 1)
+	mutations := h.linear.mutations()
+	require.Len(t, mutations, 1)
+	assert.Contains(t, mutations[0].Body, "`"+path+"` has uncommitted changes.")
 
-	out, err = h.run("tick")
-	require.NoError(t, err)
-	// The warning is posted once, but the held tree stays in the log.
-	assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has uncommitted changes\n", out)
+	h.tick()
 	assert.Len(t, h.linear.mutations(), 1)
 }
 
@@ -376,13 +344,14 @@ func TestTickKeepsATreeItCannotRead(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Contains(t, out, "skip ENG-1: can't tell whether "+filepath.Join(h.dir, "trees", "ENG-1")+" holds unpushed work, so it stays leased")
 	assert.Empty(t, h.closes())
 	assert.Empty(t, h.returns())
 	assert.Empty(t, h.linear.mutations())
+	out, err := h.run("plan")
+	require.NoError(t, err)
+	assert.Regexp(t, `(?m)^held .*teardown-clean-tree`, out)
 }
 
 func TestTickKeepsTheTreeWhenTheWorkspaceWillNotClose(t *testing.T) {
@@ -392,12 +361,13 @@ func TestTickKeepsTheTreeWhenTheWorkspaceWillNotClose(t *testing.T) {
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 	h.tools.Herdr.Fail(herdrtest.OpCloseWorkspace, errors.New("exit status 1"))
 
-	out, stderr, err := h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
+	_, err := h.run("tick")
 
-	assert.Empty(t, out)
-	assert.Contains(t, stderr, "dispatch: while tearing down ENG-1: while closing herdr workspace w-ENG-1")
+	require.ErrorContains(t, err, "while closing herdr workspace w-ENG-1")
 	assert.Empty(t, h.returns())
+	returned := teardownReceipts(h, "return")
+	require.Len(t, returned, 1)
+	assert.Equal(t, ledger.Failed, returned[0].Outcome)
 }
 
 func TestTickKeepsTheTreeWhenTreehouseRefusesTheReturn(t *testing.T) {
@@ -408,12 +378,10 @@ func TestTickKeepsTheTreeWhenTreehouseRefusesTheReturn(t *testing.T) {
 	// The lease moves to another ticket after dispatch looked at the pool.
 	h.tools.Treehouse.MoveLeaseAfterRead(filepath.Join(h.dir, "trees", "ENG-1"), "ENG-2")
 
-	out, stderr, err := h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
+	_, err := h.run("tick")
 
-	assert.Empty(t, out)
-	assert.Contains(t, stderr, "dispatch: while tearing down ENG-1: while returning")
-	assert.Contains(t, stderr, "lease holder does not match worktree")
+	require.ErrorContains(t, err, "while returning")
+	require.ErrorContains(t, err, "lease holder does not match worktree")
 	assert.Equal(t, "ENG-2", h.tools.Treehouse.Holder(filepath.Join(h.dir, "trees", "ENG-1")))
 	assert.Empty(t, h.linear.mutations())
 }
@@ -436,25 +404,6 @@ func TestTickTearsDownOneTreeAndKeepsAnotherOfTheSameTicket(t *testing.T) {
 	require.Len(t, mutations, 1)
 	assert.Contains(t, mutations[0].Body, stranded)
 	assert.NotContains(t, mutations[0].Body, clean)
-}
-
-func TestTickDryRunNamesEachHeldTreeOfOneTicket(t *testing.T) {
-	h := newHarness(t)
-	first := h.gitTree("ENG-1")
-	second := h.gitTree("library")
-	h.dirty(first)
-	h.dirty(second)
-	h.workerOn("ENG-1", first, "w-ENG-1", "idle")
-	h.workerOn("ENG-1", second, "w-library", "idle")
-	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-
-	out, err := h.run("tick", "--dry-run")
-	require.NoError(t, err)
-
-	assert.ElementsMatch(t, []string{
-		"keep ENG-1: Done, but its tree " + first + " has uncommitted changes",
-		"keep ENG-1: Done, but its tree " + second + " has uncommitted changes",
-	}, strings.Split(strings.TrimSpace(out), "\n"))
 }
 
 func TestTickLeavesTheTreesOfTicketsItDoesNotManage(t *testing.T) {
@@ -510,10 +459,8 @@ func TestTickReturnsTheTreeOfAFinishedTicketWhoseLabelsDidNotFitOnePage(t *testi
 	cut.LabelsTruncated = true
 	h.linear.setElsewhere(cut)
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "teardown ENG-1: Done, clean and pushed\n", out)
 	assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 }
 
@@ -525,10 +472,8 @@ func TestTickReturnsTheCleanTreeOfAFinishedReviewTicket(t *testing.T) {
 			h.worker("ENG-1", "idle")
 			h.linear.setElsewhere(withLabel(ticket("ENG-1", status, "dispatch"), "design-review"))
 
-			out, err := h.run("tick")
-			require.NoError(t, err)
+			h.tick()
 
-			assert.Equal(t, "teardown ENG-1: "+status+", clean and pushed\n", out)
 			assert.Equal(t, []string{"w-ENG-1"}, h.closes())
 			assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 		})
@@ -542,15 +487,14 @@ func TestTickKeepsTheDirtyTreeOfADoneReviewTicketWithOneComment(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(withLabel(ticket("ENG-1", "Done", "dispatch"), "design-review"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Contains(t, out, "keep ENG-1: Done, but its tree "+path+" has uncommitted changes")
 	assert.Empty(t, h.returns())
-	assert.Len(t, h.linear.mutations(), 1)
+	mutations := h.linear.mutations()
+	require.Len(t, mutations, 1)
+	assert.Contains(t, mutations[0].Body, "`"+path+"` has uncommitted changes.")
 
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 	assert.Len(t, h.linear.mutations(), 1)
 }
 
@@ -574,10 +518,8 @@ func TestTickStopsTheWorkerOfAPausedTicketAndKeepsItsTree(t *testing.T) {
 			h.worker("ENG-1", "working")
 			h.linear.setElsewhere(ticket("ENG-1", status, "dispatch"))
 
-			out, err := h.run("tick")
-			require.NoError(t, err)
+			h.tick()
 
-			assert.Equal(t, "stop ENG-1: moved back to "+status+"\n", out)
 			assert.Equal(t, []string{"w-ENG-1"}, h.closes())
 			assert.Empty(t, h.returns())
 			assert.Empty(t, h.linear.mutations())
@@ -585,10 +527,9 @@ func TestTickStopsTheWorkerOfAPausedTicketAndKeepsItsTree(t *testing.T) {
 			assert.FileExists(t, filepath.Join(path, "wip.txt"))
 
 			// The lease stays, and nothing more happens while the ticket is paused.
-			out, err = h.run("tick")
-			require.NoError(t, err)
-			assert.Empty(t, out)
+			h.tick()
 			assert.Len(t, h.closes(), 1)
+			assert.Empty(t, h.returns())
 		})
 	}
 }
@@ -600,10 +541,8 @@ func TestTickLeavesAWorkspaceOpenedByHandOnAPausedTicket(t *testing.T) {
 	h.worker("ENG-1", "")
 	h.linear.setElsewhere(ticket("ENG-1", "Todo", "dispatch"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Empty(t, out)
 	assert.Empty(t, h.closes())
 }
 
@@ -613,12 +552,10 @@ func TestTickLeavesAWorkspaceOpenedByHandOnAKeptTree(t *testing.T) {
 	h.dirty(path)
 	h.worker("ENG-1", "")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
 	// The comment is posted once, and the workspace stays for the next tick too.
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
 	assert.Empty(t, h.closes())
 	assert.Len(t, h.linear.mutations(), 1)
@@ -630,17 +567,14 @@ func TestTickDoesNotRepeatTheCommentAfterALeaseLookupFails(t *testing.T) {
 	h.dirty(path)
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 	require.Len(t, h.linear.mutations(), 1)
 
-	// The failed tick can't tell who holds a lease, but the warning still stands.
+	// A tick that can't tell who holds a lease holds the tree's rules, and the receipt still stands.
 	h.linear.failLookups()
-	_, _, err = h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
+	h.tick()
 	h.linear.allowLookups()
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
 	assert.Len(t, h.linear.mutations(), 1)
 }
@@ -651,19 +585,17 @@ func TestTickDoesNotRepeatTheCommentAfterAPoolCannotBeRead(t *testing.T) {
 	h.dirty(path)
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 	require.Len(t, h.linear.mutations(), 1)
 
-	// A second repo whose pool fails hides no lease from the first, but a tick
-	// that can't read every pool can't tell which finished tickets are released.
+	// A second repo whose pool fails leaves the first one's trees readable.
 	h.addRepo("tiger", filepath.Join(h.dir, "moved"))
-	_, _, err = h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
-	// Clearing the extra repo makes the next tick read every pool again.
+	h.restart()
+	h.tick()
+	// Dropping the extra repo makes the next start read every pool again.
 	h.resetRepos()
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.restart()
+	h.tick()
 
 	assert.Len(t, h.linear.mutations(), 1)
 }
@@ -680,10 +612,9 @@ func TestTickReturnsATreeWhileAnotherBranchOfTheRepoHoldsUnpushedWork(t *testing
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "teardown ENG-1: Done, clean and pushed\n", out)
+	assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 }
 
 func TestTickKeepsTickingWhenLinearCannotListTheTicketsHoldingTrees(t *testing.T) {
@@ -693,11 +624,10 @@ func TestTickKeepsTickingWhenLinearCannotListTheTicketsHoldingTrees(t *testing.T
 	h.tickets(ticket("ENG-2", "In Progress", "dispatch"))
 	h.linear.failLookups()
 
-	out, stderr, err := h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "launch ENG-2: ok\n", out)
-	assert.Contains(t, stderr, "dispatch: while reading the tickets that hold trees: linear LeasedTickets")
+	assert.Len(t, h.launches(), 1)
+	assert.Contains(t, h.loopErr(), "dispatch: while reading the tickets that hold trees: linear LeasedTickets")
 	assert.Empty(t, h.returns())
 }
 
@@ -706,16 +636,13 @@ func TestTickRelaunchesAPausedTicketOnItsKeptTree(t *testing.T) {
 	h.gitTree("ENG-1")
 	h.worker("ENG-1", "working")
 	h.linear.setElsewhere(ticket("ENG-1", "Todo", "dispatch"))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 	require.Empty(t, h.launches())
 
 	h.linear.setElsewhere()
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "launch ENG-1: ok\n", out)
 	assert.Len(t, h.launches(), 1)
 	assert.Empty(t, h.returns())
 	assert.Equal(t, "ENG-1", h.tools.Treehouse.Holder(filepath.Join(h.dir, "trees", "ENG-1")))
@@ -746,10 +673,12 @@ func TestTickTeardownFreesATreeForALaunchInTheSameTick(t *testing.T) {
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 	h.tickets(ticket("ENG-2", "In Progress", "dispatch"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "teardown ENG-1: Done, clean and pushed\nlaunch ENG-2: ok\n", out)
+	assert.Len(t, h.returns(), 1)
+	// A return changes the launch rule's once key, and the fake launcher opens no workspace, so
+	// the launch runs again after it. A real launch would leave a worker behind.
+	assert.NotEmpty(t, h.launches())
 }
 
 func TestTickReadsDoneAndPausedStatusesFromConfig(t *testing.T) {
@@ -757,7 +686,7 @@ func TestTickReadsDoneAndPausedStatusesFromConfig(t *testing.T) {
 	h.config("[plugins.linear.statuses]\nfinished = [\"Shipped\"]\npaused = [\"Parked\"]\n")
 	h.tools.Linear.AddState("Shipped", "completed")
 	h.tools.Linear.AddState("Parked", "backlog")
-	h.gitTree("ENG-1")
+	first := h.gitTree("ENG-1")
 	h.gitTree("ENG-2")
 	h.gitTree("ENG-3")
 	h.worker("ENG-1", "idle")
@@ -770,10 +699,10 @@ func TestTickReadsDoneAndPausedStatusesFromConfig(t *testing.T) {
 		ticket("ENG-3", "Done", "dispatch"),
 	)
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "teardown ENG-1: Shipped, clean and pushed\nstop ENG-2: moved back to Parked\n", out)
+	assert.Equal(t, []string{h.repo + "|" + first + "|ENG-1"}, h.returns())
+	assert.ElementsMatch(t, []string{"w-ENG-1", "w-ENG-2"}, h.closes())
 }
 
 func TestTickClosesTheWorkspaceBeforeItReturnsTheTree(t *testing.T) {
@@ -825,66 +754,33 @@ func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
 	path := h.gitTree("ENG-1")
 	h.worker("ENG-1", "working")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-	// The plan saw a clean tree, and the worker writes a file as it is killed.
+	// The cycle saw a clean tree, and the worker writes a file as it is killed.
 	h.tools.Herdr.BeforeCloseWorkspace(func(string) {
 		require.NoError(t, os.WriteFile(filepath.Join(path, "late.txt"), []byte("late\n"), 0o644))
 		require.NoError(t, exec.Command("git", "-C", path, "add", "late.txt").Run())
 	})
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	_, err := h.run("tick")
 
-	assert.Equal(t, "keep ENG-1: the worker left uncommitted changes in "+path+"\n", out)
+	require.ErrorContains(t, err, "the worker left uncommitted changes")
 	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
 	assert.Empty(t, h.returns())
 	assert.FileExists(t, filepath.Join(path, "late.txt"))
+	returned := teardownReceipts(h, "return")
+	require.Len(t, returned, 1)
+	assert.Equal(t, ledger.Refused, returned[0].Outcome)
+	assert.Equal(t, "kept: the worker left uncommitted changes in "+path, returned[0].Detail)
 
-	// The next tick's plan sees the work and posts the one comment.
-	out, err = h.run("tick")
+	// The next tick sees the work and posts the one comment. A tick reports the receipts written
+	// since it asked, and the fake clock only moves when told.
+	h.advance(time.Second)
+	_, err = h.run("tick")
 	require.NoError(t, err)
-	assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has uncommitted changes\n", out)
-	assert.Len(t, h.linear.mutations(), 1)
+	mutations := h.linear.mutations()
+	require.Len(t, mutations, 1)
+	assert.Contains(t, mutations[0].Body, "`"+path+"` has uncommitted changes.")
 	assert.Empty(t, h.returns())
 	assert.Len(t, h.closes(), 1)
-}
-
-func TestTickDryRunListsKeepAndStopWithoutActing(t *testing.T) {
-	h := newHarness(t)
-	dirty := h.gitTree("ENG-1")
-	h.dirty(dirty)
-	h.gitTree("ENG-2")
-	h.worker("ENG-1", "idle")
-	h.worker("ENG-2", "idle")
-	h.linear.setElsewhere(
-		ticket("ENG-1", "Done", "dispatch"),
-		ticket("ENG-2", "Todo", "dispatch"),
-	)
-
-	out, err := h.run("tick", "--dry-run")
-	require.NoError(t, err)
-
-	assert.Equal(t, "keep ENG-1: Done, but its tree "+dirty+" has uncommitted changes\nstop ENG-2: moved back to Todo\n", out)
-	assert.Empty(t, h.closes())
-	assert.Empty(t, h.returns())
-	assert.Empty(t, h.linear.mutations())
-	assert.NoFileExists(t, filepath.Join(h.state, "cache.json"))
-}
-
-func TestTickDryRunListsAWarnedTreeOnEveryTick(t *testing.T) {
-	h := newHarness(t)
-	path := h.gitTree("ENG-1")
-	h.commit(path)
-	h.worker("ENG-1", "idle")
-	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-	_, err := h.run("tick")
-	require.NoError(t, err)
-	require.Len(t, h.linear.mutations(), 1)
-
-	out, err := h.run("tick", "--dry-run")
-	require.NoError(t, err)
-
-	assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has 1 commit that no remote has\n", out)
-	assert.Len(t, h.linear.mutations(), 1)
 }
 
 func TestTickCommentsOnADirtyTreeThatHasNoWorkspace(t *testing.T) {
@@ -894,17 +790,13 @@ func TestTickCommentsOnADirtyTreeThatHasNoWorkspace(t *testing.T) {
 	h.lease("ENG-1", path)
 	h.linear.setElsewhere(ticket("ENG-1", "Canceled", "dispatch"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "keep ENG-1: Canceled, but its tree "+path+" has uncommitted changes\n", out)
 	assert.Empty(t, h.closes())
 	assert.Empty(t, h.returns())
 	assert.Len(t, h.linear.mutations(), 1)
 
-	out, err = h.run("tick")
-	require.NoError(t, err)
-	assert.Equal(t, "keep ENG-1: Canceled, but its tree "+path+" has uncommitted changes\n", out)
+	h.tick()
 	assert.Len(t, h.linear.mutations(), 1)
 }
 
@@ -918,36 +810,12 @@ func TestTickKeepsATreeWhoseCommitsNoRemoteHas(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "keep ENG-1: Done, but its tree "+path+" has 1 commit that no remote has\n", out)
-	assert.Empty(t, h.returns())
-}
-
-func TestTickPostsOneCommentForSeveralKeptTrees(t *testing.T) {
-	h := newHarness(t)
-	first := h.gitTree("ENG-1")
-	second := h.gitTree("library")
-	h.dirty(first)
-	h.commit(second)
-	h.workerOn("ENG-1", first, "w-ENG-1", "idle")
-	h.workerOn("ENG-1", second, "w-library", "idle")
-	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-
-	_, err := h.run("tick")
-	require.NoError(t, err)
-
-	assert.ElementsMatch(t, []string{"w-ENG-1", "w-library"}, h.closes())
 	assert.Empty(t, h.returns())
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
-	assert.Contains(t, mutations[0].Body, "`"+first+"` has uncommitted changes")
-	assert.Contains(t, mutations[0].Body, "`"+second+"` has 1 commit that no remote has")
-
-	_, err = h.run("tick")
-	require.NoError(t, err)
-	assert.Len(t, h.linear.mutations(), 1)
+	assert.Contains(t, mutations[0].Body, "`"+path+"` has 1 commit that no remote has.")
 }
 
 func TestTickLeavesPausedTicketsItDoesNotManage(t *testing.T) {
@@ -1028,22 +896,200 @@ func TestTickCommentsAgainWhenAReopenedTicketFinishesWithWorkInItsTree(t *testin
 	h.dirty(path)
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 	require.Len(t, h.linear.mutations(), 1)
 
 	// Reopened, the ticket is managed again and its old warning no longer applies.
+	h.advance(time.Minute)
 	h.linear.setElsewhere()
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.lease("ENG-1", path)
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
+	h.advance(time.Minute)
 	h.tickets()
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
 	assert.Len(t, h.linear.mutations(), 2)
+}
+
+func TestTickPostsACommentForEachKeptTree(t *testing.T) {
+	h := newHarness(t)
+	first := h.gitTree("ENG-1")
+	second := h.gitTree("library")
+	h.dirty(first)
+	h.commit(second)
+	h.workerOn("ENG-1", first, "w-ENG-1", "idle")
+	h.workerOn("ENG-1", second, "w-library", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+
+	h.tick()
+
+	assert.ElementsMatch(t, []string{"w-ENG-1", "w-library"}, h.closes())
+	assert.Empty(t, h.returns())
+	var bodies []string
+	for _, m := range h.linear.mutations() {
+		bodies = append(bodies, m.Body)
+	}
+	require.Len(t, bodies, 2)
+	assert.Contains(t, strings.Join(bodies, "\n"), "`"+first+"` has uncommitted changes.")
+	assert.Contains(t, strings.Join(bodies, "\n"), "`"+second+"` has 1 commit that no remote has.")
+
+	h.tick()
+	assert.Len(t, h.linear.mutations(), 2)
+}
+
+func TestPlanNamesEachKeptTreeOfOneTicket(t *testing.T) {
+	h := newHarness(t)
+	first := h.gitTree("ENG-1")
+	second := h.gitTree("library")
+	h.dirty(first)
+	h.dirty(second)
+	h.workerOn("ENG-1", first, "w-ENG-1", "idle")
+	h.workerOn("ENG-1", second, "w-library", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	h.tick()
+
+	out, err := h.run("plan")
+	require.NoError(t, err)
+
+	// The comment of each tree carries its path in the once key, so the two do not cover each other.
+	var covered int
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "covered") && strings.Contains(line, "comment-kept-tree") {
+			covered++
+			assert.True(t, strings.Contains(line, first) != strings.Contains(line, second))
+		}
+	}
+	assert.Equal(t, 2, covered)
+}
+
+func TestPlanListsTheCommentOfAKeptTreeAsCoveredOnEveryTick(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.commit(path)
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	h.tick()
+	require.Len(t, h.linear.mutations(), 1)
+
+	h.tick()
+	out, err := h.run("plan")
+	require.NoError(t, err)
+
+	assert.Regexp(t, `(?m)^covered +ENG-1 +comment +comment-kept-tree +done .*`+regexp.QuoteMeta(path), out)
+	assert.Len(t, h.linear.mutations(), 1)
+}
+
+func TestTickKeepsATreeWhoseGitStateIsBroken(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.worker("ENG-1", "idle")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	// Git fails in the tree, which is unknown, not clean.
+	require.NoError(t, os.WriteFile(filepath.Join(path, ".git", "HEAD"), []byte("garbage\n"), 0o644))
+
+	h.tick()
+
+	assert.Empty(t, h.closes())
+	assert.Empty(t, h.returns())
+	assert.Empty(t, h.linear.mutations())
+	assert.Empty(t, teardownReceipts(h, "return"))
+	out, err := h.run("plan")
+	require.NoError(t, err)
+	assert.Regexp(t, `(?m)^held .*teardown-clean-tree`, out)
+	assert.DirExists(t, path)
+}
+
+func TestTickKeepsATreeThatGainedACommitAfterTheCycleDecidedToReturnIt(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.worker("ENG-1", "working")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	// The cycle read a clean, pushed tree, and the worker commits as its workspace closes.
+	h.tools.Herdr.BeforeCloseWorkspace(func(string) { h.commit(path) })
+
+	_, err := h.run("tick")
+
+	require.ErrorContains(t, err, "the worker left 1 commit that no remote has")
+	assert.Empty(t, h.returns())
+	returned := teardownReceipts(h, "return")
+	require.Len(t, returned, 1)
+	assert.Equal(t, ledger.Refused, returned[0].Outcome)
+	assert.Equal(t, "kept: the worker left 1 commit that no remote has in "+path, returned[0].Detail)
+
+	// The next tick sees the commit and explains why the tree was kept.
+	h.advance(time.Second)
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	mutations := h.linear.mutations()
+	require.Len(t, mutations, 1)
+	assert.Contains(t, mutations[0].Body, "`"+path+"` has 1 commit that no remote has.")
+	assert.Empty(t, h.returns())
+}
+
+func TestTickKeepsATreeThatGainedANestedRepoAfterTheCycleDecidedToReturnIt(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.worker("ENG-1", "working")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	// An untracked repository is work git clean will not remove and returning would discard.
+	h.tools.Herdr.BeforeCloseWorkspace(func(string) {
+		require.NoError(t, os.MkdirAll(filepath.Join(path, "nested"), 0o755))
+		h.git(filepath.Join(path, "nested"), "init", "--initial-branch=main")
+	})
+
+	_, err := h.run("tick")
+
+	require.ErrorContains(t, err, "untracked nested/")
+	assert.Empty(t, h.returns())
+	assert.DirExists(t, filepath.Join(path, "nested"))
+	returned := teardownReceipts(h, "return")
+	require.Len(t, returned, 1)
+	assert.Equal(t, ledger.Refused, returned[0].Outcome)
+	assert.Equal(t, "kept: untracked nested/ in "+path+" survived git clean", returned[0].Detail)
+
+	// A kept tree is never returned later by this lease, however many ticks follow, and a
+	// comment tells the user why it is still leased.
+	h.advance(time.Second)
+	h.tick()
+	assert.Empty(t, h.returns())
+	assert.DirExists(t, filepath.Join(path, "nested"))
+	mutations := h.linear.mutations()
+	require.Len(t, mutations, 1)
+	assert.Contains(t, mutations[0].Body, "nested/")
+}
+
+func TestTickDoesNotReturnATreeWhoseGitFailsAfterTheCycleDecidedToReturnIt(t *testing.T) {
+	h := newHarness(t)
+	path := h.gitTree("ENG-1")
+	h.worker("ENG-1", "working")
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	// The cycle read the tree fine, and git cannot read it when the executor looks again.
+	h.tools.Herdr.BeforeCloseWorkspace(func(string) {
+		require.NoError(t, os.WriteFile(filepath.Join(path, ".git", "HEAD"), []byte("garbage\n"), 0o644))
+	})
+
+	_, err := h.run("tick")
+
+	require.Error(t, err)
+	assert.Empty(t, h.returns())
+	returned := teardownReceipts(h, "return")
+	require.Len(t, returned, 1)
+	assert.Equal(t, ledger.Failed, returned[0].Outcome)
+	assert.DirExists(t, path)
+}
+
+// teardownReceipts lists the receipts of one action kind the loop has written.
+
+func teardownReceipts(h *harness, kind string) []ledger.Receipt {
+	var found []ledger.Receipt
+	for _, r := range h.ledgerNow() {
+		if r.Kind == kind {
+			found = append(found, r)
+		}
+	}
+	return found
 }
 
 // gitTree makes a pool tree that is clean and pushed: a clone of a bare
