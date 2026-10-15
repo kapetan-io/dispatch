@@ -60,9 +60,9 @@ func Plan(dir string) ([]PlanRow, error) {
 }
 
 func byKey(l *ledger.Ledger, key string) (ledger.Receipt, bool) {
-	for _, rc := range l.Entries {
-		if rc.Key() == key {
-			return rc, true
+	for i := len(l.Entries) - 1; i >= 0; i-- {
+		if l.Entries[i].Key() == key {
+			return l.Entries[i], true
 		}
 	}
 	return ledger.Receipt{}, false

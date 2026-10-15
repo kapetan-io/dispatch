@@ -32,6 +32,8 @@ type treeModel struct {
 	pushed         bool
 	trackedChanges bool
 	since          int64
+	// clean is when the tree last became safe to return.
+	clean int64
 }
 
 // scenarioModel is the part of a scenario's world the fixtures describe.
@@ -316,18 +318,22 @@ func (s *scenario) applyTree(path string, fields map[string]any) {
 		}
 	}
 	if tm == nil {
-		tm = &treeModel{path: path, pushed: true, since: s.ms()}
+		tm = &treeModel{path: path, pushed: true, since: s.ms(), clean: s.ms()}
 		m.trees = append(m.trees, tm)
 	}
 	if v, ok := str(fields, "holder"); ok {
 		tm.holder = v
 		tm.since = s.ms()
 	}
+	wasSafe := tm.pushed && !tm.trackedChanges
 	if v, ok := boolean(fields, "pushed"); ok {
 		tm.pushed = v
 	}
 	if v, ok := boolean(fields, "trackedChanges"); ok {
 		tm.trackedChanges = v
+	}
+	if !wasSafe && tm.pushed && !tm.trackedChanges {
+		tm.clean = s.ms()
 	}
 }
 
@@ -491,6 +497,9 @@ func (s *scenario) stamped(state *State) {
 		if r, ok := state.lookup("treehouse.tree", tm.path); ok {
 			tree := r.v.Interface().(*Tree)
 			tree.LeasedSince = Known(tm.since, tm.since)
+			if tree.CleanSince.Unknown == "" {
+				tree.CleanSince = Known(tm.clean, tm.clean)
+			}
 		}
 	}
 }

@@ -157,6 +157,9 @@ func (e *Executor) Run(ctx context.Context, w rules.Want, wd world.World) Result
 	// A message that timed out may have landed, and a retry could say it twice.
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) && res.Outcome == ledger.Failed && isMessage(w.Kind) {
 		res.Outcome, res.Detail = ledger.Done, "timeout"
+		if w.Kind == "herdr.nudge" {
+			res.Nudged = w.Subject
+		}
 	}
 	return res
 }
@@ -175,7 +178,11 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World) Res
 		return failed("%s was not read", w.Subject)
 	}
 	cfg := e.Config
-	repo, _ := t.LabelIn(cfg.Plugins.Linear.RepoLabelGroup)
+	repo, labeled := t.LabelIn(cfg.Plugins.Linear.RepoLabelGroup)
+	// A rule that skips hasRepo would otherwise launch in dispatch's own directory.
+	if !labeled || cfg.Repos[repo].Path == "" {
+		return Result{Outcome: ledger.Refused, Detail: t.Identifier + " has no configured repo"}
+	}
 	model, _ := w.Options["model"].(string)
 	if model == "" {
 		model = cfg.WorkerModel()

@@ -13,7 +13,7 @@ import (
 // so they follow those facts instead of being remembered themselves.
 var derivedTimes = map[string]bool{
 	"statusSince": true, "previousStatus": true, "seenAt": true, "goneSince": true, "idleSince": true,
-	"blockedSince": true, "lastStop": true, "leasedSince": true, "startedAt": true, "started": true,
+	"blockedSince": true, "lastStop": true, "cleanSince": true, "leasedSince": true, "startedAt": true, "started": true,
 }
 
 // Carry gives each fact the time dispatch first saw its value, from what mem
@@ -140,6 +140,10 @@ func (s *State) deriveTimes(r *record, mem, next *world.Memory, started int64) {
 	case *Tree:
 		if rec.Holder.Unknown == "" {
 			set("leasedSince", rec.Holder.Since, rec.Holder.Since)
+		}
+		if rec.Pushed.Unknown == "" && rec.TrackedChanges.Unknown == "" {
+			since := max(rec.Pushed.Since, rec.TrackedChanges.Since)
+			set("cleanSince", since, since)
 		}
 	case *Dispatch:
 		set("startedAt", started, started)

@@ -571,7 +571,7 @@ func TestTickLaunchesWithTheBuiltInLauncher(t *testing.T) {
 	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	launched := loopReceipts(h, "launch", "ENG-1")
+	launched := h.receipts("launch", "ENG-1")
 	require.Len(t, launched, 1)
 	assert.Equal(t, ledger.Done, launched[0].Outcome)
 	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, h.tools.Herdr.Kicked())
@@ -636,7 +636,7 @@ func TestTickRefusesAnEmptyPluginRoot(t *testing.T) {
 
 	require.ErrorContains(t, err, "ENG-1 launch failed: usage_error")
 	require.ErrorContains(t, err, "no plugin root")
-	launched := loopReceipts(h, "launch", "ENG-1")
+	launched := h.receipts("launch", "ENG-1")
 	require.Len(t, launched, 1)
 	assert.Equal(t, ledger.Failed, launched[0].Outcome)
 	assert.Contains(t, launched[0].Detail, "no plugin root")

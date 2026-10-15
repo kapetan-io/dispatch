@@ -796,6 +796,24 @@ func (h *harness) seedHistory(mem *world.Memory, receipts ...ledger.Receipt) {
 }
 
 // ledgerNow is the ledger the newest history segment holds, which is what the loop has done.
+// planRow matches the plan row that gives a ticket a state, such as held or waiting.
+func planRow(state, ticket string) string {
+	return `(?m)^` + state + `\s+` + ticket + `\s`
+}
+
+// receipts lists the receipts of one kind the loop has written, oldest first. An empty
+// subject matches every subject.
+func (h *harness) receipts(kind, subject string) []ledger.Receipt {
+	h.t.Helper()
+	var found []ledger.Receipt
+	for _, r := range h.ledgerNow() {
+		if r.Kind == kind && (subject == "" || r.Subject == subject) {
+			found = append(found, r)
+		}
+	}
+	return found
+}
+
 func (h *harness) ledgerNow() []ledger.Receipt {
 	h.t.Helper()
 	seg, ok, err := history.Latest(filepath.Join(h.state, "events"))

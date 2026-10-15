@@ -44,11 +44,6 @@ func parent(id, status string) fakeTicket {
 	return ticket(id, status, "dispatch")
 }
 
-// parentsPlanRow matches the plan row that gives a ticket a state, such as held or waiting.
-func parentsPlanRow(state, ticket string) string {
-	return `(?m)^` + state + `\s+` + ticket + `\s`
-}
-
 // parentsRealLauncher makes launches create a herdr workspace, so a launched worker
 // counts against the cap the way it does in production. The fake launcher leaves no trace.
 func parentsRealLauncher(h *harness) {
@@ -406,7 +401,7 @@ func TestTickNeverPromotesPastTheWorkerCap(t *testing.T) {
 
 	plan, err := h.run("plan")
 	require.NoError(t, err)
-	assert.Regexp(t, parentsPlanRow("waiting", "ENG-3"), plan)
+	assert.Regexp(t, planRow("waiting", "ENG-3"), plan)
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
 	assert.Equal(t, "uuid-ENG-2", mutations[0].TicketID)
@@ -423,7 +418,7 @@ func TestTickPromotesAWaitingChildOnceASlotFrees(t *testing.T) {
 	require.NoError(t, err)
 	plan, err := h.run("plan")
 	require.NoError(t, err)
-	assert.Regexp(t, parentsPlanRow("waiting", "ENG-2"), plan)
+	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
 	require.Empty(t, h.linear.mutations())
 
 	// ENG-9 merged.
@@ -560,7 +555,7 @@ func TestTickKeepsLaunchingWhenTheChildrenCannotBeRead(t *testing.T) {
 	plan, err := h.run("plan")
 	require.NoError(t, err)
 	assert.Len(t, h.launches(), 1)
-	assert.Regexp(t, parentsPlanRow("held", "ENG-1"), plan)
+	assert.Regexp(t, planRow("held", "ENG-1"), plan)
 	assert.Contains(t, plan, "the children of ENG-1 were not read")
 	assert.Empty(t, h.linear.mutations())
 }
@@ -593,7 +588,7 @@ func TestTickHoldsAChildWhoseRepoPoolCannotBeRead(t *testing.T) {
 	// Whether the child holds a lease in that pool is unknown, so it waits.
 	plan, err := h.run("plan")
 	require.NoError(t, err)
-	assert.Regexp(t, parentsPlanRow("held", "ENG-2"), plan)
+	assert.Regexp(t, planRow("held", "ENG-2"), plan)
 	assert.Contains(t, plan, "treehouse pool tiger unread")
 	assert.Empty(t, h.linear.mutations())
 }
@@ -640,7 +635,7 @@ func TestTickSharesTheWorkerCapAcrossParents(t *testing.T) {
 
 	plan, err := h.run("plan")
 	require.NoError(t, err)
-	assert.Regexp(t, parentsPlanRow("waiting", "ENG-5"), plan)
+	assert.Regexp(t, planRow("waiting", "ENG-5"), plan)
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
 	assert.Equal(t, "uuid-ENG-2", mutations[0].TicketID)
@@ -726,7 +721,7 @@ func TestTickPromotesTheOldestChildFirstWhenOneSlotIsFree(t *testing.T) {
 
 	plan, err := h.run("plan")
 	require.NoError(t, err)
-	assert.Regexp(t, parentsPlanRow("waiting", "ENG-3"), plan)
+	assert.Regexp(t, planRow("waiting", "ENG-3"), plan)
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 1)
 	assert.Equal(t, "uuid-ENG-2", mutations[0].TicketID)
@@ -828,8 +823,8 @@ func TestTickAdmitsOnlyTheOldestWaitingTicketToOneFreeSlot(t *testing.T) {
 	assert.Equal(t, []string{"ENG-3"}, launched)
 	plan, err := h.run("plan")
 	require.NoError(t, err)
-	assert.Regexp(t, parentsPlanRow("waiting", "ENG-2"), plan)
-	assert.Regexp(t, parentsPlanRow("waiting", "ENG-1"), plan)
+	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
+	assert.Regexp(t, planRow("waiting", "ENG-1"), plan)
 }
 
 func TestTickCountsATicketWhoseWorkerIsUnknownAgainstTheCap(t *testing.T) {
@@ -845,7 +840,7 @@ func TestTickCountsATicketWhoseWorkerIsUnknownAgainstTheCap(t *testing.T) {
 	// ENG-5 may already have a worker, so it holds the only slot and the promotion waits.
 	plan, err := h.run("plan")
 	require.NoError(t, err)
-	assert.Regexp(t, parentsPlanRow("waiting", "ENG-2"), plan)
+	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
 	assert.Empty(t, h.linear.mutations())
 	assert.Empty(t, h.launches())
 }
@@ -878,7 +873,7 @@ func TestTickNeverStartsAWorkerWhileHerdrIsUnread(t *testing.T) {
 
 	plan, err := h.run("plan")
 	require.NoError(t, err)
-	assert.Regexp(t, parentsPlanRow("held", "ENG-1"), plan)
+	assert.Regexp(t, planRow("held", "ENG-1"), plan)
 	assert.Empty(t, h.launches())
 
 	h.tools.Herdr.Fail(herdrtest.OpRead, nil)
@@ -898,7 +893,7 @@ func TestTickNeverStartsAWorkerWhileTheReposPoolIsUnread(t *testing.T) {
 	// Only the repo whose pool could not be read is held.
 	plan, err := h.run("plan")
 	require.NoError(t, err)
-	assert.Regexp(t, parentsPlanRow("held", "ENG-1"), plan)
+	assert.Regexp(t, planRow("held", "ENG-1"), plan)
 	require.Len(t, h.launches(), 1)
 	assert.Contains(t, h.launches()[0], " ENG-2 ")
 }

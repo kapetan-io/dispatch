@@ -144,7 +144,7 @@ func TestInvariantANudgeToldBeforeARestartIsNotToldAgain(t *testing.T) {
 	h.tools.Herdr.StallPrompts()
 	_, _, err := h.runWith(t.Context(), dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tick")
 	require.NoError(t, err)
-	require.Len(t, loopReceipts(h, "nudge", "ENG-1"), 1)
+	require.Len(t, h.receipts("nudge", "ENG-1"), 1)
 
 	// Dispatch cannot know the text never arrived, so a restart sends nothing more.
 	h.restart()
@@ -153,7 +153,7 @@ func TestInvariantANudgeToldBeforeARestartIsNotToldAgain(t *testing.T) {
 		h.tick()
 	}
 
-	assert.Len(t, loopReceipts(h, "nudge", "ENG-1"), 1)
+	assert.Len(t, h.receipts("nudge", "ENG-1"), 1)
 }
 
 func TestInvariantACommentTheWorkerWasToldAboutIsNotToldAgainAfterARestart(t *testing.T) {
@@ -377,5 +377,5 @@ func TestInvariantAClockThatSteppedBackStillLoadsTheNewestRun(t *testing.T) {
 	h.tick()
 
 	assert.Len(t, h.launches(), 1)
-	assert.NotEmpty(t, loopReceipts(h, "launch", "ENG-1"))
+	assert.NotEmpty(t, h.receipts("launch", "ENG-1"))
 }

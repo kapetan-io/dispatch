@@ -1,7 +1,6 @@
 package loop
 
 import (
-	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -135,7 +134,7 @@ func (l *Loop) renameWorkspaces() {
 	}
 	l.renames++
 	go func() {
-		ctx := context.Background()
+		ctx := l.runCtx
 		for _, r := range workspaces {
 			if err := l.o.Herdr.RenameWorkspace(ctx, r.id, r.label); err != nil {
 				_, _ = fmt.Fprintf(l.o.Err, "dispatch: while renaming herdr workspace %s: %v\n", r.id, err)
@@ -146,6 +145,9 @@ func (l *Loop) renameWorkspaces() {
 				_, _ = fmt.Fprintf(l.o.Err, "dispatch: while renaming herdr tab %s: %v\n", r.id, err)
 			}
 		}
-		l.inbox <- renameDone{}
+		select {
+		case l.inbox <- renameDone{}:
+		case <-l.stopped:
+		}
 	}()
 }

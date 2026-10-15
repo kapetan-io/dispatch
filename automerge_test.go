@@ -27,17 +27,6 @@ func approvedPR(head string) prState {
 	return pr
 }
 
-// automergeReceipts lists the receipts of one kind the loop has written, oldest first.
-func automergeReceipts(h *harness, kind string) []ledger.Receipt {
-	var found []ledger.Receipt
-	for _, r := range h.ledgerNow() {
-		if r.Kind == kind {
-			found = append(found, r)
-		}
-	}
-	return found
-}
-
 func TestTickMergesAnApprovedReadyPRInAListedRepo(t *testing.T) {
 	h := newHarness(t)
 	h.repoSettings("dispatch", autoMergeSetting)
@@ -183,7 +172,7 @@ func TestTickTellsFollowersAboutAMergeNoticeWhenTheAlertFails(t *testing.T) {
 			// The alert failed, yet the followers heard and the notice is Done, not retried.
 			assert.Contains(t, next(t, lines), test.want)
 			assert.Empty(t, h.notifications())
-			notices := automergeReceipts(h, "notify")
+			notices := h.receipts("notify", "")
 			require.Len(t, notices, 1)
 			assert.Equal(t, ledger.Done, notices[0].Outcome)
 			assert.Contains(t, notices[0].Detail, "alert failed")
@@ -195,7 +184,7 @@ func TestTickTellsFollowersAboutAMergeNoticeWhenTheAlertFails(t *testing.T) {
 			h.tick()
 			assert.Empty(t, lines)
 			assert.Empty(t, h.notifications())
-			assert.Len(t, automergeReceipts(h, "notify"), 1)
+			assert.Len(t, h.receipts("notify", ""), 1)
 		})
 	}
 }
@@ -230,7 +219,7 @@ func TestTickReportsAFailedMergeOnceAndRetriesOnlyAfterAPush(t *testing.T) {
 	require.Len(t, h.notifications(), 1)
 	assert.Contains(t, h.notifications()[0], "ENG-1: merging "+prURL1+" failed")
 	assert.Contains(t, h.notifications()[0], "the base branch policy prohibits the merge")
-	attempts := automergeReceipts(h, "merge")
+	attempts := h.receipts("merge", "")
 	require.Len(t, attempts, 1)
 	assert.Equal(t, ledger.Refused, attempts[0].Outcome)
 	assert.Equal(t, "a1", attempts[0].Once[1])
@@ -245,13 +234,13 @@ func TestTickReportsAFailedMergeOnceAndRetriesOnlyAfterAPush(t *testing.T) {
 	h.tick()
 	assert.Empty(t, h.merges())
 	assert.Len(t, h.notifications(), 1)
-	assert.Len(t, automergeReceipts(h, "merge"), 1)
+	assert.Len(t, h.receipts("merge", ""), 1)
 
 	// A push that gets approved is a new head, so it merges.
 	h.pr("ENG-1", approvedPR("a2"))
 	h.tick()
 	assert.Len(t, h.merges(), 1)
-	attempts = automergeReceipts(h, "merge")
+	attempts = h.receipts("merge", "")
 	require.Len(t, attempts, 2)
 	assert.Equal(t, ledger.Done, attempts[1].Outcome)
 	assert.Equal(t, "a2", attempts[1].Once[1])
@@ -280,7 +269,7 @@ func TestTickMergesNothingWhenThePRHeadMovesAfterTheApprovalWasRead(t *testing.T
 	h.tick()
 	assert.Empty(t, h.merges())
 	assert.Contains(t, h.notifications()[len(h.notifications())-1], "ready for review")
-	attempts := automergeReceipts(h, "merge")
+	attempts := h.receipts("merge", "")
 	require.Len(t, attempts, 1)
 	assert.Equal(t, ledger.Refused, attempts[0].Outcome)
 
@@ -424,7 +413,7 @@ func TestTickDoesNotMergeAForkPRThatSharesTheWorkersBranchName(t *testing.T) {
 
 	assert.Empty(t, h.merges())
 	assert.Empty(t, h.notifications())
-	assert.Empty(t, automergeReceipts(h, "merge"))
+	assert.Empty(t, h.receipts("merge", ""))
 }
 
 func TestTickUsesTheWorkersPRWhenAForkPRSharesItsBranchName(t *testing.T) {

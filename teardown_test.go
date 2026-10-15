@@ -43,7 +43,7 @@ func TestTickReturnsTheTreeOfAFinishedTicket(t *testing.T) {
 			assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 			assert.Empty(t, h.linear.mutations())
 			assert.Empty(t, h.launches())
-			returned := teardownReceipts(h, "return")
+			returned := h.receipts("return", "")
 			require.Len(t, returned, 1)
 			assert.Equal(t, ledger.Done, returned[0].Outcome)
 			assert.Equal(t, "returned "+path, returned[0].Detail)
@@ -151,7 +151,7 @@ func TestTickRemovesUntrackedFilesBeforeReturningTheTree(t *testing.T) {
 	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
 	assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 	assert.Empty(t, h.linear.mutations())
-	returned := teardownReceipts(h, "return")
+	returned := h.receipts("return", "")
 	require.Len(t, returned, 1)
 	assert.Equal(t, "returned "+path+", removed untracked zz_tmp_test.go", returned[0].Detail)
 }
@@ -171,7 +171,7 @@ func TestTickLeavesIgnoredFilesAloneWhenRemovingUntrackedOnes(t *testing.T) {
 
 	h.tick()
 
-	returned := teardownReceipts(h, "return")
+	returned := h.receipts("return", "")
 	require.Len(t, returned, 1)
 	assert.Equal(t, "returned "+path+", removed untracked scratch.txt", returned[0].Detail)
 	assert.FileExists(t, filepath.Join(path, "build", "out.bin"))
@@ -187,7 +187,7 @@ func TestTickQuotesUntrackedFileNamesThatHoldSpaces(t *testing.T) {
 
 	h.tick()
 
-	returned := teardownReceipts(h, "return")
+	returned := h.receipts("return", "")
 	require.Len(t, returned, 1)
 	assert.Equal(t, "returned "+path+", removed untracked \"sp ace.txt\"", returned[0].Detail)
 	assert.NoFileExists(t, filepath.Join(path, "sp ace.txt"))
@@ -209,7 +209,7 @@ func TestTickKeepsTheTreeWhenGitCleanLeavesANestedRepoBehind(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(path, "scratch.txt"))
 	assert.DirExists(t, filepath.Join(path, "nested"))
 	assert.Empty(t, h.returns())
-	returned := teardownReceipts(h, "return")
+	returned := h.receipts("return", "")
 	require.Len(t, returned, 1)
 	assert.Equal(t, ledger.Refused, returned[0].Outcome)
 	assert.Equal(t, "kept: untracked nested/ in "+path+" survived git clean", returned[0].Detail)
@@ -229,7 +229,7 @@ func TestTickIgnoresGitLocationVariablesWhenRemovingUntrackedFiles(t *testing.T)
 
 	h.tick()
 
-	returned := teardownReceipts(h, "return")
+	returned := h.receipts("return", "")
 	require.Len(t, returned, 1)
 	assert.Equal(t, "returned "+path+", removed untracked scratch.txt", returned[0].Detail)
 	assert.NoFileExists(t, filepath.Join(path, "scratch.txt"))
@@ -249,7 +249,7 @@ func TestTickReturnsATreeWhoseOnlyLeftoversAreIgnored(t *testing.T) {
 
 	h.tick()
 
-	returned := teardownReceipts(h, "return")
+	returned := h.receipts("return", "")
 	require.Len(t, returned, 1)
 	assert.Equal(t, "returned "+path, returned[0].Detail)
 	assert.Len(t, h.returns(), 1)
@@ -307,7 +307,7 @@ func TestTickReturnsTheTreeOnceItsWorkIsPushed(t *testing.T) {
 
 	assert.Len(t, h.returns(), 1)
 	assert.Len(t, h.linear.mutations(), 1)
-	returned := teardownReceipts(h, "return")
+	returned := h.receipts("return", "")
 	require.Len(t, returned, 1)
 	assert.Equal(t, ledger.Done, returned[0].Outcome)
 }
@@ -365,7 +365,7 @@ func TestTickKeepsTheTreeWhenTheWorkspaceWillNotClose(t *testing.T) {
 
 	require.ErrorContains(t, err, "while closing herdr workspace w-ENG-1")
 	assert.Empty(t, h.returns())
-	returned := teardownReceipts(h, "return")
+	returned := h.receipts("return", "")
 	require.Len(t, returned, 1)
 	assert.Equal(t, ledger.Failed, returned[0].Outcome)
 }
@@ -766,7 +766,7 @@ func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
 	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
 	assert.Empty(t, h.returns())
 	assert.FileExists(t, filepath.Join(path, "late.txt"))
-	returned := teardownReceipts(h, "return")
+	returned := h.receipts("return", "")
 	require.Len(t, returned, 1)
 	assert.Equal(t, ledger.Refused, returned[0].Outcome)
 	assert.Equal(t, "kept: the worker left uncommitted changes in "+path, returned[0].Detail)
@@ -781,6 +781,14 @@ func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
 	assert.Contains(t, mutations[0].Body, "`"+path+"` has uncommitted changes.")
 	assert.Empty(t, h.returns())
 	assert.Len(t, h.closes(), 1)
+
+	// Pushing the work frees the slot, though the earlier return was refused.
+	h.git(path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "late work")
+	h.git(path, "push", "origin", "main")
+	h.advance(time.Second)
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
 }
 
 func TestTickCommentsOnADirtyTreeThatHasNoWorkspace(t *testing.T) {
@@ -994,7 +1002,7 @@ func TestTickKeepsATreeWhoseGitStateIsBroken(t *testing.T) {
 	assert.Empty(t, h.closes())
 	assert.Empty(t, h.returns())
 	assert.Empty(t, h.linear.mutations())
-	assert.Empty(t, teardownReceipts(h, "return"))
+	assert.Empty(t, h.receipts("return", ""))
 	out, err := h.run("plan")
 	require.NoError(t, err)
 	assert.Regexp(t, `(?m)^held .*teardown-clean-tree`, out)
@@ -1013,7 +1021,7 @@ func TestTickKeepsATreeThatGainedACommitAfterTheCycleDecidedToReturnIt(t *testin
 
 	require.ErrorContains(t, err, "the worker left 1 commit that no remote has")
 	assert.Empty(t, h.returns())
-	returned := teardownReceipts(h, "return")
+	returned := h.receipts("return", "")
 	require.Len(t, returned, 1)
 	assert.Equal(t, ledger.Refused, returned[0].Outcome)
 	assert.Equal(t, "kept: the worker left 1 commit that no remote has in "+path, returned[0].Detail)
@@ -1044,7 +1052,7 @@ func TestTickKeepsATreeThatGainedANestedRepoAfterTheCycleDecidedToReturnIt(t *te
 	require.ErrorContains(t, err, "untracked nested/")
 	assert.Empty(t, h.returns())
 	assert.DirExists(t, filepath.Join(path, "nested"))
-	returned := teardownReceipts(h, "return")
+	returned := h.receipts("return", "")
 	require.Len(t, returned, 1)
 	assert.Equal(t, ledger.Refused, returned[0].Outcome)
 	assert.Equal(t, "kept: untracked nested/ in "+path+" survived git clean", returned[0].Detail)
@@ -1074,23 +1082,13 @@ func TestTickDoesNotReturnATreeWhoseGitFailsAfterTheCycleDecidedToReturnIt(t *te
 
 	require.Error(t, err)
 	assert.Empty(t, h.returns())
-	returned := teardownReceipts(h, "return")
+	returned := h.receipts("return", "")
 	require.Len(t, returned, 1)
 	assert.Equal(t, ledger.Failed, returned[0].Outcome)
 	assert.DirExists(t, path)
 }
 
 // teardownReceipts lists the receipts of one action kind the loop has written.
-
-func teardownReceipts(h *harness, kind string) []ledger.Receipt {
-	var found []ledger.Receipt
-	for _, r := range h.ledgerNow() {
-		if r.Kind == kind {
-			found = append(found, r)
-		}
-	}
-	return found
-}
 
 // gitTree makes a pool tree that is clean and pushed: a clone of a bare
 // remote on main, at <dir>/trees/<name>, the path h.worker uses for a ticket

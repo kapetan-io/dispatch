@@ -12,7 +12,9 @@ whenever({
   name: "teardown-clean-tree",
   each: "treehouse.tree",
   if:   (tree) => tree.leased && finishedHolder(tree) && safeToReturn(tree),
-  then: (tree, ctx) => ctx.treehouse.queueReturn(tree, { once: ["return", tree.path, tree.leasedSince] }),
+  // The key carries when the tree last became safe, so a return refused for late work is
+  // tried again once that work is pushed, and a tree that stays safe is refused only once.
+  then: (tree, ctx) => ctx.treehouse.queueReturn(tree, { once: ["return", tree.path, tree.leasedSince, tree.cleanSince] }),
   // Closes the tree's workspace, inspects the tree again, deletes untracked files, then
   // returns it. Work found on the second look keeps the tree, and the receipt says why.
 });

@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -122,7 +123,9 @@ type Client struct {
 	URL  string
 	Key  string
 	HTTP *http.Client
-	// stats records every call this client makes.
+	// stats records every call this client makes, and mu guards it because actions and
+	// reads call the client from different goroutines.
+	mu    sync.Mutex
 	stats Stats
 }
 
@@ -133,7 +136,11 @@ func NewClient(url, key string) *Client { return &Client{URL: url, Key: key} }
 
 // Usage reports the calls this client has made and the request budget Linear
 // last reported.
-func (c *Client) Usage() Stats { return c.stats }
+func (c *Client) Usage() Stats {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.stats
+}
 
 // Stats counts a workspace's calls to Linear and keeps the hourly request budget
 // Linear reported on the last response. The budget fields stay zero until a
@@ -587,7 +594,9 @@ func (c *Client) do(ctx context.Context, operation, query string, variables map[
 	}
 	start := time.Now()
 	resp, err := httpc.Do(req)
+	c.mu.Lock()
 	c.stats.record(start, resp)
+	c.mu.Unlock()
 	if err != nil {
 		return fmt.Errorf("while calling Linear %s: %w", operation, err)
 	}

@@ -122,7 +122,7 @@ func TestTickNeverMergesADraft(t *testing.T) {
 
 			assert.Empty(t, h.merges())
 			assert.Equal(t, []string{test.text}, h.notifications())
-			assert.Empty(t, automergeReceipts(h, "merge"))
+			assert.Empty(t, h.receipts("merge", ""))
 		})
 	}
 }

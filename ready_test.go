@@ -13,17 +13,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 )
 
-// readyReceipts lists the receipts of one kind the loop has written, oldest first.
-func readyReceipts(h *harness, kind string) []ledger.Receipt {
-	var found []ledger.Receipt
-	for _, r := range h.ledgerNow() {
-		if r.Kind == kind {
-			found = append(found, r)
-		}
-	}
-	return found
-}
-
 const readyText1 = "ENG-1 is ready for review: " + prURL1
 
 func TestTickNotifiesOnceWhenAnInReviewPRIsReady(t *testing.T) {
@@ -132,7 +121,7 @@ func TestTickKeepsAReadyNoticeFromFollowersWhenTheAlertFailsAndRunsItAgain(t *te
 	require.ErrorContains(t, err, "ENG-1 notify failed")
 	assert.Empty(t, h.notifications())
 	assert.Empty(t, lines)
-	notices := readyReceipts(h, "notify")
+	notices := h.receipts("notify", "")
 	require.Len(t, notices, 1)
 	assert.Equal(t, ledger.Failed, notices[0].Outcome)
 
@@ -143,14 +132,14 @@ func TestTickKeepsAReadyNoticeFromFollowersWhenTheAlertFailsAndRunsItAgain(t *te
 
 	assert.Contains(t, next(t, lines), "ENG-1 is ready for review")
 	assert.Equal(t, []string{readyText1}, h.notifications())
-	notices = readyReceipts(h, "notify")
+	notices = h.receipts("notify", "")
 	require.Len(t, notices, 2)
 	assert.Equal(t, ledger.Done, notices[1].Outcome)
 
 	h.advance(time.Second)
 	h.tick()
 	assert.Empty(t, lines)
-	assert.Len(t, readyReceipts(h, "notify"), 2)
+	assert.Len(t, h.receipts("notify", ""), 2)
 }
 
 func TestTickLabelsEachWorkspaceWithItsStatusEmoji(t *testing.T) {

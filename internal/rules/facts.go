@@ -120,6 +120,9 @@ type Tree struct {
 	Pushed         Fact[bool]   `js:"pushed"`
 	TrackedChanges Fact[bool]   `js:"trackedChanges"`
 	Unfinished     Fact[string] `js:"unfinished"`
+	// CleanSince is when the tree last became safe to return, so a return refused for
+	// late work is tried again once the work is pushed.
+	CleanSince Fact[int64] `js:"cleanSince"`
 }
 
 // Escalation is a ticket's move to Needs Human and the comment that explains it.

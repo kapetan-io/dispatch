@@ -51,10 +51,12 @@ type Options struct {
 
 // Loop is the running reconcile loop.
 type Loop struct {
-	o     Options
-	clock Clock
-	scope world.Scope
-	hist  *history.Writer
+	// runCtx ends the reads and renames that run off the loop when the loop stops.
+	runCtx context.Context
+	o      Options
+	clock  Clock
+	scope  world.Scope
+	hist   *history.Writer
 	// segStart is when the segment being written began.
 	segStart time.Time
 
@@ -107,6 +109,8 @@ type Loop struct {
 	tells       int
 	// log lists the actions that ended, in order, so a tick reports only its own.
 	ended []logged
+	// endedBefore counts the actions dropped from ended, so a tick's seen stays a position in the whole run.
+	endedBefore int
 }
 
 type logged struct {
@@ -175,6 +179,7 @@ func (l *Loop) stamp() time.Time { return time.UnixMilli(l.ingest()) }
 // Run starts the loop and returns when ctx ends, after the actions in flight finish,
 // or when it cannot go on. A failure to start or to write history is returned.
 func (l *Loop) Run(ctx context.Context) (err error) {
+	l.runCtx = ctx
 	l.started = l.ingest()
 	// The socket is checked before anything acts, so a state directory that can't hold one
 	// fails the start with nothing launched. Requests wait in the inbox until the start is done.
@@ -203,7 +208,10 @@ func (l *Loop) Run(ctx context.Context) (err error) {
 	timer := l.clock.NewTimer(interval)
 	defer func() { timer.Stop() }()
 
-	l.settle()
+	if err = l.settle(); err != nil {
+		l.fatal(err)
+		return err
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -428,8 +436,8 @@ func (l *Loop) rotate() error {
 	for _, tree := range l.wd.Trees {
 		live[tree.Path] = true
 	}
-	if l.wd.LinearErr == nil {
-		l.led.Keep(func(subject string) bool { return live[subject] || l.flightFor(subject) })
+	if l.wd.LinearErr == nil && l.wd.HoldersErr == nil && len(l.wd.PoolErrs) == 0 {
+		l.led.Keep(func(subject string) bool { return live[subject] || l.flightFor(subject) || l.led.Unfinished(subject) })
 	}
 	next, err := history.Start(l.o.Config.History.Dir, at, history.Header{Why: "rotate", Config: l.o.ConfigText, At: at.UnixMilli()},
 		history.Snapshot{At: at.UnixMilli(), World: l.mem, Ledger: history.LedgerState{Receipts: l.led.Entries}, Resync: l.resync})
@@ -442,6 +450,11 @@ func (l *Loop) rotate() error {
 		return err
 	}
 	l.lastCycle = nil
+	// Only a tick still waiting can ask for these, so a long run doesn't keep every receipt.
+	if len(l.waiters) == 0 {
+		l.endedBefore += len(l.ended)
+		l.ended = nil
+	}
 	return l.pruneHistory(at)
 }
 
@@ -468,7 +481,9 @@ func (l *Loop) startRead() {
 	l.pending, l.reading, l.nudgedDuring = 0, true, nil
 	at := l.stamp()
 	go func() {
-		w, err := world.Refresh(context.Background(), l.o.Sources, l.scope, prev, parts, at)
+		ctx, cancel := context.WithTimeout(l.runCtx, executor.DefaultDeadline)
+		defer cancel()
+		w, err := world.Refresh(ctx, l.o.Sources, l.scope, prev, parts, at)
 		l.inbox <- readDone{parts: parts, w: w, err: err, epoch: epoch}
 	}()
 }

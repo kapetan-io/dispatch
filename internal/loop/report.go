@@ -76,7 +76,7 @@ func (l *Loop) onRequest(r request) error {
 			l.release()
 		}
 	case OpTick:
-		seen := len(l.ended)
+		seen := l.endedBefore + len(l.ended)
 		if err := l.onResync("dispatch.tick"); err != nil {
 			return err
 		}
@@ -121,7 +121,7 @@ var verbs = map[string]string{
 func (l *Loop) report(w *waiter) Response {
 	var lines, failures []string
 	code := CodeSettled
-	for _, e := range l.ended[w.seen:] {
+	for _, e := range l.ended[max(0, w.seen-l.endedBefore):] {
 		rc := e.rc
 		if w.ticket != "" && rc.Subject != w.ticket {
 			continue

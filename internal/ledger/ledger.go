@@ -141,6 +141,15 @@ func (l *Ledger) Upsert(r Receipt) {
 	l.Entries = append(l.Entries, r)
 }
 
+// Unfinished reports whether the subject has an escalation whose move landed but
+// whose comment did not, which retry-escalation-comment still has to post.
+func (l *Ledger) Unfinished(subject string) bool {
+	return slices.ContainsFunc(l.Entries, func(r Receipt) bool {
+		return r.Subject == subject && r.Kind == "escalate" && len(r.Steps) == 2 &&
+			r.Steps[0].Outcome == Done && r.Steps[1].Outcome != Done
+	})
+}
+
 // Keep drops the receipts of subjects that keep rejects.
 func (l *Ledger) Keep(keep func(subject string) bool) {
 	l.Entries = slices.DeleteFunc(l.Entries, func(r Receipt) bool { return !keep(r.Subject) })

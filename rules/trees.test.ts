@@ -53,6 +53,17 @@ scenario(rules, "teardown-clean-tree is covered by a failed return only until it
   s.expect([]);
 });
 
+scenario(rules, "teardown-clean-tree tries a refused return again once the late work is pushed", s => {
+  s.given(ticket("ENG-1", finished), tree("/trees/ENG-1", { holder: "ENG-1" }));
+  s.land("treehouse.return", "ENG-1", { outcome: "refused", detail: "kept: the worker left uncommitted changes in /trees/ENG-1" });
+  s.land("linear.comment", "ENG-1");
+  s.expect([]);   // the tree still reads clean, so the refusal stands
+  s.see(tree("/trees/ENG-1", { trackedChanges: true }));
+  s.expect([]);
+  s.see(tree("/trees/ENG-1", { trackedChanges: false }));
+  s.expect([["teardown-clean-tree", "treehouse.return", "ENG-1"]]);
+});
+
 scenario(rules, "stop-worker-on-kept-tree closes the worker of a kept tree once", s => {
   s.given(ticket("ENG-1", { status: "in_progress", optedIn: true, repo: "dispatch" }), worker("ENG-1", "working"));
   s.see(ticket("ENG-1", { status: "done" }), tree("/trees/ENG-1", { holder: "ENG-1", pushed: false }));

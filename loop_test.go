@@ -16,21 +16,10 @@ import (
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/launcher"
 	"github.com/kapetan-io/dispatch/internal/ledger"
+	"github.com/kapetan-io/dispatch/internal/lineartest"
 	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
-
-// loopReceipts lists the receipts of one kind for one ticket, from the history the loop wrote.
-func loopReceipts(h *harness, kind, subject string) []ledger.Receipt {
-	h.t.Helper()
-	var found []ledger.Receipt
-	for _, rc := range h.ledgerNow() {
-		if rc.Kind == kind && rc.Subject == subject {
-			found = append(found, rc)
-		}
-	}
-	return found
-}
 
 // loopRunWithoutLoop runs a command in a state directory where no loop runs.
 func loopRunWithoutLoop(h *harness, args ...string) (string, error) {
@@ -266,6 +255,9 @@ whenever({ name: "always-throws", each: "linear.ticket", if: () => { throw new E
 }
 
 func TestAHistoryWriteFailureStopsTheLoopAndAlerts(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions, so the write cannot be made to fail")
+	}
 	h := newHarness(t)
 	h.config("[history]\nrotate = \"1h\"\nkeep = \"24h\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -345,7 +337,7 @@ func TestALaunchThatLandsAfterItsDeadlineGetsNoSecondWorker(t *testing.T) {
 
 	_, _, err := h.runWith(t.Context(), dispatch.Options{LaunchTimeout: 100 * time.Millisecond}, "tick")
 	require.ErrorContains(t, err, "ENG-1 launch failed")
-	require.Len(t, loopReceipts(h, "launch", "ENG-1"), 1)
+	require.Len(t, h.receipts("launch", "ENG-1"), 1)
 
 	// The launch landed after the deadline, so herdr shows the worker.
 	h.worker("ENG-1", "working")
@@ -354,13 +346,14 @@ func TestALaunchThatLandsAfterItsDeadlineGetsNoSecondWorker(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Len(t, h.launches(), 1)
-	assert.Len(t, loopReceipts(h, "launch", "ENG-1"), 1)
+	assert.Len(t, h.receipts("launch", "ENG-1"), 1)
 }
 
 func TestANudgeThatTimesOutCountsAsToldAndIsNeverRepeated(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.worker("ENG-1", "idle")
+	h.recordStop("ENG-1", noTasks)
 	h.tools.Herdr.StallPrompts()
 
 	_, _, err := h.runWith(t.Context(), dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tick")
@@ -371,7 +364,7 @@ func TestANudgeThatTimesOutCountsAsToldAndIsNeverRepeated(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	nudges := loopReceipts(h, "nudge", "ENG-1")
+	nudges := h.receipts("nudge", "ENG-1")
 	require.Len(t, nudges, 1)
 	assert.Equal(t, ledger.Done, nudges[0].Outcome)
 	assert.Equal(t, "timeout", nudges[0].Detail)
@@ -438,7 +431,10 @@ func TestStoppingTheLoopAnswersATellThatIsWaitingOnARead(t *testing.T) {
 	tellOpts := h.options(dispatch.Options{})
 	tellOpts.Stdout, tellOpts.Stderr = &bytes.Buffer{}, &bytes.Buffer{}
 	go func() { told <- dispatch.Run(t.Context(), []string{"tell", "ENG-1", "hello"}, tellOpts) }()
-	time.Sleep(300 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		resp, err := loop.Ask(t.Context(), h.state, loop.Request{Op: loop.OpPending})
+		return err == nil && len(resp.Lines) > 0
+	}, 20*time.Second, 5*time.Millisecond)
 
 	require.NoError(t, h.stopLoop())
 
@@ -448,4 +444,28 @@ func TestStoppingTheLoopAnswersATellThatIsWaitingOnARead(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("the tell was never answered")
 	}
+}
+
+func TestRotatingHistoryKeepsAnEscalationCommentThatStillHasToBePosted(t *testing.T) {
+	h := newHarness(t)
+	h.config("[history]\nrotate = \"1m\"\nkeep = \"24h\"\n")
+	h.tickets(ticket("ENG-1", "In Progress", ""))
+	h.linear.failComments(true)
+	_, err := h.run("tick")
+	require.ErrorContains(t, err, "ENG-1 comment failed")
+
+	// The ticket leaves the tracked set before the loop rotates into a new segment.
+	h.tickets()
+	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	h.advance(6 * time.Minute)
+	h.advance(6 * time.Minute)
+	h.linear.failComments(false)
+
+	_, err = h.run("tick")
+
+	require.NoError(t, err)
+	mutations := h.linear.mutations()
+	require.Len(t, mutations, 2)
+	assert.Equal(t, lineartest.Comment, mutations[1].Kind)
+	assert.Equal(t, "uuid-ENG-1", mutations[1].TicketID)
 }

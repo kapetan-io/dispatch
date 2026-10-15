@@ -9,11 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// designPlanRow matches the plan row that gives a ticket a state, such as held or waiting.
-func designPlanRow(state, ticket string) string {
-	return `(?m)^` + state + `\s+` + ticket + `\s`
-}
-
 func designTicket(id, status string) fakeTicket {
 	return withLabel(ticket(id, status, "dispatch"), "design")
 }
@@ -117,7 +112,7 @@ func TestTickCountsADesignTicketAgainstTheWorkerCap(t *testing.T) {
 
 	plan, err := h.run("plan")
 	require.NoError(t, err)
-	assert.Regexp(t, designPlanRow("waiting", "ENG-2"), plan)
+	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
 	assert.Empty(t, h.launches())
 }
 
@@ -133,7 +128,7 @@ func TestTickHoldsAPromotionForADesignTicketAboutToLaunch(t *testing.T) {
 
 	plan, err := h.run("plan")
 	require.NoError(t, err)
-	assert.Regexp(t, designPlanRow("waiting", "ENG-2"), plan)
+	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
 	assert.Empty(t, h.linear.mutations())
 	assert.Len(t, h.tools.Herdr.Started(), 1)
 }
@@ -177,7 +172,7 @@ func TestTickCountsADesignReviewAgainstMaxInProgress(t *testing.T) {
 
 	plan, err := h.run("plan")
 	require.NoError(t, err)
-	assert.Regexp(t, designPlanRow("waiting", "ENG-2"), plan)
+	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
 	require.Len(t, h.tools.Herdr.Started(), 1)
 	assert.Equal(t, "opus", h.tools.Herdr.Started()[0].Model)
 }
@@ -194,7 +189,7 @@ func TestTickHoldsAPromotionWhileADesignReviewTakesTheLastSlot(t *testing.T) {
 
 	plan, err := h.run("plan")
 	require.NoError(t, err)
-	assert.Regexp(t, designPlanRow("waiting", "ENG-2"), plan)
+	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
 	assert.Empty(t, h.linear.mutations())
 }
 
@@ -211,7 +206,7 @@ func TestTickHoldsAPromotionForADesignParentInAnUnreadRepo(t *testing.T) {
 	// The design parent's worker is unknown in the unread repo, so it holds the only slot.
 	plan, err := h.run("plan")
 	require.NoError(t, err)
-	assert.Regexp(t, designPlanRow("waiting", "ENG-2"), plan)
+	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
 	assert.Empty(t, h.linear.mutations())
 }
 
