@@ -58,8 +58,6 @@ A second implementation will drift from the first, so verify it with contract te
 - **Dedicated contract tests** when the fake only speeds up tests. Feature tests use the fake and trust the contract tests to catch drift.
 - **The whole suite against both** when the fake is also a deployment target (embedded, end-to-end or local-development mode), because then it is production code.
 
-Run the contract scenarios against the real tool somewhere a failure is seen. A check that CI never runs protects nothing, and it's the cost a fake carries. State in the PR where the real-tool run happens.
-
 ### Databases
 
 A database fake almost always diverges where it matters: transaction and rollback semantics, null ordering, unique-constraint timing, row-level locks. **Default to the real database** (testcontainers or a local instance) and run your real migrations, never inline schema creation, so the migrations are part of what the test validates. A repository fake for passive-state tests is a deliberate opt-out that needs contract tests.
