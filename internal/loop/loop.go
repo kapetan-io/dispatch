@@ -87,6 +87,9 @@ type Loop struct {
 	renaming map[string]string
 	renames  int
 
+	// nextResync is when the resync timer is due. An event that finds the clock past it
+	// means the machine slept through the resync.
+	nextResync time.Time
 	// lastResync is when the previous resync line printed.
 	lastResync time.Time
 	listener   *listener
@@ -179,7 +182,9 @@ func (l *Loop) Run(ctx context.Context) (err error) {
 			err = cerr
 		}
 	}()
-	timer := l.clock.NewTimer(time.Duration(l.o.Config.Dispatch.Resync))
+	interval := time.Duration(l.o.Config.Dispatch.Resync)
+	l.nextResync = l.clock.Now().Add(interval)
+	timer := l.clock.NewTimer(interval)
 	defer func() { timer.Stop() }()
 
 	l.settle()
@@ -188,13 +193,20 @@ func (l *Loop) Run(ctx context.Context) (err error) {
 		case <-ctx.Done():
 			return l.drain()
 		case m := <-l.inbox:
-			err = l.handle(m)
+			if err = l.wakeIfLate(); err == nil {
+				err = l.handle(m)
+			}
 		case <-timer.C():
-			timer = l.clock.NewTimer(time.Duration(l.o.Config.Dispatch.Resync))
-			err = l.onResync("dispatch.resync")
+			timer = l.clock.NewTimer(interval)
+			// A wake already ran this resync when an event got there first.
+			if !l.clock.Now().Before(l.nextResync) {
+				err = l.onResync("dispatch.resync")
+			}
 		}
 		for err == nil && len(l.inbox) > 0 {
-			err = l.handle(<-l.inbox)
+			if err = l.wakeIfLate(); err == nil {
+				err = l.handle(<-l.inbox)
+			}
 		}
 		if err == nil {
 			err = l.settle()
@@ -204,6 +216,16 @@ func (l *Loop) Run(ctx context.Context) (err error) {
 			return err
 		}
 	}
+}
+
+// wakeIfLate treats the first event after a missed resync like a start. The clock is past
+// the resync because the machine slept, so the facts in the world are older than a resync,
+// and no cycle may act on them before every source has been read again.
+func (l *Loop) wakeIfLate() error {
+	if l.clock.Now().Before(l.nextResync) {
+		return nil
+	}
+	return l.onResync("dispatch.resync")
 }
 
 func (l *Loop) fatal(err error) {
@@ -240,6 +262,7 @@ func (l *Loop) drain() error {
 func (l *Loop) start(ctx context.Context) error {
 	at := l.stamp()
 	l.mem, l.led = world.NewMemory(), &ledger.Ledger{}
+	loaded := "no earlier history"
 	if seg, ok, err := history.Latest(l.o.Config.History.Dir); err != nil {
 		return fmt.Errorf("while reading history: %w", err)
 	} else if ok {
@@ -249,6 +272,7 @@ func (l *Loop) start(ctx context.Context) error {
 		}
 		l.mem, l.led, l.resync = st.Memory.Ready(), st.Ledger, st.Resync
 		l.closeCrashed(at)
+		loaded = baseName(seg.Path)
 	}
 	l.resync++
 	hist, err := history.Start(l.o.Config.History.Dir, at, history.Header{Why: "start", Config: l.o.ConfigText, At: at.UnixMilli()},
@@ -269,13 +293,11 @@ func (l *Loop) start(ctx context.Context) error {
 		return err
 	}
 	l.wd = wd
-	l.cycleDue = true
+	_, _ = fmt.Fprintf(l.o.Out, "%s start: %s, %s, ledger %s from %s\n", at.Format(time.TimeOnly), count(len(l.wd.Tickets), "tracked ticket"),
+		count(len(l.o.Rules.Defs()), "rule"), count(len(l.led.Entries), "receipt"), loaded)
 	if err := l.cycle("start"); err != nil {
 		return err
 	}
-	l.cycleDue = false
-	_, _ = fmt.Fprintf(l.o.Out, "%s start: %s, %s, ledger %s from %s\n", at.Format(time.TimeOnly), count(len(l.wd.Tickets), "tracked ticket"),
-		count(len(l.o.Rules.Defs()), "rule"), count(len(l.led.Entries), "receipt"), baseName(l.hist.Path()))
 	l.resumeRest()
 	return nil
 }
@@ -330,6 +352,9 @@ func (l *Loop) handle(m any) error {
 func (l *Loop) onResync(typ string) error {
 	at := l.ingest()
 	l.resync++
+	if typ == "dispatch.resync" {
+		l.nextResync = time.UnixMilli(at).Add(time.Duration(l.o.Config.Dispatch.Resync))
+	}
 	if err := l.write(history.Event{Line: history.LineEvent, Ingest: at, Source: "dispatch", Type: typ}); err != nil {
 		return err
 	}

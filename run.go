@@ -212,9 +212,17 @@ func runCommand(ctx context.Context, opts Options) error {
 		return err
 	}
 	lin := &keyedLinear{opts: opts, cfg: cfg, keys: &keyLookup{}}
-	viewer, err := lin.Viewer(ctx)
-	if err != nil {
+	// No key, or a key Linear rejects, can't be fixed by waiting. A network that is down at
+	// boot can, and the loop reads Linear again at every resync.
+	if _, err := lin.workspace(ctx); err != nil {
 		return err
+	}
+	viewer, err := lin.Viewer(ctx)
+	if errors.Is(err, linear.ErrUnauthorized) {
+		return err
+	}
+	if err != nil {
+		_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while asking Linear who owns the key: %v\n", err)
 	}
 	exec := executor.New(executor.Env{
 		Config: cfg, Linear: func() linear.Workspace { return lin }, Herdr: opts.Herdr, Treehouse: opts.Treehouse,

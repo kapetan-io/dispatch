@@ -251,3 +251,22 @@ whenever({ name: "spins-in-then", each: "linear.ticket", if: () => true, then: (
 		})
 	}
 }
+
+// An event that finds the clock past a resync that never ran is a wake from sleep: every
+// source is read again before any cycle acts on the facts from before the sleep.
+func TestInvariantAnEventAfterASleepReadsEverySourceBeforeActing(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.tick()
+	before, prompted := h.linear.calls(), len(h.prompts())
+	h.clock.Skew(6 * time.Hour)
+	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))
+
+	// A tell is an event that is not a read of Linear.
+	_, err := h.run("tell", "ENG-1", "hello")
+	require.NoError(t, err)
+
+	assert.Greater(t, h.linear.calls(), before)
+	assert.Equal(t, []string{"w-ENG-1:p1|hello"}, h.prompts()[prompted:])
+}

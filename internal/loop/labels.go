@@ -121,7 +121,7 @@ func (l *Loop) quiet(t linear.Ticket, w world.Worker) bool {
 }
 
 // renameWorkspaces fixes the labels that differ, off the loop goroutine. A failed
-// rename is tried again at the next cycle, because the label still differs.
+// rename is tried again after the next read of herdr, because the label still differs.
 func (l *Loop) renameWorkspaces() {
 	workspaces, tabs := l.workspaceRenames()
 	if len(workspaces)+len(tabs) == 0 {

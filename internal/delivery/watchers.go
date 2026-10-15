@@ -83,20 +83,6 @@ func readWatchers(stateDir string) ([]string, error) {
 	return list, nil
 }
 
-// Preview lists what Notify would send for ev, one line per follower. An
-// unreadable list previews nothing, and the live tick reports it.
-func (p Post) Preview(ev Event) []string {
-	list, err := Watchers(p.StateDir, ev.Ticket.Identifier)
-	if err != nil {
-		return nil
-	}
-	var lines []string
-	for _, socket := range list {
-		lines = append(lines, fmt.Sprintf("would message %s: %s", socket, message(ev)))
-	}
-	return lines
-}
-
 // tellWatchers sends ev to every session following its ticket. A socket that
 // refuses the connection or whose file is gone belongs to a session that has
 // exited, so every ticket it followed is dropped. Any other failure keeps the

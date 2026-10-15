@@ -827,6 +827,13 @@ func (c *fakeClock) NewTimer(d time.Duration) dispatch.Timer {
 	return t
 }
 
+// Skew moves the clock without firing a timer, as a machine that slept through a resync does.
+func (c *fakeClock) Skew(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
 // Advance moves the clock and fires the timers that are due, returning how many.
 func (c *fakeClock) Advance(d time.Duration) int {
 	c.mu.Lock()
