@@ -138,9 +138,9 @@ If the discussion resolved domain terms, write them to the right `docs/CONTEXT.m
 
 ## Audit the transcript
 
-Have a fresh sub-agent compare the blueprint with this session's transcript. It lists each user decision as PRESENT, SUPERSEDED, CHANGED or MISSING against the blueprint and its decision log, with the user's words and time. Tell it to keep scratch in the scratchpad and run Python with `-I`.
+Have a sub-agent compare the blueprint with this session's transcript. The sub-agents job is to list each user decision as PRESENT, SUPERSEDED, CHANGED or MISSING against the blueprint and its decision log, with the user's words and time.
 
-Fix confirmed gaps, and ask the user where the answer isn't clear. A decision fix goes in its section and the decision log.
+Using the report from the audit sub-agent, fix confirmed gaps, and ask the user where the answer isn't clear. A decision fix goes in its section and the decision log.
 
 ## Review or break down
 
