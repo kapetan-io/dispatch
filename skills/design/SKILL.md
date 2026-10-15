@@ -138,13 +138,9 @@ If the discussion resolved domain terms, write them to the right `docs/CONTEXT.m
 
 ## Audit the transcript
 
-Compactions lose early decisions and reword others, so have a fresh sub-agent check the blueprint against what the user said.
+Have a fresh sub-agent compare the blueprint with this session's transcript. It lists each user decision as PRESENT, SUPERSEDED, CHANGED or MISSING against the blueprint and its decision log, with the user's words and time, and lists which sections must be built before which. Tell it to keep scratch in the scratchpad and run Python with `-I`.
 
-Give it the blueprint and this session's transcript, the newest `*.jsonl` in `~/.claude/projects/<tree path with / and . as ->/` (confirm by grepping for the feature ticket id). It keeps scratch in the scratchpad and runs Python with `-I`. It reads each user message with the assistant text before it, since "yes" only means something next to its question.
-
-It lists the decisions the user made that the blueprint should reflect as PRESENT, SUPERSEDED, CHANGED or MISSING, each with the user's words and time, and which sections must be built before which.
-
-Verify CHANGED, MISSING and SUPERSEDED against the transcript, fix what holds, and ask the user where the answer isn't clear. A decision fix goes in its section and the decision log. Put the dependencies under Dependencies and Constraints as a build-order list for the reviewer and `dispatch:breakdown`.
+Fix confirmed gaps, and ask the user where the answer isn't clear. A decision fix goes in its section and the decision log. Put the dependencies under Dependencies and Constraints as a build-order list.
 
 ## Review or break down
 
