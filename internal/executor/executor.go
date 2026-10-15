@@ -290,6 +290,9 @@ func (e *Executor) comment(ctx context.Context, w rules.Want, wd world.World) Re
 	text, _ := w.Args["text"].(string)
 	id := e.linearID(w.Subject, wd)
 	if id == "" {
+		id = w.Target["linearID"]
+	}
+	if id == "" {
 		return failed("%s was not read", w.Subject)
 	}
 	if err := e.Linear().Comment(ctx, id, text); err != nil {

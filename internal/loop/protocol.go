@@ -2,7 +2,10 @@ package loop
 
 // Operations a client asks of the running loop over its socket.
 const (
-	OpTick    = "tick"
+	OpTick = "tick"
+	// OpSettle waits for the loop to settle and reports every action since it started,
+	// without reading anything again. A test that starts the loop and ticks once uses it.
+	OpSettle  = "settle"
 	OpTell    = "tell"
 	OpIdle    = "idle"
 	OpPending = "pending"
@@ -21,8 +24,6 @@ type Request struct {
 	Op     string `json:"op"`
 	Ticket string `json:"ticket,omitempty"`
 	Text   string `json:"text,omitempty"`
-	// All makes a tick report every action since the loop started, not only those after it asked.
-	All bool `json:"all,omitempty"`
 }
 
 // Response is the loop's answer. Lines are printed to stdout, one per ticket.

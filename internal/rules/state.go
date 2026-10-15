@@ -569,6 +569,11 @@ func (s *State) addEscalations() {
 			}
 			return "pending"
 		}
+		// The ticket may have left the tracked set since, and a rule that finishes the
+		// comment still has to name it.
+		if _, ok := s.lookup("linear.ticket", rc.Subject); !ok {
+			s.foreignTicket(rc.Subject)
+		}
 		e := &Escalation{
 			Ticket:    Known(Ref{Kind: "linear.ticket", ID: rc.Subject}, at),
 			Reason:    Known(rc.Detail, at),

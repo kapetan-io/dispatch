@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch"
+	"github.com/kapetan-io/dispatch/internal/linear"
 )
 
 // keyScript writes an executable that appends a line to a counter file on each
@@ -40,10 +41,10 @@ func TestApiKeyCommandSuppliesTheLinearKey(t *testing.T) {
 	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
-	out, err := h.run("tick", "--dry-run")
+	_, err := h.run("tick")
 
 	require.NoError(t, err)
-	assert.Equal(t, "launch ENG-1\n", out)
+	assert.Len(t, h.launches(), 1)
 }
 
 func TestApiKeyCommandWinsOverTheKeychain(t *testing.T) {
@@ -53,7 +54,7 @@ func TestApiKeyCommandWinsOverTheKeychain(t *testing.T) {
 	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\napi_key_keychain = \"no-such-service\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
-	_, err := h.run("tick", "--dry-run")
+	_, err := h.run("tick")
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, runCount(t, counter))
@@ -67,7 +68,7 @@ func TestApiKeyCommandYieldsToTheEnvironmentKey(t *testing.T) {
 	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
-	_, err := h.run("tick", "--dry-run")
+	_, err := h.run("tick")
 
 	require.NoError(t, err)
 	assert.Equal(t, 0, runCount(t, counter))
@@ -105,19 +106,13 @@ func TestApiKeyCommandRunsOncePerRunProcess(t *testing.T) {
 	command, counter := keyScript(t, h.dir, "echo test-key")
 	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	ctx, stop := context.WithCancel(context.Background())
-	defer stop()
 
-	done := make(chan error, 1)
-	go func() {
-		_, _, err := h.runWith(ctx, dispatch.Options{}, "run", "--interval", "20ms")
-		done <- err
-	}()
+	h.tick()
+	callsAfter1 := h.linear.calls()
+	h.tick()
+	h.advance(5 * time.Minute)
 
-	// Several ticks have run once the Linear fake has answered several times.
-	require.Eventually(t, func() bool { return h.linear.calls() >= 3 }, 5*time.Second, 10*time.Millisecond)
-	stop()
-	require.NoError(t, <-done)
+	require.Greater(t, h.linear.calls(), callsAfter1)
 	assert.Equal(t, 1, runCount(t, counter))
 }
 
@@ -145,25 +140,20 @@ func TestLinearViewerFailsWithoutAKey(t *testing.T) {
 	assert.Empty(t, out)
 }
 
-func TestApiKeyCommandRotationIsPickedUpAfterLinearRejectsTheKey(t *testing.T) {
+func TestApiKeyCommandRunsAgainOnTheNextStartAfterLinearRejectsTheKey(t *testing.T) {
 	h := newHarness(t)
 	h.useConfiguredKey(t)
 	command, counter := keyScript(t, h.dir, `if [ "$(wc -l < `+filepath.Join(h.dir, "runs")+`)" -le 1 ]; then echo bad; else echo test-key; fi`)
 	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	ctx, stop := context.WithCancel(context.Background())
-	defer stop()
-
-	done := make(chan error, 1)
-	go func() {
-		_, _, err := h.runWith(ctx, dispatch.Options{}, "run", "--interval", "20ms")
-		done <- err
-	}()
 
 	// Linear answers 401 to the first key, so only the rerun's key can reach it.
-	require.Eventually(t, func() bool { return len(h.launches()) >= 1 }, 5*time.Second, 10*time.Millisecond)
-	stop()
-	require.NoError(t, <-done)
+	_, err := h.run("run")
+	require.ErrorIs(t, err, linear.ErrUnauthorized)
+	_, err = h.run("tick")
+
+	require.NoError(t, err)
+	assert.Len(t, h.launches(), 1)
 	assert.Equal(t, 2, runCount(t, counter))
 }
 
@@ -178,7 +168,7 @@ func TestApiKeyCommandStopsWhenRunIsCancelled(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, _, err := h.runWith(ctx, dispatch.Options{}, "run", "--interval", "20ms")
+		_, _, err := h.runWith(ctx, dispatch.Options{}, "run")
 		done <- err
 	}()
 	require.Eventually(t, func() bool { return runCount(t, counter) == 1 }, 5*time.Second, 10*time.Millisecond)
@@ -186,13 +176,13 @@ func TestApiKeyCommandStopsWhenRunIsCancelled(t *testing.T) {
 
 	select {
 	case err := <-done:
-		require.NoError(t, err)
+		require.Error(t, err)
 	case <-time.After(3 * time.Second):
 		t.Fatal("dispatch run did not return within 3s of cancel")
 	}
 }
 
-func TestApiKeyCommandThatBlocksTimesOutAndTheNextTickRetries(t *testing.T) {
+func TestApiKeyCommandThatBlocksTimesOutAndTheNextStartRetries(t *testing.T) {
 	h := newHarness(t)
 	h.useConfiguredKey(t)
 	command, counter := keyScript(t, h.dir, `if [ "$(wc -l < `+filepath.Join(h.dir, "runs")+`)" -le 1 ]; then sleep 30; fi; echo test-key`)
@@ -203,8 +193,8 @@ func TestApiKeyCommandThatBlocksTimesOutAndTheNextTickRetries(t *testing.T) {
 
 	require.ErrorContains(t, err, command)
 	require.ErrorContains(t, err, "timed out after 1s")
-	out, _, err := h.runWith(context.Background(), dispatch.Options{KeyCommandTimeout: time.Second}, "tick", "--dry-run")
+	_, _, err = h.runWith(context.Background(), dispatch.Options{KeyCommandTimeout: time.Second}, "tick")
 	require.NoError(t, err)
-	assert.Equal(t, "launch ENG-1\n", out)
+	assert.Len(t, h.launches(), 1)
 	assert.Equal(t, 2, runCount(t, counter))
 }

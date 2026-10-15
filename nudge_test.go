@@ -77,11 +77,14 @@ func TestTickDoesNotCountANudgeHerdrRefused(t *testing.T) {
 
 	assert.Empty(t, h.prompts())
 	assert.Empty(t, h.linear.mutations())
+	// Each tick retries the nudge, and every attempt is its own receipt.
 	ledger := h.ledgerNow()
-	require.Len(t, ledger, 1)
-	assert.Equal(t, "nudge", ledger[0].Kind)
-	assert.Equal(t, "failed", string(ledger[0].Outcome))
-	assert.Equal(t, "blocked", ledger[0].Detail)
+	require.Len(t, ledger, 4)
+	for _, receipt := range ledger {
+		assert.Equal(t, "nudge", receipt.Kind)
+		assert.Equal(t, "failed", string(receipt.Outcome))
+		assert.Equal(t, "blocked", receipt.Detail)
+	}
 }
 
 func TestTickSendsTheResumeNudgeWhenAnswerMovesTicketBack(t *testing.T) {

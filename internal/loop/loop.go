@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -581,6 +582,13 @@ func (l *Loop) restOf(w rules.Want, res rules.Result) []rules.Want {
 // begin writes the attempted receipt and only then starts the action, so a crash
 // between the two leaves a record that it was tried.
 func (l *Loop) begin(w rules.Want, rest []rules.Want, reply chan Response) error {
+	if w.Kind == "linear.comment" {
+		w.Target = maps.Clone(w.Target)
+		if w.Target == nil {
+			w.Target = map[string]string{}
+		}
+		w.Target["linearID"] = l.linearID(w.Subject)
+	}
 	at := l.ingest()
 	rc := ledger.Receipt{Kind: w.Receipt, Subject: w.Subject, Once: w.Once, Rule: w.Rule, Started: at, Resync: l.resync}
 	if len(rest) > 0 {
@@ -687,6 +695,17 @@ func (l *Loop) resumeRest() {
 			_ = l.runNext(rc)
 		}
 	}
+}
+
+// linearID is Linear's id for a ticket an escalation moved, from its receipt, so a lost
+// comment can be finished after the ticket left the tracked set.
+func (l *Loop) linearID(subject string) string {
+	for i := len(l.led.Entries) - 1; i >= 0; i-- {
+		if rc := l.led.Entries[i]; rc.Subject == subject && rc.TicketID != "" {
+			return rc.TicketID
+		}
+	}
+	return ""
 }
 
 func orStr(s, def string) string {

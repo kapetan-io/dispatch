@@ -372,8 +372,11 @@ func TestTickReadsOneInReviewPRPerTicketPerTick(t *testing.T) {
 
 	_, err := h.run("tick")
 	require.NoError(t, err)
+	assert.Equal(t, []string{"thrawn01/eng-1", "thrawn01/eng-2"}, h.prReads())
 
-	// The loop's first read and the tick's read take one page each per ticket.
+	// Each tick after the loop's own first read takes one page per ticket.
+	_, err = h.run("tick")
+	require.NoError(t, err)
 	assert.Equal(t, []string{"thrawn01/eng-1", "thrawn01/eng-2", "thrawn01/eng-1", "thrawn01/eng-2"}, h.prReads())
 }
 

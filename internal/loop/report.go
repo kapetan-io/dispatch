@@ -70,11 +70,13 @@ func (l *Loop) onRequest(r request) error {
 		r.reply <- Response{Idle: l.idle, Busy: l.busy()}
 	case OpPending:
 		r.reply <- Response{Lines: l.pendingLines(), Code: CodeFailed}
+	case OpSettle:
+		l.waiters = append(l.waiters, &waiter{ticket: strings.ToUpper(r.Ticket), reply: r.reply})
+		if !l.busy() {
+			l.release()
+		}
 	case OpTick:
 		seen := len(l.log)
-		if r.All {
-			seen = 0
-		}
 		if err := l.onResync("dispatch.tick"); err != nil {
 			return err
 		}
