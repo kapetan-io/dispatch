@@ -26,14 +26,7 @@ You are answering a "why" question about a piece of code by synthesizing finding
 
 ## Epistemics Framework
 
-You MUST follow the framework in `references/epistemics.md`. Read it in full before writing the output. The key rules:
-
-1. Every claim sits in one of these tiers: **Direct**, **Supported**, **Inferred**, **Speculative**, **Unknown**. The tier determines what section the claim goes in and how it's phrased.
-2. Every Direct/Supported claim must have a citation (PR #, ticket ID, doc URL, chat permalink, commit hash, or file:line).
-3. Inferred and Speculative claims must use hedged language ("appears to", "likely", "suggests", "one possibility is").
-4. Never cite code as evidence for its own intent.
-5. Gaps in the evidence must be documented. Don't fill them with plausible-sounding guesses.
-6. If the user's question embedded a hypothesis, treat it as a candidate, not a conclusion. Check the evidence independently.
+Read `references/epistemics.md` in full before writing and follow it: every claim sits in a tier, cites its source, and uses the tier's phrasing, and gaps are documented rather than filled.
 
 ## Instructions
 
@@ -98,15 +91,12 @@ Be specific. "We searched the issue tracker for [query1], [query2], [query3] and
 
 ### Sources Consulted
 
-Bulleted list of what was actually searched, so the user can judge coverage and redirect. Format:
+One line per investigator, so the user can judge coverage. Give what was searched, or "Not searched" with the reason:
 
-- **Source control history**: {file paths}, {number of commits reviewed}, PRs #{numbers}, and code comments searched. Or "Not searched. This should not happen because git and `gh` are always expected."
-- **Issue / ticket tracker**: {ticket IDs and keyword searches}. Or "Not searched. No matching MCP available in this environment."
-- **Long-form documents**: {page titles and search queries}. Or "Not searched. No matching MCP available in this environment."
-- **Real-time team chat**: {channels searched, date ranges, queries}. Or "Not searched. No matching MCP available in this environment."
-- **Infrastructure observability**: {dashboards, monitors, metrics, logs, traces, or incidents searched}. Or "Not searched. No matching MCP available in this environment."
-- **Error / exception tracking**: {issues, events, or releases searched}. Or "Not searched. No matching MCP available in this environment."
-- **Product analytics warehouse**: {fully-qualified tables queried, the time windows, and the numeric summaries (counts, percentiles, first/last-seen timestamps) that bore on the question}. Or "Not searched. No matching MCP available in this environment."
+- **Source control history**: files, commits reviewed, PRs, code comments.
+- **Issue / ticket tracker**, **Long-form documents**, **Real-time team chat**: tickets, pages, channels, date ranges, queries.
+- **Infrastructure observability**, **Error / exception tracking**: dashboards, monitors, issues, releases searched.
+- **Product analytics warehouse**: fully-qualified tables, time windows, and the numeric summaries that bore on the question.
 
 ### Confidence Summary
 
@@ -118,18 +108,8 @@ One or two sentences summarizing your overall confidence. E.g.:
 
 ## Quality Check Before Returning
 
-Before finalizing, review your output against this checklist:
-
-1. Does every claim in "What We Found" have a citation? If not, add one or move the claim to "Inferred" or "Hypotheses."
-2. Is the phrasing tier-appropriate? (Direct claims can use "because". Inferred claims cannot.)
-3. Did you surface any contradictions you noticed, or did you quietly pick one?
-4. Does the "What We Don't Know" section exist and name specific gaps? If it's empty or missing, be suspicious. Historical investigations almost always have gaps.
-5. If the user embedded a hypothesis in their question, did you check it against the evidence rather than rubber-stamping it?
-6. Did you cite any code as evidence for its own intent? Remove those. Code is mechanics, not motivation.
-7. Is the overall tone calibrated? A confident-sounding answer with weak evidence is the exact failure mode this skill exists to prevent.
-
-If any item fails, revise before returning.
+Run the calibration check at the end of `references/epistemics.md` against your output, and revise if anything fails. Also confirm you surfaced contradictions rather than quietly picking one.
 
 ## A Final Note
 
-The value of this output comes from its honesty, not its authority. A reader who takes your answer to the original author, an engineering lead, or a product manager should be well-positioned to ask the right follow-up questions. Be clear about what's known, what's inferred, and what's missing. Don't optimize for looking decisive. Optimize for being useful.
+The value of this output is its honesty. Someone taking it to the original author should be able to ask the right follow-up questions.

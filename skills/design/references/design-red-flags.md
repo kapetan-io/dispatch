@@ -2,62 +2,29 @@
 
 Screen every candidate before synthesis. A red flag is a reason to revise or reject the shape.
 
-## Shallow module
+## Ousterhout's four
 
-A shallow module exposes a large interface while hiding little complexity. Judge depth by the capability and policy hidden behind the public surface relative to the size of that surface. Prefer a simple interface backed by substantial behavior.
-
-Do not confuse a deep module with a deep call chain. A deep call chain scatters understanding across layers. A deep module concentrates capability behind one interface.
-
-Look for these signs:
-
-- Callers coordinate several methods to complete one operation.
-- Public options expose internal stages or implementation choices.
-- Learning the interface does not save the caller from learning the implementation.
-
-## Information leakage
-
-Information leakage makes multiple modules depend on the same internal decision. A representation, policy, or protocol detail appears in more than one place, so changing it requires coordinated edits.
-
-Public re-exports of transport or wire types are leakage. Parse external data into domain types behind the interface. Keep storage schemas, framework objects, and protocol details private.
+- **Shallow module.** A large interface hiding little. Callers coordinate several methods for one operation, or options expose internal stages. Judge depth by the capability hidden behind the surface, and don't mistake a deep module for a deep call chain, which scatters understanding across layers.
+- **Information leakage.** One internal decision appears in several modules, so changing it takes coordinated edits. Re-exporting transport or wire types is leakage. Parse external data into domain types behind the interface.
+- **Temporal decomposition.** Modules split by execution order (load, validate, transform, save) repeat one representation and its invariants at every boundary. Group by the knowledge a module owns.
+- **Pass-through method.** Forwards the same arguments to a method of the same shape. Remove it unless it adds policy or adaptation.
 
 ## Boundary below the domain
 
-Testing the main behavior would mean scripting a dependency's output or asserting the exact request sent. The boundary sits below the domain, so tests can only restate the implementation.
-
-Move the boundary up until tests read as situations: state set up in the domain's words, an action through the surface, a domain outcome asserted.
-
-## Temporal decomposition
-
-Temporal decomposition organizes modules by execution order instead of the knowledge they own. Separate load, validate, transform, and save stages often repeat one representation and its invariants across several boundaries.
-
-Group code around domain knowledge and ownership. Methods that run at different times can still belong to one module when they protect the same decisions.
-
-## Pass-through method
-
-A pass-through method forwards the same arguments to another method with the same shape. It adds a layer without hiding complexity.
-
-Remove it or move responsibility to the module that can complete the operation. Keep a forwarding boundary only when it adds policy, adaptation, or a distinct abstraction.
+Testing the main behavior would mean scripting a dependency's output or asserting the exact request sent, so tests can only restate the implementation. Move the boundary up until tests read as situations: state set up in the domain's words, an action through the surface, a domain outcome asserted.
 
 ## Split ownership
 
-More than one module writes the same state or keeps its own copy of it. An agent that edits one writer can't see the others, so their rules diverge.
-
-Give each piece of state one owner. Other modules read it or ask the owner to change it.
+More than one module writes the same state or keeps its own copy. An agent that edits one writer can't see the others, so their rules diverge. Give each piece of state one owner. Others read it or ask the owner to change it.
 
 ## Two ways to do one task
 
-The design supports more than one way to do the same task. An agent copies whichever way it finds first, so every way keeps gaining callers.
-
-Keep one way. Move callers off the others and delete them in the same change.
+An agent copies whichever way it finds first, so every way keeps gaining callers. Keep one, move callers off the others and delete them in the same change.
 
 ## Importable internals
 
-A caller can import a module's internals. An agent takes the shortest path that compiles, so it imports them directly and they become part of the interface.
-
-Make internals unreachable from outside the module, so an import from outside fails the build.
+An agent takes the shortest path that compiles, so a caller that can import internals will, and they become interface. Make them unreachable so an outside import fails the build.
 
 ## Hand-synced list
 
-Two or more places list the same items, and adding an item means editing every list. An agent that sees one list updates only that one.
-
-Keep one list and derive the others from it. If a list can't be derived, make the build fail when the lists disagree.
+Two places list the same items and adding one means editing both. An agent that sees one list updates only that one. Keep one list and derive the others, or fail the build when they disagree.

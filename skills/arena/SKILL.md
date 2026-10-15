@@ -29,7 +29,7 @@ The N candidates will receive the same prompt, so the prompt is the contract.
 3. List the premises the question assumes (existing mechanisms, timers, config keys), the artifact's main structural choice (where the boundary sits, who owns each thing), and any premises the caller passes in. For each, ask whether a signal now available (an event, hook or callback) makes it unnecessary. A premise that is a true constraint stays in the candidate prompt as a constraint. A premise that is not a true constraint stays out of the candidate prompt.
 4. Write the candidate prompt so it tells each candidate to name at least one premise of the question and answer "if we built this from scratch with every signal now available, would this mechanism exist?" before answering the question as asked. If the answer is no, the candidate says so first. A candidate has tested a premise when it argues from evidence that the premise is or is not a true constraint, and not merely when it names the premise. The listed premises are a sample. Each candidate also names the premise its own shape rests on most.
 5. Pick the runners. Default to three candidates, one each on the Agent tool's `model` values `opus`, `fable` and `sonnet`. Spawn more when the arena covers multiple design directions. Same model N times when the work is generation-bound rather than judgment-sensitive. Candidates use the default (general-purpose) agent, since they must write files. If a `model` value is rejected, run that seat on the default model and say so in the synthesis record.
-6. Assign output paths. Each candidate writes to its own location (a git worktree where possible, otherwise `<scratchpad>/arena-<slug>/candidate-<n>/`). For a worktree, set `isolation: "worktree"` and read the path from the agent's result. Otherwise assign the path up front. Separate before serializing shared state. When concurrent actors might share mutable state, first ask whether they need the same mutable object. If not, eliminate the sharing. Give each actor its own owned file, key, branch, or state directory, and merge only at the read/reporting boundary.
+6. Assign output paths. Each candidate writes to its own location (a git worktree where possible, otherwise `<scratchpad>/arena-<slug>/candidate-<n>/`). For a worktree, set `isolation: "worktree"` and read the path from the agent's result. Otherwise assign the path up front. Candidates never share a mutable file or directory, so each owns its path and you merge only when you read.
 
 ## Phase B: Fan out
 
@@ -51,7 +51,7 @@ Read every candidate end to end before picking.
 
 Score each candidate against the rubric criterion by criterion, not on holistic feel. Compare against the cross-judge. Agreement on the base confirms the pick. Disagreement means one of you is biased or the rubric was ambiguous. Read both rationales before deciding.
 
-Pick the base on which candidate a future maintainer can extend most easily without breaking invariants. Prefer the cleaner boundary or smaller API when two feel tied, per the Laziness Protocol. Aim for the most result with the least code and complexity. Make the smallest change that solves the problem.
+Pick the base on which candidate a future maintainer can extend most easily without breaking invariants. When two feel tied, prefer the cleaner boundary or smaller API (`dispatch:principle-laziness-protocol`).
 
 Record the pick and the reason in a short synthesis note alongside the base artifact, including the cross-judge's verdict.
 

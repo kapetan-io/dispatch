@@ -15,52 +15,11 @@ The most trustworthy source, tied directly to the code, and the most complete. E
 
 ## How to search it
 
-Expand the seed commit list:
+Beyond blame and `git log --follow`, the useful moves:
 
-```bash
-# Full history of the file through renames
-git log --follow --oneline -- <file>
-
-# Pickaxe: commits that added or removed this exact text
-git log -S '<exact_string_from_code>' -- <file>
-
-# Or for patterns:
-git log -G '<regex>' -- <file>
-
-# Who wrote each line and when
-git blame -L <start>,<end> <file>
-
-# The full diff of a specific commit
-git show <hash>
-
-# Commits between two points affecting this file
-git log <old>..<new> -p -- <file>
-```
-
-For each substantive commit, pull the PR context:
-
-```bash
-# Find the PR number from the merge commit or branch
-git log -1 --format=%B <hash>
-
-# Full PR context: body, review comments, linked issues
-gh pr view <number> --json title,body,author,createdAt,mergedAt,labels,closingIssuesReferences,comments,reviews,files
-
-# The --json reviews and comments fields are where the real signal is
-```
-
-Look for out-of-band docs:
-
-```bash
-# ADRs often live in docs/adr/ or similar
-rg -l -i 'architecture.decision' --glob '*.md'
-
-# TODOs and FIXMEs near the target
-rg -n -C2 '(TODO|FIXME|HACK|XXX|NOTE)' <target_file>
-
-# Related tests. Names often encode the "why"
-rg -l '<symbol>' --glob '*test*'
-```
+- Pickaxe: `git log -S '<exact string>' -- <file>` (or `-G '<regex>'`) finds the commit that added or removed a line, even after renames and moves.
+- `gh pr view <n> --json title,body,comments,reviews,closingIssuesReferences`. The reviews and comments fields hold the real signal.
+- Out-of-band docs: ADRs (`docs/adr/` or similar), TODO/FIXME/HACK near the target, and tests that reference the symbol, whose names often encode the edge case.
 
 ## What good evidence looks like here
 
