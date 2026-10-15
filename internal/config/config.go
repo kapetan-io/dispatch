@@ -186,8 +186,11 @@ func Load(path string) (Config, error) {
 			unknown = append(unknown, key.String())
 		}
 	}
-	if len(unknown) > 0 {
-		return Config{}, fmt.Errorf("while reading config %s: unknown setting %s", path, strings.Join(unknown, ", "))
+	if len(unknown) == 1 {
+		return Config{}, fmt.Errorf("while reading config %s: unknown setting %s", path, unknown[0])
+	}
+	if len(unknown) > 1 {
+		return Config{}, fmt.Errorf("while reading config %s: unknown settings:\n  %s", path, strings.Join(unknown, "\n  "))
 	}
 	if err := c.check(); err != nil {
 		return Config{}, fmt.Errorf("while reading config %s: %w", path, err)

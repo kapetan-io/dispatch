@@ -6,6 +6,14 @@ dispatch reads `~/.config/dispatch/config.toml`. Every setting is optional, and 
 dispatch: while reading config /Users/you/.config/dispatch/config.toml: unknown setting max_in_progres
 ```
 
+With several unknown settings, the error names the file once and lists each setting on its own line:
+
+```
+dispatch: while reading config /Users/you/.config/dispatch/config.toml: unknown settings:
+  interval_minutes
+  max_in_progress
+```
+
 `dispatch tick`, `dispatch run` and `dispatch tell` all load the file this way. `dispatch ticket-hint` and `dispatch record-stop` run in every Claude Code session, so they print the error to stderr and exit 0 instead.
 
 Every `toml` block in the docs is loaded by a test through the same loader, so these examples cannot drift from the code.

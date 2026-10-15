@@ -22,9 +22,9 @@ func TestUnknownConfigKeyFailsEveryCommand(t *testing.T) {
 		{"TickDryRun", "max_in_progres = 9\n", []string{"tick", "--dry-run"}, `unknown setting max_in_progres`},
 		{"RunWithoutInterval", "max_in_progres = 9\n", []string{"run"}, `unknown setting max_in_progres`},
 		{"Tell", "max_in_progres = 9\n", []string{"tell", "ENG-1", "hello"}, `unknown setting max_in_progres`},
-		{"BlueprintNeedsHumanTable", "[plugins.linear.needs_human]\nstatus = \"Needs Human\"\n", []string{"tick"}, `unknown setting plugins.linear.needs_human`},
+		{"BlueprintNeedsHumanTable", "[plugins.linear.needs_human]\nstatus = \"Needs Human\"\n", []string{"tick"}, "unknown settings:\n  plugins.linear.needs_human\n  plugins.linear.needs_human.status"},
 		{"StatusesTodoTypo", "[plugins.linear.statuses]\ntodoo = \"Todo\"\n", []string{"tick"}, `unknown setting plugins.linear.statuses.todoo`},
-		{"TwoUnknownKeys", "nudge_limt = 1\nworker_modle = \"opus\"\n", []string{"tick"}, `unknown setting nudge_limt, worker_modle`},
+		{"TwoUnknownKeys", "nudge_limt = 1\nworker_modle = \"opus\"\n", []string{"tick"}, "unknown settings:\n  nudge_limt\n  worker_modle"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
@@ -127,8 +127,8 @@ func TestOldConfigLayoutFailsTheStartNamingItsFirstKey(t *testing.T) {
 		config string
 		want   string
 	}{
-		{"IntervalMinutes", "interval_minutes = 5\nmax_in_progress = 4\n", `unknown setting interval_minutes, max_in_progress`},
-		{"LinearTable", "[linear]\nteams = [\"ENG\"]\n", `unknown setting linear`},
+		{"IntervalMinutes", "interval_minutes = 5\nmax_in_progress = 4\n", "unknown settings:\n  interval_minutes\n  max_in_progress"},
+		{"LinearTable", "[linear]\nteams = [\"ENG\"]\n", "unknown settings:\n  linear\n  linear.teams"},
 		{"ModelsMoved", "worker_model = \"opus\"\n", `unknown setting worker_model`},
 		{"DoneRenamed", "[plugins.linear.statuses]\ndone = [\"Done\"]\n", `unknown setting plugins.linear.statuses.done`},
 	} {
