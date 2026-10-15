@@ -184,7 +184,7 @@ In a repo with `auto_merge = true`, a cycle that finds an In Review ticket's PR 
 - A draft is never merged. In a repo with `open_pr_as = "draft"`, an approved PR you open merges in the next cycle when it is ready, without the "reviews are handled" notification.
 - An approval of an earlier commit doesn't count, so a push after approval waits for a new one.
 - A ready PR with no approval on its head gets the ready-for-review notification as before. If the approval arrives later, the next cycle merges it.
-- A failed merge, such as branch protection refusing it, prints the error to stderr and sends one notification. Later cycles skip that head, and a push makes the PR eligible again.
+- A merge GitHub refuses, such as branch protection refusing it, prints the error to stderr and sends one notification. Later cycles skip that head, and a push makes the PR eligible again. A merge that fails before it reaches GitHub, such as a Linear read that failed or a ticket that changed since the cycle, is tried again at the next resync.
 - `dispatch rules check` shows whether the `merge` action is wanted now and takes no action.
 - dispatch reads the config once, when `dispatch run` starts, so a change to a repo's `auto_merge` takes effect when you stop `dispatch run` and start it again.
 
