@@ -22,8 +22,9 @@ Load `dispatch:converse` with the Skill tool. Open a todolist with one entry per
 5. Agree on the contract sketch
 6. Discuss the rest of the technical half, then run the correctness and testability passes
 7. Write the blueprint
-8. Review or break down
-9. Hand off
+8. Audit the transcript
+9. Review or break down
+10. Hand off
 
 ### Orient
 
@@ -134,6 +135,12 @@ Objective, Mental Model, User Stories, Correctness Constraints (State Invariants
 Keep PII as its own section. Mark anything unresolved with `TODO:` and a line on what is missing. Keep it short, since a section that drives no decision is noise. Write for a reader who was not in the discussion, with no "the option we discussed". "We considered X but chose Y because Z" is useful. If the feature has an OpenAPI spec, the contract sketch becomes a second document on the ticket, as a fenced YAML block.
 
 If the discussion resolved domain terms, write them to the right `docs/CONTEXT.md` in one pass. Do not commit. The tree is returned at hand-off, which discards the change, so the hand-off uploads it.
+
+## Audit the transcript
+
+Have a sub-agent compare the blueprint with this session's transcript. The sub-agents job is to list each user decision as PRESENT, SUPERSEDED, CHANGED or MISSING against the blueprint and its decision log, with the user's words and time.
+
+Using the report from the audit sub-agent, fix confirmed gaps, and ask the user where the answer isn't clear. A decision fix goes in its section and the decision log.
 
 ## Review or break down
 
