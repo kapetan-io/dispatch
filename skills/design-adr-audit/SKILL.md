@@ -11,7 +11,7 @@ This is **read-only**. You never edit the plan, the ADRs or code. Acting on find
 
 ## 1. Resolve the plan
 
-Use what the user or `design-review` supplied. A feature ticket's blueprint is a Linear document. Sub-agents read it themselves, so name the ticket and tell them to load the Linear tools with ToolSearch and only read. List every file or document an agent must read to know what the plan decides, including any ADR the plan itself records. If you can't identify the plan, ask.
+Use what the user or `design-review` supplied. A feature ticket's blueprint is a Linear document, so write its `get_document` text to a scratchpad file and give sub-agents that path, not Linear access. List every file or document an agent must read to know what the plan decides, including any ADR the plan itself records. If you can't identify the plan, ask.
 
 ## 2. Scope the ADR corpus
 

@@ -36,7 +36,7 @@ Blueprint: <document link>
 
 ## Reading and writing the blueprint
 
-Read the blueprint with `get_document` on the feature ticket. Sub-agents read it themselves: give each the feature ticket id and tell it to load the Linear tools with ToolSearch and only read. Each round then sees the blueprint as the last patch left it, and the prompt doesn't carry a copy that goes stale. Point them at `docs/CONTEXT.md` (the domain glossary) if it exists, and give only the list of files in `docs/adr/`, so they read specific ADRs on demand.
+Read the blueprint with `get_document` on the feature ticket and write it to `blueprint.md` in your scratchpad. Sub-agents read that file, never Linear, so a missing Linear connection can't leave one reviewing nothing. Rewrite the file from a fresh `get_document` after every patch, so each round sees the blueprint as the last patch left it. Point them at `docs/CONTEXT.md` (the domain glossary) if it exists, and give only the list of files in `docs/adr/`, so they read specific ADRs on demand.
 
 Linear rewrites markdown on save: bullets come back as `*`, a leading H1 is dropped and lines can gain blanks. Apply each fix as a `save_document` patch whose old text you copied from a fresh `get_document`, and read again before the next patch. Never push the whole document back.
 
@@ -58,7 +58,7 @@ All sub-agents are foreground and use `model: "sonnet"`.
 
 ## Phase 1: Review agent
 
-Prompt: you are reviewing a Blueprint, one document holding a feature's product definition and technical design. Find gaps, inconsistencies and ambiguities that would force product or implementation decisions during the build, and places where the technical half does not satisfy the product intent. Give it the ticket id, the glossary path, the ADR file list, the coverage map, the pre-work findings, the round number, and in round 2+ the prior fixes, the deferred list and the blockers.
+Prompt: you are reviewing a Blueprint, one document holding a feature's product definition and technical design. Find gaps, inconsistencies and ambiguities that would force product or implementation decisions during the build, and places where the technical half does not satisfy the product intent. Give it the blueprint path, the glossary path, the ADR file list, the coverage map, the pre-work findings, the round number, and in round 2+ the prior fixes, the deferred list and the blockers.
 
 Each finding has a category, half (Product, Technical, Stories, Cross-half), priority, section, evidence, issue and suggested fix, plus authoritativeness for drift. Priorities are P0 (blocks the build), P1 (forces a decision an engineer shouldn't make alone) and P2 (polish). File nothing below P2.
 
@@ -76,7 +76,7 @@ Each finding has a category, half (Product, Technical, Stories, Cross-half), pri
 
 ## Phase 2: Validation agent
 
-Give it the findings, the ticket id, the glossary path, the ADR list and the coverage map. For each finding it reads the cited section and answers **Confirmed**, **False positive** (say why: covered elsewhere, an ADR settles it, quoted out of context, same concept in different words) or **Needs clarification** (a real ambiguity only the user can settle). It verifies drift locations, both passages of an inconsistency and the ADR itself. For stories, silence is not a violation, and an unverifiable criterion must truly be unverifiable.
+Give it the findings, the blueprint path, the glossary path, the ADR list and the coverage map. For each finding it reads the cited section and answers **Confirmed**, **False positive** (say why: covered elsewhere, an ADR settles it, quoted out of context, same concept in different words) or **Needs clarification** (a real ambiguity only the user can settle). It verifies drift locations, both passages of an inconsistency and the ADR itself. For stories, silence is not a violation, and an unverifiable criterion must truly be unverifiable.
 
 ## Phase 3: Skeptic agent
 
@@ -98,7 +98,7 @@ For each surface-to-user finding, ask through AskUserQuestion, framed "Finding N
 
 ## Phase 6: Goal validation
 
-A separate agent reads the blueprint cold, with the glossary path and ADR list, and answers one question: could an engineer build the right thing from this tomorrow, or would they get stuck or build the wrong thing? It does not look for improvements. It checks: (1) product intent is clear and acceptance criteria are mechanically verifiable; (2) contracts are unambiguous enough for two engineers to build compatible sides; (3) nothing contradicts, including across the halves; (4) no decision is deferred that an engineer needs before writing code; (5) the technical half covers each product requirement that needs a technical decision; (6) with Correctness Constraints, a reader can see how each invariant is preserved and no invariant rests on an unstated implementation property; (7) with User Stories, each has verifiable criteria and the stories cover the workflows and constraints. Missing detail, brevity and "could be clearer" are not blockers.
+A separate agent reads `blueprint.md` cold, with the glossary path and ADR list, and answers one question: could an engineer build the right thing from this tomorrow, or would they get stuck or build the wrong thing? It does not look for improvements. It checks: (1) product intent is clear and acceptance criteria are mechanically verifiable; (2) contracts are unambiguous enough for two engineers to build compatible sides; (3) nothing contradicts, including across the halves; (4) no decision is deferred that an engineer needs before writing code; (5) the technical half covers each product requirement that needs a technical decision; (6) with Correctness Constraints, a reader can see how each invariant is preserved and no invariant rests on an unstated implementation property; (7) with User Stories, each has verifiable criteria and the stories cover the workflows and constraints. Missing detail, brevity and "could be clearer" are not blockers.
 
 It answers **VERDICT: PASS or FAIL**, one line per criterion, and on FAIL at most 5 blockers naming what is wrong and where. PASS ends the loop. FAIL starts the next round with those blockers, or follows step 4 after round 5.
 
