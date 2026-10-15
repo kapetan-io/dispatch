@@ -784,9 +784,13 @@ func (h *harness) seedHistory(mem *world.Memory, receipts ...ledger.Receipt) {
 	if mem == nil {
 		mem = world.NewMemory()
 	}
+	var resync int
+	for _, rc := range receipts {
+		resync = max(resync, rc.Resync)
+	}
 	w, err := history.Start(filepath.Join(h.state, "events"), h.clock.Now().Add(-time.Hour),
 		history.Header{Why: "start", At: h.clock.Now().Add(-time.Hour).UnixMilli()},
-		history.Snapshot{At: h.clock.Now().Add(-time.Hour).UnixMilli(), World: mem, Ledger: history.LedgerState{Receipts: receipts}})
+		history.Snapshot{At: h.clock.Now().Add(-time.Hour).UnixMilli(), World: mem, Ledger: history.LedgerState{Receipts: receipts}, Resync: resync})
 	require.NoError(h.t, err)
 	require.NoError(h.t, w.Close(false))
 }
