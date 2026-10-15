@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
-	"github.com/kapetan-io/dispatch/internal/linear"
-	"github.com/kapetan-io/dispatch/internal/reconcile"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
@@ -436,5 +434,5 @@ func (l *launch) gitToStderr(ctx context.Context, dir string, args ...string) er
 // tabLabel is what the tick's tab rename sets, so the first tick leaves a
 // freshly launched tab alone.
 func (l *launch) tabLabel() string {
-	return reconcile.TabLabel(linear.Ticket{Identifier: l.req.Ticket, Title: l.req.Title})
+	return herdr.TabLabel(l.req.Ticket, l.req.Title)
 }

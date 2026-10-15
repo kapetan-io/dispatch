@@ -25,7 +25,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
-	"github.com/kapetan-io/dispatch/internal/worker"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -84,7 +83,7 @@ func (e *Executor) Guard(w rules.Want, wd world.World) string {
 	if wd.HerdrErr != nil {
 		return "herdr was not read"
 	}
-	if wk := worker.Find(w.Subject, wd.Trees, wd.Snapshot); wk.State != worker.None {
+	if wk := world.FindWorker(w.Subject, wd.Trees, wd.Snapshot); wk.State != world.NoWorker {
 		return "a worker is running"
 	}
 	if t, ok := ticketOf(wd, w.Subject); ok {
@@ -210,8 +209,8 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World) Res
 }
 
 func (e *Executor) nudge(ctx context.Context, w rules.Want, wd world.World) Result {
-	wk := worker.Find(w.Subject, wd.Trees, wd.Snapshot)
-	if wk.State == worker.None {
+	wk := world.FindWorker(w.Subject, wd.Trees, wd.Snapshot)
+	if wk.State == world.NoWorker {
 		return failed("%s has no worker", w.Subject)
 	}
 	text, _ := w.Args["text"].(string)

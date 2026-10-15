@@ -11,7 +11,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/stops"
-	"github.com/kapetan-io/dispatch/internal/worker"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -345,13 +344,13 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 func (s *State) addIdleWorkers(w world.World) {
 	for _, t := range slices.Clone(s.kinds["linear.ticket"]) {
 		if _, ok := s.workers[t.id]; !ok {
-			s.workerRecord(w, t.id, worker.Worker{State: worker.None}, stops.Record{})
+			s.workerRecord(w, t.id, world.Worker{State: world.NoWorker}, stops.Record{})
 			s.workers[t.id].hidden = true
 		}
 	}
 	for _, tree := range slices.Clone(s.kinds["treehouse.tree"]) {
 		if _, ok := s.workersByTree[tree.id]; !ok {
-			s.workerRecord(w, "tree:"+tree.id, worker.Worker{State: worker.None, TreePath: tree.id}, stops.Record{})
+			s.workerRecord(w, "tree:"+tree.id, world.Worker{State: world.NoWorker, TreePath: tree.id}, stops.Record{})
 			s.workersByTree[tree.id].hidden = true
 		}
 	}
@@ -379,7 +378,7 @@ func (s *State) leasedUnknown(w world.World, r *record) {
 	}
 }
 
-func (s *State) workerRecord(w world.World, id string, wk worker.Worker, stop stops.Record) {
+func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop stops.Record) {
 	at := s.ms()
 	subject := strings.SplitN(id, "@", 2)[0]
 	rec := &Worker{
@@ -396,13 +395,13 @@ func (s *State) workerRecord(w world.World, id string, wk worker.Worker, stop st
 		rec.Workspace = Known(&wk.WorkspaceID, at)
 	}
 	state := wk.State
-	if state == worker.Idle && w.Nudged[subject] {
-		state = worker.Working
+	if state == world.Idle && w.Nudged[subject] {
+		state = world.Working
 		rec.State = Known(string(state), at)
 	}
 	fallback := false
 	switch state {
-	case worker.Idle:
+	case world.Idle:
 		rec.IdleSince = Known(&at, at)
 		lastStop := Stop{At: at}
 		if stop.Reported && !stop.At.IsZero() {
@@ -412,14 +411,14 @@ func (s *State) workerRecord(w world.World, id string, wk worker.Worker, stop st
 			fallback = true
 		}
 		rec.LastStop = Known(&lastStop, at)
-	case worker.Blocked:
+	case world.Blocked:
 		rec.BlockedSince = Known(&at, at)
 	}
 	r := newRecord("herdr.worker", id, subject, rec)
 	r.stopFallback = fallback
 	if w.HerdrErr != nil {
 		r.unknownAll(s.herdrUnread)
-	} else if wk.State == worker.None {
+	} else if wk.State == world.NoWorker {
 		if t, ok := s.lookup("linear.ticket", subject); ok {
 			if repo, ok := repoOf(t); ok && w.UnreadRepos[repo] {
 				r.unknownAll(s.pools[repo].unknown)

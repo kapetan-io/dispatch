@@ -337,3 +337,42 @@ func TestAnIdleHourCostsThreeLinearQueriesPerResync(t *testing.T) {
 	assert.Equal(t, 36, h.linear.calls()-before)
 	assert.Empty(t, h.linear.mutations())
 }
+
+func TestALaunchThatLandsAfterItsDeadlineGetsNoSecondWorker(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tools.Launcher.Stall()
+
+	_, _, err := h.runWith(t.Context(), dispatch.Options{LaunchTimeout: 100 * time.Millisecond}, "tick")
+	require.ErrorContains(t, err, "ENG-1 launch failed")
+	require.Len(t, loopReceipts(h, "launch", "ENG-1"), 1)
+
+	// The launch landed after the deadline, so herdr shows the worker.
+	h.worker("ENG-1", "working")
+	h.advance(time.Second)
+	_, err = h.run("tick")
+
+	require.NoError(t, err)
+	assert.Len(t, h.launches(), 1)
+	assert.Len(t, loopReceipts(h, "launch", "ENG-1"), 1)
+}
+
+func TestANudgeThatTimesOutCountsAsToldAndIsNeverRepeated(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.tools.Herdr.StallPrompts()
+
+	_, _, err := h.runWith(t.Context(), dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tick")
+	require.NoError(t, err)
+	for range 2 {
+		h.advance(time.Hour)
+		_, err = h.run("tick")
+		require.NoError(t, err)
+	}
+
+	nudges := loopReceipts(h, "nudge", "ENG-1")
+	require.Len(t, nudges, 1)
+	assert.Equal(t, ledger.Done, nudges[0].Outcome)
+	assert.Equal(t, "timeout", nudges[0].Detail)
+}

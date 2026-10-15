@@ -7,11 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/kapetan-io/dispatch/internal/world"
 	"io"
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/linear"
-	"github.com/kapetan-io/dispatch/internal/worker"
 )
 
 // ErrBlocked is returned for a worker waiting on a question. Typing into it
@@ -37,9 +37,9 @@ type Event struct {
 
 // Nudge types text into the worker. A refused nudge is not a failed one, and
 // callers tell them apart by ErrBlocked.
-func (p Post) Nudge(ctx context.Context, w worker.Worker, text string) error {
+func (p Post) Nudge(ctx context.Context, w world.Worker, text string) error {
 	// herdr refuses a blocked agent too, but another route would not.
-	if w.State == worker.Blocked {
+	if w.State == world.Blocked {
 		return ErrBlocked
 	}
 	if err := p.Herdr.Prompt(ctx, w.PaneID, text); err != nil {

@@ -71,6 +71,9 @@ type Options struct {
 	// RuleTimeout cuts off a rule call on the wall clock. Zero means 1 second for
 	// an if and 30 seconds for a then.
 	RuleTimeout RuleTimeout
+	// LaunchTimeout is how long a launch may take before it is given up on, 25 seconds by default,
+	// and ActionTimeout how long every other action may take, 1 minute by default.
+	LaunchTimeout, ActionTimeout time.Duration
 	// Clock owns every timer the loop sets, the resync and history rotation, and
 	// stamps ingest times. Defaults to the wall clock.
 	Clock  Clock

@@ -17,7 +17,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
-	"github.com/kapetan-io/dispatch/internal/worker"
 )
 
 // Sources are the tools one read goes through.
@@ -76,7 +75,7 @@ type World struct {
 	Trees    []treehouse.Tree
 	PoolErrs map[string]error
 	// Workers maps a ticket identifier to what the lookup found.
-	Workers map[string]worker.Worker
+	Workers map[string]Worker
 	// Stops maps an In Progress ticket identifier to its idle worker's latest Stop.
 	// Tickets without a record are absent.
 	Stops map[string]stops.Record
@@ -86,7 +85,7 @@ type World struct {
 	LeaseHolders []linear.Ticket
 	HoldersErr   error
 	// Leases maps a lease holder to a worker for each tree it holds.
-	Leases map[string][]worker.Worker
+	Leases map[string][]Worker
 	// Leased holds every ticket identifier that holds a treehouse lease.
 	Leased map[string]bool
 	// Children maps an In Progress parent's identifier to all its children, in
@@ -208,19 +207,19 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 			}
 		}
 		snap := w.Snapshot
-		w.Workers, w.Stops = map[string]worker.Worker{}, map[string]stops.Record{}
+		w.Workers, w.Stops = map[string]Worker{}, map[string]stops.Record{}
 		for _, t := range w.Tickets {
-			wk := worker.Find(t.Identifier, w.Trees, snap)
+			wk := FindWorker(t.Identifier, w.Trees, snap)
 			w.Workers[t.Identifier] = wk
-			if wk.State == worker.Idle && t.Status == scope.Statuses.InProgress {
+			if wk.State == Idle && t.Status == scope.Statuses.InProgress {
 				if rec, ok := stops.Read(src.StateDir, wk.TreePath, wk.Session); ok {
 					w.Stops[t.Identifier] = rec
 				}
 			}
 		}
-		w.Leases = map[string][]worker.Worker{}
+		w.Leases = map[string][]Worker{}
 		for _, t := range w.LeaseHolders {
-			w.Leases[t.Identifier] = worker.FindAll(t.Identifier, w.Trees, snap)
+			w.Leases[t.Identifier] = FindWorkers(t.Identifier, w.Trees, snap)
 		}
 	}
 	if parts&FromLinear != 0 && w.LinearErr == nil {
@@ -346,9 +345,9 @@ func (s Scope) Parents(tickets []linear.Ticket) []linear.Ticket {
 // ReadsPR reports whether the dispatcher uses this In Review ticket's PR.
 // Working and blocked workers are skipped so their PRs cost no call, and so are
 // tickets whose labels or children make it unsure they are build tickets.
-func (s Scope) ReadsPR(t linear.Ticket, state worker.State) bool {
+func (s Scope) ReadsPR(t linear.Ticket, state WorkerState) bool {
 	if t.Status != s.Statuses.InReview || t.LabelsTruncated || t.HasChildren || !NotDesign(t) {
 		return false
 	}
-	return state == worker.None || state == worker.Idle
+	return state == NoWorker || state == Idle
 }

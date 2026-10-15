@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/linear"
-	"github.com/kapetan-io/dispatch/internal/worker"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -28,17 +28,12 @@ const unresponsiveAfter = time.Hour
 type rename struct{ id, label string }
 
 func workerOf(wd world.World, ticket string) string {
-	return string(worker.Find(ticket, wd.Trees, wd.Snapshot).State)
+	return string(world.FindWorker(ticket, wd.Trees, wd.Snapshot).State)
 }
 
 func label(emoji string, t linear.Ticket) string { return emoji + " " + t.Identifier }
 
-func tabLabel(t linear.Ticket) string {
-	if t.Title == "" {
-		return t.Identifier
-	}
-	return t.Identifier + " " + t.Title
-}
+func tabLabel(t linear.Ticket) string { return herdr.TabLabel(t.Identifier, t.Title) }
 
 // workspaceRenames lists the workspaces whose label differs from the one their
 // ticket's status calls for, and the tabs whose label differs from their ticket's.
@@ -57,7 +52,7 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 	for _, tab := range wd.Snapshot.Tabs {
 		currentTabs[tab.ID] = tab.Label
 	}
-	add := func(t linear.Ticket, w worker.Worker, emoji string) {
+	add := func(t linear.Ticket, w world.Worker, emoji string) {
 		have, ok := current[w.WorkspaceID]
 		want := label(emoji, t)
 		if w.WorkspaceID != "" && ok && have != want && l.renaming[w.WorkspaceID] != want {
@@ -69,8 +64,8 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 			continue
 		}
 		w := wd.Workers[t.Identifier]
-		if wd.Nudged[t.Identifier] && w.State == worker.Idle {
-			w.State = worker.Working
+		if wd.Nudged[t.Identifier] && w.State == world.Idle {
+			w.State = world.Working
 		}
 		switch t.Status {
 		case cfg.InProgress:
@@ -82,7 +77,7 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 		case cfg.InReview:
 			emoji := emojiInReview
 			pr, ok := wd.PRs[t.Identifier]
-			if ok && pr.Ready && w.State == worker.Idle {
+			if ok && pr.Ready && w.State == world.Idle {
 				emoji = emojiReady
 			}
 			// An unreadable PR must not flip a 👀 label to 🟡 until it is read again.
@@ -106,7 +101,7 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 		}
 		for _, w := range wd.Leases[t.Identifier] {
 			// A live worker's workspace is closed by its own rule.
-			if w.State == worker.None {
+			if w.State == world.NoWorker {
 				add(t, w, emojiPaused)
 			}
 		}
@@ -117,8 +112,8 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 // quiet reports whether t is a design or review ticket whose worker ended its
 // last turn at least an hour ago. Nothing nudges these, so the label is the only
 // sign the worker stopped without asking anything.
-func (l *Loop) quiet(t linear.Ticket, w worker.Worker) bool {
-	if w.State != worker.Idle || !slices.ContainsFunc(world.DesignLabels, t.HasLabel) || l.state == nil {
+func (l *Loop) quiet(t linear.Ticket, w world.Worker) bool {
+	if w.State != world.Idle || !slices.ContainsFunc(world.DesignLabels, t.HasLabel) || l.state == nil {
 		return false
 	}
 	stop, busy, ok := l.state.LastStop(t.Identifier)
