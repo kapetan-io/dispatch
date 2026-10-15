@@ -1,0 +1,561 @@
+package dispatch_test
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/kapetan-io/dispatch"
+	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/herdrtest"
+	"github.com/kapetan-io/dispatch/internal/rules"
+)
+
+// shippedRulesConfig is the [rules] table `rules init` asks the user to add.
+const shippedRulesConfig = "[rules]\nworker_model = \"sonnet\"\ndesign_model = \"opus\"\nlaunch_failure_limit = 2\nnudge_limit = 2\nblocked_renotify_minutes = 15\n"
+
+// repoRules is the repo's own rules/ directory, which the tests run.
+const repoRules = "rules"
+
+// rulesDir writes the files into a new directory and returns it.
+func rulesDir(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, body := range files {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644))
+	}
+	return dir
+}
+
+// oneRule is a rules directory holding dispatch.ts with just this body.
+func oneRule(t *testing.T, body string) string {
+	t.Helper()
+	return rulesDir(t, map[string]string{"dispatch.ts": "import { whenever, on, known, minutes, hours } from \"dispatch\";\n" + body})
+}
+
+func (h *harness) rules(dir string, args ...string) (string, error) {
+	h.t.Helper()
+	stdout, _, err := h.runWith(context.Background(), dispatch.Options{RulesDir: dir}, append([]string{"rules"}, args...)...)
+	return stdout, err
+}
+
+func TestRulesCheckPrintsWhatEachRuleWantsNow(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
+	h.worker("ENG-2", "working")
+
+	out, err := h.rules(repoRules, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `linear\.ticket +2 tracked tickets \(assigned to .*; teams ENG; statuses Todo, In Progress, In Review, Needs Human\)`, out)
+	assert.Regexp(t, `launch-worker +whenever +linear\.ticket +wants launch now for ENG-1\n`, out)
+	assert.Regexp(t, `nudge-stall +whenever +linear\.ticket +wants nothing now\n`, out)
+	assert.Contains(t, out, "herdr.worker")
+	assert.Contains(t, out, "treehouse.tree")
+}
+
+func TestRulesCheckListsEveryShippedRule(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	out, err := h.rules(repoRules, "check")
+
+	require.NoError(t, err)
+	for _, name := range []string{
+		"launch-worker", "relaunch-for-pr", "stop-paused-worker", "teardown-clean-tree", "stop-worker-on-kept-tree",
+		"comment-kept-tree", "close-parent", "promote-child", "escalate-launch-failures", "escalate-relaunch-limit",
+		"escalate-truncated-labels", "escalate-missing-repo", "escalate-abandoned-blocker", "escalate-abandoned-blocker-child",
+		"note-blocker-hold", "retry-escalation-comment", "nudge-comment", "nudge-resume", "nudge-stall", "nudge-pr-activity",
+		"nudge-pr-needs-work", "notify-needs-human", "notify-blocked", "notify-ready-for-review", "notify-stall-count",
+		"notify-unresponsive", "notify-merge-failed", "auto-merge",
+	} {
+		assert.Regexp(t, `(?m)^`+name+` +whenever `, out)
+	}
+}
+
+func TestRulesCheckActsOnNothing(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "Needs Human", "dispatch"))
+
+	_, err := h.rules(repoRules, "check")
+
+	require.NoError(t, err)
+	assert.Empty(t, h.launches())
+	assert.Empty(t, h.linear.mutations())
+	assert.Empty(t, h.notifications())
+	assert.Empty(t, h.prompts())
+}
+
+func TestRulesCheckHoldsWhatItCannotRead(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tools.Treehouse.FailTrees(errors.New("exit status 1"))
+
+	out, err := h.rules(repoRules, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `launch-worker +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, out)
+	assert.Empty(t, h.launches())
+}
+
+func TestRulesCheckHoldsWhenHerdrCannotBeRead(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tools.Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
+
+	out, err := h.rules(repoRules, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `launch-worker +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, out)
+}
+
+func TestRulesCheckRunsTheTicketsThatCanLaunchBesideTheOnesThatCannot(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	noRepo := ticket("ENG-2", "In Progress", "")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"), noRepo)
+
+	out, err := h.rules(repoRules, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `launch-worker +whenever +linear\.ticket +wants launch now for ENG-1\n`, out)
+	assert.Regexp(t, `escalate-missing-repo +whenever +linear\.ticket +wants escalate now for ENG-2\n`, out)
+}
+
+func TestRulesCheckFailsOnARuleReadingAMissingRulesKey(t *testing.T) {
+	h := newHarness(t)
+	h.config("[rules]\nworker_model = \"sonnet\"\n")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	out, err := h.rules(repoRules, "check")
+
+	require.ErrorContains(t, err, "problems found")
+	assert.Contains(t, out, `finding: launch-worker threw in its if for ENG-1: Error: config.toml has no [rules] key "launch_failure_limit". Add launch_failure_limit = ... under [rules]`)
+}
+
+func TestRulesCheckFailsOnACustomRulesKeyTheFileLacks(t *testing.T) {
+	h := newHarness(t)
+	h.config("[rules]\nbug_model = \"opus\"\n")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `whenever({ name: "bug-model", each: "linear.ticket", if: (t, ctx) => ctx.config.rules.bug_model === "opus" && ctx.config.rules.review_model === "x", then: () => {} });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.ErrorContains(t, err, "1 problems found")
+	assert.Contains(t, out, `config.toml has no [rules] key "review_model"`)
+}
+
+func TestRulesCheckReadsAKeyTheFileHas(t *testing.T) {
+	h := newHarness(t)
+	h.config("[rules]\nbug_model = \"opus\"\n")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `whenever({ name: "bug-model", each: "linear.ticket", if: (t, ctx) => ctx.config.rules.bug_model === "opus",
+  then: (t, ctx) => ctx.herdr.queueNudge(t, "use " + ctx.config.rules.bug_model, { once: ["m", t.id] }) });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `bug-model +whenever +linear\.ticket +wants nudge now for ENG-1\n`, out)
+}
+
+func TestRulesCheckFindsEachProblemWhenLoading(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{"UnknownRecordKind", `whenever({ name: "a", each: "linear.tickets", if: () => true, then: () => {} });`, `there is no record kind "linear.tickets"`},
+		{"UnknownEvent", `on({ name: "a", event: "linear.comment.posted2", if: () => true, then: () => {} });`, `there is no event "linear.comment.posted2"`},
+		{"WheneverWithEvent", `whenever({ name: "a", event: "linear.comment.posted", if: () => true, then: () => {} } as any);`, `whenever takes each, not event`},
+		{"OnWithEach", `on({ name: "a", each: "linear.ticket", if: () => true, then: () => {} } as any);`, `on takes event, not each`},
+		{"DuplicateName", `whenever({ name: "a", each: "linear.ticket", if: () => false, then: () => {} });
+whenever({ name: "a", each: "github.pr", if: () => false, then: () => {} });`, `rule "a" is defined twice`},
+		{"NoName", `whenever({ name: "", each: "linear.ticket", if: () => false, then: () => {} });`, `a whenever rule with no name`},
+		{"QueueWithoutOnce", `whenever({ name: "a", each: "linear.ticket", if: () => true,
+  then: (t, ctx) => ctx.herdr.queueNudge(t, "hello", { }) });`, `queueNudge is queued with no once key`},
+		{"AsyncThen", `whenever({ name: "a", each: "linear.ticket", if: () => true, then: async () => {} });`, `async functions are not allowed`},
+		{"Generator", `whenever({ name: "a", each: "linear.ticket", if: () => true, then: function* () {} });`, `generators are not allowed`},
+		{"Promise", `whenever({ name: "a", each: "linear.ticket", if: () => true, then: () => { new Promise(() => {}); } });`, `Promise is not available`},
+		{"EvalCall", `whenever({ name: "a", each: "linear.ticket", if: () => true, then: () => { eval("1"); } });`, `eval is not available`},
+		{"SyntaxError", `whenever({ name: "a", each: "linear.ticket", if: ( => true });`, `Unexpected`},
+		{"MissingImport", `import "./nothing";`, `Could not resolve "./nothing"`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.config(shippedRulesConfig)
+			h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+			out, err := h.rules(oneRule(t, test.body), "check")
+
+			require.Error(t, err)
+			assert.Contains(t, out, "finding:")
+			assert.Contains(t, out, test.want)
+			assert.Empty(t, h.launches())
+		})
+	}
+}
+
+func TestRulesCheckRefusesAThenThatReturnsABoolean(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `whenever({ name: "swap", each: "linear.ticket", if: (t) => true, then: (t) => t.status === "in_progress" as any });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.ErrorContains(t, err, "1 problems found")
+	assert.Contains(t, out, "finding: swap threw in its then for ENG-1: then returned a boolean")
+}
+
+func TestRulesCheckIsolatesAFailingRuleFromTheOthers(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
+	dir := oneRule(t, `
+whenever({ name: "throws", each: "linear.ticket", if: () => true, then: (t, ctx) => { ctx.herdr.queueNudge(t, "discarded-text", { once: ["x"] }); throw new Error("boom"); } });
+whenever({ name: "loops", each: "linear.ticket", if: () => { for (;;) {} }, then: () => {} });
+whenever({ name: "recurses", each: "linear.ticket", if: () => { const f = (): number => f() + 1; return f() > 0; }, then: () => {} });
+whenever({ name: "healthy", each: "linear.ticket", if: () => true,
+  then: (t, ctx) => ctx.herdr.queueNudge(t, "hello", { once: ["healthy", t.id] }) });`)
+
+	out, _, err := h.runWith(context.Background(), dispatch.Options{RulesDir: dir, RuleTimeout: dispatch.RuleTimeout{If: 50 * time.Millisecond}}, "rules", "check")
+
+	require.ErrorContains(t, err, "problems found")
+	assert.Regexp(t, `healthy +whenever +linear\.ticket +wants nudge now for ENG-1, ENG-2\n`, out)
+	assert.Regexp(t, `throws +whenever +linear\.ticket +wants nothing now\n`, out)
+	assert.Contains(t, out, "finding: throws threw in its then for ENG-1: Error: boom")
+	assert.Contains(t, out, "finding: loops ran out of time in its if for ENG-1: took longer than its time budget and was stopped")
+	assert.Contains(t, out, "finding: recurses threw in its if for ENG-1: called itself more than 256 levels deep and was stopped")
+	assert.NotContains(t, out, "discarded-text")
+}
+
+func TestRulesCheckHoldsARuleThatCatchesAnUnknownRead(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tools.Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
+	dir := oneRule(t, `
+whenever({ name: "catches", each: "linear.ticket",
+  if: (t, ctx) => { try { return ctx.herdr.worker(t).state === "none"; } catch (e) { return true; } },
+  then: (t, ctx) => ctx.herdr.queueLaunch(t, { once: ["catches", t.id] }) });
+whenever({ name: "asks", each: "linear.ticket",
+  if: (t, ctx) => !known(() => ctx.herdr.worker(t).state),
+  then: (t, ctx) => ctx.linear.queueComment(t, "herdr is unread", { once: ["asks", t.id] }) });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `catches +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, out)
+	assert.Regexp(t, `asks +whenever +linear\.ticket +wants comment now for ENG-1\n`, out)
+}
+
+func TestRulesCheckPinsTimeAndRemovesWhatMakesACycleDepend(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	for _, test := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{"Random", `Math.random()`, "Math.random is not available"},
+		{"LocalTime", `new Date().getHours()`, "getHours"},
+		{"Eval", `(globalThis as any).eval("1")`, ""},
+	} {
+		dir := oneRule(t, `whenever({ name: "a", each: "linear.ticket", if: () => true, then: (t: any) => { `+test.body+`; } });`)
+
+		out, err := h.rules(dir, "check")
+
+		if test.want == "" {
+			continue
+		}
+		require.Error(t, err, test.name)
+		assert.Contains(t, out, test.want, test.name)
+	}
+}
+
+func TestRulesCheckGivesDateTheTimeOfTheCycle(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `
+whenever({ name: "now", each: "linear.ticket", if: (t, ctx) => Date.now() === ctx.now && new Date().getTime() === ctx.now && new Date().toISOString() === "2026-10-09T12:00:00.000Z",
+  then: (t, ctx) => ctx.linear.queueComment(t, "pinned", { once: ["now", t.id] }) });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `now +whenever +linear\.ticket +wants comment now for ENG-1\n`, out)
+}
+
+func TestRulesCheckRefusesAWriteToARecord(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `whenever({ name: "writes", each: "linear.ticket", if: (t: any) => { t.status = "done"; return true; }, then: () => {} });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.Error(t, err)
+	assert.Contains(t, out, "linear.ticket/ENG-1 is read-only")
+}
+
+func TestRulesCheckLoadsAShadowRuleAndReportsWhatItWouldDo(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `
+whenever({ name: "dry", each: "linear.ticket", shadow: true, if: () => true,
+  then: (t, ctx) => ctx.linear.queueComment(t, "hi", { once: ["dry", t.id] }) });
+on({ name: "check-failed", event: "github.check.completed", shadow: true, if: () => true, then: () => {} });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `dry +whenever +linear\.ticket +shadow: would comment now for ENG-1\n`, out)
+	assert.Regexp(t, `check-failed +on +github\.check\.completed +shadow: reports only\n`, out)
+	assert.Empty(t, h.linear.mutations())
+}
+
+func TestRulesCheckFollowsTheDispatchRulesSetting(t *testing.T) {
+	h := newHarness(t)
+	dir := oneRule(t, `whenever({ name: "mine", each: "linear.ticket", if: () => false, then: () => {} });`)
+	h.config("[dispatch]\nrules = " + `"` + dir + `"` + "\n")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	out, err := h.run("rules", "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `mine +whenever +linear\.ticket +wants nothing now\n`, out)
+}
+
+func TestRulesCheckFailsOnAnUnknownConfigKey(t *testing.T) {
+	h := newHarness(t)
+	h.config("[dispatch]\nmax_in_progres = 4\n")
+
+	_, err := h.rules(repoRules, "check")
+
+	require.ErrorContains(t, err, "unknown setting dispatch.max_in_progres")
+}
+
+func TestRulesCheckListsTheOrderedStepsOfAMerge(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.repoSettings("dispatch", "auto_merge = true\n")
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", approvedPR("a1"))
+
+	out, err := h.rules(repoRules, "check")
+
+	require.NoError(t, err)
+	assert.Regexp(t, `auto-merge +whenever +github\.pr +wants merge now for ENG-1\n`, out)
+}
+
+func TestRulesInitWritesTheShippedRules(t *testing.T) {
+	h := newHarness(t)
+	dir := filepath.Join(t.TempDir(), "rules")
+
+	out, err := h.rules("", "init", dir)
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "wrote ")
+	for _, name := range []string{
+		"dispatch.ts", "shared.ts", "texts.ts", "workers.ts", "trees.ts", "parents.ts", "escalations.ts", "nudges.ts",
+		"notices.ts", "merge.ts", "extras.ts", "commands.ts", "workers.test.ts", "config.example.toml", "tsconfig.json",
+		"types/dispatch.d.ts", "types/testing.d.ts", "config.schema.json",
+	} {
+		assert.FileExists(t, filepath.Join(dir, name))
+	}
+	entry, err := os.ReadFile(filepath.Join(dir, "dispatch.ts"))
+	require.NoError(t, err)
+	for _, imported := range []string{"workers", "trees", "parents", "escalations", "nudges", "notices", "merge"} {
+		assert.Contains(t, string(entry), `import "./`+imported+`";`)
+	}
+	assert.NotContains(t, string(entry), `import "./extras"`)
+	assert.NotContains(t, string(entry), `import "./commands"`)
+}
+
+func TestRulesInitRunsTheRulesItWrote(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := filepath.Join(t.TempDir(), "rules")
+	_, err := h.rules("", "init", dir)
+	require.NoError(t, err)
+
+	out, err := h.rules(dir, "check")
+	require.NoError(t, err)
+	assert.Regexp(t, `launch-worker +whenever +linear\.ticket +wants launch now for ENG-1\n`, out)
+
+	out, err = h.rules(dir, "test")
+	require.NoError(t, err)
+	assert.Contains(t, out, "0 failed")
+}
+
+func TestRulesInitRefusesToOverwriteAnyFile(t *testing.T) {
+	h := newHarness(t)
+	dir := rulesDir(t, map[string]string{"shared.ts": "// mine\n", "extra-notes.md": "keep\n"})
+
+	_, err := h.rules("", "init", dir)
+
+	require.ErrorContains(t, err, "already has shared.ts")
+	shared, readErr := os.ReadFile(filepath.Join(dir, "shared.ts"))
+	require.NoError(t, readErr)
+	assert.Equal(t, "// mine\n", string(shared))
+	assert.NoFileExists(t, filepath.Join(dir, "dispatch.ts"))
+	assert.NoDirExists(t, filepath.Join(dir, "types"))
+}
+
+func TestRulesInitTwiceRefusesTheSecond(t *testing.T) {
+	h := newHarness(t)
+	dir := filepath.Join(t.TempDir(), "rules")
+	_, err := h.rules("", "init", dir)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "shared.ts"), []byte("// edited\n"), 0o644))
+
+	_, err = h.rules("", "init", dir)
+
+	require.ErrorContains(t, err, "already has")
+	edited, readErr := os.ReadFile(filepath.Join(dir, "shared.ts"))
+	require.NoError(t, readErr)
+	assert.Equal(t, "// edited\n", string(edited))
+}
+
+func TestRulesInitWritesToTheConfiguredDirectory(t *testing.T) {
+	h := newHarness(t)
+	dir := filepath.Join(t.TempDir(), "configured")
+	h.config("[dispatch]\nrules = " + `"` + dir + `"` + "\n")
+
+	_, err := h.run("rules", "init")
+
+	require.NoError(t, err)
+	assert.FileExists(t, filepath.Join(dir, "dispatch.ts"))
+}
+
+func TestRulesTestRunsTheShippedScenarios(t *testing.T) {
+	h := newHarness(t)
+
+	out, err := h.rules(repoRules, "test")
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "0 failed")
+	assert.NotContains(t, out, "FAIL")
+}
+
+func TestRulesTestReportsAFailingScenarioAndRunsTheRest(t *testing.T) {
+	h := newHarness(t)
+	dir := rulesDir(t, map[string]string{
+		"dispatch.ts": `import { whenever } from "dispatch";
+whenever({ name: "greet", each: "linear.ticket", if: (t) => t.status === "in_progress",
+  then: (t, ctx) => ctx.herdr.queueNudge(t, "hello", { once: ["greet", t.id] }) });`,
+		"greet.test.ts": `import { scenario, ticket, rulesFrom } from "dispatch/testing";
+const rules = rulesFrom("./dispatch");
+scenario(rules, "wants a greeting", s => {
+  s.given(ticket("ENG-1", { status: "in_progress" }));
+  s.expect([["greet", "herdr.nudge", "ENG-1"]]);
+});
+scenario(rules, "expects the wrong thing", s => {
+  s.given(ticket("ENG-1", { status: "in_progress" }));
+  s.expect([]);
+});
+scenario(rules, "wants nothing for a ticket in review", s => {
+  s.given(ticket("ENG-2", { status: "in_review" }));
+  s.expect([]);
+});`,
+	})
+
+	out, err := h.rules(dir, "test")
+
+	require.ErrorContains(t, err, "1 of 3 scenarios failed")
+	assert.Contains(t, out, "ok   greet.test.ts: wants a greeting")
+	assert.Contains(t, out, "FAIL greet.test.ts: expects the wrong thing")
+	assert.Contains(t, out, "expected the cycle to want nothing but it wants [greet herdr.nudge ENG-1]")
+	assert.Contains(t, out, "ok   greet.test.ts: wants nothing for a ticket in review")
+}
+
+func TestRulesTestFailsWithNoScenarios(t *testing.T) {
+	h := newHarness(t)
+
+	_, err := h.rules(rulesDir(t, map[string]string{"dispatch.ts": ""}), "test")
+
+	require.ErrorContains(t, err, "no *.test.ts files")
+}
+
+func TestRulesCommandNeedsASubcommand(t *testing.T) {
+	h := newHarness(t)
+
+	_, stderr, err := h.runContext(context.Background(), "rules")
+	require.ErrorContains(t, err, "rules takes init, check or test")
+	assert.Contains(t, stderr, "dispatch rules init [dir]")
+
+	_, err = h.run("rules", "frobnicate")
+	require.ErrorContains(t, err, `unknown rules command "frobnicate"`)
+}
+
+func TestRulesCheckStillReadsLinearThroughItsPortOnly(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	before := h.linear.calls()
+
+	_, err := h.rules(repoRules, "check")
+
+	require.NoError(t, err)
+	assert.Positive(t, h.linear.calls()-before)
+	assert.Empty(t, h.linear.mutations())
+}
+
+// generated is every file the repo commits that dispatch generates from its Go types.
+func generated() map[string]string {
+	return map[string]string{
+		"rules/types/dispatch.d.ts": rules.Declarations(config.ShippedRules()),
+		"rules/types/testing.d.ts":  rules.TestingDeclarations(),
+		"rules/config.schema.json":  string(config.JSONSchema()),
+	}
+}
+
+// TestGeneratedFilesMatchTheGoTypes fails when a Go type, an action, an event or
+// a config key changes without the committed declarations and schema. Run it
+// with UPDATE_GENERATED=1 to rewrite them.
+func TestGeneratedFilesMatchTheGoTypes(t *testing.T) {
+	for path, want := range generated() {
+		if os.Getenv("UPDATE_GENERATED") != "" {
+			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+			require.NoError(t, os.WriteFile(path, []byte(want), 0o644))
+		}
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, want, string(got), "%s is stale: run UPDATE_GENERATED=1 go test -run TestGeneratedFilesMatchTheGoTypes .", path)
+	}
+}
+
+func TestConfigSchemaNamesEveryTableTheLoaderReads(t *testing.T) {
+	var schema struct {
+		Properties map[string]struct {
+			AdditionalProperties any `json:"additionalProperties"`
+		} `json:"properties"`
+		AdditionalProperties bool `json:"additionalProperties"`
+	}
+	require.NoError(t, json.Unmarshal(config.JSONSchema(), &schema))
+
+	var tables []string
+	for name := range schema.Properties {
+		tables = append(tables, name)
+	}
+	assert.ElementsMatch(t, []string{"dispatch", "history", "repos", "plugins", "http", "rules"}, tables)
+	assert.False(t, schema.AdditionalProperties)
+	assert.Equal(t, true, schema.Properties["rules"].AdditionalProperties)
+}

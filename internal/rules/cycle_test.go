@@ -5,110 +5,97 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evanw/esbuild/pkg/api"
-	"github.com/grafana/sobek"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/pullrequest"
+	"github.com/kapetan-io/dispatch/internal/rules"
+	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/worker"
+	"github.com/kapetan-io/dispatch/internal/world"
 )
 
-type dyn struct{ rt *sobek.Runtime }
-
-func (d dyn) Get(k string) sobek.Value {
-	if k == "bad" {
-		ctor := d.rt.Get("Unknown")
-		o, err := d.rt.New(ctor, d.rt.ToValue("herdr unread"))
-		if err != nil {
-			panic(err)
+// busyWorld is a world the size of a busy day: 60 tickets across every status,
+// 40 workers, 20 PRs and 40 trees.
+func busyWorld(cfg config.Config, now time.Time) world.World {
+	st := cfg.Plugins.Linear.Statuses
+	w := world.World{
+		At: now, Workers: map[string]worker.Worker{}, Stops: map[string]stops.Record{}, Leases: map[string][]worker.Worker{},
+		Leased: map[string]bool{}, Children: map[string][]linear.Ticket{}, Unfinished: map[string]string{},
+		Work: map[string]treehouse.Work{}, CheckErrors: map[string]error{}, Untracked: map[string][]string{},
+		PRs: map[string]pullrequest.PullRequest{}, PRReadFailed: map[string]bool{},
+		PoolErrs: map[string]error{}, UnreadRepos: map[string]bool{},
+	}
+	statuses := []string{st.InProgress, st.InReview, st.NeedsHuman}
+	states := []worker.State{worker.Working, worker.Idle, worker.Blocked, worker.None}
+	for i := range 60 {
+		id := fmt.Sprintf("ENG-%d", i+1)
+		t := linear.Ticket{
+			ID: "id-" + id, Identifier: id, Title: "ticket " + id, Status: statuses[i%3], Team: "ENG", Mine: true,
+			Labels: []linear.Label{{Name: "ai"}, {Name: "dispatch", Group: "repo"}}, LastComment: "2026-10-14T10:00:00Z",
+			CreatedAt: fmt.Sprintf("2026-10-%02dT00:00:00Z", i%28+1),
 		}
-		panic(o)
+		w.Tickets = append(w.Tickets, t)
+		wk := worker.Worker{State: states[i%4]}
+		if wk.State != worker.None && i < 40 {
+			wk.TreePath = "/trees/" + id
+			w.Trees = append(w.Trees, treehouse.Tree{Path: wk.TreePath, LeaseHolder: id})
+			w.Leased[id] = true
+		} else {
+			wk = worker.Worker{State: worker.None}
+		}
+		w.Workers[id] = wk
+		if t.Status == st.InReview && i < 40 {
+			w.PRs[id] = pullrequest.PullRequest{Number: i, URL: "https://github.test/" + id, Head: "sha", Ready: i%2 == 0}
+		}
 	}
-	if k == "x" {
-		return d.rt.ToValue(42)
-	}
-	return nil
+	return w
 }
-func (d dyn) Set(k string, v sobek.Value) bool { panic(d.rt.NewTypeError("read-only")) }
-func (d dyn) Has(k string) bool                { return k == "x" }
-func (d dyn) Delete(k string) bool             { return false }
-func (d dyn) Keys() []string                   { return []string{"x"} }
 
-func TestSpike(t *testing.T) {
-	src := `
-import { whenever } from "dispatch";
-import type { Ticket } from "dispatch";
-const f = (t: Ticket) => t?.x ?? 1;
-whenever({ name: "a", each: "linear.ticket", if: (t: any) => { try { return t.bad } catch (e) { return e instanceof Unknown } }, then: (t: any) => ({...t, k: f(t)}) });
-whenever({ name: "b", each: "x", if: (t: any) => { t.x = 3; return true }, then: () => {} });
-whenever({ name: "loop", each: "x", if: () => { for(;;){} }, then: () => {} });
-`
-	res := api.Build(api.BuildOptions{
-		Stdin:  &api.StdinOptions{Contents: src, Loader: api.LoaderTS, ResolveDir: "."},
-		Bundle: true,
-		Format: api.FormatIIFE,
-		Target: api.ES2017,
-		Write:  false,
-		Plugins: []api.Plugin{{Name: "dispatch", Setup: func(b api.PluginBuild) {
-			b.OnResolve(api.OnResolveOptions{Filter: "^dispatch$"}, func(a api.OnResolveArgs) (api.OnResolveResult, error) {
-				return api.OnResolveResult{Path: "dispatch", Namespace: "dispatch"}, nil
-			})
-			b.OnLoad(api.OnLoadOptions{Filter: ".*", Namespace: "dispatch"}, func(a api.OnLoadArgs) (api.OnLoadResult, error) {
-				c := "export const whenever = globalThis.__d.whenever;"
-				return api.OnLoadResult{Contents: &c, Loader: api.LoaderJS}, nil
-			})
-		}}},
-	})
-	if len(res.Errors) > 0 {
-		t.Fatal(res.Errors[0].Text)
-	}
-	code := string(res.OutputFiles[0].Contents)
-	t.Log(code)
-	prog, err := sobek.Compile("rules.js", code, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	start := time.Now()
-	var fn map[string]sobek.Callable
-	for i := 0; i < 1000; i++ {
-		rt := sobek.New()
-		fn = map[string]sobek.Callable{}
-		d := rt.NewObject()
-		_ = d.Set("whenever", func(c sobek.FunctionCall) sobek.Value {
-			o := c.Arguments[0].ToObject(rt)
-			f, _ := sobek.AssertFunction(o.Get("if"))
-			fn[o.Get("name").String()] = f
-			return sobek.Undefined()
-		})
-		_ = rt.Set("__d", d)
-		_, err := rt.RunString(`class Unknown extends Error { constructor(r){ super(r); this.name="Unknown" } }; globalThis.Unknown = Unknown;`)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := rt.RunProgram(prog); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Logf("per runtime+program: %v", time.Since(start)/1000)
+func shipped(t *testing.T, timeouts rules.Timeouts) *rules.Rules {
+	t.Helper()
+	loaded, err := rules.Load("../../rules", "dispatch.ts", timeouts)
+	require.NoError(t, err)
+	return loaded
+}
 
-	rt := sobek.New()
-	rt.SetMaxCallStackSize(256)
-	fn = map[string]sobek.Callable{}
-	d := rt.NewObject()
-	_ = d.Set("whenever", func(c sobek.FunctionCall) sobek.Value {
-		o := c.Arguments[0].ToObject(rt)
-		f, _ := sobek.AssertFunction(o.Get("if"))
-		fn[o.Get("name").String()] = f
-		return sobek.Undefined()
-	})
-	_ = rt.Set("__d", d)
-	_, _ = rt.RunString(`class Unknown extends Error { constructor(r){ super(r); this.name="Unknown" } }; globalThis.Unknown = Unknown;`)
-	if _, err := rt.RunProgram(prog); err != nil {
-		t.Fatal(err)
+func shippedConfig() config.Config {
+	cfg := config.Config{
+		Dispatch: config.Dispatch{MaxInProgress: 4},
+		Plugins:  config.Plugins{Linear: config.Linear{Teams: []string{"ENG"}, AILabel: "ai", RepoLabelGroup: "repo"}},
+		Repos:    config.Repos{"dispatch": {Path: "/work/dispatch", OpenPRAs: config.OpenPRAsOpen}},
+		Rules:    config.ShippedRules(),
 	}
-	obj := rt.NewDynamicObject(dyn{rt})
-	v, err := fn["a"](nil, obj)
-	fmt.Println("a:", v, err)
-	_, err = fn["b"](nil, obj)
-	fmt.Println("b err:", err)
-	timer := time.AfterFunc(100*time.Millisecond, func() { rt.Interrupt("timeout") })
-	_, err = fn["loop"](nil, obj)
-	timer.Stop()
-	fmt.Printf("loop err: %T %v\n", err, err)
+	cfg.Plugins.Linear.Statuses = config.Statuses{
+		Todo: "Todo", CloseParent: "Done", BlockerDone: "Done", InProgress: "In Progress", InReview: "In Review",
+		NeedsHuman: "Needs Human", Finished: []string{"Done", "Canceled", "Duplicate"}, Paused: []string{"Backlog", "Todo"},
+	}
+	return cfg
+}
+
+// TestCycleCostWithGoBackedRecords measures what Open Question 1 asks: whether
+// a cycle over records that throw on unknown values and track every read is
+// fast enough to run once a second.
+func TestCycleCostWithGoBackedRecords(t *testing.T) {
+	cfg := shippedConfig()
+	loaded := shipped(t, rules.Timeouts{})
+	now := time.Now()
+	w := busyWorld(cfg, now)
+
+	const runs = 5
+	var total time.Duration
+	var result rules.Result
+	for range runs {
+		state := rules.FromWorld(w, cfg, nil, "you")
+		start := time.Now()
+		result = loaded.Cycle(state, nil)
+		total += time.Since(start)
+	}
+	per := total / runs
+	t.Logf("a cycle over %d tickets, %d workers and %d PRs takes %s with %d rules", len(w.Tickets), len(w.Workers), len(w.PRs), per, len(loaded.Defs()))
+	assert.Empty(t, result.Throws)
+	assert.Less(t, per, time.Second)
 }

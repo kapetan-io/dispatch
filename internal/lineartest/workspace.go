@@ -270,7 +270,7 @@ func (s *session) ManagedTickets(_ context.Context, label string, teams []string
 		// Fields the real query leaves out come back zero, so a caller that reads
 		// one fails here as it would against Linear. LeasedTickets and
 		// ParentChildren do the same.
-		issue.Mine, issue.CreatedAt = false, ""
+		issue.Mine = false
 		found = append(found, s.w.withChildren(issue))
 	}
 	if len(found) > linear.PageSize {

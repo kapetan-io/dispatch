@@ -107,7 +107,7 @@ func rulesInit(opts Options, arg string) error {
 	}
 	files[typesDir+"/dispatch.d.ts"] = []byte(rules.Declarations(rulesTable))
 	files[typesDir+"/testing.d.ts"] = []byte(rules.TestingDeclarations())
-	files["tsconfig.json"] = []byte(tsconfig)
+	files["config.schema.json"] = config.JSONSchema()
 
 	names := make([]string, 0, len(files))
 	for name := range files {
@@ -135,21 +135,6 @@ func rulesInit(opts Options, arg string) error {
 	_, _ = fmt.Fprintf(opts.Stdout, "wrote %d files to %s\nadd the [rules] keys in %s to your config.toml, then run dispatch rules check\n", len(names), dir, filepath.Join(dir, "config.example.toml"))
 	return nil
 }
-
-const tsconfig = `{
-  "compilerOptions": {
-    "strict": true,
-    "noEmit": true,
-    "target": "ES2017",
-    "lib": ["ES2017"],
-    "module": "ES2015",
-    "moduleResolution": "node",
-    "skipLibCheck": true,
-    "types": []
-  },
-  "include": ["types/*.d.ts", "dispatch.ts", "*.test.ts"]
-}
-`
 
 func rulesCheck(ctx context.Context, opts Options, arg string) error {
 	cfg, err := config.Load(opts.ConfigPath)

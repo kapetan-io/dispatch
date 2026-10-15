@@ -49,7 +49,11 @@ func (c *call) throwUnknown(reason string) {
 }
 
 func (c *call) throwError(format string, args ...any) {
-	panic(c.rt.NewGoError(fmt.Errorf(format, args...)))
+	obj, err := c.rt.New(c.rt.Get("Error"), c.rt.ToValue(fmt.Sprintf(format, args...)))
+	if err != nil {
+		panic(err)
+	}
+	panic(obj)
 }
 
 // read notes that the rule looked at a value, for dispatch trace.

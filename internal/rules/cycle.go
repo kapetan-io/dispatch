@@ -362,7 +362,11 @@ func interpret(c *call, out sobek.Value, err error) callResult {
 	}
 	var interrupted *sobek.InterruptedError
 	if errors.As(err, &interrupted) {
-		return callResult{err: fmt.Errorf("took longer than %s and was stopped", "its budget"), timeout: true}
+		return callResult{err: errors.New("took longer than its time budget and was stopped"), timeout: true}
+	}
+	var overflow *sobek.StackOverflowError
+	if errors.As(err, &overflow) {
+		return callResult{err: fmt.Errorf("called itself more than %d levels deep and was stopped", maxCallDepth)}
 	}
 	var ex *sobek.Exception
 	if errors.As(err, &ex) {
@@ -374,7 +378,7 @@ func interpret(c *call, out sobek.Value, err error) callResult {
 				return callResult{}
 			}
 		}
-		return callResult{err: errors.New(firstLine(ex.Error()))}
+		return callResult{err: errors.New(describeThrown(ex))}
 	}
 	return callResult{err: err}
 }
@@ -428,4 +432,20 @@ func (r *Rules) collect(state *State, def *ruleDef, rec *record, c *call, ret so
 		wants = append(wants, w)
 	}
 	return wants, nil
+}
+
+// describeThrown names what a rule threw as "Name: message", without the stack.
+func describeThrown(ex *sobek.Exception) string {
+	obj, ok := ex.Value().(*sobek.Object)
+	if !ok {
+		return ex.Value().String()
+	}
+	name, message := obj.Get("name"), obj.Get("message")
+	switch {
+	case name != nil && message != nil:
+		return name.String() + ": " + message.String()
+	case message != nil:
+		return message.String()
+	}
+	return firstLine(ex.Error())
 }
