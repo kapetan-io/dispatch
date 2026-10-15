@@ -46,3 +46,23 @@ _Avoid_: review claim (a claim asserts something to check)
 
 - Each port has one **real adapter** and one **tool fake**, and every **contract scenario** runs against both.
 - The **drift check** runs the scenarios against the **real adapter** only.
+
+**World**:
+What the sources say right now, held in memory and updated by each read. Every value in it is a fact.
+_Avoid_: state, store, snapshot (a snapshot is the world written at the head of a history segment)
+
+**Fact**:
+One value in the world, with the time it was first seen at that value (its `since`), or unknown.
+_Avoid_: field, property
+
+**Unknown**:
+A fact whose read failed or came back cut short. A `whenever` rule that reads one holds for that record, and an `on` rule drops its event, so a failed read never counts as "no".
+_Avoid_: missing, empty, null
+
+**Cycle**:
+One run of every rule over the world and the ledger, after an event. It gives what dispatch wants now, what waits for a slot, and what is held and why. `dispatch rules check` runs one against the world as it is now.
+_Avoid_: plan, tick, pass
+
+**Once key**:
+The value a rule gives each action, naming what must change before the action runs again, such as a comment time or a PR head. The ledger runs an action once per key.
+_Avoid_: dedupe key, idempotency key

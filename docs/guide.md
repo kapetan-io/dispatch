@@ -49,7 +49,7 @@ Linear's GitHub integration should move a ticket to Done when its PR merges. dis
 path = "~/Development/dispatch"
 ```
 
-The [config reference](config.md) lists every other setting and has examples for several repos and renamed statuses. dispatch fails on a setting it doesn't know.
+The [config reference](config.md) lists every other setting and has examples for several repos and renamed statuses. dispatch fails on a setting it doesn't know. The [rules guide](rules.md) covers `dispatch rules init`, `check` and `test`.
 
 **6. Load the plugin in your own Claude sessions.** Workers get the plugin from `[plugins.herdr].plugin_root` on their own. Your session, the one that files tickets and supervises workers, needs it too, for `/dispatch:dispatch` and `dispatch:ticket`. The repo is its own marketplace, so install it once from your clone. Use your clone's path where the commands show `~/Development/dispatch`:
 

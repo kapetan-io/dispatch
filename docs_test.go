@@ -126,6 +126,15 @@ func TestContextDefinesTheRepoSettingsTerms(t *testing.T) {
 	}
 }
 
+func TestContextDefinesTheRuleTerms(t *testing.T) {
+	body, err := os.ReadFile("docs/CONTEXT.md")
+	require.NoError(t, err)
+
+	for _, term := range []string{"World", "Fact", "Unknown", "Cycle", "Once key"} {
+		assert.Contains(t, string(body), "**"+term+"**:")
+	}
+}
+
 func TestGuideInstallCommandsMatchTheMarketplace(t *testing.T) {
 	var manifest, catalog struct {
 		Name    string `json:"name"`
