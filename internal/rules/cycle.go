@@ -41,6 +41,10 @@ type Want struct {
 	After string
 	// Capped is true when the action takes a worker slot.
 	Capped bool
+	// Target holds what the cycle read about the record the action is for, such
+	// as a worker's workspace, so the action acts on what the rule saw and not on
+	// whatever is there when it starts.
+	Target map[string]string
 	// Created is when the record's ticket was created, which orders admission.
 	Created string
 	seq     int
@@ -224,10 +228,12 @@ func ordinal(n int) string {
 	return fmt.Sprintf("%d%s", n, suffix)
 }
 
-// running counts the In Progress tickets that hold a worker slot: those with a
-// worker, and those whose worker is unknown, which may have one.
+// running counts the tickets that hold a worker slot: In Progress tickets with a
+// worker, those whose worker is unknown, which may have one, and those a launch or
+// a promotion is under way for, whose worker or status isn't visible yet.
 func (s *State) running() int {
 	n := 0
+	counted := map[string]bool{}
 	for _, t := range s.kinds["linear.ticket"] {
 		if t.hidden || t.v.Interface().(*Ticket).Status.Value != "in_progress" {
 			continue
@@ -239,10 +245,20 @@ func (s *State) running() int {
 		wk := w.v.Interface().(*Worker)
 		if wk.State.Unknown != "" || wk.State.Value != "none" {
 			n++
+			counted[t.id] = true
+		}
+	}
+	for id := range s.reserved {
+		if !counted[id] {
+			n++
 		}
 	}
 	return n
 }
+
+// Reserve holds a worker slot for a ticket a launch or a promotion is under way
+// for, until a read shows the result.
+func (s *State) Reserve(ticket string) { s.reserved[ticket] = true }
 
 // evaluate runs one rule over one record or event.
 func (r *Rules) evaluate(res *Result, state *State, def *ruleDef, rec *record, ev *Event) []Want {
@@ -448,6 +464,7 @@ func (r *Rules) collect(state *State, def *ruleDef, c *call, ordered []int) []Wa
 		w := Want{
 			Rule: def.name, Kind: q.spec.Kind, Receipt: q.spec.Receipt, Subject: q.subject.subject, Once: q.once, Args: q.args, Options: q.opts,
 			Record: q.subject.String(), Shadow: def.shadow, After: after[q.id], Capped: q.takesSlot(),
+			Target: state.target(q.subject),
 		}
 		if t, ok := state.lookup("linear.ticket", q.subject.subject); ok {
 			w.Created, w.seq = t.created, t.seq

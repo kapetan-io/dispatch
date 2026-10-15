@@ -179,7 +179,7 @@ func rulesCheck(ctx context.Context, opts Options, arg string) error {
 	w, err := world.Read(ctx, world.Sources{
 		Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
 		StateDir: opts.StateDir, Stderr: opts.Stderr, Tolerant: true,
-	}, world.ScopeOf(cfg), opts.Now())
+	}, world.ScopeOf(cfg), opts.Clock.Now())
 	if err != nil {
 		return err
 	}

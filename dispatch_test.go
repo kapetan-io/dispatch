@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -20,11 +21,15 @@ import (
 
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/herdr"
+	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/launcher"
+	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/lineartest"
+	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/kapetan-io/dispatch/internal/tooltest"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/world"
 )
 
 func TestTickDryRunListsLaunchWithoutActing(t *testing.T) {
@@ -473,25 +478,37 @@ type harness struct {
 	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
 	// with the launcher built into dispatch, over tools.Herdr and tools.Treehouse.
 	builtinLauncher bool
-	// clock is the time every command sees, and moves only through advance.
-	clock time.Time
+	// clock is the time every command and the loop see, and moves only through advance.
+	clock *fakeClock
+	// running is the loop started by the first command that needs one.
+	running *runningLoop
+	// rules is the directory of rules the loop runs.
+	rulesDir string
 	// pages is what GitHub was last set to answer, by ticket and cursor.
 	pages map[string][]byte
 }
 
 func newHarness(t *testing.T) *harness {
 	dir := t.TempDir()
+	// A unix socket path is capped near 104 bytes on macOS, which t.TempDir() overruns.
+	state, err := os.MkdirTemp("/tmp", "dsp")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(state) })
+	rulesDir, err := filepath.Abs("rules")
+	require.NoError(t, err)
 	h := &harness{
-		t:     t,
-		dir:   dir,
-		repo:  filepath.Join(dir, "repo"),
-		state: filepath.Join(dir, "state"),
-		tools: tooltest.New(t),
-		clock: time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC),
-		pages: map[string][]byte{},
+		t:        t,
+		dir:      dir,
+		repo:     filepath.Join(dir, "repo"),
+		state:    state,
+		rulesDir: rulesDir,
+		tools:    tooltest.New(t),
+		clock:    &fakeClock{now: time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)},
+		pages:    map[string][]byte{},
 	}
+	t.Cleanup(func() { _ = h.stopLoop() })
 	h.linear = &linearHarness{Workspace: h.tools.Linear}
-	h.tools.Linear.Now = func() time.Time { return h.clock }
+	h.tools.Linear.Now = h.clock.Now
 	require.NoError(t, os.MkdirAll(h.repo, 0o755))
 	h.addRepo("dispatch", h.repo)
 	return h
@@ -547,13 +564,12 @@ func (h *harness) runContext(ctx context.Context, args ...string) (string, strin
 	return h.runWith(ctx, dispatch.Options{}, args...)
 }
 
-// runWith runs a command with the harness's fakes, over the Options given.
-func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...string) (string, string, error) {
-	h.writeFile("config.toml", h.extra+h.reposTOML())
-	var stdout, stderr bytes.Buffer
+// options is the Options every command runs over: the harness's fakes.
+func (h *harness) options(extra dispatch.Options) dispatch.Options {
+	h.writeFile("config.toml", h.withRules(h.extra)+h.historyTOML()+h.reposTOML())
 	extra.ConfigPath = filepath.Join(h.dir, "config.toml")
 	extra.StateDir = h.state
-	extra.Now = func() time.Time { return h.clock }
+	extra.Clock = h.clock
 	extra.Linear = h.linear.Connect
 	if !h.configuredKey {
 		extra.LinearKey = lineartest.Key
@@ -565,11 +581,144 @@ func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...s
 	if !h.builtinLauncher {
 		extra.Launcher = h.tools.Launcher
 	}
+	if extra.RulesDir == "" {
+		extra.RulesDir = h.rulesDir
+	}
 	extra.LaunchPace = time.Millisecond
-	extra.Stdout = &stdout
-	extra.Stderr = &stderr
-	err := dispatch.Run(ctx, args, extra)
+	return extra
+}
+
+// withRules gives the config the [rules] keys the shipped rules read, at today's
+// values, unless the test set them. A test's own [rules] table keeps its keys.
+func (h *harness) withRules(extra string) string {
+	defaults := []string{
+		"worker_model = \"sonnet\"", "design_model = \"opus\"", "launch_failure_limit = 2", "nudge_limit = 2", "blocked_renotify_minutes = 15",
+	}
+	if !strings.Contains(extra, "[rules]") {
+		return extra + "\n[rules]\n" + strings.Join(defaults, "\n") + "\n"
+	}
+	var missing []string
+	for _, d := range defaults {
+		key, _, _ := strings.Cut(d, " ")
+		if !strings.Contains(extra, "\n"+key+" ") && !strings.Contains(extra, "\n"+key+"=") {
+			missing = append(missing, d)
+		}
+	}
+	return strings.Replace(extra, "[rules]\n", "[rules]\n"+strings.Join(missing, "\n")+"\n", 1)
+}
+
+// historyTOML points history at the state directory, unless the test set it.
+func (h *harness) historyTOML() string {
+	if strings.Contains(h.extra, "[history]") {
+		return ""
+	}
+	return fmt.Sprintf("\n[history]\ndir = %q\n", filepath.Join(h.state, "events"))
+}
+
+// runWith runs a command with the harness's fakes, over the Options given. A
+// command that needs the loop starts one first.
+func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...string) (string, string, error) {
+	if len(args) > 0 && (args[0] == "tick" || args[0] == "tell") && h.running == nil {
+		if err := h.startLoop(extra); err != nil {
+			return "", "", err
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	opts := h.options(extra)
+	opts.Stdout, opts.Stderr = &stdout, &stderr
+	err := dispatch.Run(ctx, args, opts)
 	return stdout.String(), stderr.String(), err
+}
+
+// syncBuffer is a buffer the loop writes to while a test reads it.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+type runningLoop struct {
+	cancel context.CancelFunc
+	done   chan error
+	out    *syncBuffer
+	err    *syncBuffer
+}
+
+// startLoop runs `dispatch run` in the background over the harness's fakes and
+// returns once it answers on its socket, or with the error that stopped it.
+func (h *harness) startLoop(extra dispatch.Options) error {
+	h.t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	r := &runningLoop{cancel: cancel, done: make(chan error, 1), out: &syncBuffer{}, err: &syncBuffer{}}
+	opts := h.options(extra)
+	opts.Stdout, opts.Stderr = r.out, r.err
+	go func() { r.done <- dispatch.Run(ctx, []string{"run"}, opts) }()
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case err := <-r.done:
+			cancel()
+			return err
+		default:
+		}
+		if resp, err := loop.Ask(ctx, h.state, loop.Request{Op: loop.OpIdle}); err == nil && !resp.Busy {
+			h.running = r
+			return nil
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	return errors.New("the loop did not start in 20 seconds")
+}
+
+// stopLoop stops the loop and returns what it stopped with.
+func (h *harness) stopLoop() error {
+	if h.running == nil {
+		return nil
+	}
+	r := h.running
+	h.running = nil
+	r.cancel()
+	select {
+	case err := <-r.done:
+		return err
+	case <-time.After(30 * time.Second):
+		return errors.New("the loop did not stop in 30 seconds")
+	}
+}
+
+// restart stops the loop and starts it again, as a user does after editing config.toml or a rule.
+func (h *harness) restart() {
+	h.t.Helper()
+	require.NoError(h.t, h.stopLoop())
+	require.NoError(h.t, h.startLoop(dispatch.Options{}))
+}
+
+// loopOut is what the running loop has printed to stdout.
+func (h *harness) loopOut() string {
+	if h.running == nil {
+		return ""
+	}
+	return h.running.out.String()
+}
+
+// loopErr is what the running loop has printed to stderr.
+func (h *harness) loopErr() string {
+	if h.running == nil {
+		return ""
+	}
+	return h.running.err.String()
 }
 
 func (h *harness) tick() string {
@@ -579,9 +728,101 @@ func (h *harness) tick() string {
 	return out
 }
 
-// advance moves the clock forward.
+// advance moves the clock forward, which fires the resync when it is due, and
+// waits until the loop has settled.
 func (h *harness) advance(d time.Duration) {
-	h.clock = h.clock.Add(d)
+	h.t.Helper()
+	var before loop.Response
+	if h.running != nil {
+		var err error
+		before, err = loop.Ask(context.Background(), h.state, loop.Request{Op: loop.OpIdle})
+		require.NoError(h.t, err)
+	}
+	fired := h.clock.Advance(d)
+	if h.running == nil || fired == 0 {
+		return
+	}
+	require.Eventually(h.t, func() bool {
+		resp, err := loop.Ask(context.Background(), h.state, loop.Request{Op: loop.OpIdle})
+		return err == nil && !resp.Busy && resp.Idle > before.Idle
+	}, 20*time.Second, 2*time.Millisecond)
+}
+
+// seedHistory writes a segment as an earlier run left it, with no stop line as after
+// a crash, for the next loop start to resume from. Call it before the loop starts.
+func (h *harness) seedHistory(mem *world.Memory, receipts ...ledger.Receipt) {
+	h.t.Helper()
+	require.Nil(h.t, h.running)
+	if mem == nil {
+		mem = world.NewMemory()
+	}
+	w, err := history.Start(filepath.Join(h.state, "events"), h.clock.Now().Add(-time.Hour),
+		history.Header{Why: "start", At: h.clock.Now().Add(-time.Hour).UnixMilli()},
+		history.Snapshot{At: h.clock.Now().Add(-time.Hour).UnixMilli(), World: mem, Ledger: history.LedgerState{Receipts: receipts}})
+	require.NoError(h.t, err)
+	require.NoError(h.t, w.Close(false))
+}
+
+// ledgerNow is the ledger the newest history segment holds, which is what the loop has done.
+func (h *harness) ledgerNow() []ledger.Receipt {
+	h.t.Helper()
+	seg, ok, err := history.Latest(filepath.Join(h.state, "events"))
+	require.NoError(h.t, err)
+	require.True(h.t, ok)
+	st, err := seg.Load()
+	require.NoError(h.t, err)
+	return st.Ledger.Entries
+}
+
+// fakeClock is the time the loop and the tools see. It moves only through Advance.
+type fakeClock struct {
+	mu     sync.Mutex
+	now    time.Time
+	timers []*fakeTimer
+}
+
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *fakeClock) NewTimer(d time.Duration) dispatch.Timer {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t := &fakeTimer{c: make(chan time.Time, 1), at: c.now.Add(d)}
+	c.timers = append(c.timers, t)
+	return t
+}
+
+// Advance moves the clock and fires the timers that are due, returning how many.
+func (c *fakeClock) Advance(d time.Duration) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+	fired := 0
+	for _, t := range c.timers {
+		if !t.done && !c.now.Before(t.at) {
+			t.done = true
+			t.c <- c.now
+			fired++
+		}
+	}
+	return fired
+}
+
+type fakeTimer struct {
+	c    chan time.Time
+	at   time.Time
+	done bool
+}
+
+func (t *fakeTimer) C() <-chan time.Time { return t.c }
+
+func (t *fakeTimer) Stop() bool {
+	was := !t.done
+	t.done = true
+	return was
 }
 
 func (h *harness) tickets(tickets ...fakeTicket) {

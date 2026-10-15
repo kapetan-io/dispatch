@@ -37,9 +37,19 @@ type Receipt struct {
 	// Started and Ended are milliseconds since the epoch.
 	Started int64 `json:"started"`
 	Ended   int64 `json:"ended,omitempty"`
+	// TicketID is the Linear id of the ticket an escalation moved, so a lost
+	// comment can be finished after the ticket has left the tracked set.
+	TicketID string `json:"ticketID,omitempty"`
+	// Rest holds the steps still to run after this one, when a rule returned an
+	// ordered list, as JSON the executor wrote. They run once this one is Done,
+	// even after it made the rule's condition false.
+	Rest json.RawMessage `json:"rest,omitempty"`
 	// Steps are the separate parts of an action that has several, such as an
 	// escalation's move and comment, each with its own outcome.
 	Steps []Step `json:"steps,omitempty"`
+	// Resync is the resync the action ran in. A Failed receipt from the resync
+	// that is running holds the action back until the next one.
+	Resync int `json:"resync"`
 	// Reset marks a Done receipt written for something that was never sent, so counts and waits skip it.
 	Reset bool `json:"reset,omitempty"`
 }
@@ -117,3 +127,20 @@ func (l *Ledger) Done(subject string, once Once) bool {
 
 // Add appends a receipt.
 func (l *Ledger) Add(r Receipt) { l.Entries = append(l.Entries, r) }
+
+// Upsert replaces the receipt with r's key that started when r did, which is how
+// an attempt gains its outcome, and appends r when there is none.
+func (l *Ledger) Upsert(r Receipt) {
+	for i := range l.Entries {
+		if l.Entries[i].Started == r.Started && l.Entries[i].Key() == r.Key() {
+			l.Entries[i] = r
+			return
+		}
+	}
+	l.Entries = append(l.Entries, r)
+}
+
+// Keep drops the receipts of subjects that keep rejects.
+func (l *Ledger) Keep(keep func(subject string) bool) {
+	l.Entries = slices.DeleteFunc(l.Entries, func(r Receipt) bool { return !keep(r.Subject) })
+}

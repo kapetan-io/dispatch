@@ -55,7 +55,7 @@ func recordStop(ctx context.Context, opts Options) error {
 	if _, _, managed := repoAt(ctx, cfg, in.CWD); !managed {
 		return nil
 	}
-	rec := stops.Record{At: opts.Now().UTC(), Reported: in.BackgroundTasks != nil}
+	rec := stops.Record{At: opts.Clock.Now().UTC(), Reported: in.BackgroundTasks != nil}
 	if rec.Reported {
 		for _, task := range *in.BackgroundTasks {
 			if task.Status == "running" {
