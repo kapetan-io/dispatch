@@ -29,9 +29,9 @@ import (
 	"github.com/kapetan-io/dispatch/internal/lock"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/reconcile"
-	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/worker"
+	"github.com/kapetan-io/dispatch/internal/world"
 )
 
 // Options points the dispatcher at its config, its state and the tools it
@@ -315,101 +315,36 @@ func tick(ctx context.Context, opts Options, dryRun bool, keys *keyLookup) (sum 
 	lin := opts.Linear(key)
 	defer func() { sum.linear = lin.Usage() }()
 
-	snap, err := opts.Herdr.Read(ctx)
-	if err != nil {
-		return sum, err
-	}
-	// A repo whose pool can't be read holds back only its own tickets, so one
-	// moved clone doesn't stop launches in every other repo.
-	var trees []treehouse.Tree
-	readErrs := map[string]error{}
-	for label, repo := range cfg.Repos {
-		dir := repo.Path
-		t, err := opts.Treehouse.Trees(ctx, dir)
-		if err != nil {
-			err = treehouse.StatusError(dir, err)
-			readErrs[label] = err
-			continue
-		}
-		trees = append(trees, t...)
-	}
-	unread := map[string]bool{}
-	for label, err := range readErrs {
-		if len(readErrs) == len(cfg.Repos) {
-			return sum, err
-		}
-		_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the %s pool: %v\n", label, err)
-		unread[label] = true
-	}
-	tickets, err := lin.ManagedTickets(ctx, cfg.Plugins.Linear.AILabel, cfg.Plugins.Linear.Teams)
-	if err != nil {
-		return sum, err
-	}
-
-	// A failed lease lookup skips teardown only; launches and nudges still run.
-	holders, err := leaseHolders(ctx, lin, cfg, trees, tickets)
-	lookupFailed := err != nil
-	if lookupFailed {
-		_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the tickets that hold trees: %v\n", err)
-	}
-	leased := map[string]bool{}
-	for _, tree := range trees {
-		if tree.LeaseHolder != "" {
-			leased[tree.LeaseHolder] = true
-		}
-	}
 	now := opts.Now()
-	workers := map[string]worker.Worker{}
-	lastStops := map[string]stops.Record{}
-	for _, t := range tickets {
-		w := worker.Find(t.Identifier, trees, snap)
-		workers[t.Identifier] = w
-		if w.State == worker.Idle && t.Status == cfg.Plugins.Linear.Statuses.InProgress {
-			if rec, ok := stops.Read(opts.StateDir, w.TreePath, w.Session); ok {
-				lastStops[t.Identifier] = rec
-			}
-		}
+	w, err := world.Read(ctx, world.Sources{
+		Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
+		StateDir: opts.StateDir, Stderr: opts.Stderr,
+	}, world.ScopeOf(cfg), now)
+	if err != nil {
+		return sum, err
 	}
+	snap, tickets, workers, unread, leased := w.Snapshot, w.Tickets, w.Workers, w.UnreadRepos, w.Leased
+	lookupFailed := w.HoldersErr != nil
 	sum.tickets = len(tickets)
 	input := reconcile.Input{
-		Tickets:        tickets,
-		Workers:        workers,
+		World:          w,
 		InProgress:     cfg.Plugins.Linear.Statuses.InProgress,
 		InReview:       cfg.Plugins.Linear.Statuses.InReview,
 		NeedsHuman:     cfg.Plugins.Linear.Statuses.NeedsHuman,
 		MaxInProgress:  cfg.Dispatch.MaxInProgress,
 		NudgeLimit:     cfg.NudgeLimit(),
 		Now:            now,
-		Stops:          lastStops,
 		RenotifyTicks:  cfg.BlockedRenotifyTicks(),
 		Cache:          c,
 		RepoLabelGroup: cfg.Plugins.Linear.RepoLabelGroup,
 		Repos:          cfg.Repos,
-		UnreadRepos:    unread,
 		Done:           cfg.Plugins.Linear.Statuses.Finished,
 		Paused:         cfg.Plugins.Linear.Statuses.Paused,
-		LeaseHolders:   holders,
-		Leases:         leaseWorkers(holders, trees, snap),
 		Todo:           cfg.Plugins.Linear.Statuses.Todo,
 		AILabel:        cfg.Plugins.Linear.AILabel,
 		Teams:          cfg.Plugins.Linear.Teams,
 		BlockerDone:    cfg.Plugins.Linear.Statuses.BlockerDone,
-		Leased:         leased,
 	}
-	// Only promotion and closing wait on the children, so a failed read holds
-	// back those two and nothing else.
-	if parents := input.Parents(); len(parents) > 0 {
-		ids := make([]string, len(parents))
-		for i, parent := range parents {
-			ids[i] = parent.ID
-		}
-		var readErr error
-		if input.Children, readErr = lin.ParentChildren(ctx, ids); readErr != nil {
-			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the children of open parents: %v\n", readErr)
-		}
-	}
-	input.Unfinished, input.CheckErrors, input.Untracked = inspectTrees(ctx, input)
-	input.PRs, input.PRReadFailed = readPRs(ctx, opts, input)
 	actions := reconcile.Plan(input)
 
 	sum.actions = len(actions)
@@ -787,34 +722,6 @@ func settle(c cache.Cache, now time.Time, tickets []linear.Ticket, workers map[s
 			delete(c, id)
 		}
 	}
-}
-
-// readPRs reads the open PR of each ticket for which in.ReadsPR is true. A PR
-// that can't be read is reported and left out, so it holds back only its own
-// ticket, and its ticket is named in failed to tell it from a ticket with no
-// open PR.
-func readPRs(ctx context.Context, opts Options, in reconcile.Input) (prs map[string]pullrequest.PullRequest, failed map[string]bool) {
-	prs, failed = map[string]pullrequest.PullRequest{}, map[string]bool{}
-	for _, t := range in.Tickets {
-		if !in.ReadsPR(t) {
-			continue
-		}
-		repo, ok := t.LabelIn(in.RepoLabelGroup)
-		dir := in.Repos[repo].Path
-		if !ok || dir == "" {
-			continue
-		}
-		pr, found, err := opts.PullRequests.Read(ctx, dir, t.Branch, pullrequest.Rules{IgnoreAuthors: in.Repos[repo].IgnoreCommentAuthors, RequiredChecksOnly: in.Repos[repo].IgnoreOptionalChecks})
-		if err != nil {
-			_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, err)
-			failed[t.Identifier] = true
-			continue
-		}
-		if found {
-			prs[t.Identifier] = pr
-		}
-	}
-	return prs, failed
 }
 
 // move sets a ticket's status by name.

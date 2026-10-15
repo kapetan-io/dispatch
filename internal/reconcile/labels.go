@@ -6,6 +6,7 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/worker"
+	"github.com/kapetan-io/dispatch/internal/world"
 )
 
 // Status emoji at the front of a worker's workspace label.
@@ -88,7 +89,7 @@ func (in Input) Renames(current map[string]string) []Rename {
 // The Stop record catches a turn that began and ended between two ticks. It
 // reads the idle clock that settle updates, so Renames must run after settle.
 func (in Input) quiet(t linear.Ticket, w worker.Worker) bool {
-	if w.State != worker.Idle || !slices.ContainsFunc(designLabels, t.HasLabel) {
+	if w.State != worker.Idle || !slices.ContainsFunc(world.DesignLabels, t.HasLabel) {
 		return false
 	}
 	stop, busy := in.lastStop(t, in.Cache[t.Identifier])
