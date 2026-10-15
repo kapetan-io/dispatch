@@ -468,4 +468,9 @@ func TestRotatingHistoryKeepsAnEscalationCommentThatStillHasToBePosted(t *testin
 	require.Len(t, mutations, 2)
 	assert.Equal(t, lineartest.Comment, mutations[1].Kind)
 	assert.Equal(t, "uuid-ENG-1", mutations[1].TicketID)
+
+	// Once the comment is posted nothing is owed, so the next rotations drop the ticket's receipts.
+	h.advance(6 * time.Minute)
+	h.advance(6 * time.Minute)
+	assert.Empty(t, h.receipts("escalate", "ENG-1"))
 }

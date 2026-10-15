@@ -134,6 +134,14 @@ func Read(ctx context.Context, src Sources, scope Scope, now time.Time) (World, 
 	return Refresh(ctx, src, scope, World{}, Everything, now)
 }
 
+// ReadDeadline bounds each read of one source, so a slow read cannot spend the time of the
+// reads after it.
+const ReadDeadline = time.Minute
+
+func bound(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, ReadDeadline)
+}
+
 // Refresh reads the sources in parts again and keeps what prev says about the
 // rest, so a launch can be followed by a look at herdr and treehouse that makes
 // no Linear call. A failed read of one source never empties what another source
@@ -146,7 +154,9 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 	if parts&FromLocal != 0 || prev.At.IsZero() {
 		parts |= FromLocal
 		w.HerdrErr, w.PoolErrs, w.UnreadRepos, w.Trees = nil, map[string]error{}, map[string]bool{}, nil
-		snap, err := src.Herdr.Read(ctx)
+		readCtx, done := bound(ctx)
+		snap, err := src.Herdr.Read(readCtx)
+		done()
 		if err != nil {
 			if !src.Tolerant {
 				return w, err
@@ -156,7 +166,9 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		w.Snapshot = snap
 		readErrs := map[string]error{}
 		for label, repo := range scope.Repos {
-			trees, err := src.Treehouse.Trees(ctx, repo.Path)
+			readCtx, done := bound(ctx)
+			trees, err := src.Treehouse.Trees(readCtx, repo.Path)
+			done()
 			if err != nil {
 				readErrs[label] = treehouse.StatusError(repo.Path, err)
 				continue
@@ -178,7 +190,9 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 	}
 	if parts&FromLinear != 0 || prev.At.IsZero() {
 		parts |= FromLinear
-		tickets, err := src.Linear.ManagedTickets(ctx, scope.AILabel, scope.Teams)
+		readCtx, done := bound(ctx)
+		tickets, err := src.Linear.ManagedTickets(readCtx, scope.AILabel, scope.Teams)
+		done()
 		switch {
 		case err == nil:
 			w.Tickets, w.LinearErr = tickets, nil
@@ -192,7 +206,9 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 	if parts&(FromLinear|FromLocal) != 0 {
 		// A failed lease lookup skips teardown only; launches and nudges still run.
 		if parts&FromLinear != 0 && w.LinearErr == nil {
-			w.LeaseHolders, w.HoldersErr = leaseHolders(ctx, src.Linear, scope, w.Trees, w.Tickets)
+			readCtx, done := bound(ctx)
+			w.LeaseHolders, w.HoldersErr = leaseHolders(readCtx, src.Linear, scope, w.Trees, w.Tickets)
+			done()
 			if w.HoldersErr != nil {
 				_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the tickets that hold trees: %v\n", w.HoldersErr)
 			}
@@ -230,7 +246,10 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 			for i, parent := range parents {
 				ids[i] = parent.ID
 			}
-			if w.Children, w.ChildrenErr = src.Linear.ParentChildren(ctx, ids); w.ChildrenErr != nil {
+			readCtx, done := bound(ctx)
+			w.Children, w.ChildrenErr = src.Linear.ParentChildren(readCtx, ids)
+			done()
+			if w.ChildrenErr != nil {
 				_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the children of open parents: %v\n", w.ChildrenErr)
 			}
 		}
@@ -272,12 +291,16 @@ func (w *World) inspectTrees(ctx context.Context, scope Scope) {
 			continue
 		}
 		for _, wk := range w.Leases[t.Identifier] {
-			work, err := treehouse.Inspect(ctx, wk.TreePath)
+			readCtx, done := bound(ctx)
+			work, err := treehouse.Inspect(readCtx, wk.TreePath)
+			done()
 			if err != nil {
 				w.CheckErrors[wk.TreePath] = err
 				continue
 			}
-			files, err := treehouse.Untracked(ctx, wk.TreePath)
+			readCtx, done = bound(ctx)
+			files, err := treehouse.Untracked(readCtx, wk.TreePath)
+			done()
 			if err != nil {
 				w.CheckErrors[wk.TreePath] = err
 				continue
@@ -301,7 +324,9 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 			continue
 		}
 		settings := scope.Repos[repo]
-		pr, found, err := src.PullRequests.Read(ctx, dir, t.Branch, pullrequest.Rules{IgnoreAuthors: settings.IgnoreCommentAuthors, RequiredChecksOnly: settings.IgnoreOptionalChecks})
+		readCtx, done := bound(ctx)
+		pr, found, err := src.PullRequests.Read(readCtx, dir, t.Branch, pullrequest.Rules{IgnoreAuthors: settings.IgnoreCommentAuthors, RequiredChecksOnly: settings.IgnoreOptionalChecks})
+		done()
 		if err != nil {
 			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, err)
 			w.PRReadFailed[t.Identifier] = true

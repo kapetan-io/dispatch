@@ -481,9 +481,7 @@ func (l *Loop) startRead() {
 	l.pending, l.reading, l.nudgedDuring = 0, true, nil
 	at := l.stamp()
 	go func() {
-		ctx, cancel := context.WithTimeout(l.runCtx, executor.DefaultDeadline)
-		defer cancel()
-		w, err := world.Refresh(ctx, l.o.Sources, l.scope, prev, parts, at)
+		w, err := world.Refresh(l.runCtx, l.o.Sources, l.scope, prev, parts, at)
 		l.inbox <- readDone{parts: parts, w: w, err: err, epoch: epoch}
 	}()
 }
