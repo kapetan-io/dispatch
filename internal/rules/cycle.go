@@ -409,9 +409,9 @@ func (r *Rules) collect(state *State, def *ruleDef, rec *record, c *call, ret so
 			if !ok || ho.Get("__id") == nil {
 				return nil, errors.New("then returned something that isn't an action a queue method gave back")
 			}
-			id := ho.Get("__id").ToInteger()
-			if id < 0 || id >= int64(len(c.queue)) {
-				return nil, errors.New("then returned something that isn't an action a queue method gave back")
+			id, isInt := ho.Get("__id").Export().(int64)
+			if !isInt || id < 0 || id >= int64(len(c.queue)) || slices.Contains(ordered, int(id)) {
+				return nil, errors.New("then returned something that isn't an action a queue method gave back, or returned one twice")
 			}
 			ordered = append(ordered, int(id))
 		}

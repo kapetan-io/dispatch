@@ -490,6 +490,8 @@ func (c *call) linearAPI() *sobek.Object {
 	_ = o.Set("blockersRead", func(call sobek.FunctionCall) sobek.Value {
 		return blockerList(s.blockers[ticket(call.Argument(0)).id].read)
 	})
+	// Until history keeps when a stretch of waiting began, a reading has only its own
+	// time, so this is the status time unless a scenario tracked the stretch.
 	_ = o.Set("waitingSince", func(call sobek.FunctionCall) sobek.Value {
 		t := ticket(call.Argument(0))
 		if since, ok := s.waiting[t.id]; ok {

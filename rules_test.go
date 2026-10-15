@@ -784,3 +784,26 @@ func TestRulesCheckCannotReachTheRealClockThroughDate(t *testing.T) {
 	require.NoError(t, err)
 	assert.Regexp(t, `clock +whenever +linear\.ticket +wants comment now for ENG-1`, out)
 }
+
+func TestRulesCheckRefusesAHandleThatIsNotAnActionOrIsReturnedTwice(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		then string
+	}{
+		{"NotANumber", `(t: any, ctx: any) => { const a = ctx.linear.queueComment(t, "a", { once: ["a"] }); return [a, { queued: true, __id: "x" }]; }`},
+		{"NaN", `(t: any, ctx: any) => { const a = ctx.linear.queueComment(t, "a", { once: ["a"] }); return [{ queued: true, __id: NaN }, a]; }`},
+		{"Twice", `(t: any, ctx: any) => { const a = ctx.linear.queueComment(t, "a", { once: ["a"] }); return [a, a]; }`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.config(shippedRulesConfig)
+			h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+			dir := oneRule(t, `whenever({ name: "forges", each: "linear.ticket", if: () => true, then: `+test.then+` });`)
+
+			out, err := h.rules(dir, "check")
+
+			require.ErrorContains(t, err, "problems found")
+			assert.Contains(t, out, "finding: forges threw in its then for ENG-1: then returned something that isn't an action")
+		})
+	}
+}
