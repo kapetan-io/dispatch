@@ -20,6 +20,17 @@ const (
 	DefaultBlockedRenotifyMinutes = 15
 )
 
+// ShippedRules is the [rules] table with the five keys the shipped rules read, at today's values.
+func ShippedRules() Rules {
+	return Rules{
+		"worker_model":             DefaultWorkerModel,
+		"design_model":             DefaultDesignModel,
+		"launch_failure_limit":     int64(DefaultLaunchFailureLimit),
+		"nudge_limit":              int64(DefaultNudgeLimit),
+		"blocked_renotify_minutes": int64(DefaultBlockedRenotifyMinutes),
+	}
+}
+
 func (r Rules) check() error {
 	for _, key := range []string{"launch_failure_limit", "nudge_limit", "blocked_renotify_minutes"} {
 		if v, ok := r[key]; ok {

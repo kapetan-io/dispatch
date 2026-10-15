@@ -1,0 +1,8 @@
+# The [rules] keys the shipped rules read, at today's values. Add them to the [rules] table of
+# ~/.config/dispatch/config.toml. A rule that reads a key the file lacks fails `dispatch rules check`.
+[rules]
+worker_model = "sonnet"            # build workers
+design_model = "opus"              # design and design-review workers
+launch_failure_limit = 2           # failed launches in a row before the ticket goes to Needs Human
+nudge_limit = 2                    # PR nudges or relaunches per PR head before the ticket goes to Needs Human
+blocked_renotify_minutes = 15      # minutes between notices for a worker blocked on a question

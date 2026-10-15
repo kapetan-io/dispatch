@@ -34,6 +34,9 @@ import (
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
+// RuleTimeout bounds how long one call of a rule's if and then may run.
+type RuleTimeout struct{ If, Then time.Duration }
+
 // Options points the dispatcher at its config, its state and the tools it
 // drives. Zero values take the defaults.
 type Options struct {
@@ -67,6 +70,11 @@ type Options struct {
 	Dir string
 	// LaunchPace is the pause between launcher polls of herdr. Defaults to 1 second.
 	LaunchPace time.Duration
+	// RulesDir overrides [dispatch].rules, so tests run the repo's rules/ directory.
+	RulesDir string
+	// RuleTimeout cuts off a rule call on the wall clock. Zero means 1 second for
+	// an if and 30 seconds for a then.
+	RuleTimeout RuleTimeout
 	// Now is the clock. Defaults to time.Now.
 	Now    func() time.Time
 	Stdin  io.Reader
@@ -77,6 +85,7 @@ type Options struct {
 const usage = `usage: dispatch tick [--dry-run]
        dispatch run [--interval DURATION]
        dispatch tell <ticket> "<text>"
+       dispatch rules init|check|test [dir]
        dispatch ticket-hint
        dispatch repo-settings
        dispatch linear-viewer
@@ -92,6 +101,8 @@ const usage = `usage: dispatch tick [--dry-run]
   run          tick now and then once per interval until interrupted (Ctrl-C)
   --interval   time between ticks; defaults to the config's [dispatch].resync
   tell         type text into the ticket's worker; fails when the worker is blocked or absent
+  rules        init writes the shipped TypeScript rules, check lints them and prints what each wants
+               now, and test runs their *.test.ts scenarios. Nothing acts on them yet
   ticket-hint  print a reminder to use the dispatch:ticket skill when run in a repo listed under
                [repos] in the config, or a worktree of one; prints nothing elsewhere.
                The plugin's SessionStart hook runs it
@@ -131,6 +142,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		}
 		_, err := tick(ctx, opts, *dryRun, &keyLookup{})
 		return err
+	case "rules":
+		return rulesCommand(ctx, opts, args[1:])
 	case "tell":
 		if len(args) != 3 {
 			_, _ = fmt.Fprintln(opts.Stderr, usage)

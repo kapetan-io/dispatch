@@ -94,6 +94,7 @@ type World struct {
 	// inspected. CheckErrors holds the trees that could not be read, and
 	// Untracked the untracked files in each tree.
 	Unfinished  map[string]string
+	Work        map[string]treehouse.Work
 	CheckErrors map[string]error
 	Untracked   map[string][]string
 	// PRs maps an In Review ticket identifier to its open PR. Tickets whose PR
@@ -207,12 +208,13 @@ func leaseHolders(ctx context.Context, lin linear.Workspace, scope Scope, trees 
 // unreadable tree is recorded and kept leased.
 func (w *World) inspectTrees(ctx context.Context, scope Scope) {
 	w.Unfinished, w.CheckErrors, w.Untracked = map[string]string{}, map[string]error{}, map[string][]string{}
+	w.Work = map[string]treehouse.Work{}
 	for _, t := range w.LeaseHolders {
 		if !scope.Retires(t) {
 			continue
 		}
 		for _, wk := range w.Leases[t.Identifier] {
-			why, err := treehouse.Unfinished(ctx, wk.TreePath)
+			work, err := treehouse.Inspect(ctx, wk.TreePath)
 			if err != nil {
 				w.CheckErrors[wk.TreePath] = err
 				continue
@@ -222,7 +224,7 @@ func (w *World) inspectTrees(ctx context.Context, scope Scope) {
 				w.CheckErrors[wk.TreePath] = err
 				continue
 			}
-			w.Unfinished[wk.TreePath], w.Untracked[wk.TreePath] = why, files
+			w.Unfinished[wk.TreePath], w.Untracked[wk.TreePath], w.Work[wk.TreePath] = work.String(), files, work
 		}
 	}
 }

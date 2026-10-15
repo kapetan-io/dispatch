@@ -118,29 +118,52 @@ func (c *CLI) command(ctx context.Context, repoDir string, args ...string) *exec
 // tracked changes and its HEAD is pushed. A squash-merged branch whose remote
 // copy was pruned counts as unpushed.
 func Unfinished(ctx context.Context, path string) (string, error) {
-	status, err := git(ctx, path, "status", "--porcelain", "--untracked-files=no")
+	work, err := Inspect(ctx, path)
 	if err != nil {
 		return "", err
+	}
+	return work.String(), nil
+}
+
+// Work is what returning a tree would destroy.
+type Work struct {
+	// Unpushed counts the commits reachable from HEAD that no remote has.
+	Unpushed int
+	// TrackedChanges means tracked files are modified or staged.
+	TrackedChanges bool
+}
+
+// Inspect reads what returning the tree at path would destroy. See Unfinished
+// for what counts.
+func Inspect(ctx context.Context, path string) (Work, error) {
+	status, err := git(ctx, path, "status", "--porcelain", "--untracked-files=no")
+	if err != nil {
+		return Work{}, err
 	}
 	count, err := git(ctx, path, "rev-list", "--count", "HEAD", "--not", "--remotes")
 	if err != nil {
-		return "", err
+		return Work{}, err
 	}
 	unpushed, err := strconv.Atoi(strings.TrimSpace(count))
 	if err != nil {
-		return "", fmt.Errorf("while counting unpushed commits in %s: %w", path, err)
+		return Work{}, fmt.Errorf("while counting unpushed commits in %s: %w", path, err)
 	}
+	return Work{Unpushed: unpushed, TrackedChanges: strings.TrimSpace(status) != ""}, nil
+}
+
+// String describes the work, or is empty when there is none.
+func (w Work) String() string {
 	var found []string
-	if strings.TrimSpace(status) != "" {
+	if w.TrackedChanges {
 		found = append(found, "uncommitted changes")
 	}
 	switch {
-	case unpushed == 1:
+	case w.Unpushed == 1:
 		found = append(found, "1 commit that no remote has")
-	case unpushed > 1:
-		found = append(found, fmt.Sprintf("%d commits that no remote has", unpushed))
+	case w.Unpushed > 1:
+		found = append(found, fmt.Sprintf("%d commits that no remote has", w.Unpushed))
 	}
-	return strings.Join(found, " and "), nil
+	return strings.Join(found, " and ")
 }
 
 // Untracked lists the files in the tree at path that git does not track and
