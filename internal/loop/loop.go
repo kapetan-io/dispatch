@@ -95,9 +95,16 @@ type Loop struct {
 	linearAlerts bool
 	wg           sync.WaitGroup
 	tells        int
+	// log lists the actions that ended, in order, so a tick reports only its own.
+	log []logged
 }
 
 type resyncLine struct{ at time.Time }
+
+type logged struct {
+	seq int
+	rc  ledger.Receipt
+}
 
 // flight is an action in flight.
 type flight struct {
@@ -619,6 +626,7 @@ func (l *Loop) onAction(m actionDone) error {
 		return err
 	}
 	l.led.Upsert(rc)
+	l.log = append(l.log, logged{seq: len(l.log) + 1, rc: rc})
 	note := res.Detail
 	if res.Note != "" {
 		note = res.Note

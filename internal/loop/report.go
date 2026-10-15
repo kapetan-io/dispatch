@@ -17,8 +17,8 @@ import (
 type waiter struct {
 	ticket string
 	reply  chan Response
-	// since is when the tick asked, in milliseconds. Receipts from then on are its news.
-	since int64
+	// seen is how many actions had ended when the tick asked. Later ones are its news.
+	seen int
 }
 
 func cycleLine(now int64, why string, res rules.Result) history.Cycle {
@@ -74,7 +74,7 @@ func (l *Loop) onRequest(r request) error {
 		if err := l.onResync("dispatch.tick"); err != nil {
 			return err
 		}
-		l.waiters = append(l.waiters, &waiter{ticket: strings.ToUpper(r.Ticket), reply: r.reply, since: l.lastIngest})
+		l.waiters = append(l.waiters, &waiter{ticket: strings.ToUpper(r.Ticket), reply: r.reply, seen: len(l.log)})
 	case OpTell:
 		l.want(world.FromLocal)
 		l.afterRead = append(l.afterRead, func() { l.tell(r) })
@@ -115,8 +115,9 @@ var verbs = map[string]string{
 func (l *Loop) report(w *waiter) Response {
 	var lines, failures []string
 	code := CodeSettled
-	for _, rc := range l.led.Entries {
-		if rc.Outcome == "" || rc.Ended < w.since || (w.ticket != "" && rc.Subject != w.ticket) {
+	for _, e := range l.log[w.seen:] {
+		rc := e.rc
+		if w.ticket != "" && rc.Subject != w.ticket {
 			continue
 		}
 		detail := strings.TrimPrefix(rc.Detail, "ok")

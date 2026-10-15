@@ -439,7 +439,8 @@ func (e *Executor) merge(ctx context.Context, w rules.Want, wd world.World) Resu
 	}
 	if err := e.PullRequests.Merge(ctx, url, head); err != nil {
 		msg, _, _ := strings.Cut(err.Error(), "\n")
-		return Result{Outcome: ledger.Refused, Detail: msg, Reread: world.FromGitHub}
+		// No re-read: the notice for a refused head has to see that head, and the next resync reads the new one.
+		return Result{Outcome: ledger.Refused, Detail: msg}
 	}
 	return Result{Outcome: ledger.Done, Reread: world.FromGitHub}
 }
