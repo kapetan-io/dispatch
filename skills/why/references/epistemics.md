@@ -34,3 +34,4 @@ An honest "we don't know" tells the user to ask a human or drop the question. A 
 2. Does the phrasing match the tier?
 3. Is any code being cited as evidence for its own intent? Remove it.
 4. Does "What We Don't Know" exist? Historical investigations almost always have gaps, so an absent section is suspicious.
+5. If the question embedded a hypothesis, did you check it against the evidence rather than confirm it?
