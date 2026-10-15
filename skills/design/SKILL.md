@@ -129,7 +129,7 @@ Objective, Mental Model, User Stories, Correctness Constraints (State Invariants
 
 Keep PII as its own section. Mark anything unresolved with `TODO:` and a line on what is missing. Keep it short, since a section that drives no decision is noise. Write for a reader who was not in the discussion, with no "the option we discussed". "We considered X but chose Y because Z" is useful. If the feature has an OpenAPI spec, the contract sketch becomes a second document on the ticket, as a fenced YAML block.
 
-If the discussion resolved domain terms, add a `Glossary changes` section to the blueprint in the format of [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md). Your tree is discarded at hand-off, so the first build piece commits the terms to the right `docs/CONTEXT.md`, as `dispatch:breakdown` arranges.
+If the discussion resolved domain terms, add a `Glossary changes` section to the blueprint in the format of [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md), naming the `CONTEXT.md` each term belongs in. Your tree is discarded at hand-off, so the first build piece commits the terms, as `dispatch:breakdown` arranges.
 
 ## Audit the transcript
 
