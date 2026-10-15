@@ -92,4 +92,4 @@ Tests live in `package xxx_test`, which makes unexported identifiers unreachable
 
 ## Kotlin/Micronaut
 
-For a Micronaut application, tests use `@MicronautTest` so the full context boots with real injection, and the request goes through `HttpClient`. `@MockBean` and `@Replaces` substitute external boundaries only. `@MockBean(UserService::class)` means the test covers implementation. Use Awaitility's `await().atMost()` where Go uses `require.Eventually`. For a Kotlin library, call the exported functions directly.
+For a Micronaut application, tests use `@MicronautTest` so the full context boots with real injection, and the request goes through `HttpClient`. `@MockBean` and `@Replaces` substitute external boundaries only. `@MockBean(UserService::class)` skips the real `UserService` and ties the test to how it is called, not to what the system does. Use Awaitility's `await().atMost()` where Go uses `require.Eventually`. For a Kotlin library, call the exported functions directly.
