@@ -347,6 +347,8 @@ func (s *scenario) cycle() {
 	state := s.state()
 	s.last = s.rules.Cycle(state, s.events)
 	s.events, s.dirty, s.ran = nil, false, true
+	// A throw acknowledged in one cycle says nothing about the next.
+	s.thrown = map[string]bool{}
 }
 
 func (s *scenario) state() *State {

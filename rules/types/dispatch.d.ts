@@ -66,7 +66,7 @@ declare module "dispatch" {
   export interface Tree {
     readonly path: string;
     readonly leased: boolean;
-    readonly holder: Ticket;
+    readonly holder: Ticket | undefined;
     readonly leasedSince: number;
     readonly pushed: boolean;
     readonly trackedChanges: boolean;

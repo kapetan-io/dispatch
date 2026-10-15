@@ -115,7 +115,7 @@ type PR struct {
 type Tree struct {
 	Path           Fact[string] `js:"path"`
 	Leased         Fact[bool]   `js:"leased"`
-	Holder         Fact[Ref]    `js:"holder" ref:"linear.ticket"`
+	Holder         Fact[Ref]    `js:"holder" ref:"linear.ticket" ts:"Ticket | undefined"`
 	LeasedSince    Fact[int64]  `js:"leasedSince"`
 	Pushed         Fact[bool]   `js:"pushed"`
 	TrackedChanges Fact[bool]   `js:"trackedChanges"`

@@ -15,6 +15,9 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 )
 
+// maxOnceItems bounds a once key, which is a topic and a few world values.
+const maxOnceItems = 32
+
 // queued is an action a then asked for.
 type queued struct {
 	id      int
@@ -356,6 +359,9 @@ func (c *call) subjectOf(v sobek.Value) string {
 func (c *call) parseOnce(v sobek.Value) (ledger.Once, error) {
 	if v == nil {
 		return nil, fmt.Errorf("once is missing. Every action needs once: [topic, ...values]")
+	}
+	if obj, isObj := v.(*sobek.Object); isObj && obj.ClassName() == "Array" && obj.Get("length").ToInteger() > maxOnceItems {
+		return nil, fmt.Errorf("once has more than %d items. Items are the topic and the few world values that must change", maxOnceItems)
 	}
 	arr, ok := v.Export().([]any)
 	if !ok || len(arr) == 0 {

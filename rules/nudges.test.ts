@@ -276,3 +276,12 @@ scenario(rules, "nudge-pr-needs-work is held when the PR could not be read", s =
   s.expect([]);
   s.expectHeld("nudge-pr-needs-work", "ENG-1");
 });
+
+scenario(rules, "a refused resume nudge is not owed again, so the stall nudge is not held behind it", s => {
+  s.given(ticket("ENG-1", { status: "in_progress", previousStatus: "needs_human" }), worker("ENG-1", "idle"));
+  s.expect([["nudge-resume", "herdr.nudge", "ENG-1"]]);
+  s.land("herdr.nudge", "ENG-1", { outcome: "refused", detail: "blocked" });
+  s.see(worker("ENG-1", "working"));
+  s.see(worker("ENG-1", "idle"));
+  s.expect([["nudge-stall", "herdr.nudge", "ENG-1"]]);
+});

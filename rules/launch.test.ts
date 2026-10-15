@@ -217,3 +217,17 @@ scenario(rules, "relaunch-for-pr does not start a worker in a repo the config la
           pr("ENG-1", { problems: ["a failed check"] }));
   s.expect([]);
 });
+
+scenario(rules, "a launch that landed done resets the failure count, whatever its detail says", s => {
+  s.given(ticket("ENG-1", build));
+  s.land("herdr.launch", "ENG-1", { outcome: "failed", detail: "boom" });
+  s.see(worker("ENG-1", "working"));
+  s.see(worker("ENG-1", "none"));
+  s.land("herdr.launch", "ENG-1");
+  s.see(worker("ENG-1", "working"));
+  s.see(worker("ENG-1", "none"));
+  s.land("herdr.launch", "ENG-1", { outcome: "failed", detail: "boom" });
+  s.see(worker("ENG-1", "working"));
+  s.see(worker("ENG-1", "none"));
+  s.expect([["launch-worker", "herdr.launch", "ENG-1"]]);
+});

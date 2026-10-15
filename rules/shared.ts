@@ -99,14 +99,15 @@ export const stoppedSinceLastNudge = (t: Ticket, ctx: Ctx) => {
 // once per move.
 export const resumeOwed = (t: Ticket, ctx: Ctx) =>
   t.status === "in_progress" && t.previousStatus === "needs_human"
-  && !ctx.ledger.done(t, ["resume", t.statusSince]);
+  && !ctx.ledger.receipts(t, { kind: "nudge", topic: "resume" })
+       .some(r => r.once[1] === t.statusSince && r.outcome !== "failed");
 
 // Failures since the last launch that worked or found the pool full, or since the
 // escalation they caused, so fixing the problem and moving the ticket back starts over.
 // Launches and In Review relaunches count alike, as today.
 export const launchFailures = (t: Ticket, ctx: Ctx) => {
   const r = ctx.ledger.receipts(t, { kind: ["launch", "escalate"] });          // newest first
-  const reset = r.findIndex(x => x.kind === "escalate" || ["ok", "already_running", "pool_exhausted"].includes(x.detail));
+  const reset = r.findIndex(x => x.kind === "escalate" || x.outcome === "done" || x.detail === "pool_exhausted");
   return r.slice(0, reset < 0 ? r.length : reset).filter(x => x.outcome === "failed").length;
 };
 

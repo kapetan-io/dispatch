@@ -97,3 +97,8 @@ scenario(rules, "teardown-clean-tree returns every tree a finished ticket holds,
   s.land("treehouse.return", "ENG-1");
   s.expect([["teardown-clean-tree", "treehouse.return", "ENG-1"]]);
 });
+
+scenario(rules, "a tree nobody holds is left alone and a rule asking about its holder is not thrown off", s => {
+  s.given(tree("/trees/free", {}));
+  s.expect([]);
+});

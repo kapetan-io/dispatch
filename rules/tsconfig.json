@@ -4,8 +4,8 @@
     "noEmit": true,
     "target": "ES2017",
     "lib": ["ES2017"],
-    "module": "ES2015",
-    "moduleResolution": "node",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "skipLibCheck": true,
     "types": []
   },

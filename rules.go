@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -193,7 +194,7 @@ func rulesCheck(ctx context.Context, opts Options, arg string) error {
 		}
 		findings = append(findings, fmt.Sprintf("%s %s in its %s for %s: %s", t.Rule, how, t.Phase, t.Subject, t.Error))
 	}
-	findings = append(findings, typeCheck(ctx, opts, dir)...)
+	findings = append(findings, typeCheck(ctx, dir)...)
 	for _, f := range findings {
 		_, _ = fmt.Fprintln(opts.Stdout, "finding:", f)
 	}
@@ -228,20 +229,42 @@ func writeTypes(dir string, cfg config.Config) error {
 
 // typeCheck runs tsc over the rules when it is installed. It is how a typo in
 // a field name or a mixed-up type is found without waiting for the record to exist.
-func typeCheck(ctx context.Context, opts Options, dir string) []string {
+// It hands tsc a config of its own, because the flags that name files can't be
+// mixed with a tsconfig.json on every tsc version, and "node" module resolution
+// is gone from the newest ones.
+func typeCheck(ctx context.Context, dir string) []string {
 	tsc, err := exec.LookPath("tsc")
 	if err != nil {
 		return nil
 	}
-	files := []string{typesDir + "/dispatch.d.ts", typesDir + "/testing.d.ts", rulesEntry}
-	tests, _ := filepath.Glob(filepath.Join(dir, "*.test.ts"))
-	for _, t := range tests {
-		files = append(files, filepath.Base(t))
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return []string{"tsc: " + err.Error()}
 	}
-	args := append([]string{"--noEmit", "--strict", "--target", "ES2017", "--lib", "ES2017", "--module", "ES2015",
-		"--moduleResolution", "node", "--skipLibCheck"}, files...)
-	cmd := exec.CommandContext(ctx, tsc, args...)
-	cmd.Dir = dir
+	files := []string{filepath.Join(abs, typesDir, "dispatch.d.ts"), filepath.Join(abs, typesDir, "testing.d.ts"), filepath.Join(abs, rulesEntry)}
+	tests, _ := filepath.Glob(filepath.Join(abs, "*.test.ts"))
+	files = append(files, tests...)
+	conf, err := json.Marshal(map[string]any{
+		"compilerOptions": map[string]any{
+			"strict": true, "noEmit": true, "target": "ES2017", "lib": []string{"ES2017"}, "module": "ESNext",
+			"moduleResolution": "bundler", "skipLibCheck": true, "types": []string{},
+		},
+		"files": files,
+	})
+	if err != nil {
+		return []string{"tsc: " + err.Error()}
+	}
+	tmp, err := os.MkdirTemp("", "dispatch-tsc-")
+	if err != nil {
+		return []string{"tsc: " + err.Error()}
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+	confPath := filepath.Join(tmp, "tsconfig.json")
+	if err := os.WriteFile(confPath, conf, 0o644); err != nil {
+		return []string{"tsc: " + err.Error()}
+	}
+	cmd := exec.CommandContext(ctx, tsc, "-p", confPath)
+	cmd.Dir = abs
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return nil

@@ -97,5 +97,7 @@ func TestCycleCostWithGoBackedRecords(t *testing.T) {
 	per := total / runs
 	t.Logf("a cycle over %d tickets, %d workers and %d PRs takes %s with %d rules", len(w.Tickets), len(w.Workers), len(w.PRs), per, len(loaded.Defs()))
 	assert.Empty(t, result.Throws)
-	assert.Less(t, per, time.Second)
+	// About 300ms without the race detector and 7 times that with it, so the bound only
+	// catches a cycle that has become pathologically slow.
+	assert.Less(t, per, 15*time.Second)
 }

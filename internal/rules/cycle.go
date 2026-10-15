@@ -402,7 +402,7 @@ func (c *call) returned(ret sobek.Value) ([]int, error) {
 	if ret == nil || sobek.IsUndefined(ret) || sobek.IsNull(ret) {
 		return nil, nil
 	}
-	if _, isBool := ret.Export().(bool); isBool {
+	if ret.ExportType().Kind() == reflect.Bool {
 		return nil, errors.New("then returned a boolean. That looks like a swap with if, because then queues actions and returns nothing or the actions it queued")
 	}
 	obj, ok := ret.(*sobek.Object)
@@ -412,7 +412,11 @@ func (c *call) returned(ret sobek.Value) ([]int, error) {
 	items := []sobek.Value{obj}
 	if obj.ClassName() == "Array" {
 		items = items[:0]
-		for i := range obj.Get("length").ToInteger() {
+		length := obj.Get("length").ToInteger()
+		if length > int64(len(c.queue)) {
+			return nil, notAction
+		}
+		for i := range length {
 			items = append(items, obj.Get(strconv.FormatInt(i, 10)))
 		}
 	}

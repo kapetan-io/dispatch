@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -213,7 +214,7 @@ func TestRulesCheckRefusesAThenThatReturnsABoolean(t *testing.T) {
 	h := newHarness(t)
 	h.config(shippedRulesConfig)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	dir := oneRule(t, `whenever({ name: "swap", each: "linear.ticket", if: (t) => true, then: (t) => t.status === "in_progress" as any });`)
+	dir := oneRule(t, `whenever({ name: "swap", each: "linear.ticket", if: (t) => true, then: ((t: any) => t.status === "in_progress") as any });`)
 
 	out, err := h.rules(dir, "check")
 
@@ -812,7 +813,8 @@ func TestRulesCheckStopsAGetterInAReturnedObjectWithinTheBudget(t *testing.T) {
 	h := newHarness(t)
 	h.config(shippedRulesConfig)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	dir := oneRule(t, `whenever({ name: "getter", each: "linear.ticket", if: () => true, then: () => ({ get queued() { for (;;) {} } }) as any });
+	dir := oneRule(t, `whenever({ name: "getter", each: "linear.ticket", if: () => true,
+  then: (t, ctx) => { ctx.linear.queueComment(t, "a", { once: ["a"] }); const returned: any[] = [null]; Object.defineProperty(returned, "0", { get() { for (;;) {} } }); return returned as any; } });
 whenever({ name: "healthy", each: "linear.ticket", if: () => true, then: (t, ctx) => ctx.linear.queueComment(t, "ok", { once: ["h", t.id] }) });`)
 
 	start := time.Now()
@@ -820,7 +822,7 @@ whenever({ name: "healthy", each: "linear.ticket", if: () => true, then: (t, ctx
 
 	require.ErrorContains(t, err, "problems found")
 	assert.Less(t, time.Since(start), 5*time.Second)
-	assert.Contains(t, out, "finding: getter")
+	assert.Contains(t, out, "finding: getter ran out of time in its then for ENG-1: took longer than its time budget and was stopped")
 	assert.Regexp(t, `healthy +whenever +linear\.ticket +wants comment now for ENG-1`, out)
 }
 
@@ -871,4 +873,89 @@ scenario(rules, "expects the break", s => {
 	assert.Contains(t, out, "FAIL broken.test.ts: expects nothing from a broken rule")
 	assert.Contains(t, out, "broken threw in its if for ENG-1")
 	assert.Contains(t, out, "ok   broken.test.ts: expects the break")
+}
+
+func TestRulesCheckRefusesAHugeArrayWithoutBuildingIt(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `whenever({ name: "huge", each: "linear.ticket", if: () => true, then: () => new Array(1_000_000_000) as any });
+whenever({ name: "huge-once", each: "linear.ticket", if: () => true,
+  then: (t, ctx) => ctx.linear.queueComment(t, "x", { once: new Array(1_000_000_000) as any }) });`)
+
+	out, err := h.rules(dir, "check")
+
+	require.ErrorContains(t, err, "problems found")
+	assert.Contains(t, out, "finding: huge threw in its then for ENG-1: then returned something that isn't an action")
+	assert.Contains(t, out, "finding: huge-once threw in its then for ENG-1: ")
+	assert.Contains(t, out, "once has more than 32 items")
+}
+
+// fakeTSC puts a tsc on PATH that records its arguments and the config it was given.
+func fakeTSC(t *testing.T, exit int, output string) (record string) {
+	t.Helper()
+	bin := t.TempDir()
+	record = filepath.Join(t.TempDir(), "args")
+	script := "#!/bin/sh\necho \"$@\" > " + record + "\ncat \"$2\" >> " + record + "\n" + "echo '" + output + "'\nexit " + strconv.Itoa(exit) + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "tsc"), []byte(script), 0o755))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return record
+}
+
+func TestRulesCheckTypeChecksWithTscThroughAConfigOfItsOwn(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	record := fakeTSC(t, 0, "")
+
+	_, err := h.rules(repoRules, "check")
+
+	require.NoError(t, err)
+	got, readErr := os.ReadFile(record)
+	require.NoError(t, readErr)
+	assert.Contains(t, string(got), "-p ")
+	assert.Contains(t, string(got), `"moduleResolution":"bundler"`)
+	assert.Contains(t, string(got), `"strict":true`)
+	assert.Contains(t, string(got), "dispatch.d.ts")
+	assert.Contains(t, string(got), "launch.test.ts")
+	assert.NotContains(t, string(got), "node10")
+}
+
+func TestRulesCheckReportsWhatTscFinds(t *testing.T) {
+	h := newHarness(t)
+	h.config(shippedRulesConfig)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	fakeTSC(t, 2, "shared.ts(6,57): error TS2322: Type 'unknown' is not assignable to type 'number'.")
+
+	out, err := h.rules(repoRules, "check")
+
+	require.ErrorContains(t, err, "1 problems found")
+	assert.Contains(t, out, "finding: tsc: shared.ts(6,57): error TS2322")
+}
+
+func TestRulesTestAcknowledgesAThrowOnlyForTheCycleItWasMadeIn(t *testing.T) {
+	h := newHarness(t)
+	dir := rulesDir(t, map[string]string{
+		"dispatch.ts": `import { whenever } from "dispatch";
+whenever({ name: "broken", each: "linear.ticket", if: (t: any) => t.nothing.deeper === 1, then: () => {} });`,
+		"broken.test.ts": `import { scenario, ticket, rulesFrom } from "dispatch/testing";
+const rules = rulesFrom("./dispatch");
+scenario(rules, "acknowledged in the cycle it happens", s => {
+  s.given(ticket("ENG-1", { status: "in_progress" }));
+  s.expectThrew("broken");
+  s.expect([]);
+});
+scenario(rules, "not acknowledged in the next cycle", s => {
+  s.given(ticket("ENG-1", { status: "in_progress" }));
+  s.expectThrew("broken");
+  s.resync();
+  s.expect([]);
+});`,
+	})
+
+	out, err := h.rules(dir, "test")
+
+	require.ErrorContains(t, err, "1 of 2 scenarios failed")
+	assert.Contains(t, out, "ok   broken.test.ts: acknowledged in the cycle it happens")
+	assert.Contains(t, out, "FAIL broken.test.ts: not acknowledged in the next cycle")
 }
