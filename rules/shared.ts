@@ -53,34 +53,17 @@ export const recentlySent = (t: Ticket, topic: string, window: number, ctx: Ctx)
   ctx.ledger.receipts(t, { kind: ["nudge", "notify", "comment"], topic })
     .some(r => sent(r) && r.started > ctx.now - window);
 
-// Whether a ticket's worker has heard about a comment or PR activity. A worker dispatch
-// first saw after the item started out knowing it, and a launch's kickoff tells it
-// everything dispatch had seen. A resume nudge tells it to read every comment. Otherwise
-// a nudge tells what its once key names, such as ["comment", at] or ["activity", at],
-// in the source's own time.
-export const heard = (t: Ticket, topic: "comment" | "activity", item: Seen | undefined, ctx: Ctx) => {
+// Whether a ticket's worker has heard about PR activity. A worker dispatch first saw
+// after the item started out knowing it, and a launch's kickoff tells it everything
+// dispatch had seen. Otherwise an activity nudge tells what its once key names, in the
+// source's own time.
+export const heard = (t: Ticket, topic: "activity", item: Seen | undefined, ctx: Ctx) => {
   if (item === undefined) return true;
   const w = ctx.herdr.worker(t);
   if (w.state !== "none" && w.seenAt >= item.seenAt) return true;
   return ctx.ledger.receipts(t, { kind: ["launch", "nudge"] }).some(r => told(r) && (
-    r.kind === "launch"                              ? r.started > item.seenAt
-    : r.once[0] === "resume" && topic === "comment"  ? r.started > item.seenAt
-    :                                                  r.once[0] === topic && String(r.once[1]) >= item.at));
-};
-
-export const owedComment = (t: Ticket, ctx: Ctx) => !heard(t, "comment", t.lastHumanComment, ctx);
-
-// nudge-comment wants to tell the worker about a comment. A worker gets one nudge at a
-// time, comment first, as today, so the stall and PR nudges stand back while this holds.
-// The resume nudge covers the comments, so this stands back for it in turn. It leaves
-// out stoppedSinceLastNudge, so the merge and ready notice wait for an owed comment even
-// while the nudge itself waits for the worker to stop.
-export const commentNudgeOwed = (t: Ticket, ctx: Ctx) => {
-  const w = ctx.herdr.worker(t);
-  return (t.status === "in_progress" || t.status === "in_review") && nudgeable(t)
-      && (w.state === "idle" || w.state === "working")
-      && !(w.state === "idle" && resumeOwed(t, ctx))
-      && owedComment(t, ctx);
+    r.kind === "launch" ? r.started > item.seenAt
+    :                     r.once[0] === topic && String(r.once[1]) >= item.at));
 };
 
 // A worker gets no second nudge of any kind until it stops after the last one, so a

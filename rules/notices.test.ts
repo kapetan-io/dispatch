@@ -115,19 +115,10 @@ scenario(rules, "notify-ready-for-review waits until the worker has heard of the
   s.expect([["nudge-pr-activity", "herdr.nudge", "ENG-1"]]);
 });
 
-scenario(rules, "notify-ready-for-review waits behind an owed comment nudge, even while that nudge waits for a Stop", s => {
+scenario(rules, "notify-ready-for-review is not held back by a ticket comment", s => {
   s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", { ready: true, head: "h1" }));
   s.land("notify.send", "ENG-1");
-  s.see(comment("ENG-1", { at: "10:00" }));
-  s.expect([["nudge-comment", "herdr.nudge", "ENG-1"]]);
-  s.land("herdr.nudge", "ENG-1");
-  s.see(pr("ENG-1", { head: "h2" }));
-  s.expect([["notify-ready-for-review", "notify.send", "ENG-1"]]);
-  s.see(comment("ENG-1", { at: "11:00" }));
-  s.expect([]);
-  stopsAgain(s, "ENG-1");
-  s.expect([["nudge-comment", "herdr.nudge", "ENG-1"]]);
-  s.land("herdr.nudge", "ENG-1");
+  s.see(comment("ENG-1", { at: "10:00" }), pr("ENG-1", { head: "h2" }));
   s.expect([["notify-ready-for-review", "notify.send", "ENG-1"]]);
 });
 
@@ -204,14 +195,6 @@ scenario(rules, "notify-unresponsive is silent once the worker stops again", s =
   s.advance(2 * hour);
   stopsAgain(s, "ENG-1");
   s.expect([["nudge-stall", "herdr.nudge", "ENG-1"]]);
-});
-
-scenario(rules, "notify-unresponsive does not follow a comment nudge", s => {
-  s.given(ticket("ENG-1", build), worker("ENG-1", "idle"));
-  s.see(comment("ENG-1", { at: "10:00" }));
-  s.land("herdr.nudge", "ENG-1");
-  s.advance(2 * hour);
-  s.expect([]);
 });
 
 scenario(rules, "notify-merge-failed tells the followers once per head after a refused merge", s => {

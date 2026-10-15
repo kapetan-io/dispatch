@@ -39,7 +39,7 @@ type Ticket struct {
 	LabelsTruncated bool
 	// LastComment is the creation time of the ticket's newest comment, or empty
 	// when it has none. It is RFC 3339 and sorts as text. Only ManagedTickets
-	// fills it in, since only its tickets get comment nudges.
+	// fills it in. It feeds the rules' lastHumanComment fact.
 	LastComment string
 	// Mine means the ticket is assigned to the key's owner. Only ParentChildren
 	// sets it, because ManagedTickets returns nothing else.

@@ -9,7 +9,7 @@ dispatch rules init            # writes to [dispatch].rules in config.toml
 dispatch rules init ~/rules    # or to a directory you name
 ```
 
-`init` writes the 28 shipped rules, their scenario tests, the generated types an editor reads, a `tsconfig.json`, a JSON schema for `config.toml`, and `config.example.toml`. It refuses to overwrite a file, so run it into an empty directory, and nothing is written when any file would collide.
+`init` writes the 27 shipped rules, their scenario tests, the generated types an editor reads, a `tsconfig.json`, a JSON schema for `config.toml`, and `config.example.toml`. It refuses to overwrite a file, so run it into an empty directory, and nothing is written when any file would collide.
 
 The rules read five keys of the `[rules]` table in `config.toml`. Copy them from `config.example.toml`:
 
@@ -35,7 +35,7 @@ nudge-stall        whenever  linear.ticket   wants nothing now
 
 A record whose rule read something that couldn't be read is listed as `held for ENG-9`. It exits 1 on any finding: a rule that fails to load, a rule that throws or runs out of time, a queued action with no once key, a rule that reads a `[rules]` key the file lacks, and, when `tsc` is installed, a type error from `tsc --noEmit --strict`.
 
-A check takes no action: it reads the world and rewrites `types/`. Every fact's `since` is the time of the read and the ledger is empty, so it shows what a fresh start would want. Comments aren't told apart yet, so a worker is taken to know every comment already.
+A check takes no action: it reads the world and rewrites `types/`. Every fact's `since` is the time of the read and the ledger is empty, so it shows what a fresh start would want.
 
 ## Test them
 
@@ -83,7 +83,7 @@ Add a rule by creating a file and importing it from `dispatch.ts`, which is the 
 | File | What it is |
 |---|---|
 | `dispatch.ts` | Imports every file that runs. |
-| `workers.ts`, `trees.ts`, `parents.ts`, `escalations.ts`, `nudges.ts`, `notices.ts`, `merge.ts` | The 28 rules, grouped by job. |
+| `workers.ts`, `trees.ts`, `parents.ts`, `escalations.ts`, `nudges.ts`, `notices.ts`, `merge.ts` | The 27 rules, grouped by job. |
 | `shared.ts`, `texts.ts` | Helpers and the nudge texts the `dispatch:build` skill relies on word for word. |
 | `types/dispatch.d.ts`, `types/testing.d.ts` | Generated from dispatch's Go types, and rewritten by `rules check`. They sit in `types/` because `tsc` ignores a `dispatch.d.ts` that has a `dispatch.ts` beside it. |
 | `config.schema.json` | A JSON schema for `config.toml`, generated from the same structs the loader reads. |
