@@ -233,3 +233,31 @@ func TestAKickoffThatFailedWithTheWorkspaceStuckOpenIsClosedLater(t *testing.T) 
 
 	assert.Equal(t, []string{"w2"}, h.tools.Herdr.ClosedWorkspaces())
 }
+
+func TestAnUnreadableStopBesideAReadableOneStillHoldsTheWorker(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.setWorkerSession("ENG-1", "")
+	h.recordStopFrom("worker", "ENG-1", "")
+	h.advance(time.Minute)
+	h.recordStopFrom("other", "ENG-1", "")
+	records, err := filepath.Glob(filepath.Join(h.state, "stops", "*", "*.json"))
+	require.NoError(t, err)
+	require.Len(t, records, 2)
+	newest, newestAt := "", ""
+	for _, record := range records {
+		body, err := os.ReadFile(record)
+		require.NoError(t, err)
+		if string(body) > newestAt {
+			newest, newestAt = record, string(body)
+		}
+	}
+	require.NoError(t, os.WriteFile(newest, []byte("not json"), 0o644))
+	markLaunch(t, h.state, filepath.Join(h.dir, "trees", "ENG-1"), h.clock.Now())
+
+	h.advance(10 * time.Minute)
+	h.tick()
+
+	assert.Empty(t, h.tools.Herdr.ClosedWorkspaces())
+}
