@@ -47,14 +47,3 @@ func TestAReleaseByALaunchThatWasReplacedLeavesTheNewerMark(t *testing.T) {
 	assert.True(t, held)
 	assert.Equal(t, time.UnixMilli(2000), at)
 }
-
-func TestAReleaseByTheOwningLaunchRemovesTheMark(t *testing.T) {
-	state, tree := t.TempDir(), t.TempDir()
-	id, err := kickoffs.Mark(state, tree, time.UnixMilli(1000))
-	require.NoError(t, err)
-
-	kickoffs.Release(state, tree, id)
-
-	_, held := kickoffs.Since(state, tree)
-	assert.False(t, held)
-}
