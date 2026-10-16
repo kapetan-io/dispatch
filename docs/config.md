@@ -78,7 +78,7 @@ Repos have no default, so the block shows one repo with every setting at its def
 
 | Setting | Default | What it does |
 |---|---|---|
-| `dir` | `~/.local/state/dispatch/events` | Where `dispatch run` keeps its history, one `events-<time>.jsonl` segment at a time. It is dispatch's only state, and `dispatch plan` reads it. |
+| `dir` | `~/.local/state/dispatch/events` | Where `dispatch run` keeps its history, one `events-<time>.jsonl` segment at a time. It is dispatch's only state, and `dispatch plan`, `dispatch trace` and `dispatch replay` read it. |
 | `rotate` | `6h` | How old the current segment gets before `dispatch run` starts a new one, which opens with a snapshot of what dispatch knew and did. |
 | `keep` | `1d` | How long old segments are kept before `dispatch run` deletes them. Days are written `7d`. |
 

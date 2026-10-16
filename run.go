@@ -193,19 +193,8 @@ func runCommand(ctx context.Context, opts Options) error {
 	if cfg.Dispatch.Resync <= 0 {
 		return fmt.Errorf("[dispatch].resync must be positive, got %s", time.Duration(cfg.Dispatch.Resync))
 	}
-	dir, err := rulesDir(opts, "", &cfg)
+	loaded, err := loadRules(opts, cfg)
 	if err != nil {
-		return err
-	}
-	loaded, err := rules.Load(dir, rulesEntry, rules.Timeouts(opts.RuleTimeout))
-	if err != nil {
-		var lerr *rules.LoadError
-		if errors.As(err, &lerr) {
-			for _, p := range lerr.Problems {
-				_, _ = fmt.Fprintln(opts.Stderr, "finding:", p)
-			}
-			return fmt.Errorf("%d problems found in the rules, so none loaded", len(lerr.Problems))
-		}
 		return err
 	}
 	if err := os.MkdirAll(opts.StateDir, 0o700); err != nil {
@@ -263,6 +252,29 @@ func runCommand(ctx context.Context, opts Options) error {
 		Executor: exec, HTTP: services, Herdr: opts.Herdr, Alerts: opts.Alerts, Usage: lin.Usage, Unauthorized: lin.reset,
 		Viewer: viewer.Name, Out: opts.Stdout, Err: opts.Stderr,
 	}).Run(ctx)
+}
+
+// loadRules loads the rules the config points at. A rule that doesn't load stops the command,
+// and each problem is printed first.
+func loadRules(opts Options, cfg config.Config) (*rules.Rules, error) {
+	dir, err := rulesDir(opts, "", &cfg)
+	if err != nil {
+		return nil, err
+	}
+	return loadRulesIn(opts, dir)
+}
+
+// loadRulesIn loads the rules under dir, printing each problem a rule has.
+func loadRulesIn(opts Options, dir string) (*rules.Rules, error) {
+	loaded, err := rules.Load(dir, rulesEntry, rules.Timeouts(opts.RuleTimeout))
+	var lerr *rules.LoadError
+	if errors.As(err, &lerr) {
+		for _, p := range lerr.Problems {
+			_, _ = fmt.Fprintln(opts.Stderr, "finding:", p)
+		}
+		return nil, fmt.Errorf("%d problems found in the rules, so none loaded", len(lerr.Problems))
+	}
+	return loaded, err
 }
 
 const defaultTickTimeout = 2 * time.Minute

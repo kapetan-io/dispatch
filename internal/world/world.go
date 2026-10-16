@@ -58,7 +58,8 @@ func ScopeOf(cfg config.Config) Scope {
 }
 
 // World is one read of everything, joined. Every field that can fail to be read
-// has a sibling that says so.
+// has a sibling that says so. A new field must also be added to worldRecord in json.go,
+// which is the form history writes.
 type World struct {
 	// At is when the read started.
 	At time.Time

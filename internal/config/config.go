@@ -167,8 +167,22 @@ func defaults() Config {
 // Load reads path over the defaults and expands a leading ~ in every path. It
 // fails on a setting dispatch does not know.
 func Load(path string) (Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, fmt.Errorf("while reading config %s: %w", path, err)
+	}
+	return parse(string(data), path, true)
+}
+
+// Parse reads config text as Load reads a file, without requiring the repos' clones to
+// exist, because the text comes from history and a clone may have moved since.
+func Parse(text string) (Config, error) {
+	return parse(text, "recorded in history", false)
+}
+
+func parse(text, path string, checkPaths bool) (Config, error) {
 	c := defaults()
-	meta, err := toml.DecodeFile(path, &c)
+	meta, err := toml.Decode(text, &c)
 	if msg, ok := repoProblem(err); ok {
 		return Config{}, fmt.Errorf("while reading config %s: %s", path, msg)
 	}
@@ -204,8 +218,10 @@ func Load(path string) (Config, error) {
 		repo.Path = ExpandHome(repo.Path)
 		c.Repos[label] = repo
 	}
-	if err := c.Repos.checkPaths(); err != nil {
-		return Config{}, fmt.Errorf("while reading config %s: %w", path, err)
+	if checkPaths {
+		if err := c.Repos.checkPaths(); err != nil {
+			return Config{}, fmt.Errorf("while reading config %s: %w", path, err)
+		}
 	}
 	return c, nil
 }

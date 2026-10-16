@@ -24,14 +24,14 @@ type waiter struct {
 func cycleLine(now int64, why string, res rules.Result) history.Cycle {
 	c := history.Cycle{Line: history.LineCycle, Now: now, Why: why, Reads: map[string][]string{}}
 	for _, w := range res.Wants {
-		c.Wants = append(c.Wants, history.Entry{Rule: w.Rule, Subject: w.Subject, Kind: w.Receipt, Once: w.Once})
+		c.Wants = append(c.Wants, history.Entry{Rule: w.Rule, Subject: w.Subject, Kind: w.Receipt, Once: w.Once, Args: w.Args, Options: w.Options})
 		c.Reads[w.Rule+"/"+w.Subject] = res.Reads[w.Rule+"/"+w.Subject]
 	}
 	for _, w := range res.Waiting {
 		c.Waiting = append(c.Waiting, history.Entry{Rule: w.Rule, Subject: w.Subject, Kind: w.Receipt, Once: w.Once, Reason: w.Reason})
 	}
 	for _, h := range res.Held {
-		c.Held = append(c.Held, history.Entry{Rule: h.Rule, Subject: h.Subject, Reason: h.Reason})
+		c.Held = append(c.Held, history.Entry{Rule: h.Rule, Subject: h.Subject, Reason: h.Reason, Dropped: h.Dropped})
 		c.Reads[h.Rule+"/"+h.Subject] = h.Reads
 	}
 	for _, cv := range res.Covered {
@@ -62,6 +62,15 @@ func sameCycle(a, b history.Cycle) bool {
 	x, _ := json.Marshal(a)
 	y, _ := json.Marshal(b)
 	return string(x) == string(y)
+}
+
+// readingKey identifies the world and reservations of a read. It leaves out the clock in
+// the world, which moves with every cycle.
+func readingKey(r history.Reading) string {
+	w := *r.World
+	w.At = time.Time{}
+	b, _ := json.Marshal(history.Reading{Reserved: r.Reserved, World: &w})
+	return string(b)
 }
 
 // onRequest answers a client.
