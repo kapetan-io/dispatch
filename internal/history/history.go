@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -99,10 +100,11 @@ type World struct {
 	Changes []Change `json:"changes,omitempty"`
 	// Gone lists the facts that are no longer remembered, as "kind/id/field".
 	Gone []string `json:"gone,omitempty"`
-	// PreviousStatus, Waiting and Pools are written whole when any of them changed.
+	// PreviousStatus, Waiting, Pools and Children are written whole when any of them changed.
 	PreviousStatus map[string]string     `json:"previousStatus,omitempty"`
 	Waiting        map[string]int64      `json:"waiting,omitempty"`
 	Pools          map[string]world.Pool `json:"pools,omitempty"`
+	Children       map[string][]string   `json:"children,omitempty"`
 	Others         bool                  `json:"others,omitempty"`
 }
 
@@ -429,9 +431,10 @@ func Diff(old, next *world.Memory) (World, bool) {
 	}
 	slices.SortFunc(w.Changes, func(a, b Change) int { return strings.Compare(a.Record+"/"+a.Field, b.Record+"/"+b.Field) })
 	slices.Sort(w.Gone)
-	others := !mapsEqual(old.PreviousStatus, next.PreviousStatus) || !mapsEqual(old.Waiting, next.Waiting) || !poolsEqual(old.Pools, next.Pools)
+	others := !mapsEqual(old.PreviousStatus, next.PreviousStatus) || !mapsEqual(old.Waiting, next.Waiting) || !poolsEqual(old.Pools, next.Pools) ||
+		!maps.EqualFunc(old.Children, next.Children, slices.Equal)
 	if others {
-		w.Others, w.PreviousStatus, w.Waiting, w.Pools = true, next.PreviousStatus, next.Waiting, next.Pools
+		w.Others, w.PreviousStatus, w.Waiting, w.Pools, w.Children = true, next.PreviousStatus, next.Waiting, next.Pools, next.Children
 	}
 	return w, len(w.Changes) > 0 || len(w.Gone) > 0 || others
 }
@@ -446,7 +449,7 @@ func (w World) ApplyTo(m *world.Memory) {
 		delete(m.Facts, key)
 	}
 	if w.Others {
-		m.PreviousStatus, m.Waiting, m.Pools = w.PreviousStatus, w.Waiting, w.Pools
+		m.PreviousStatus, m.Waiting, m.Pools, m.Children = w.PreviousStatus, w.Waiting, w.Pools, w.Children
 		m.Ready()
 	}
 }

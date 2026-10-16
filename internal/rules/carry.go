@@ -2,6 +2,7 @@ package rules
 
 import (
 	"encoding/json"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -79,6 +80,7 @@ func (s *State) Carry(mem *world.Memory, started int64) *world.Memory {
 	s.carryPreviousStatus(mem, next)
 	s.carryWaiting(mem, next)
 	s.carryPools(mem, next)
+	s.carryChildren(mem, next)
 	s.keepWhileUnread(mem, next)
 	return next
 }
@@ -235,33 +237,57 @@ func (s *State) carryPools(mem, next *world.Memory) {
 	}
 }
 
+// carryChildren remembers which children each parent listed. A parent whose
+// children couldn't be read keeps the list it had, and so does every parent while
+// Linear is unread, because no parent exists then to say its children were unread.
+func (s *State) carryChildren(mem, next *world.Memory) {
+	if s.linearUnread != "" {
+		maps.Copy(next.Children, mem.Children)
+	}
+	for parent, ids := range s.children {
+		next.Children[parent] = ids
+	}
+	for parent := range s.childrenUnread {
+		if ids, ok := mem.Children[parent]; ok {
+			next.Children[parent] = ids
+		}
+	}
+}
+
 // keepWhileUnread keeps what dispatch remembered about records a failed read left out,
 // because no record exists to carry it. While Linear can't be read no ticket exists, so
 // every wait is kept. While a pool can't be read its trees don't exist, nor do the
-// tickets that hold them, so those are kept. Without this a restart during an outage
-// would forget every wait, and the keys built on them would change.
+// tickets that hold them, so those are kept. While a parent's children can't be listed
+// the ones it last listed are kept. Without this a restart during an outage would forget
+// every wait, and the keys built on them would change. Tree facts are kept only for an
+// unread pool, so a children-only failure doesn't keep every tree.
 func (s *State) keepWhileUnread(mem, next *world.Memory) {
 	poolUnread := false
 	for _, p := range s.pools {
 		poolUnread = poolUnread || p.unknown != ""
 	}
-	if s.linearUnread == "" && !poolUnread {
+	if s.linearUnread == "" && !poolUnread && len(s.childrenUnread) == 0 {
 		return
 	}
-	holders := map[string]bool{}
+	kept := map[string]bool{}
 	if poolUnread {
 		for key, old := range mem.Facts {
 			var holder Ref
 			if strings.HasPrefix(key, "treehouse.tree/") && strings.HasSuffix(key, "/holder") && json.Unmarshal(old.Value, &holder) == nil {
-				holders[holder.ID] = true
+				kept[holder.ID] = true
 			}
 		}
 	}
+	for parent := range s.childrenUnread {
+		for _, id := range mem.Children[parent] {
+			kept[id] = true
+		}
+	}
 	keep := func(key string) bool {
-		if s.linearUnread != "" || strings.HasPrefix(key, "treehouse.tree/") {
+		if s.linearUnread != "" || (poolUnread && strings.HasPrefix(key, "treehouse.tree/")) {
 			return true
 		}
-		for id := range holders {
+		for id := range kept {
 			if strings.HasPrefix(key, "linear.ticket/"+id+"/") || strings.HasPrefix(key, "herdr.worker/"+id+"/") || strings.HasPrefix(key, "herdr.worker/"+id+"@") {
 				return true
 			}
@@ -274,12 +300,12 @@ func (s *State) keepWhileUnread(mem, next *world.Memory) {
 		}
 	}
 	for id, v := range mem.PreviousStatus {
-		if _, ok := next.PreviousStatus[id]; !ok && (s.linearUnread != "" || holders[id]) {
+		if _, ok := next.PreviousStatus[id]; !ok && (s.linearUnread != "" || kept[id]) {
 			next.PreviousStatus[id] = v
 		}
 	}
 	for id, v := range mem.Waiting {
-		if _, ok := next.Waiting[id]; !ok && (s.linearUnread != "" || holders[id]) {
+		if _, ok := next.Waiting[id]; !ok && (s.linearUnread != "" || kept[id]) {
 			next.Waiting[id] = v
 		}
 	}

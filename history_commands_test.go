@@ -1,6 +1,7 @@
 package dispatch_test
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/ledger"
+	"github.com/kapetan-io/dispatch/internal/lineartest"
 )
 
 var replayed = regexp.MustCompile(`^(\d+) cycles?, (\d+) match\n$`)
@@ -899,4 +901,160 @@ func TestTraceKnowsATicketNoRuleHasWantedAnythingFor(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Contains(t, out, "wants nothing for ENG-1")
+}
+
+func TestHistoryKeepsAChildsMemoryWhileTheChildrenOfItsParentAreUnread(t *testing.T) {
+	h := newHarness(t)
+	// The cap keeps ENG-2 in Todo, so only the children read knows it exists.
+	h.config("[dispatch]\nmax_in_progress = 1\n")
+	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
+	h.worker("ENG-9", "working")
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+
+	h.linear.failChildren()
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	require.NoError(t, h.stopLoop())
+
+	text, err := os.ReadFile(newestSegment(t, h))
+	require.NoError(t, err)
+	worlds := 0
+	for _, line := range strings.Split(string(text), "\n") {
+		if !strings.HasPrefix(line, `{"line":"world"`) {
+			continue
+		}
+		worlds++
+		var changed history.World
+		require.NoError(t, json.Unmarshal([]byte(line), &changed))
+		for _, key := range changed.Gone {
+			assert.NotContains(t, key, "ENG-2")
+		}
+	}
+	require.Positive(t, worlds)
+}
+
+const childCommentRule = `
+whenever({ name: "greet-child", each: "linear.ticket", if: (t) => t.id === "ENG-2",
+  then: (t, ctx) => ctx.linear.queueComment(t, "hello", { once: ["greet", t.statusSince] }) });`
+
+func TestAChildKeepsItsOnceKeyAcrossAFailedReadOfItsParentsChildren(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		restart bool
+	}{
+		{"SameLoop", false},
+		{"AfterRestart", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.rulesDir = oneRule(t, childCommentRule)
+			h.config("[dispatch]\nmax_in_progress = 1\n")
+			h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
+			h.worker("ENG-9", "working")
+			h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+			h.tick()
+			first := h.receipts("comment", "ENG-2")
+			require.Len(t, first, 1)
+
+			// The key's statusSince is the time dispatch first saw ENG-2, so it must not
+			// move to the time the children were read again.
+			h.linear.failChildren()
+			h.advance(time.Hour)
+			h.tick()
+			if test.restart {
+				h.restart()
+			}
+			h.linear.FailOn(lineartest.OnChildren, false)
+			h.advance(time.Hour)
+			h.tick()
+
+			again := h.receipts("comment", "ENG-2")
+			require.Len(t, again, 1)
+			assert.Equal(t, first[0].Once, again[0].Once)
+			comments := 0
+			for _, change := range h.linear.mutations() {
+				if change.Kind == lineartest.Comment && change.TicketID == "uuid-ENG-2" {
+					comments++
+				}
+			}
+			assert.Equal(t, 1, comments)
+		})
+	}
+}
+
+func TestAChildOfAParentWhoseChildrenAreUnreadIsRememberedAcrossARestart(t *testing.T) {
+	h := newHarness(t)
+	h.config("[dispatch]\nmax_in_progress = 1\n")
+	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
+	h.worker("ENG-9", "working")
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	h.tick()
+	h.linear.failChildren()
+	h.tick()
+
+	h.restart()
+	h.tick()
+	require.NoError(t, h.stopLoop())
+
+	text, err := os.ReadFile(newestSegment(t, h))
+	require.NoError(t, err)
+	for _, line := range strings.Split(string(text), "\n") {
+		if !strings.HasPrefix(line, `{"line":"world"`) {
+			continue
+		}
+		var changed history.World
+		require.NoError(t, json.Unmarshal([]byte(line), &changed))
+		for _, key := range changed.Gone {
+			assert.NotContains(t, key, "ENG-2")
+		}
+	}
+}
+
+func TestAChildThatLeftTheParentIsForgottenOnceTheChildrenAreRead(t *testing.T) {
+	h := newHarness(t)
+	h.config("[dispatch]\nmax_in_progress = 1\n")
+	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
+	h.worker("ENG-9", "working")
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	h.tick()
+
+	h.linear.setChildren(child("ENG-3", "ENG-1", "Todo"))
+	h.tick()
+	require.NoError(t, h.stopLoop())
+
+	text, err := os.ReadFile(newestSegment(t, h))
+	require.NoError(t, err)
+	assert.Regexp(t, `"gone":\[[^\]]*ENG-2`, string(text))
+}
+
+func TestHistoryKeepsAChildsMemoryThroughALinearOutageBeforeTheChildrenFail(t *testing.T) {
+	h := newHarness(t)
+	h.config("[dispatch]\nmax_in_progress = 1\n")
+	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
+	h.worker("ENG-9", "working")
+	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	h.tick()
+	// Linear is unread across the restart, so no parent exists to list its children.
+	h.linear.FailOn(lineartest.OnManaged, true)
+	h.restart()
+	h.linear.FailOn(lineartest.OnManaged, false)
+	h.linear.failChildren()
+	h.advance(5 * time.Minute)
+	h.tick()
+	require.NoError(t, h.stopLoop())
+
+	text, err := os.ReadFile(newestSegment(t, h))
+	require.NoError(t, err)
+	for _, line := range strings.Split(string(text), "\n") {
+		if !strings.HasPrefix(line, `{"line":"world"`) {
+			continue
+		}
+		var changed history.World
+		require.NoError(t, json.Unmarshal([]byte(line), &changed))
+		for _, key := range changed.Gone {
+			assert.False(t, strings.Contains(key, "linear.ticket/ENG-2/") || strings.Contains(key, "herdr.worker/ENG-2/"), key)
+		}
+	}
 }
