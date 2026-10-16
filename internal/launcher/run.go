@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
+	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
@@ -42,6 +43,9 @@ type Options struct {
 	Treehouse treehouse.Pool
 	// Stderr receives progress. Defaults to discarding it.
 	Stderr io.Writer
+	// StateDir is where a launch records that its kickoff is unconfirmed, so a
+	// tick can find a Claude the launch died on. Empty records nothing.
+	StateDir string
 	// PreflightTimeout bounds the wait for the herdr server. Defaults to 60s.
 	PreflightTimeout time.Duration
 	// Pace is the unit of waiting between polls for the herdr server, which waits 5 units.
@@ -155,6 +159,8 @@ func (l *launch) run(ctx context.Context) Result {
 	if r, ok := l.openWorkspace(ctx); !ok {
 		return r
 	}
+	l.beginKickoff()
+	defer l.clearKickoff()
 	started, r, ok := l.startWorker(ctx, workerName)
 	if !ok {
 		return r
@@ -180,6 +186,26 @@ func (l *launch) run(ctx context.Context) Result {
 	return Result{
 		Status: StatusOK, Ticket: req.Ticket, Branch: req.Branch, Worktree: l.tree,
 		Workspace: l.workspace, Pane: started.Pane, Agent: started.Agent, Kickoff: req.Kickoff,
+	}
+}
+
+// beginKickoff marks the launch unconfirmed until it returns. A launch killed
+// before then leaves the mark, which is how a later tick knows the Claude in
+// this tree never got its kickoff.
+func (l *launch) beginKickoff() {
+	if l.opts.StateDir == "" {
+		return
+	}
+	if err := kickoffs.Mark(l.opts.StateDir, l.tree, time.Now()); err != nil {
+		l.log("%v", err)
+	}
+}
+
+// clearKickoff runs on every return, because a launch that reports its own failure has
+// already closed its workspace.
+func (l *launch) clearKickoff() {
+	if l.opts.StateDir != "" {
+		kickoffs.Clear(l.opts.StateDir, l.tree)
 	}
 }
 

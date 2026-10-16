@@ -88,8 +88,11 @@ type Worker struct {
 	GoneSince    Fact[int64]   `js:"goneSince"`
 	IdleSince    Fact[*int64]  `js:"idleSince"`
 	BlockedSince Fact[*int64]  `js:"blockedSince"`
-	LastStop     Fact[*Stop]   `js:"lastStop"`
-	Busy         Fact[bool]    `js:"busy"`
+	// UnconfirmedSince is when the launch that started this worker began, while its
+	// kickoff is still unconfirmed. A launch killed before the kickoff leaves it set.
+	UnconfirmedSince Fact[*int64] `js:"unconfirmedSince"`
+	LastStop         Fact[*Stop]  `js:"lastStop"`
+	Busy             Fact[bool]   `js:"busy"`
 }
 
 // PR is the open pull request of an In Review ticket.

@@ -235,6 +235,9 @@ func (s *scenario) applyWorker(id, state string, fields map[string]any) {
 	if wk.State == world.Blocked && prev != world.Blocked {
 		st.blocked = now
 	}
+	if v, ok := fields["unconfirmed"]; ok {
+		wk.UnconfirmedSince = scenarioStart.UnixMilli() + toInt(v)
+	}
 	m.workers[id] = wk
 	if v, ok := fields["lastStop"]; ok {
 		at := scenarioStart.UnixMilli() + toInt(v)

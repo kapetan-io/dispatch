@@ -13,6 +13,7 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/herdr"
+	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/stops"
@@ -226,6 +227,9 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		w.Workers, w.Stops = map[string]Worker{}, map[string]stops.Record{}
 		for _, t := range w.Tickets {
 			wk := FindWorker(t.Identifier, w.Trees, snap)
+			if at, ok := kickoffs.Since(src.StateDir, wk.TreePath); ok && wk.State != NoWorker {
+				wk.UnconfirmedSince = at.UnixMilli()
+			}
 			w.Workers[t.Identifier] = wk
 			if wk.State == Idle && t.Status == scope.Statuses.InProgress {
 				if rec, ok := stops.Read(src.StateDir, wk.TreePath, wk.Session); ok {

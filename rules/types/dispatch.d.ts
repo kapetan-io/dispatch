@@ -60,6 +60,7 @@ declare module "dispatch" {
     readonly goneSince: number;
     readonly idleSince: number | undefined;
     readonly blockedSince: number | undefined;
+    readonly unconfirmedSince: number | undefined;
     readonly lastStop: Stop | undefined;
     readonly busy: boolean;
   }

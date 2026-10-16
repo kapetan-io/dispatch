@@ -1,10 +1,16 @@
 import { whenever, known } from "dispatch";
 import type { Blocker, Ctx, Ticket } from "dispatch";
-import { escalate, openBlockers, abandonedBlocker, startableChild, launchFailures, relaunches,
+import { escalate, openBlockers, abandonedBlocker, startableChild, launchFailures, launchFailureList, relaunches,
          launchFailureLimit, nudgeLimit } from "./shared";
 
 // Each of these moves a ticket to Needs Human and says why, once per stretch in its
 // status. Moving the ticket back starts a new stretch, so the escalation can happen again.
+
+const lastLaunchFailure = (t: Ticket, ctx: Ctx) => {
+  const last = launchFailureList(t, ctx)[0];   // the rule runs at the limit, so there is one
+  return last.kind === "close" ? "The last time, Claude opened but its launch died before the kickoff ran."
+                               : `The launcher said: ${last.detail}`;
+};
 
 // Launches and In Review relaunches count alike, as today.
 whenever({
@@ -12,7 +18,7 @@ whenever({
   each: "linear.ticket",
   if:   (t, ctx) => (t.status === "in_progress" || t.status === "in_review") && launchFailures(t, ctx) >= launchFailureLimit(ctx),
   then: (t, ctx) => escalate(t, ctx,
-           `its worker failed to launch ${launchFailures(t, ctx)} times in a row. The launcher said: ${ctx.ledger.receipts(t, { kind: "launch" })[0].detail}`,
+           `its worker failed to launch ${launchFailures(t, ctx)} times in a row. ${lastLaunchFailure(t, ctx)}`,
            ["launch-failures", t.statusSince]),
 });
 

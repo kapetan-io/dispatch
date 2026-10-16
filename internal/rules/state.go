@@ -401,6 +401,9 @@ func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop sto
 	if wk.WorkspaceID != "" {
 		rec.Workspace = Known(&wk.WorkspaceID, at)
 	}
+	if wk.UnconfirmedSince != 0 {
+		rec.UnconfirmedSince = Known(&wk.UnconfirmedSince, at)
+	}
 	state := wk.State
 	if state == world.Idle && w.Nudged[subject] {
 		state = world.Working
@@ -601,6 +604,9 @@ func (s *State) target(r *record) map[string]string {
 	case *Worker:
 		if rec.Workspace.Unknown == "" && rec.Workspace.Value != nil {
 			out["workspace"] = *rec.Workspace.Value
+		}
+		if rec.Tree.Unknown == "" && rec.Tree.Value != nil {
+			out["tree"] = *rec.Tree.Value
 		}
 	case *Tree:
 		out["path"] = rec.Path.Value

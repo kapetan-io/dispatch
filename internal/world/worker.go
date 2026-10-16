@@ -30,6 +30,9 @@ type Worker struct {
 	TabID       string
 	// Session is the Claude session id herdr reports for the agent, or empty.
 	Session string
+	// UnconfirmedSince is when the launch that started this worker began, in
+	// milliseconds, read from the kickoffs record. Zero means the launch returned.
+	UnconfirmedSince int64
 }
 
 // FindWorker looks up the worker on the ticket's first tree. FindWorkers returns one for

@@ -106,6 +106,7 @@ func launcherFor(opts Options, root string, progress io.Writer) launcher.Launche
 		Treehouse:  opts.Treehouse,
 		Pace:       opts.LaunchPace,
 		Stderr:     progress,
+		StateDir:   opts.StateDir,
 	}
 	// DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT=<seconds> bounds the wait for the herdr
 	// server. Zero fails at once, so it becomes the smallest nonzero wait.

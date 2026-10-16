@@ -36,7 +36,7 @@ func TestingDeclarations() string {
     blockers?: { id: string; status: string; abandoned?: boolean }[];
     labelsTruncated?: boolean; blockersTruncated?: boolean;
   }): Fixture;
-  export function worker(ticket: string, state: "none" | "working" | "idle" | "blocked", fields?: { lastStop?: number; busy?: boolean }): Fixture;
+  export function worker(ticket: string, state: "none" | "working" | "idle" | "blocked", fields?: { lastStop?: number; busy?: boolean; unconfirmed?: number }): Fixture;
   export function pool(repo: string, fields?: { free?: number; returns?: number }): Fixture;
   export function comment(ticket: string, fields?: { body?: string; at?: string; author?: string; byDispatch?: boolean }): Fixture;
   export function pr(ticket: string, fields?: {

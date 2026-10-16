@@ -20,6 +20,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/delivery"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
+	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/launcher"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
@@ -241,7 +242,16 @@ func (e *Executor) closeWorkspace(ctx context.Context, w rules.Want) Result {
 	if err := e.Herdr.CloseWorkspace(ctx, id); err != nil {
 		return failed("while closing herdr workspace %s: %v", id, err)
 	}
-	return Result{Outcome: ledger.Done, Reread: world.FromLocal}
+	res := Result{Outcome: ledger.Done, Reread: world.FromLocal}
+	// A closed workspace ends any launch on its tree, and a mark left behind would be read
+	// onto the next Claude there.
+	if tree := w.Target["tree"]; tree != "" {
+		kickoffs.Clear(e.StateDir, tree)
+	}
+	if len(w.Once) > 0 && w.Once[0] == "close-unconfirmed" {
+		res.Detail = "closed workspace " + id + ": its launch died before the kickoff ran"
+	}
+	return res
 }
 
 // fresh reads one ticket again from Linear, whatever its status, so a decision
@@ -400,6 +410,7 @@ func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World)
 		return failed("while returning %s to the pool: %v", path, err)
 	}
 	stops.Remove(e.StateDir, path)
+	kickoffs.Clear(e.StateDir, path)
 	res.Outcome, res.Detail = ledger.Done, detail
 	return res
 }
