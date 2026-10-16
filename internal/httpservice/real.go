@@ -58,6 +58,10 @@ func (r *Real) do(ctx context.Context, method, service, p string, body []byte) (
 		return Response{}, err
 	}
 	what := fmt.Sprintf("%s %s %s", method, service, p)
+	if ctx.Err() != nil {
+		// Nothing went out, so this is not a timeout that may have landed.
+		return Response{}, &Unavailable{Reason: what + ": the caller gave up first"}
+	}
 	token, err := r.token(ctx, service, svc)
 	if err != nil {
 		return Response{}, &Unavailable{Reason: what + ": " + err.Error()}
@@ -92,7 +96,7 @@ func (r *Real) do(ctx context.Context, method, service, p string, body []byte) (
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return Response{}, &Unavailable{Reason: fmt.Sprintf("%s: returned %d", what, resp.StatusCode)}
 	}
-	return Response{Status: resp.StatusCode, Body: BodyJSON(Redact(token, data))}, nil
+	return Response{Status: resp.StatusCode, Body: RedactedBody(token, data)}, nil
 }
 
 // unavailable describes a failed round trip without the URL a transport error carries,

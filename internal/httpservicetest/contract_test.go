@@ -82,6 +82,33 @@ var scenarios = []scenario{
 		assert.NotContains(t, string(res.Body), token)
 		assert.JSONEq(t, `{"you":"[redacted]"}`, string(res.Body))
 	}},
+	{Name: "ATokenTheServiceEchoesBackWithJSONEscapesIsRedacted", Run: func(t *testing.T, s subject) {
+		escaped := `\u0073` + token[1:]
+		s.Serve("sentry", "GET", "/escaped", 200, `{"`+escaped+`":"`+escaped+`","list":["`+escaped+`"],"n":12345678901234567890}`)
+
+		res, err := s.Services.Get(context.Background(), "sentry", "/escaped")
+
+		require.NoError(t, err)
+		assert.NotContains(t, string(res.Body), token)
+		var decoded map[string]any
+		require.NoError(t, json.Unmarshal(res.Body, &decoded))
+		assert.NotContains(t, decoded, token)
+		assert.Equal(t, "[redacted]", decoded["[redacted]"])
+		assert.Equal(t, []any{"[redacted]"}, decoded["list"])
+		assert.Contains(t, string(res.Body), "12345678901234567890")
+	}},
+	{Name: "ACancelledContextSendsNothing", Run: func(t *testing.T, s subject) {
+		s.Serve("open", "GET", "/me", 200, `{}`)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		_, err := s.Services.Get(ctx, "open", "/me")
+
+		var unavailable *httpservice.Unavailable
+		require.ErrorAs(t, err, &unavailable)
+		assert.False(t, unavailable.Timeout)
+		assert.Empty(t, s.Requests())
+	}},
 	{Name: "AServiceTheConfigDoesNotNameIsRefused", Run: func(t *testing.T, s subject) {
 		_, err := s.Services.Get(context.Background(), "nowhere", "/x")
 

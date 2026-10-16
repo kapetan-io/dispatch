@@ -102,7 +102,7 @@ nudge_limit = 3
 
 ## `[http.<name>]`
 
-A service a rule may call with `ctx.http`. Each table needs a `base_url`, an `http` or `https` URL with a host and no user. `token_command` prints the service's token, and is optional. Dispatch runs it the first time a rule calls the service and keeps the token in memory until the service answers 401, then runs it again on the next call.
+A service a rule may call with `ctx.http`. Each table needs a `base_url`, an `http` or `https` URL with a host and no user, query or fragment. `token_command` prints the service's token, and is optional. Dispatch runs it the first time a rule calls the service and keeps the token in memory until the service answers 401, then runs it again on the next call.
 
 ```toml
 [http.sentry]

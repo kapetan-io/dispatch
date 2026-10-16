@@ -173,3 +173,58 @@ func TestACallerThatGivesUpWhileTheTokenCommandRunsIsNotHeldUntilItEnds(t *testi
 	assert.False(t, unavailable.Timeout)
 	assert.Less(t, time.Since(start), 3*time.Second)
 }
+
+func TestALate401ForAnOlderTokenLeavesTheNewerTokenAlone(t *testing.T) {
+	counter := filepath.Join(t.TempDir(), "runs")
+	command := "n=$(cat " + counter + " 2>/dev/null || echo 0); n=$((n+1)); echo $n > " + counter + "; echo tok$n"
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var seen []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = append(seen, r.URL.Path+" "+r.Header.Get("Authorization"))
+		mu.Unlock()
+		switch r.URL.Path {
+		case "/slow":
+			<-release
+			w.WriteHeader(401)
+		case "/rejected":
+			w.WriteHeader(401)
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	defer server.Close()
+	real := httpservice.New(map[string]config.HTTPService{
+		"sentry": {BaseURL: server.URL, TokenCommand: command},
+	}, nil)
+	_, err := real.Get(context.Background(), "sentry", "/prime")
+	require.NoError(t, err)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = real.Get(context.Background(), "sentry", "/slow")
+	}()
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(seen) == 2
+	}, 5*time.Second, time.Millisecond)
+
+	// The first token is rejected, so the next call fetches a second one.
+	_, err = real.Get(context.Background(), "sentry", "/rejected")
+	require.Error(t, err)
+	_, err = real.Get(context.Background(), "sentry", "/second")
+	require.NoError(t, err)
+	close(release)
+	<-done
+	_, err = real.Get(context.Background(), "sentry", "/third")
+	require.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, "/third Bearer tok2", seen[len(seen)-1])
+	runs, err := os.ReadFile(counter)
+	require.NoError(t, err)
+	assert.Equal(t, "2\n", string(runs))
+}

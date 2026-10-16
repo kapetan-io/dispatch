@@ -88,12 +88,43 @@ func Resolve(base, p string) (*url.URL, error) {
 	return full, nil
 }
 
-// Redact removes token from b, in case a service echoes it back.
-func Redact(token string, b []byte) []byte {
+// RedactedBody turns a response body into JSON with token removed from every string and key. It
+// decodes JSON first, because a service can spell the token with escapes such as \u0073 that
+// only the decoder undoes.
+func RedactedBody(token string, b []byte) json.RawMessage {
 	if token == "" {
-		return b
+		return BodyJSON(b)
 	}
-	return bytes.ReplaceAll(b, []byte(token), []byte("[redacted]"))
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil || dec.More() {
+		text, _ := json.Marshal(strings.ReplaceAll(string(b), token, "[redacted]"))
+		return text
+	}
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(redactValue(token, v))
+	return json.RawMessage(bytes.TrimSpace(out.Bytes()))
+}
+
+func redactValue(token string, v any) any {
+	switch v := v.(type) {
+	case string:
+		return strings.ReplaceAll(v, token, "[redacted]")
+	case []any:
+		for i := range v {
+			v[i] = redactValue(token, v[i])
+		}
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, item := range v {
+			out[strings.ReplaceAll(k, token, "[redacted]")] = redactValue(token, item)
+		}
+		return out
+	}
+	return v
 }
 
 // BodyJSON turns a response body into JSON: the body itself when it is JSON, and a

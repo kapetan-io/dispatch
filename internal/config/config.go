@@ -219,8 +219,9 @@ func (c Config) check() error {
 		if service.BaseURL == "" {
 			return fmt.Errorf("http.%s has no base_url", name)
 		}
-		if u, err := url.Parse(service.BaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
-			return fmt.Errorf("http.%s base_url must be an http or https URL with a host and no user, got %q", name, service.BaseURL)
+		if u, err := url.Parse(service.BaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil ||
+			u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(service.BaseURL, "#") {
+			return fmt.Errorf("http.%s base_url must be an http or https URL with a host, no user, no query and no fragment, got %q", name, service.BaseURL)
 		}
 	}
 	return c.Rules.check()

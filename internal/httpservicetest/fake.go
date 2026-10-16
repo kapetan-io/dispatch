@@ -94,6 +94,9 @@ func (f *Fake) do(ctx context.Context, method, service, path string, body []byte
 		return httpservice.Response{}, err
 	}
 	what := fmt.Sprintf("%s %s %s", method, service, path)
+	if ctx.Err() != nil {
+		return httpservice.Response{}, &httpservice.Unavailable{Reason: what + ": the caller gave up first"}
+	}
 	f.mu.Lock()
 	token := f.tokens[service]
 	req := Request{Method: method, Service: service, Path: path, Body: string(body)}
@@ -116,5 +119,5 @@ func (f *Fake) do(ctx context.Context, method, service, path string, body []byte
 	if a.status < 200 || a.status > 299 {
 		return httpservice.Response{}, &httpservice.Unavailable{Reason: fmt.Sprintf("%s: returned %d", what, a.status)}
 	}
-	return httpservice.Response{Status: a.status, Body: httpservice.BodyJSON(httpservice.Redact(token, []byte(a.body)))}, nil
+	return httpservice.Response{Status: a.status, Body: httpservice.RedactedBody(token, []byte(a.body))}, nil
 }
