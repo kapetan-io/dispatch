@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"github.com/grafana/sobek"
 
 	"github.com/kapetan-io/dispatch/internal/config"
+	// The fake is plain Go with no testing import, so the binary can answer a scenario's requests with it.
+	"github.com/kapetan-io/dispatch/internal/httpservicetest"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 )
 
@@ -158,6 +161,9 @@ type scenario struct {
 	poolUnread  map[string]bool
 	prUnread    map[string]bool
 	events      []Event
+	// services answers the requests a then makes, and kept holds what its gets got since the last resync.
+	services *httpservicetest.Fake
+	kept     map[string]Exchange
 	// thrown holds the rules expectThrew has acknowledged.
 	thrown map[string]bool
 	last   Result
@@ -177,9 +183,11 @@ func newScenario(h *scenarioHost, rules *Rules) *scenario {
 		}},
 		Repos: config.Repos{"dispatch": {Path: "/work/dispatch", OpenPRAs: config.OpenPRAsOpen}},
 		Rules: config.ShippedRules(),
+		HTTP:  map[string]config.HTTPService{},
 	}
 	return &scenario{
 		host: h, rules: rules, cfg: cfg, led: &ledger.Ledger{}, now: scenarioStart, dirty: true,
+		services: httpservicetest.New(cfg.HTTP), kept: map[string]Exchange{},
 		m:      newModel(),
 		thrown: map[string]bool{}, pools: map[string]int{}, poolUnread: map[string]bool{}, prUnread: map[string]bool{},
 	}
@@ -251,12 +259,23 @@ func (s *scenario) object() *sobek.Object {
 		s.cycle()
 		return sobek.Undefined()
 	})
-	set("resync", func(call sobek.FunctionCall) sobek.Value { s.tick(); s.cycle(); return sobek.Undefined() })
+	set("http", func(call sobek.FunctionCall) sobek.Value {
+		s.respond(call.Argument(0).String(), call.Argument(1).String(), call.Argument(2), call.Argument(3))
+		s.dirty = true
+		return sobek.Undefined()
+	})
+	set("resync", func(call sobek.FunctionCall) sobek.Value {
+		s.kept = map[string]Exchange{}
+		s.tick()
+		s.cycle()
+		return sobek.Undefined()
+	})
 	set("start", func(call sobek.FunctionCall) sobek.Value { s.cycle(); return sobek.Undefined() })
 	set("restart", func(call sobek.FunctionCall) sobek.Value {
 		// The world and the ledger come back as they were. Reading them back
 		// through history arrives with the reconcile loop.
 		s.events = nil
+		s.kept = map[string]Exchange{}
 		s.tick()
 		s.cycle()
 		return sobek.Undefined()
@@ -365,6 +384,7 @@ func (s *scenario) state() *State {
 		w.PRReadFailed[id] = true
 	}
 	state := FromWorld(w, s.cfg, s.led, "you")
+	state.HTTP, state.Kept = s.services, s.kept
 	for repo, returns := range s.pools {
 		if p, ok := state.pools[repo]; ok && p.unknown == "" {
 			state.pools[repo] = pool{returns: returns}
@@ -372,6 +392,27 @@ func (s *scenario) state() *State {
 	}
 	s.stamped(state)
 	return state
+}
+
+// respond sets what a service answers to a path, as the JSON of body.
+func (s *scenario) respond(service, path string, body, opts sobek.Value) {
+	status, method := 200, "GET"
+	if o, ok := opts.Export().(map[string]any); ok {
+		if v, ok := o["status"]; ok {
+			status = int(toInt(v))
+		}
+		if v, ok := o["method"].(string); ok {
+			method = v
+		}
+	}
+	if _, ok := s.cfg.HTTP[service]; !ok {
+		s.fail("http(%q, ...): the scenario has no such service. Add it with config({ http: { %s: { baseUrl: \"https://...\" } } })", service, service)
+	}
+	text, err := json.Marshal(body.Export())
+	if err != nil {
+		s.fail("http(%q, %q): the body is not JSON: %v", service, path, err)
+	}
+	s.services.Respond(service, method, path, status, string(text))
 }
 
 // land writes the receipt of a wanted action, as if the executor had run it.
@@ -526,8 +567,18 @@ func (s *scenario) applyConfig(m map[string]any) {
 				}
 				s.cfg.Repos[label] = repo
 			}
+		case "http":
+			table, _ := v.(map[string]any)
+			for name, settings := range table {
+				fields, _ := settings.(map[string]any)
+				base, _ := fields["baseUrl"].(string)
+				if base == "" {
+					s.fail("config(http): %s needs a baseUrl", name)
+				}
+				s.cfg.HTTP[name] = config.HTTPService{BaseURL: base}
+			}
 		default:
-			s.fail("config(%q): a scenario can set maxInProgress, rules and repos", key)
+			s.fail("config(%q): a scenario can set maxInProgress, rules, repos and http", key)
 		}
 	}
 }

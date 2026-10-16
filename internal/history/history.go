@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kapetan-io/dispatch/internal/httpservice"
+
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
@@ -124,7 +126,8 @@ type Cycle struct {
 	Covered []Entry `json:"covered,omitempty"`
 	Throws  []Throw `json:"throws,omitempty"`
 	// Reads maps "rule/subject" to what the rule read.
-	Reads map[string][]string `json:"reads,omitempty"`
+	Reads map[string][]string    `json:"reads,omitempty"`
+	HTTP  []httpservice.Exchange `json:"http,omitempty"`
 }
 
 // Receipt is a receipt line. An attempted action has no outcome.

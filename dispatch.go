@@ -21,6 +21,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/delivery"
 	"github.com/kapetan-io/dispatch/internal/herdr"
+	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/launcher"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/loop"
@@ -56,6 +57,9 @@ type Options struct {
 	// gh, which cuts each call off after 30 seconds so a stalled network can't
 	// hold up the loop.
 	PullRequests pullrequest.Repository
+	// HTTP reaches the services config.toml names under [http.<name>]. Defaults to
+	// calling them over HTTP with the token each token_command prints.
+	HTTP httpservice.Services
 	// Alerts shows notifications. Defaults to macOS notifications through osascript.
 	Alerts delivery.Alerts
 	// Launcher starts the workers. Defaults to leasing a tree from Treehouse and

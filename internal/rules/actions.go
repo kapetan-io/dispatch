@@ -45,10 +45,11 @@ const (
 	kindTreehouseRet   = "treehouse.return"
 	kindGitHubMerge    = "github.merge"
 	kindNotifySend     = "notify.send"
+	kindHTTPPost       = "http.post"
 )
 
 // Actions lists every action a rule can queue. Adding one also takes a subject
-// kind in queueFn (call.go) and, for a new plugin, a case in ctxPlugins (declarations.go)
+// kind in queueFn (call.go), unless its subject is a name and not a record, as a post's is, and, for a new plugin, a case in ctxPlugins (declarations.go)
 // and in ctx (call.go); the generated declarations then follow from this table.
 var Actions = []ActionSpec{
 	{Plugin: "linear", Method: "queueMove", Kind: kindLinearMove, Receipt: "move", Subject: Param{"t", "Ticket"},
@@ -66,4 +67,7 @@ var Actions = []ActionSpec{
 	{Plugin: "github", Method: "queueMerge", Kind: kindGitHubMerge, Receipt: "merge", Subject: Param{"pr", "PR"}},
 	{Plugin: "notify", Method: "queueSend", Kind: kindNotifySend, Receipt: "notify", Subject: Param{"subject", "Ticket"},
 		Params: []Param{{"text", "string"}}, Options: "followersAlways?: boolean"},
+	// The subject of a post is the service it goes to, a name from [http.<name>].
+	{Plugin: "http", Method: "queuePost", Kind: kindHTTPPost, Receipt: "post", Subject: Param{"service", "string"},
+		Params: []Param{{"path", "string"}, {"body", "unknown"}}},
 }

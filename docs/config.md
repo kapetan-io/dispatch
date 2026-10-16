@@ -102,13 +102,15 @@ nudge_limit = 3
 
 ## `[http.<name>]`
 
-A service a rule may call. Each table needs a `base_url`. `token_command` prints the service's token. Dispatch loads these tables and checks them, and no rule can call a service yet.
+A service a rule may call with `ctx.http`. Each table needs a `base_url`, an `http` or `https` URL with a host and no user. `token_command` prints the service's token, and is optional. Dispatch runs it the first time a rule calls the service and keeps the token in memory until the service answers 401, then runs it again on the next call.
 
 ```toml
 [http.sentry]
 base_url = "https://sentry.io/api/0"
 token_command = "op read op://dev/sentry/token"
 ```
+
+A rule names the service and a path, and dispatch sends `Authorization: Bearer <token>` itself. The token never reaches a rule, history or an error, and `ctx.config.http` leaves `token_command` out. The path must start with `/` and stay under the `base_url` path, so `/issues/` on the service above is `https://sentry.io/api/0/issues/`. A path such as `//other.host/x` or `/../admin` throws at the call, and so does a service this file doesn't name. A redirect is never followed.
 
 ## `[plugins.herdr]`
 

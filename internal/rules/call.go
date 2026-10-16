@@ -20,12 +20,31 @@ const maxOnceItems = 32
 
 // queued is an action a then asked for.
 type queued struct {
-	id      int
-	spec    ActionSpec
+	id   int
+	spec ActionSpec
+	// subject is the record the action is about. It is nil for a post, whose subject is a service.
 	subject *record
 	args    map[string]any
 	once    ledger.Once
 	opts    map[string]any
+	// service is the [http.<name>] a post goes to.
+	service string
+}
+
+// subjectID is what the ledger keys the action by: the ticket, or the service of a post.
+func (q *queued) subjectID() string {
+	if q.subject == nil {
+		return q.service
+	}
+	return q.subject.subject
+}
+
+// recordName names what the action is about in plans.
+func (q *queued) recordName() string {
+	if q.subject == nil {
+		return "http.service/" + q.service
+	}
+	return q.subject.String()
 }
 
 // call is one run of one rule's if or then, in a runtime of its own.
@@ -42,8 +61,12 @@ type call struct {
 	// holds the call when it is not empty, even if the rule caught the error.
 	unknown []string
 	reads   []string
-	queue   []*queued
-	objects map[string]*sobek.Object
+	// exchanges lists the responses a then waited on, and the requests that got none.
+	exchanges []Exchange
+	// deadline is when the call's time budget ends, which bounds an HTTP request.
+	deadline time.Time
+	queue    []*queued
+	objects  map[string]*sobek.Object
 	// handles maps the object a queue method returned to its place in queue, so a
 	// then can only return actions it queued, and reading one runs no rule code.
 	handles map[*sobek.Object]int
@@ -312,6 +335,7 @@ func (c *call) ctx() sobek.Value {
 	_ = ctx.Set("treehouse", c.treehouseAPI())
 	_ = ctx.Set("github", c.pluginAPI("github"))
 	_ = ctx.Set("notify", c.pluginAPI("notify"))
+	_ = ctx.Set("http", c.httpAPI())
 	return ctx
 }
 
@@ -407,11 +431,16 @@ func (c *call) queueFn(spec ActionSpec) func(sobek.FunctionCall) sobek.Value {
 		if c.phase != phaseThen {
 			c.throwError("%s can only be called in then. An if reads and never queues", spec.Method)
 		}
-		subjectKinds := map[string][]string{
-			"Ticket": {"linear.ticket"}, "Worker": {"herdr.worker"}, "PR": {"github.pr"}, "Tree": {"treehouse.tree"},
-		}[spec.Subject.TS]
-		subject := c.recordArg(call.Argument(0), subjectKinds...)
-		q := &queued{id: len(c.queue), spec: spec, subject: subject, args: map[string]any{}, opts: map[string]any{}}
+		q := &queued{id: len(c.queue), spec: spec, args: map[string]any{}, opts: map[string]any{}}
+		if spec.Plugin == "http" {
+			c.checkRequest("ctx.http."+spec.Method, call.Argument(0), call.Argument(1))
+			q.service = call.Argument(0).String()
+		} else {
+			subjectKinds := map[string][]string{
+				"Ticket": {"linear.ticket"}, "Worker": {"herdr.worker"}, "PR": {"github.pr"}, "Tree": {"treehouse.tree"},
+			}[spec.Subject.TS]
+			q.subject = c.recordArg(call.Argument(0), subjectKinds...)
+		}
 		for i, p := range spec.Params {
 			v := call.Argument(i + 1)
 			if sobek.IsUndefined(v) || sobek.IsNull(v) {
@@ -666,7 +695,7 @@ func toTree(v reflect.Value) any {
 		out := map[string]any{}
 		for i := range v.NumField() {
 			name, _, _ := strings.Cut(v.Type().Field(i).Tag.Get("toml"), ",")
-			if name != "" {
+			if name != "" && v.Type().Field(i).Tag.Get("ctx") != "-" {
 				out[name] = toTree(v.Field(i))
 			}
 		}

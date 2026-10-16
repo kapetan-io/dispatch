@@ -6,6 +6,7 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/delivery"
 	"github.com/kapetan-io/dispatch/internal/herdr"
+	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/launcher"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
@@ -44,6 +46,7 @@ type Env struct {
 	PullRequests pullrequest.Repository
 	Launcher     launcher.Launcher
 	Alerts       delivery.Alerts
+	HTTP         httpservice.Services
 	StateDir     string
 	Stderr       io.Writer
 	// LaunchDeadline and Deadline override the defaults, so a test can see a launch time out.
@@ -151,11 +154,13 @@ func (e *Executor) Run(ctx context.Context, w rules.Want, wd world.World) Result
 		res = e.merge(ctx, w, wd)
 	case "notify.send":
 		res = e.notify(ctx, w, wd)
+	case "http.post":
+		res = e.post(ctx, w)
 	default:
 		res = Result{Outcome: ledger.Failed, Detail: "no executor for " + w.Kind}
 	}
 	// A message that timed out may have landed, and a retry could say it twice.
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) && res.Outcome == ledger.Failed && isMessage(w.Kind) {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) && res.Outcome == ledger.Failed && isMessage(w.Kind) && w.Kind != "http.post" {
 		res.Outcome, res.Detail = ledger.Done, "timeout"
 		if w.Kind == "herdr.nudge" {
 			res.Nudged = w.Subject
@@ -165,7 +170,7 @@ func (e *Executor) Run(ctx context.Context, w rules.Want, wd world.World) Result
 }
 
 func isMessage(kind string) bool {
-	return slices.Contains([]string{"herdr.nudge", "notify.send", "linear.comment"}, kind)
+	return slices.Contains([]string{"herdr.nudge", "notify.send", "linear.comment", "http.post"}, kind)
 }
 
 func failed(format string, args ...any) Result {
@@ -478,6 +483,32 @@ func (e *Executor) notify(ctx context.Context, w rules.Want, wd world.World) Res
 		return failed("%v", err)
 	}
 	return Result{Outcome: ledger.Done}
+}
+
+// post sends a rule's body to its service. A POST that timed out may have landed, so it counts as sent.
+func (e *Executor) post(ctx context.Context, w rules.Want) Result {
+	path, _ := w.Args["path"].(string)
+	body, err := json.Marshal(w.Args["body"])
+	if err != nil {
+		return Result{Outcome: ledger.Refused, Detail: "the body is not JSON"}
+	}
+	if e.HTTP == nil {
+		return failed("no services to call")
+	}
+	res, err := e.HTTP.Post(ctx, w.Subject, path, body)
+	var unavailable *httpservice.Unavailable
+	switch {
+	case errors.As(err, &unavailable) && unavailable.Timeout:
+		// Only a timeout after the request went out may have landed. A token_command that ran
+		// out of time sent nothing, so that one stays Failed and is tried again.
+		return Result{Outcome: ledger.Done, Detail: "timeout"}
+	case errors.Is(err, httpservice.ErrUnknownService), errors.Is(err, httpservice.ErrPath):
+		// The config changed since the rule queued it, and trying again can't fix that.
+		return Result{Outcome: ledger.Refused, Detail: err.Error()}
+	case err != nil:
+		return failed("%v", err)
+	}
+	return Result{Outcome: ledger.Done, Detail: fmt.Sprintf("POST %s %s: %d", w.Subject, path, res.Status)}
 }
 
 // Reason names why a notice went out, the way followers read it. The sessions that follow

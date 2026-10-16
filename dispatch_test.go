@@ -21,6 +21,7 @@ import (
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/history"
+	"github.com/kapetan-io/dispatch/internal/httpservicetest"
 	"github.com/kapetan-io/dispatch/internal/launcher"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
@@ -501,6 +502,8 @@ type harness struct {
 	exactRules bool
 	// pages is what GitHub was last set to answer, by ticket and cursor.
 	pages map[string][]byte
+	// http is the services a rule's ctx.http reaches. Nil leaves Options.HTTP to its default.
+	http *httpservicetest.Fake
 }
 
 func newHarness(t *testing.T) *harness {
@@ -592,6 +595,9 @@ func (h *harness) options(extra dispatch.Options) dispatch.Options {
 	extra.Herdr = h.tools.Herdr
 	extra.Treehouse = h.tools.Treehouse
 	extra.PullRequests = h.tools.PullRequests
+	if h.http != nil {
+		extra.HTTP = h.http
+	}
 	extra.Alerts = h.tools.Alerts
 	if !h.builtinLauncher {
 		extra.Launcher = h.tools.Launcher

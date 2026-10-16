@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/stops"
@@ -92,6 +93,12 @@ type State struct {
 	Ledger *ledger.Ledger
 	// Viewer names whose tickets are tracked.
 	Viewer string
+	// HTTP is how a then reaches the services config.toml names. With none, every
+	// ctx.http.get reads as an unknown.
+	HTTP httpservice.Services
+	// Kept holds the responses a get got since the last resync, by service and path.
+	// A get adds to it as the cycle runs, and the owner of the state clears it at a resync.
+	Kept map[string]Exchange
 
 	kinds    map[string][]*record
 	index    map[string]*record
@@ -132,7 +139,7 @@ func NewState(cfg config.Config, now time.Time) *State {
 		parents: map[string]string{}, children: map[string][]string{}, childrenUnread: map[string]string{},
 		blockers: map[string]blockers{}, waiting: map[string]int64{}, workers: map[string]*record{}, workersByTree: map[string]*record{},
 		pools: map[string]pool{}, leased: map[string]bool{}, leasedUnread: map[string]string{}, treeRepo: map[string]string{}, reserved: map[string]bool{},
-		maxInProgress: cfg.Dispatch.MaxInProgress, started: now,
+		maxInProgress: cfg.Dispatch.MaxInProgress, started: now, Kept: map[string]Exchange{},
 	}
 }
 

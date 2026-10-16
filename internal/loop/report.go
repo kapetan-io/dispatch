@@ -41,6 +41,7 @@ func cycleLine(now int64, why string, res rules.Result) history.Cycle {
 		c.Throws = append(c.Throws, history.Throw{Rule: t.Rule, Subject: t.Subject, Error: t.Error, Timeout: t.Timeout})
 		c.Reads[t.Rule+"/"+t.Subject] = res.Reads[t.Rule+"/"+t.Subject]
 	}
+	c.HTTP = res.HTTP
 	if len(c.Reads) == 0 {
 		c.Reads = nil
 	}

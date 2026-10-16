@@ -14,6 +14,7 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/executor"
+	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/lock"
 	"github.com/kapetan-io/dispatch/internal/loop"
@@ -172,6 +173,15 @@ func (k *keyedLinear) Usage() linear.Stats {
 	return k.cur.Usage()
 }
 
+// servicesFor is the services a rule's ctx.http reaches: the ones the caller gave, or the
+// [http.<name>] tables of the config.
+func servicesFor(opts Options, cfg config.Config) httpservice.Services {
+	if opts.HTTP != nil {
+		return opts.HTTP
+	}
+	return httpservice.New(cfg.HTTP, nil)
+}
+
 // runCommand starts the reconcile loop and runs it until ctx ends. It fails to start
 // on a bad config key, rules that don't load, a lock another run holds, and a history
 // that can't be written.
@@ -237,10 +247,12 @@ func runCommand(ctx context.Context, opts Options) error {
 	if err != nil {
 		_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while asking Linear who owns the key: %v\n", err)
 	}
+	services := servicesFor(opts, cfg)
 	exec := executor.New(executor.Env{
 		Config: cfg, Linear: func() linear.Workspace { return lin }, Herdr: opts.Herdr, Treehouse: opts.Treehouse,
 		PullRequests: opts.PullRequests, Launcher: launcherFor(opts, cfg.Plugins.Herdr.PluginRoot, nil), Alerts: opts.Alerts,
 		StateDir: opts.StateDir, Stderr: opts.Stderr, LaunchDeadline: opts.LaunchTimeout, Deadline: opts.ActionTimeout,
+		HTTP: services,
 	})
 	return loop.New(loop.Options{
 		Config: cfg, ConfigText: string(text), StateDir: opts.StateDir, Rules: loaded, Clock: opts.Clock,
@@ -248,7 +260,7 @@ func runCommand(ctx context.Context, opts Options) error {
 			Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
 			StateDir: opts.StateDir, Stderr: opts.Stderr,
 		},
-		Executor: exec, Herdr: opts.Herdr, Alerts: opts.Alerts, Usage: lin.Usage, Unauthorized: lin.reset,
+		Executor: exec, HTTP: services, Herdr: opts.Herdr, Alerts: opts.Alerts, Usage: lin.Usage, Unauthorized: lin.reset,
 		Viewer: viewer.Name, Out: opts.Stdout, Err: opts.Stderr,
 	}).Run(ctx)
 }

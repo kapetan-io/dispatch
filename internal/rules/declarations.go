@@ -70,6 +70,7 @@ const staticDeclarations = `  export type Once = [topic: string, ...values: (str
     ended?: number;
     reset?: boolean;
   }
+  export interface HttpResponse { status: number; body: unknown }
   export interface Action { readonly queued: true }
   export function whenever<K extends RecordKind>(rule: {
     name: string;
@@ -107,9 +108,12 @@ func ctxPlugins() string {
 `,
 		"github": "",
 		"notify": "",
+		"http": `      get(service: string, path: string): HttpResponse;
+      last(service: string, path: string): HttpResponse;
+`,
 	}
 	var b strings.Builder
-	for _, plugin := range []string{"linear", "herdr", "treehouse", "github", "notify"} {
+	for _, plugin := range []string{"linear", "herdr", "treehouse", "github", "notify", "http"} {
 		fmt.Fprintf(&b, "    %s: {\n%s", plugin, reads[plugin])
 		for _, a := range Actions {
 			if a.Plugin != plugin {
@@ -232,7 +236,7 @@ func configFields(t reflect.Type, rules config.Rules) []field {
 	for i := range t.NumField() {
 		sf := t.Field(i)
 		name, _, _ := strings.Cut(sf.Tag.Get("toml"), ",")
-		if name == "" {
+		if name == "" || sf.Tag.Get("ctx") == "-" {
 			continue
 		}
 		out = append(out, field{name: name, ts: configType(sf.Type, name, rules)})

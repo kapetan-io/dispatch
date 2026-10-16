@@ -20,6 +20,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/executor"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/history"
+	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/rules"
@@ -37,8 +38,10 @@ type Options struct {
 	// Sources are the tools one read goes through. The loop sets Tolerant and Resilient.
 	Sources  world.Sources
 	Executor *executor.Executor
-	Herdr    herdr.Herdr
-	Alerts   delivery.Alerts
+	// HTTP is how a rule's then reaches the services config.toml names.
+	HTTP   httpservice.Services
+	Herdr  herdr.Herdr
+	Alerts delivery.Alerts
 	// Usage reports the Linear calls made so far.
 	Usage func() linear.Stats
 	// Unauthorized is called when Linear rejects the key, so the next read fetches it again.
@@ -68,8 +71,10 @@ type Loop struct {
 	started    int64
 	lastIngest int64
 
-	state     *rules.State
-	result    rules.Result
+	state  *rules.State
+	result rules.Result
+	// kept holds the responses a get got since the last resync, which ctx.http.last reads.
+	kept      map[string]rules.Exchange
 	lastCycle *history.Cycle
 	cycleDue  bool
 
@@ -176,7 +181,7 @@ func New(o Options) *Loop {
 
 // messageKinds are the receipts whose action may have landed when its outcome
 // is lost, so they count as sent and never run again.
-var messageKinds = []string{"nudge", "notify", "comment"}
+var messageKinds = []string{"nudge", "notify", "comment", "post"}
 
 // ingest is the time the loop stamps an event with. It never goes backward.
 func (l *Loop) ingest() int64 {
@@ -415,6 +420,7 @@ func (l *Loop) onResync(typ string) error {
 		return err
 	}
 	l.wd.Nudged, l.nudgedDuring = nil, nil
+	l.kept = nil
 	l.nudgeEpoch++
 	l.readAgain(world.Everything)
 	// A step that failed after the one before it landed is not wanted again by its rule,
@@ -463,7 +469,11 @@ func (l *Loop) rotate() error {
 		live[tree.Path] = true
 	}
 	if l.wd.LinearErr == nil && l.wd.HoldersErr == nil && len(l.wd.PoolErrs) == 0 {
-		l.led.Keep(func(subject string) bool { return live[subject] || l.flightFor(subject) || l.led.Unfinished(subject) })
+		// A post's receipt is keyed by its service, which no ticket or tree makes live.
+		l.led.Keep(func(subject string) bool {
+			_, service := l.o.Config.HTTP[subject]
+			return live[subject] || service || l.flightFor(subject) || l.led.Unfinished(subject)
+		})
 	}
 	next, err := history.Start(l.o.Config.History.Dir, at, history.Header{Why: "rotate", Config: l.o.ConfigText, At: at.UnixMilli()},
 		history.Snapshot{At: at.UnixMilli(), World: l.mem, Ledger: history.LedgerState{Receipts: l.led.Entries}, Resync: l.resync})
@@ -607,6 +617,11 @@ func (l *Loop) cycle(why string) error {
 	now := l.ingest()
 	l.wd.At = time.UnixMilli(now)
 	state := rules.FromWorld(l.wd, l.o.Config, l.led, l.o.Viewer)
+	state.HTTP = l.o.HTTP
+	if l.kept == nil {
+		l.kept = map[string]rules.Exchange{}
+	}
+	state.Kept = l.kept
 	for _, f := range l.flights {
 		if f.want.Capped && f.want.Options["uncapped"] != true {
 			state.Reserve(f.want.Subject)

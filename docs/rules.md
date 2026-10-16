@@ -76,6 +76,29 @@ whenever({
 - `Date` is pinned to `ctx.now`, `Math.random` throws, and `eval`, `Function`, `Promise`, async functions and generators aren't available.
 - Each `if` has one second and each `then` thirty. A rule that throws or times out wants nothing for that record, and every other rule goes ahead.
 
+## Calling a service
+
+A rule can call the services `config.toml` names under `[http.<name>]`, with dispatch adding the token:
+
+```ts
+whenever({
+  name: "note-open-errors",
+  each: "linear.ticket",
+  if:   (t) => t.status === "in_progress",
+  then: (t, ctx) => {
+    const issues = ctx.http.get("sentry", "/issues/?query=is:unresolved").body as any[];
+    if (issues.length > 0) return ctx.linear.queueComment(t, `${issues.length} unresolved Sentry issues`, { once: ["open-errors", t.id] });
+  },
+});
+```
+
+- `ctx.http.get(service, path)` works only in `then`. It waits for the response, within the `then` budget of thirty seconds, and returns `{ status, body }` with `body` parsed as JSON, or the text when it isn't JSON. A `get` in `if` throws.
+- A request that fails, times out or answers outside 2xx reads as an unknown, so the rule is held for that record and tried again in the next cycle. A slow service delays the rest of its cycle, because a cycle runs every rule one after another.
+- `ctx.http.last(service, path)` reads the response a `get` kept, from `if` or `then`, without a request. It lasts until the next resync, and reads as an unknown when nothing is kept. Rule order matters inside a cycle, so register the rule that gets before the rules that read.
+- `ctx.http.queuePost(service, path, body, { once })` queues a POST of `body` as JSON. It runs like any other action, so the key decides whether it runs again. A POST that fails is tried again at the next resync, but one that times out counts as sent and is not repeated, because it may have landed.
+- `rules test` has no network. A scenario names the service with `s.config({ http: { sentry: { baseUrl: "https://sentry.test/api/0" } } })` and sets its answers with `s.http("sentry", "/issues/?query=is:unresolved", [])`.
+- Each response a `then` waited on is recorded in the cycle line of the history, so a replay can read it instead of calling the service. `dispatch replay` isn't built yet. `rules check` calls the services for real, since it reads the world.
+
 Add a rule by creating a file and importing it from `dispatch.ts`, which is the list of what runs. `extras.ts` and `commands.ts` are examples that `dispatch.ts` doesn't import.
 
 ## Files
