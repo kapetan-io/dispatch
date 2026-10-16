@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/kapetan-io/dispatch/internal/config"
-	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/stops"
 )
 
@@ -67,8 +66,6 @@ func recordStop(ctx context.Context, opts Options) error {
 	if err := stops.Write(opts.StateDir, tree, in.SessionID, rec); err != nil {
 		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
 	}
-	// A turn ended, so the kickoff ran even if its launch was killed before it said so.
-	kickoffs.Clear(opts.StateDir, tree)
 	return nil
 }
 

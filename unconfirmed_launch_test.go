@@ -31,6 +31,12 @@ func (k *kickoffWatcher) Kickoff(ctx context.Context, pane, text string) error {
 }
 
 // launchOver launches ENG-1 through h, recording the mark in state.
+func markLaunch(t *testing.T, state, tree string, at time.Time) {
+	t.Helper()
+	_, err := kickoffs.Mark(state, tree, at)
+	require.NoError(t, err)
+}
+
 func launchOver(l *launchHarness, h herdr.Herdr, state string) error {
 	l.t.Helper()
 	opts := dispatch.Options{Dir: l.repo, Herdr: h, Treehouse: l.tools.Treehouse, LaunchPace: time.Millisecond, StateDir: state, Stdout: io.Discard, Stderr: io.Discard}
@@ -66,7 +72,7 @@ func TestAWorkerWhoseLaunchDiedBeforeItsKickoffIsClosedAndRelaunched(t *testing.
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.worker("ENG-1", "idle")
 	tree := filepath.Join(h.dir, "trees", "ENG-1")
-	require.NoError(t, kickoffs.Mark(h.state, tree, h.clock.Now()))
+	markLaunch(t, h.state, tree, h.clock.Now())
 
 	// A launch still inside its grace period may be about to type the kickoff.
 	h.tick()
@@ -100,7 +106,7 @@ func TestADesignReviewWorkerWhoseLaunchDiedIsClosedToo(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design"))
 	h.worker("ENG-1", "idle")
-	require.NoError(t, kickoffs.Mark(h.state, filepath.Join(h.dir, "trees", "ENG-1"), h.clock.Now()))
+	markLaunch(t, h.state, filepath.Join(h.dir, "trees", "ENG-1"), h.clock.Now())
 
 	h.tick()
 	h.advance(6 * time.Minute)
@@ -113,7 +119,7 @@ func TestADesignReviewWorkerWhoseLaunchDiedIsClosedAndRelaunched(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"))
 	h.worker("ENG-1", "idle")
-	require.NoError(t, kickoffs.Mark(h.state, filepath.Join(h.dir, "trees", "ENG-1"), h.clock.Now()))
+	markLaunch(t, h.state, filepath.Join(h.dir, "trees", "ENG-1"), h.clock.Now())
 
 	h.advance(6 * time.Minute)
 	h.tick()
@@ -131,7 +137,7 @@ func TestClosingAnUnconfirmedWorkerClearsItsMark(t *testing.T) {
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.worker("ENG-1", "idle")
 	tree := filepath.Join(h.dir, "trees", "ENG-1")
-	require.NoError(t, kickoffs.Mark(h.state, tree, h.clock.Now()))
+	markLaunch(t, h.state, tree, h.clock.Now())
 
 	h.advance(6 * time.Minute)
 	h.tick()
@@ -144,7 +150,7 @@ func TestAnIdleWorkerWithAnUnconfirmedKickoffIsNotNudged(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.worker("ENG-1", "idle")
-	require.NoError(t, kickoffs.Mark(h.state, filepath.Join(h.dir, "trees", "ENG-1"), h.clock.Now()))
+	markLaunch(t, h.state, filepath.Join(h.dir, "trees", "ENG-1"), h.clock.Now())
 
 	h.tick()
 	h.advance(90 * time.Second)
@@ -166,7 +172,7 @@ func TestALaunchThatKeepsDyingBeforeItsKickoffReachesNeedsHuman(t *testing.T) {
 		Once: ledger.Once{"close-unconfirmed", tree, earlier}, Started: earlier, Ended: earlier,
 	})
 	h.worker("ENG-1", "idle")
-	require.NoError(t, kickoffs.Mark(h.state, tree, h.clock.Now()))
+	markLaunch(t, h.state, tree, h.clock.Now())
 
 	h.advance(6 * time.Minute)
 	h.tick()
@@ -176,15 +182,42 @@ func TestALaunchThatKeepsDyingBeforeItsKickoffReachesNeedsHuman(t *testing.T) {
 	assert.Empty(t, h.launches())
 }
 
-func TestAStopClearsTheMarkOfALaunchKilledAfterItsKickoffRan(t *testing.T) {
+func TestAStopFromTheWorkersOwnSessionConfirmsALaunchKilledAfterItsKickoffRan(t *testing.T) {
 	h := newHarness(t)
-	h.worker("ENG-1", "working")
-	h.recordStop("ENG-1", "")
-	tree := filepath.Join(h.dir, "trees", "ENG-1")
-	require.NoError(t, kickoffs.Mark(h.state, tree, h.clock.Now()))
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.recordStopFrom("worker", "ENG-1", "")
+	markLaunch(t, h.state, filepath.Join(h.dir, "trees", "ENG-1"), h.clock.Now().Add(-time.Second))
 
-	h.recordStop("ENG-1", "")
+	h.advance(10 * time.Minute)
+	h.tick()
 
-	_, left := kickoffs.Since(h.state, tree)
-	assert.False(t, left)
+	assert.Empty(t, h.tools.Herdr.ClosedWorkspaces())
+}
+
+func TestAStopFromAnotherSessionInTheTreeDoesNotConfirmALaunch(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.recordStopFrom("someone-else", "ENG-1", "")
+	markLaunch(t, h.state, filepath.Join(h.dir, "trees", "ENG-1"), h.clock.Now().Add(-time.Second))
+
+	h.advance(10 * time.Minute)
+	h.tick()
+
+	assert.Equal(t, []string{"w-ENG-1"}, h.tools.Herdr.ClosedWorkspaces())
+}
+
+func TestALaunchNeverReleasesTheMarkOfALaunchThatReplacedIt(t *testing.T) {
+	state, tree := t.TempDir(), t.TempDir()
+	first, err := kickoffs.Mark(state, tree, time.UnixMilli(1000))
+	require.NoError(t, err)
+	_, err = kickoffs.Mark(state, tree, time.UnixMilli(2000))
+	require.NoError(t, err)
+
+	kickoffs.Release(state, tree, first)
+
+	at, held := kickoffs.Since(state, tree)
+	assert.True(t, held)
+	assert.Equal(t, time.UnixMilli(2000), at)
 }

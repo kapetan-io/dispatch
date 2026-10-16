@@ -5,6 +5,7 @@
 package kickoffs
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -30,30 +31,41 @@ func file(stateDir, tree string) string {
 	return filepath.Join(dir(stateDir), hex.EncodeToString(sum[:8]))
 }
 
-// Mark records that a launch on tree started at the given time. A second
-// Mark replaces the first, because a relaunch starts over.
-func Mark(stateDir, tree string, at time.Time) error {
+// Mark records that a launch on tree started at the given time and returns the
+// id that launch releases it with. A second Mark replaces the first, because a
+// relaunch starts over.
+func Mark(stateDir, tree string, at time.Time) (string, error) {
 	name := file(stateDir, tree)
 	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
-		return fmt.Errorf("while recording the launch: %w", err)
+		return "", fmt.Errorf("while recording the launch: %w", err)
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(name), ".kickoff-*.tmp")
 	if err != nil {
-		return fmt.Errorf("while recording the launch: %w", err)
+		return "", fmt.Errorf("while recording the launch: %w", err)
 	}
-	_, werr := tmp.WriteString(strconv.FormatInt(at.UnixMilli(), 10))
+	var raw [8]byte
+	_, _ = rand.Read(raw[:])
+	id := hex.EncodeToString(raw[:])
+	_, werr := tmp.WriteString(strconv.FormatInt(at.UnixMilli(), 10) + " " + id)
 	if cerr := tmp.Close(); werr == nil {
 		werr = cerr
 	}
 	if werr != nil {
 		_ = os.Remove(tmp.Name())
-		return fmt.Errorf("while recording the launch: %w", werr)
+		return "", fmt.Errorf("while recording the launch: %w", werr)
 	}
-	return os.Rename(tmp.Name(), name)
+	return id, os.Rename(tmp.Name(), name)
 }
 
-// Clear removes the record of tree, because its kickoff was confirmed or its
-// worker is gone.
+// Release removes the record of tree if the launch with id still owns it. A
+// launch that a newer one replaced leaves the newer one's record alone.
+func Release(stateDir, tree, id string) {
+	if _, owner, ok := read(stateDir, tree); ok && owner == id {
+		_ = os.Remove(file(stateDir, tree))
+	}
+}
+
+// Clear removes the record of tree whoever owns it, because its worker is gone.
 func Clear(stateDir, tree string) {
 	_ = os.Remove(file(stateDir, tree))
 }
@@ -61,13 +73,19 @@ func Clear(stateDir, tree string) {
 // Since is when the launch on tree started and has not been confirmed. A
 // missing or unreadable record reports false.
 func Since(stateDir, tree string) (time.Time, bool) {
+	at, _, ok := read(stateDir, tree)
+	return at, ok
+}
+
+func read(stateDir, tree string) (at time.Time, owner string, ok bool) {
 	b, err := os.ReadFile(file(stateDir, tree))
 	if err != nil {
-		return time.Time{}, false
+		return time.Time{}, "", false
 	}
-	ms, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+	millis, owner, _ := strings.Cut(strings.TrimSpace(string(b)), " ")
+	ms, err := strconv.ParseInt(millis, 10, 64)
 	if err != nil {
-		return time.Time{}, false
+		return time.Time{}, "", false
 	}
-	return time.UnixMilli(ms), true
+	return time.UnixMilli(ms), owner, true
 }

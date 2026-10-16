@@ -227,7 +227,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		w.Workers, w.Stops = map[string]Worker{}, map[string]stops.Record{}
 		for _, t := range w.Tickets {
 			wk := FindWorker(t.Identifier, w.Trees, snap)
-			if at, ok := kickoffs.Since(src.StateDir, wk.TreePath); ok && wk.State != NoWorker {
+			if at, ok := kickoffs.Since(src.StateDir, wk.TreePath); ok && wk.State != NoWorker && !stoppedSince(src.StateDir, wk, at) {
 				wk.UnconfirmedSince = at.UnixMilli()
 			}
 			w.Workers[t.Identifier] = wk
@@ -379,4 +379,15 @@ func (s Scope) ReadsPR(t linear.Ticket, state WorkerState) bool {
 		return false
 	}
 	return state == NoWorker || state == Idle
+}
+
+// stoppedSince reports whether the worker's own Claude session ended a turn after at. That
+// proves its kickoff ran even if the launch that marked it was killed before it said so. A
+// Stop from another session in the tree proves nothing, and with no session known none counts.
+func stoppedSince(stateDir string, wk Worker, at time.Time) bool {
+	if wk.Session == "" {
+		return false
+	}
+	rec, ok := stops.Read(stateDir, wk.TreePath, wk.Session)
+	return ok && rec.At.After(at)
 }

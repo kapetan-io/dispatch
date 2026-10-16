@@ -106,6 +106,9 @@ type launch struct {
 	repo      string
 	tree      string
 	workspace string
+	// markID is the id this launch holds its kickoffs record under, so it never releases
+	// the record of a launch that replaced it.
+	markID string
 	// fresh is set when this run took the lease, as opposed to finding one from
 	// an earlier run.
 	fresh bool
@@ -196,16 +199,19 @@ func (l *launch) beginKickoff() {
 	if l.opts.StateDir == "" {
 		return
 	}
-	if err := kickoffs.Mark(l.opts.StateDir, l.tree, time.Now()); err != nil {
+	id, err := kickoffs.Mark(l.opts.StateDir, l.tree, time.Now())
+	if err != nil {
 		l.log("%v", err)
+		return
 	}
+	l.markID = id
 }
 
 // clearKickoff runs on every return, because a launch that reports its own failure has
 // already closed its workspace.
 func (l *launch) clearKickoff() {
 	if l.opts.StateDir != "" {
-		kickoffs.Clear(l.opts.StateDir, l.tree)
+		kickoffs.Release(l.opts.StateDir, l.tree, l.markID)
 	}
 }
 
