@@ -127,6 +127,9 @@ type Entry struct {
 	Text    string      `json:"text,omitempty"`
 	// Dropped marks a held entry for an on rule, whose event is gone for good.
 	Dropped bool `json:"dropped,omitempty"`
+	// Args and Options are what a wanted action carries besides its once key, such as a comment's text.
+	Args    map[string]any `json:"args,omitempty"`
+	Options map[string]any `json:"options,omitempty"`
 }
 
 // Throw is a rule call that threw or ran out of time.

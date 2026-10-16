@@ -853,3 +853,50 @@ func TestTraceFailsWhenItCannotWriteItsReport(t *testing.T) {
 
 	require.ErrorContains(t, err, "broken pipe")
 }
+
+func TestReplayWithOtherRulesNoticesAnActionWithTheSameKeyButOtherText(t *testing.T) {
+	h := newHarness(t)
+	greeting := func(text string) string {
+		return oneRule(t, `whenever({ name: "greet", each: "linear.ticket", if: () => true, then: (t, ctx) => ctx.linear.queueComment(t, "`+text+`", { once: ["greet"] }) });`)
+	}
+	h.rulesDir = greeting("hello")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	require.NoError(t, h.stopLoop())
+	require.Equal(t, []string{"hello"}, comments(h))
+
+	out, err := h.run("replay", "--rules", greeting("goodbye"))
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "difference at")
+	assert.Contains(t, out, `recorded: wants comment ENG-1 once [greet] args {"text":"hello"}`)
+	assert.Contains(t, out, `replayed: wants comment ENG-1 once [greet] args {"text":"goodbye"}`)
+}
+
+func TestStateResetQuietRefusesWhileARuleFails(t *testing.T) {
+	h := newHarness(t)
+	h.rulesDir = oneRule(t, `whenever({ name: "broken", each: "linear.ticket", if: () => { throw new Error("boom"); }, then: () => {} });`)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	_, err := h.run("state", "reset", "--quiet")
+
+	require.ErrorContains(t, err, "while rule broken fails for ENG-1")
+	paths, err := history.Segments(filepath.Join(h.state, "events"))
+	require.NoError(t, err)
+	assert.Empty(t, paths)
+}
+
+func TestTraceKnowsATicketNoRuleHasWantedAnythingFor(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "working")
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	require.NoError(t, h.stopLoop())
+
+	out, err := h.run("trace", "ENG-1")
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "wants nothing for ENG-1")
+}

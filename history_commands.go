@@ -221,7 +221,12 @@ func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *wo
 	state := rules.FromWorld(wd, cfg, &ledger.Ledger{}, "")
 	next := state.Carry(mem, at.UnixMilli())
 	var receipts []ledger.Receipt
-	for _, want := range loaded.Cycle(state, nil).Wants {
+	result := loaded.Cycle(state, nil)
+	// A rule that threw or ran out of time wants nothing, and may want a message on the next run, which an empty ledger would send again.
+	for _, t := range result.Throws {
+		return nil, nil, fmt.Errorf("cannot record the messages the first cycle wants while rule %s fails for %s: %s", t.Rule, t.Subject, t.Error)
+	}
+	for _, want := range result.Wants {
 		if !slices.Contains(loop.MessageKinds, want.Receipt) {
 			continue
 		}

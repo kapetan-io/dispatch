@@ -24,7 +24,7 @@ func Trace(dir, ticket string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	tr := &tracing{out: out, ticket: ticket, printed: map[string]bool{}}
+	tr := &tracing{out: out, ticket: ticket, printed: map[string]bool{}, last: unprinted}
 	for _, p := range paths {
 		seg, err := history.Read(p)
 		if errors.Is(err, history.ErrIncomplete) {
@@ -54,11 +54,15 @@ type tracing struct {
 	cycles int
 	// printed holds the receipts already shown, because a snapshot carries the receipts of the segments before it.
 	printed map[string]bool
-	// last is what the previous cycle decided for the ticket, without what the rules read.
+	// last is what the previous cycle decided for the ticket, without what the rules read. It starts as
+	// a value no decision equals, so the first cycle that knows the ticket prints.
 	last string
 	// err is the first write to out that failed.
 	err error
 }
+
+// unprinted is the value of tracing.last before any decision has been shown.
+const unprinted = "\x00"
 
 // decision is what one rule decided for the ticket.
 type decision struct{ rule, text string }
@@ -76,10 +80,15 @@ func (t *tracing) segment(seg history.Segment) {
 			t.receipt(rc)
 		}
 	}
+	for fact := range seg.Snapshot.World.Facts {
+		if strings.HasPrefix(fact, "linear.ticket/"+t.ticket+"/") {
+			t.seen = true
+		}
+	}
 	// Only a rotated segment continues the run before it, so every other segment (a start or a reset)
 	// shows its first cycle again.
 	if seg.Header.Why != "rotate" {
-		t.last = ""
+		t.last = unprinted
 	}
 	for _, raw := range seg.Lines {
 		var head struct {
@@ -91,6 +100,15 @@ func (t *tracing) segment(seg history.Segment) {
 			var c history.Cycle
 			if json.Unmarshal(raw, &c) == nil {
 				t.cycle(c)
+			}
+		case history.LineWorld:
+			var w history.World
+			if json.Unmarshal(raw, &w) == nil {
+				for _, c := range w.Changes {
+					if c.Record == "linear.ticket/"+t.ticket {
+						t.seen = true
+					}
+				}
 			}
 		case history.LineReceipt:
 			var r history.Receipt
@@ -114,7 +132,8 @@ func (t *tracing) cycle(c history.Cycle) {
 	if len(decided) > 0 {
 		t.seen = true
 	}
-	if key == t.last {
+	// A ticket history knows but no rule has wanted anything for still shows its first, empty decision.
+	if (len(decided) == 0 && !t.seen) || key == t.last {
 		return
 	}
 	t.last = key

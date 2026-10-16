@@ -24,7 +24,7 @@ type waiter struct {
 func cycleLine(now int64, why string, res rules.Result) history.Cycle {
 	c := history.Cycle{Line: history.LineCycle, Now: now, Why: why, Reads: map[string][]string{}}
 	for _, w := range res.Wants {
-		c.Wants = append(c.Wants, history.Entry{Rule: w.Rule, Subject: w.Subject, Kind: w.Receipt, Once: w.Once})
+		c.Wants = append(c.Wants, history.Entry{Rule: w.Rule, Subject: w.Subject, Kind: w.Receipt, Once: w.Once, Args: w.Args, Options: w.Options})
 		c.Reads[w.Rule+"/"+w.Subject] = res.Reads[w.Rule+"/"+w.Subject]
 	}
 	for _, w := range res.Waiting {

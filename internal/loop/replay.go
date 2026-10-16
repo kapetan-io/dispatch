@@ -393,6 +393,15 @@ func byRule(e history.Entry) string { return " (" + e.Rule + ")" }
 // wantsText describes a wanted action. Rules compared for their actions alone may be named differently.
 func wantsText(e history.Entry, actionsOnly bool) string {
 	text := fmt.Sprintf("wants %s %s once %s", e.Kind, e.Subject, FormatOnce(e.Once))
+	for _, extra := range []struct {
+		name string
+		with map[string]any
+	}{{"args", e.Args}, {"options", e.Options}} {
+		if len(extra.with) > 0 {
+			b, _ := json.Marshal(extra.with)
+			text += fmt.Sprintf(" %s %s", extra.name, b)
+		}
+	}
 	if actionsOnly {
 		return text
 	}
