@@ -786,3 +786,20 @@ func TestReplayOfARangeWithNoCyclesIsNotAnUnreplayableSegment(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "0 cycles, 0 match\n", out)
 }
+
+func TestReplayExitsTwoWhenTheOnlySegmentsWithCyclesAreFromBeforeReadLines(t *testing.T) {
+	h := newHarness(t)
+	old, err := history.Start(filepath.Join(h.state, "events"), h.clock.Now().Add(-2*time.Hour), history.Header{Why: "start"}, history.Snapshot{})
+	require.NoError(t, err)
+	require.NoError(t, old.Append(history.Cycle{Line: history.LineCycle, Now: h.clock.Now().Add(-2 * time.Hour).UnixMilli()}))
+	require.NoError(t, old.Close(true))
+	// A reset starts a segment that has no cycle, which says nothing about the world.
+	empty, err := history.Start(filepath.Join(h.state, "events"), h.clock.Now().Add(-time.Hour), history.Header{Why: "reset"}, history.Snapshot{})
+	require.NoError(t, err)
+	require.NoError(t, empty.Close(true))
+
+	_, err = h.run("replay")
+
+	require.ErrorContains(t, err, "holds no record of the world its cycles read")
+	assert.Equal(t, 2, dispatch.ExitCode(err))
+}

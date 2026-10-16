@@ -74,14 +74,16 @@ func Replay(o ReplayOptions) (Replayed, error) {
 		if err != nil {
 			return res, err
 		}
-		done, err := replaySegment(seg, o, &res)
+		done, hadCycles, err := replaySegment(seg, o, &res)
 		if errors.Is(err, ErrNotReplayable) {
 			// A segment from before history recorded the world must not hide the newer ones.
 			res.Skipped = append(res.Skipped, err.Error())
 			skipped = err
 			continue
 		}
-		replayable = true
+		// An empty segment, such as the one a reset starts, says nothing about the world, so it can't vouch
+		// for the older ones it sits beside.
+		replayable = replayable || hadCycles
 		if err != nil || done || res.Difference != "" {
 			return res, err
 		}
@@ -124,20 +126,21 @@ type segmentReplay struct {
 	lastCycle *history.Cycle
 }
 
-// replaySegment runs the cycles of one segment again. It returns true once a cycle is past To,
-// and ErrNotReplayable when the segment holds no record of the world.
-func replaySegment(seg history.Segment, o ReplayOptions, res *Replayed) (bool, error) {
+// replaySegment runs the cycles of one segment again. It returns true once a cycle is past To, and
+// whether the segment held any cycle, in range or not. It returns ErrNotReplayable when the segment
+// holds no record of the world.
+func replaySegment(seg history.Segment, o ReplayOptions, res *Replayed) (stopped, hadCycles bool, err error) {
 	st := &segmentReplay{
 		seg: seg, mem: seg.Snapshot.World, led: &ledger.Ledger{Entries: slices.Clone(seg.Snapshot.Ledger.Receipts)},
 		read: seg.Snapshot.Read, rules: o.Rules,
 	}
 	var pending *cycleRecord
-	stopped := false
 	flush := func(final bool) error {
 		if pending == nil || stopped {
 			return nil
 		}
 		g := *pending
+		hadCycles = true
 		pending = nil
 		at := time.UnixMilli(g.now)
 		switch {
@@ -170,23 +173,23 @@ func replaySegment(seg history.Segment, o ReplayOptions, res *Replayed) (bool, e
 			rank = rankCycle
 		case history.LineReceipt:
 			if err := flush(false); err != nil || res.Difference != "" {
-				return false, err
+				return stopped, hadCycles, err
 			}
 			var r history.Receipt
 			if err := json.Unmarshal(raw, &r); err != nil {
-				return false, err
+				return stopped, hadCycles, err
 			}
 			st.led.Upsert(r.Receipt)
 			continue
 		default:
 			if err := flush(false); err != nil || res.Difference != "" {
-				return false, err
+				return stopped, hadCycles, err
 			}
 			continue
 		}
 		if pending != nil && (pending.now != now || rank <= pending.rank) {
 			if err := flush(false); err != nil || res.Difference != "" {
-				return false, err
+				return stopped, hadCycles, err
 			}
 		}
 		if pending == nil {
@@ -206,13 +209,13 @@ func replaySegment(seg history.Segment, o ReplayOptions, res *Replayed) (bool, e
 			err = json.Unmarshal(raw, pending.cycle)
 		}
 		if err != nil {
-			return false, err
+			return stopped, hadCycles, err
 		}
 	}
 	if err := flush(true); err != nil || res.Difference != "" {
-		return false, err
+		return stopped, hadCycles, err
 	}
-	return stopped, nil
+	return stopped, hadCycles, nil
 }
 
 // apply takes a cycle that ran before the replay's start as it was recorded.
