@@ -98,7 +98,7 @@ func RedactedBody(token string, b []byte) json.RawMessage {
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.UseNumber()
 	var v any
-	if err := dec.Decode(&v); err != nil || dec.More() {
+	if !json.Valid(b) || dec.Decode(&v) != nil {
 		text, _ := json.Marshal(strings.ReplaceAll(string(b), token, "[redacted]"))
 		return text
 	}

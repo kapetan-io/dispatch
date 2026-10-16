@@ -97,6 +97,18 @@ var scenarios = []scenario{
 		assert.Equal(t, []any{"[redacted]"}, decoded["list"])
 		assert.Contains(t, string(res.Body), "12345678901234567890")
 	}},
+	{Name: "ABodyThatIsNotWhollyJSONComesBackWhole", Run: func(t *testing.T, s subject) {
+		for _, body := range []string{"123 }", "[1] ]", `{"a":1} trailing`} {
+			s.Serve("sentry", "GET", "/odd", 200, body)
+
+			res, err := s.Services.Get(context.Background(), "sentry", "/odd")
+
+			require.NoError(t, err)
+			var text string
+			require.NoError(t, json.Unmarshal(res.Body, &text), body)
+			assert.Equal(t, body, text)
+		}
+	}},
 	{Name: "ACancelledContextSendsNothing", Run: func(t *testing.T, s subject) {
 		s.Serve("open", "GET", "/me", 200, `{}`)
 		ctx, cancel := context.WithCancel(context.Background())
