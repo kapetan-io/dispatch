@@ -731,3 +731,58 @@ func TestStateResetQuietRefusesWhileAPoolIsUnread(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, paths)
 }
+
+func TestReplayStillComparesMemoryInTheLastCycleOfASegmentThatHasNoStopLine(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "In Review"}))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	// The title changes what memory holds and leaves the rules deciding what they did, so no cycle line follows.
+	renamed := blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "In Review"})
+	renamed.Title = "ENG-2 renamed"
+	h.tickets(renamed)
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	require.NoError(t, h.stopLoop())
+	path := newestSegment(t, h)
+	text, err := os.ReadFile(path)
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(text)), "\n")
+	last := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, `{"line":"read"`) {
+			last = i
+		}
+	}
+	require.Positive(t, last)
+	require.Contains(t, lines[last], "ENG-2 renamed")
+	for _, line := range lines[last+1:] {
+		require.NotContains(t, line, `{"line":"cycle"`)
+	}
+	// The crash left no stop line, and the blocker was Done as far as the last read says.
+	lines[last] = strings.ReplaceAll(lines[last], `"Status":"In Review"`, `"Status":"Done"`)
+	require.NoError(t, os.WriteFile(path, []byte(strings.Join(lines[:len(lines)-1], "\n")+"\n"), 0o600))
+
+	out, err := h.run("replay")
+
+	require.Error(t, err)
+	assert.Equal(t, 1, dispatch.ExitCode(err))
+	assert.Contains(t, out, "memory: recorded")
+}
+
+func TestReplayOfARangeWithNoCyclesIsNotAnUnreplayableSegment(t *testing.T) {
+	h := newHarness(t)
+	old, err := history.Start(filepath.Join(h.state, "events"), h.clock.Now().Add(-time.Hour), history.Header{Why: "start"}, history.Snapshot{})
+	require.NoError(t, err)
+	require.NoError(t, old.Append(history.Cycle{Line: history.LineCycle, Now: h.clock.Now().Add(-time.Hour).UnixMilli()}))
+	require.NoError(t, old.Close(true))
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	require.NoError(t, h.stopLoop())
+
+	out, _, err := h.runContext(t.Context(), "replay", "--from", h.clock.Now().Add(time.Hour).Format(time.RFC3339))
+
+	require.NoError(t, err)
+	assert.Equal(t, "0 cycles, 0 match\n", out)
+}

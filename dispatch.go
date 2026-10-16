@@ -105,14 +105,15 @@ const usage = `usage: dispatch run
                then print one line per ticket. Exits 3 with "dispatch: not running" when no loop runs
   --timeout    how long tick waits before it reports what is still pending; defaults to 2m
   plan         print what the latest cycle acts on, waits for, holds and has covered, read from history
-  trace        print why dispatch acted on the ticket, read from history: each cycle that changed what a
-               rule wanted for it with what the rule read, each hold, wait, throw and dropped event,
-               and each receipt. Exits 1 when kept history has no record of the ticket
+  trace        print why dispatch acted on the ticket, read from history: each cycle that changed what
+               the rules decided for it (a want, wait, hold, throw or dropped event) with what each
+               rule read, and each receipt. Exits 1 when kept history has no record of the ticket
   replay       run the cycles in a stretch of history again over the world and ledger they ran over,
                and print "N cycles, N match" and exit 0, or print the first difference and exit 1.
                TIME is RFC 3339, "2006-01-02 15:04" or "15:04" today. With --rules, run the rules in
                DIR over the same history, print the first action that differs from the live run and
-               exit 0. Exits 2 for history written before it recorded the world
+               exit 0. Exits 2 when no cycle could be replayed, because the history was written before it
+               recorded the world
   state reset  start a new history segment with an empty ledger, keeping what the world remembers.
                With --quiet, record the messages the first cycle wants as sent, so none is repeated.
                Exits 1 while dispatch run holds the lock

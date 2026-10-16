@@ -17,8 +17,8 @@ import (
 var ErrNoRecord = errors.New("history has no record of the ticket")
 
 // Trace prints why dispatch acted on a ticket, from every segment kept in dir: each cycle that
-// changed what a rule wanted for it, with what the rule read, each hold, wait, throw and dropped
-// event, and each receipt. It returns ErrNoRecord when history never mentions the ticket.
+// changed what the rules decided for it (a want, wait, hold, throw or dropped event), with
+// what each rule read, and each receipt. It returns ErrNoRecord when history never mentions the ticket.
 func Trace(dir, ticket string, out io.Writer) error {
 	paths, err := history.Segments(dir)
 	if err != nil {
@@ -62,7 +62,8 @@ func (t *tracing) segment(seg history.Segment) {
 			t.receipt(rc)
 		}
 	}
-	// A rotated segment opens with a cycle line whatever it decided, so only a new run shows it again.
+	// Only a rotated segment continues the run before it, so every other segment (a start or a reset)
+	// shows its first cycle again.
 	if seg.Header.Why != "rotate" {
 		t.last = ""
 	}

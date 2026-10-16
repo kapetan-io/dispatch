@@ -244,5 +244,11 @@ func firstUnread(w world.World) error {
 			return err
 		}
 	}
+	for id := range w.PRReadFailed {
+		return fmt.Errorf("the pull request of %s", id)
+	}
+	for path, err := range w.CheckErrors {
+		return fmt.Errorf("the tree at %s: %w", path, err)
+	}
 	return nil
 }

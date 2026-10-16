@@ -109,8 +109,10 @@ type World struct {
 // launch or promotion in flight. It is written before the cycle line, and only when
 // it differs from the read before, so a cycle without one ran over the last.
 type Reading struct {
-	Line     string       `json:"line"`
-	Now      int64        `json:"now"`
+	Line string `json:"line"`
+	// Now is the cycle's time, which pairs the read with the world and cycle lines of that cycle.
+	Now int64 `json:"now"`
+	// Reserved are the tickets a worker slot is held for while their launch is in flight.
 	Reserved []string     `json:"reserved,omitempty"`
 	World    *world.World `json:"world"`
 }

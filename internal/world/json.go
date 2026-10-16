@@ -41,6 +41,7 @@ type worldRecord struct {
 	Nudged       map[string]bool                    `json:"nudged,omitempty"`
 }
 
+// treeRecord adds the clone directory that treehouse.Tree's own JSON leaves out.
 type treeRecord struct {
 	treehouse.Tree
 	RepoDir string `json:"repoDir,omitempty"`

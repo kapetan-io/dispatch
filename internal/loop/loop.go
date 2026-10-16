@@ -179,7 +179,8 @@ func New(o Options) *Loop {
 }
 
 // MessageKinds are the receipts whose action may have landed when its outcome
-// is lost, so they count as sent and never run again.
+// is lost, so they count as sent and never run again. `dispatch state reset --quiet` also uses
+// this list to pick the messages it records as already sent.
 var MessageKinds = []string{"nudge", "notify", "comment"}
 
 // ingest is the time the loop stamps an event with. It never goes backward.
