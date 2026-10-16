@@ -5,7 +5,6 @@
 package history
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -16,6 +15,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/kapetan-io/dispatch/internal/httpservice"
 
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -151,7 +152,8 @@ type Cycle struct {
 	Covered []Entry `json:"covered,omitempty"`
 	Throws  []Throw `json:"throws,omitempty"`
 	// Reads maps "rule/subject" to what the rule read.
-	Reads map[string][]string `json:"reads,omitempty"`
+	Reads map[string][]string    `json:"reads,omitempty"`
+	HTTP  []httpservice.Exchange `json:"http,omitempty"`
 }
 
 // Receipt is a receipt line. An attempted action has no outcome.
@@ -309,11 +311,12 @@ func Read(path string) (Segment, error) {
 		return Segment{}, err
 	}
 	seg := Segment{Path: path}
-	sc := bufio.NewScanner(bytes.NewReader(b))
-	sc.Buffer(make([]byte, 0, 1<<20), 64<<20)
 	n := 0
-	for sc.Scan() {
-		raw := bytes.TrimSpace(sc.Bytes())
+	// A line holds whole HTTP responses, so it has no length limit.
+	for rest := b; len(rest) > 0; {
+		line, after, _ := bytes.Cut(rest, []byte("\n"))
+		rest = after
+		raw := bytes.TrimSpace(line)
 		if len(raw) == 0 {
 			continue
 		}
@@ -351,9 +354,6 @@ func Read(path string) (Segment, error) {
 			seg.Lines = append(seg.Lines, slices.Clone(raw))
 		}
 		n++
-	}
-	if err := sc.Err(); err != nil {
-		return seg, fmt.Errorf("while reading %s: %w", path, err)
 	}
 	if n < 2 {
 		return seg, fmt.Errorf("%s %w", path, ErrIncomplete)

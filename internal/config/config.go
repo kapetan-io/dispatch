@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -77,11 +78,11 @@ type Treehouse struct{}
 // Notify is the notify plugin's table. It has no settings yet.
 type Notify struct{}
 
-// HTTPService is a service named for rules to call. Dispatch loads and checks the
-// table, and no rule can call it yet.
+// HTTPService is a service named for rules to call through ctx.http.
 type HTTPService struct {
-	BaseURL      string `toml:"base_url"`
-	TokenCommand string `toml:"token_command"`
+	BaseURL string `toml:"base_url"`
+	// TokenCommand prints the token. ctx.config leaves it out, so a rule never sees how the token is found.
+	TokenCommand string `toml:"token_command" ctx:"-"`
 }
 
 // Repo is the settings table of one repo, keyed by its Linear repo label.
@@ -233,6 +234,10 @@ func (c Config) check() error {
 	for name, service := range c.HTTP {
 		if service.BaseURL == "" {
 			return fmt.Errorf("http.%s has no base_url", name)
+		}
+		if u, err := url.Parse(service.BaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil ||
+			u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(service.BaseURL, "#") {
+			return fmt.Errorf("http.%s base_url must be an http or https URL with a host, no user, no query and no fragment, got %q", name, service.BaseURL)
 		}
 	}
 	return c.Rules.check()

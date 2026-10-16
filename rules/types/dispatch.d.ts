@@ -122,7 +122,7 @@ declare module "dispatch" {
     history: { dir: string; rotate: string; keep: string };
     repos: { [label: string]: { path: string; open_pr_as: string; ignore_comment_authors: string[]; ignore_optional_checks: boolean; auto_merge: boolean } };
     plugins: { linear: { api_key_command: string; api_key_keychain: string; teams: string[]; ai_label: string; repo_label_group: string; statuses: { todo: string; close_parent: string; blocker_done: string; in_progress: string; in_review: string; needs_human: string; finished: string[]; paused: string[] } }; herdr: { plugin_root: string }; github: {  }; treehouse: {  }; notify: {  } };
-    http: { [label: string]: { base_url: string; token_command: string } };
+    http: { [label: string]: { base_url: string } };
     rules: { "blocked_renotify_minutes": number; "design_model": string; "launch_failure_limit": number; "nudge_limit": number; "worker_model": string; [key: string]: unknown };
     hasRepo(label: string | undefined): boolean;
   }
@@ -137,6 +137,7 @@ declare module "dispatch" {
     ended?: number;
     reset?: boolean;
   }
+  export interface HttpResponse { status: number; body: unknown }
   export interface Action { readonly queued: true }
   export function whenever<K extends RecordKind>(rule: {
     name: string;
@@ -190,6 +191,11 @@ declare module "dispatch" {
     };
     notify: {
       queueSend(subject: Ticket, text: string, o: { once: Once; followersAlways?: boolean }): Action;
+    };
+    http: {
+      get(service: string, path: string): HttpResponse;
+      last(service: string, path: string): HttpResponse;
+      queuePost(service: string, path: string, body: unknown, o: { once: Once }): Action;
     };
   }
 }

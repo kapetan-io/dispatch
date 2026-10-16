@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/grafana/sobek"
 
@@ -92,6 +93,8 @@ type Result struct {
 	// Reads maps "rule/subject" to what the rule read, for the records that
 	// wanted something, were held or threw.
 	Reads map[string][]string
+	// HTTP lists the requests a then waited on and what each got, which a replay can read instead of calling the service.
+	HTTP []Exchange
 }
 
 // WantsFor returns the actions wanted by rule.
@@ -278,6 +281,7 @@ func (r *Rules) evaluate(res *Result, state *State, def *ruleDef, rec *record, e
 		return nil
 	}
 	verdict, c = r.run(state, def, phaseThen, rec, ev)
+	res.HTTP = append(res.HTTP, c.exchanges...)
 	if out := r.verdict(res, c, def, recordName, subject, verdict, key); out != nil {
 		return nil
 	}
@@ -330,7 +334,8 @@ type callResult struct {
 // run calls the rule's if or then in a fresh runtime.
 func (r *Rules) run(state *State, def *ruleDef, phase string, rec *record, ev *Event) (callResult, *call) {
 	rt := newRuntime(state.ms())
-	c := &call{state: state, rt: rt, phase: phase, objects: map[string]*sobek.Object{}, handles: map[*sobek.Object]int{}}
+	c := &call{state: state, rt: rt, phase: phase, objects: map[string]*sobek.Object{}, handles: map[*sobek.Object]int{},
+		deadline: time.Now().Add(r.timeouts.forPhase(phase))}
 	reg := &registry{}
 	if err := reg.install(rt, c.known); err != nil {
 		return callResult{err: err}, c
@@ -455,19 +460,21 @@ func (r *Rules) collect(state *State, def *ruleDef, c *call, ordered []int) []Wa
 	for _, id := range ordered {
 		q := c.queue[id]
 		if prev != nil {
-			after[q.id] = ledger.Key(prev.spec.Receipt, prev.subject.subject, prev.once)
+			after[q.id] = ledger.Key(prev.spec.Receipt, prev.subjectID(), prev.once)
 		}
 		prev = q
 	}
 	var wants []Want
 	for _, q := range c.queue {
 		w := Want{
-			Rule: def.name, Kind: q.spec.Kind, Receipt: q.spec.Receipt, Subject: q.subject.subject, Once: q.once, Args: q.args, Options: q.opts,
-			Record: q.subject.String(), Shadow: def.shadow, After: after[q.id], Capped: q.takesSlot(),
-			Target: state.target(q.subject),
+			Rule: def.name, Kind: q.spec.Kind, Receipt: q.spec.Receipt, Subject: q.subjectID(), Once: q.once, Args: q.args, Options: q.opts,
+			Record: q.recordName(), Shadow: def.shadow, After: after[q.id], Capped: q.takesSlot(),
 		}
-		if t, ok := state.lookup("linear.ticket", q.subject.subject); ok {
-			w.Created, w.seq = t.created, t.seq
+		if q.subject != nil {
+			w.Target = state.target(q.subject)
+			if t, ok := state.lookup("linear.ticket", q.subject.subject); ok {
+				w.Created, w.seq = t.created, t.seq
+			}
 		}
 		wants = append(wants, w)
 	}
