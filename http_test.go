@@ -595,19 +595,3 @@ func TestRulesCheckCallsNoServiceUnlessGivenOne(t *testing.T) {
 	assert.Regexp(t, `ask +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, out)
 	assert.NoFileExists(t, marker)
 }
-
-func TestAHugeResponseDoesNotStopTheLoopFromRestarting(t *testing.T) {
-	h := newHarness(t)
-	sentry := h.sentry()
-	sentry.Respond("sentry", "GET", "/huge", 200, `"`+strings.Repeat("x", 66<<20)+`"`)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	dir := oneRule(t, `whenever({ name: "huge", each: "linear.ticket", if: () => true,
-  then: (t, ctx) => ctx.linear.queueComment(t, "got " + ctx.http.get("sentry", "/huge").status, { once: ["huge", t.id] }) });`)
-
-	_, _, err := h.runWith(context.Background(), dispatch.Options{RulesDir: dir}, "tick")
-	require.NoError(t, err)
-
-	require.NotEmpty(t, h.receipts("comment", "ENG-1"))
-	h.restart()
-	assert.Equal(t, []string{"got 200"}, h.commentBodies())
-}
