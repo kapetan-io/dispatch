@@ -1,6 +1,7 @@
 package dispatch_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -802,4 +803,53 @@ func TestReplayExitsTwoWhenTheOnlySegmentsWithCyclesAreFromBeforeReadLines(t *te
 
 	require.ErrorContains(t, err, "holds no record of the world its cycles read")
 	assert.Equal(t, 2, dispatch.ExitCode(err))
+}
+
+func TestTracePrintsACycleOnlyWhenTheDecisionChangedNotWhatTheRuleRead(t *testing.T) {
+	h := newHarness(t)
+	now := h.clock.Now().UnixMilli()
+	w, err := history.Start(filepath.Join(h.state, "events"), h.clock.Now(), history.Header{Why: "start"}, history.Snapshot{})
+	require.NoError(t, err)
+	held := []history.Entry{{Rule: "launch-worker", Subject: "ENG-9", Reason: "herdr unread: herdr down"}}
+	require.NoError(t, w.Append(history.Cycle{Line: history.LineCycle, Now: now, Held: held, Reads: map[string][]string{"launch-worker/ENG-9": {"worker=unknown"}}}))
+	require.NoError(t, w.Append(history.Cycle{Line: history.LineCycle, Now: now + 1000, Held: held, Reads: map[string][]string{"launch-worker/ENG-9": {"worker=unknown", "failures=1"}}}))
+	require.NoError(t, w.Close(true))
+
+	out, err := h.run("trace", "ENG-9")
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(out, "cycle #"), out)
+}
+
+func TestTraceShowsAResetReceiptAsNeverSent(t *testing.T) {
+	h := newHarness(t)
+	w, err := history.Start(filepath.Join(h.state, "events"), h.clock.Now(), history.Header{Why: "reset"}, history.Snapshot{
+		Ledger: history.LedgerState{Receipts: []ledger.Receipt{{Kind: "nudge", Subject: "ENG-9", Once: ledger.Once{"stall", 5.0}, Outcome: ledger.Done, Detail: "state reset", Started: 1, Ended: 2, Reset: true}}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, w.Close(true))
+
+	out, err := h.run("trace", "ENG-9")
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "receipt  nudge ENG-9 done (reset, never sent) once [stall 5]")
+}
+
+// failingWriter rejects every write, as a closed pipe does.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
+
+func TestTraceFailsWhenItCannotWriteItsReport(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	require.NoError(t, h.stopLoop())
+	opts := h.options(dispatch.Options{})
+	opts.Stdout, opts.Stderr = failingWriter{}, failingWriter{}
+
+	err = dispatch.Run(t.Context(), []string{"trace", "ENG-1"}, opts)
+
+	require.ErrorContains(t, err, "broken pipe")
 }

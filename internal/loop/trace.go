@@ -34,6 +34,9 @@ func Trace(dir, ticket string, out io.Writer) error {
 			return err
 		}
 		tr.segment(seg)
+		if tr.err != nil {
+			return tr.err
+		}
 	}
 	if !tr.seen {
 		return ErrNoRecord
@@ -51,8 +54,19 @@ type tracing struct {
 	cycles int
 	// printed holds the receipts already shown, because a snapshot carries the receipts of the segments before it.
 	printed map[string]bool
-	// last is what the previous cycle decided for the ticket.
+	// last is what the previous cycle decided for the ticket, without what the rules read.
 	last string
+	// err is the first write to out that failed.
+	err error
+}
+
+// decision is what one rule decided for the ticket.
+type decision struct{ rule, text string }
+
+func (t *tracing) printf(format string, args ...any) {
+	if t.err == nil {
+		_, t.err = fmt.Fprintf(t.out, format, args...)
+	}
 }
 
 func (t *tracing) segment(seg history.Segment) {
@@ -91,9 +105,13 @@ func (t *tracing) segment(seg history.Segment) {
 // cycle prints the cycle when what it decided for the ticket differs from the cycle before.
 func (t *tracing) cycle(c history.Cycle) {
 	t.cycles++
-	lines := t.decisions(c)
-	key := strings.Join(lines, "\n")
-	if len(lines) > 0 {
+	decided := t.decisions(c)
+	keys := make([]string, len(decided))
+	for i, d := range decided {
+		keys[i] = d.rule + "  " + d.text
+	}
+	key := strings.Join(keys, "\n")
+	if len(decided) > 0 {
 		t.seen = true
 	}
 	if key == t.last {
@@ -105,25 +123,24 @@ func (t *tracing) cycle(c history.Cycle) {
 	if c.Why != "" {
 		why = " (" + c.Why + ")"
 	}
-	if len(lines) == 0 {
-		_, _ = fmt.Fprintf(t.out, "%s cycle #%d%s  wants nothing for %s\n", when, t.cycles, why, t.ticket)
+	if len(decided) == 0 {
+		t.printf("%s cycle #%d%s  wants nothing for %s\n", when, t.cycles, why, t.ticket)
 		return
 	}
-	for _, line := range lines {
-		_, _ = fmt.Fprintf(t.out, "%s cycle #%d%s  %s\n", when, t.cycles, why, line)
+	for i, d := range decided {
+		read := ""
+		if r := c.Reads[d.rule+"/"+t.ticket]; len(r) > 0 {
+			read = "  read " + strings.Join(r, " ")
+		}
+		t.printf("%s cycle #%d%s  %s%s\n", when, t.cycles, why, keys[i], read)
 	}
 }
 
-// decisions lists what the cycle decided for the ticket, one line per rule.
-func (t *tracing) decisions(c history.Cycle) []string {
-	var lines []string
-	add := func(rule, text string) {
-		read := ""
-		if r := c.Reads[rule+"/"+t.ticket]; len(r) > 0 {
-			read = "  read " + strings.Join(r, " ")
-		}
-		lines = append(lines, fmt.Sprintf("%s  %s%s", rule, text, read))
-	}
+// decisions lists what the cycle decided for the ticket, without what the rules read, so a rule that
+// reads a new value and decides the same thing doesn't make another cycle.
+func (t *tracing) decisions(c history.Cycle) []decision {
+	var out []decision
+	add := func(rule, text string) { out = append(out, decision{rule, text}) }
 	for _, e := range c.Wants {
 		if e.Subject == t.ticket {
 			add(e.Rule, fmt.Sprintf("wants %s once %s", e.Kind, FormatOnce(e.Once)))
@@ -158,8 +175,8 @@ func (t *tracing) decisions(c history.Cycle) []string {
 			add(e.Rule, how+": "+e.Error)
 		}
 	}
-	slices.Sort(lines)
-	return lines
+	slices.SortFunc(out, func(a, b decision) int { return strings.Compare(a.rule+a.text, b.rule+b.text) })
+	return out
 }
 
 func (t *tracing) receipt(r ledger.Receipt) {
@@ -172,11 +189,14 @@ func (t *tracing) receipt(r ledger.Receipt) {
 		return
 	}
 	t.printed[key] = true
+	if r.Reset {
+		state += " (reset, never sent)"
+	}
 	text := fmt.Sprintf("%s receipt  %s %s %s once %s", clock(when), r.Kind, r.Subject, state, FormatOnce(r.Once))
 	if r.Detail != "" {
 		text += ": " + r.Detail
 	}
-	_, _ = fmt.Fprintln(t.out, text)
+	t.printf("%s\n", text)
 }
 
 func clock(ms int64) string { return time.UnixMilli(ms).Format(time.TimeOnly) }
