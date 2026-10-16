@@ -1,6 +1,8 @@
 package dispatch_test
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -8,6 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kapetan-io/dispatch/internal/herdr"
+	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 )
@@ -177,4 +181,55 @@ func TestAStopFromAnotherSessionInTheTreeDoesNotConfirmALaunch(t *testing.T) {
 	h.tick()
 
 	assert.Equal(t, []string{"w-ENG-1"}, h.tools.Herdr.ClosedWorkspaces())
+}
+
+func TestAStopFromAnySessionConfirmsALaunchWhenHerdrNamesNoSession(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.setWorkerSession("ENG-1", "")
+	h.recordStopFrom("worker", "ENG-1", "")
+	markLaunch(t, h.state, filepath.Join(h.dir, "trees", "ENG-1"), h.clock.Now().Add(-time.Second))
+
+	h.advance(10 * time.Minute)
+	h.tick()
+
+	assert.Empty(t, h.tools.Herdr.ClosedWorkspaces())
+}
+
+func TestAStopRecordThatCannotBeReadIsNotTakenForNoStop(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.recordStopFrom("worker", "ENG-1", "")
+	records, err := filepath.Glob(filepath.Join(h.state, "stops", "*", "*.json"))
+	require.NoError(t, err)
+	require.NotEmpty(t, records)
+	for _, record := range records {
+		require.NoError(t, os.WriteFile(record, []byte("not json"), 0o644))
+	}
+	markLaunch(t, h.state, filepath.Join(h.dir, "trees", "ENG-1"), h.clock.Now().Add(-time.Second))
+
+	h.advance(10 * time.Minute)
+	h.tick()
+
+	assert.Empty(t, h.tools.Herdr.ClosedWorkspaces())
+}
+
+func TestAKickoffThatFailedWithTheWorkspaceStuckOpenIsClosedLater(t *testing.T) {
+	h := newHarness(t)
+	h.builtinLauncher = true
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.pool()
+	h.tools.Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
+	h.tools.Herdr.Fail(herdrtest.OpCloseWorkspace, errors.New("herdr would not close it"))
+	_, _ = h.run("tick")
+	h.tools.Herdr.Fail(herdrtest.OpCloseWorkspace, nil)
+	h.tools.Herdr.Fail(herdrtest.OpKickoff, nil)
+	h.tools.Herdr.SetStatus("w2:p2", "idle")
+
+	h.advance(10 * time.Minute)
+	h.tick()
+
+	assert.Equal(t, []string{"w2"}, h.tools.Herdr.ClosedWorkspaces())
 }

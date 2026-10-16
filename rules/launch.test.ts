@@ -315,10 +315,10 @@ scenario(rules, "a stop-paused-worker close does not count toward the launch fai
   s.expect([["launch-worker", "herdr.launch", "ENG-1"]]);
 });
 
-scenario(rules, "close-unconfirmed-worker closes a worker stopped at a startup dialog", s => {
+scenario(rules, "close-unconfirmed-worker leaves a blocked worker asking its first question alone", s => {
   s.given(ticket("ENG-1", build), worker("ENG-1", "blocked", { unconfirmed: 0 }));
   s.advance(300_000);
-  s.expect([["close-unconfirmed-worker", "herdr.close", "ENG-1"], ["notify-blocked", "notify.send", "ENG-1"]]);
+  s.expect([["notify-blocked", "notify.send", "ENG-1"]]);
 });
 
 scenario(rules, "close-unconfirmed-worker leaves a paused ticket's worker to stop-paused-worker", s => {

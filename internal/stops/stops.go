@@ -101,6 +101,28 @@ func Read(stateDir, tree, session string) (Record, bool) {
 	return latest, !latest.At.IsZero()
 }
 
+// Unreadable reports whether records exist for session, or for any session when it is
+// empty, and none of them can be read. That is unknown, not absent, so a caller that would
+// act on a missing Stop holds instead.
+func Unreadable(stateDir, tree, session string) bool {
+	dir := treeDir(stateDir, tree)
+	files := []string{filepath.Join(dir, hash(session)+".json")}
+	if session == "" {
+		files, _ = filepath.Glob(filepath.Join(dir, "*.json"))
+	}
+	var broken bool
+	for _, f := range files {
+		if _, err := os.Stat(f); err != nil {
+			continue
+		}
+		if _, ok := readFile(f); ok {
+			return false
+		}
+		broken = true
+	}
+	return broken
+}
+
 func readFile(name string) (Record, bool) {
 	b, err := os.ReadFile(name)
 	if err != nil {

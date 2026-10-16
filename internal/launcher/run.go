@@ -115,6 +115,8 @@ type launch struct {
 	// markID is the id this launch holds its kickoffs record under, so it never releases
 	// the record of a launch that replaced it.
 	markID string
+	// workspaceOpen is set when a failed kickoff could not close the workspace.
+	workspaceOpen bool
 	// fresh is set when this run took the lease, as opposed to finding one from
 	// an earlier run.
 	fresh bool
@@ -178,7 +180,9 @@ func (l *launch) run(ctx context.Context) Result {
 	// An unconfirmed kickoff closes the workspace. Left open, its idle Claude
 	// would look like a live worker, and no cycle would retry or escalate.
 	if err := l.opts.Herdr.Kickoff(ctx, started.Pane, req.Kickoff); err != nil {
-		_ = l.opts.Herdr.CloseWorkspace(context.WithoutCancel(ctx), l.workspace)
+		if l.opts.Herdr.CloseWorkspace(context.WithoutCancel(ctx), l.workspace) != nil {
+			l.workspaceOpen = true
+		}
 		detail := "Claude started but herdr"
 		switch {
 		case errors.Is(err, herdr.ErrEnterNotSent):
@@ -214,9 +218,10 @@ func (l *launch) beginKickoff() {
 }
 
 // clearKickoff runs on every return, because a launch that reports its own failure has
-// already closed its workspace.
+// already closed its workspace. When that close failed, the idle Claude is still there, and
+// the mark stays so a later cycle closes it.
 func (l *launch) clearKickoff() {
-	if l.opts.StateDir != "" {
+	if l.opts.StateDir != "" && !l.workspaceOpen {
 		kickoffs.Release(l.opts.StateDir, l.tree, l.markID)
 	}
 }
