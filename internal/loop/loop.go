@@ -71,7 +71,10 @@ type Loop struct {
 	state     *rules.State
 	result    rules.Result
 	lastCycle *history.Cycle
-	cycleDue  bool
+	// lastRead is the read the newest history line of that kind holds.
+	lastRead    *history.Reading
+	lastReadKey string
+	cycleDue    bool
 
 	inbox chan any
 	// stopped closes when the loop has ended, so a client waiting on it hears so.
@@ -174,9 +177,9 @@ func New(o Options) *Loop {
 	}
 }
 
-// messageKinds are the receipts whose action may have landed when its outcome
+// MessageKinds are the receipts whose action may have landed when its outcome
 // is lost, so they count as sent and never run again.
-var messageKinds = []string{"nudge", "notify", "comment"}
+var MessageKinds = []string{"nudge", "notify", "comment"}
 
 // ingest is the time the loop stamps an event with. It never goes backward.
 func (l *Loop) ingest() int64 {
@@ -324,7 +327,7 @@ func (l *Loop) start(ctx context.Context) error {
 		loaded = baseName(seg.Path)
 	}
 	l.resync++
-	hist, err := history.Start(l.o.Config.History.Dir, at, history.Header{Why: "start", Config: l.o.ConfigText, At: at.UnixMilli()},
+	hist, err := history.Start(l.o.Config.History.Dir, at, l.header("start", at),
 		history.Snapshot{At: at.UnixMilli(), World: l.mem, Ledger: history.LedgerState{Receipts: l.led.Entries}, Resync: l.resync})
 	if err != nil {
 		return err
@@ -357,7 +360,7 @@ func (l *Loop) start(ctx context.Context) error {
 func (l *Loop) closeCrashed(at time.Time) {
 	for i := range l.led.Entries {
 		rc := &l.led.Entries[i]
-		if rc.Outcome != "" || slices.Contains(messageKinds, rc.Kind) {
+		if rc.Outcome != "" || slices.Contains(MessageKinds, rc.Kind) {
 			continue
 		}
 		rc.Outcome, rc.Detail, rc.Ended = ledger.Failed, "crashed", at.UnixMilli()
@@ -367,6 +370,10 @@ func (l *Loop) closeCrashed(at time.Time) {
 			}
 		}
 	}
+}
+
+func (l *Loop) header(why string, at time.Time) history.Header {
+	return history.Header{Why: why, Config: l.o.ConfigText, Rules: l.o.Rules.Source(), Started: l.started, At: at.UnixMilli()}
 }
 
 func (l *Loop) pruneHistory(at time.Time) error {
@@ -465,8 +472,8 @@ func (l *Loop) rotate() error {
 	if l.wd.LinearErr == nil && l.wd.HoldersErr == nil && len(l.wd.PoolErrs) == 0 {
 		l.led.Keep(func(subject string) bool { return live[subject] || l.flightFor(subject) || l.led.Unfinished(subject) })
 	}
-	next, err := history.Start(l.o.Config.History.Dir, at, history.Header{Why: "rotate", Config: l.o.ConfigText, At: at.UnixMilli()},
-		history.Snapshot{At: at.UnixMilli(), World: l.mem, Ledger: history.LedgerState{Receipts: l.led.Entries}, Resync: l.resync})
+	next, err := history.Start(l.o.Config.History.Dir, at, l.header("rotate", at),
+		history.Snapshot{At: at.UnixMilli(), World: l.mem, Ledger: history.LedgerState{Receipts: l.led.Entries}, Resync: l.resync, Read: l.lastRead})
 	if err != nil {
 		return err
 	}
@@ -607,13 +614,19 @@ func (l *Loop) cycle(why string) error {
 	now := l.ingest()
 	l.wd.At = time.UnixMilli(now)
 	state := rules.FromWorld(l.wd, l.o.Config, l.led, l.o.Viewer)
+	var reserved []string
 	for _, f := range l.flights {
 		if f.want.Capped && f.want.Options["uncapped"] != true {
 			state.Reserve(f.want.Subject)
+			reserved = append(reserved, f.want.Subject)
 		}
+	}
+	if err := l.writeRead(now, reserved); err != nil {
+		return err
 	}
 	next := state.Carry(l.mem, l.started)
 	if line, changed := history.Diff(l.mem, next); changed {
+		line.At = now
 		if err := l.write(line); err != nil {
 			return err
 		}
@@ -630,6 +643,32 @@ func (l *Loop) cycle(why string) error {
 	}
 	l.alertThrows(res)
 	return l.act(res)
+}
+
+// writeRead records the world the cycle is about to run over, unless the read before it
+// holds the same world and reservations. The clock in the world is left out of that
+// comparison, because it moves with every cycle.
+func (l *Loop) writeRead(now int64, reserved []string) error {
+	slices.Sort(reserved)
+	read := history.Reading{Line: history.LineRead, Now: now, Reserved: slices.Compact(reserved), World: &l.wd}
+	key := readingKey(read)
+	if l.lastRead != nil && key == l.lastReadKey {
+		return nil
+	}
+	b, err := json.Marshal(read)
+	if err != nil {
+		return err
+	}
+	if err := l.write(json.RawMessage(b)); err != nil {
+		return err
+	}
+	// The copy is decoded from the line, because the world's maps change under later reads.
+	var kept history.Reading
+	if err := json.Unmarshal(b, &kept); err != nil {
+		return err
+	}
+	l.lastRead, l.lastReadKey = &kept, key
+	return nil
 }
 
 // alertOverflow tells the user once per stretch of reads that Linear has more tickets than

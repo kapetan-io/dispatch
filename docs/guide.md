@@ -202,7 +202,38 @@ dispatch plan
 
 It reads the newest history segment, so it works while `dispatch run` is stopped, and fails with `there is no history to read` before the first run. It prints one row per ticket and action: `act` for an action the cycle wants now, `waiting` for one that waits for a worker slot or an earlier step, `held` for a ticket a rule can't decide because a source it reads couldn't be read, and `covered` for an action the ledger already has a receipt for. The columns are the state, the ticket, the action, the rule and a detail, which is the once key, the reason it waits or is held, or the receipt that covers it.
 
-dispatch keeps its state in history. History is a series of segments named `events-<time>.jsonl` under `[history].dir`. Each starts with a snapshot of what dispatch knew and did before it, and then appends every event, change, cycle and receipt. `dispatch run` loads the newest segment at start, so a restart picks up where it stopped. A new segment starts every `[history].rotate`, and a segment older than `[history].keep` is deleted. `dispatch run` reads the config and the rules once, at start, so a change to either needs a restart.
+To see why dispatch acted on a ticket, or didn't:
+
+```sh
+dispatch trace ENG-301
+```
+
+```
+12:00:00 cycle #1 (start)  launch-worker  wants launch once [launch - 3]  read status=in_progress worker=none
+12:00:11 receipt  launch ENG-301 done once [launch - 3]: ok: workspace w3
+12:00:11 cycle #2 (event)  launch-worker  wants launch once [launch - 3], covered: done 12:00
+```
+
+`trace` reads every kept segment and prints a cycle only when what the rules decided for the ticket changed since the cycle before. Each line names the rule, what it wanted, waited for, was held on, threw or dropped, and what it read. Receipts print as they were written, first as `attempted` and then with their outcome. It exits 1 when kept history has no record of the ticket.
+
+To check that the rules still decide what they decided, or to try a changed rule on what really happened:
+
+```sh
+dispatch replay --from "2026-10-15 09:00" --to 10:30
+dispatch replay --rules ~/rules-next
+```
+
+`replay` runs the cycles in that stretch again over the world and ledger each one ran over, and compares them with what the live run decided. It prints `42 cycles, 42 match` and exits 0, or prints the first difference and exits 1. `--from` and `--to` take RFC 3339, `2006-01-02 15:04` or a time of day today. With `--rules`, it runs the rules in that directory instead, stops at the first action they want that the live run didn't, prints it and exits 0. It exits 2 for a segment written before history recorded the world, which cannot be replayed.
+
+To forget what dispatch has done, so a worker is told again what it was told before:
+
+```sh
+dispatch state reset --quiet
+```
+
+It starts a new history segment with an empty ledger and keeps what the world remembers, so no wait starts over. With `--quiet` it first reads everything once and records the nudges, notices and comments the first cycle wants as already sent, flagged `reset`, so a restart doesn't repeat them. It exits 1 while `dispatch run` is going.
+
+dispatch keeps its state in history. History is a series of segments named `events-<time>.jsonl` under `[history].dir`. Each starts with a snapshot of what dispatch knew and did before it, and then appends every event, change, cycle and receipt, and the world each cycle read, which is what `replay` runs again. The line format is public, and every line has a `line` field naming its type (`header`, `snapshot`, `event`, `read`, `world`, `cycle`, `receipt`, `stop`). `dispatch run` loads the newest segment at start, so a restart picks up where it stopped. A new segment starts every `[history].rotate`, and a segment older than `[history].keep` is deleted. `dispatch run` reads the config and the rules once, at start, so a change to either needs a restart.
 
 **Pause** a ticket by moving it to Backlog or Todo. Its worker stops and its tree stays leased. Move it to In Progress to relaunch a worker on that tree. **Cancel** it, and the worker stops and the tree returns, unless it holds unpushed work.
 

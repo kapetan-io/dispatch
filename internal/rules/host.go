@@ -52,6 +52,7 @@ func (d *ruleDef) isEvent() bool { return d.event != "" }
 // Rules is a loaded set of rules: the program they compile to and what each registered.
 type Rules struct {
 	Dir      string
+	source   string
 	program  *sobek.Program
 	defs     []*ruleDef
 	timeouts Timeouts
@@ -109,12 +110,22 @@ func Load(dir, entry string, timeouts Timeouts) (*Rules, error) {
 	return compile(dir, code, timeouts)
 }
 
+// Source is the bundled script the rules run as, which history keeps so a replay
+// runs the rules the live run did even after the files change.
+func (r *Rules) Source() string { return r.source }
+
+// Compile loads rules from the script Source returned, with dir as the directory
+// they came from.
+func Compile(dir, source string, timeouts Timeouts) (*Rules, error) {
+	return compile(dir, source, timeouts)
+}
+
 func compile(dir, code string, timeouts Timeouts) (*Rules, error) {
 	program, err := sobek.Compile("rules.js", code, false)
 	if err != nil {
 		return nil, &LoadError{Problems: []string{err.Error()}}
 	}
-	r := &Rules{Dir: dir, program: program, timeouts: timeouts}
+	r := &Rules{Dir: dir, source: code, program: program, timeouts: timeouts}
 	problems := lintSource(code)
 	rt := newRuntime(0)
 	reg := &registry{}

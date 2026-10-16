@@ -26,6 +26,7 @@ const (
 	LineHeader   = "header"
 	LineSnapshot = "snapshot"
 	LineEvent    = "event"
+	LineRead     = "read"
 	LineWorld    = "world"
 	LineCycle    = "cycle"
 	LineReceipt  = "receipt"
@@ -45,7 +46,11 @@ type Header struct {
 	Why string `json:"why"`
 	// Config is the text of config.toml this segment ran with.
 	Config string `json:"config,omitempty"`
-	At     int64  `json:"at"`
+	// Rules is the bundled script the rules ran as, so a replay runs what the live run did.
+	Rules string `json:"rules,omitempty"`
+	// Started is when the dispatch run that wrote the segment began, in milliseconds.
+	Started int64 `json:"started,omitempty"`
+	At      int64 `json:"at"`
 }
 
 // Snapshot is the second line: everything a restart needs from before the segment began.
@@ -56,6 +61,8 @@ type Snapshot struct {
 	Ledger LedgerState   `json:"ledger"`
 	// Resync counts the resyncs so far, so a receipt can say which one it ran in.
 	Resync int `json:"resync"`
+	// Read is the last read a cycle ran over, so a segment can be replayed on its own.
+	Read *Reading `json:"read,omitempty"`
 }
 
 // LedgerState is the receipts a snapshot carries.
@@ -84,7 +91,9 @@ type Change struct {
 
 // World is what a read changed in the world's memory.
 type World struct {
-	Line    string   `json:"line"`
+	Line string `json:"line"`
+	// At is the cycle the change was found in, so a replay can pair it with the read and cycle lines.
+	At      int64    `json:"at,omitempty"`
 	Changes []Change `json:"changes,omitempty"`
 	// Gone lists the facts that are no longer remembered, as "kind/id/field".
 	Gone []string `json:"gone,omitempty"`
@@ -95,6 +104,16 @@ type World struct {
 	Others         bool                  `json:"others,omitempty"`
 }
 
+// Reading is the world a cycle ran over, as the cycle saw it, and the tickets that had a
+// launch or promotion in flight. It is written before the cycle line, and only when
+// it differs from the read before, so a cycle without one ran over the last.
+type Reading struct {
+	Line     string       `json:"line"`
+	Now      int64        `json:"now"`
+	Reserved []string     `json:"reserved,omitempty"`
+	World    *world.World `json:"world"`
+}
+
 // Entry is one action a cycle wanted, set aside or held.
 type Entry struct {
 	Rule    string      `json:"rule"`
@@ -103,6 +122,8 @@ type Entry struct {
 	Once    ledger.Once `json:"once,omitempty"`
 	Reason  string      `json:"reason,omitempty"`
 	Text    string      `json:"text,omitempty"`
+	// Dropped marks a held entry for an on rule, whose event is gone for good.
+	Dropped bool `json:"dropped,omitempty"`
 }
 
 // Throw is a rule call that threw or ran out of time.
@@ -246,6 +267,13 @@ func Segments(dir string) ([]string, error) {
 	return out, nil
 }
 
+// SegmentStart is the time a segment's file name says it began.
+func SegmentStart(path string) (time.Time, bool) {
+	name := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(path), segmentPrefix), segmentSuffix)
+	t, err := time.Parse(timeLayout, name)
+	return t, err == nil
+}
+
 // Latest reads the newest segment. It returns false when dir holds none.
 func Latest(dir string) (Segment, bool, error) {
 	paths, err := Segments(dir)
@@ -256,7 +284,7 @@ func Latest(dir string) (Segment, bool, error) {
 	// between leaves one with neither, which holds nothing, so the one before it is the state.
 	for i := len(paths) - 1; i >= 0; i-- {
 		seg, err := Read(paths[i])
-		if errors.Is(err, errIncomplete) {
+		if errors.Is(err, ErrIncomplete) {
 			continue
 		}
 		return seg, err == nil, err
@@ -264,7 +292,8 @@ func Latest(dir string) (Segment, bool, error) {
 	return Segment{}, false, nil
 }
 
-var errIncomplete = errors.New("has no header and snapshot")
+// ErrIncomplete means a segment has no header and snapshot, as after a crash while it was created.
+var ErrIncomplete = errors.New("has no header and snapshot")
 
 // Read reads one segment. A last line that doesn't parse is a crash's torn write
 // and is dropped, and the read stops there.
@@ -321,7 +350,7 @@ func Read(path string) (Segment, error) {
 		return seg, fmt.Errorf("while reading %s: %w", path, err)
 	}
 	if n < 2 {
-		return seg, fmt.Errorf("%s %w", path, errIncomplete)
+		return seg, fmt.Errorf("%s %w", path, ErrIncomplete)
 	}
 	return seg, nil
 }
