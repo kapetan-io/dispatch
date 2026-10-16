@@ -429,3 +429,305 @@ func TestRestartLoadsASegmentThatHoldsReadLines(t *testing.T) {
 	assert.NotEmpty(t, seg.Header.Rules)
 	assert.NotZero(t, seg.Header.Started)
 }
+
+func segmentLines(t *testing.T, path, line string) int {
+	t.Helper()
+	text, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return strings.Count(string(text), `"line":"`+line+`"`)
+}
+
+func TestReplayRunsCyclesAcrossSegmentRotation(t *testing.T) {
+	h := newHarness(t)
+	h.config("[history]\nrotate = \"1m\"\nkeep = \"24h\"\n")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	h.advance(6 * time.Minute)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"), blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "In Review"}))
+	h.advance(6 * time.Minute)
+	h.advance(6 * time.Minute)
+	require.NoError(t, h.stopLoop())
+	paths, err := history.Segments(filepath.Join(h.state, "events"))
+	require.NoError(t, err)
+	require.Greater(t, len(paths), 1)
+
+	cycles, matched := replayCounts(t, h)
+
+	assert.Equal(t, cycles, matched)
+	var written int
+	for _, p := range paths {
+		written += segmentLines(t, p, "cycle")
+	}
+	assert.Equal(t, written, cycles)
+	// A segment begun by rotation replays from its own snapshot.
+	last, _ := replayCounts(t, h, "--from", h.clock.Now().Add(-time.Second).Format(time.RFC3339))
+	assert.Positive(t, last)
+	assert.Less(t, last, cycles)
+}
+
+func TestReplayRunsASegmentThatHasNoStopLine(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	require.NoError(t, h.stopLoop())
+	path := newestSegment(t, h)
+	text, err := os.ReadFile(path)
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(text)), "\n")
+	require.Contains(t, lines[len(lines)-1], `"line":"stop"`)
+	require.NoError(t, os.WriteFile(path, []byte(strings.Join(lines[:len(lines)-1], "\n")+"\n"), 0o600))
+
+	cycles, matched := replayCounts(t, h)
+
+	assert.Positive(t, cycles)
+	assert.Equal(t, cycles, matched)
+}
+
+func TestReplaySkipsARuleCallThatTimedOutInTheLiveRun(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		timeout string
+		wantErr bool
+	}{
+		{"TimedOut", "true", false},
+		{"Threw", "false", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "In Review"}))
+			_, err := h.run("tick")
+			require.NoError(t, err)
+			require.NoError(t, h.stopLoop())
+			// Replay doesn't spend a rule's time budget, so whatever the rule decided that cycle isn't compared.
+			throw := `{"line":"cycle","throws":[{"rule":"note-blocker-hold","subject":"ENG-2","error":"ran out of time","timeout":` + test.timeout + `}],`
+			editSegment(t, newestSegment(t, h), `{"line":"cycle",`, throw)
+
+			out, err := h.run("replay")
+
+			if test.wantErr {
+				require.Error(t, err)
+				assert.Equal(t, 1, dispatch.ExitCode(err))
+				assert.Contains(t, out, "threw for ENG-2")
+				return
+			}
+			require.NoError(t, err)
+			assert.Regexp(t, replayed, out)
+		})
+	}
+}
+
+func TestReplayKeepsTheTicketsAWorkerSlotWasReservedFor(t *testing.T) {
+	h := newHarness(t)
+	h.config("[dispatch]\nmax_in_progress = 1\n")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	require.NoError(t, h.stopLoop())
+	cycles, matched := replayCounts(t, h)
+	require.Equal(t, cycles, matched)
+	// A launch under way holds a slot, so the cycle would have waited both tickets had it been recorded so.
+	editSegment(t, newestSegment(t, h), `{"line":"read",`, `{"line":"read","reserved":["ENG-1","ENG-2"],`)
+
+	out, err := h.run("replay")
+
+	require.Error(t, err)
+	assert.Equal(t, 1, dispatch.ExitCode(err))
+	assert.Contains(t, out, "2 of 1 in progress")
+}
+
+func TestReplayWritesAReadAndACycleOnlyWhenTheyDifferFromTheLast(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	path := newestSegment(t, h)
+	reads, cycles := segmentLines(t, path, "read"), segmentLines(t, path, "cycle")
+	require.Positive(t, reads)
+
+	// The resync reads the same world and the rules decide the same thing.
+	h.advance(10 * time.Minute)
+	h.advance(10 * time.Minute)
+	require.NoError(t, h.stopLoop())
+
+	assert.Equal(t, reads, segmentLines(t, path, "read"))
+	assert.Equal(t, cycles, segmentLines(t, path, "cycle"))
+}
+
+func TestReplayStopsAtTheTimeGivenWithTo(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	before := h.clock.Now()
+	h.advance(10 * time.Minute)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	require.NoError(t, h.stopLoop())
+	all, _ := replayCounts(t, h)
+
+	upTo, matched := replayCounts(t, h, "--to", before.Add(time.Minute).Format(time.RFC3339))
+
+	assert.Positive(t, upTo)
+	assert.Less(t, upTo, all)
+	assert.Equal(t, upTo, matched)
+}
+
+func TestTraceShowsAThrowAndARuleThatRanOutOfTime(t *testing.T) {
+	h := newHarness(t)
+	now := h.clock.Now().UnixMilli()
+	w, err := history.Start(filepath.Join(h.state, "events"), h.clock.Now(), history.Header{Why: "start"}, history.Snapshot{})
+	require.NoError(t, err)
+	require.NoError(t, w.Append(history.Cycle{
+		Line: history.LineCycle, Now: now,
+		Throws: []history.Throw{{Rule: "launch-worker", Subject: "ENG-4", Error: "boom"}},
+	}))
+	require.NoError(t, w.Append(history.Cycle{
+		Line: history.LineCycle, Now: now + 1,
+		Throws: []history.Throw{{Rule: "launch-worker", Subject: "ENG-4", Error: "too slow", Timeout: true}},
+	}))
+	require.NoError(t, w.Close(true))
+
+	out, err := h.run("trace", "ENG-4")
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "launch-worker  threw: boom")
+	assert.Contains(t, out, "launch-worker  ran out of time: too slow")
+}
+
+func TestTraceReadsASegmentWrittenBeforeReadLinesAndSaysOfAReceiptInIt(t *testing.T) {
+	h := newHarness(t)
+	now := h.clock.Now()
+	w, err := history.Start(filepath.Join(h.state, "events"), now, history.Header{Why: "start"}, history.Snapshot{})
+	require.NoError(t, err)
+	require.NoError(t, w.Append(history.Cycle{
+		Line: history.LineCycle, Now: now.UnixMilli(),
+		Wants: []history.Entry{{Rule: "launch-worker", Kind: "launch", Subject: "ENG-6"}},
+	}))
+	require.NoError(t, w.Append(history.Receipt{Line: history.LineReceipt, Receipt: ledger.Receipt{
+		Kind: "launch", Subject: "ENG-6", Outcome: ledger.Done, Started: now.UnixMilli(), Ended: now.UnixMilli(),
+	}}))
+	require.NoError(t, w.Close(true))
+
+	out, err := h.run("trace", "ENG-6")
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "launch-worker  wants launch")
+	assert.Contains(t, out, "receipt  launch ENG-6 done")
+}
+
+func TestReplaySkipsASegmentFromBeforeReadLinesAndReplaysTheNewerOnes(t *testing.T) {
+	h := newHarness(t)
+	old, err := history.Start(filepath.Join(h.state, "events"), h.clock.Now().Add(-time.Hour), history.Header{Why: "start"}, history.Snapshot{})
+	require.NoError(t, err)
+	require.NoError(t, old.Append(history.Cycle{Line: history.LineCycle, Now: h.clock.Now().Add(-time.Hour).UnixMilli()}))
+	require.NoError(t, old.Close(true))
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	require.NoError(t, h.stopLoop())
+
+	out, stderr, err := h.runContext(t.Context(), "replay")
+
+	require.NoError(t, err)
+	found := replayed.FindStringSubmatch(out)
+	require.NotNil(t, found, out)
+	assert.Equal(t, found[1], found[2])
+	assert.Contains(t, stderr, "dispatch: skipped")
+	assert.Contains(t, stderr, "holds no record of the world its cycles read")
+}
+
+func TestReplayIgnoresACycleACrashLeftUndecided(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	_, err = h.run("tick")
+	require.NoError(t, err)
+	require.NoError(t, h.stopLoop())
+	path := newestSegment(t, h)
+	text, err := os.ReadFile(path)
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(text)), "\n")
+	last := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, `{"line":"read"`) {
+			last = i
+		}
+	}
+	require.Positive(t, last)
+	// The crash came after the read and the memory change were written and before the cycle line.
+	keep := lines[:last+1]
+	for _, line := range lines[last+1:] {
+		if !strings.HasPrefix(line, `{"line":"world"`) {
+			break
+		}
+		keep = append(keep, line)
+	}
+	require.NoError(t, os.WriteFile(path, []byte(strings.Join(keep, "\n")+"\n"), 0o600))
+
+	cycles, matched := replayCounts(t, h)
+
+	assert.Positive(t, cycles)
+	assert.Equal(t, cycles, matched)
+}
+
+func TestReplayWithNoHistoryExitsOne(t *testing.T) {
+	h := newHarness(t)
+
+	_, err := h.run("replay")
+
+	require.ErrorContains(t, err, "there is no history to read")
+	assert.Equal(t, 1, dispatch.ExitCode(err))
+}
+
+func TestTraceDoesNotRepeatADecisionWhenASegmentRotates(t *testing.T) {
+	h := newHarness(t)
+	h.config("[history]\nrotate = \"1m\"\n")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	for range 3 {
+		h.advance(6 * time.Minute)
+	}
+	require.NoError(t, h.stopLoop())
+	paths, err := history.Segments(filepath.Join(h.state, "events"))
+	require.NoError(t, err)
+	require.Greater(t, len(paths), 2)
+
+	out, err := h.run("trace", "ENG-1")
+
+	require.NoError(t, err)
+	// One cycle wanted the launch and the next found it covered. Rotation changed nothing after that.
+	assert.Equal(t, 2, strings.Count(out, "cycle #"), out)
+}
+
+func TestTracePrintsTheReceiptsOfSegmentsAlreadyDeleted(t *testing.T) {
+	h := newHarness(t)
+	w, err := history.Start(filepath.Join(h.state, "events"), h.clock.Now(), history.Header{Why: "rotate"}, history.Snapshot{
+		Ledger: history.LedgerState{Receipts: []ledger.Receipt{{Kind: "launch", Subject: "ENG-9", Once: ledger.Once{"launch", nil, 3.0}, Outcome: ledger.Done, Detail: "ok: workspace w3", Started: 1, Ended: 2}}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, w.Close(true))
+
+	out, err := h.run("trace", "ENG-9")
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "receipt  launch ENG-9 done once [launch - 3]: ok: workspace w3")
+}
+
+func TestStateResetQuietRefusesWhileAPoolIsUnread(t *testing.T) {
+	h := newHarness(t)
+	h.addRepo("tiger", filepath.Join(h.dir, "moved"))
+	h.tickets(ticket("ENG-1", "In Progress", "tiger"))
+
+	_, err := h.run("state", "reset", "--quiet")
+
+	require.ErrorContains(t, err, "cannot record the messages the first cycle wants while a source is down")
+	paths, err := history.Segments(filepath.Join(h.state, "events"))
+	require.NoError(t, err)
+	assert.Empty(t, paths)
+}

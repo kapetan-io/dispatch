@@ -12,16 +12,16 @@ import (
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
-// recorded is World as history writes it. A read's errors become their text, which is
+// worldRecord is World as history writes it. A read's errors become their text, which is
 // all a rule can see of one, and a tree keeps the clone it came from, which treehouse's
 // own JSON leaves out.
-type recorded struct {
+type worldRecord struct {
 	At           time.Time                          `json:"at"`
 	Tickets      []linear.Ticket                    `json:"tickets,omitempty"`
 	LinearErr    string                             `json:"linearErr,omitempty"`
 	Snapshot     herdr.Snapshot                     `json:"snapshot"`
 	HerdrErr     string                             `json:"herdrErr,omitempty"`
-	Trees        []recordedTree                     `json:"trees,omitempty"`
+	Trees        []treeRecord                       `json:"trees,omitempty"`
 	PoolErrs     map[string]string                  `json:"poolErrs,omitempty"`
 	Workers      map[string]Worker                  `json:"workers,omitempty"`
 	Stops        map[string]stops.Record            `json:"stops,omitempty"`
@@ -41,14 +41,14 @@ type recorded struct {
 	Nudged       map[string]bool                    `json:"nudged,omitempty"`
 }
 
-type recordedTree struct {
+type treeRecord struct {
 	treehouse.Tree
 	RepoDir string `json:"repoDir,omitempty"`
 }
 
 // MarshalJSON writes the read in the form history keeps.
 func (w World) MarshalJSON() ([]byte, error) {
-	r := recorded{
+	r := worldRecord{
 		At: w.At, Tickets: w.Tickets, LinearErr: errText(w.LinearErr), Snapshot: w.Snapshot, HerdrErr: errText(w.HerdrErr),
 		PoolErrs: errTexts(w.PoolErrs), Workers: w.Workers, Stops: w.Stops, LeaseHolders: w.LeaseHolders,
 		HoldersErr: errText(w.HoldersErr), Leases: w.Leases, Leased: w.Leased, Children: w.Children,
@@ -56,14 +56,14 @@ func (w World) MarshalJSON() ([]byte, error) {
 		Untracked: w.Untracked, PRs: w.PRs, PRReadFailed: w.PRReadFailed, UnreadRepos: w.UnreadRepos, Nudged: w.Nudged,
 	}
 	for _, t := range w.Trees {
-		r.Trees = append(r.Trees, recordedTree{Tree: t, RepoDir: t.RepoDir})
+		r.Trees = append(r.Trees, treeRecord{Tree: t, RepoDir: t.RepoDir})
 	}
 	return json.Marshal(r)
 }
 
 // UnmarshalJSON reads a read back. An error returns as one with the recorded text.
 func (w *World) UnmarshalJSON(b []byte) error {
-	var r recorded
+	var r worldRecord
 	if err := json.Unmarshal(b, &r); err != nil {
 		return err
 	}

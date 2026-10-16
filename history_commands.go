@@ -46,7 +46,7 @@ func replayCommand(opts Options, args []string) error {
 	fs.SetOutput(opts.Stderr)
 	from := fs.String("from", "", "the first cycle to run again")
 	to := fs.String("to", "", "the last cycle to run again")
-	changed := fs.String("rules", "", "a directory of rules to run over the recorded history")
+	rulesDir := fs.String("rules", "", "a directory of rules to run over the recorded history")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -58,19 +58,22 @@ func replayCommand(opts Options, args []string) error {
 		return err
 	}
 	now := opts.Clock.Now()
-	ro := loop.ReplayOptions{Dir: cfg.History.Dir}
-	if ro.From, err = parseWhen("--from", *from, now); err != nil {
+	options := loop.ReplayOptions{Dir: cfg.History.Dir}
+	if options.From, err = parseWhen("--from", *from, now); err != nil {
 		return err
 	}
-	if ro.To, err = parseWhen("--to", *to, now); err != nil {
+	if options.To, err = parseWhen("--to", *to, now); err != nil {
 		return err
 	}
-	if *changed != "" {
-		if ro.Rules, err = loadRulesIn(opts, config.ExpandHome(*changed)); err != nil {
+	if *rulesDir != "" {
+		if options.Rules, err = loadRulesIn(opts, config.ExpandHome(*rulesDir)); err != nil {
 			return err
 		}
 	}
-	res, err := loop.Replay(ro)
+	res, err := loop.Replay(options)
+	for _, why := range res.Skipped {
+		_, _ = fmt.Fprintln(opts.Stderr, "dispatch: skipped", why)
+	}
 	if errors.Is(err, loop.ErrNotReplayable) {
 		return exitError{code: codeNotReplayable, err: err}
 	}
@@ -82,7 +85,7 @@ func replayCommand(opts Options, args []string) error {
 		return nil
 	}
 	_, _ = fmt.Fprintln(opts.Stdout, res.Difference)
-	if ro.Rules != nil {
+	if options.Rules != nil {
 		return nil
 	}
 	return fmt.Errorf("replay differs from the live run after %s, %d match", countNoun(res.Cycles-1, "cycle"), res.Matched)
@@ -212,6 +215,9 @@ func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *wo
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := firstUnread(wd); err != nil {
+		return nil, nil, fmt.Errorf("cannot record the messages the first cycle wants while a source is down: %w", err)
+	}
 	state := rules.FromWorld(wd, cfg, &ledger.Ledger{}, "")
 	next := state.Carry(mem, at.UnixMilli())
 	var receipts []ledger.Receipt
@@ -225,4 +231,18 @@ func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *wo
 		})
 	}
 	return receipts, next, nil
+}
+
+// firstUnread names a source the read could not reach. A rule holds back every message for what it
+// cannot read, so a quiet reset over such a read would record nothing, and the next run would send it all.
+func firstUnread(w world.World) error {
+	for label, err := range w.PoolErrs {
+		return fmt.Errorf("the %s pool: %w", label, err)
+	}
+	for _, err := range []error{w.LinearErr, w.HerdrErr, w.HoldersErr, w.ChildrenErr} {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

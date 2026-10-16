@@ -42,13 +42,14 @@ const (
 // Header is the first line of a segment.
 type Header struct {
 	Line string `json:"line"`
-	// Why is "start" or "rotate".
+	// Why is "start", "rotate" or "reset".
 	Why string `json:"why"`
 	// Config is the text of config.toml this segment ran with.
 	Config string `json:"config,omitempty"`
 	// Rules is the bundled script the rules ran as, so a replay runs what the live run did.
 	Rules string `json:"rules,omitempty"`
-	// Started is when the dispatch run that wrote the segment began, in milliseconds.
+	// Started is the run start that Carry stamps new facts with, in milliseconds. A segment that
+	// `dispatch state reset` writes has no run, so it holds the reset time.
 	Started int64 `json:"started,omitempty"`
 	At      int64 `json:"at"`
 }

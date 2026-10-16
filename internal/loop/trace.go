@@ -24,7 +24,7 @@ func Trace(dir, ticket string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	tr := &tracing{out: out, ticket: ticket}
+	tr := &tracing{out: out, ticket: ticket, printed: map[string]bool{}}
 	for _, p := range paths {
 		seg, err := history.Read(p)
 		if errors.Is(err, history.ErrIncomplete) {
@@ -46,8 +46,11 @@ type tracing struct {
 	ticket string
 	// seen is true once history has mentioned the ticket.
 	seen bool
-	// cycles counts the cycle lines read, so each prints with a number the next trace of it agrees on.
+	// cycles numbers the cycle lines read across the kept segments, so a number is a position in this
+	// printout and not an id.
 	cycles int
+	// printed holds the receipts already shown, because a snapshot carries the receipts of the segments before it.
+	printed map[string]bool
 	// last is what the previous cycle decided for the ticket.
 	last string
 }
@@ -56,9 +59,13 @@ func (t *tracing) segment(seg history.Segment) {
 	for _, rc := range seg.Snapshot.Ledger.Receipts {
 		if rc.Subject == t.ticket {
 			t.seen = true
+			t.receipt(rc)
 		}
 	}
-	t.last = ""
+	// A rotated segment opens with a cycle line whatever it decided, so only a new run shows it again.
+	if seg.Header.Why != "rotate" {
+		t.last = ""
+	}
 	for _, raw := range seg.Lines {
 		var head struct {
 			Line string `json:"line"`
@@ -159,6 +166,11 @@ func (t *tracing) receipt(r ledger.Receipt) {
 	if when == 0 {
 		when, state = r.Started, "attempted"
 	}
+	key := fmt.Sprint(r.Key(), r.Started, state)
+	if t.printed[key] {
+		return
+	}
+	t.printed[key] = true
 	text := fmt.Sprintf("%s receipt  %s %s %s once %s", clock(when), r.Kind, r.Subject, state, FormatOnce(r.Once))
 	if r.Detail != "" {
 		text += ": " + r.Detail

@@ -36,6 +36,8 @@ type Replayed struct {
 	Cycles, Matched int
 	// Difference describes the first place replay and the live run part, or is empty.
 	Difference string
+	// Skipped says why each segment that cannot be replayed was left out.
+	Skipped []string
 }
 
 // Replay runs the cycles in a stretch of history again, over the world and the ledger
@@ -47,6 +49,9 @@ func Replay(o ReplayOptions) (Replayed, error) {
 	if err != nil {
 		return Replayed{}, err
 	}
+	if len(paths) == 0 {
+		return Replayed{}, ErrNoHistory
+	}
 	first := 0
 	if !o.From.IsZero() {
 		for i, p := range paths {
@@ -56,6 +61,7 @@ func Replay(o ReplayOptions) (Replayed, error) {
 		}
 	}
 	var res Replayed
+	var skipped error
 	for _, p := range paths[first:] {
 		if start, ok := history.SegmentStart(p); ok && !o.To.IsZero() && start.After(o.To) {
 			break
@@ -68,15 +74,24 @@ func Replay(o ReplayOptions) (Replayed, error) {
 			return res, err
 		}
 		done, err := replaySegment(seg, o, &res)
+		if errors.Is(err, ErrNotReplayable) {
+			// A segment from before history recorded the world must not hide the newer ones.
+			res.Skipped = append(res.Skipped, err.Error())
+			skipped = err
+			continue
+		}
 		if err != nil || done || res.Difference != "" {
 			return res, err
 		}
 	}
+	if res.Cycles == 0 && skipped != nil {
+		return res, skipped
+	}
 	return res, nil
 }
 
-// cycleGroup is the lines one cycle wrote, in the order it wrote them.
-type cycleGroup struct {
+// cycleRecord is the lines one cycle wrote, in the order it wrote them.
+type cycleRecord struct {
 	now   int64
 	read  *history.Reading
 	world *history.World
@@ -91,25 +106,28 @@ const (
 	rankCycle
 )
 
-type replaying struct {
-	seg      history.Segment
-	cfg      config.Config
-	rules    *rules.Rules
-	ready    bool
-	mem      *world.Memory
-	led      *ledger.Ledger
-	read     *history.Reading
-	recorded *history.Cycle
+type segmentReplay struct {
+	seg   history.Segment
+	cfg   config.Config
+	rules *rules.Rules
+	ready bool
+	mem   *world.Memory
+	led   *ledger.Ledger
+	read  *history.Reading
+	// lastCycle is the newest cycle line read, which a cycle that wrote none is compared with.
+	lastCycle *history.Cycle
 }
 
+// replaySegment runs the cycles of one segment again. It returns true once a cycle is past To,
+// and ErrNotReplayable when the segment holds no record of the world.
 func replaySegment(seg history.Segment, o ReplayOptions, res *Replayed) (bool, error) {
-	st := &replaying{
+	st := &segmentReplay{
 		seg: seg, mem: seg.Snapshot.World, led: &ledger.Ledger{Entries: slices.Clone(seg.Snapshot.Ledger.Receipts)},
 		read: seg.Snapshot.Read, rules: o.Rules,
 	}
-	var pending *cycleGroup
+	var pending *cycleRecord
 	stopped := false
-	flush := func() error {
+	flush := func(final bool) error {
 		if pending == nil || stopped {
 			return nil
 		}
@@ -117,6 +135,10 @@ func replaySegment(seg history.Segment, o ReplayOptions, res *Replayed) (bool, e
 		pending = nil
 		at := time.UnixMilli(g.now)
 		switch {
+		case final && !seg.Clean && g.cycle == nil:
+			// A crash between the read line and the cycle line leaves a cycle nobody decided.
+			st.apply(g)
+			return nil
 		case !o.From.IsZero() && at.Before(o.From):
 			st.apply(g)
 			return nil
@@ -142,7 +164,7 @@ func replaySegment(seg history.Segment, o ReplayOptions, res *Replayed) (bool, e
 		case history.LineCycle:
 			rank = rankCycle
 		case history.LineReceipt:
-			if err := flush(); err != nil || res.Difference != "" {
+			if err := flush(false); err != nil || res.Difference != "" {
 				return false, err
 			}
 			var r history.Receipt
@@ -152,18 +174,18 @@ func replaySegment(seg history.Segment, o ReplayOptions, res *Replayed) (bool, e
 			st.led.Upsert(r.Receipt)
 			continue
 		default:
-			if err := flush(); err != nil || res.Difference != "" {
+			if err := flush(false); err != nil || res.Difference != "" {
 				return false, err
 			}
 			continue
 		}
 		if pending != nil && (pending.now != now || rank <= pending.rank) {
-			if err := flush(); err != nil || res.Difference != "" {
+			if err := flush(false); err != nil || res.Difference != "" {
 				return false, err
 			}
 		}
 		if pending == nil {
-			pending = &cycleGroup{now: now}
+			pending = &cycleRecord{now: now}
 		}
 		pending.rank = rank
 		var err error
@@ -182,14 +204,14 @@ func replaySegment(seg history.Segment, o ReplayOptions, res *Replayed) (bool, e
 			return false, err
 		}
 	}
-	if err := flush(); err != nil || res.Difference != "" {
+	if err := flush(true); err != nil || res.Difference != "" {
 		return false, err
 	}
 	return stopped, nil
 }
 
 // apply takes a cycle that ran before the replay's start as it was recorded.
-func (st *replaying) apply(g cycleGroup) {
+func (st *segmentReplay) apply(g cycleRecord) {
 	if g.read != nil {
 		st.read = g.read
 	}
@@ -197,12 +219,12 @@ func (st *replaying) apply(g cycleGroup) {
 		g.world.ApplyTo(st.mem)
 	}
 	if g.cycle != nil {
-		st.recorded = g.cycle
+		st.lastCycle = g.cycle
 	}
 }
 
 // run does one cycle again and compares it with the recorded one.
-func (st *replaying) run(g cycleGroup, o ReplayOptions, res *Replayed) error {
+func (st *segmentReplay) run(g cycleRecord, o ReplayOptions, res *Replayed) error {
 	if g.read != nil {
 		st.read = g.read
 	}
@@ -225,9 +247,9 @@ func (st *replaying) run(g cycleGroup, o ReplayOptions, res *Replayed) error {
 	line.At = g.now
 	st.mem = next
 	got := cycleLine(g.now, "", st.rules.Cycle(state, nil))
-	want := st.recorded
+	want := st.lastCycle
 	if g.cycle != nil {
-		want, st.recorded = g.cycle, g.cycle
+		want, st.lastCycle = g.cycle, g.cycle
 	}
 	res.Cycles++
 	at := time.UnixMilli(g.now).Format(time.TimeOnly)
@@ -248,7 +270,7 @@ func (st *replaying) run(g cycleGroup, o ReplayOptions, res *Replayed) error {
 }
 
 // load takes the config the segment ran with, and its rules unless replay was given others.
-func (st *replaying) load() error {
+func (st *segmentReplay) load() error {
 	h := st.seg.Header
 	cfg, err := config.Parse(h.Config)
 	if err != nil {
@@ -261,7 +283,7 @@ func (st *replaying) load() error {
 	if h.Rules == "" {
 		return fmt.Errorf("%s was written before history recorded the rules: %w", baseName(st.seg.Path), ErrNotReplayable)
 	}
-	loaded, err := rules.Compile("", h.Rules, rules.Timeouts{If: time.Minute, Then: time.Minute})
+	loaded, err := rules.Compile("", h.Rules, rules.Timeouts{})
 	if err != nil {
 		return fmt.Errorf("while loading the rules recorded in %s: %w", baseName(st.seg.Path), err)
 	}
@@ -279,16 +301,16 @@ func compareMemory(got history.World, changed bool, recorded *history.World) str
 	case recorded == nil:
 		return "memory: replay found a change that the live run did not record"
 	}
-	x, _ := json.Marshal(got)
-	y, _ := json.Marshal(*recorded)
-	if string(x) != string(y) {
-		return fmt.Sprintf("memory: recorded %s, replayed %s", y, x)
+	replayed, _ := json.Marshal(got)
+	live, _ := json.Marshal(*recorded)
+	if string(replayed) != string(live) {
+		return fmt.Sprintf("memory: recorded %s, replayed %s", live, replayed)
 	}
 	return ""
 }
 
-// compareCycles returns the first line the recorded cycle has that the replayed one lacks, and the
-// other way round. A rule call that timed out live isn't compared, because replay doesn't spend its budget.
+// compareCycles returns the first line only the recorded cycle has, the first line only the replayed
+// one has, and whether the two differ. A rule call that timed out live isn't compared, because replay doesn't spend its budget.
 func compareCycles(recorded, replayed history.Cycle, actionsOnly bool) (string, string, bool) {
 	skip := map[string]bool{}
 	for _, t := range recorded.Throws {
@@ -312,7 +334,7 @@ func firstOr(lines []string, none string) string {
 	return lines[0]
 }
 
-// cycleLines lists what a cycle decided, one line each, in words the trace uses.
+// cycleLines lists what a cycle decided, one line each. Replay compares and prints them.
 func cycleLines(c history.Cycle, skip map[string]bool, actionsOnly bool) []string {
 	var out []string
 	for _, e := range c.Wants {

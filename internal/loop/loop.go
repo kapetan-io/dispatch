@@ -71,7 +71,8 @@ type Loop struct {
 	state     *rules.State
 	result    rules.Result
 	lastCycle *history.Cycle
-	// lastRead is the read the newest history line of that kind holds.
+	// lastRead is the Reading most recently written, kept so an identical one is skipped and a
+	// rotated segment's snapshot can carry it. lastReadKey is its readingKey.
 	lastRead    *history.Reading
 	lastReadKey string
 	cycleDue    bool
