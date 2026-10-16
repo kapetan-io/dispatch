@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -39,6 +40,11 @@ func Mark(stateDir, tree string, at time.Time) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 		return "", fmt.Errorf("while recording the launch: %w", err)
 	}
+	unlock, err := lockTree(name)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 	tmp, err := os.CreateTemp(filepath.Dir(name), ".kickoff-*.tmp")
 	if err != nil {
 		return "", fmt.Errorf("while recording the launch: %w", err)
@@ -60,9 +66,31 @@ func Mark(stateDir, tree string, at time.Time) (string, error) {
 // Release removes the record of tree if the launch with id still owns it. A
 // launch that a newer one replaced leaves the newer one's record alone.
 func Release(stateDir, tree, id string) {
-	if _, owner, ok := read(stateDir, tree); ok && owner == id {
-		_ = os.Remove(file(stateDir, tree))
+	name := file(stateDir, tree)
+	unlock, err := lockTree(name)
+	if err != nil {
+		return
 	}
+	defer unlock()
+	if _, owner, ok := read(stateDir, tree); ok && owner == id {
+		_ = os.Remove(name)
+	}
+}
+
+// lockTree holds an exclusive flock beside the record while Mark replaces it or Release
+// checks its owner, so a Mark landing between Release's check and its removal cannot lose
+// the newer launch's record. Both hold it for microseconds, so waiting is fine, and the OS
+// drops it if the holder dies.
+func lockTree(name string) (func(), error) {
+	f, err := os.OpenFile(name+".lock", os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("while recording the launch: %w", err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("while recording the launch: %w", err)
+	}
+	return func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); _ = f.Close() }, nil
 }
 
 // Clear removes the record of tree whoever owns it, because its worker is gone.

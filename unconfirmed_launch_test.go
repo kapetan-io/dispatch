@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -220,4 +221,27 @@ func TestALaunchNeverReleasesTheMarkOfALaunchThatReplacedIt(t *testing.T) {
 	at, held := kickoffs.Since(state, tree)
 	assert.True(t, held)
 	assert.Equal(t, time.UnixMilli(2000), at)
+}
+
+func TestAReleaseRacingANewerLaunchNeverErasesTheNewerMark(t *testing.T) {
+	state, tree := t.TempDir(), t.TempDir()
+
+	for range 500 {
+		first, err := kickoffs.Mark(state, tree, time.UnixMilli(1000))
+		require.NoError(t, err)
+		var done sync.WaitGroup
+		done.Add(2)
+		go func() { defer done.Done(); kickoffs.Release(state, tree, first) }()
+		go func() {
+			defer done.Done()
+			_, err := kickoffs.Mark(state, tree, time.UnixMilli(2000))
+			assert.NoError(t, err)
+		}()
+		done.Wait()
+
+		at, held := kickoffs.Since(state, tree)
+		require.True(t, held)
+		require.Equal(t, time.UnixMilli(2000), at)
+		kickoffs.Clear(state, tree)
+	}
 }
