@@ -46,6 +46,9 @@ type Options struct {
 	// StateDir is where a launch records that its kickoff is unconfirmed, so a
 	// tick can find a Claude the launch died on. Empty records nothing.
 	StateDir string
+	// Now is the time a launch's kickoff record carries, which the rules compare with the
+	// loop's clock. Defaults to the wall clock.
+	Now func() time.Time
 	// PreflightTimeout bounds the wait for the herdr server. Defaults to 60s.
 	PreflightTimeout time.Duration
 	// Pace is the unit of waiting between polls for the herdr server, which waits 5 units.
@@ -68,6 +71,9 @@ func (o Options) withDefaults() Options {
 	}
 	if o.Pace == 0 {
 		o.Pace = time.Second
+	}
+	if o.Now == nil {
+		o.Now = time.Now
 	}
 	return o
 }
@@ -199,7 +205,7 @@ func (l *launch) beginKickoff() {
 	if l.opts.StateDir == "" {
 		return
 	}
-	id, err := kickoffs.Mark(l.opts.StateDir, l.tree, time.Now())
+	id, err := kickoffs.Mark(l.opts.StateDir, l.tree, l.opts.Now())
 	if err != nil {
 		l.log("%v", err)
 		return

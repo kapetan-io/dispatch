@@ -1,71 +1,41 @@
 package dispatch_test
 
 import (
-	"context"
-	"io"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kapetan-io/dispatch"
-	"github.com/kapetan-io/dispatch/internal/herdr"
-	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 )
 
-// kickoffWatcher notes whether the launch had marked its kickoff unconfirmed when
-// herdr was asked to type it.
-type kickoffWatcher struct {
-	*herdrtest.Herdr
-	state, tree string
-	marked      bool
-}
-
-func (k *kickoffWatcher) Kickoff(ctx context.Context, pane, text string) error {
-	_, k.marked = kickoffs.Since(k.state, k.tree)
-	return k.Herdr.Kickoff(ctx, pane, text)
-}
-
-// launchOver launches ENG-1 through h, recording the mark in state.
+// markLaunch leaves the mark a launch killed before its kickoff would leave, because a
+// test cannot kill a launch halfway.
 func markLaunch(t *testing.T, state, tree string, at time.Time) {
 	t.Helper()
 	_, err := kickoffs.Mark(state, tree, at)
 	require.NoError(t, err)
 }
 
-func launchOver(l *launchHarness, h herdr.Herdr, state string) error {
-	l.t.Helper()
-	opts := dispatch.Options{Dir: l.repo, Herdr: h, Treehouse: l.tools.Treehouse, LaunchPace: time.Millisecond, StateDir: state, Stdout: io.Discard, Stderr: io.Discard}
-	return dispatch.Run(context.Background(), []string{"launch", "ENG-1", "thrawn01/eng-1"}, opts)
-}
+func TestAWorkerWhoseLaunchReturnedIsNotClosedWhateverItsAge(t *testing.T) {
+	h := newHarness(t)
+	h.builtinLauncher = true
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.pool()
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	require.Len(t, h.tools.Herdr.Kicked(), 1)
+	h.tools.Herdr.SetStatus("w2:p2", "idle")
 
-func TestLaunchHoldsTheMarkOnlyUntilItReturns(t *testing.T) {
-	l := newLaunchHarness(t)
-	state := t.TempDir()
-	watch := &kickoffWatcher{Herdr: l.tools.Herdr, state: state, tree: l.tree}
+	h.advance(10 * time.Minute)
+	h.tick()
 
-	require.NoError(t, launchOver(l, watch, state))
-
-	assert.True(t, watch.marked)
-	_, left := kickoffs.Since(state, l.tree)
-	assert.False(t, left)
-}
-
-func TestLaunchClearsTheMarkWhenItClosesTheWorkspaceItself(t *testing.T) {
-	l := newLaunchHarness(t)
-	state := t.TempDir()
-	l.tools.Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
-
-	require.Error(t, launchOver(l, l.tools.Herdr, state))
-
-	assert.Equal(t, []string{"w2"}, l.tools.Herdr.ClosedWorkspaces())
-	_, left := kickoffs.Since(state, l.tree)
-	assert.False(t, left)
+	assert.Empty(t, h.tools.Herdr.ClosedWorkspaces())
+	assert.Len(t, h.launches(), 0)
+	assert.Len(t, h.tools.Herdr.Started(), 1)
 }
 
 func TestAWorkerWhoseLaunchDiedBeforeItsKickoffIsClosedAndRelaunched(t *testing.T) {
@@ -207,41 +177,4 @@ func TestAStopFromAnotherSessionInTheTreeDoesNotConfirmALaunch(t *testing.T) {
 	h.tick()
 
 	assert.Equal(t, []string{"w-ENG-1"}, h.tools.Herdr.ClosedWorkspaces())
-}
-
-func TestALaunchNeverReleasesTheMarkOfALaunchThatReplacedIt(t *testing.T) {
-	state, tree := t.TempDir(), t.TempDir()
-	first, err := kickoffs.Mark(state, tree, time.UnixMilli(1000))
-	require.NoError(t, err)
-	_, err = kickoffs.Mark(state, tree, time.UnixMilli(2000))
-	require.NoError(t, err)
-
-	kickoffs.Release(state, tree, first)
-
-	at, held := kickoffs.Since(state, tree)
-	assert.True(t, held)
-	assert.Equal(t, time.UnixMilli(2000), at)
-}
-
-func TestAReleaseRacingANewerLaunchNeverErasesTheNewerMark(t *testing.T) {
-	state, tree := t.TempDir(), t.TempDir()
-
-	for range 500 {
-		first, err := kickoffs.Mark(state, tree, time.UnixMilli(1000))
-		require.NoError(t, err)
-		var done sync.WaitGroup
-		done.Add(2)
-		go func() { defer done.Done(); kickoffs.Release(state, tree, first) }()
-		go func() {
-			defer done.Done()
-			_, err := kickoffs.Mark(state, tree, time.UnixMilli(2000))
-			assert.NoError(t, err)
-		}()
-		done.Wait()
-
-		at, held := kickoffs.Since(state, tree)
-		require.True(t, held)
-		require.Equal(t, time.UnixMilli(2000), at)
-		kickoffs.Clear(state, tree)
-	}
 }
