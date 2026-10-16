@@ -35,11 +35,14 @@ type Memory struct {
 	// Waiting maps a ticket to when its current stretch of waiting on blockers began.
 	Waiting map[string]int64 `json:"waiting,omitempty"`
 	Pools   map[string]Pool  `json:"pools,omitempty"`
+	// Children maps each parent to the children its last good read listed, so a read
+	// that fails to list them can keep the memory of those children.
+	Children map[string][]string `json:"children,omitempty"`
 }
 
 // NewMemory returns an empty memory.
 func NewMemory() *Memory {
-	return &Memory{Facts: map[string]Remembered{}, PreviousStatus: map[string]string{}, Waiting: map[string]int64{}, Pools: map[string]Pool{}}
+	return &Memory{Facts: map[string]Remembered{}, PreviousStatus: map[string]string{}, Waiting: map[string]int64{}, Pools: map[string]Pool{}, Children: map[string][]string{}}
 }
 
 // Ready fills the maps a decoded memory may lack.
@@ -55,6 +58,9 @@ func (m *Memory) Ready() *Memory {
 	}
 	if m.Pools == nil {
 		m.Pools = map[string]Pool{}
+	}
+	if m.Children == nil {
+		m.Children = map[string][]string{}
 	}
 	return m
 }
