@@ -1,29 +1,28 @@
-// Package worker finds the Claude worker serving a ticket.
-//
-// The lookup goes from the ticket to its treehouse lease (the lease holder is
-// the ticket id), to the herdr workspace showing the leased tree, to the Claude
-// agent in that workspace. herdr agent names are not used, because they clear
-// when an agent exits.
-package worker
+package world
 
 import (
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
-// State is how a ticket's worker is doing.
-type State string
+// A worker is found by the join from a ticket to its treehouse lease (the lease
+// holder is the ticket id), to the herdr workspace showing the leased tree, to the
+// Claude agent in that workspace. herdr agent names are not used, because they
+// clear when an agent exits.
+
+// WorkerState is how a ticket's worker is doing.
+type WorkerState string
 
 const (
-	None    State = "none"
-	Working State = "working"
-	Idle    State = "idle"
-	Blocked State = "blocked"
+	NoWorker WorkerState = "none"
+	Working  WorkerState = "working"
+	Idle     WorkerState = "idle"
+	Blocked  WorkerState = "blocked"
 )
 
 // Worker is what the lookup found for one ticket.
 type Worker struct {
-	State       State
+	State       WorkerState
 	TreePath    string
 	RepoDir     string
 	WorkspaceID string
@@ -33,18 +32,18 @@ type Worker struct {
 	Session string
 }
 
-// Find looks up the worker on the ticket's first tree. FindAll returns one for
+// FindWorker looks up the worker on the ticket's first tree. FindWorkers returns one for
 // every tree.
-func Find(ticket string, trees []treehouse.Tree, snap herdr.Snapshot) Worker {
-	if all := FindAll(ticket, trees, snap); len(all) > 0 {
+func FindWorker(ticket string, trees []treehouse.Tree, snap herdr.Snapshot) Worker {
+	if all := FindWorkers(ticket, trees, snap); len(all) > 0 {
 		return all[0]
 	}
-	return Worker{State: None}
+	return Worker{State: NoWorker}
 }
 
-// FindAll looks up one worker for each tree the ticket holds a lease on. A
+// FindWorkers looks up one worker for each tree the ticket holds a lease on. A
 // ticket has several when its design includes a library in another repo.
-func FindAll(ticket string, trees []treehouse.Tree, snap herdr.Snapshot) []Worker {
+func FindWorkers(ticket string, trees []treehouse.Tree, snap herdr.Snapshot) []Worker {
 	var all []Worker
 	for _, t := range trees {
 		if t.LeaseHolder == ticket {
@@ -55,7 +54,7 @@ func FindAll(ticket string, trees []treehouse.Tree, snap herdr.Snapshot) []Worke
 }
 
 func onTree(t treehouse.Tree, snap herdr.Snapshot) Worker {
-	w := Worker{State: None, TreePath: t.Path, RepoDir: t.RepoDir}
+	w := Worker{State: NoWorker, TreePath: t.Path, RepoDir: t.RepoDir}
 	for _, ws := range snap.Workspaces {
 		if ws.CheckoutPath == t.Path {
 			w.WorkspaceID = ws.ID
@@ -77,7 +76,7 @@ func onTree(t treehouse.Tree, snap herdr.Snapshot) Worker {
 	return w
 }
 
-func stateOf(status string) State {
+func stateOf(status string) WorkerState {
 	switch status {
 	case "idle", "done":
 		return Idle

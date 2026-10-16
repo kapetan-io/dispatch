@@ -69,7 +69,7 @@ type PullRequest struct {
 	ActivitySummary string
 	// UnresolvedThreads means a review thread is still open. It keeps the PR from
 	// being ready but is not a Problem, because the reviewer closes the thread,
-	// and nudging every tick tells the worker about work it already did. The
+	// and nudging every cycle tells the worker about work it already did. The
 	// thread's newest comment reaches the worker through ActivityAt instead.
 	UnresolvedThreads bool
 	// Problems are the reasons the PR needs work, phrased to follow "has".
@@ -540,7 +540,7 @@ type CLI struct {
 type Option func(*CLI)
 
 // WithTimeout cuts each gh call off after d, so a stalled network can't hold
-// the tick that is waiting on it.
+// the read that is waiting on it.
 func WithTimeout(d time.Duration) Option {
 	return func(c *CLI) { c.timeout = d }
 }

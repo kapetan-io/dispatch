@@ -20,6 +20,7 @@ type Launcher struct {
 	mu       sync.Mutex
 	launched []launcher.Request
 	answer   *launcher.Result
+	stalled  bool
 }
 
 // New returns a Launcher that records its calls in j.
@@ -33,6 +34,14 @@ func (l *Launcher) Answer(r launcher.Result) {
 	l.answer = &r
 }
 
+// Stall makes every launch from now on wait until its context ends and then report
+// agent_start_failed, which is a launch that outlasts its deadline.
+func (l *Launcher) Stall() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.stalled = true
+}
+
 // Launched lists the requests, oldest first.
 func (l *Launcher) Launched() []launcher.Request {
 	l.mu.Lock()
@@ -43,8 +52,15 @@ func (l *Launcher) Launched() []launcher.Request {
 func (l *Launcher) Launch(ctx context.Context, r launcher.Request) launcher.Result {
 	l.journal.Record("launcher", "launch", r.Ticket, r.Branch)
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	l.launched = append(l.launched, r)
+	stalled := l.stalled
+	l.mu.Unlock()
+	if stalled {
+		<-ctx.Done()
+		return launcher.Result{Status: "agent_start_failed", Detail: "the launch outlasted its deadline", Ticket: r.Ticket}
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	if l.answer != nil {
 		return *l.answer
 	}

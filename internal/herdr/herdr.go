@@ -328,3 +328,11 @@ func (c *CLI) command(ctx context.Context, args ...string) *exec.Cmd {
 }
 
 var _ Herdr = (*CLI)(nil)
+
+// TabLabel is the label of a worker's tab, `<ticket> <title>`, or the ticket alone when it has no title.
+func TabLabel(ticket, title string) string {
+	if title == "" {
+		return ticket
+	}
+	return ticket + " " + title
+}

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
+	"github.com/kapetan-io/dispatch/internal/ledger"
 )
 
 const readyText1 = "ENG-1 is ready for review: " + prURL1
@@ -20,26 +21,20 @@ func TestTickNotifiesOnceWhenAnInReviewPRIsReady(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", cleanPR("a1"))
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
-	assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
 	assert.Equal(t, []string{readyText1}, h.notifications())
 	assert.Empty(t, h.prompts())
 	assert.Empty(t, h.linear.mutations())
 
 	// No later tick repeats it.
-	for range 2 {
-		out, err = h.run("tick")
-		require.NoError(t, err)
-		assert.Empty(t, out)
-	}
+	h.tick()
+	h.tick()
 	assert.Len(t, h.notifications(), 1)
 
 	// A push that leaves the PR ready again notifies again.
 	h.pr("ENG-1", cleanPR("a2"))
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 	assert.Len(t, h.notifications(), 2)
 }
 
@@ -100,30 +95,51 @@ func TestTickRetriesAReadyNotificationThatFailed(t *testing.T) {
 	h.pr("ENG-1", cleanPR("a1"))
 	h.tools.Alerts.Fail(errors.New("exit status 1"))
 
-	_, stderr, err := h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
-	assert.Contains(t, stderr, "while notifying about ENG-1")
+	_, err := h.run("tick")
+	require.ErrorContains(t, err, "ENG-1")
 	assert.Empty(t, h.notifications())
 
 	h.tools.Alerts.Fail(nil)
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
 	assert.Equal(t, []string{readyText1}, h.notifications())
 }
 
-func TestTickDryRunNamesTheReadyNotificationWithoutSendingIt(t *testing.T) {
+func TestTickKeepsAReadyNoticeFromFollowersWhenTheAlertFailsAndRunsItAgain(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", cleanPR("a1"))
-
-	out, err := h.run("tick", "--dry-run")
+	socket, lines := sessionSocket(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
+	_, err := h.run("watch", "ENG-1")
 	require.NoError(t, err)
+	h.tools.Alerts.Fail(errors.New("exit status 1"))
 
-	assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
+	// A notice that did not reach the alert has not reached a follower either.
+	_, err = h.run("tick")
+	require.ErrorContains(t, err, "ENG-1 notify failed")
 	assert.Empty(t, h.notifications())
-	assert.Empty(t, h.renames())
+	assert.Empty(t, lines)
+	notices := h.receipts("notify", "")
+	require.Len(t, notices, 1)
+	assert.Equal(t, ledger.Failed, notices[0].Outcome)
+
+	// The next tick runs it again, and the followers hear it once the alert shows.
+	h.tools.Alerts.Fail(nil)
+	h.advance(time.Second)
+	h.tick()
+
+	assert.Contains(t, next(t, lines), "ENG-1 is ready for review")
+	assert.Equal(t, []string{readyText1}, h.notifications())
+	notices = h.receipts("notify", "")
+	require.Len(t, notices, 2)
+	assert.Equal(t, ledger.Done, notices[1].Outcome)
+
+	h.advance(time.Second)
+	h.tick()
+	assert.Empty(t, lines)
+	assert.Len(t, h.receipts("notify", ""), 2)
 }
 
 func TestTickLabelsEachWorkspaceWithItsStatusEmoji(t *testing.T) {
@@ -230,12 +246,10 @@ func TestTickStillFindsAWorkerWhoseLabelChanged(t *testing.T) {
 	h.worker("ENG-1", "idle")
 
 	// The first tick renames the workspace and nudges the worker in it.
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 	h.advance(5 * time.Minute)
 	h.recordStop("ENG-1", noTasks)
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
 	assert.Equal(t, []string{stallPrompt, stallPrompt}, h.prompts())
 	assert.Empty(t, h.launches())
@@ -386,14 +400,13 @@ func TestTickNotifiesForTheNewHeadWhenAFailedNotificationIsFollowedByAPush(t *te
 	h.pr("ENG-1", cleanPR("a1"))
 	h.tools.Alerts.Fail(errors.New("exit status 1"))
 	_, err := h.run("tick")
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "ENG-1")
 
 	h.tools.Alerts.Fail(nil)
+	h.advance(time.Second)
 	h.pr("ENG-1", cleanPR("a2"))
-	for range 2 {
-		_, err = h.run("tick")
-		require.NoError(t, err)
-	}
+	h.tick()
+	h.tick()
 
 	assert.Equal(t, []string{readyText1}, h.notifications())
 }
@@ -456,27 +469,14 @@ func TestTickRetriesARenameHerdrRefused(t *testing.T) {
 	h.worker("ENG-1", "working")
 	h.tools.Herdr.Fail(herdrtest.OpRenameWorkspace, errors.New("exit status 1"))
 
-	_, stderr, err := h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
-	assert.Contains(t, stderr, "while renaming herdr workspace w-ENG-1")
+	h.tick()
+	assert.Contains(t, h.loopErr(), "while renaming herdr workspace w-ENG-1")
 	assert.Empty(t, h.renames())
 
 	h.tools.Herdr.Fail(herdrtest.OpRenameWorkspace, nil)
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	h.tick()
 
 	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, h.renames())
-}
-
-func TestTickDoesNotRenameOnADryRun(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "working")
-
-	_, err := h.run("tick", "--dry-run")
-	require.NoError(t, err)
-
-	assert.Empty(t, h.renames())
 }
 
 func TestTickLabelsEveryWorkerAfterOneTick(t *testing.T) {
@@ -520,15 +520,16 @@ func TestTickLabelsAnEscalatedTicketNeedsHumanOnTheSameTick(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
+	h.tick()
+	h.advance(time.Second)
 	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
-	for range 2 {
-		_, err := h.run("tick")
-		require.NoError(t, err)
-	}
+	h.tick()
+	h.advance(5 * time.Minute)
+	h.advance(time.Second)
+	h.recordStop("ENG-1", noTasks)
 
-	out, err := h.run("tick")
-	require.NoError(t, err)
-	require.Contains(t, out, "escalate ENG-1")
+	h.tick()
+	require.Len(t, h.linear.mutations(), 2)
 
 	assert.Equal(t, "w-ENG-1|🔴 ENG-1", h.renames()[len(h.renames())-1])
 }
@@ -539,10 +540,11 @@ func TestTickFindsAWorkerWhoseLabelChangedWhenPromptingAReviewNudge(t *testing.T
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 
-	for range 2 {
-		_, err := h.run("tick")
-		require.NoError(t, err)
-	}
+	// A worker is nudged once per Stop.
+	h.tick()
+	h.advance(5 * time.Minute)
+	h.recordStop("ENG-1", noTasks)
+	h.tick()
 
 	assert.Len(t, h.prompts(), 2)
 	assert.Empty(t, h.launches())

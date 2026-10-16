@@ -3,6 +3,7 @@ package delivery_test
 import (
 	"context"
 	"errors"
+	"github.com/kapetan-io/dispatch/internal/world"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,7 +14,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/journal"
-	"github.com/kapetan-io/dispatch/internal/worker"
 )
 
 func idleAgent() *herdrtest.Herdr {
@@ -27,7 +27,7 @@ func TestNudgeTypesIntoThePane(t *testing.T) {
 	fake := idleAgent()
 	post := delivery.Post{Herdr: fake}
 
-	err := post.Nudge(context.Background(), worker.Worker{State: worker.Idle, PaneID: "w1:p1"}, "keep going")
+	err := post.Nudge(context.Background(), world.Worker{State: world.Idle, PaneID: "w1:p1"}, "keep going")
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{"w1:p1|keep going"}, fake.Prompted())
@@ -37,7 +37,7 @@ func TestNudgeRefusesABlockedWorkerBeforeAskingHerdr(t *testing.T) {
 	fake := idleAgent()
 	post := delivery.Post{Herdr: fake}
 
-	err := post.Nudge(context.Background(), worker.Worker{State: worker.Blocked, PaneID: "w1:p1"}, "keep going")
+	err := post.Nudge(context.Background(), world.Worker{State: world.Blocked, PaneID: "w1:p1"}, "keep going")
 
 	require.ErrorIs(t, err, delivery.ErrBlocked)
 	assert.Empty(t, fake.Prompted())
@@ -48,7 +48,7 @@ func TestNudgeReportsAWorkerThatBlockedAfterTheSnapshot(t *testing.T) {
 	fake.BlockAfterSnapshot("w1:p1")
 	post := delivery.Post{Herdr: fake}
 
-	err := post.Nudge(context.Background(), worker.Worker{State: worker.Idle, PaneID: "w1:p1"}, "keep going")
+	err := post.Nudge(context.Background(), world.Worker{State: world.Idle, PaneID: "w1:p1"}, "keep going")
 
 	require.ErrorContains(t, err, "agent_blocked")
 	require.ErrorContains(t, err, "while prompting herdr pane w1:p1")
@@ -59,7 +59,7 @@ func TestNudgeReportsAWorkerThatBlockedAfterTheSnapshot(t *testing.T) {
 func TestNudgeReportsAPaneHerdrDoesNotKnow(t *testing.T) {
 	post := delivery.Post{Herdr: idleAgent()}
 
-	err := post.Nudge(context.Background(), worker.Worker{State: worker.Idle, PaneID: "w9:p9"}, "hi")
+	err := post.Nudge(context.Background(), world.Worker{State: world.Idle, PaneID: "w9:p9"}, "hi")
 
 	require.ErrorContains(t, err, "agent target w9:p9 not found")
 	assert.NotErrorIs(t, err, delivery.ErrBlocked)

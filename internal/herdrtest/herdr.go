@@ -40,6 +40,7 @@ type Herdr struct {
 	journal *journal.Journal
 
 	mu          sync.Mutex
+	stalled     bool
 	workspaces  []herdr.Workspace
 	tabs        []herdr.Tab
 	panes       []herdr.Pane
@@ -232,10 +233,25 @@ func (h *Herdr) Read(ctx context.Context) (herdr.Snapshot, error) {
 	return s, nil
 }
 
+// StallPrompts makes every Prompt from now on wait until its context ends, which is a
+// herdr that takes the text and never answers.
+func (h *Herdr) StallPrompts() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.stalled = true
+}
+
 func (h *Herdr) Prompt(ctx context.Context, pane, text string) error {
 	h.journal.Record("herdr", "prompt", pane, text)
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	h.mu.Lock()
+	stalled := h.stalled
+	h.mu.Unlock()
+	if stalled {
+		<-ctx.Done()
+		return ctx.Err()
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()

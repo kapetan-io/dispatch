@@ -11,7 +11,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
-	"github.com/kapetan-io/dispatch/internal/worker"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -33,6 +32,8 @@ type treeModel struct {
 	pushed         bool
 	trackedChanges bool
 	since          int64
+	// clean is when the tree last became safe to return.
+	clean int64
 }
 
 // scenarioModel is the part of a scenario's world the fixtures describe.
@@ -40,7 +41,7 @@ type scenarioModel struct {
 	tickets map[string]*linear.Ticket
 	order   []string
 	parent  map[string]string
-	workers map[string]*worker.Worker
+	workers map[string]*world.Worker
 	stops   map[string]stops.Record
 	prs     map[string]*pullrequest.PullRequest
 	trees   []*treeModel
@@ -49,7 +50,7 @@ type scenarioModel struct {
 
 func newModel() *scenarioModel {
 	return &scenarioModel{
-		tickets: map[string]*linear.Ticket{}, parent: map[string]string{}, workers: map[string]*worker.Worker{},
+		tickets: map[string]*linear.Ticket{}, parent: map[string]string{}, workers: map[string]*world.Worker{},
 		stops: map[string]stops.Record{}, prs: map[string]*pullrequest.PullRequest{}, stamps: map[string]*stamp{},
 	}
 }
@@ -207,31 +208,31 @@ func (s *scenario) model() *scenarioModel {
 func (s *scenario) applyWorker(id, state string, fields map[string]any) {
 	m := s.model()
 	old, had := m.workers[id]
-	wk := &worker.Worker{State: worker.State(state), TreePath: "/trees/" + id, RepoDir: "/work", WorkspaceID: "ws-" + id, PaneID: "pane-" + id, TabID: "tab-" + id, Session: "session-" + id}
-	if state == string(worker.None) {
-		wk = &worker.Worker{State: worker.None}
+	wk := &world.Worker{State: world.WorkerState(state), TreePath: "/trees/" + id, RepoDir: "/work", WorkspaceID: "ws-" + id, PaneID: "pane-" + id, TabID: "tab-" + id, Session: "session-" + id}
+	if state == string(world.NoWorker) {
+		wk = &world.Worker{State: world.NoWorker}
 	}
 	st := m.stamp(id)
 	now := s.ms()
 	if !had {
 		st.gone = now
 	}
-	prev := worker.None
+	prev := world.NoWorker
 	if had {
 		prev = old.State
 	}
 	switch {
-	case wk.State != worker.None && prev == worker.None:
+	case wk.State != world.NoWorker && prev == world.NoWorker:
 		st.seen = now
 	}
-	if wk.State == worker.None && prev != worker.None {
+	if wk.State == world.NoWorker && prev != world.NoWorker {
 		st.gone = now
 	}
-	if wk.State == worker.Idle && prev != worker.Idle {
+	if wk.State == world.Idle && prev != world.Idle {
 		st.idle = now
 		st.lastStop = 0
 	}
-	if wk.State == worker.Blocked && prev != worker.Blocked {
+	if wk.State == world.Blocked && prev != world.Blocked {
 		st.blocked = now
 	}
 	m.workers[id] = wk
@@ -317,18 +318,22 @@ func (s *scenario) applyTree(path string, fields map[string]any) {
 		}
 	}
 	if tm == nil {
-		tm = &treeModel{path: path, pushed: true, since: s.ms()}
+		tm = &treeModel{path: path, pushed: true, since: s.ms(), clean: s.ms()}
 		m.trees = append(m.trees, tm)
 	}
 	if v, ok := str(fields, "holder"); ok {
 		tm.holder = v
 		tm.since = s.ms()
 	}
+	wasSafe := tm.pushed && !tm.trackedChanges
 	if v, ok := boolean(fields, "pushed"); ok {
 		tm.pushed = v
 	}
 	if v, ok := boolean(fields, "trackedChanges"); ok {
 		tm.trackedChanges = v
+	}
+	if !wasSafe && tm.pushed && !tm.trackedChanges {
+		tm.clean = s.ms()
 	}
 }
 
@@ -338,8 +343,8 @@ func (s *scenario) world() world.World {
 	cfg := s.cfg
 	scope := world.ScopeOf(cfg)
 	w := world.World{
-		At: s.now, Workers: map[string]worker.Worker{}, Stops: map[string]stops.Record{},
-		Leases: map[string][]worker.Worker{}, Leased: map[string]bool{}, Children: map[string][]linear.Ticket{},
+		At: s.now, Workers: map[string]world.Worker{}, Stops: map[string]stops.Record{},
+		Leases: map[string][]world.Worker{}, Leased: map[string]bool{}, Children: map[string][]linear.Ticket{},
 		Unfinished: map[string]string{}, Work: map[string]treehouse.Work{}, CheckErrors: map[string]error{},
 		Untracked: map[string][]string{}, PRs: map[string]pullrequest.PullRequest{}, PRReadFailed: map[string]bool{},
 		PoolErrs: map[string]error{}, UnreadRepos: map[string]bool{},
@@ -347,25 +352,25 @@ func (s *scenario) world() world.World {
 	started := func(t *linear.Ticket) bool {
 		return slices.Contains([]string{cfg.Plugins.Linear.Statuses.InProgress, cfg.Plugins.Linear.Statuses.InReview, cfg.Plugins.Linear.Statuses.NeedsHuman}, t.Status)
 	}
-	workerOf := func(id string) worker.Worker {
+	workerOf := func(id string) world.Worker {
 		if wk, ok := m.workers[id]; ok {
 			return *wk
 		}
-		return worker.Worker{State: worker.None}
+		return world.Worker{State: world.NoWorker}
 	}
 	for _, id := range m.order {
 		t := m.tickets[id]
 		if started(t) {
 			w.Tickets = append(w.Tickets, *t)
 			w.Workers[id] = workerOf(id)
-			if rec, ok := m.stops[id]; ok && w.Workers[id].State == worker.Idle {
+			if rec, ok := m.stops[id]; ok && w.Workers[id].State == world.Idle {
 				w.Stops[id] = rec
 			}
 		}
 	}
 	trees := slices.Clone(m.trees)
 	for _, id := range m.order {
-		if wk := workerOf(id); wk.State != worker.None && !slices.ContainsFunc(trees, func(t *treeModel) bool { return t.path == wk.TreePath }) {
+		if wk := workerOf(id); wk.State != world.NoWorker && !slices.ContainsFunc(trees, func(t *treeModel) bool { return t.path == wk.TreePath }) {
 			trees = append(trees, &treeModel{path: wk.TreePath, holder: id, pushed: true, since: s.ms()})
 		}
 	}
@@ -383,8 +388,8 @@ func (s *scenario) world() world.World {
 		w.LeaseHolders = append(w.LeaseHolders, *holder)
 		wk := workerOf(tm.holder)
 		wk.TreePath = tm.path
-		if wk.State == worker.None {
-			wk = worker.Worker{State: worker.None, TreePath: tm.path}
+		if wk.State == world.NoWorker {
+			wk = world.Worker{State: world.NoWorker, TreePath: tm.path}
 		}
 		w.Leases[tm.holder] = append(w.Leases[tm.holder], wk)
 		if scope.Retires(*holder) {
@@ -492,6 +497,9 @@ func (s *scenario) stamped(state *State) {
 		if r, ok := state.lookup("treehouse.tree", tm.path); ok {
 			tree := r.v.Interface().(*Tree)
 			tree.LeasedSince = Known(tm.since, tm.since)
+			if tree.CleanSince.Unknown == "" {
+				tree.CleanSince = Known(tm.clean, tm.clean)
+			}
 		}
 	}
 }

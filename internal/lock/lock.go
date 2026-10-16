@@ -1,4 +1,4 @@
-// Package lock keeps two ticks from acting at the same time.
+// Package lock keeps two dispatch runs from acting at the same time.
 package lock
 
 import (
@@ -9,11 +9,11 @@ import (
 	"syscall"
 )
 
-// ErrHeld means another tick holds the lock.
-var ErrHeld = errors.New("another tick holds the lock")
+// ErrHeld means another dispatch run holds the lock.
+var ErrHeld = errors.New("another dispatch run holds the lock")
 
 // Lock is an exclusive flock on a file. The OS releases it when the holding
-// process exits, so a crashed tick never blocks the ticks after it.
+// process exits, so a crashed run never blocks the runs after it.
 type Lock struct {
 	file *os.File
 }

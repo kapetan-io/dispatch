@@ -3,7 +3,6 @@ package dispatch_test
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -102,7 +101,7 @@ func TestTickMessagesFollowersAboutAReadyPR(t *testing.T) {
 
 	got := next(t, lines)
 	assert.Contains(t, got, `"type":"user"`)
-	assert.Contains(t, got, "ENG-1 is ready for review")
+	assert.Contains(t, got, "dispatch event (PR ready for review): ENG-1 is ready for review")
 	assert.Contains(t, got, prURL1)
 	assert.Contains(t, got, "https://linear.app/team/issue/ENG-1")
 	assert.Equal(t, []string{readyText1}, h.notifications())
@@ -113,6 +112,19 @@ func TestTickMessagesFollowersAboutAReadyPR(t *testing.T) {
 	assert.Empty(t, lines)
 }
 
+func TestTickMessagesFollowersThatReviewsAreHandledNotThatAPRIsReady(t *testing.T) {
+	h := draftHarness(t)
+	h.pr("ENG-1", cleanPR("a1"))
+	socket, lines := sessionSocket(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
+	_, err := h.run("watch", "ENG-1")
+	require.NoError(t, err)
+
+	h.tick()
+
+	assert.Contains(t, next(t, lines), "dispatch event (reviews handled): ENG-1's reviews are handled")
+}
+
 func TestTickMessagesFollowersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -120,8 +132,8 @@ func TestTickMessagesFollowersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
 		worker string
 		want   string
 	}{
-		{name: "NeedsHuman", status: "Needs Human", worker: "working", want: "ENG-1 is in Needs Human"},
-		{name: "Blocked", status: "In Progress", worker: "blocked", want: "ENG-1 is waiting on your answer"},
+		{name: "NeedsHuman", status: "Needs Human", worker: "working", want: "dispatch event (entered Needs Human): ENG-1 is in Needs Human"},
+		{name: "Blocked", status: "In Progress", worker: "blocked", want: "dispatch event (worker is blocked on a question): ENG-1 is waiting on your answer"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
@@ -161,33 +173,14 @@ func TestTickDropsAFollowerWhoseSessionExited(t *testing.T) {
 	_, err = h.run("watch", "ENG-1")
 	require.NoError(t, err)
 
-	out, stderr, err := h.runContext(t.Context(), "tick")
+	_, err = h.run("tick")
 
 	require.NoError(t, err)
-	assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
-	assert.Contains(t, stderr, "dropped watcher socket "+dead)
+	assert.Equal(t, []string{readyText1}, h.notifications())
+	assert.Contains(t, h.loopErr(), "dropped watcher socket "+dead)
 	b, err := os.ReadFile(filepath.Join(h.state, "watchers"))
 	require.NoError(t, err)
 	assert.Equal(t, "ENG-1 "+socket+"\n", string(b))
-}
-
-func TestTickDryRunPrintsTheMessagesWithoutSending(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
-	h.worker("ENG-1", "idle")
-	h.pr("ENG-1", cleanPR("a1"))
-	socket, lines := sessionSocket(t)
-	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
-	_, err := h.run("watch", "ENG-1")
-	require.NoError(t, err)
-
-	out, err := h.run("tick", "--dry-run")
-	require.NoError(t, err)
-
-	assert.Equal(t, "notify ENG-1: PR ready for review\n"+
-		"would message "+socket+": dispatch event (PR ready for review): "+readyText1+" Ticket: https://linear.app/team/issue/ENG-1\n", out)
-	assert.Empty(t, lines)
-	assert.Empty(t, h.notifications())
 }
 
 func TestTickMessagesEveryFollowerOfATicket(t *testing.T) {
@@ -235,6 +228,8 @@ func TestTickMessagesFollowersAboutAnUnresponsiveWorker(t *testing.T) {
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.recordStop("ENG-1", noTasks)
+	// The nudge must start after the Stop it answers, and the fake clock only moves when told.
+	h.advance(time.Second)
 	h.tick()
 	socket, lines := sessionSocket(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
@@ -258,7 +253,8 @@ func TestTickMessagesFollowersAboutStallNudgeCounts(t *testing.T) {
 	_, err := h.run("watch", "ENG-1")
 	require.NoError(t, err)
 
-	for range 6 {
+	// The first nudge starts when dispatch first sees the ticket, so the count leaves it out.
+	for range 7 {
 		h.advance(5 * time.Minute)
 		h.recordStop("ENG-1", noTasks)
 		h.tick()
@@ -278,58 +274,19 @@ func TestTickMessagesFollowersAboutAnEscalation(t *testing.T) {
 	_, err := h.run("watch", "ENG-1")
 	require.NoError(t, err)
 
+	// Each tick retries the launch, and the second failure reaches the limit.
 	_, err = h.run("tick")
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "pool_error")
 	assert.Empty(t, lines)
+	// A receipt is told from its retry by its start time, which the fake clock only changes when moved.
+	h.advance(time.Second)
 	_, err = h.run("tick")
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "pool_error")
 
 	got := next(t, lines)
 	assert.Contains(t, got, "ENG-1 is in Needs Human")
 	assert.Contains(t, got, "https://linear.app/team/issue/ENG-1")
 	assert.Len(t, h.notifications(), 1)
-}
-
-func TestTickDryRunPrintsEscalationAndMergeMessages(t *testing.T) {
-	for _, test := range []struct {
-		name  string
-		setup func(h *harness)
-		want  string
-	}{
-		{
-			name: "Merge",
-			setup: func(h *harness) {
-				h.repoSettings("dispatch", autoMergeSetting)
-				h.tickets(ticket("ENG-1", "In Review", "dispatch"))
-				h.worker("ENG-1", "idle")
-				h.pr("ENG-1", approvedPR("a1"))
-			},
-			want: "dispatch event (PR approved): " + mergedText1,
-		},
-		{
-			name: "Escalate",
-			setup: func(h *harness) {
-				h.tickets(ticket("ENG-1", "In Progress", "nosuchrepo"))
-			},
-			want: "dispatch event: ENG-1 is in Needs Human",
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			h := newHarness(t)
-			test.setup(h)
-			socket, lines := sessionSocket(t)
-			t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
-			_, err := h.run("watch", "ENG-1")
-			require.NoError(t, err)
-
-			out, err := h.run("tick", "--dry-run")
-			require.NoError(t, err)
-
-			assert.Contains(t, out, fmt.Sprintf("would message %s: %s", socket, test.want))
-			assert.Empty(t, lines)
-			assert.Empty(t, h.notifications())
-		})
-	}
 }
 
 func TestTickTellsFollowersAboutAMergeWhenTheAlertFails(t *testing.T) {
@@ -357,7 +314,11 @@ func TestTickTellsFollowersAboutAMergeWhenTheAlertFails(t *testing.T) {
 			}
 
 			_, err = h.run("tick")
-			require.NoError(t, err)
+			if test.fails {
+				require.ErrorContains(t, err, "merge refused")
+			} else {
+				require.NoError(t, err)
+			}
 
 			// No later tick sends it again, so this tick's message is the only one.
 			assert.Contains(t, next(t, lines), test.want)
@@ -490,31 +451,6 @@ func TestUnwatchFailsOutsideAClaudeSession(t *testing.T) {
 	_, err := h.run("unwatch", "ENG-1")
 
 	require.ErrorContains(t, err, "CLAUDE_CODE_MESSAGING_SOCKET is not set")
-}
-
-func TestTickDryRunListsOnlyTheFollowersOfEachEvent(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
-	h.worker("ENG-1", "idle")
-	h.worker("ENG-2", "idle")
-	h.pr("ENG-1", cleanPR("a1"))
-	h.pr("ENG-2", cleanPR("a2"))
-	socket1, _ := sessionSocket(t)
-	socket2, _ := sessionSocket(t)
-	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket1)
-	_, err := h.run("watch", "ENG-1")
-	require.NoError(t, err)
-	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket2)
-	_, err = h.run("watch", "ENG-2")
-	require.NoError(t, err)
-
-	out, err := h.run("tick", "--dry-run")
-	require.NoError(t, err)
-
-	assert.Contains(t, out, "would message "+socket1+": dispatch event (PR ready for review): ENG-1 is ready")
-	assert.Contains(t, out, "would message "+socket2+": dispatch event (PR ready for review): ENG-2 is ready")
-	assert.NotContains(t, out, "would message "+socket1+": dispatch event (PR ready for review): ENG-2")
-	assert.NotContains(t, out, "would message "+socket2+": dispatch event (PR ready for review): ENG-1")
 }
 
 func TestTickDroppingADeadSessionStopsItFollowingEveryTicket(t *testing.T) {

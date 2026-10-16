@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -122,7 +123,9 @@ type Client struct {
 	URL  string
 	Key  string
 	HTTP *http.Client
-	// stats records every call this client makes.
+	// stats records every call this client makes, and mu guards it because actions and
+	// reads call the client from different goroutines.
+	mu    sync.Mutex
 	stats Stats
 }
 
@@ -133,7 +136,11 @@ func NewClient(url, key string) *Client { return &Client{URL: url, Key: key} }
 
 // Usage reports the calls this client has made and the request budget Linear
 // last reported.
-func (c *Client) Usage() Stats { return c.stats }
+func (c *Client) Usage() Stats {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.stats
+}
 
 // Stats counts a workspace's calls to Linear and keeps the hourly request budget
 // Linear reported on the last response. The budget fields stay zero until a
@@ -168,14 +175,22 @@ func (s *Stats) record(start time.Time, resp *http.Response) {
 // unfinished child could close.
 const PageSize = 100
 
+// ErrOverflow matches the errors for a read with more tickets than fit on a page.
+var ErrOverflow = errors.New("more tickets than fit on one page")
+
+type overflow string
+
+func (e overflow) Error() string        { return string(e) }
+func (e overflow) Is(target error) bool { return target == ErrOverflow }
+
 // ManagedOverflow is the error for more started tickets with label than fit on a page.
 func ManagedOverflow(label string) error {
-	return fmt.Errorf("more than %d started %q tickets are assigned to you; dispatch reads one page and would miss the rest", PageSize, label)
+	return overflow(fmt.Sprintf("more than %d started %q tickets are assigned to you; dispatch reads one page and would miss the rest", PageSize, label))
 }
 
 // LeasedOverflow is the error for more leased tickets than fit on a page.
 func LeasedOverflow() error {
-	return fmt.Errorf("more than %d tickets hold treehouse leases; dispatch reads one page and would miss the rest", PageSize)
+	return overflow(fmt.Sprintf("more than %d tickets hold treehouse leases; dispatch reads one page and would miss the rest", PageSize))
 }
 
 // ChildrenOverflow is the error for more children than fit on a page.
@@ -587,7 +602,9 @@ func (c *Client) do(ctx context.Context, operation, query string, variables map[
 	}
 	start := time.Now()
 	resp, err := httpc.Do(req)
+	c.mu.Lock()
 	c.stats.record(start, resp)
+	c.mu.Unlock()
 	if err != nil {
 		return fmt.Errorf("while calling Linear %s: %w", operation, err)
 	}

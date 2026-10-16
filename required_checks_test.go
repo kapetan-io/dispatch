@@ -1,7 +1,6 @@
 package dispatch_test
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 
@@ -10,6 +9,8 @@ import (
 )
 
 const requiredOnly = "ignore_optional_checks = true\n"
+
+const readyNotice = "ENG-1 is ready for review: https://github.com/kapetan-io/dispatch/pull/7"
 
 func requiredOnlyHarness(t *testing.T, p prState) *harness {
 	h := newHarness(t)
@@ -34,10 +35,10 @@ func TestTickIgnoresAnOptionalCheckThatFails(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			h := requiredOnlyHarness(t, prState{head: "a1", checks: test.checks, decision: "APPROVED", mergeable: "MERGEABLE", contexts: test.contexts})
 
-			out, err := h.run("tick")
+			_, err := h.run("tick")
 			require.NoError(t, err)
 
-			assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
+			assert.Equal(t, []string{readyNotice}, h.notifications())
 			assert.Empty(t, h.prompts())
 		})
 	}
@@ -56,10 +57,11 @@ func TestTickCountsARequiredCheckThatFails(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			h := requiredOnlyHarness(t, prState{head: "a1", checks: test.checks, mergeable: "MERGEABLE", contexts: test.contexts})
 
-			out, err := h.run("tick")
+			_, err := h.run("tick")
 			require.NoError(t, err)
 
-			assert.Equal(t, "nudge ENG-1: PR needs work: a failed check\n", out)
+			require.Len(t, h.prompts(), 1)
+			assert.Contains(t, h.prompts()[0], "has a failed check")
 		})
 	}
 }
@@ -77,11 +79,11 @@ func TestTickWaitsOnARequiredCheckThatHasNotFinished(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			h := requiredOnlyHarness(t, prState{head: "a1", checks: test.checks, decision: "APPROVED", mergeable: "MERGEABLE", contexts: test.contexts})
 
-			out, err := h.run("tick")
+			_, err := h.run("tick")
 			require.NoError(t, err)
 
-			assert.Empty(t, out)
 			assert.Empty(t, h.notifications())
+			assert.Empty(t, h.prompts())
 		})
 	}
 }
@@ -89,11 +91,11 @@ func TestTickWaitsOnARequiredCheckThatHasNotFinished(t *testing.T) {
 func TestTickLeavesAnExpectedRollupNotReadyWithoutAskingForChecks(t *testing.T) {
 	h := requiredOnlyHarness(t, prState{head: "a1", checks: "EXPECTED", decision: "APPROVED", mergeable: "MERGEABLE"})
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Empty(t, out)
 	assert.Empty(t, h.notifications())
+	assert.Empty(t, h.prompts())
 	assert.Empty(t, h.tools.Calls("pullrequest", "checks"))
 }
 
@@ -101,20 +103,20 @@ func TestTickNudgesOverChangesRequestedWhileOnlyAnOptionalCheckRuns(t *testing.T
 	h := requiredOnlyHarness(t, prState{head: "b2", checks: "PENDING", decision: "CHANGES_REQUESTED", mergeable: "MERGEABLE",
 		contexts: []checkContext{{"test", "SUCCESS", true}, {"CodeRabbit", "IN_PROGRESS", false}}})
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "nudge ENG-1: PR needs work: changes requested\n", out)
+	require.Len(t, h.prompts(), 1)
+	assert.Contains(t, h.prompts()[0], "has changes requested")
 }
 
 func TestTickMutesChangesRequestedWhileARequiredCheckRuns(t *testing.T) {
 	h := requiredOnlyHarness(t, prState{head: "b2", checks: "PENDING", decision: "CHANGES_REQUESTED", mergeable: "MERGEABLE",
 		contexts: []checkContext{{"test", "IN_PROGRESS", true}}})
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Empty(t, out)
 	assert.Empty(t, h.prompts())
 }
 
@@ -122,11 +124,10 @@ func TestTickErrorsWhenChecksNeedASecondPage(t *testing.T) {
 	h := requiredOnlyHarness(t, prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	h.respondChecks("a1", []checkContext{{"test", "SUCCESS", true}}, true)
 
-	out, stderr, err := h.runContext(context.Background(), "tick")
+	_, err := h.run("tick")
 
 	require.NoError(t, err)
-	assert.Empty(t, out)
-	assert.Contains(t, stderr, "while reading the PR for ENG-1: PR 7 has more than 100 checks")
+	assert.Contains(t, h.loopErr(), "while reading the PR for ENG-1: PR 7 has more than 100 checks")
 	assert.Empty(t, h.prompts())
 }
 
@@ -136,20 +137,21 @@ func TestTickCountsEveryCheckInARepoWithoutTheSetting(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "nudge ENG-1: PR needs work: a failed check\n", out)
+	require.Len(t, h.prompts(), 1)
+	assert.Contains(t, h.prompts()[0], "has a failed check")
 	assert.Empty(t, h.tools.Calls("pullrequest", "checks"))
 }
 
 func TestTickDoesNotAskForChecksWhenTheRollupPassed(t *testing.T) {
 	h := requiredOnlyHarness(t, cleanPR("a1"))
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
+	assert.Equal(t, []string{readyNotice}, h.notifications())
 	assert.Empty(t, h.tools.Calls("pullrequest", "checks"))
 }
 
@@ -157,10 +159,9 @@ func TestTickWaitsWhenAPushLandsBetweenReadingThePRAndItsChecks(t *testing.T) {
 	h := requiredOnlyHarness(t, prState{head: "a1", checks: "FAILURE", decision: "APPROVED", mergeable: "MERGEABLE"})
 	h.respondChecks("b2", []checkContext{{"test", "SUCCESS", true}}, false)
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Empty(t, out)
 	assert.Empty(t, h.notifications())
 	assert.Empty(t, h.prompts())
 }
@@ -168,10 +169,10 @@ func TestTickWaitsWhenAPushLandsBetweenReadingThePRAndItsChecks(t *testing.T) {
 func TestTickIgnoresAFailedRollupThatListsNoChecks(t *testing.T) {
 	h := requiredOnlyHarness(t, prState{head: "a1", checks: "FAILURE", decision: "APPROVED", mergeable: "MERGEABLE", contexts: []checkContext{}})
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "notify ENG-1: PR ready for review\n", out)
+	assert.Equal(t, []string{readyNotice}, h.notifications())
 	assert.Empty(t, h.prompts())
 }
 
@@ -179,10 +180,10 @@ func TestTickReadsStatusContextsByWhetherTheyAreRequired(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		required bool
-		want     string
+		nudged   bool
 	}{
-		{name: "RequiredErrored", required: true, want: "nudge ENG-1: PR needs work: a failed check\n"},
-		{name: "OptionalErrored", required: false, want: "notify ENG-1: PR ready for review\n"},
+		{name: "RequiredErrored", required: true, nudged: true},
+		{name: "OptionalErrored", required: false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := requiredOnlyHarness(t, prState{head: "a1", checks: "ERROR", decision: "APPROVED", mergeable: "MERGEABLE"})
@@ -191,10 +192,17 @@ func TestTickReadsStatusContextsByWhetherTheyAreRequired(t *testing.T) {
 				map[string]any{"commit": map[string]any{"oid": "a1", "statusCheckRollup": map[string]any{"contexts": map[string]any{"nodes": []any{status}, "pageInfo": map[string]bool{"hasNextPage": false}}}}},
 			}}}}}})
 
-			out, err := h.run("tick")
+			_, err := h.run("tick")
 			require.NoError(t, err)
 
-			assert.Equal(t, test.want, out)
+			if test.nudged {
+				require.Len(t, h.prompts(), 1)
+				assert.Contains(t, h.prompts()[0], "has a failed check")
+				assert.Empty(t, h.notifications())
+				return
+			}
+			assert.Empty(t, h.prompts())
+			assert.Equal(t, []string{readyNotice}, h.notifications())
 		})
 	}
 }
@@ -207,9 +215,10 @@ func TestTickCountsEveryCheckWhenOnlyAnotherRepoIgnoresOptionalOnes(t *testing.T
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "nudge ENG-1: PR needs work: a failed check\n", out)
+	require.Len(t, h.prompts(), 1)
+	assert.Contains(t, h.prompts()[0], "has a failed check")
 	assert.Empty(t, h.tools.Calls("pullrequest", "checks"))
 }

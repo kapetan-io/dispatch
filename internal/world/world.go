@@ -17,7 +17,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
-	"github.com/kapetan-io/dispatch/internal/worker"
 )
 
 // Sources are the tools one read goes through.
@@ -31,9 +30,11 @@ type Sources struct {
 	// Stderr receives one line for each read that failed without stopping the read.
 	Stderr io.Writer
 	// Tolerant keeps going when herdr, or every pool, can't be read, and
-	// records them as unread. Without it Read returns that failure, which is
-	// what a tick that acts must do.
+	// records them as unread. Without it the read returns that failure.
 	Tolerant bool
+	// Resilient records a failed Linear read in World.LinearErr and goes on,
+	// where without it Read returns that failure.
+	Resilient bool
 }
 
 // Scope is the part of the config a read depends on.
@@ -62,7 +63,9 @@ type World struct {
 	// At is when the read started.
 	At time.Time
 	// Tickets are the managed tickets: started, assigned to you and carrying the opt-in label.
-	Tickets []linear.Ticket
+	// When LinearErr is set they are the last ones read, and no longer known.
+	Tickets   []linear.Ticket
+	LinearErr error
 	// Snapshot is herdr's view. It is empty when HerdrErr is set.
 	Snapshot herdr.Snapshot
 	HerdrErr error
@@ -71,7 +74,7 @@ type World struct {
 	Trees    []treehouse.Tree
 	PoolErrs map[string]error
 	// Workers maps a ticket identifier to what the lookup found.
-	Workers map[string]worker.Worker
+	Workers map[string]Worker
 	// Stops maps an In Progress ticket identifier to its idle worker's latest Stop.
 	// Tickets without a record are absent.
 	Stops map[string]stops.Record
@@ -81,7 +84,7 @@ type World struct {
 	LeaseHolders []linear.Ticket
 	HoldersErr   error
 	// Leases maps a lease holder to a worker for each tree it holds.
-	Leases map[string][]worker.Worker
+	Leases map[string][]Worker
 	// Leased holds every ticket identifier that holds a treehouse lease.
 	Leased map[string]bool
 	// Children maps an In Progress parent's identifier to all its children, in
@@ -104,85 +107,159 @@ type World struct {
 	PRReadFailed map[string]bool
 	// UnreadRepos are the repo labels whose pool could not be read.
 	UnreadRepos map[string]bool
+	// Nudged holds the tickets whose worker was typed into since the last full
+	// read. They show as working until the next one, so nothing that waits for an
+	// idle worker acts on a worker that is already busy with the nudge.
+	Nudged map[string]bool
 }
+
+// Part names the sources one read goes through.
+type Part uint
+
+const (
+	// FromLinear reads the tracked tickets, who holds the trees and the children of open parents.
+	FromLinear Part = 1 << iota
+	// FromLocal reads herdr, every pool and the Stop records.
+	FromLocal
+	// FromGitHub reads the PR of each ticket that has one to read.
+	FromGitHub
+	// Everything reads every source.
+	Everything = FromLinear | FromLocal | FromGitHub
+)
 
 // Read takes one reading of the world. The failures that leave nothing to
 // decide from, which are Linear's tickets and, unless Tolerant, herdr and
 // every pool, are returned. The others are recorded in the World.
 func Read(ctx context.Context, src Sources, scope Scope, now time.Time) (World, error) {
-	w := World{At: now, PoolErrs: map[string]error{}, UnreadRepos: map[string]bool{}}
-	snap, err := src.Herdr.Read(ctx)
-	if err != nil {
-		if !src.Tolerant {
-			return w, err
-		}
-		w.HerdrErr = err
-	}
-	w.Snapshot = snap
-	readErrs := map[string]error{}
-	for label, repo := range scope.Repos {
-		trees, err := src.Treehouse.Trees(ctx, repo.Path)
-		if err != nil {
-			readErrs[label] = treehouse.StatusError(repo.Path, err)
-			continue
-		}
-		w.Trees = append(w.Trees, trees...)
-	}
-	// A repo whose pool can't be read holds back only its own tickets, so one
-	// moved clone doesn't stop launches in every other repo.
-	for label, err := range readErrs {
-		if len(readErrs) == len(scope.Repos) && !src.Tolerant {
-			return w, err
-		}
-		if len(readErrs) != len(scope.Repos) {
-			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the %s pool: %v\n", label, err)
-		}
-		w.PoolErrs[label] = err
-		w.UnreadRepos[label] = true
-	}
-	w.Tickets, err = src.Linear.ManagedTickets(ctx, scope.AILabel, scope.Teams)
-	if err != nil {
-		return w, err
-	}
+	return Refresh(ctx, src, scope, World{}, Everything, now)
+}
 
-	// A failed lease lookup skips teardown only; launches and nudges still run.
-	w.LeaseHolders, w.HoldersErr = leaseHolders(ctx, src.Linear, scope, w.Trees, w.Tickets)
-	if w.HoldersErr != nil {
-		_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the tickets that hold trees: %v\n", w.HoldersErr)
-	}
-	w.Leased = map[string]bool{}
-	for _, tree := range w.Trees {
-		if tree.LeaseHolder != "" {
-			w.Leased[tree.LeaseHolder] = true
+// ReadDeadline bounds each read of one source, so a slow read cannot spend the time of the
+// reads after it.
+const ReadDeadline = time.Minute
+
+func bound(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, ReadDeadline)
+}
+
+// Refresh reads the sources in parts again and keeps what prev says about the
+// rest, so a launch can be followed by a look at herdr and treehouse that makes
+// no Linear call. A failed read of one source never empties what another source
+// said. With Resilient, a failed Linear read is recorded in LinearErr and the
+// tickets prev held are kept, so nothing downstream mistakes the failure for
+// "no tickets".
+func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Part, now time.Time) (World, error) {
+	w := prev
+	w.At = now
+	if parts&FromLocal != 0 || prev.At.IsZero() {
+		parts |= FromLocal
+		w.HerdrErr, w.PoolErrs, w.UnreadRepos, w.Trees = nil, map[string]error{}, map[string]bool{}, nil
+		readCtx, done := bound(ctx)
+		snap, err := src.Herdr.Read(readCtx)
+		done()
+		if err != nil {
+			if !src.Tolerant {
+				return w, err
+			}
+			w.HerdrErr = err
+		}
+		w.Snapshot = snap
+		readErrs := map[string]error{}
+		for label, repo := range scope.Repos {
+			readCtx, done := bound(ctx)
+			trees, err := src.Treehouse.Trees(readCtx, repo.Path)
+			done()
+			if err != nil {
+				readErrs[label] = treehouse.StatusError(repo.Path, err)
+				continue
+			}
+			w.Trees = append(w.Trees, trees...)
+		}
+		// A repo whose pool can't be read holds back only its own tickets, so one
+		// moved clone doesn't stop launches in every other repo.
+		for label, err := range readErrs {
+			if len(readErrs) == len(scope.Repos) && !src.Tolerant {
+				return w, err
+			}
+			if len(readErrs) != len(scope.Repos) {
+				_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the %s pool: %v\n", label, err)
+			}
+			w.PoolErrs[label] = err
+			w.UnreadRepos[label] = true
 		}
 	}
-	w.Workers, w.Stops = map[string]worker.Worker{}, map[string]stops.Record{}
-	for _, t := range w.Tickets {
-		wk := worker.Find(t.Identifier, w.Trees, snap)
-		w.Workers[t.Identifier] = wk
-		if wk.State == worker.Idle && t.Status == scope.Statuses.InProgress {
-			if rec, ok := stops.Read(src.StateDir, wk.TreePath, wk.Session); ok {
-				w.Stops[t.Identifier] = rec
+	if parts&FromLinear != 0 || prev.At.IsZero() {
+		parts |= FromLinear
+		readCtx, done := bound(ctx)
+		tickets, err := src.Linear.ManagedTickets(readCtx, scope.AILabel, scope.Teams)
+		done()
+		switch {
+		case err == nil:
+			w.Tickets, w.LinearErr = tickets, nil
+		case src.Resilient:
+			w.LinearErr = err
+			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the tickets: %v\n", err)
+		default:
+			return w, err
+		}
+	}
+	if parts&(FromLinear|FromLocal) != 0 {
+		// A failed lease lookup skips teardown only; launches and nudges still run.
+		if parts&FromLinear != 0 && w.LinearErr == nil {
+			readCtx, done := bound(ctx)
+			w.LeaseHolders, w.HoldersErr = leaseHolders(readCtx, src.Linear, scope, w.Trees, w.Tickets)
+			done()
+			if w.HoldersErr != nil {
+				_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the tickets that hold trees: %v\n", w.HoldersErr)
+			}
+		} else if parts&FromLinear != 0 {
+			w.HoldersErr = w.LinearErr
+		}
+		w.Leased = map[string]bool{}
+		for _, tree := range w.Trees {
+			if tree.LeaseHolder != "" {
+				w.Leased[tree.LeaseHolder] = true
+			}
+		}
+		snap := w.Snapshot
+		w.Workers, w.Stops = map[string]Worker{}, map[string]stops.Record{}
+		for _, t := range w.Tickets {
+			wk := FindWorker(t.Identifier, w.Trees, snap)
+			w.Workers[t.Identifier] = wk
+			if wk.State == Idle && t.Status == scope.Statuses.InProgress {
+				if rec, ok := stops.Read(src.StateDir, wk.TreePath, wk.Session); ok {
+					w.Stops[t.Identifier] = rec
+				}
+			}
+		}
+		w.Leases = map[string][]Worker{}
+		for _, t := range w.LeaseHolders {
+			w.Leases[t.Identifier] = FindWorkers(t.Identifier, w.Trees, snap)
+		}
+	}
+	if parts&FromLinear != 0 && w.LinearErr == nil {
+		// Only promotion and closing wait on the children, so a failed read holds
+		// back those two and nothing else.
+		w.Children, w.ChildrenErr = nil, nil
+		if parents := scope.Parents(w.Tickets); len(parents) > 0 {
+			ids := make([]string, len(parents))
+			for i, parent := range parents {
+				ids[i] = parent.ID
+			}
+			readCtx, done := bound(ctx)
+			w.Children, w.ChildrenErr = src.Linear.ParentChildren(readCtx, ids)
+			done()
+			if w.ChildrenErr != nil {
+				_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the children of open parents: %v\n", w.ChildrenErr)
 			}
 		}
 	}
-	w.Leases = map[string][]worker.Worker{}
-	for _, t := range w.LeaseHolders {
-		w.Leases[t.Identifier] = worker.FindAll(t.Identifier, w.Trees, snap)
+	if parts&(FromLinear|FromLocal) != 0 {
+		w.inspectTrees(ctx, scope)
 	}
-	// Only promotion and closing wait on the children, so a failed read holds
-	// back those two and nothing else.
-	if parents := scope.Parents(w.Tickets); len(parents) > 0 {
-		ids := make([]string, len(parents))
-		for i, parent := range parents {
-			ids[i] = parent.ID
-		}
-		if w.Children, w.ChildrenErr = src.Linear.ParentChildren(ctx, ids); w.ChildrenErr != nil {
-			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the children of open parents: %v\n", w.ChildrenErr)
-		}
+	if parts&FromGitHub != 0 || prev.At.IsZero() {
+		w.readPRs(ctx, src, scope)
 	}
-	w.inspectTrees(ctx, scope)
-	w.readPRs(ctx, src, scope)
 	return w, nil
 }
 
@@ -214,12 +291,16 @@ func (w *World) inspectTrees(ctx context.Context, scope Scope) {
 			continue
 		}
 		for _, wk := range w.Leases[t.Identifier] {
-			work, err := treehouse.Inspect(ctx, wk.TreePath)
+			readCtx, done := bound(ctx)
+			work, err := treehouse.Inspect(readCtx, wk.TreePath)
+			done()
 			if err != nil {
 				w.CheckErrors[wk.TreePath] = err
 				continue
 			}
-			files, err := treehouse.Untracked(ctx, wk.TreePath)
+			readCtx, done = bound(ctx)
+			files, err := treehouse.Untracked(readCtx, wk.TreePath)
+			done()
 			if err != nil {
 				w.CheckErrors[wk.TreePath] = err
 				continue
@@ -243,7 +324,9 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 			continue
 		}
 		settings := scope.Repos[repo]
-		pr, found, err := src.PullRequests.Read(ctx, dir, t.Branch, pullrequest.Rules{IgnoreAuthors: settings.IgnoreCommentAuthors, RequiredChecksOnly: settings.IgnoreOptionalChecks})
+		readCtx, done := bound(ctx)
+		pr, found, err := src.PullRequests.Read(readCtx, dir, t.Branch, pullrequest.Rules{IgnoreAuthors: settings.IgnoreCommentAuthors, RequiredChecksOnly: settings.IgnoreOptionalChecks})
+		done()
 		if err != nil {
 			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, err)
 			w.PRReadFailed[t.Identifier] = true
@@ -286,9 +369,9 @@ func (s Scope) Parents(tickets []linear.Ticket) []linear.Ticket {
 // ReadsPR reports whether the dispatcher uses this In Review ticket's PR.
 // Working and blocked workers are skipped so their PRs cost no call, and so are
 // tickets whose labels or children make it unsure they are build tickets.
-func (s Scope) ReadsPR(t linear.Ticket, state worker.State) bool {
+func (s Scope) ReadsPR(t linear.Ticket, state WorkerState) bool {
 	if t.Status != s.Statuses.InReview || t.LabelsTruncated || t.HasChildren || !NotDesign(t) {
 		return false
 	}
-	return state == worker.None || state == worker.Idle
+	return state == NoWorker || state == Idle
 }

@@ -1,3 +1,4 @@
+import { known } from "dispatch";
 import type { Ticket, Ctx, Receipt, Seen, Once } from "dispatch";
 
 // A worker gets launch_failure_limit launch attempts in a row, and nudge_limit nudges or
@@ -56,13 +57,14 @@ export const recentlySent = (t: Ticket, topic: string, window: number, ctx: Ctx)
 // Whether a ticket's worker has heard about PR activity. A worker dispatch first saw
 // after the item started out knowing it, and a launch's kickoff tells it everything
 // dispatch had seen. Otherwise an activity nudge tells what its once key names, in the
-// source's own time.
+// source's own time. A launch or nudge started in the very cycle that first saw the item
+// counts, because that cycle shares the item's millisecond (so >=, not >).
 export const heard = (t: Ticket, topic: "activity", item: Seen | undefined, ctx: Ctx) => {
   if (item === undefined) return true;
   const w = ctx.herdr.worker(t);
   if (w.state !== "none" && w.seenAt >= item.seenAt) return true;
   return ctx.ledger.receipts(t, { kind: ["launch", "nudge"] }).some(r => told(r) && (
-    r.kind === "launch" ? r.started > item.seenAt
+    r.kind === "launch" ? r.started >= item.seenAt
     :                     r.once[0] === topic && String(r.once[1]) >= item.at));
 };
 
@@ -74,7 +76,7 @@ export const heard = (t: Ticket, topic: "activity", item: Seen | undefined, ctx:
 // flagged reset was never sent, so neither holds anything back.
 export const stoppedSinceLastNudge = (t: Ticket, ctx: Ctx) => {
   const w = ctx.herdr.worker(t);
-  const last = ctx.ledger.receipts(t, { kind: "nudge" }).find(r => sent(r) && r.started > w.seenAt);  // newest first
+  const last = ctx.ledger.receipts(t, { kind: "nudge" }).find(r => sent(r) && r.started >= w.seenAt);  // newest first
   return last === undefined || (w.lastStop !== undefined && w.lastStop.at > last.started);
 };
 
@@ -91,20 +93,25 @@ export const resumeOwed = (t: Ticket, ctx: Ctx) =>
 export const launchFailures = (t: Ticket, ctx: Ctx) => {
   const r = ctx.ledger.receipts(t, { kind: ["launch", "escalate"] });          // newest first
   const reset = r.findIndex(x => x.kind === "escalate" || x.outcome === "done" || ["already_running", "pool_exhausted"].includes(x.detail));
-  return r.slice(0, reset < 0 ? r.length : reset).filter(x => x.outcome === "failed").length;
+  return r.slice(0, reset < 0 ? r.length : reset).filter(x => x.outcome === "failed" && x.detail !== "crashed").length;
 };
 
 // Nudges about a PR that needs work, at this head, since the ticket's last status change.
 export const prNudges = (t: Ticket, head: string, ctx: Ctx) =>
   ctx.ledger.receipts(t, { kind: "nudge", topic: "pr" })
-    .filter(r => sent(r) && r.once[1] === head && r.started > t.statusSince).length;
+    .filter(r => sent(r) && r.once[1] === head && r.started >= t.statusSince).length;
 
 // Relaunches for a PR that needed work, at this head, since the ticket's last status change.
 export const relaunches = (t: Ticket, head: string, ctx: Ctx) =>
   ctx.ledger.receipts(t, { kind: "launch", topic: "relaunch" })
-    .filter(r => r.outcome === "done" && r.once[1] === head && r.started > t.statusSince).length;
+    .filter(r => r.outcome === "done" && r.once[1] === head && r.started >= t.statusSince).length;
 
 // Moves the ticket to Needs Human and comments why. The receipt keeps the two steps
 // apart, so retry-escalation-comment can finish a comment that failed after the move.
-export const escalate = (t: Ticket, ctx: Ctx, why: string, once: Once) =>
-  ctx.linear.queueEscalate(t, why, { once });
+// notify-needs-human leaves a design ticket alone (a review ticket it covers), so the notice for one dispatch moved itself
+// follows the move. The list is ordered, so a move that fails announces nothing.
+export const escalate = (t: Ticket, ctx: Ctx, why: string, once: Once) => {
+  const move = ctx.linear.queueEscalate(t, why, { once });
+  return !known(() => t.labels) || skill(t) !== "design" ? move
+    : [move, ctx.notify.queueSend(t, `${t.id} is in Needs Human: ${t.title}`, { once: ["needs-human-escalated", ...once] })];
+};

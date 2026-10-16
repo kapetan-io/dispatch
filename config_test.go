@@ -19,8 +19,8 @@ func TestUnknownConfigKeyFailsEveryCommand(t *testing.T) {
 		want   string
 	}{
 		{"TickTopLevel", "max_in_progres = 9\n", []string{"tick"}, `unknown setting max_in_progres`},
-		{"TickDryRun", "max_in_progres = 9\n", []string{"tick", "--dry-run"}, `unknown setting max_in_progres`},
-		{"RunWithoutInterval", "max_in_progres = 9\n", []string{"run"}, `unknown setting max_in_progres`},
+		{"Plan", "max_in_progres = 9\n", []string{"plan"}, `unknown setting max_in_progres`},
+		{"Run", "max_in_progres = 9\n", []string{"run"}, `unknown setting max_in_progres`},
 		{"Tell", "max_in_progres = 9\n", []string{"tell", "ENG-1", "hello"}, `unknown setting max_in_progres`},
 		{"BlueprintNeedsHumanTable", "[plugins.linear.needs_human]\nstatus = \"Needs Human\"\n", []string{"tick"}, "unknown settings:\n  plugins.linear.needs_human\n  plugins.linear.needs_human.status"},
 		{"StatusesTodoTypo", "[plugins.linear.statuses]\ntodoo = \"Todo\"\n", []string{"tick"}, `unknown setting plugins.linear.statuses.todoo`},
@@ -55,10 +55,10 @@ func TestKnownConfigKeysBehaveAsBefore(t *testing.T) {
 	h.config("[dispatch]\nmax_in_progress = 1\n[plugins.linear.statuses]\nin_progress = \"In Progress\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
-	out, err := h.run("tick", "--dry-run")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "launch ENG-1\n", out)
+	assert.Len(t, h.launches(), 1)
 }
 
 func TestConfigRejectsABadRepoTable(t *testing.T) {
@@ -81,7 +81,7 @@ func TestConfigRejectsABadRepoTable(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			file := writeHintConfig(t, test.config)
 
-			err := dispatch.Run(t.Context(), []string{"tell", "ENG-1", "hi"}, dispatch.Options{ConfigPath: file})
+			err := dispatch.Run(t.Context(), []string{"plan"}, dispatch.Options{ConfigPath: file})
 
 			require.ErrorContains(t, err, "while reading config "+file+": ")
 			require.ErrorContains(t, err, test.wantErr)
@@ -95,7 +95,7 @@ func TestConfigSamePathIsComparedAfterHomeExpansion(t *testing.T) {
 	t.Setenv("HOME", home)
 	file := writeHintConfig(t, "[repos.a]\npath = \"~/src/api\"\n[repos.b]\npath = \""+home+"/src/api\"\n")
 
-	err := dispatch.Run(t.Context(), []string{"tell", "ENG-1", "hi"}, dispatch.Options{ConfigPath: file})
+	err := dispatch.Run(t.Context(), []string{"plan"}, dispatch.Options{ConfigPath: file})
 
 	require.ErrorContains(t, err, "repos.a and repos.b have the same path "+home+"/src/api")
 }
@@ -116,7 +116,7 @@ func TestConfigLoadsTwoReposWhosePathsAreASymlinkAndItsTarget(t *testing.T) {
 func TestConfigNamesTheKeyOfAWrongTypedSetting(t *testing.T) {
 	file := writeHintConfig(t, "[repos.api]\npath = \"~/x\"\nauto_merge = 1\n")
 
-	err := dispatch.Run(t.Context(), []string{"tell", "ENG-1", "hi"}, dispatch.Options{ConfigPath: file})
+	err := dispatch.Run(t.Context(), []string{"plan"}, dispatch.Options{ConfigPath: file})
 
 	require.ErrorContains(t, err, "repos.api.auto_merge: incompatible types")
 }
@@ -136,7 +136,7 @@ func TestOldConfigLayoutFailsTheStartNamingItsFirstKey(t *testing.T) {
 			h := newHarness(t)
 			h.config(test.config)
 
-			_, err := h.run("tick", "--dry-run")
+			_, err := h.run("tick")
 
 			require.ErrorContains(t, err, test.want)
 		})
@@ -148,10 +148,10 @@ func TestRulesTableTakesAnyKey(t *testing.T) {
 	h.config("[rules]\nbug_model = \"opus\"\nreviewers = [\"a\", \"b\"]\n[rules.slack]\nchannel = \"#eng\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
-	out, err := h.run("tick", "--dry-run")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "launch ENG-1\n", out)
+	assert.Len(t, h.launches(), 1)
 }
 
 func TestConfigRejectsValuesThatDecodeButMeanNothing(t *testing.T) {
@@ -170,7 +170,7 @@ func TestConfigRejectsValuesThatDecodeButMeanNothing(t *testing.T) {
 			h := newHarness(t)
 			h.config(test.config)
 
-			_, err := h.run("tick", "--dry-run")
+			_, err := h.run("tick")
 
 			require.ErrorContains(t, err, test.want)
 		})
@@ -182,8 +182,8 @@ func TestConfigDaysAreAccepted(t *testing.T) {
 	h.config("[history]\nkeep = \"7d\"\nrotate = \"1d12h\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
-	out, err := h.run("tick", "--dry-run")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "launch ENG-1\n", out)
+	assert.Len(t, h.launches(), 1)
 }

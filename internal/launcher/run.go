@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
-	"github.com/kapetan-io/dispatch/internal/linear"
-	"github.com/kapetan-io/dispatch/internal/reconcile"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
@@ -163,7 +161,7 @@ func (l *launch) run(ctx context.Context) Result {
 	}
 
 	// An unconfirmed kickoff closes the workspace. Left open, its idle Claude
-	// would look like a live worker, and no tick would retry or escalate.
+	// would look like a live worker, and no cycle would retry or escalate.
 	if err := l.opts.Herdr.Kickoff(ctx, started.Pane, req.Kickoff); err != nil {
 		_ = l.opts.Herdr.CloseWorkspace(context.WithoutCancel(ctx), l.workspace)
 		detail := "Claude started but herdr"
@@ -175,7 +173,7 @@ func (l *launch) run(ctx context.Context) Result {
 		}
 		return Result{
 			Status:    StatusInjectionUnconfirmed,
-			Detail:    detail + " never showed the kickoff running, so the workspace was closed and the next tick retries. Record the screens with DISPATCH_LAUNCH_TRACE (`dispatch launch`).",
+			Detail:    detail + " never showed the kickoff running, so the workspace was closed and the next resync retries. Record the screens with DISPATCH_LAUNCH_TRACE (`dispatch launch`).",
 			Workspace: l.workspace, Pane: started.Pane, Worktree: l.tree,
 		}
 	}
@@ -433,8 +431,8 @@ func (l *launch) gitToStderr(ctx context.Context, dir string, args ...string) er
 	return cmd.Run()
 }
 
-// tabLabel is what the tick's tab rename sets, so the first tick leaves a
+// tabLabel is what the loop's tab rename sets, so the first cycle leaves a
 // freshly launched tab alone.
 func (l *launch) tabLabel() string {
-	return reconcile.TabLabel(linear.Ticket{Identifier: l.req.Ticket, Title: l.req.Title})
+	return herdr.TabLabel(l.req.Ticket, l.req.Title)
 }

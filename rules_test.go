@@ -141,6 +141,7 @@ func TestRulesCheckRunsTheTicketsThatCanLaunchBesideTheOnesThatCannot(t *testing
 
 func TestRulesCheckFailsOnARuleReadingAMissingRulesKey(t *testing.T) {
 	h := newHarness(t)
+	h.exactRules = true
 	h.config("[rules]\nworker_model = \"sonnet\"\n")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 

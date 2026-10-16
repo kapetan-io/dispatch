@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,25 +20,16 @@ import (
 
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/herdr"
+	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/launcher"
+	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/lineartest"
+	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/kapetan-io/dispatch/internal/tooltest"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/world"
 )
-
-func TestTickDryRunListsLaunchWithoutActing(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-
-	out, err := h.run("tick", "--dry-run")
-	require.NoError(t, err)
-
-	assert.Equal(t, "launch ENG-1\n", out)
-	assert.Empty(t, h.launches())
-	assert.Empty(t, h.linear.mutations())
-	assert.NoFileExists(t, filepath.Join(h.state, "cache.json"))
-}
 
 func TestTickLaunchesApprovedTicketWithNoWorker(t *testing.T) {
 	h := newHarness(t)
@@ -47,7 +38,7 @@ func TestTickLaunchesApprovedTicketWithNoWorker(t *testing.T) {
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "launch ENG-1: ok\n", out)
+	assert.Equal(t, "ENG-1 launched\n", out)
 	assert.Equal(t, []string{h.repo + " ENG-1 thrawn01/eng-1 --model sonnet"}, h.launches())
 	assert.Empty(t, h.linear.mutations())
 }
@@ -87,7 +78,7 @@ func TestTickWaitsWhenWorkerCapIsFull(t *testing.T) {
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "wait ENG-2: 1 of 1 workers already running\n", out)
+	assert.Equal(t, "ENG-2 queued: launch, 1 of 1 in progress, 1st in line\n", out)
 	assert.Empty(t, h.launches())
 }
 
@@ -101,7 +92,8 @@ func TestTickLaunchesNothingForTicketsThatAreNotInProgress(t *testing.T) {
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "notify ENG-2: entered Needs Human\n", out)
+	assert.Equal(t, "ENG-2 notified\n", out)
+	assert.Equal(t, []string{"ENG-2 is in Needs Human: ticket ENG-2"}, h.notifications())
 	assert.Empty(t, h.launches())
 }
 
@@ -111,13 +103,15 @@ func TestTickEscalatesAfterRepeatedLaunchFailures(t *testing.T) {
 	h.launchResult(`{"status":"pool_error","detail":"treehouse lease failed"}`)
 
 	_, err := h.run("tick")
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "ENG-1 launch failed: pool_error: treehouse lease failed")
 	assert.Empty(t, h.linear.mutations())
 
+	// Two failures at the same millisecond are one receipt, so the clock moves between ticks.
+	h.advance(time.Second)
 	out, err := h.run("tick")
-	require.NoError(t, err)
 
-	assert.Contains(t, out, "escalate ENG-1: launch failed 2 times")
+	require.ErrorContains(t, err, "ENG-1 launch failed")
+	assert.Contains(t, out, "ENG-1 escalated: its worker failed to launch 2 times in a row")
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 2)
 	assert.Equal(t, lineartest.Move, mutations[0].Kind)
@@ -130,16 +124,31 @@ func TestTickNeverEscalatesForAFullPool(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.launchResult(`{"status":"pool_exhausted","detail":"all 4/4 pool trees are taken"}`)
+	// Another holder has the only tree, so the pool's return count can move when it lets go.
+	other := filepath.Join(h.dir, "trees", "other")
+	h.tools.Treehouse.Seed(h.repo, treehouse.Tree{Path: other, Status: "leased", LeaseHolder: "other"})
 
-	var out string
-	for range 3 {
-		var err error
-		out, err = h.run("tick")
+	out, err := h.run("tick")
+	require.NoError(t, err)
+	assert.Equal(t, "ENG-1 launch refused: pool_exhausted\n", out)
+	for range 2 {
+		h.advance(time.Second)
+		_, err = h.run("tick")
 		require.NoError(t, err)
 	}
 
-	assert.Equal(t, "launch ENG-1: pool_exhausted: all 4/4 pool trees are taken\n", out)
-	assert.Len(t, h.launches(), 3)
+	// While no tree comes back there is one attempt, not one per tick.
+	assert.Len(t, h.launches(), 1)
+	assert.Empty(t, h.linear.mutations())
+
+	require.NoError(t, h.tools.Treehouse.Return(t.Context(), h.repo, other, "other"))
+	h.launchResult(`{"status":"ok","ticket":"ENG-1","branch":"thrawn01/eng-1"}`)
+	h.advance(time.Second)
+	out, err = h.run("tick")
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "ENG-1 launched")
+	assert.Len(t, h.launches(), 2)
 	assert.Empty(t, h.linear.mutations())
 }
 
@@ -154,7 +163,7 @@ func TestTickSkipsTicketsItNeverLaunches(t *testing.T) {
 			name:     "ParentTicket",
 			ticket:   ticket("ENG-1", "In Progress", "dispatch"),
 			children: []fakeTicket{child("ENG-2", "ENG-1", "Backlog")},
-			want:     "skip ENG-1: has sub-issues, and a parent never gets a worker\n",
+			want:     "",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -172,6 +181,26 @@ func TestTickSkipsTicketsItNeverLaunches(t *testing.T) {
 	}
 }
 
+func TestTickAlertsWhenItEscalatesADesignTicket(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(withLabel(ticket("ENG-1", "In Progress", ""), "design"))
+
+	h.tick()
+
+	require.Len(t, h.linear.mutations(), 2)
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
+}
+
+func TestTickAlertsOnceWhenItEscalatesADesignReviewTicket(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(withLabel(ticket("ENG-1", "In Progress", ""), "design-review"))
+
+	h.tick()
+
+	require.Len(t, h.linear.mutations(), 2)
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
+}
+
 func TestTickEscalatesTicketItCannotPlaceInARepo(t *testing.T) {
 	for _, test := range []struct {
 		name     string
@@ -181,7 +210,7 @@ func TestTickEscalatesTicketItCannotPlaceInARepo(t *testing.T) {
 		{
 			name:     "NoRepoLabel",
 			repo:     "",
-			wantBody: "has no \"repo\" label",
+			wantBody: "has no repo label",
 		},
 		{
 			name:     "RepoNotConfigured",
@@ -214,13 +243,14 @@ func TestTickLaunchesOtherTicketsWhenAnEscalationFails(t *testing.T) {
 	h.linear.failMoves()
 
 	out, err := h.run("tick")
-	require.NoError(t, err)
 
-	assert.Equal(t, "launch ENG-2: ok\n", out)
+	require.ErrorContains(t, err, "ENG-1 escalate failed")
+	assert.Contains(t, out, "ENG-2 launched")
 	assert.Len(t, h.launches(), 1)
 	// The failed move left ENG-1 In Progress, so no comment was posted that a
 	// later tick would post again.
 	assert.Empty(t, h.linear.mutations())
+	assert.Zero(t, h.linear.CallsTo(lineartest.OnComment))
 }
 
 func TestTickNeverCommentsWhenLinearRefusesTheMove(t *testing.T) {
@@ -228,24 +258,31 @@ func TestTickNeverCommentsWhenLinearRefusesTheMove(t *testing.T) {
 	h.tickets(ticket("ENG-1", "In Progress", ""))
 	h.linear.unsuccessfulMoves()
 
-	out, stderr, err := h.runContext(context.Background(), "tick")
-	require.NoError(t, err)
+	_, err := h.run("tick")
 
-	assert.Empty(t, out)
-	assert.Contains(t, stderr, "while escalating ENG-1: linear MoveTicket: Linear reported success=false")
-	assert.Equal(t, 1, h.linear.CallsTo(lineartest.OnMove))
+	require.ErrorContains(t, err, "ENG-1 escalate failed: linear MoveTicket: Linear reported success=false")
+	assert.Contains(t, h.loopOut(), "escalate ENG-1 failed: linear MoveTicket: Linear reported success=false")
+	assert.Zero(t, h.linear.CallsTo(lineartest.OnComment))
 	assert.Empty(t, h.linear.mutations())
 }
 
-func TestTickFailsWhenManagedTicketsSpanMoreThanOnePage(t *testing.T) {
+func TestTickReadsNothingWhenManagedTicketsSpanMoreThanOnePage(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.linear.overflowManaged()
 
 	_, err := h.run("tick")
 
-	require.ErrorContains(t, err, "more than 100 started \"ai\" tickets are assigned to you")
+	// The tickets are unknown, which holds every rule that needs them, so the tick has nothing to fail on.
+	require.NoError(t, err)
+	assert.Contains(t, h.loopErr(), "more than 100 started \"ai\" tickets are assigned to you")
 	assert.Empty(t, h.launches())
+
+	// The user hears of it once, however many resyncs find the same overflow.
+	h.advance(time.Hour)
+	h.advance(time.Hour)
+	require.Len(t, h.notifications(), 1)
+	assert.Contains(t, h.notifications()[0], "more than 100 started \"ai\" tickets are assigned to you")
 }
 
 func TestTickHoldsBackOnlyTheRepoWhosePoolCannotBeRead(t *testing.T) {
@@ -257,13 +294,17 @@ func TestTickHoldsBackOnlyTheRepoWhosePoolCannotBeRead(t *testing.T) {
 		ticket("ENG-2", "In Progress", "tiger"),
 	)
 
-	out, stderr, err := h.runContext(context.Background(), "tick")
+	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "wait ENG-2: the tiger pool could not be read this tick\nlaunch ENG-1: ok\n", out)
-	assert.Contains(t, stderr, "dispatch: while reading the tiger pool:")
+	assert.Contains(t, out, "ENG-1 launched\n")
+	assert.Contains(t, out, "ENG-2 held: treehouse pool tiger unread")
+	assert.Contains(t, h.loopErr(), "dispatch: while reading the tiger pool:")
 	assert.Equal(t, []string{h.repo + " ENG-1 thrawn01/eng-1 --model sonnet"}, h.launches())
 	assert.Empty(t, h.linear.mutations())
+	plan, err := h.run("plan")
+	require.NoError(t, err)
+	assert.Regexp(t, `(?m)^held +ENG-2 +- +launch-worker +treehouse pool tiger unread`, plan)
 }
 
 func TestTickCountsTicketsInAnUnreadRepoAgainstTheWorkerCap(t *testing.T) {
@@ -279,7 +320,7 @@ func TestTickCountsTicketsInAnUnreadRepoAgainstTheWorkerCap(t *testing.T) {
 	require.NoError(t, err)
 
 	// ENG-2 may have a live worker nobody could see, so ENG-1 must not launch.
-	assert.Contains(t, out, "wait ENG-1: 1 of 1 workers already running")
+	assert.Contains(t, out, "ENG-1 queued: launch, 1 of 1 in progress")
 	assert.Empty(t, h.launches())
 }
 
@@ -288,15 +329,16 @@ func TestTickPostsAnEscalationCommentThatFailedOnAnEarlierTick(t *testing.T) {
 	h.tickets(ticket("ENG-1", "In Progress", ""))
 	h.linear.failComments(true)
 
-	_, stderr, err := h.runContext(context.Background(), "tick")
-	require.NoError(t, err)
-	assert.Contains(t, stderr, "while escalating ENG-1: moved to Needs Human, but the comment failed")
+	_, err := h.run("tick")
+	require.ErrorContains(t, err, "ENG-1 comment failed: while commenting on ENG-1")
+	require.Len(t, h.linear.mutations(), 1)
 
 	// The ticket has since left the started states the dispatcher reads, so
 	// the retry can't depend on finding it among managed tickets.
 	h.tickets()
 	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
 	h.linear.failComments(false)
+	h.advance(time.Second)
 
 	_, err = h.run("tick")
 	require.NoError(t, err)
@@ -305,9 +347,10 @@ func TestTickPostsAnEscalationCommentThatFailedOnAnEarlierTick(t *testing.T) {
 	require.Len(t, mutations, 2)
 	assert.Equal(t, lineartest.Move, mutations[0].Kind)
 	assert.Equal(t, lineartest.Comment, mutations[1].Kind)
-	assert.Contains(t, mutations[1].Body, `has no "repo" label`)
+	assert.Contains(t, mutations[1].Body, "has no repo label")
 	assert.Equal(t, "uuid-ENG-1", mutations[1].TicketID)
 
+	h.advance(time.Second)
 	_, err = h.run("tick")
 	require.NoError(t, err)
 	assert.Len(t, h.linear.mutations(), 2)
@@ -318,11 +361,10 @@ func TestTickRetriesAnEscalationCommentThatLinearAnsweredWithSuccessFalse(t *tes
 	h.tickets(ticket("ENG-1", "In Progress", ""))
 	h.linear.unsuccessfulComments()
 
-	_, stderr, err := h.runContext(context.Background(), "tick")
-	require.NoError(t, err)
+	_, err := h.run("tick")
 
-	assert.Contains(t, stderr, "moved to Needs Human, but the comment failed")
-	assert.Contains(t, stderr, "Linear reported success=false")
+	require.ErrorContains(t, err, "ENG-1 comment failed")
+	require.ErrorContains(t, err, "Linear reported success=false")
 	require.Len(t, h.linear.mutations(), 1)
 	assert.Equal(t, lineartest.Move, h.linear.mutations()[0].Kind)
 }
@@ -338,27 +380,12 @@ func TestTickEscalatesATicketWhoseLabelsDidNotFitOnePage(t *testing.T) {
 	out, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Contains(t, out, "escalate ENG-1: it has more labels than the dispatcher reads")
+	assert.Contains(t, out, "ENG-1 escalated: it has more labels than the dispatcher reads")
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
 	assert.Empty(t, h.launches())
 	mutations := h.linear.mutations()
 	require.Len(t, mutations, 2)
 	assert.Equal(t, needsHumanID, mutations[0].StateID)
-}
-
-func TestTickExitsWhenAnotherTickHoldsTheLock(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	require.NoError(t, os.MkdirAll(h.state, 0o755))
-	held, err := os.OpenFile(filepath.Join(h.state, "tick.lock"), os.O_RDWR|os.O_CREATE, 0o644)
-	require.NoError(t, err)
-	defer func() { _ = held.Close() }()
-	require.NoError(t, syscall.Flock(int(held.Fd()), syscall.LOCK_EX|syscall.LOCK_NB))
-
-	out, err := h.run("tick")
-	require.NoError(t, err)
-
-	assert.Empty(t, out)
-	assert.Empty(t, h.launches())
 }
 
 func TestRunRejectsUnknownCommand(t *testing.T) {
@@ -369,7 +396,7 @@ func TestRunRejectsUnknownCommand(t *testing.T) {
 	require.ErrorContains(t, err, `unknown command "deploy"`)
 }
 
-func TestRunTicksOnEachIntervalUntilCanceled(t *testing.T) {
+func TestRunStartsActsAndStopsCleanlyOnCancel(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	ctx, cancel := context.WithCancel(context.Background())
@@ -379,73 +406,64 @@ func TestRunTicksOnEachIntervalUntilCanceled(t *testing.T) {
 
 	go func() {
 		var err error
-		out, _, err = h.runContext(ctx, "run", "--interval", "20ms")
+		out, _, err = h.runContext(ctx, "run")
 		done <- err
 	}()
-	// The fake launcher starts no worker herdr could show, so every tick launches ENG-1 again.
-	// A 4th launch proves the 3rd tick printed before cancellation could drop it.
-	require.Eventually(t, func() bool { return len(h.launches()) >= 4 }, 15*time.Second, 10*time.Millisecond)
+	// The loop acts on its first read, before any tick asks.
+	require.Eventually(t, func() bool { return len(h.launches()) == 1 }, 15*time.Second, 10*time.Millisecond)
 	cancel()
 
 	require.NoError(t, <-done)
-	assert.Contains(t, out, "ticking every 20ms")
-	assert.GreaterOrEqual(t, strings.Count(out, "launch ENG-1: ok"), 3)
-	assert.Regexp(t, `(?m)^\d\d:\d\d:\d\d tick: 1 ticket, 1 action, Linear 1 call in `+duration+` \(2400 of 2500 requests left this hour\), took `+duration+`$`, out)
+	assert.Contains(t, out, "start: 1 tracked ticket, 27 rules")
+	assert.Contains(t, out, "launch ENG-1 ok")
 }
 
-func TestRunPrintsASlowTickInSeconds(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.tools.Treehouse.DelayTrees(1100 * time.Millisecond)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan error, 1)
-	var out string
-
-	go func() {
-		var err error
-		out, _, err = h.runContext(ctx, "run", "--interval", "20ms")
-		done <- err
-	}()
-	// A second launch proves the slow first tick already printed its line,
-	// which cancellation would otherwise drop.
-	require.Eventually(t, func() bool { return len(h.launches()) >= 2 }, 15*time.Second, 10*time.Millisecond)
-	cancel()
-
-	require.NoError(t, <-done)
-	assert.Regexp(t, `(?m)^\d\d:\d\d:\d\d tick: 1 ticket, 1 action, Linear 1 call in `+duration+` \(2400 of 2500 requests left this hour\), took \d+(?:\.\d+)?s$`, out)
-}
-
-func TestRunKeepsTickingAfterAFailedTick(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	// treehouse fails its first call only, so the first tick fails and the
-	// second one launches.
-	h.tools.Treehouse.FailTrees(errors.New("exit status 1"))
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan error, 1)
-	var stderr string
-
-	go func() {
-		var err error
-		_, stderr, err = h.runContext(ctx, "run", "--interval", "20ms")
-		done <- err
-	}()
-	require.Eventually(t, func() bool { return len(h.launches()) >= 1 }, 5*time.Second, 10*time.Millisecond)
-	cancel()
-
-	require.NoError(t, <-done)
-	assert.Regexp(t, `^\d\d:\d\d:\d\d dispatch: tick failed after `+duration+`: while running treehouse status`, stderr)
-}
-
-func TestRunRejectsANonPositiveInterval(t *testing.T) {
+func TestRunRejectsANonPositiveResync(t *testing.T) {
 	h := newHarness(t)
 	h.config("[dispatch]\nresync = \"0s\"\n")
 
 	_, err := h.run("run")
 
-	require.ErrorContains(t, err, "interval must be positive")
+	require.ErrorContains(t, err, "[dispatch].resync must be positive")
+}
+
+func TestRunRejectsArguments(t *testing.T) {
+	h := newHarness(t)
+
+	_, err := h.run("run", "--interval", "20ms")
+
+	require.ErrorContains(t, err, "run takes no arguments")
+}
+
+func TestRunExitsWhenAnotherRunHoldsTheLock(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tick()
+
+	_, err := h.run("run")
+
+	require.ErrorContains(t, err, "another dispatch run holds the lock")
+	assert.Len(t, h.launches(), 1)
+}
+
+func TestRunFailsToStartOnAnUnknownConfigKey(t *testing.T) {
+	h := newHarness(t)
+	h.config("max_in_progres = 9\n")
+
+	_, err := h.run("run")
+
+	require.ErrorContains(t, err, "unknown setting max_in_progres")
+}
+
+func TestRunFailsToStartWhenTheRulesDoNotLoad(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	dir := oneRule(t, `whenever({ name: "broken", each: "linear.ticket", if: (t) => t.status === , then: () => {} });`)
+
+	_, _, err := h.runWith(context.Background(), dispatch.Options{RulesDir: dir}, "run")
+
+	require.ErrorContains(t, err, "problems found in the rules, so none loaded")
+	assert.Empty(t, h.launches())
 }
 
 // duration matches Go's duration formatting, which prints 0s under a
@@ -473,25 +491,39 @@ type harness struct {
 	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
 	// with the launcher built into dispatch, over tools.Herdr and tools.Treehouse.
 	builtinLauncher bool
-	// clock is the time every command sees, and moves only through advance.
-	clock time.Time
+	// clock is the time every command and the loop see, and moves only through advance.
+	clock *fakeClock
+	// running is the loop started by the first command that needs one.
+	running *runningLoop
+	// rulesDir is the directory of rules the loop runs.
+	rulesDir string
+	// exactRules keeps the [rules] table as the test wrote it, without filling in the shipped keys.
+	exactRules bool
 	// pages is what GitHub was last set to answer, by ticket and cursor.
 	pages map[string][]byte
 }
 
 func newHarness(t *testing.T) *harness {
 	dir := t.TempDir()
+	// A unix socket path is capped near 104 bytes on macOS, which t.TempDir() overruns.
+	state, err := os.MkdirTemp("/tmp", "dsp")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(state) })
+	rulesDir, err := filepath.Abs("rules")
+	require.NoError(t, err)
 	h := &harness{
-		t:     t,
-		dir:   dir,
-		repo:  filepath.Join(dir, "repo"),
-		state: filepath.Join(dir, "state"),
-		tools: tooltest.New(t),
-		clock: time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC),
-		pages: map[string][]byte{},
+		t:        t,
+		dir:      dir,
+		repo:     filepath.Join(dir, "repo"),
+		state:    state,
+		rulesDir: rulesDir,
+		tools:    tooltest.New(t),
+		clock:    &fakeClock{now: time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)},
+		pages:    map[string][]byte{},
 	}
+	t.Cleanup(func() { _ = h.stopLoop() })
 	h.linear = &linearHarness{Workspace: h.tools.Linear}
-	h.tools.Linear.Now = func() time.Time { return h.clock }
+	h.tools.Linear.Now = h.clock.Now
 	require.NoError(t, os.MkdirAll(h.repo, 0o755))
 	h.addRepo("dispatch", h.repo)
 	return h
@@ -547,13 +579,12 @@ func (h *harness) runContext(ctx context.Context, args ...string) (string, strin
 	return h.runWith(ctx, dispatch.Options{}, args...)
 }
 
-// runWith runs a command with the harness's fakes, over the Options given.
-func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...string) (string, string, error) {
-	h.writeFile("config.toml", h.extra+h.reposTOML())
-	var stdout, stderr bytes.Buffer
+// options is the Options every command runs over: the harness's fakes.
+func (h *harness) options(extra dispatch.Options) dispatch.Options {
+	h.writeFile("config.toml", h.withRules(h.withHistory(h.extra))+h.historyTOML()+h.reposTOML())
 	extra.ConfigPath = filepath.Join(h.dir, "config.toml")
 	extra.StateDir = h.state
-	extra.Now = func() time.Time { return h.clock }
+	extra.Clock = h.clock
 	extra.Linear = h.linear.Connect
 	if !h.configuredKey {
 		extra.LinearKey = lineartest.Key
@@ -565,11 +596,183 @@ func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...s
 	if !h.builtinLauncher {
 		extra.Launcher = h.tools.Launcher
 	}
+	if extra.RulesDir == "" && !strings.Contains(h.extra, "\nrules = ") {
+		extra.RulesDir = h.rulesDir
+	}
 	extra.LaunchPace = time.Millisecond
-	extra.Stdout = &stdout
-	extra.Stderr = &stderr
-	err := dispatch.Run(ctx, args, extra)
+	return extra
+}
+
+// withRules gives the config the [rules] keys the shipped rules read, at today's
+// values, unless the test set them. A test's own [rules] table keeps its keys.
+func (h *harness) withRules(extra string) string {
+	if h.exactRules {
+		return extra
+	}
+	defaults := []string{
+		"worker_model = \"sonnet\"", "design_model = \"opus\"", "launch_failure_limit = 2", "nudge_limit = 2", "blocked_renotify_minutes = 15",
+	}
+	if !strings.Contains(extra, "[rules]") {
+		return extra + "\n[rules]\n" + strings.Join(defaults, "\n") + "\n"
+	}
+	var missing []string
+	for _, d := range defaults {
+		key, _, _ := strings.Cut(d, " ")
+		if !strings.Contains(extra, "\n"+key+" ") && !strings.Contains(extra, "\n"+key+"=") {
+			missing = append(missing, d)
+		}
+	}
+	return strings.Replace(extra, "[rules]\n", "[rules]\n"+strings.Join(missing, "\n")+"\n", 1)
+}
+
+// historyTOML points history at the state directory, unless the test set it. A
+// test that sets only other [history] keys still gets the directory, so no test
+// writes into the user's real history.
+func (h *harness) historyTOML() string {
+	if strings.Contains(h.extra, "[history]") {
+		return ""
+	}
+	return fmt.Sprintf("\n[history]\ndir = %q\n", filepath.Join(h.state, "events"))
+}
+
+// withHistory adds the history directory to a test's own [history] table.
+func (h *harness) withHistory(extra string) string {
+	if !strings.Contains(extra, "[history]") || strings.Contains(extra, "\ndir ") || strings.Contains(extra, "\ndir=") {
+		return extra
+	}
+	return strings.Replace(extra, "[history]\n", fmt.Sprintf("[history]\ndir = %q\n", filepath.Join(h.state, "events")), 1)
+}
+
+// runWith runs a command with the harness's fakes, over the Options given. A
+// command that needs the loop starts one first.
+func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...string) (string, string, error) {
+	if len(args) > 0 && (args[0] == "tick" || args[0] == "tell") && h.running == nil {
+		if err := h.startLoop(extra); err != nil {
+			return "", "", err
+		}
+		// The loop acted on what it read at start, before this tick asked, so the first
+		// tick of a test asks for everything since the start.
+		if len(args) <= 2 && args[0] == "tick" {
+			return h.tickSinceStart(ctx, args[1:])
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	opts := h.options(extra)
+	opts.Stdout, opts.Stderr = &stdout, &stderr
+	err := dispatch.Run(ctx, args, opts)
 	return stdout.String(), stderr.String(), err
+}
+
+// tickSinceStart is `dispatch tick [ticket]` for the tick that starts the loop: it reports
+// every action since the start and reads nothing again, so one tick is one attempt.
+func (h *harness) tickSinceStart(ctx context.Context, args []string) (string, string, error) {
+	req := loop.Request{Op: loop.OpSettle}
+	if len(args) == 1 {
+		req.Ticket = strings.ToUpper(args[0])
+	}
+	resp, err := loop.Ask(ctx, h.state, req)
+	if err != nil {
+		return "", "", err
+	}
+	var out strings.Builder
+	for _, line := range resp.Lines {
+		out.WriteString(line + "\n")
+	}
+	if resp.Code != loop.CodeSettled {
+		return out.String(), "", errors.New(resp.Error)
+	}
+	return out.String(), "", nil
+}
+
+// syncBuffer is a buffer the loop writes to while a test reads it.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+type runningLoop struct {
+	cancel context.CancelFunc
+	done   chan error
+	out    *syncBuffer
+	err    *syncBuffer
+}
+
+// startLoop runs `dispatch run` in the background over the harness's fakes and
+// returns once it answers on its socket, or with the error that stopped it.
+func (h *harness) startLoop(extra dispatch.Options) error {
+	h.t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	r := &runningLoop{cancel: cancel, done: make(chan error, 1), out: &syncBuffer{}, err: &syncBuffer{}}
+	opts := h.options(extra)
+	opts.Stdout, opts.Stderr = r.out, r.err
+	go func() { r.done <- dispatch.Run(ctx, []string{"run"}, opts) }()
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case err := <-r.done:
+			cancel()
+			return err
+		default:
+		}
+		if resp, err := loop.Ask(ctx, h.state, loop.Request{Op: loop.OpIdle}); err == nil && !resp.Busy {
+			h.running = r
+			return nil
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	return errors.New("the loop did not start in 20 seconds")
+}
+
+// stopLoop stops the loop and returns what it stopped with.
+func (h *harness) stopLoop() error {
+	if h.running == nil {
+		return nil
+	}
+	r := h.running
+	h.running = nil
+	r.cancel()
+	select {
+	case err := <-r.done:
+		return err
+	case <-time.After(30 * time.Second):
+		return errors.New("the loop did not stop in 30 seconds")
+	}
+}
+
+// restart stops the loop and starts it again, as a user does after editing config.toml or a rule.
+func (h *harness) restart() {
+	h.t.Helper()
+	require.NoError(h.t, h.stopLoop())
+	require.NoError(h.t, h.startLoop(dispatch.Options{}))
+}
+
+// loopOut is what the running loop has printed to stdout.
+func (h *harness) loopOut() string {
+	if h.running == nil {
+		return ""
+	}
+	return h.running.out.String()
+}
+
+// loopErr is what the running loop has printed to stderr.
+func (h *harness) loopErr() string {
+	if h.running == nil {
+		return ""
+	}
+	return h.running.err.String()
 }
 
 func (h *harness) tick() string {
@@ -579,9 +782,133 @@ func (h *harness) tick() string {
 	return out
 }
 
-// advance moves the clock forward.
+// advance moves the clock forward, which fires the resync when it is due, and
+// waits until the loop has settled.
 func (h *harness) advance(d time.Duration) {
-	h.clock = h.clock.Add(d)
+	h.t.Helper()
+	var before loop.Response
+	if h.running != nil {
+		var err error
+		before, err = loop.Ask(context.Background(), h.state, loop.Request{Op: loop.OpIdle})
+		require.NoError(h.t, err)
+	}
+	fired := h.clock.Advance(d)
+	if h.running == nil || fired == 0 {
+		return
+	}
+	require.Eventually(h.t, func() bool {
+		resp, err := loop.Ask(context.Background(), h.state, loop.Request{Op: loop.OpIdle})
+		return err == nil && !resp.Busy && resp.Idle > before.Idle
+	}, 20*time.Second, 2*time.Millisecond)
+}
+
+// seedHistory writes a segment as an earlier run left it, with no stop line as after
+// a crash, for the next loop start to resume from. Call it before the loop starts.
+func (h *harness) seedHistory(mem *world.Memory, receipts ...ledger.Receipt) {
+	h.t.Helper()
+	require.Nil(h.t, h.running)
+	if mem == nil {
+		mem = world.NewMemory()
+	}
+	var resync int
+	for _, rc := range receipts {
+		resync = max(resync, rc.Resync)
+	}
+	w, err := history.Start(filepath.Join(h.state, "events"), h.clock.Now().Add(-time.Hour),
+		history.Header{Why: "start", At: h.clock.Now().Add(-time.Hour).UnixMilli()},
+		history.Snapshot{At: h.clock.Now().Add(-time.Hour).UnixMilli(), World: mem, Ledger: history.LedgerState{Receipts: receipts}, Resync: resync})
+	require.NoError(h.t, err)
+	require.NoError(h.t, w.Close(false))
+}
+
+// ledgerNow is the ledger the newest history segment holds, which is what the loop has done.
+// planRow matches the plan row that gives a ticket a state, such as held or waiting.
+func planRow(state, ticket string) string {
+	return `(?m)^` + state + `\s+` + ticket + `\s`
+}
+
+// receipts lists the receipts of one kind the loop has written, oldest first. An empty
+// subject matches every subject.
+func (h *harness) receipts(kind, subject string) []ledger.Receipt {
+	h.t.Helper()
+	var found []ledger.Receipt
+	for _, r := range h.ledgerNow() {
+		if r.Kind == kind && (subject == "" || r.Subject == subject) {
+			found = append(found, r)
+		}
+	}
+	return found
+}
+
+func (h *harness) ledgerNow() []ledger.Receipt {
+	h.t.Helper()
+	seg, ok, err := history.Latest(filepath.Join(h.state, "events"))
+	require.NoError(h.t, err)
+	require.True(h.t, ok)
+	st, err := seg.Load()
+	require.NoError(h.t, err)
+	return st.Ledger.Entries
+}
+
+// fakeClock is the time the loop and the tools see. It moves only through Advance.
+type fakeClock struct {
+	mu     sync.Mutex
+	now    time.Time
+	timers []*fakeTimer
+}
+
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *fakeClock) NewTimer(d time.Duration) dispatch.Timer {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t := &fakeTimer{clock: c, c: make(chan time.Time, 1), at: c.now.Add(d)}
+	c.timers = append(c.timers, t)
+	return t
+}
+
+// Skew moves the clock without firing a timer, as a machine that slept through a resync does.
+func (c *fakeClock) Skew(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
+// Advance moves the clock and fires the timers that are due, returning how many.
+func (c *fakeClock) Advance(d time.Duration) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+	fired := 0
+	for _, t := range c.timers {
+		if !t.done && !c.now.Before(t.at) {
+			t.done = true
+			t.c <- c.now
+			fired++
+		}
+	}
+	return fired
+}
+
+type fakeTimer struct {
+	clock *fakeClock
+	c     chan time.Time
+	at    time.Time
+	done  bool
+}
+
+func (t *fakeTimer) C() <-chan time.Time { return t.c }
+
+func (t *fakeTimer) Stop() bool {
+	t.clock.mu.Lock()
+	defer t.clock.mu.Unlock()
+	was := !t.done
+	t.done = true
+	return was
 }
 
 func (h *harness) tickets(tickets ...fakeTicket) {

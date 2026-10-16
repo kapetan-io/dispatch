@@ -14,7 +14,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
-	"github.com/kapetan-io/dispatch/internal/worker"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -23,14 +22,14 @@ import (
 func busyWorld(cfg config.Config, now time.Time) world.World {
 	st := cfg.Plugins.Linear.Statuses
 	w := world.World{
-		At: now, Workers: map[string]worker.Worker{}, Stops: map[string]stops.Record{}, Leases: map[string][]worker.Worker{},
+		At: now, Workers: map[string]world.Worker{}, Stops: map[string]stops.Record{}, Leases: map[string][]world.Worker{},
 		Leased: map[string]bool{}, Children: map[string][]linear.Ticket{}, Unfinished: map[string]string{},
 		Work: map[string]treehouse.Work{}, CheckErrors: map[string]error{}, Untracked: map[string][]string{},
 		PRs: map[string]pullrequest.PullRequest{}, PRReadFailed: map[string]bool{},
 		PoolErrs: map[string]error{}, UnreadRepos: map[string]bool{},
 	}
 	statuses := []string{st.InProgress, st.InReview, st.NeedsHuman}
-	states := []worker.State{worker.Working, worker.Idle, worker.Blocked, worker.None}
+	states := []world.WorkerState{world.Working, world.Idle, world.Blocked, world.NoWorker}
 	for i := range 60 {
 		id := fmt.Sprintf("ENG-%d", i+1)
 		t := linear.Ticket{
@@ -39,13 +38,13 @@ func busyWorld(cfg config.Config, now time.Time) world.World {
 			CreatedAt: fmt.Sprintf("2026-10-%02dT00:00:00Z", i%28+1),
 		}
 		w.Tickets = append(w.Tickets, t)
-		wk := worker.Worker{State: states[i%4]}
-		if wk.State != worker.None && i < 40 {
+		wk := world.Worker{State: states[i%4]}
+		if wk.State != world.NoWorker && i < 40 {
 			wk.TreePath = "/trees/" + id
 			w.Trees = append(w.Trees, treehouse.Tree{Path: wk.TreePath, LeaseHolder: id})
 			w.Leased[id] = true
 		} else {
-			wk = worker.Worker{State: worker.None}
+			wk = world.Worker{State: world.NoWorker}
 		}
 		w.Workers[id] = wk
 		if t.Status == st.InReview && i < 40 {

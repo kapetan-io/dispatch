@@ -39,7 +39,7 @@ A check GitHub does not mark required for merging the PR. It never counts in a r
 _Avoid_: non-blocking check, flaky check
 
 **PR phase**:
-Draft or open, read from GitHub's `isDraft` on every tick. Each phase has its own ready notification.
+Draft or open, read from GitHub's `isDraft` on every resync. Each phase has its own ready notification.
 _Avoid_: PR state (GitHub's `state` is OPEN for a draft too)
 
 **Review question**:
@@ -65,8 +65,28 @@ _Avoid_: missing, empty, null
 
 **Cycle**:
 One run of every rule over the world and the ledger, after an event. It gives what dispatch wants now, what waits for a slot, and what is held and why. `dispatch rules check` runs one against the world as it is now.
-_Avoid_: plan, tick, pass
+_Avoid_: plan, pass
 
 **Once key**:
 The value a rule gives each action, naming what must change before the action runs again, such as a comment time or a PR head. The ledger runs an action once per key.
 _Avoid_: dedupe key, idempotency key
+
+**Event**:
+Anything telling dispatch something changed: a source read that differs from what it knew, an action's result, the resync, `dispatch tick`. Each event runs a cycle.
+_Avoid_: notification, trigger
+
+**Resync**:
+The 5-minute event that re-reads every source (Linear, GitHub, herdr, treehouse and Stop records) and runs a cycle. It is the only clock rules wait on, so a wait ends up to 5 minutes after its deadline.
+_Avoid_: tick (`dispatch tick` forces one early), poll interval
+
+**Ledger**:
+What dispatch did, one receipt per action, keyed by the action's once key. A rule asks it whether an action already happened.
+_Avoid_: log, history (history is the segment files the ledger is written to)
+
+**Receipt**:
+The ledger's record of one action: key, rule, outcome (done, refused, failed; absent while attempted), detail, times.
+_Avoid_: result, audit entry
+
+**Executor**:
+Starts each action a cycle wants whose once key the ledger doesn't cover, off the loop, and writes its receipt.
+_Avoid_: runner, worker (a worker is a Claude session)

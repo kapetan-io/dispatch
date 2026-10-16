@@ -71,6 +71,8 @@ declare module "dispatch" {
     readonly pushed: boolean;
     readonly trackedChanges: boolean;
     readonly unfinished: string;
+    readonly untracked: string;
+    readonly cleanSince: number;
   }
   export interface Escalation {
     readonly ticket: Ticket;

@@ -13,25 +13,13 @@ func designTicket(id, status string) fakeTicket {
 	return withLabel(ticket(id, status, "dispatch"), "design")
 }
 
-func TestTickDryRunLaunchesADesignTicket(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(designTicket("ENG-1", "In Progress"))
-
-	out, err := h.run("tick", "--dry-run")
-	require.NoError(t, err)
-
-	assert.Equal(t, "launch ENG-1\n", out)
-	assert.Empty(t, h.launches())
-}
-
 func TestTickLaunchesADesignTicketWithTheDesignKickoff(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(designTicket("ENG-1", "In Progress"), ticket("ENG-2", "In Progress", "dispatch"))
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "launch ENG-1: ok\nlaunch ENG-2: ok\n", out)
 	assert.Equal(t, []string{
 		h.repo + " ENG-1 thrawn01/eng-1 --model opus --kickoff /dispatch:design ENG-1",
 		h.repo + " ENG-2 thrawn01/eng-2 --model sonnet",
@@ -55,10 +43,9 @@ func TestTickTypesTheDesignKickoffWithTheBuiltInLauncher(t *testing.T) {
 	h.tickets(designTicket("ENG-1", "In Progress"))
 	h.pool()
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "launch ENG-1: ok\n", out)
 	assert.Equal(t, []string{"w2:p2|/dispatch:design ENG-1"}, h.tools.Herdr.Kicked())
 	require.Len(t, h.tools.Herdr.Started(), 1)
 	assert.Equal(t, "opus", h.tools.Herdr.Started()[0].Model)
@@ -120,24 +107,30 @@ func TestTickCountsADesignTicketAgainstTheWorkerCap(t *testing.T) {
 	h.tickets(designTicket("ENG-1", "In Progress"), ticket("ENG-2", "In Progress", "dispatch"))
 	h.worker("ENG-1", "idle")
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "wait ENG-2: 1 of 1 workers already running\n", out)
+	plan, err := h.run("plan")
+	require.NoError(t, err)
+	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
 	assert.Empty(t, h.launches())
 }
 
 func TestTickHoldsAPromotionForADesignTicketAboutToLaunch(t *testing.T) {
 	h := newHarness(t)
+	parentsRealLauncher(h)
 	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.tickets(parent("ENG-1", "In Progress"), designTicket("ENG-3", "In Progress"))
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Contains(t, out, "wait ENG-2: 1 of 1 In Progress tickets already\n")
+	plan, err := h.run("plan")
+	require.NoError(t, err)
+	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
 	assert.Empty(t, h.linear.mutations())
+	assert.Len(t, h.tools.Herdr.Started(), 1)
 }
 
 func TestTickLaunchesADesignReviewTicketOnTheDesignModel(t *testing.T) {
@@ -145,10 +138,9 @@ func TestTickLaunchesADesignReviewTicketOnTheDesignModel(t *testing.T) {
 	h.config("[rules]\ndesign_model = \"haiku\"\n")
 	h.tickets(withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"))
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "launch ENG-1: ok\n", out)
 	assert.Equal(t, []string{
 		h.repo + " ENG-1 thrawn01/eng-1 --model haiku --kickoff /dispatch:design-review ENG-1",
 	}, h.launches())
@@ -168,30 +160,37 @@ func TestTickLaunchesADesignReviewTicketThatAlsoCarriesDesignAsAReview(t *testin
 
 func TestTickCountsADesignReviewAgainstMaxInProgress(t *testing.T) {
 	h := newHarness(t)
+	parentsRealLauncher(h)
 	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.tickets(
 		withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"),
 		ticket("ENG-2", "In Progress", "dispatch"),
 	)
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Contains(t, out, "launch ENG-1")
-	assert.Contains(t, out, "wait ENG-2: 1 of 1 workers already running\n")
-	assert.Len(t, h.launches(), 1)
+	plan, err := h.run("plan")
+	require.NoError(t, err)
+	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
+	require.Len(t, h.tools.Herdr.Started(), 1)
+	assert.Equal(t, "opus", h.tools.Herdr.Started()[0].Model)
 }
 
 func TestTickHoldsAPromotionWhileADesignReviewTakesTheLastSlot(t *testing.T) {
 	h := newHarness(t)
+	parentsRealLauncher(h)
 	h.config("[dispatch]\nmax_in_progress = 1\n")
 	h.tickets(parent("ENG-1", "In Progress"), withLabel(ticket("ENG-3", "In Progress", "dispatch"), "design-review"))
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Contains(t, out, "wait ENG-2: 1 of 1 In Progress tickets already\n")
+	plan, err := h.run("plan")
+	require.NoError(t, err)
+	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
+	assert.Empty(t, h.linear.mutations())
 }
 
 func TestTickHoldsAPromotionForADesignParentInAnUnreadRepo(t *testing.T) {
@@ -201,10 +200,13 @@ func TestTickHoldsAPromotionForADesignParentInAnUnreadRepo(t *testing.T) {
 	h.tickets(parent("ENG-1", "In Progress"), withLabel(ticket("ENG-3", "In Progress", "tiger"), "design"))
 	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-4", "ENG-3", "Backlog"))
 
-	out, _, err := h.runContext(t.Context(), "tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Contains(t, out, "wait ENG-2: 1 of 1 In Progress tickets already\n")
+	// The design parent's worker is unknown in the unread repo, so it holds the only slot.
+	plan, err := h.run("plan")
+	require.NoError(t, err)
+	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
 	assert.Empty(t, h.linear.mutations())
 }
 
@@ -214,10 +216,10 @@ func TestTickStopsADesignWhoseTicketIsPaused(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(designTicket("ENG-1", "Backlog"))
 
-	out, err := h.run("tick", "--dry-run")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Contains(t, out, "stop ENG-1")
+	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
 }
 
 func TestTickReturnsTheTreeOfACanceledDesignTicket(t *testing.T) {
@@ -226,8 +228,9 @@ func TestTickReturnsTheTreeOfACanceledDesignTicket(t *testing.T) {
 	h.worker("ENG-1", "idle")
 	h.linear.setElsewhere(designTicket("ENG-1", "Canceled"))
 
-	out, err := h.run("tick", "--dry-run")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Contains(t, out, "teardown ENG-1")
+	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
+	assert.Equal(t, []string{h.repo + "|" + filepath.Join(h.dir, "trees", "ENG-1") + "|ENG-1"}, h.returns())
 }

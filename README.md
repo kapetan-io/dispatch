@@ -2,13 +2,13 @@
 
 An autonomous build workflow for Claude Code, packaged as a Claude Code plugin.
 
-You design a feature with Claude in an interactive session. An autonomous review then checks the design and splits it into small Linear build tickets. Once you approve, a stateless dispatcher, running every 5 minutes in a herdr window you keep open, starts a Claude worker for each ticket in its own worktree, and each worker carries its ticket to a merged pull request.
+You design a feature with Claude in an interactive session. An autonomous review then checks the design and splits it into small Linear build tickets. Once you approve, a dispatcher, running in a herdr window you keep open and re-reading its sources every 5 minutes, starts a Claude worker for each ticket in its own worktree, and each worker carries its ticket to a merged pull request.
 
 ## Status
 
-The dispatcher works end to end today. `dispatch run` launches a worker for each ticket you move to In Progress, nudges idle workers (once per Stop, never escalating them) and stalled PRs, escalates to Needs Human with a macOS notification, starts a parent ticket's children in order and closes the parent, and tears down finished trees. The `dispatch:build` skill carries a ticket to an open PR, and `dispatch:ticket` writes tickets the dispatcher picks up. Not built yet is the herdr workspace status emoji the blueprint describes.
+The dispatcher works end to end today. `dispatch run` is a reconcile loop: it keeps what it knows of Linear, GitHub, herdr and treehouse in memory, runs the TypeScript [rules](docs/rules.md) after each event, and records what it did in a ledger kept in history files. It launches a worker for each ticket you move to In Progress, nudges idle workers (once per Stop, never escalating them) and stalled PRs, escalates to Needs Human with a macOS notification, starts a parent ticket's children in order and closes the parent, and tears down finished trees. The `dispatch:build` skill carries a ticket to an open PR, and `dispatch:ticket` writes tickets the dispatcher picks up.
 
-Start with "Set it up" in the [user guide](docs/guide.md), which takes a fresh Mac to a working dispatcher and supervisor session and ends with a check you run to confirm it. The [config reference](docs/config.md) lists every setting, and [rules](docs/rules.md) covers `dispatch rules`, which lints and tests the TypeScript copy of its decisions. The design is in `docs/design/`, starting with `decision-log.md`.
+Start with "Set it up" in the [user guide](docs/guide.md), which takes a fresh Mac to a working dispatcher and supervisor session and ends with a check you run to confirm it. The [config reference](docs/config.md) lists every setting, and [rules](docs/rules.md) covers `dispatch rules`, which lints and tests the TypeScript rules that make its decisions. The design is in `docs/design/`, starting with `decision-log.md`.
 
 ## Layout
 
@@ -31,4 +31,4 @@ cd ~/Development/dispatch && go install ./cmd/dispatch
 dispatch run
 ```
 
-The [user guide](docs/guide.md) covers the setup this needs (herdr, treehouse, `gh`, the Linear API key and statuses), how a ticket flows, pausing, `dispatch tell`, and what to do when something breaks.
+The [user guide](docs/guide.md) covers the setup this needs (herdr, treehouse, `gh`, the Linear API key and statuses), how a ticket flows, pausing, `dispatch tick`, `dispatch plan`, `dispatch tell`, and what to do when something breaks.

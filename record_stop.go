@@ -26,7 +26,7 @@ type stopInput struct {
 }
 
 // recordStop runs as a Stop hook. It stores when the session ended its turn and
-// how many background tasks were still running, for the tick to read. It
+// how many background tasks were still running, for the rules to read. It
 // succeeds silently everywhere else, because the hook runs in every Claude
 // session on the machine and a failure would show in all of them.
 func recordStop(ctx context.Context, opts Options) error {
@@ -55,7 +55,7 @@ func recordStop(ctx context.Context, opts Options) error {
 	if _, _, managed := repoAt(ctx, cfg, in.CWD); !managed {
 		return nil
 	}
-	rec := stops.Record{At: opts.Now().UTC(), Reported: in.BackgroundTasks != nil}
+	rec := stops.Record{At: opts.Clock.Now().UTC(), Reported: in.BackgroundTasks != nil}
 	if rec.Reported {
 		for _, task := range *in.BackgroundTasks {
 			if task.Status == "running" {

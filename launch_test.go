@@ -22,6 +22,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/journal"
+	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/tooltest"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
@@ -567,10 +568,12 @@ func TestTickLaunchesWithTheBuiltInLauncher(t *testing.T) {
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	tree := h.pool()
 
-	out, err := h.run("tick")
+	_, err := h.run("tick")
 	require.NoError(t, err)
 
-	assert.Equal(t, "launch ENG-1: ok\n", out)
+	launched := h.receipts("launch", "ENG-1")
+	require.Len(t, launched, 1)
+	assert.Equal(t, ledger.Done, launched[0].Outcome)
 	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, h.tools.Herdr.Kicked())
 	require.Len(t, h.tools.Herdr.Started(), 1)
 	started := h.tools.Herdr.Started()[0]
@@ -629,10 +632,14 @@ func TestTickRefusesAnEmptyPluginRoot(t *testing.T) {
 	out, err := exec.Command("git", "-C", h.repo, "init", "-q", "-b", "main").CombinedOutput()
 	require.NoError(t, err, string(out))
 
-	out2, err := h.run("tick")
-	require.NoError(t, err)
+	_, err = h.run("tick")
 
-	assert.Contains(t, out2, "launch ENG-1: usage_error (failure 1 of 2) no plugin root")
+	require.ErrorContains(t, err, "ENG-1 launch failed: usage_error")
+	require.ErrorContains(t, err, "no plugin root")
+	launched := h.receipts("launch", "ENG-1")
+	require.Len(t, launched, 1)
+	assert.Equal(t, ledger.Failed, launched[0].Outcome)
+	assert.Contains(t, launched[0].Detail, "no plugin root")
 }
 
 // launchHarness runs `dispatch launch` in a throwaway git repo against the
@@ -933,7 +940,7 @@ func TestClaudeShimNamesAStaleDispatchBinary(t *testing.T) {
 	require.NoError(t, err)
 
 	cmd := exec.Command(filepath.Join(shims, "claude"), "--resume")
-	cmd.Env = append(os.Environ(), "PATH="+strings.Join([]string{shims, stale, dir, os.Getenv("PATH")}, ":"))
+	cmd.Env = append(os.Environ(), "PATH="+strings.Join([]string{shims, stale, dir, os.Getenv("PATH")}, ":"), "DISPATCH_BIN=")
 	out, err := cmd.CombinedOutput()
 
 	var exit *exec.ExitError

@@ -35,10 +35,11 @@ whenever({
 
 // In a repo whose workers open PRs as drafts, a ready draft gets one notice, and
 // opening it gets another once its reviews are handled. Opening a draft doesn't move
-// the head, so the two notices carry different topics.
+// the head, so the two notices carry different topics, and followers read the reviews-handled
+// one as a different event from a fresh PR.
 const readyNotice = (pr: PR) =>
   pr.openAs === "draft" && pr.draft ? { topic: "draft-ready", text: `${pr.ticket.id}'s draft is ready for your review: ${pr.url}` }
-  : pr.openAs === "draft"           ? { topic: "ready", text: `${pr.ticket.id}'s reviews are handled: ${pr.url}` }
+  : pr.openAs === "draft"           ? { topic: "reviews-handled", text: `${pr.ticket.id}'s reviews are handled: ${pr.url}` }
   :                                   { topic: "ready", text: `${pr.ticket.id} is ready for review: ${pr.url}` };
 
 // Once per head and notice, and not for a PR auto-merge is about to merge.
@@ -54,7 +55,7 @@ whenever({
 // Its own rule rather than a step after the stall nudge, so a failed notification
 // is retried while the count still stands.
 const stallNudges = (t: Ticket, ctx: Ctx) => ctx.ledger.receipts(t, { kind: "nudge", topic: "stall" })
-  .filter(r => sent(r) && r.started > t.statusSince).length;
+  .filter(r => sent(r) && r.started >= t.statusSince).length;
 whenever({
   name: "notify-stall-count",
   each: "linear.ticket",

@@ -11,7 +11,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/stops"
-	"github.com/kapetan-io/dispatch/internal/worker"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -26,6 +25,8 @@ type record struct {
 	seq     int
 	// hidden marks a record rules can read through a lookup but never run over.
 	hidden bool
+	// stopFallback marks a worker whose lastStop stands in for a Stop record that was never written.
+	stopFallback bool
 	// v is a pointer to the kind's struct.
 	v reflect.Value
 }
@@ -109,7 +110,13 @@ type State struct {
 	// a ticket's lease can't be told, per ticket.
 	leased       map[string]bool
 	leasedUnread map[string]string
-	herdrUnread  string
+	// reserved holds the tickets a launch or a promotion is under way for.
+	reserved map[string]bool
+	// treeRepo maps a tree path to the label of the repo whose pool holds it.
+	treeRepo    map[string]string
+	herdrUnread string
+	// linearUnread holds the reason the tickets weren't read, which makes every ticket fact unknown.
+	linearUnread string
 	// maxInProgress is the cap admission enforces.
 	maxInProgress int
 	seq           int
@@ -124,7 +131,7 @@ func NewState(cfg config.Config, now time.Time) *State {
 		kinds: map[string][]*record{}, index: map[string]*record{},
 		parents: map[string]string{}, children: map[string][]string{}, childrenUnread: map[string]string{},
 		blockers: map[string]blockers{}, waiting: map[string]int64{}, workers: map[string]*record{}, workersByTree: map[string]*record{},
-		pools: map[string]pool{}, leased: map[string]bool{}, leasedUnread: map[string]string{},
+		pools: map[string]pool{}, leased: map[string]bool{}, leasedUnread: map[string]string{}, treeRepo: map[string]string{}, reserved: map[string]bool{},
 		maxInProgress: cfg.Dispatch.MaxInProgress, started: now,
 	}
 }
@@ -265,6 +272,9 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 	for _, t := range w.Tickets {
 		s.ticketRecord(t)
 	}
+	if w.LinearErr != nil {
+		s.linearUnread = "Linear unread: " + w.LinearErr.Error()
+	}
 	for _, t := range w.LeaseHolders {
 		if _, ok := s.lookup("linear.ticket", t.Identifier); !ok {
 			s.ticketRecord(t)
@@ -321,6 +331,11 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 	s.prRecords(w)
 	s.addEscalations()
 	s.addIdleWorkers(w)
+	if s.linearUnread != "" {
+		for _, r := range s.kinds["linear.ticket"] {
+			r.unknownAll(s.linearUnread)
+		}
+	}
 	return s
 }
 
@@ -329,13 +344,13 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 func (s *State) addIdleWorkers(w world.World) {
 	for _, t := range slices.Clone(s.kinds["linear.ticket"]) {
 		if _, ok := s.workers[t.id]; !ok {
-			s.workerRecord(w, t.id, worker.Worker{State: worker.None}, stops.Record{})
+			s.workerRecord(w, t.id, world.Worker{State: world.NoWorker}, stops.Record{})
 			s.workers[t.id].hidden = true
 		}
 	}
 	for _, tree := range slices.Clone(s.kinds["treehouse.tree"]) {
 		if _, ok := s.workersByTree[tree.id]; !ok {
-			s.workerRecord(w, "tree:"+tree.id, worker.Worker{State: worker.None, TreePath: tree.id}, stops.Record{})
+			s.workerRecord(w, "tree:"+tree.id, world.Worker{State: world.NoWorker, TreePath: tree.id}, stops.Record{})
 			s.workersByTree[tree.id].hidden = true
 		}
 	}
@@ -363,7 +378,7 @@ func (s *State) leasedUnknown(w world.World, r *record) {
 	}
 }
 
-func (s *State) workerRecord(w world.World, id string, wk worker.Worker, stop stops.Record) {
+func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop stops.Record) {
 	at := s.ms()
 	subject := strings.SplitN(id, "@", 2)[0]
 	rec := &Worker{
@@ -379,22 +394,31 @@ func (s *State) workerRecord(w world.World, id string, wk worker.Worker, stop st
 	if wk.WorkspaceID != "" {
 		rec.Workspace = Known(&wk.WorkspaceID, at)
 	}
-	switch wk.State {
-	case worker.Idle:
+	state := wk.State
+	if state == world.Idle && w.Nudged[subject] {
+		state = world.Working
+		rec.State = Known(string(state), at)
+	}
+	fallback := false
+	switch state {
+	case world.Idle:
 		rec.IdleSince = Known(&at, at)
 		lastStop := Stop{At: at}
 		if stop.Reported && !stop.At.IsZero() {
 			lastStop.At = stop.At.UnixMilli()
 			rec.Busy = Known(stop.Busy(s.Now), at)
+		} else {
+			fallback = true
 		}
 		rec.LastStop = Known(&lastStop, at)
-	case worker.Blocked:
+	case world.Blocked:
 		rec.BlockedSince = Known(&at, at)
 	}
 	r := newRecord("herdr.worker", id, subject, rec)
+	r.stopFallback = fallback
 	if w.HerdrErr != nil {
 		r.unknownAll(s.herdrUnread)
-	} else if wk.State == worker.None {
+	} else if wk.State == world.NoWorker {
 		if t, ok := s.lookup("linear.ticket", subject); ok {
 			if repo, ok := repoOf(t); ok && w.UnreadRepos[repo] {
 				r.unknownAll(s.pools[repo].unknown)
@@ -414,6 +438,11 @@ func (s *State) treeRecords(w world.World) {
 	at := s.ms()
 	for _, tree := range w.Trees {
 		holder := tree.LeaseHolder
+		for label, repo := range s.Config.Repos {
+			if repo.Path == tree.RepoDir {
+				s.treeRepo[tree.Path] = label
+			}
+		}
 		rec := &Tree{
 			Path:        Known(tree.Path, at),
 			Leased:      Known(holder != "", at),
@@ -440,13 +469,16 @@ func (s *State) treeRecords(w world.World) {
 		case w.CheckErrors[tree.Path] != nil:
 			reason := fmt.Sprintf("can't tell whether %s holds unpushed work: %v", tree.Path, w.CheckErrors[tree.Path])
 			rec.Pushed, rec.TrackedChanges, rec.Unfinished = Unread[bool](reason), Unread[bool](reason), Unread[string](reason)
+			rec.Untracked, rec.CleanSince = Unread[string](reason), Unread[int64](reason)
 		case !tried:
 			reason := tree.Path + " was not inspected, because its ticket isn't finished"
 			rec.Pushed, rec.TrackedChanges, rec.Unfinished = Unread[bool](reason), Unread[bool](reason), Unread[string](reason)
+			rec.Untracked, rec.CleanSince = Unread[string](reason), Unread[int64](reason)
 		default:
 			rec.Pushed = Known(inspected.Unpushed == 0, at)
 			rec.TrackedChanges = Known(inspected.TrackedChanges, at)
 			rec.Unfinished = Known(w.Unfinished[tree.Path], at)
+			rec.Untracked, rec.CleanSince = Known(strings.Join(w.Untracked[tree.Path], "\n"), at), Known(at, at)
 		}
 		r := newRecord("treehouse.tree", tree.Path, holder, rec)
 		if holder == "" {
@@ -539,6 +571,11 @@ func (s *State) addEscalations() {
 			}
 			return "pending"
 		}
+		// The ticket may have left the tracked set since, and a rule that finishes the
+		// comment still has to name it.
+		if _, ok := s.lookup("linear.ticket", rc.Subject); !ok {
+			s.foreignTicket(rc.Subject)
+		}
 		e := &Escalation{
 			Ticket:    Known(Ref{Kind: "linear.ticket", ID: rc.Subject}, at),
 			Reason:    Known(rc.Detail, at),
@@ -548,4 +585,37 @@ func (s *State) addEscalations() {
 		}
 		s.add(newRecord("ledger.escalation", fmt.Sprintf("%s@%d", rc.Subject, rc.Started), rc.Subject, e))
 	}
+}
+
+// target is what a cycle read about the record an action is for, as text.
+func (s *State) target(r *record) map[string]string {
+	out := map[string]string{}
+	switch rec := r.v.Interface().(type) {
+	case *Worker:
+		if rec.Workspace.Unknown == "" && rec.Workspace.Value != nil {
+			out["workspace"] = *rec.Workspace.Value
+		}
+	case *Tree:
+		out["path"] = rec.Path.Value
+		out["holder"] = rec.Holder.Value.ID
+	case *PR:
+		out["url"] = rec.URL.Value
+		out["head"] = rec.Head.Value
+	}
+	return out
+}
+
+// LastStop is when a ticket's idle worker last ended a turn, in milliseconds, and
+// whether it still has background work running. ok is false when the worker has no
+// known stop.
+func (s *State) LastStop(ticket string) (at int64, busy, ok bool) {
+	r, found := s.workers[ticket]
+	if !found {
+		return 0, false, false
+	}
+	w := r.v.Interface().(*Worker)
+	if w.LastStop.Unknown != "" || w.LastStop.Value == nil {
+		return 0, false, false
+	}
+	return w.LastStop.Value.At, w.Busy.Value, true
 }
