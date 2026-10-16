@@ -1,6 +1,6 @@
-import { whenever } from "dispatch";
+import { whenever, minutes } from "dispatch";
 import { openBlockers, abandonedBlocker, nudgeable, launchAs, heard, launchFailures, relaunches,
-         launchFailureLimit, nudgeLimit } from "./shared";
+         launchFailureLimit, nudgeLimit, UNCONFIRMED_CLOSE } from "./shared";
 
 // A worker exists while an opted-in ticket is In Progress, unblocked, and has none.
 // Once per stretch with no worker. After a full pool, once more each time a tree comes
@@ -50,4 +50,23 @@ whenever({
   each: "herdr.worker",
   if:   (w) => w.state !== "none" && w.ticket.paused,
   then: (w, ctx) => ctx.herdr.queueClose(w, { once: ["close", w.tree, w.seenAt] }),
+});
+
+// A launch killed after Claude started and before its kickoff ran leaves a Claude that is
+// open with nothing to do. It looks like a live worker, so launch-worker never retries it
+// and nothing nudges it. The launcher marks a launch unconfirmed until it returns, so a
+// worker still marked after the grace period lost its launch. Only an idle worker counts.
+// A blocked one may have got its kickoff and be asking its first question, and no Stop
+// has confirmed it yet, so closing it would lose that work. A launch dispatch runs gives up
+// after 25 seconds, but one run by hand can wait on herdr for about two minutes, and the
+// grace period leaves it room. A paused ticket's worker is closed by stop-paused-worker, and
+// that close must not count as a failed launch. Closing the workspace frees the ticket for
+// launch-worker, and each close counts toward launch_failure_limit.
+const KICKOFF_GRACE = minutes(5);
+whenever({
+  name: "close-unconfirmed-worker",
+  each: "herdr.worker",
+  if:   (w, ctx) => w.state === "idle" && w.unconfirmedSince !== undefined
+           && !w.ticket.paused && ctx.now - w.unconfirmedSince >= KICKOFF_GRACE,
+  then: (w, ctx) => ctx.herdr.queueClose(w, { once: [UNCONFIRMED_CLOSE, w.tree, w.unconfirmedSince] }),
 });

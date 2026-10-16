@@ -91,7 +91,7 @@ It reads every source and runs a cycle at start, then again every `resync` perio
 3. **Launch.** At the next resync, `dispatch launch` leases a treehouse tree held by the ticket id, creates the ticket's branch in it, opens a herdr workspace, and starts Claude with `/dispatch:build <ticket>`.
 4. **Build.** The worker follows the `dispatch:build` skill. It reads the ticket and its comments, implements with surface tests, has fresh sub-agents review the tests and the code, rebases onto `main`, runs the tests and the app, and opens a PR that ends with `Fixes <ticket>`. It reports only through the ticket's status and comments.
 5. **In Review.** The worker moves the ticket to In Review once the PR is linked. It then waits. Each cycle, the dispatcher checks an In Review ticket with an idle worker, and nudges it when the PR has a failed check, requested changes or a conflict.
-6. **Needs Human.** A worker that needs a decision outside its terminal moves the ticket to Needs Human with a comment saying what it needs. dispatch fires a macOS notification. Answer on the ticket and move it back to In Progress, and the worker gets the resume nudge. The dispatcher also sets Needs Human itself, with one comment, after `nudge_limit` fruitless PR nudges, `nudge_limit` relaunches of an In Review worker that never pushed, or `launch_failure_limit` failed launches. It does the same at once for a ticket with no repo label, a repo label with no `[repos.<label>]` table, or more labels than it reads.
+6. **Needs Human.** A worker that needs a decision outside its terminal moves the ticket to Needs Human with a comment saying what it needs. dispatch fires a macOS notification. Answer on the ticket and move it back to In Progress, and the worker gets the resume nudge. The dispatcher also sets Needs Human itself, with one comment, after `nudge_limit` fruitless PR nudges, `nudge_limit` relaunches of an In Review worker that never pushed, or `launch_failure_limit` failed launches. It does the same at once for a ticket with no repo label, a repo label with no `[repos.<label>]` table, or more labels than it reads. A launch killed after Claude started and before its kickoff ran leaves an idle Claude with no ticket. Five minutes later dispatch closes that workspace and relaunches, and each such close counts toward `launch_failure_limit`.
 7. **Merge.** The PR merges, either you or dispatch (when its repo sets [`auto_merge = true`](config.md#auto-merge) and a review has approved the head commit), and Linear moves the ticket to Done.
 8. **Teardown.** The next resync closes the worker's workspace and returns the tree to the pool, unless the tree holds modified or staged tracked files, or unpushed commits. Untracked files are deleted first.
 
@@ -176,7 +176,7 @@ A `design` ticket is torn down and paused like a build, since its design worker 
 `dispatch run` prints a start line, then one line when an action starts and one when it ends, and a resync line after each resync. They read like this:
 
 ```
-16:05:07 start: 12 tracked tickets, 27 rules, ledger 31 receipts from events-20261015T160507Z.jsonl
+16:05:07 start: 12 tracked tickets, 28 rules, ledger 31 receipts from events-20261015T160507Z.jsonl
 16:05:08 launch ENG-9 (launch-worker)
 16:05:31 launch ENG-9 ok: workspace w3
 16:05:32 launch ENG-4 (launch-worker)

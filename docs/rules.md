@@ -106,7 +106,7 @@ Add a rule by creating a file and importing it from `dispatch.ts`, which is the 
 | File | What it is |
 |---|---|
 | `dispatch.ts` | Imports every file that runs. |
-| `workers.ts`, `trees.ts`, `parents.ts`, `escalations.ts`, `nudges.ts`, `notices.ts`, `merge.ts` | The 27 rules, grouped by job. |
+| `workers.ts`, `trees.ts`, `parents.ts`, `escalations.ts`, `nudges.ts`, `notices.ts`, `merge.ts` | The 28 rules, grouped by job. |
 | `shared.ts`, `texts.ts` | Helpers and the nudge texts the `dispatch:build` skill relies on word for word. |
 | `types/dispatch.d.ts`, `types/testing.d.ts` | Generated from dispatch's Go types, and rewritten by `rules check`. They sit in `types/` because `tsc` ignores a `dispatch.d.ts` that has a `dispatch.ts` beside it. |
 | `config.schema.json` | A JSON schema for `config.toml`, generated from the same structs the loader reads. |

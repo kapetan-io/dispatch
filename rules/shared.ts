@@ -73,9 +73,12 @@ export const heard = (t: Ticket, topic: "activity", item: Seen | undefined, ctx:
 // lastStop from when dispatch saw this stretch of idling begin. A nudged worker shows as
 // working until the next resync, so that stretch starts after the nudge and the worker
 // isn't stranded. Only nudges sent to this worker count, and a Done receipt from
-// flagged reset was never sent, so neither holds anything back.
+// flagged reset was never sent, so neither holds anything back. While the kickoff is
+// unconfirmed the Claude is idle only because it was never told anything, and a nudge
+// would race the kickoff, so close-unconfirmed-worker handles it.
 export const stoppedSinceLastNudge = (t: Ticket, ctx: Ctx) => {
   const w = ctx.herdr.worker(t);
+  if (w.unconfirmedSince !== undefined) return false;
   const last = ctx.ledger.receipts(t, { kind: "nudge" }).find(r => sent(r) && r.started >= w.seenAt);  // newest first
   return last === undefined || (w.lastStop !== undefined && w.lastStop.at > last.started);
 };
@@ -87,14 +90,24 @@ export const resumeOwed = (t: Ticket, ctx: Ctx) =>
   && !ctx.ledger.receipts(t, { kind: "nudge", topic: "resume" })
        .some(r => r.once[1] === t.statusSince && r.outcome !== "failed");
 
-// Failures since the last launch that worked or found the pool full, or since the
-// escalation they caused, so fixing the problem and moving the ticket back starts over.
-// Launches and In Review relaunches count alike, as today.
-export const launchFailures = (t: Ticket, ctx: Ctx) => {
-  const r = ctx.ledger.receipts(t, { kind: ["launch", "escalate"] });          // newest first
-  const reset = r.findIndex(x => x.kind === "escalate" || x.outcome === "done" || ["already_running", "pool_exhausted"].includes(x.detail));
-  return r.slice(0, reset < 0 ? r.length : reset).filter(x => x.outcome === "failed" && x.detail !== "crashed").length;
+// The once topic of closing a worker whose kickoff never ran. The executor matches the
+// same string to word the log line.
+export const UNCONFIRMED_CLOSE = "close-unconfirmed";
+
+// The launch failures since the last launch that worked or found the pool full, or since
+// the escalation they caused, newest first, so fixing the problem and moving the ticket
+// back starts over. Launches and In Review relaunches count alike. Closing a Claude whose
+// launch died before its kickoff counts too, because the launch that started it never
+// reported.
+export const launchFailureList = (t: Ticket, ctx: Ctx) => {
+  const r = ctx.ledger.receipts(t, { kind: ["launch", "escalate", "close"] })   // newest first
+    .filter(x => x.kind !== "close" || x.once[0] === UNCONFIRMED_CLOSE);
+  const reset = r.findIndex(x => x.kind === "escalate" || x.outcome === "done" && x.kind === "launch"
+                                 || ["already_running", "pool_exhausted"].includes(x.detail));
+  return r.slice(0, reset < 0 ? r.length : reset)
+    .filter(x => x.kind === "close" ? x.outcome === "done" : x.outcome === "failed" && x.detail !== "crashed");
 };
+export const launchFailures = (t: Ticket, ctx: Ctx) => launchFailureList(t, ctx).length;
 
 // Nudges about a PR that needs work, at this head, since the ticket's last status change.
 export const prNudges = (t: Ticket, head: string, ctx: Ctx) =>

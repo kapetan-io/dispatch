@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
+	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
@@ -42,6 +43,12 @@ type Options struct {
 	Treehouse treehouse.Pool
 	// Stderr receives progress. Defaults to discarding it.
 	Stderr io.Writer
+	// StateDir is where a launch records that its kickoff is unconfirmed, so a
+	// tick can find a Claude the launch died on. Empty records nothing.
+	StateDir string
+	// Now is the time a launch's kickoff record carries, which the rules compare with the
+	// loop's clock. Defaults to the wall clock.
+	Now func() time.Time
 	// PreflightTimeout bounds the wait for the herdr server. Defaults to 60s.
 	PreflightTimeout time.Duration
 	// Pace is the unit of waiting between polls for the herdr server, which waits 5 units.
@@ -64,6 +71,9 @@ func (o Options) withDefaults() Options {
 	}
 	if o.Pace == 0 {
 		o.Pace = time.Second
+	}
+	if o.Now == nil {
+		o.Now = time.Now
 	}
 	return o
 }
@@ -102,6 +112,11 @@ type launch struct {
 	repo      string
 	tree      string
 	workspace string
+	// markID is the id this launch holds its kickoffs record under, so it never releases
+	// the record of a launch that replaced it.
+	markID string
+	// workspaceOpen is set when a failed kickoff could not close the workspace.
+	workspaceOpen bool
 	// fresh is set when this run took the lease, as opposed to finding one from
 	// an earlier run.
 	fresh bool
@@ -155,6 +170,8 @@ func (l *launch) run(ctx context.Context) Result {
 	if r, ok := l.openWorkspace(ctx); !ok {
 		return r
 	}
+	l.beginKickoff()
+	defer l.clearKickoff()
 	started, r, ok := l.startWorker(ctx, workerName)
 	if !ok {
 		return r
@@ -163,7 +180,9 @@ func (l *launch) run(ctx context.Context) Result {
 	// An unconfirmed kickoff closes the workspace. Left open, its idle Claude
 	// would look like a live worker, and no cycle would retry or escalate.
 	if err := l.opts.Herdr.Kickoff(ctx, started.Pane, req.Kickoff); err != nil {
-		_ = l.opts.Herdr.CloseWorkspace(context.WithoutCancel(ctx), l.workspace)
+		if l.opts.Herdr.CloseWorkspace(context.WithoutCancel(ctx), l.workspace) != nil {
+			l.workspaceOpen = true
+		}
 		detail := "Claude started but herdr"
 		switch {
 		case errors.Is(err, herdr.ErrEnterNotSent):
@@ -180,6 +199,30 @@ func (l *launch) run(ctx context.Context) Result {
 	return Result{
 		Status: StatusOK, Ticket: req.Ticket, Branch: req.Branch, Worktree: l.tree,
 		Workspace: l.workspace, Pane: started.Pane, Agent: started.Agent, Kickoff: req.Kickoff,
+	}
+}
+
+// beginKickoff marks the launch unconfirmed until it returns. A launch killed
+// before then leaves the mark, which is how a later tick knows the Claude in
+// this tree never got its kickoff.
+func (l *launch) beginKickoff() {
+	if l.opts.StateDir == "" {
+		return
+	}
+	id, err := kickoffs.Mark(l.opts.StateDir, l.tree, l.opts.Now())
+	if err != nil {
+		l.log("%v", err)
+		return
+	}
+	l.markID = id
+}
+
+// clearKickoff runs on every return, because a launch that reports its own failure has
+// already closed its workspace. When that close failed, the idle Claude is still there, and
+// the mark stays so a later cycle closes it.
+func (l *launch) clearKickoff() {
+	if l.opts.StateDir != "" && !l.workspaceOpen {
+		kickoffs.Release(l.opts.StateDir, l.tree, l.markID)
 	}
 }
 

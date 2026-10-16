@@ -252,3 +252,77 @@ scenario(rules, "a refused launch that found the worker already running resets t
   s.see(worker("ENG-1", "none"));
   s.expect([["launch-worker", "herdr.launch", "ENG-1"]]);
 });
+
+scenario(rules, "close-unconfirmed-worker leaves an unconfirmed launch alone during the grace period", s => {
+  s.given(ticket("ENG-1", build), worker("ENG-1", "idle", { unconfirmed: 0 }));
+  s.expect([]);
+  s.advance(240_000);
+  s.expect([]);
+});
+
+scenario(rules, "close-unconfirmed-worker closes an idle worker whose launch died before the kickoff", s => {
+  s.given(ticket("ENG-1", build), worker("ENG-1", "idle", { unconfirmed: 0 }));
+  s.advance(300_000);
+  s.expect([["close-unconfirmed-worker", "herdr.close", "ENG-1"]]);
+  s.land("herdr.close", "ENG-1");
+  s.expect([]);
+});
+
+scenario(rules, "close-unconfirmed-worker leaves a worker that is running its kickoff alone", s => {
+  s.given(ticket("ENG-1", build), worker("ENG-1", "working", { unconfirmed: 0 }));
+  s.advance(600_000);
+  s.expect([]);
+});
+
+scenario(rules, "close-unconfirmed-worker leaves a confirmed idle worker to the stall nudge", s => {
+  s.given(ticket("ENG-1", build), worker("ENG-1", "idle"));
+  s.advance(600_000);
+  s.expect([["nudge-stall", "herdr.nudge", "ENG-1"]]);
+});
+
+scenario(rules, "a closed unconfirmed worker is relaunched", s => {
+  s.given(ticket("ENG-1", build), worker("ENG-1", "idle", { unconfirmed: 0 }));
+  s.advance(300_000);
+  s.expect([["close-unconfirmed-worker", "herdr.close", "ENG-1"]]);
+  s.land("herdr.close", "ENG-1");
+  s.see(worker("ENG-1", "none"));
+  s.expect([["launch-worker", "herdr.launch", "ENG-1"]]);
+});
+
+scenario(rules, "a close of an unconfirmed worker counts toward the launch failure limit", s => {
+  s.given(ticket("ENG-1", build), worker("ENG-1", "idle", { unconfirmed: 0 }));
+  s.advance(300_000);
+  s.expect([["close-unconfirmed-worker", "herdr.close", "ENG-1"]]);
+  s.land("herdr.close", "ENG-1");
+  s.see(worker("ENG-1", "none"));
+  s.expect([["launch-worker", "herdr.launch", "ENG-1"]]);
+  s.land("herdr.launch", "ENG-1", { outcome: "failed", detail: "crashed" });
+  s.see(worker("ENG-1", "idle", { unconfirmed: 310_000 }));
+  s.advance(310_000);
+  s.expect([["close-unconfirmed-worker", "herdr.close", "ENG-1"]]);
+  s.land("herdr.close", "ENG-1");
+  s.expect([["escalate-launch-failures", "linear.escalate", "ENG-1"]]);
+});
+
+scenario(rules, "a stop-paused-worker close does not count toward the launch failure limit", s => {
+  s.given(ticket("ENG-1", build), worker("ENG-1", "working"));
+  s.see(ticket("ENG-1", { status: "backlog" }));
+  s.land("herdr.close", "ENG-1");
+  s.see(worker("ENG-1", "none"), worker("ENG-1", "working"));
+  s.expect([["stop-paused-worker", "herdr.close", "ENG-1"]]);
+  s.land("herdr.close", "ENG-1");
+  s.see(ticket("ENG-1", build), worker("ENG-1", "none"));
+  s.expect([["launch-worker", "herdr.launch", "ENG-1"]]);
+});
+
+scenario(rules, "close-unconfirmed-worker leaves a blocked worker asking its first question alone", s => {
+  s.given(ticket("ENG-1", build), worker("ENG-1", "blocked", { unconfirmed: 0 }));
+  s.advance(300_000);
+  s.expect([["notify-blocked", "notify.send", "ENG-1"]]);
+});
+
+scenario(rules, "close-unconfirmed-worker leaves a paused ticket's worker to stop-paused-worker", s => {
+  s.given(ticket("ENG-1", { status: "backlog", optedIn: true, repo: "dispatch" }), worker("ENG-1", "idle", { unconfirmed: 0 }));
+  s.advance(300_000);
+  s.expect([["stop-paused-worker", "herdr.close", "ENG-1"]]);
+});
