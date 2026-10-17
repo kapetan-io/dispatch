@@ -561,6 +561,42 @@ func TestRotatingHistoryKeepsTheReceiptsOfChildrenReadThroughTheirParent(t *test
 				}
 			}
 			assert.Equal(t, 1, comments)
+			require.NoError(t, h.stopLoop())
+			_, err := h.run("replay")
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestRotatingHistoryDropsTheReceiptsOfAChildNoParentListsAnymore(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(h *harness)
+	}{
+		{"ParentIsDone", func(h *harness) {
+			h.tickets(parent("ENG-1", "Done"), ticket("ENG-9", "In Progress", "dispatch"))
+		}},
+		{"ChildMovesToAnotherParent", func(h *harness) {
+			h.linear.setChildren(child("ENG-2", "ENG-3", "Todo"))
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.rulesDir = oneRule(t, childCommentRule)
+			h.config("[dispatch]\nmax_in_progress = 1\n[history]\nrotate = \"1m\"\nkeep = \"24h\"\n")
+			h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
+			h.worker("ENG-9", "working")
+			h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+			h.tick()
+			require.Len(t, h.receipts("comment", "ENG-2"), 1)
+
+			test.change(h)
+			for range 3 {
+				h.advance(6 * time.Minute)
+				h.tick()
+			}
+
+			assert.Empty(t, h.receipts("comment", "ENG-2"))
 		})
 	}
 }

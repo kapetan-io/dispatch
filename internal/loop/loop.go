@@ -477,8 +477,7 @@ func (l *Loop) rotate() error {
 	for _, tree := range l.wd.Trees {
 		live[tree.Path] = true
 	}
-	// The world read before a resync is stale, so only memory still names the children read through
-	// a parent, and it keeps a parent's list while that parent's read fails.
+	// Memory keeps a parent's children while their read fails, and the world's Children does not.
 	for _, ids := range l.mem.Children {
 		for _, id := range ids {
 			live[id] = true
