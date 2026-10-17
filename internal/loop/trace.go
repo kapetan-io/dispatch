@@ -137,7 +137,7 @@ func (t *tracing) cycle(c history.Cycle) {
 	}
 	exchanges := t.exchanges(c)
 	// A ticket history knows but no rule has wanted anything for still shows its first, empty decision.
-	newDecision := !(len(decided) == 0 && !t.seen) && key != t.last
+	newDecision := (len(decided) > 0 || t.seen) && key != t.last
 	newAnswers := len(exchanges) > 0 && !slices.Equal(exchanges, t.lastHTTP)
 	if !newDecision && !newAnswers {
 		return

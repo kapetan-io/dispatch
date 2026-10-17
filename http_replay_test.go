@@ -377,3 +377,24 @@ func TestTraceShowsAnAnswerThatChangedWhileTheRuleDecidedTheSame(t *testing.T) {
 	assert.Contains(t, out, `GET sentry /count  200 {"open":3}`)
 	assert.Contains(t, out, `GET sentry /count  200 {"open":4}`)
 }
+
+func TestReplayWithOtherRulesMatchesTheSameGetsRegisteredInAnotherOrder(t *testing.T) {
+	const first = `whenever({ name: "first", each: "linear.ticket", if: (t) => t.status === "in_progress",
+  then: (t, ctx) => ctx.linear.queueComment(t, "a " + (ctx.http.get("sentry", "/a").body as any).n, { once: ["a", t.id] }) });`
+	const second = `whenever({ name: "second", each: "linear.ticket", if: (t) => t.status === "in_progress",
+  then: (t, ctx) => ctx.linear.queueComment(t, "b " + (ctx.http.get("sentry", "/b").body as any).n, { once: ["b", t.id] }) });`
+	h := newHarness(t)
+	sentry := h.sentry()
+	sentry.Respond("sentry", "GET", "/a", 200, `{"n":1}`)
+	sentry.Respond("sentry", "GET", "/b", 200, `{"n":2}`)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.rulesDir = oneRule(t, first+"\n"+second)
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	require.NoError(t, h.stopLoop())
+
+	cycles, matched := replayCounts(t, h, "--rules", oneRule(t, second+"\n"+first))
+
+	assert.Positive(t, cycles)
+	assert.Equal(t, cycles, matched)
+}
