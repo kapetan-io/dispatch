@@ -522,3 +522,45 @@ func TestTheOverflowAlertIsShownAgainAfterItFailed(t *testing.T) {
 	require.Len(t, h.notifications(), 1)
 	assert.Contains(t, h.notifications()[0], "more than 100 started")
 }
+
+func TestRotatingHistoryKeepsTheReceiptsOfChildrenReadThroughTheirParent(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		failChildren bool
+	}{
+		{"ChildrenRead", false},
+		{"ChildrenUnread", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.rulesDir = oneRule(t, childCommentRule)
+			// The cap keeps ENG-2 in Todo, so only the children read knows it exists.
+			h.config("[dispatch]\nmax_in_progress = 1\n[history]\nrotate = \"1m\"\nkeep = \"24h\"\n")
+			h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
+			h.worker("ENG-9", "working")
+			h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+			h.tick()
+			require.Len(t, h.receipts("comment", "ENG-2"), 1)
+
+			if test.failChildren {
+				h.linear.failChildren()
+			}
+			for range 4 {
+				h.advance(6 * time.Minute)
+				h.tick()
+			}
+			h.restart()
+			h.advance(6 * time.Minute)
+			h.tick()
+
+			assert.Len(t, h.receipts("comment", "ENG-2"), 1)
+			comments := 0
+			for _, change := range h.linear.mutations() {
+				if change.Kind == lineartest.Comment && change.TicketID == "uuid-ENG-2" {
+					comments++
+				}
+			}
+			assert.Equal(t, 1, comments)
+		})
+	}
+}
