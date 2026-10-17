@@ -74,8 +74,10 @@ type Loop struct {
 	state  *rules.State
 	result rules.Result
 	// kept holds the responses a get got since the last resync, which ctx.http.last reads.
-	kept      map[string]rules.Exchange
-	lastCycle *history.Cycle
+	kept map[string]rules.Exchange
+	// keptCleared is true from a clear of kept until the first cycle that gets.
+	keptCleared bool
+	lastCycle   *history.Cycle
 	// lastRead is the Reading most recently written, kept so an identical one is skipped and a
 	// rotated segment's snapshot can carry it. lastReadKey is its readingKey.
 	lastRead    *history.Reading
@@ -443,6 +445,7 @@ func (l *Loop) onResync(typ string) error {
 	}
 	l.wd.Nudged, l.nudgedDuring = nil, nil
 	l.kept = nil
+	l.keptCleared = true
 	l.nudgeEpoch++
 	l.readAgain(world.Everything)
 	// A step that failed after the one before it landed is not wanted again by its rule,
@@ -665,7 +668,13 @@ func (l *Loop) cycle(why string) error {
 	res := l.o.Rules.Cycle(state, nil)
 	l.state, l.result = state, res
 	entry := cycleLine(now, why, res)
-	if l.lastCycle == nil || !sameCycle(*l.lastCycle, entry) {
+	// The first cycle to get after a clear writes its line even when it repeats the last, because replay
+	// can only refill what the clear emptied from a line that records the gets.
+	refills := l.keptCleared && len(entry.HTTP) > 0
+	if refills {
+		l.keptCleared = false
+	}
+	if l.lastCycle == nil || refills || !sameCycle(*l.lastCycle, entry) {
 		if err := l.write(entry); err != nil {
 			return err
 		}

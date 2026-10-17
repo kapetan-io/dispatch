@@ -323,3 +323,35 @@ func TestReplayStartsTheSegmentAfterARestartWithNothingKept(t *testing.T) {
 	assert.Positive(t, cycles)
 	assert.Equal(t, cycles, matched)
 }
+
+func TestReplayMatchesALastReadAfterACycleThatWroteNoLinesRefilledWhatAResyncCleared(t *testing.T) {
+	h := newHarness(t)
+	sentry := h.sentry()
+	sentry.Respond("sentry", "GET", "/count", 200, `{"open":3}`)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "working")
+	// poll gets on every cycle while the worker works, so the cycle after a tick refills what the tick cleared
+	// and the cycle that sees the worker idle only reads it.
+	h.rulesDir = oneRule(t, `
+whenever({ name: "poll", each: "linear.ticket", if: (t, ctx) => t.status === "in_progress" && ctx.herdr.worker(t).state === "working",
+  then: (t, ctx) => { ctx.http.get("sentry", "/count"); return ctx.linear.queueComment(t, "polled", { once: ["poll", t.id] }); } });
+whenever({ name: "idle-reader", each: "linear.ticket", if: (t, ctx) => ctx.herdr.worker(t).state === "idle" && known(() => ctx.http.last("sentry", "/count")),
+  then: (t, ctx) => ctx.linear.queueComment(t, "idle with " + (ctx.http.last("sentry", "/count").body as any).open, { once: ["idle", t.id] }) });`)
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	h.advance(time.Minute)
+	h.tick()
+	// Nothing changed since the last tick, so the cycle after this one writes no line at all.
+	h.advance(time.Minute)
+	h.tick()
+	h.setWorkerStatus("ENG-1", "idle")
+
+	_, err = h.run("tell", "ENG-1", "hi")
+	require.NoError(t, err)
+	require.NoError(t, h.stopLoop())
+	require.Contains(t, comments(h), "idle with 3")
+
+	cycles, matched := replayCounts(t, h)
+
+	assert.Equal(t, cycles, matched)
+}
