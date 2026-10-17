@@ -26,12 +26,19 @@ type Response struct {
 // Exchange is a request a rule's then waited on and what it got: the response, or the reason
 // it got none. It never holds a token or the Authorization header.
 type Exchange struct {
-	Service string          `json:"service"`
-	Path    string          `json:"path"`
+	Service string `json:"service"`
+	Path    string `json:"path"`
+	// Rule and Ticket name the rule call that asked, for trace. Replay matches on Service and Path alone.
+	// They are empty in exchanges recorded without them.
+	Rule    string          `json:"rule,omitempty"`
+	Ticket  string          `json:"ticket,omitempty"`
 	Status  int             `json:"status,omitempty"`
 	Body    json.RawMessage `json:"body,omitempty"`
 	Unknown string          `json:"unknown,omitempty"`
 }
+
+// Key identifies a request by service and path, which is how ctx.http.last finds a kept response.
+func Key(service, path string) string { return service + " " + path }
 
 // Services is the set of services config.toml names.
 type Services interface {
@@ -75,8 +82,9 @@ func Resolve(base, p string) (*url.URL, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %q: %v", ErrPath, p, err)
 	}
-	// An encoded backslash decodes to one, which some servers read as a slash.
-	if strings.Contains(full.Path, "\\") {
+	// An encoded backslash decodes to one, which some servers read as a slash. Some servers also
+	// read ".." followed by ";" as a parent segment, which path.Clean doesn't.
+	if strings.Contains(full.Path, "\\") || strings.Contains(full.Path, "..;") {
 		return nil, fmt.Errorf("%w: %q is not a path on the service", ErrPath, p)
 	}
 	prefix := strings.TrimRight(root.Path, "/")

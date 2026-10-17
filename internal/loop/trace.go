@@ -153,6 +153,16 @@ func (t *tracing) cycle(c history.Cycle) {
 		}
 		t.printf("%s cycle #%d%s  %s%s\n", when, t.cycles, why, keys[i], read)
 	}
+	for _, ex := range c.HTTP {
+		if ex.Ticket != t.ticket {
+			continue
+		}
+		answer := fmt.Sprintf("%d %s", ex.Status, ex.Body)
+		if ex.Unknown != "" {
+			answer = "no answer: " + ex.Unknown
+		}
+		t.printf("%s   http  %s  GET %s %s  %s\n", when, ex.Rule, ex.Service, ex.Path, answer)
+	}
 }
 
 // decisions lists what the cycle decided for the ticket, without what the rules read, so a rule that

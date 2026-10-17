@@ -100,6 +100,11 @@ func TestAPathThatLeavesTheServiceThrowsAtTheCall(t *testing.T) {
 		{"OtherHost", "//evil.example/x"},
 		{"AboveThePrefix", "/../../admin"},
 		{"EncodedDots", "/%2e%2e/admin"},
+		{"ParameterDots", "/..;/admin"},
+		{"MidPathParameterDots", "/issues/..;/admin"},
+		{"ParameterDotsWithValue", "/issues/..;x=1/admin"},
+		{"EncodedSemicolon", "/issues/..%3b/admin"},
+		{"EncodedDotsAndSemicolon", "/%2e%2e%3B/admin"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
@@ -139,6 +144,8 @@ func TestAGetThatFailsHoldsTheRule(t *testing.T) {
 			assert.Regexp(t, `ask +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, out)
 			assert.NotContains(t, out, sentryToken)
 			assert.Empty(t, h.linear.mutations())
+			require.Len(t, sentry.Requests(), 1)
+			assert.Equal(t, "Bearer "+sentryToken, sentry.Requests()[0].Authorization)
 		})
 	}
 }
@@ -157,6 +164,7 @@ func TestAGetThatOutlastsTheThenBudgetHoldsTheRuleInsteadOfThrowing(t *testing.T
 
 	require.NoError(t, err)
 	assert.Less(t, time.Since(start), 5*time.Second)
+	assert.Len(t, sentry.Requests(), 1)
 	assert.Regexp(t, `slow +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, stdout)
 }
 
@@ -326,7 +334,7 @@ func TestEachResponseAThenWaitedOnIsRecordedInTheCycleLine(t *testing.T) {
 	}
 	var recorded int
 	for _, line := range lines {
-		if strings.Contains(line, `"line":"cycle"`) && strings.Contains(line, `"http":[{"service":"sentry","path":"/count","status":200,"body":{"open":3}}]`) {
+		if strings.Contains(line, `"line":"cycle"`) && strings.Contains(line, `"http":[{"service":"sentry","path":"/count","rule":"count","ticket":"ENG-1","status":200,"body":{"open":3}}]`) {
 			recorded++
 		}
 	}
@@ -454,7 +462,7 @@ func TestAGetThatFailsIsRecordedInTheCycleLineWithItsReasonAndNoToken(t *testing
 		body, err := os.ReadFile(f)
 		require.NoError(t, err)
 		for _, line := range strings.Split(string(body), "\n") {
-			if strings.Contains(line, `"line":"cycle"`) && strings.Contains(line, `"http":[{"service":"sentry","path":"/down","unknown":"GET sentry /down: returned 503"}]`) {
+			if strings.Contains(line, `"line":"cycle"`) && strings.Contains(line, `"http":[{"service":"sentry","path":"/down","rule":"down","ticket":"ENG-1","unknown":"GET sentry /down: returned 503"}]`) {
 				recorded++
 			}
 		}
