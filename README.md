@@ -24,6 +24,14 @@ Load the plugin in place for one session (the [user guide](docs/guide.md) instal
 claude --plugin-dir ~/Development/dispatch
 ```
 
+To start your supervising session with the plugin loaded and cross-session messages accepted (how dispatch events reach it), put this fish function in `~/.config/fish/functions/claude-dispatch.fish`:
+
+```fish
+function claude-dispatch --wraps claude --description 'claude with cross-session inbound and the local dispatch plugin'
+    claude --settings '{"crossSessionInbound":"accept"}' --plugin-dir ~/Development/dispatch $argv
+end
+```
+
 ## Running the dispatcher
 
 ```sh

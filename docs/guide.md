@@ -123,6 +123,8 @@ Add this to your Claude Code user settings (`~/.claude/settings.json`):
 { "crossSessionInbound": "accept" }
 ```
 
+If you use fish, the `claude-dispatch` function in the [README](../README.md#development) starts a session with this setting and the plugin loaded, so you don't need to edit your user settings.
+
 Without it, a session that skips permission prompts holds each message behind an approval dialog ("the sender did not attest its permission mode"), and the event waits until you open that session and answer. dispatch cannot see a held message, because the socket sends no reply.
 
 ## Workspace labels
