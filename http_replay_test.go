@@ -355,3 +355,25 @@ whenever({ name: "idle-reader", each: "linear.ticket", if: (t, ctx) => ctx.herdr
 
 	assert.Equal(t, cycles, matched)
 }
+
+func TestTraceShowsAnAnswerThatChangedWhileTheRuleDecidedTheSame(t *testing.T) {
+	h := newHarness(t)
+	sentry := h.sentry()
+	sentry.Respond("sentry", "GET", "/count", 200, `{"open":3}`)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.rulesDir = oneRule(t, countRule)
+	_, err := h.run("tick")
+	require.NoError(t, err)
+	h.advance(time.Minute)
+	h.tick()
+	sentry.Respond("sentry", "GET", "/count", 200, `{"open":4}`)
+	h.advance(time.Minute)
+	h.tick()
+	require.NoError(t, h.stopLoop())
+
+	out, err := h.run("trace", "ENG-1")
+
+	require.NoError(t, err)
+	assert.Contains(t, out, `GET sentry /count  200 {"open":3}`)
+	assert.Contains(t, out, `GET sentry /count  200 {"open":4}`)
+}

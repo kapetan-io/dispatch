@@ -57,6 +57,8 @@ type tracing struct {
 	// last is what the previous cycle decided for the ticket, without what the rules read. It starts as
 	// a value no decision equals, so the first cycle that knows the ticket prints.
 	last string
+	// lastHTTP is the exchanges most recently printed, so an answer that changed prints even when the decision didn't.
+	lastHTTP []string
 	// err is the first write to out that failed.
 	err error
 }
@@ -88,7 +90,7 @@ func (t *tracing) segment(seg history.Segment) {
 	// Only a rotated segment continues the run before it, so every other segment (a start or a reset)
 	// shows its first cycle again.
 	if seg.Header.Why != "rotate" {
-		t.last = unprinted
+		t.last, t.lastHTTP = unprinted, nil
 	}
 	for _, raw := range seg.Lines {
 		var head struct {
@@ -120,7 +122,8 @@ func (t *tracing) segment(seg history.Segment) {
 	}
 }
 
-// cycle prints the cycle when what it decided for the ticket differs from the cycle before.
+// cycle prints the cycle when what it decided for the ticket differs from the cycle before, and the
+// exchanges the ticket's rules waited on when those differ from the last ones printed.
 func (t *tracing) cycle(c history.Cycle) {
 	t.cycles++
 	decided := t.decisions(c)
@@ -132,27 +135,39 @@ func (t *tracing) cycle(c history.Cycle) {
 	if len(decided) > 0 {
 		t.seen = true
 	}
+	exchanges := t.exchanges(c)
 	// A ticket history knows but no rule has wanted anything for still shows its first, empty decision.
-	if (len(decided) == 0 && !t.seen) || key == t.last {
+	newDecision := !(len(decided) == 0 && !t.seen) && key != t.last
+	newAnswers := len(exchanges) > 0 && !slices.Equal(exchanges, t.lastHTTP)
+	if !newDecision && !newAnswers {
 		return
 	}
-	t.last = key
-	when := clock(c.Now)
-	why := ""
+	prefix := fmt.Sprintf("%s cycle #%d", clock(c.Now), t.cycles)
 	if c.Why != "" {
-		why = " (" + c.Why + ")"
+		prefix += " (" + c.Why + ")"
 	}
-	if len(decided) == 0 {
-		t.printf("%s cycle #%d%s  wants nothing for %s\n", when, t.cycles, why, t.ticket)
-		return
-	}
-	for i, d := range decided {
-		read := ""
-		if r := c.Reads[d.rule+"/"+t.ticket]; len(r) > 0 {
-			read = "  read " + strings.Join(r, " ")
+	if newDecision {
+		t.last = key
+		if len(decided) == 0 {
+			t.printf("%s  wants nothing for %s\n", prefix, t.ticket)
 		}
-		t.printf("%s cycle #%d%s  %s%s\n", when, t.cycles, why, keys[i], read)
+		for i, d := range decided {
+			read := ""
+			if r := c.Reads[d.rule+"/"+t.ticket]; len(r) > 0 {
+				read = "  read " + strings.Join(r, " ")
+			}
+			t.printf("%s  %s%s\n", prefix, keys[i], read)
+		}
 	}
+	t.lastHTTP = exchanges
+	for _, line := range exchanges {
+		t.printf("%s  %s\n", prefix, line)
+	}
+}
+
+// exchanges lists the responses the ticket's rules waited on in the cycle, one line each.
+func (t *tracing) exchanges(c history.Cycle) []string {
+	var out []string
 	for _, ex := range c.HTTP {
 		if ex.Ticket != t.ticket {
 			continue
@@ -161,8 +176,9 @@ func (t *tracing) cycle(c history.Cycle) {
 		if ex.Unknown != "" {
 			answer = "no answer: " + ex.Unknown
 		}
-		t.printf("%s   http  %s  GET %s %s  %s\n", when, ex.Rule, ex.Service, ex.Path, answer)
+		out = append(out, fmt.Sprintf("http  %s  GET %s %s  %s", ex.Rule, ex.Service, ex.Path, answer))
 	}
+	return out
 }
 
 // decisions lists what the cycle decided for the ticket, without what the rules read, so a rule that

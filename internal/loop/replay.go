@@ -191,7 +191,7 @@ func replaySegment(seg history.Segment, o ReplayOptions, res *Replayed) (stopped
 			if err := flush(false); err != nil || res.Difference != "" {
 				return stopped, hadCycles, err
 			}
-			if head.Line == history.LineEvent && clearsKept(head.Type) {
+			if head.Line == history.LineEvent && history.ClearsKept(head.Type) {
 				st.kept = map[string]rules.Exchange{}
 			}
 			continue

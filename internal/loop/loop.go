@@ -250,7 +250,7 @@ func (l *Loop) Run(ctx context.Context) (err error) {
 			// A wake already ran this resync when an event got there first.
 			l.rearm = true
 			if !l.clock.Now().Before(l.nextResync) {
-				err = l.onResync(eventResync)
+				err = l.onResync(history.EventResync)
 			}
 		}
 		for err == nil && len(l.inbox) > 0 {
@@ -280,7 +280,7 @@ func (l *Loop) wakeIfLate() error {
 	if l.clock.Now().Before(l.nextResync) {
 		return nil
 	}
-	return l.onResync(eventResync)
+	return l.onResync(history.EventResync)
 }
 
 func (l *Loop) fatal(err error) {
@@ -345,7 +345,7 @@ func (l *Loop) start(ctx context.Context) error {
 	if err := l.pruneHistory(at); err != nil {
 		return err
 	}
-	if err := l.write(history.Event{Line: history.LineEvent, Ingest: at.UnixMilli(), Source: "dispatch", Type: eventStart}); err != nil {
+	if err := l.write(history.Event{Line: history.LineEvent, Ingest: at.UnixMilli(), Source: "dispatch", Type: history.EventStart}); err != nil {
 		return err
 	}
 	wd, err := world.Refresh(ctx, l.o.Sources, l.scope, world.World{}, world.Everything, at)
@@ -419,24 +419,11 @@ func (l *Loop) handle(m any) error {
 	return nil
 }
 
-// Event types after which no response is kept: onResync clears the kept map for a resync and a tick, and
-// a start begins empty. Replay clears its copy at the same lines through clearsKept.
-const (
-	eventStart  = "dispatch.start"
-	eventResync = "dispatch.resync"
-	eventTick   = "dispatch.tick"
-)
-
-// clearsKept is true for an event line after which no response is kept.
-func clearsKept(typ string) bool {
-	return typ == eventStart || typ == eventResync || typ == eventTick
-}
-
 // onResync re-reads every source. A resync is the only clock rules wait on.
 func (l *Loop) onResync(typ string) error {
 	at := l.ingest()
 	l.resync++
-	if typ == eventResync {
+	if typ == history.EventResync {
 		l.nextResync = time.UnixMilli(at).Add(time.Duration(l.o.Config.Dispatch.Resync))
 		l.rearm = true
 	}
@@ -451,7 +438,7 @@ func (l *Loop) onResync(typ string) error {
 	// A step that failed after the one before it landed is not wanted again by its rule,
 	// because the first step made the rule's condition false.
 	l.afterRead = append(l.afterRead, l.resumeRest)
-	if typ == eventResync {
+	if typ == history.EventResync {
 		l.afterRead = append(l.afterRead, func() error { l.printResync(); return nil })
 	}
 	return l.rotate()
