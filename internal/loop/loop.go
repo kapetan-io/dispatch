@@ -74,8 +74,10 @@ type Loop struct {
 	state  *rules.State
 	result rules.Result
 	// kept holds the responses a get got since the last resync, which ctx.http.last reads.
-	kept      map[string]rules.Exchange
-	lastCycle *history.Cycle
+	kept map[string]rules.Exchange
+	// keptCleared is true from a clear of kept until the first cycle that gets.
+	keptCleared bool
+	lastCycle   *history.Cycle
 	// lastRead is the Reading most recently written, kept so an identical one is skipped and a
 	// rotated segment's snapshot can carry it. lastReadKey is its readingKey.
 	lastRead    *history.Reading
@@ -248,7 +250,7 @@ func (l *Loop) Run(ctx context.Context) (err error) {
 			// A wake already ran this resync when an event got there first.
 			l.rearm = true
 			if !l.clock.Now().Before(l.nextResync) {
-				err = l.onResync("dispatch.resync")
+				err = l.onResync(history.EventResync)
 			}
 		}
 		for err == nil && len(l.inbox) > 0 {
@@ -278,7 +280,7 @@ func (l *Loop) wakeIfLate() error {
 	if l.clock.Now().Before(l.nextResync) {
 		return nil
 	}
-	return l.onResync("dispatch.resync")
+	return l.onResync(history.EventResync)
 }
 
 func (l *Loop) fatal(err error) {
@@ -343,7 +345,7 @@ func (l *Loop) start(ctx context.Context) error {
 	if err := l.pruneHistory(at); err != nil {
 		return err
 	}
-	if err := l.write(history.Event{Line: history.LineEvent, Ingest: at.UnixMilli(), Source: "dispatch", Type: "dispatch.start"}); err != nil {
+	if err := l.write(history.Event{Line: history.LineEvent, Ingest: at.UnixMilli(), Source: "dispatch", Type: history.EventStart}); err != nil {
 		return err
 	}
 	wd, err := world.Refresh(ctx, l.o.Sources, l.scope, world.World{}, world.Everything, at)
@@ -421,7 +423,7 @@ func (l *Loop) handle(m any) error {
 func (l *Loop) onResync(typ string) error {
 	at := l.ingest()
 	l.resync++
-	if typ == "dispatch.resync" {
+	if typ == history.EventResync {
 		l.nextResync = time.UnixMilli(at).Add(time.Duration(l.o.Config.Dispatch.Resync))
 		l.rearm = true
 	}
@@ -430,12 +432,13 @@ func (l *Loop) onResync(typ string) error {
 	}
 	l.wd.Nudged, l.nudgedDuring = nil, nil
 	l.kept = nil
+	l.keptCleared = true
 	l.nudgeEpoch++
 	l.readAgain(world.Everything)
 	// A step that failed after the one before it landed is not wanted again by its rule,
 	// because the first step made the rule's condition false.
 	l.afterRead = append(l.afterRead, l.resumeRest)
-	if typ == "dispatch.resync" {
+	if typ == history.EventResync {
 		l.afterRead = append(l.afterRead, func() error { l.printResync(); return nil })
 	}
 	return l.rotate()
@@ -658,7 +661,13 @@ func (l *Loop) cycle(why string) error {
 	res := l.o.Rules.Cycle(state, nil)
 	l.state, l.result = state, res
 	entry := cycleLine(now, why, res)
-	if l.lastCycle == nil || !sameCycle(*l.lastCycle, entry) {
+	// The first cycle to get after a clear writes its line even when it repeats the last, because replay
+	// can only refill what the clear emptied from a line that records the gets.
+	refills := l.keptCleared && len(entry.HTTP) > 0
+	if refills {
+		l.keptCleared = false
+	}
+	if l.lastCycle == nil || refills || !sameCycle(*l.lastCycle, entry) {
 		if err := l.write(entry); err != nil {
 			return err
 		}

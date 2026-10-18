@@ -13,7 +13,7 @@ import (
 // Exchange is a request a then waited on and what it got.
 type Exchange = httpservice.Exchange
 
-func exchangeKey(service, path string) string { return service + " " + path }
+func exchangeKey(service, path string) string { return httpservice.Key(service, path) }
 
 // checkRequest throws for a service config.toml doesn't name and a path that would
 // leave it, which are mistakes in the rule and not an outage.

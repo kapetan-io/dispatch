@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/history"
+	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -124,6 +126,9 @@ type segmentReplay struct {
 	read  *history.Reading
 	// lastCycle is the newest cycle line read, which a cycle that wrote none is compared with.
 	lastCycle *history.Cycle
+	// kept holds the answers recorded since the last resync, tick or start, which ctx.http.last reads.
+	// A segment begins at one of those, so it begins with none.
+	kept map[string]rules.Exchange
 }
 
 // replaySegment runs the cycles of one segment again. It returns true once a cycle is past To, and
@@ -132,7 +137,7 @@ type segmentReplay struct {
 func replaySegment(seg history.Segment, o ReplayOptions, res *Replayed) (stopped, hadCycles bool, err error) {
 	st := &segmentReplay{
 		seg: seg, mem: seg.Snapshot.World, led: &ledger.Ledger{Entries: slices.Clone(seg.Snapshot.Ledger.Receipts)},
-		read: seg.Snapshot.Read, rules: o.Rules,
+		read: seg.Snapshot.Read, rules: o.Rules, kept: map[string]rules.Exchange{},
 	}
 	var pending *cycleRecord
 	flush := func(final bool) error {
@@ -161,6 +166,7 @@ func replaySegment(seg history.Segment, o ReplayOptions, res *Replayed) (stopped
 			Line string `json:"line"`
 			Now  int64  `json:"now"`
 			At   int64  `json:"at"`
+			Type string `json:"type"`
 		}
 		_ = json.Unmarshal(raw, &head)
 		rank, now := 0, head.Now
@@ -184,6 +190,9 @@ func replaySegment(seg history.Segment, o ReplayOptions, res *Replayed) (stopped
 		default:
 			if err := flush(false); err != nil || res.Difference != "" {
 				return stopped, hadCycles, err
+			}
+			if head.Line == history.LineEvent && history.ClearsKept(head.Type) {
+				st.kept = map[string]rules.Exchange{}
 			}
 			continue
 		}
@@ -229,6 +238,14 @@ func (st *segmentReplay) apply(g cycleRecord) {
 	if g.cycle != nil {
 		st.lastCycle = g.cycle
 	}
+	// A cycle that wrote no line repeated the last one's gets, and live it kept their answers again.
+	if st.lastCycle != nil {
+		for _, ex := range st.lastCycle.HTTP {
+			if ex.Unknown == "" {
+				st.kept[httpservice.Key(ex.Service, ex.Path)] = ex
+			}
+		}
+	}
 }
 
 // run does one cycle again and compares it with the recorded one.
@@ -247,6 +264,16 @@ func (st *segmentReplay) run(g cycleRecord, o ReplayOptions, res *Replayed, torn
 	wd := *st.read.World
 	wd.At = time.UnixMilli(g.now)
 	state := rules.FromWorld(wd, st.cfg, st.led, "")
+	state.Kept = st.kept
+	want := st.lastCycle
+	if g.cycle != nil {
+		want, st.lastCycle = g.cycle, g.cycle
+	}
+	var answers *recordedServices
+	if want != nil {
+		answers = &recordedServices{recorded: want.HTTP}
+		state.HTTP = answers
+	}
 	for _, subject := range st.read.Reserved {
 		state.Reserve(subject)
 	}
@@ -255,10 +282,6 @@ func (st *segmentReplay) run(g cycleRecord, o ReplayOptions, res *Replayed, torn
 	line.At = g.now
 	st.mem = next
 	got := cycleLine(g.now, "", st.rules.Cycle(state, nil))
-	want := st.lastCycle
-	if g.cycle != nil {
-		want, st.lastCycle = g.cycle, g.cycle
-	}
 	res.Cycles++
 	at := time.UnixMilli(g.now).Format(time.TimeOnly)
 	// A torn segment may end between the read line and the world line, so it only vouches for a world line it has.
@@ -270,6 +293,10 @@ func (st *segmentReplay) run(g cycleRecord, o ReplayOptions, res *Replayed, torn
 	}
 	if want != nil && !torn {
 		if recorded, replayed, differs := compareCycles(*want, got, o.Rules != nil); differs {
+			res.Difference = fmt.Sprintf("difference at %s\n  recorded: %s\n  replayed: %s", at, recorded, replayed)
+			return nil
+		}
+		if recorded, replayed, differs := answers.differences(*want); differs {
 			res.Difference = fmt.Sprintf("difference at %s\n  recorded: %s\n  replayed: %s", at, recorded, replayed)
 			return nil
 		}
@@ -413,4 +440,54 @@ func heldText(e history.Entry) string {
 		return fmt.Sprintf("%s dropped an event for %s: %s", e.Rule, e.Subject, e.Reason)
 	}
 	return fmt.Sprintf("%s is held for %s: %s", e.Rule, e.Subject, e.Reason)
+}
+
+// recordedServices answers a replayed cycle's gets from the exchanges the live cycle recorded, in the
+// order it made them. It never reaches a service, and a get the live cycle didn't make gets no answer.
+type recordedServices struct {
+	recorded []rules.Exchange
+	used     []bool
+	// extra lists the gets replay made that the live cycle did not.
+	extra []string
+}
+
+func (r *recordedServices) Get(_ context.Context, service, path string) (httpservice.Response, error) {
+	if r.used == nil {
+		r.used = make([]bool, len(r.recorded))
+	}
+	for i, ex := range r.recorded {
+		if !r.used[i] && ex.Service == service && ex.Path == path {
+			r.used[i] = true
+			if ex.Unknown != "" {
+				return httpservice.Response{}, &httpservice.Unavailable{Reason: ex.Unknown}
+			}
+			return httpservice.Response{Status: ex.Status, Body: ex.Body}, nil
+		}
+	}
+	r.extra = append(r.extra, "GET "+service+" "+path)
+	return httpservice.Response{}, &httpservice.Unavailable{Reason: fmt.Sprintf("no recorded answer for GET %s %s", service, path)}
+}
+
+func (r *recordedServices) Post(context.Context, string, string, []byte) (httpservice.Response, error) {
+	return httpservice.Response{}, &httpservice.Unavailable{Reason: "replay sends no POST"}
+}
+
+// differences returns the first get only the recorded cycle made, the first only replay made, and whether
+// they differ. It compares which gets were made, not what they returned. A cycle with a rule call that timed out live isn't compared, because replay doesn't spend its budget.
+func (r *recordedServices) differences(live history.Cycle) (string, string, bool) {
+	for _, t := range live.Throws {
+		if t.Timeout {
+			return "", "", false
+		}
+	}
+	var missing []string
+	for i, ex := range r.recorded {
+		if r.used == nil || !r.used[i] {
+			missing = append(missing, "GET "+httpservice.Key(ex.Service, ex.Path))
+		}
+	}
+	if len(missing) == 0 && len(r.extra) == 0 {
+		return "", "", false
+	}
+	return firstOr(missing, "nothing like it"), firstOr(r.extra, "nothing like it"), true
 }

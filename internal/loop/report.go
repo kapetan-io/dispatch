@@ -87,7 +87,7 @@ func (l *Loop) onRequest(r request) error {
 		}
 	case OpTick:
 		seen := l.endedBefore + len(l.ended)
-		if err := l.onResync("dispatch.tick"); err != nil {
+		if err := l.onResync(history.EventTick); err != nil {
 			return err
 		}
 		l.waiters = append(l.waiters, &waiter{ticket: strings.ToUpper(r.Ticket), reply: r.reply, seen: seen})

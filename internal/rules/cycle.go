@@ -281,7 +281,10 @@ func (r *Rules) evaluate(res *Result, state *State, def *ruleDef, rec *record, e
 		return nil
 	}
 	verdict, c = r.run(state, def, phaseThen, rec, ev)
-	res.HTTP = append(res.HTTP, c.exchanges...)
+	for _, ex := range c.exchanges {
+		ex.Rule, ex.Ticket = def.name, subject
+		res.HTTP = append(res.HTTP, ex)
+	}
 	if out := r.verdict(res, c, def, recordName, subject, verdict, key); out != nil {
 		return nil
 	}

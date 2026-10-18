@@ -406,13 +406,27 @@ func (s Segment) Load() (State, error) {
 			if err := json.Unmarshal(raw, &e); err != nil {
 				return st, err
 			}
-			if e.Type == "dispatch.resync" || e.Type == "dispatch.tick" {
+			if IsResync(e.Type) {
 				st.Resync++
 			}
 		}
 	}
 	return st, nil
 }
+
+// Event types the dispatcher writes when it starts and when it reads every source again.
+const (
+	EventStart  = "dispatch.start"
+	EventResync = "dispatch.resync"
+	EventTick   = "dispatch.tick"
+)
+
+// IsResync is true for an event after which the dispatcher read every source again.
+func IsResync(typ string) bool { return typ == EventResync || typ == EventTick }
+
+// ClearsKept is true for an event after which no ctx.http response is kept. The loop clears its kept
+// responses at these events and replay clears its copy at the same lines.
+func ClearsKept(typ string) bool { return typ == EventStart || IsResync(typ) }
 
 // Diff returns the world line that turns old into next, or false when they agree.
 func Diff(old, next *world.Memory) (World, bool) {

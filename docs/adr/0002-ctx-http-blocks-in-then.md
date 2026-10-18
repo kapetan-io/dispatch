@@ -21,5 +21,6 @@ We will let `ctx.http.get` block inside `then`, within the `then` budget of 30 s
 
 - A rule that uses HTTP reads as straight-line code, with no hold-and-wait across cycles.
 - A slow service delays the rest of the cycle it runs in, up to the `then` budget.
-- `replay` stays exact, because it reads recorded responses instead of calling services.
+- `replay` stays exact, because it reads recorded responses instead of calling services. Under `replay --rules`, a get with no recorded answer is a difference, and replay never makes up an answer.
+- `state reset --quiet` makes live GETs through the configured services, since it must run the rules to learn which messages they want, and refuses when an answer comes back unknown.
 - An `if` can't fetch. It can only read a response a `then` already fetched.
