@@ -460,7 +460,7 @@ func (l *Loop) printResync() {
 }
 
 // rotate starts a new segment once the current one is old enough. The snapshot
-// drops receipts of tickets that are neither tracked nor holding a tree.
+// drops receipts of tickets that are neither tracked, read through a parent, nor holding a tree.
 func (l *Loop) rotate() error {
 	every := time.Duration(l.o.Config.History.Rotate)
 	if every <= 0 || l.clock.Now().Sub(l.segStart) < every {
@@ -476,6 +476,12 @@ func (l *Loop) rotate() error {
 	}
 	for _, tree := range l.wd.Trees {
 		live[tree.Path] = true
+	}
+	// Memory keeps a parent's children while their read fails, and the world's Children does not.
+	for _, ids := range l.mem.Children {
+		for _, id := range ids {
+			live[id] = true
+		}
 	}
 	if l.wd.LinearErr == nil && l.wd.HoldersErr == nil && len(l.wd.PoolErrs) == 0 {
 		// A post's receipt is keyed by its service, which no ticket or tree makes live.
