@@ -105,7 +105,8 @@ func settingKeys(typ reflect.Type, prefix string) []string {
 	var keys []string
 	for i := range typ.NumField() {
 		field := typ.Field(i)
-		name := prefix + field.Tag.Get("toml")
+		tag, _, _ := strings.Cut(field.Tag.Get("toml"), ",")
+		name := prefix + tag
 		if field.Type.Kind() == reflect.Struct {
 			keys = append(keys, settingKeys(field.Type, name+".")...)
 			continue

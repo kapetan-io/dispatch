@@ -61,6 +61,7 @@ path = "~/Development/dispatch"
 open_pr_as = "open"
 ignore_comment_authors = []
 ignore_optional_checks = false
+approval_checks = []
 auto_merge = false
 ```
 
@@ -161,6 +162,7 @@ auto_merge = true
 | `open_pr_as` | `"open"` | `"open"` or `"draft"`. With `"draft"`, workers open the PR as a draft and never mark it open, and a ready PR gets one notification per commit in each phase, "ENG-1's draft is ready for your review" while it is a draft and "ENG-1's reviews are handled" once you open it. Dispatch never merges a draft in any repo. |
 | `ignore_comment_authors` | `[]` | GitHub logins, matched without regard to case, whose comments, reviews, approvals, change requests and review threads dispatch and the worker ignore. They draw no nudge, never keep a PR from being ready, and never count as an approval. A thread still counts when one of its last 20 comments is from someone else. |
 | `ignore_optional_checks` | `false` | When `true`, only checks GitHub requires for merging count, for dispatch and the worker. A failing or never-finishing check GitHub doesn't require draws no nudge, doesn't hold back ready and doesn't mute a change-request nudge. A branch that requires no checks has no check that counts. |
+| `approval_checks` | `[]` | Names of checks that pass only after a human approves the PR, such as `"Mergify Merge Protections"`, matched by full name without regard to case. They count for nothing, for dispatch and the worker. A failing, pending or never-finishing one draws no nudge and doesn't hold back ready, so a draft waiting for review is still reported ready. A failing or running build check still counts, even beside an approval check. Like `ignore_optional_checks`, it makes dispatch read each check of a PR that isn't passing, so such a PR with more than 100 checks fails to read. |
 | `auto_merge` | `false` | Merge a ready PR once a review approves its head commit. See [Auto-merge](#auto-merge). |
 
 The load fails, naming the repo and the fix, on a `label = "path"` entry under `[repos]`, a table without `path`, two tables with one `path`, an unknown key in a table, an `open_pr_as` other than `"open"` or `"draft"`, and a top-level `auto_merge`.

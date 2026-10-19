@@ -36,6 +36,14 @@ type Rules struct {
 	// RequiredChecksOnly makes only the checks GitHub requires for merging the
 	// PR count. A branch that requires none has no check that counts.
 	RequiredChecksOnly bool
+	// ApprovalChecks are names of checks that pass only after a human approves
+	// the PR, so they can't gate a PR that is waiting for that review.
+	ApprovalChecks []string
+}
+
+func (r Rules) isApprovalCheck(c checkContext) bool {
+	name := cmp.Or(c.Name, c.Context)
+	return slices.ContainsFunc(r.ApprovalChecks, func(n string) bool { return strings.EqualFold(n, name) })
 }
 
 func (r Rules) ignores(a *author) bool {
@@ -75,7 +83,7 @@ type PullRequest struct {
 	// Problems are the reasons the PR needs work, phrased to follow "has".
 	Problems []string
 	// Ready means the PR needs no work, has no open review thread and nothing is still running: every check
-	// (every required one, under Rules.RequiredChecksOnly) has passed (a PR with no checks counts as passed) and GitHub says it
+	// (every required one, under Rules.RequiredChecksOnly, and none named in Rules.ApprovalChecks) has passed (a PR with no checks counts as passed) and GitHub says it
 	// merges cleanly. A running check, such as a bot review still in progress,
 	// or a merge state GitHub has not computed yet, is not ready.
 	Ready bool
@@ -165,7 +173,10 @@ const checksQuery = `query Checks($owner: String!, $repo: String!, $number: Int!
 // checkContext is a CheckRun or a StatusContext. A CheckRun has a status and,
 // once COMPLETED, a conclusion. A StatusContext has only a state.
 type checkContext struct {
-	Typename   string `json:"__typename"`
+	Typename string `json:"__typename"`
+	// Name fills for a CheckRun and Context for a StatusContext.
+	Name       string `json:"name"`
+	Context    string `json:"context"`
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion"`
 	State      string `json:"state"`
@@ -196,13 +207,14 @@ type checksPage struct {
 	} `json:"data"`
 }
 
-// rollupState is the state GitHub's rollup would have if only the required
-// checks counted: SUCCESS when none is required, FAILURE when a required check
-// failed, PENDING while one has not finished.
-func rollupState(contexts []checkContext) string {
+// rollupState is the state GitHub's rollup would have if only the checks that
+// count did: SUCCESS when none does, FAILURE when one failed, PENDING while one
+// has not finished. A check counts unless it is an approval check, or optional
+// while rules want only the required ones.
+func rollupState(contexts []checkContext, rules Rules) string {
 	running := false
 	for _, c := range contexts {
-		if !c.IsRequired {
+		if rules.isApprovalCheck(c) || (rules.RequiredChecksOnly && !c.IsRequired) {
 			continue
 		}
 		switch {
@@ -222,12 +234,12 @@ func rollupState(contexts []checkContext) string {
 	return "SUCCESS"
 }
 
-// requiredRollupState reads the checks behind PR number and returns the rollup
-// state of the required ones. A second page of checks is an error, because a
-// required failure beyond the first page would go unnoticed. Checks of any
+// countedRollupState reads the checks behind PR number and returns the rollup
+// state of the ones that count under rules. A second page of checks is an
+// error, because a failure beyond the first page would go unnoticed. Checks of any
 // commit but head, which a push between the two reads causes, are PENDING, so
 // the PR is not ready until the next read agrees with itself.
-func requiredRollupState(ctx context.Context, src Source, number int, head string) (string, error) {
+func countedRollupState(ctx context.Context, src Source, number int, head string, rules Rules) (string, error) {
 	b, err := src.Checks(ctx, number)
 	if err != nil {
 		return "", err
@@ -244,7 +256,7 @@ func requiredRollupState(ctx context.Context, src Source, number int, head strin
 			if r.Contexts.PageInfo.HasNextPage {
 				return "", fmt.Errorf("PR %d has more than 100 checks; dispatch reads one page and would miss required ones", number)
 			}
-			return rollupState(r.Contexts.Nodes), nil
+			return rollupState(r.Contexts.Nodes, rules), nil
 		}
 	}
 	// The rollup the branch query saw has vanished, so this read can't vouch for it.
@@ -465,9 +477,12 @@ func Find(ctx context.Context, branch string, src Source, rules Rules) (PullRequ
 		}
 		state := r.State
 		// An EXPECTED rollup is a required check that has not started, which
-		// stays not ready, so it needs no look at which checks are required.
-		if rules.RequiredChecksOnly && (state == "FAILURE" || state == "ERROR" || state == "PENDING") {
-			if state, err = requiredRollupState(ctx, src, n.Number, n.HeadRefOid); err != nil {
+		// stays not ready unless that check is an approval check, so only a
+		// repo with approval checks looks at which checks are behind it.
+		approvals := len(rules.ApprovalChecks) > 0
+		unsettled := state == "FAILURE" || state == "ERROR" || state == "PENDING" || (state == "EXPECTED" && approvals)
+		if (rules.RequiredChecksOnly || approvals) && unsettled {
+			if state, err = countedRollupState(ctx, src, n.Number, n.HeadRefOid, rules); err != nil {
 				return PullRequest{}, false, err
 			}
 		}

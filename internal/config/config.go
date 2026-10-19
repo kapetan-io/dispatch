@@ -93,6 +93,8 @@ type Repo struct {
 	OpenPRAs             string   `toml:"open_pr_as"`
 	IgnoreCommentAuthors []string `toml:"ignore_comment_authors"`
 	IgnoreOptionalChecks bool     `toml:"ignore_optional_checks"`
+	// ApprovalChecks names checks that pass only after a human approves the PR, such as Mergify's "Merge Protections".
+	ApprovalChecks []string `toml:"approval_checks,omitempty"`
 	// AutoMerge makes dispatch merge a ready PR once a review approves its head commit.
 	AutoMerge bool `toml:"auto_merge"`
 }
@@ -317,6 +319,9 @@ func decodeRepo(label string, table map[string]any) (Repo, error) {
 	}
 	if unknown := meta.Undecoded(); len(unknown) > 0 {
 		return Repo{}, fmt.Errorf("unknown setting repos.%s.%s: remove it or fix the spelling", label, unknown[0])
+	}
+	if len(repo.ApprovalChecks) == 0 {
+		repo.ApprovalChecks = nil
 	}
 	if repo.Path == "" {
 		return Repo{}, fmt.Errorf("repos.%s has no path: add path = \"<clone directory>\" under [repos.%s]", label, label)

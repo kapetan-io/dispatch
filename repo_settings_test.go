@@ -162,3 +162,13 @@ func TestRepoSettingsFailsWhenTwoReposResolveToTheCloneAtTheWorkingDirectory(t *
 	require.ErrorContains(t, err, "repos.alpha and repos.zeta both resolve to "+clone+": give each repo its own clone")
 	assert.Empty(t, out)
 }
+
+func TestRepoSettingsPrintsTheApprovalChecksWhenListed(t *testing.T) {
+	clone := newHintRepo(t)
+	config := writeHintConfig(t, "[repos.dispatch]\npath = \""+clone+"\"\napproval_checks = [\"Mergify Merge Protections\"]\n")
+
+	out, err := runRepoSettings(t, clone, config)
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "approval_checks = [\"Mergify Merge Protections\"]\n")
+}
