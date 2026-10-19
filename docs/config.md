@@ -92,7 +92,7 @@ Your own table. Dispatch never interprets it, and a rule reads a key as `ctx.con
 | `design_model` | `opus` | The model name passed to `claude --model` for the worker of a `design` or `design-review` ticket. |
 | `launch_failure_limit` | `2` | Failed launches in a row before the ticket goes to Needs Human with the launcher's error. A full treehouse pool (`pool_exhausted`) never counts. Closing a Claude whose launch died before its kickoff ran counts as one failure. |
 | `nudge_limit` | `2` | PR nudges to an idle In Review worker with no push before the ticket goes to Needs Human. The count resets when a push moves the PR head, and it also caps relaunches of a gone worker that never pushes. In Progress tickets never read it, since an idle In Progress worker is nudged once per Stop and never escalated. |
-| `blocked_renotify_minutes` | `15` | Minutes between macOS notifications for a worker that stays blocked on a question, a notification can only go out in a cycle, so it can come later than the period by up to one `resync`. The first notification comes on the first cycle that sees the worker blocked. `0` notifies in every cycle while it is blocked. |
+| `blocked_renotify_minutes` | `15` | Minutes between notifications for a worker that stays blocked on a question, a notification can only go out in a cycle, so it can come later than the period by up to one `resync`. The first notification comes on the first cycle that sees the worker blocked. `0` notifies in every cycle while it is blocked. |
 
 ```toml
 [rules]
@@ -181,7 +181,7 @@ Anywhere else it fails with `dispatch: /tmp is not inside a repo under [repos] i
 
 ## Auto-merge
 
-In a repo with `auto_merge = true`, a cycle that finds an In Review ticket's PR ready (the same test as the ready-for-review notification, with the worker idle) and approved by a review on its head commit runs `gh pr merge <PR URL> --merge --match-head-commit <head>`. The run window prints `merge ENG-1 (auto-merge)` when the merge starts and `merge ENG-1 done` when it ends, and dispatch sends a macOS notification, `ENG-1 was approved and merged: <PR URL>`, in place of the ready-for-review one. Any reviewer's approval counts, which today means CodeRabbit's, unless another reviewer's latest review requests changes. The merge only goes through for the commit that was approved.
+In a repo with `auto_merge = true`, a cycle that finds an In Review ticket's PR ready (the same test as the ready-for-review notification, with the worker idle) and approved by a review on its head commit runs `gh pr merge <PR URL> --merge --match-head-commit <head>`. The run window prints `merge ENG-1 (auto-merge)` when the merge starts and `merge ENG-1 done` when it ends, and dispatch sends a notification, `ENG-1 was approved and merged: <PR URL>`, in place of the ready-for-review one. Any reviewer's approval counts, which today means CodeRabbit's, unless another reviewer's latest review requests changes. The merge only goes through for the commit that was approved.
 
 - A draft is never merged. In a repo with `open_pr_as = "draft"`, an approved PR you open merges in the next cycle when it is ready, without the "reviews are handled" notification.
 - An approval of an earlier commit doesn't count, so a push after approval waits for a new one.
