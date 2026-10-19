@@ -26,7 +26,7 @@ Every test pins the surface it enters through, so a package test pins the packag
 - The package ships to other consumers.
 - The package wraps an external tool, or is a fake of one, so its adapter and contract tests (see Ports and adapters) run against the real thing.
 
-A package test that meets none of these gets the deletion check. Imagine deleting the package and rewriting its callers. If the test would die while the product tests stay green, it was pinning structure, so delete it. This covers a test you are about to write and an existing one that repeats the same observable behavior as a product test.
+A package test that meets none of these gets the deletion check. Imagine deleting the package and rewriting its callers. If the test would die while the product tests stay green, it was pinning structure, so delete it. You may delete tests you wrote yourself on this ticket. Leave any other existing test in place unless the ticket's intent is to delete it, and name the ones that repeat a product test in the PR instead.
 
 ## Finding the surface
 
