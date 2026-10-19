@@ -163,8 +163,7 @@ func (l *launch) run(ctx context.Context) Result {
 	if r, ok := l.preflight(ctx); !ok {
 		return r
 	}
-	existed := l.trackBranch(ctx)
-	if r, ok := l.leaseTree(ctx, existed); !ok {
+	if r, ok := l.fetchAndLease(ctx); !ok {
 		return r
 	}
 	if r, ok := l.openWorkspace(ctx); !ok {
@@ -240,6 +239,21 @@ func (l *launch) preflight(ctx context.Context) (Result, bool) {
 			return Result{Status: StatusHerdrUnavailable, Detail: "interrupted while waiting for the herdr server"}, false
 		}
 	}
+}
+
+// fetchAndLease holds the clone's turn for every fetch a launch makes, treehouse's
+// own included, so launches into one repo queue here and then go on in parallel.
+func (l *launch) fetchAndLease(ctx context.Context) (Result, bool) {
+	clone := l.repo
+	if dir, err := l.git(ctx, l.repo, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil {
+		clone = strings.TrimSpace(dir)
+	}
+	done, ok := takeTurn(ctx, clone)
+	if !ok {
+		return Result{Status: StatusPoolError, Detail: "interrupted while waiting for another launch into " + l.repo}, false
+	}
+	defer done()
+	return l.leaseTree(ctx, l.trackBranch(ctx))
 }
 
 // trackBranch reports whether the branch already exists, locally or on origin,

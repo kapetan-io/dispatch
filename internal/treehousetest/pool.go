@@ -28,6 +28,10 @@ type Pool struct {
 	treesFail    []error
 	leaseFail    error
 	treesDelay   time.Duration
+	leaseHold    time.Duration
+	leasing      map[string]int
+	peakLeasing  map[string]int
+	peakAll      int
 	beforeReturn func(path string)
 }
 
@@ -35,7 +39,7 @@ type leaseMove struct{ path, holder string }
 
 // New returns an empty Pool that records its calls in j.
 func New(j *journal.Journal) *Pool {
-	return &Pool{journal: j, trees: map[string][]treehouse.Tree{}}
+	return &Pool{journal: j, trees: map[string][]treehouse.Tree{}, leasing: map[string]int{}, peakLeasing: map[string]int{}}
 }
 
 // Seed puts trees in the pool of repoDir exactly as given, so a test can set up
@@ -117,6 +121,31 @@ func (p *Pool) DelayTrees(d time.Duration) {
 	p.treesDelay = d
 }
 
+// HoldLeases makes every Lease call take d, long enough for another launch in
+// the same repo to start meanwhile. Real treehouse fetches while it leases, and
+// two fetches into one clone's refs collide.
+func (p *Pool) HoldLeases(d time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.leaseHold = d
+}
+
+// PeakLeasing is the most Lease calls that were running at once in the pool of
+// repoDir. Above 1 means two launches could have fetched into the clone together.
+func (p *Pool) PeakLeasing(repoDir string) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.peakLeasing[p.poolKey(repoDir)]
+}
+
+// PeakLeasingAnywhere is the most Lease calls that were running at once in all
+// pools together.
+func (p *Pool) PeakLeasingAnywhere() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.peakAll
+}
+
 // BeforeReturn runs f with the tree's path at the start of every Return call,
 // so a test can look at the world at the moment dispatch returns a tree.
 func (p *Pool) BeforeReturn(f func(path string)) {
@@ -173,7 +202,19 @@ func (p *Pool) Lease(ctx context.Context, repoDir, ticket string) (treehouse.Tre
 		return treehouse.Tree{}, err
 	}
 	p.mu.Lock()
+	key, hold := p.poolKey(repoDir), p.leaseHold
+	p.leasing[key]++
+	p.peakLeasing[key] = max(p.peakLeasing[key], p.leasing[key])
+	total := 0
+	for _, n := range p.leasing {
+		total += n
+	}
+	p.peakAll = max(p.peakAll, total)
+	p.mu.Unlock()
+	time.Sleep(hold)
+	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.leasing[key]--
 	if p.leaseFail != nil {
 		return treehouse.Tree{}, p.leaseFail
 	}

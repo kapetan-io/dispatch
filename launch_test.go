@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -974,4 +975,55 @@ func TestClaudeShimRunsTheDispatchThatLaunchedIt(t *testing.T) {
 	argv, err := os.ReadFile(filepath.Join(dir, "argv"))
 	require.NoError(t, err)
 	assert.Equal(t, "--resume\n", string(argv))
+}
+
+func TestLaunchesIntoOneRepoTakeTurnsLeasing(t *testing.T) {
+	l := newLaunchHarness(t)
+	second := filepath.Join(l.dir, "tree2")
+	l.git(l.repo, "worktree", "add", "-q", "--detach", second)
+	l.tools.Treehouse.AddTree(l.repo, second)
+	l.tools.Treehouse.HoldLeases(100 * time.Millisecond)
+
+	var wg sync.WaitGroup
+	results := make([]launchOutput, 2)
+	for i, ticket := range []string{"ENG-1", "ENG-2"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i] = l.launch(ticket, "thrawn01/"+strings.ToLower(ticket))
+		}()
+	}
+	wg.Wait()
+
+	assert.Equal(t, "ok", results[0].result["status"])
+	assert.Equal(t, "ok", results[1].result["status"])
+	assert.Equal(t, 1, l.tools.Treehouse.PeakLeasing(l.repo))
+}
+
+func TestLaunchesIntoDifferentReposLeaseTogether(t *testing.T) {
+	l := newLaunchHarness(t)
+	other := filepath.Join(l.dir, "other")
+	require.NoError(t, os.MkdirAll(other, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(other, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
+	l.git(other, "init", "-q", "-b", "main")
+	l.git(other, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "init")
+	otherTree := filepath.Join(l.dir, "other-tree")
+	l.git(other, "worktree", "add", "-q", "--detach", otherTree)
+	l.tools.Treehouse.AddTree(other, otherTree)
+	l.tools.Treehouse.HoldLeases(300 * time.Millisecond)
+
+	var wg sync.WaitGroup
+	for i, dir := range []string{l.repo, other} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := dispatch.Run(context.Background(), []string{"launch", fmt.Sprintf("ENG-%d", i+1), fmt.Sprintf("thrawn01/eng-%d", i+1)}, dispatch.Options{
+				Dir: dir, Herdr: l.tools.Herdr, Treehouse: l.tools.Treehouse, LaunchPace: time.Millisecond, Stdout: io.Discard, Stderr: io.Discard,
+			})
+			assert.NoError(t, err)
+		}()
+	}
+	wg.Wait()
+
+	assert.Equal(t, 2, l.tools.Treehouse.PeakLeasingAnywhere())
 }
