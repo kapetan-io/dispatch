@@ -4,7 +4,7 @@ dispatch runs Claude workers on your approved Linear tickets. You approve a tick
 
 ## Set it up
 
-You need a Mac with these on your PATH. dispatch shells out to all of them.
+You need a Mac or a Linux machine with these on your PATH. dispatch shells out to all of them.
 
 | Tool | Why |
 |---|---|
@@ -24,13 +24,13 @@ cd ~/Development/dispatch && go install ./cmd/dispatch
 
 Put `$GOBIN` (default `~/go/bin`) on your PATH. `bin/dispatch-launch` runs `dispatch launch`, so it needs the binary there.
 
-**2. Give dispatch your Linear API key.** Create a personal API key in Linear under Settings, then Security & access. On macOS, store it in the keychain under the service name `dispatch-linear-api-key`. On Linux there is no keychain lookup, so set `LINEAR_API_KEY` or `api_key_command` instead:
+**2. Give dispatch your Linear API key.** Create a personal API key in Linear under Settings, then Security & access. On macOS, store it in the keychain under the service name `dispatch-linear-api-key`:
 
 ```sh
 security add-generic-password -s dispatch-linear-api-key -a "$USER" -w
 ```
 
-The command prompts for the key. Setting `LINEAR_API_KEY` in the environment overrides the keychain, and `api_key_keychain` in the config names a different service. If the keychain is off limits, set `api_key_command` in the `[plugins.linear]` config to a command that prints the key, such as `op read op://Work/linear/credential`, and skip the keychain. dispatch manages only tickets assigned to the owner of this key.
+The command prompts for the key. On Linux there is no keychain lookup, so export `LINEAR_API_KEY` or set `api_key_command` (see below), for example `export LINEAR_API_KEY=lin_api_...` in the shell that runs `dispatch run`. Setting `LINEAR_API_KEY` in the environment overrides the keychain, and `api_key_keychain` in the config names a different service. If the keychain is off limits, set `api_key_command` in the `[plugins.linear]` config to a command that prints the key, such as `op read op://Work/linear/credential`, and skip the keychain. dispatch manages only tickets assigned to the owner of this key.
 
 **3. Prepare Linear.** dispatch finds your tickets by status and label, so each team in your config needs:
 
@@ -268,7 +268,7 @@ It needs the running loop, and exits 3 with `dispatch: not running` without one.
 
 ## Troubleshooting
 
-**`dispatch run` stops at start with `no Linear API key`.** `LINEAR_API_KEY` is unset, `api_key_command` is not set, and the keychain has no entry under the configured service (Linux has no keychain lookup, so set one of the first two). When `api_key_command` is set, the error instead names that command and its exit status, so run the command yourself. Otherwise redo step 2, and check the entry exists with `security find-generic-password -s dispatch-linear-api-key >/dev/null && echo found`, which reports the entry without printing the key. Fix the cause and start `dispatch run` again.
+**`dispatch run` stops at start with `no Linear API key`.** `LINEAR_API_KEY` is unset, `api_key_command` is not set, and the keychain has no entry under the configured service (Linux has no keychain lookup, so set one of the first two). When `api_key_command` is set, the error instead names that command and its exit status, so run the command yourself. Otherwise redo step 2. On macOS, check the entry exists with `security find-generic-password -s dispatch-linear-api-key >/dev/null && echo found`, which reports the entry without printing the key. Fix the cause and start `dispatch run` again.
 
 **`dispatch run` stops at start with `unknown setting`.** The config has a key dispatch doesn't know, and the message names it and the file. The usual causes are a typo and an example copied from an old design document. See the [config reference](config.md).
 
