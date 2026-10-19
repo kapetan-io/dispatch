@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -138,6 +139,20 @@ func TestLinearViewerFailsWithoutAKey(t *testing.T) {
 
 	require.ErrorContains(t, err, "api_key_command")
 	assert.Empty(t, out)
+}
+
+func TestLinearViewerOffMacOSNamesTheKeySourcesWithoutAKeychain(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("macOS looks the key up in the keychain")
+	}
+	h := newHarness(t)
+	h.useConfiguredKey(t)
+
+	_, err := h.run("linear-viewer")
+
+	require.ErrorContains(t, err, "LINEAR_API_KEY")
+	require.ErrorContains(t, err, "api_key_command")
+	assert.NotContains(t, err.Error(), "keychain has no")
 }
 
 func TestApiKeyCommandRunsAgainOnTheNextStartAfterLinearRejectsTheKey(t *testing.T) {

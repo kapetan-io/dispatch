@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -190,6 +191,26 @@ func TestTickAlertsWhenItEscalatesADesignTicket(t *testing.T) {
 
 	require.Len(t, h.linear.mutations(), 2)
 	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
+}
+
+func TestTickShowsHerdrNotificationsOffMacOS(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("macOS shows alerts through osascript")
+	}
+	h := newHarness(t)
+	h.builtinAlerts = true
+	bin := t.TempDir()
+	argv := filepath.Join(bin, "argv")
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "herdr"),
+		[]byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > "+argv+"\n"), 0o755))
+	t.Setenv("PATH", bin)
+	h.tickets(withLabel(ticket("ENG-1", "In Progress", ""), "design"))
+
+	h.tick()
+
+	got, err := os.ReadFile(argv)
+	require.NoError(t, err)
+	assert.Equal(t, "notification\nshow\ndispatch\n--body\nENG-1 is in Needs Human: ticket ENG-1\n--sound\nrequest\n", string(got))
 }
 
 func TestTickAlertsOnceWhenItEscalatesADesignReviewTicket(t *testing.T) {
@@ -492,6 +513,9 @@ type harness struct {
 	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
 	// with the launcher built into dispatch, over tools.Herdr and tools.Treehouse.
 	builtinLauncher bool
+	// builtinAlerts leaves Options.Alerts empty, so alerts go through the
+	// notifier dispatch picks for the operating system.
+	builtinAlerts bool
 	// clock is the time every command and the loop see, and moves only through advance.
 	clock *fakeClock
 	// running is the loop started by the first command that needs one.
@@ -598,7 +622,9 @@ func (h *harness) options(extra dispatch.Options) dispatch.Options {
 	if h.http != nil {
 		extra.HTTP = h.http
 	}
-	extra.Alerts = h.tools.Alerts
+	if !h.builtinAlerts {
+		extra.Alerts = h.tools.Alerts
+	}
 	if !h.builtinLauncher {
 		extra.Launcher = h.tools.Launcher
 	}

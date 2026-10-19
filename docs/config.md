@@ -92,7 +92,7 @@ Your own table. Dispatch never interprets it, and a rule reads a key as `ctx.con
 | `design_model` | `opus` | The model name passed to `claude --model` for the worker of a `design` or `design-review` ticket. |
 | `launch_failure_limit` | `2` | Failed launches in a row before the ticket goes to Needs Human with the launcher's error. A full treehouse pool (`pool_exhausted`) never counts. Closing a Claude whose launch died before its kickoff ran counts as one failure. |
 | `nudge_limit` | `2` | PR nudges to an idle In Review worker with no push before the ticket goes to Needs Human. The count resets when a push moves the PR head, and it also caps relaunches of a gone worker that never pushes. In Progress tickets never read it, since an idle In Progress worker is nudged once per Stop and never escalated. |
-| `blocked_renotify_minutes` | `15` | Minutes between macOS notifications for a worker that stays blocked on a question, a notification can only go out in a cycle, so it can come later than the period by up to one `resync`. The first notification comes on the first cycle that sees the worker blocked. `0` notifies in every cycle while it is blocked. |
+| `blocked_renotify_minutes` | `15` | Minutes between notifications for a worker that stays blocked on a question, a notification can only go out in a cycle, so it can come later than the period by up to one `resync`. The first notification comes on the first cycle that sees the worker blocked. `0` notifies in every cycle while it is blocked. |
 
 ```toml
 [rules]
@@ -125,7 +125,7 @@ A rule names the service and a path, and dispatch sends `Authorization: Bearer <
 | Setting | Default | What it does |
 |---|---|---|
 | `api_key_command` | none | A shell command that prints your Linear API key, such as `op read op://Work/linear/credential`. dispatch looks for the key in this order and stops at the first hit: the `LINEAR_API_KEY` environment variable, this command, then the keychain entry in `api_key_keychain`. With the command set, the keychain is never read. `dispatch run` runs the command once and keeps the key until Linear rejects it or the process exits, so a password manager that prompts to unlock asks once and a rotated key is picked up at the next read. A command that fails or prints nothing stops `dispatch run` at start with an error naming the command and its exit status. One that runs longer than a minute, such as a password manager waiting on an unlock prompt, is killed and the error says it timed out. Start `dispatch run` again to run it again. |
-| `api_key_keychain` | `dispatch-linear-api-key` | The macOS keychain service holding your Linear API key. The `LINEAR_API_KEY` environment variable wins when set. |
+| `api_key_keychain` | `dispatch-linear-api-key` | The macOS keychain service holding your Linear API key. Linux has no keychain lookup, so use `LINEAR_API_KEY` or `api_key_command` there. The `LINEAR_API_KEY` environment variable wins when set. |
 | `teams` | `["ENG"]` | Team keys dispatch manages. A ticket in another team is ignored, and a promoted child must be in one of these. |
 | `ai_label` | `ai` | The label that opts a ticket in. dispatch touches only tickets assigned to the owner of the API key that carry it. |
 | `repo_label_group` | `repo` | The Linear label group whose labels name a ticket's repo. A ticket's repo label must match a `[repos.<label>]` table. |
@@ -181,7 +181,7 @@ Anywhere else it fails with `dispatch: /tmp is not inside a repo under [repos] i
 
 ## Auto-merge
 
-In a repo with `auto_merge = true`, a cycle that finds an In Review ticket's PR ready (the same test as the ready-for-review notification, with the worker idle) and approved by a review on its head commit runs `gh pr merge <PR URL> --merge --match-head-commit <head>`. The run window prints `merge ENG-1 (auto-merge)` when the merge starts and `merge ENG-1 done` when it ends, and dispatch sends a macOS notification, `ENG-1 was approved and merged: <PR URL>`, in place of the ready-for-review one. Any reviewer's approval counts, which today means CodeRabbit's, unless another reviewer's latest review requests changes. The merge only goes through for the commit that was approved.
+In a repo with `auto_merge = true`, a cycle that finds an In Review ticket's PR ready (the same test as the ready-for-review notification, with the worker idle) and approved by a review on its head commit runs `gh pr merge <PR URL> --merge --match-head-commit <head>`. The run window prints `merge ENG-1 (auto-merge)` when the merge starts and `merge ENG-1 done` when it ends, and dispatch sends a notification, `ENG-1 was approved and merged: <PR URL>`, in place of the ready-for-review one. Any reviewer's approval counts, which today means CodeRabbit's, unless another reviewer's latest review requests changes. The merge only goes through for the commit that was approved.
 
 - A draft is never merged. In a repo with `open_pr_as = "draft"`, an approved PR you open merges in the next cycle when it is ready, without the "reviews are handled" notification.
 - An approval of an earlier commit doesn't count, so a push after approval waits for a new one.

@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -60,7 +61,7 @@ type Options struct {
 	// HTTP reaches the services config.toml names under [http.<name>]. Defaults to
 	// calling them over HTTP with the token each token_command prints.
 	HTTP httpservice.Services
-	// Alerts shows notifications. Defaults to macOS notifications through osascript.
+	// Alerts shows notifications. Defaults to macOS notifications through osascript on macOS and herdr notifications elsewhere.
 	Alerts delivery.Alerts
 	// Launcher starts the workers. Defaults to leasing a tree from Treehouse and
 	// starting the worker in Herdr.
@@ -224,7 +225,7 @@ func withDefaults(o Options) Options {
 		o.PullRequests = pullrequest.NewCLI("gh")
 	}
 	if o.Alerts == nil {
-		o.Alerts = delivery.NewNotificationCenter("osascript")
+		o.Alerts = delivery.NewAlerts(runtime.GOOS)
 	}
 	if o.Clock == nil {
 		o.Clock = loop.WallClock{}
@@ -271,9 +272,12 @@ func (k *keyLookup) find(ctx context.Context, opts Options, cfg config.Config) (
 		}
 		return k.fromCommand, nil
 	}
+	if runtime.GOOS != "darwin" {
+		return "", errors.New("no Linear API key: LINEAR_API_KEY is unset and api_key_command is not set (only macOS has a keychain lookup)")
+	}
 	out, err := exec.CommandContext(ctx, "security", "find-generic-password", "-s", cfg.Plugins.Linear.APIKeyKeychain, "-w").Output()
 	if err != nil {
-		return "", fmt.Errorf("no Linear API key: LINEAR_API_KEY is unset and the keychain has no %q entry", cfg.Plugins.Linear.APIKeyKeychain)
+		return "", fmt.Errorf("no Linear API key: LINEAR_API_KEY is unset, api_key_command is not set, and the keychain has no %q entry", cfg.Plugins.Linear.APIKeyKeychain)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
