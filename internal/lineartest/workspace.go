@@ -356,7 +356,10 @@ func (s *session) StateID(_ context.Context, team, name string) (string, error) 
 		return "", err
 	}
 	defer s.w.mu.Unlock()
-	if team != s.w.team || s.w.stateOf(name) == nil {
+	if team != s.w.team {
+		return "", linear.NoTeam(team)
+	}
+	if s.w.stateOf(name) == nil {
 		return "", linear.NoStatus(team, name)
 	}
 	return StateID(name), nil

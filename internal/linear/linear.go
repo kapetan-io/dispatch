@@ -103,7 +103,8 @@ type Workspace interface {
 	// ParentChildren returns every child, in every status, of the parents with
 	// these Linear ids, keyed by the parent's identifier.
 	ParentChildren(ctx context.Context, parents []string) (map[string][]Ticket, error)
-	// StateID returns the id of the named workflow status on a team.
+	// StateID returns the id of the named workflow status on a team, or NoTeam
+	// when the key matches no team.
 	StateID(ctx context.Context, team, name string) (string, error)
 	// Move sets a ticket's status.
 	Move(ctx context.Context, ticketID, stateID string) error
@@ -481,8 +482,10 @@ func SplitIdentifier(id string) (team string, number int, ok bool) {
 	return id[:i], n, true
 }
 
-const teamStates = `query TeamStates {
-  teams { nodes { key states { nodes { id name } } } }
+// Filtering on the key keeps the answer to one team, because an unfiltered
+// teams connection stops at its first page of 50.
+const teamStates = `query TeamStates($team: String!) {
+  teams(filter: {key: {eq: $team}}) { nodes { key states { nodes { id name } } } }
 }`
 
 // StateID returns the id of the named workflow status on a team.
@@ -500,7 +503,7 @@ func (c *Client) StateID(ctx context.Context, team, name string) (string, error)
 			} `json:"nodes"`
 		} `json:"teams"`
 	}
-	if err := c.do(ctx, "TeamStates", teamStates, nil, &resp); err != nil {
+	if err := c.do(ctx, "TeamStates", teamStates, map[string]any{"team": team}, &resp); err != nil {
 		return "", err
 	}
 	for _, t := range resp.Teams.Nodes {
@@ -512,6 +515,9 @@ func (c *Client) StateID(ctx context.Context, team, name string) (string, error)
 				return s.ID, nil
 			}
 		}
+	}
+	if len(resp.Teams.Nodes) == 0 {
+		return "", NoTeam(team)
 	}
 	return "", NoStatus(team, name)
 }
@@ -559,6 +565,11 @@ func (c *Client) Comment(ctx context.Context, ticketID, body string) error {
 // NoStatus is the error for a status name the team doesn't have.
 func NoStatus(team, name string) error {
 	return fmt.Errorf("team %s has no %q status", team, name)
+}
+
+// NoTeam is the error for a team key that matches no Linear team.
+func NoTeam(team string) error {
+	return fmt.Errorf("team %s not found", team)
 }
 
 // Unsuccessful is the error for a mutation Linear answered with success:false.
