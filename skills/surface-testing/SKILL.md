@@ -17,12 +17,23 @@ A test should change only when the system's requirements change. Refactors, new 
 
 Every test interacts with the system the way its end users would. Never call internal or private functions from a test. If you can't observe a behavior through the surface, fix the design, not the test strategy. Models reach for internals by default, because the function is right there.
 
+## Enter at the highest surface
+
+Every test pins the surface it enters through, so a package test pins the package's API. If a refactor merges or deletes the package, its tests go with it while the product tests stay green. Reach each behavior from the outermost surface first (the CLI or service a user runs). Write a package test only when one of these holds, and a one-line comment on the test names which:
+
+- The scenario is unreachable from above, such as concurrent callers, a crash between two steps, or a fault the product can't inject.
+- The package is combinatorial, like a parser or codec, and driving every input through the product is slow or hides the case.
+- The package ships to other consumers.
+- The package wraps an external tool, so its adapter and contract tests (see Ports and adapters) run against the real thing.
+
+A package test that meets none of these gets the deletion check. Imagine deleting the package and rewriting its callers. If the test would die while the product tests stay green, it was pinning structure, so delete it. This covers a test you are about to write and an existing one that repeats the same observable behavior as a product test.
+
 ## Finding the surface
 
 - **HTTP/gRPC service**: boot the application and send real requests. Don't instantiate handlers or services.
 - **CLI**: call `Run(ctx, args, opts)` with arguments and capture output. `main()` stays a thin wrapper around it, so `main` and tests enter the same way.
 - **Library**: call the exported functions as a consumer would.
-- **Internal library boundary**: a package that could be extracted and published without changing its interface. In design, implementation and review, recognize or introduce these boundaries at domain edges. Test each through its exported API only, from `package xxx_test`. It is a first-class surface, not an internal seam to cut through when wiring components together. Consumers use the real package, so there is nothing to substitute unless it wraps an external tool.
+- **Internal library boundary**: a package that could be extracted and published without changing its interface. Recognize these at domain edges in design and review. It is a surface of last resort, tested only under the conditions in "Enter at the highest surface" above. Test it through its exported API only, from `package xxx_test`. Consumers use the real package, so there is nothing to substitute unless it wraps an external tool.
 
 ```go
 func main() {
