@@ -210,57 +210,69 @@ type checksPage struct {
 // rollupState is the state GitHub's rollup would have if only the checks that
 // count did: SUCCESS when none does, FAILURE when one failed, PENDING while one
 // has not finished. A check counts unless it is an approval check, or optional
-// while rules want only the required ones.
-func rollupState(contexts []checkContext, rules Rules) string {
-	running := false
+// while rules want only the required ones. gated reports an approval check
+// that has not passed.
+func rollupState(contexts []checkContext, rules Rules) (state string, gated bool) {
+	running, failed := false, false
 	for _, c := range contexts {
-		if rules.isApprovalCheck(c) || (rules.RequiredChecksOnly && !c.IsRequired) {
+		isStatus := c.Typename == "StatusContext"
+		passed := (isStatus && c.State == "SUCCESS") || (!isStatus && c.Status == "COMPLETED" && slices.Contains([]string{"SUCCESS", "NEUTRAL", "SKIPPED"}, c.Conclusion))
+		if rules.isApprovalCheck(c) {
+			gated = gated || !passed
+			continue
+		}
+		if rules.RequiredChecksOnly && !c.IsRequired {
 			continue
 		}
 		switch {
-		case c.Typename == "StatusContext" && (c.State == "FAILURE" || c.State == "ERROR"):
-			return "FAILURE"
-		case c.Typename == "StatusContext" && c.State != "SUCCESS":
+		case isStatus && (c.State == "FAILURE" || c.State == "ERROR"):
+			failed = true
+		case isStatus && c.State != "SUCCESS":
 			running = true
-		case c.Typename != "StatusContext" && c.Status != "COMPLETED":
+		case !isStatus && c.Status != "COMPLETED":
 			running = true
-		case c.Typename != "StatusContext" && !slices.Contains([]string{"SUCCESS", "NEUTRAL", "SKIPPED"}, c.Conclusion):
-			return "FAILURE"
+		case !isStatus && !passed:
+			failed = true
 		}
 	}
-	if running {
-		return "PENDING"
+	switch {
+	case failed:
+		return "FAILURE", gated
+	case running:
+		return "PENDING", gated
 	}
-	return "SUCCESS"
+	return "SUCCESS", gated
 }
 
 // countedRollupState reads the checks behind PR number and returns the rollup
-// state of the ones that count under rules. A second page of checks is an
+// state of the ones that count under rules, and whether an approval check has
+// not passed. A second page of checks is an
 // error, because a failure beyond the first page would go unnoticed. Checks of any
 // commit but head, which a push between the two reads causes, are PENDING, so
 // the PR is not ready until the next read agrees with itself.
-func countedRollupState(ctx context.Context, src Source, number int, head string, rules Rules) (string, error) {
+func countedRollupState(ctx context.Context, src Source, number int, head string, rules Rules) (state string, gated bool, err error) {
 	b, err := src.Checks(ctx, number)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	var resp checksPage
 	if err := json.Unmarshal(b, &resp); err != nil {
-		return "", fmt.Errorf("while reading gh output for the checks of PR %d: %w", number, err)
+		return "", false, fmt.Errorf("while reading gh output for the checks of PR %d: %w", number, err)
 	}
 	for _, c := range resp.Data.Repository.PullRequest.Commits.Nodes {
 		if c.Commit.Oid != head {
-			return "PENDING", nil
+			return "PENDING", true, nil
 		}
 		if r := c.Commit.StatusCheckRollup; r != nil {
 			if r.Contexts.PageInfo.HasNextPage {
-				return "", fmt.Errorf("PR %d has more than 100 checks; dispatch reads one page and would miss required ones", number)
+				return "", false, fmt.Errorf("PR %d has more than 100 checks; dispatch reads one page and would miss required ones", number)
 			}
-			return rollupState(r.Contexts.Nodes, rules), nil
+			state, gated := rollupState(r.Contexts.Nodes, rules)
+			return state, gated, nil
 		}
 	}
 	// The rollup the branch query saw has vanished, so this read can't vouch for it.
-	return "PENDING", nil
+	return "PENDING", true, nil
 }
 
 type reviewNode struct {
@@ -449,7 +461,7 @@ func Find(ctx context.Context, branch string, src Source, rules Rules) (PullRequ
 		return PullRequest{}, false, err
 	}
 	opinions := slices.DeleteFunc(slices.Clone(n.LatestOpinionatedReviews.Nodes), func(r opinionNode) bool { return rules.ignores(r.Author) })
-	checksPassed, checksRunning := true, false
+	checksPassed, checksRunning, gated := true, false, false
 	pr := PullRequest{Number: n.Number, URL: n.URL, Head: n.HeadRefOid, Draft: n.IsDraft}
 	// GitHub's reviewDecision is empty on an unprotected branch and can't say
 	// which commit a request is on, so the reviews are read directly. One
@@ -482,9 +494,11 @@ func Find(ctx context.Context, branch string, src Source, rules Rules) (PullRequ
 		approvals := len(rules.ApprovalChecks) > 0
 		unsettled := state == "FAILURE" || state == "ERROR" || state == "PENDING" || (state == "EXPECTED" && approvals)
 		if (rules.RequiredChecksOnly || approvals) && unsettled {
-			if state, err = countedRollupState(ctx, src, n.Number, n.HeadRefOid, rules); err != nil {
+			var gate bool
+			if state, gate, err = countedRollupState(ctx, src, n.Number, n.HeadRefOid, rules); err != nil {
 				return PullRequest{}, false, err
 			}
+			gated = gated || gate
 		}
 		if state == "FAILURE" || state == "ERROR" {
 			pr.Problems = append(pr.Problems, "a failed check")
@@ -493,6 +507,10 @@ func Find(ctx context.Context, branch string, src Source, rules Rules) (PullRequ
 			checksPassed = false
 			checksRunning = checksRunning || state == "PENDING" || state == "EXPECTED"
 		}
+	}
+	// A review approves nothing while a human-approval gate is still unmet.
+	if gated {
+		pr.Approved = false
 	}
 	// RFC 3339 UTC times sort as strings, and only the newest item matters, so
 	// widen reads far enough back to find the newest unlisted one.

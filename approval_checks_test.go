@@ -86,3 +86,34 @@ func TestTickCountsAnApprovalCheckInARepoThatDoesNotListIt(t *testing.T) {
 	require.Len(t, h.prompts(), 1)
 	assert.Contains(t, h.prompts()[0], "has a failed check")
 }
+
+func TestTickDoesNotAutoMergeWhileAnApprovalCheckHasNotPassed(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		checks   string
+		contexts []checkContext
+	}{
+		{name: "FailedAndOptional", checks: "FAILURE", contexts: []checkContext{{"Mergify Merge Protections", "FAILURE", false}, {"premerge", "SUCCESS", true}}},
+		{name: "FailedAndRequired", checks: "FAILURE", contexts: []checkContext{{"Mergify Merge Protections", "FAILURE", true}, {"premerge", "SUCCESS", true}}},
+		{name: "NotStarted", checks: "EXPECTED", contexts: []checkContext{{"Mergify Merge Protections", "EXPECTED", true}, {"premerge", "SUCCESS", true}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			pr := prState{head: "a1", checks: test.checks, mergeable: "MERGEABLE", approved: []string{"a1"}, contexts: test.contexts}
+			h := approvalHarness(t, approvalGate+autoMergeSetting, pr)
+
+			h.tick()
+
+			assert.Empty(t, h.merges())
+		})
+	}
+}
+
+func TestTickAutoMergesOnceTheApprovalCheckPasses(t *testing.T) {
+	pr := prState{head: "a1", checks: "SUCCESS", mergeable: "MERGEABLE", approved: []string{"a1"},
+		contexts: []checkContext{{"Mergify Merge Protections", "SUCCESS", true}, {"premerge", "SUCCESS", true}}}
+	h := approvalHarness(t, approvalGate+autoMergeSetting, pr)
+
+	h.tick()
+
+	assert.Equal(t, []string{mergeCall1}, h.merges())
+}

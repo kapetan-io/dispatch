@@ -34,6 +34,7 @@ func TestRepoSettingsPrintsTheTableOfTheRepoAtTheWorkingDirectory(t *testing.T) 
 		"open_pr_as = \"open\"\n"+
 		"ignore_comment_authors = []\n"+
 		"ignore_optional_checks = false\n"+
+		"approval_checks = []\n"+
 		"auto_merge = false\n", out)
 }
 
@@ -53,6 +54,7 @@ func TestRepoSettingsPrintsEverySettingAtItsConfiguredValue(t *testing.T) {
 		"open_pr_as = \"draft\"\n"+
 		"ignore_comment_authors = [\"github-actions[bot]\", \"codeowners-bot\"]\n"+
 		"ignore_optional_checks = true\n"+
+		"approval_checks = []\n"+
 		"auto_merge = true\n", out)
 }
 

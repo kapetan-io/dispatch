@@ -78,6 +78,7 @@ func TestDocConfigReferenceListsEveryKeyAtItsDefault(t *testing.T) {
 		Path:                 config.ExpandHome("~/Development/dispatch"),
 		OpenPRAs:             "open",
 		IgnoreCommentAuthors: []string{},
+		ApprovalChecks:       []string{},
 	}, got.Repos["dispatch"])
 	got.Repos, want.Repos = nil, nil
 	assert.Equal(t, want, got)
