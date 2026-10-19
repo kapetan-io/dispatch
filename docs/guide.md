@@ -24,7 +24,7 @@ cd ~/Development/dispatch && go install ./cmd/dispatch
 
 Put `$GOBIN` (default `~/go/bin`) on your PATH. `bin/dispatch-launch` runs `dispatch launch`, so it needs the binary there.
 
-**2. Put your Linear API key in the keychain.** Create a personal API key in Linear under Settings, then Security & access. Store it under the service name `dispatch-linear-api-key`:
+**2. Give dispatch your Linear API key.** Create a personal API key in Linear under Settings, then Security & access. On macOS, store it in the keychain under the service name `dispatch-linear-api-key`. On Linux there is no keychain lookup, so set `LINEAR_API_KEY` or `api_key_command` instead:
 
 ```sh
 security add-generic-password -s dispatch-linear-api-key -a "$USER" -w
@@ -107,7 +107,7 @@ An idle In Review worker also gets the activity nudge when its PR gains a review
 
 The activity nudge counts toward neither the stall nor the PR limit, and it goes ahead of the ready notification and auto-merge, so a review nobody has read is never merged past. A PR that needs work gets the PR nudge first, and the activity nudge follows once those problems clear. When a ticket enters In Review, its worker is nudged about any review or comment already on the PR. dispatch can't tell your reply on the PR from the worker's own, so a worker's reply draws one more nudge, which tells it to say nothing if there is nothing to act on.
 
-A worker blocked on a question (AskUserQuestion), on an In Progress or In Review ticket, fires a macOS notification (through `osascript`) on its first blocked cycle and again every `blocked_renotify_minutes` minutes (default 15) while it stays blocked. The dispatcher never answers the question and never sets Needs Human for it. A ticket entering Needs Human fires one notification, a parent included.
+A worker blocked on a question (AskUserQuestion), on an In Progress or In Review ticket, fires a notification (a macOS notification through `osascript` on macOS, a herdr notification through `herdr notification show` elsewhere) on its first blocked cycle and again every `blocked_renotify_minutes` minutes (default 15) while it stays blocked. The dispatcher never answers the question and never sets Needs Human for it. A ticket entering Needs Human fires one notification, a parent included.
 
 A PR is ready for review when its ticket is In Review, its worker is idle, every check has finished and passed (a PR with no checks counts as passed), no review thread is unresolved, no reviewer's latest review requests changes on the head, and GitHub reports the PR as mergeable. A check still running, such as CodeRabbit's while its review is in progress, or a merge state GitHub has not computed yet, keeps the PR from being ready. The dispatcher fires one notification naming the ticket and its PR, once per PR head commit. A push that leaves the PR ready again notifies again, and no cycle in between repeats it.
 
@@ -268,7 +268,7 @@ It needs the running loop, and exits 3 with `dispatch: not running` without one.
 
 ## Troubleshooting
 
-**`dispatch run` stops at start with `no Linear API key`.** `LINEAR_API_KEY` is unset and the keychain has no entry under the configured service. When `api_key_command` is set, the error instead names that command and its exit status, so run the command yourself. Otherwise redo step 2, and check the entry exists with `security find-generic-password -s dispatch-linear-api-key >/dev/null && echo found`, which reports the entry without printing the key. Fix the cause and start `dispatch run` again.
+**`dispatch run` stops at start with `no Linear API key`.** `LINEAR_API_KEY` is unset, `api_key_command` is not set, and the keychain has no entry under the configured service (Linux has no keychain lookup, so set one of the first two). When `api_key_command` is set, the error instead names that command and its exit status, so run the command yourself. Otherwise redo step 2, and check the entry exists with `security find-generic-password -s dispatch-linear-api-key >/dev/null && echo found`, which reports the entry without printing the key. Fix the cause and start `dispatch run` again.
 
 **`dispatch run` stops at start with `unknown setting`.** The config has a key dispatch doesn't know, and the message names it and the file. The usual causes are a typo and an example copied from an old design document. See the [config reference](config.md).
 

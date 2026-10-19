@@ -78,3 +78,51 @@ func TestNotificationCenterShowsTextThatLooksLikeAnOption(t *testing.T) {
 	args := strings.Split(string(got), "\x00")
 	assert.Equal(t, []string{"--", "-e", "dispatch"}, args[len(args)-3:])
 }
+
+// Linking the test binary into a temp dir under the tool's name lets Show run
+// it by name from PATH, as NewAlerts does.
+func stubOnPath(t *testing.T, name string) {
+	exe, err := os.Executable()
+	require.NoError(t, err)
+	dir := t.TempDir()
+	require.NoError(t, os.Symlink(exe, dir+"/"+name))
+	t.Setenv("PATH", dir)
+}
+
+func TestAlertsOnLinuxShowAHerdrNotification(t *testing.T) {
+	stubOnPath(t, "herdr")
+	argsFile := t.TempDir() + "/args"
+	t.Setenv(envArgs, argsFile)
+
+	err := delivery.NewAlerts("linux").Show(context.Background(), "-ENG-1 needs you")
+
+	require.NoError(t, err)
+	got, err := os.ReadFile(argsFile)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"notification", "show", "dispatch", "--body", "-ENG-1 needs you", "--sound", "request"},
+		strings.Split(string(got), "\x00"))
+}
+
+func TestAlertsOnLinuxReportWhatHerdrSaid(t *testing.T) {
+	stubOnPath(t, "herdr")
+	t.Setenv(envArgs, t.TempDir()+"/args")
+	t.Setenv(envExit, "1")
+	t.Setenv(envStderr, "no herdr server\n")
+
+	err := delivery.NewAlerts("linux").Show(context.Background(), "x")
+
+	require.ErrorContains(t, err, "exit status 1: no herdr server")
+}
+
+func TestAlertsOnMacOSShowAnOsascriptNotification(t *testing.T) {
+	stubOnPath(t, "osascript")
+	argsFile := t.TempDir() + "/args"
+	t.Setenv(envArgs, argsFile)
+
+	err := delivery.NewAlerts("darwin").Show(context.Background(), "ENG-1")
+
+	require.NoError(t, err)
+	got, err := os.ReadFile(argsFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(got), "display notification")
+}
