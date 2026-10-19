@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -21,7 +22,7 @@ type wire struct {
 	server  *httptest.Server
 	answers map[string]any
 	// respond takes precedence over answers for the operations it names.
-	respond   map[string]func(variables map[string]any) any
+	respond   map[string]func(query string, variables map[string]any) any
 	status    int
 	envelope  map[string]any
 	variables map[string]map[string]any
@@ -30,7 +31,7 @@ type wire struct {
 }
 
 func newWire(t *testing.T) *wire {
-	w := &wire{answers: map[string]any{}, respond: map[string]func(map[string]any) any{}, variables: map[string]map[string]any{}, queries: map[string]string{}}
+	w := &wire{answers: map[string]any{}, respond: map[string]func(string, map[string]any) any{}, variables: map[string]map[string]any{}, queries: map[string]string{}}
 	w.server = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		var req struct {
 			OperationName string         `json:"operationName"`
@@ -52,7 +53,7 @@ func newWire(t *testing.T) *wire {
 			return
 		}
 		if respond, ok := w.respond[req.OperationName]; ok {
-			_ = json.NewEncoder(rw).Encode(map[string]any{"data": respond(req.Variables)})
+			_ = json.NewEncoder(rw).Encode(map[string]any{"data": respond(req.Query, req.Variables)})
 			return
 		}
 		_ = json.NewEncoder(rw).Encode(map[string]any{"data": w.answers[req.OperationName]})
@@ -370,8 +371,10 @@ func teamsPastTheFirstPage(w *wire) {
 		workspaceTeams = 216
 		linearPageSize = 50
 	)
-	w.respond["TeamStates"] = func(variables map[string]any) any {
-		filter, filtered := variables["team"].(string)
+	w.respond["TeamStates"] = func(query string, variables map[string]any) any {
+		// Sending the variable is not enough, the query has to apply it.
+		filter, sent := variables["team"].(string)
+		filtered := sent && strings.Contains(query, "teams(filter: {key: {eq: $team}})")
 		nodes := []any{}
 		for i := range workspaceTeams {
 			key := fmt.Sprintf("T%d", i)
