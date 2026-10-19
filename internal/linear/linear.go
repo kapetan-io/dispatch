@@ -483,9 +483,12 @@ func SplitIdentifier(id string) (team string, number int, ok bool) {
 }
 
 // Filtering on the key keeps the answer to one team, because an unfiltered
-// teams connection stops at its first page of 50.
+// teams connection stops at its first page of 50. A states connection has the
+// same default, so it asks for 250, the most Linear returns per page. Linear
+// rejects a query over 10,000 complexity points and prices a connection at its
+// page size, so teams asks for one: 50 teams of 250 states would cost 15,000.
 const teamStates = `query TeamStates($team: String!) {
-  teams(filter: {key: {eq: $team}}) { nodes { key states { nodes { id name } } } }
+  teams(first: 1, filter: {key: {eq: $team}}) { nodes { key states(first: 250) { nodes { id name } } } }
 }`
 
 // StateID returns the id of the named workflow status on a team.

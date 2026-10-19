@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -374,7 +376,7 @@ func teamsPastTheFirstPage(w *wire) {
 	w.respond["TeamStates"] = func(query string, variables map[string]any) any {
 		// Sending the variable is not enough, the query has to apply it.
 		filter, sent := variables["team"].(string)
-		filtered := sent && strings.Contains(query, "teams(filter: {key: {eq: $team}})")
+		filtered := sent && strings.Contains(query, "teams(first: 1, filter: {key: {eq: $team}})")
 		nodes := []any{}
 		for i := range workspaceTeams {
 			key := fmt.Sprintf("T%d", i)
@@ -403,6 +405,59 @@ func TestClientFindsAStatusOfATeamPastLinearsFirst50(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "ARM-done", id)
+}
+
+// teamWithManyStatuses answers TeamStates like Linear does for a team of 60
+// statuses. A states connection returns only as many as its first: argument
+// asks for, and 50 when it has none. Like Linear it rejects a query priced over
+// 10,000 points, which a connection costs at its page size however few it
+// returns, and here a rejection shows as no team.
+func teamWithManyStatuses(w *wire) {
+	const (
+		teamStatuses   = 60
+		linearPageSize = 50
+		maxComplexity  = 10000
+	)
+	w.respond["TeamStates"] = func(query string, variables map[string]any) any {
+		pageSize := func(connection string) int {
+			if match := regexp.MustCompile(connection + `\(first: (\d+)`).FindStringSubmatch(query); match != nil {
+				size, _ := strconv.Atoi(match[1])
+				return size
+			}
+			return linearPageSize
+		}
+		size := pageSize("states")
+		const statusPoints = 1.2 // an object and two properties
+		if float64(pageSize("teams")*size)*statusPoints > maxComplexity {
+			return map[string]any{"teams": map[string]any{"nodes": []any{}}}
+		}
+		nodes := []any{}
+		for i := range min(teamStatuses, size) {
+			nodes = append(nodes, map[string]string{"id": fmt.Sprintf("S%d", i), "name": fmt.Sprintf("Status %d", i)})
+		}
+		return map[string]any{"teams": map[string]any{"nodes": []any{
+			map[string]any{"key": "BIG", "states": map[string]any{"nodes": nodes}},
+		}}}
+	}
+}
+
+func TestClientFindsAStatusPastATeamsFirst50Statuses(t *testing.T) {
+	w := newWire(t)
+	teamWithManyStatuses(w)
+
+	id, err := w.client().StateID(context.Background(), "BIG", "Status 55")
+
+	require.NoError(t, err)
+	assert.Equal(t, "S55", id)
+}
+
+func TestClientReportsAMissingStatusOfATeamWithMoreThan50(t *testing.T) {
+	w := newWire(t)
+	teamWithManyStatuses(w)
+
+	_, err := w.client().StateID(context.Background(), "BIG", "Nope")
+
+	require.EqualError(t, err, linear.NoStatus("BIG", "Nope").Error())
 }
 
 func TestClientReportsAStatusATeamLacks(t *testing.T) {
