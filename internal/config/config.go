@@ -93,6 +93,8 @@ type Repo struct {
 	OpenPRAs             string   `toml:"open_pr_as"`
 	IgnoreCommentAuthors []string `toml:"ignore_comment_authors"`
 	IgnoreOptionalChecks bool     `toml:"ignore_optional_checks"`
+	// ApprovalChecks names checks that pass only after a human approves the PR, such as Mergify's "Merge Protections".
+	ApprovalChecks []string `toml:"approval_checks"`
 	// AutoMerge makes dispatch merge a ready PR once a review approves its head commit.
 	AutoMerge bool `toml:"auto_merge"`
 }
@@ -298,7 +300,7 @@ func (r *Repos) UnmarshalTOML(data any) error {
 // decodeRepo reads one repo table by encoding it back to TOML and decoding it
 // into Repo, so the decoder's type checks apply to every key.
 func decodeRepo(label string, table map[string]any) (Repo, error) {
-	repo := Repo{OpenPRAs: OpenPRAsOpen, IgnoreCommentAuthors: []string{}}
+	repo := Repo{OpenPRAs: OpenPRAsOpen, IgnoreCommentAuthors: []string{}, ApprovalChecks: []string{}}
 	var buf bytes.Buffer
 	if err := toml.NewEncoder(&buf).Encode(table); err != nil {
 		return Repo{}, fmt.Errorf("repos.%s: %v", label, err)

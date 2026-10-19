@@ -150,6 +150,12 @@
       "additionalProperties": {
         "additionalProperties": false,
         "properties": {
+          "approval_checks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "auto_merge": {
             "type": "boolean"
           },

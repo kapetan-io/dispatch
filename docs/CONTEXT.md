@@ -38,6 +38,10 @@ _Avoid_: bot, ignored bot (some bots, such as CodeRabbit, are not listed and sti
 A check GitHub does not mark required for merging the PR. It never counts in a repo with `ignore_optional_checks = true`.
 _Avoid_: non-blocking check, flaky check
 
+**Approval check**:
+A check that passes only after a human approves the PR, such as "Mergify Merge Protections". A repo names them in `approval_checks`, and they count for nothing, so a draft waiting for review is still ready.
+_Avoid_: gate, blocking check
+
 **PR phase**:
 Draft or open, read from GitHub's `isDraft` on every resync. Each phase has its own ready notification.
 _Avoid_: PR state (GitHub's `state` is OPEN for a draft too)

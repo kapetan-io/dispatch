@@ -34,6 +34,7 @@ func TestRepoSettingsPrintsTheTableOfTheRepoAtTheWorkingDirectory(t *testing.T) 
 		"open_pr_as = \"open\"\n"+
 		"ignore_comment_authors = []\n"+
 		"ignore_optional_checks = false\n"+
+		"approval_checks = []\n"+
 		"auto_merge = false\n", out)
 }
 
@@ -53,6 +54,7 @@ func TestRepoSettingsPrintsEverySettingAtItsConfiguredValue(t *testing.T) {
 		"open_pr_as = \"draft\"\n"+
 		"ignore_comment_authors = [\"github-actions[bot]\", \"codeowners-bot\"]\n"+
 		"ignore_optional_checks = true\n"+
+		"approval_checks = []\n"+
 		"auto_merge = true\n", out)
 }
 
@@ -161,4 +163,14 @@ func TestRepoSettingsFailsWhenTwoReposResolveToTheCloneAtTheWorkingDirectory(t *
 
 	require.ErrorContains(t, err, "repos.alpha and repos.zeta both resolve to "+clone+": give each repo its own clone")
 	assert.Empty(t, out)
+}
+
+func TestRepoSettingsPrintsTheApprovalChecksWhenListed(t *testing.T) {
+	clone := newHintRepo(t)
+	config := writeHintConfig(t, "[repos.dispatch]\npath = \""+clone+"\"\napproval_checks = [\"Mergify Merge Protections\"]\n")
+
+	out, err := runRepoSettings(t, clone, config)
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "approval_checks = [\"Mergify Merge Protections\"]\n")
 }

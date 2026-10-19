@@ -330,7 +330,7 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 		}
 		settings := scope.Repos[repo]
 		readCtx, done := bound(ctx)
-		pr, found, err := src.PullRequests.Read(readCtx, dir, t.Branch, pullrequest.Rules{IgnoreAuthors: settings.IgnoreCommentAuthors, RequiredChecksOnly: settings.IgnoreOptionalChecks})
+		pr, found, err := src.PullRequests.Read(readCtx, dir, t.Branch, pullrequest.Rules{IgnoreAuthors: settings.IgnoreCommentAuthors, RequiredChecksOnly: settings.IgnoreOptionalChecks, ApprovalChecks: settings.ApprovalChecks})
 		done()
 		if err != nil {
 			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, err)

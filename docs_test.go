@@ -78,6 +78,7 @@ func TestDocConfigReferenceListsEveryKeyAtItsDefault(t *testing.T) {
 		Path:                 config.ExpandHome("~/Development/dispatch"),
 		OpenPRAs:             "open",
 		IgnoreCommentAuthors: []string{},
+		ApprovalChecks:       []string{},
 	}, got.Repos["dispatch"])
 	got.Repos, want.Repos = nil, nil
 	assert.Equal(t, want, got)
@@ -105,7 +106,8 @@ func settingKeys(typ reflect.Type, prefix string) []string {
 	var keys []string
 	for i := range typ.NumField() {
 		field := typ.Field(i)
-		name := prefix + field.Tag.Get("toml")
+		tag, _, _ := strings.Cut(field.Tag.Get("toml"), ",")
+		name := prefix + tag
 		if field.Type.Kind() == reflect.Struct {
 			keys = append(keys, settingKeys(field.Type, name+".")...)
 			continue
