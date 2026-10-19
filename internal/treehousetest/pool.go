@@ -29,6 +29,8 @@ type Pool struct {
 	leaseFail    error
 	treesDelay   time.Duration
 	leaseHold    time.Duration
+	leaseQuorum  int
+	quorumMet    bool
 	leasing      map[string]int
 	peakLeasing  map[string]int
 	peakAll      int
@@ -130,6 +132,15 @@ func (p *Pool) HoldLeases(d time.Duration) {
 	p.leaseHold = d
 }
 
+// AwaitLeases makes every Lease call wait until n Lease calls are running at once
+// in all pools together, so a test sees two launches overlap without guessing how
+// long the second takes to arrive. A wait that outlasts ten seconds gives up.
+func (p *Pool) AwaitLeases(n int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.leaseQuorum = n
+}
+
 // PeakLeasing is the most Lease calls that were running at once in the pool of
 // repoDir. Above 1 means two launches could have fetched into the clone together.
 func (p *Pool) PeakLeasing(repoDir string) int {
@@ -212,6 +223,19 @@ func (p *Pool) Lease(ctx context.Context, repoDir, ticket string) (treehouse.Tre
 	p.peakAll = max(p.peakAll, total)
 	p.mu.Unlock()
 	time.Sleep(hold)
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+		p.mu.Lock()
+		total := 0
+		for _, n := range p.leasing {
+			total += n
+		}
+		p.quorumMet = p.quorumMet || total >= p.leaseQuorum
+		ready := p.quorumMet
+		p.mu.Unlock()
+		if ready {
+			break
+		}
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.leasing[key]--

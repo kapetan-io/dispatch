@@ -1010,7 +1010,7 @@ func TestLaunchesIntoDifferentReposLeaseTogether(t *testing.T) {
 	otherTree := filepath.Join(l.dir, "other-tree")
 	l.git(other, "worktree", "add", "-q", "--detach", otherTree)
 	l.tools.Treehouse.AddTree(other, otherTree)
-	l.tools.Treehouse.HoldLeases(300 * time.Millisecond)
+	l.tools.Treehouse.AwaitLeases(2)
 
 	var wg sync.WaitGroup
 	for i, dir := range []string{l.repo, other} {
