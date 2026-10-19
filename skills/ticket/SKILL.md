@@ -41,10 +41,36 @@ When the ticket's purpose is to create, change or evaluate a skill, Notes for th
 - Before opening the PR, a sub-agent loads `anthropic-skills:skill-creator` with the Skill tool, reads the changed skill and reviews it without running any test prompts. The worker addresses the review.
 - Keep the skill brief. Cut detail and rules the reader would follow without being told.
 
+## Review before you save (managed repos)
+
+You wrote the draft from a conversation the worker never saw, so you can't see what it leaves out. A guess you stated as a question, or a code fact you didn't check, costs the user a round trip. Skip this for a `design` or `design-review` ticket, which is worked with the user present. For any other ticket, write the draft to a file in your scratchpad, with a copy of any cited design that isn't a repo file, and start a foreground sub-agent (`model: "sonnet"`). Give it those paths, the repo and the name of the branch the worker will build on, and nothing from the conversation, so it sees what the worker sees. Tell it to run `git fetch` and read the code from that branch (`git show origin/<base>:<path>`), not the current checkout, which may be stale.
+
+Ask it to:
+
+1. State the ticket's intent in a sentence.
+2. Check every claim about the code against the repo: cause, repro, what exists today, what the change touches. Quote the claim and give file:line for what it found. Look for the other places the same thing lives (copies, callers, stored data, other surfaces) that the ticket doesn't mention.
+3. For each "Not decided" question, check whether the code or design already answers it or makes it moot.
+4. Name any deliverable that isn't observable at the surface, or that doesn't serve the intent.
+
+It returns the intent sentence, then only findings, each as the claim or question quoted, what the repo shows, and file:line where the finding is about code. No fixes, no praise. A claim about code it can't back with a file is not a finding, and "nothing found" is an answer. Check its intent sentence against what you meant.
+
+You judge each finding, because only you know what the conversation settled. Check the evidence yourself first.
+
+- **Real gap or wrong claim.** Fix the ticket.
+- **Settled in the conversation.** Write the decision into the ticket, as the user's ("the user wants X"). "We discussed it" is not a reason to drop a finding unless what was discussed is now in the ticket.
+- **Deliberately out of play.** Say so in the ticket (non-goal, or "Nothing open" with the reason), so the worker doesn't rediscover it.
+- **Moot question.** Delete it.
+- **A call the user hasn't made.** Ask the user now, or list it under "Not decided".
+- **Wrong.** Set it aside only with the evidence that disproves it.
+
+Review again only if you changed what the ticket asks for, not for wording. Tell the user in a line what the review changed.
+
 ## Check before you save (managed repos)
 
 - Write each ticket you mention by its identifier (ENG-123) so Linear links it.
+- Write a GitHub issue or pull request as its full URL, never a bare `#N`. Linear links a bare number to whichever repo's item of that number it finds first.
 - Count the title's characters. Over 50, shorten it.
+- Unless it's a `design` or `design-review` ticket, confirm the review ran and each finding landed in the ticket or was set aside with evidence.
 - Re-read In plain English as the user would. If it needs the code open to make sense, rewrite it.
 - On a ticket that touches a skill, confirm Notes for the worker carries each skill instruction listed above.
 - Confirm the ticket has the team, AI label, repo label, assignee and paused status. A missing one means the dispatcher never sees it or sees it too soon. A `design` ticket waits in Backlog on purpose, and the user moves it to In Progress to start the design skill.
