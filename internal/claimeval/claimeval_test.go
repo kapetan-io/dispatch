@@ -38,7 +38,9 @@ func gitRepo(t *testing.T) string {
 	write(t, filepath.Join(dir, "evals", "build", "key.md"), "answer key\n")
 	for _, args := range [][]string{
 		{"init", "-q"}, {"add", "-A"},
-		{"-c", "user.name=dev", "-c", "user.email=dev@example.com", "commit", "-qm", "start"},
+		// Git detaches a background maintenance run after a commit, and it can
+		// still be writing to .git when TempDir cleanup removes the directory.
+		{"-c", "user.name=dev", "-c", "user.email=dev@example.com", "-c", "maintenance.auto=false", "-c", "gc.auto=0", "commit", "-qm", "start"},
 	} {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
