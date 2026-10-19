@@ -47,7 +47,33 @@ func gitRepo(t *testing.T) string {
 		out, err := cmd.CombinedOutput()
 		require.NoError(t, err, string(out))
 	}
+	logLateGitEntries(t, dir)
 	return dir
+}
+
+// logLateGitEntries names anything that appears directly in .git after setup,
+// because CI once failed TempDir cleanup with ENOTEMPTY on .git and the writer
+// is unknown. It runs before TempDir's RemoveAll, and the output shows only
+// when the test fails.
+func logLateGitEntries(t *testing.T, dir string) {
+	t.Helper()
+	list := func() map[string]bool {
+		entries, err := os.ReadDir(filepath.Join(dir, ".git"))
+		require.NoError(t, err)
+		names := make(map[string]bool, len(entries))
+		for _, entry := range entries {
+			names[entry.Name()] = true
+		}
+		return names
+	}
+	before := list()
+	t.Cleanup(func() {
+		for name := range list() {
+			if !before[name] {
+				t.Logf("entry added to .git after setup: %s", name)
+			}
+		}
+	})
 }
 
 const skillText = "# Build\n\n## Steps\n\n1. **Orient.** Old wording.\n2. **Implement.** Code it.\n"
