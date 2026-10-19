@@ -71,10 +71,10 @@ var Scenarios = []Scenario{
 
 		require.ErrorContains(t, err, `has no "No Such Status" status`)
 	}},
-	{Name: "StateIDRefusesATeamTheKeyOwnerIsNotIn", Run: func(t *testing.T, s Subject) {
+	{Name: "StateIDReportsATeamTheKeyOwnerIsNotIn", Run: func(t *testing.T, s Subject) {
 		_, err := s.Connect(s.Key).StateID(context.Background(), "NOSUCHTEAM", "Todo")
 
-		require.ErrorContains(t, err, `team NOSUCHTEAM has no "Todo" status`)
+		require.ErrorContains(t, err, `team NOSUCHTEAM not found`)
 	}},
 	{Name: "ManagedTicketsWithAnUnusedLabelIsEmpty", Run: func(t *testing.T, s Subject) {
 		found, err := s.Connect(s.Key).ManagedTickets(context.Background(), "dispatch-drift-unused-label", []string{s.Team})

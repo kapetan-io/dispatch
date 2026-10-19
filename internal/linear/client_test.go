@@ -18,8 +18,10 @@ import (
 // canned data. It exists to test what the adapter sends and how it reads
 // answers, which the in-memory fake hides.
 type wire struct {
-	server    *httptest.Server
-	answers   map[string]any
+	server  *httptest.Server
+	answers map[string]any
+	// respond takes precedence over answers for the operations it names.
+	respond   map[string]func(variables map[string]any) any
 	status    int
 	envelope  map[string]any
 	variables map[string]map[string]any
@@ -28,7 +30,7 @@ type wire struct {
 }
 
 func newWire(t *testing.T) *wire {
-	w := &wire{answers: map[string]any{}, variables: map[string]map[string]any{}, queries: map[string]string{}}
+	w := &wire{answers: map[string]any{}, respond: map[string]func(map[string]any) any{}, variables: map[string]map[string]any{}, queries: map[string]string{}}
 	w.server = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		var req struct {
 			OperationName string         `json:"operationName"`
@@ -47,6 +49,10 @@ func newWire(t *testing.T) *wire {
 		}
 		if w.envelope != nil {
 			_ = json.NewEncoder(rw).Encode(w.envelope)
+			return
+		}
+		if respond, ok := w.respond[req.OperationName]; ok {
+			_ = json.NewEncoder(rw).Encode(map[string]any{"data": respond(req.Variables)})
 			return
 		}
 		_ = json.NewEncoder(rw).Encode(map[string]any{"data": w.answers[req.OperationName]})
@@ -356,22 +362,62 @@ func TestClientMakesNoCallForNoParents(t *testing.T) {
 	assert.Zero(t, client.Usage().Calls)
 }
 
-func TestClientFindsAStatusByTeamAndName(t *testing.T) {
-	w := newWire(t)
-	team := func(key, id string) map[string]any {
-		return map[string]any{"key": key, "states": map[string]any{"nodes": []any{map[string]string{"id": id, "name": "Done"}}}}
+// teamsPastTheFirstPage answers TeamStates like Linear does for a workspace
+// of 216 teams whose last one is ARM. Without a team filter only the first
+// 50 teams come back, so ARM is found only when the query names it.
+func teamsPastTheFirstPage(w *wire) {
+	const (
+		workspaceTeams = 216
+		linearPageSize = 50
+	)
+	w.respond["TeamStates"] = func(variables map[string]any) any {
+		filter, filtered := variables["team"].(string)
+		nodes := []any{}
+		for i := range workspaceTeams {
+			key := fmt.Sprintf("T%d", i)
+			if i == workspaceTeams-1 {
+				key = "ARM"
+			}
+			if filtered && key != filter {
+				continue
+			}
+			if !filtered && len(nodes) == linearPageSize {
+				break
+			}
+			nodes = append(nodes, map[string]any{"key": key, "states": map[string]any{"nodes": []any{
+				map[string]string{"id": key + "-done", "name": "Done"},
+			}}})
+		}
+		return map[string]any{"teams": map[string]any{"nodes": nodes}}
 	}
-	w.answers["TeamStates"] = map[string]any{"teams": map[string]any{"nodes": []any{team("OPS", "ops-done"), team("ENG", "eng-done")}}}
+}
 
-	id, err := w.client().StateID(context.Background(), "ENG", "Done")
+func TestClientFindsAStatusOfATeamPastLinearsFirst50(t *testing.T) {
+	w := newWire(t)
+	teamsPastTheFirstPage(w)
+
+	id, err := w.client().StateID(context.Background(), "ARM", "Done")
+
 	require.NoError(t, err)
-	assert.Equal(t, "eng-done", id)
+	assert.Equal(t, "ARM-done", id)
+}
 
-	_, err = w.client().StateID(context.Background(), "ENG", "Nope")
-	require.EqualError(t, err, linear.NoStatus("ENG", "Nope").Error())
+func TestClientReportsAStatusATeamLacks(t *testing.T) {
+	w := newWire(t)
+	teamsPastTheFirstPage(w)
 
-	_, err = w.client().StateID(context.Background(), "NONE", "Done")
-	require.EqualError(t, err, linear.NoStatus("NONE", "Done").Error())
+	_, err := w.client().StateID(context.Background(), "ARM", "Nope")
+
+	require.EqualError(t, err, linear.NoStatus("ARM", "Nope").Error())
+}
+
+func TestClientReportsAnUnknownTeam(t *testing.T) {
+	w := newWire(t)
+	teamsPastTheFirstPage(w)
+
+	_, err := w.client().StateID(context.Background(), "NONE", "Done")
+
+	require.EqualError(t, err, linear.NoTeam("NONE").Error())
 }
 
 func TestClientReportsAnUnexpectedHTTPStatus(t *testing.T) {
