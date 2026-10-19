@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -403,6 +405,48 @@ func TestClientFindsAStatusOfATeamPastLinearsFirst50(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "ARM-done", id)
+}
+
+// teamWithManyStatuses answers TeamStates like Linear does for a team of 60
+// statuses. A states connection returns only as many as its first: argument
+// asks for, and 50 when it has none.
+func teamWithManyStatuses(w *wire) {
+	const (
+		teamStatuses   = 60
+		linearPageSize = 50
+	)
+	w.respond["TeamStates"] = func(query string, variables map[string]any) any {
+		size := linearPageSize
+		if match := regexp.MustCompile(`states\(first: (\d+)\)`).FindStringSubmatch(query); match != nil {
+			size, _ = strconv.Atoi(match[1])
+		}
+		nodes := []any{}
+		for i := range min(teamStatuses, size) {
+			nodes = append(nodes, map[string]string{"id": fmt.Sprintf("S%d", i), "name": fmt.Sprintf("Status %d", i)})
+		}
+		return map[string]any{"teams": map[string]any{"nodes": []any{
+			map[string]any{"key": "BIG", "states": map[string]any{"nodes": nodes}},
+		}}}
+	}
+}
+
+func TestClientFindsAStatusPastATeamsFirst50Statuses(t *testing.T) {
+	w := newWire(t)
+	teamWithManyStatuses(w)
+
+	id, err := w.client().StateID(context.Background(), "BIG", "Status 55")
+
+	require.NoError(t, err)
+	assert.Equal(t, "S55", id)
+}
+
+func TestClientReportsAMissingStatusOfATeamWithMoreThan50(t *testing.T) {
+	w := newWire(t)
+	teamWithManyStatuses(w)
+
+	_, err := w.client().StateID(context.Background(), "BIG", "Nope")
+
+	require.EqualError(t, err, linear.NoStatus("BIG", "Nope").Error())
 }
 
 func TestClientReportsAStatusATeamLacks(t *testing.T) {
