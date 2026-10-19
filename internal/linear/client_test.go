@@ -376,7 +376,7 @@ func teamsPastTheFirstPage(w *wire) {
 	w.respond["TeamStates"] = func(query string, variables map[string]any) any {
 		// Sending the variable is not enough, the query has to apply it.
 		filter, sent := variables["team"].(string)
-		filtered := sent && strings.Contains(query, "teams(filter: {key: {eq: $team}})")
+		filtered := sent && strings.Contains(query, "teams(first: 1, filter: {key: {eq: $team}})")
 		nodes := []any{}
 		for i := range workspaceTeams {
 			key := fmt.Sprintf("T%d", i)
@@ -409,16 +409,27 @@ func TestClientFindsAStatusOfATeamPastLinearsFirst50(t *testing.T) {
 
 // teamWithManyStatuses answers TeamStates like Linear does for a team of 60
 // statuses. A states connection returns only as many as its first: argument
-// asks for, and 50 when it has none.
+// asks for, and 50 when it has none. Like Linear it rejects a query priced over
+// 10,000 points, which a connection costs at its page size however few it
+// returns, and here a rejection shows as no team.
 func teamWithManyStatuses(w *wire) {
 	const (
 		teamStatuses   = 60
 		linearPageSize = 50
+		maxComplexity  = 10000
 	)
 	w.respond["TeamStates"] = func(query string, variables map[string]any) any {
-		size := linearPageSize
-		if match := regexp.MustCompile(`states\(first: (\d+)\)`).FindStringSubmatch(query); match != nil {
-			size, _ = strconv.Atoi(match[1])
+		pageSize := func(connection string) int {
+			if match := regexp.MustCompile(connection + `\(first: (\d+)`).FindStringSubmatch(query); match != nil {
+				size, _ := strconv.Atoi(match[1])
+				return size
+			}
+			return linearPageSize
+		}
+		size := pageSize("states")
+		const statusPoints = 1.2 // an object and two properties
+		if float64(pageSize("teams")*size)*statusPoints > maxComplexity {
+			return map[string]any{"teams": map[string]any{"nodes": []any{}}}
 		}
 		nodes := []any{}
 		for i := range min(teamStatuses, size) {
