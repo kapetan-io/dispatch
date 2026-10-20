@@ -627,7 +627,7 @@ func (o *configObject) Get(key string) sobek.Value {
 	v, ok := o.value[key]
 	if !ok {
 		if o.path == "rules" || strings.HasPrefix(o.path, "rules.") {
-			c.throwError("config.toml has no [%s] key %q. Add %s = ... under [%s]", o.path, key, key, o.path)
+			c.throwError("config.toml has no [%s] key %q. Add %s = ... under [%s], then restart dispatch run, which reads config.toml only when it starts", o.path, key, key, o.path)
 		}
 		return nil
 	}

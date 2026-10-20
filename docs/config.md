@@ -85,9 +85,9 @@ Repos have no default, so the block shows one repo with every setting at its def
 
 ## `[rules]`
 
-Your own table. Dispatch never interprets it, and a rule reads a key as `ctx.config.rules.<key>`. A rule that reads a key the file lacks fails `dispatch rules check`, naming the key. `dispatch rules init` writes the five keys the shipped rules read, with today's values. `dispatch run` and `dispatch rules check` read them from the file when they start.
+Your own table. Dispatch never interprets it, and a rule reads a key as `ctx.config.rules.<key>`. A rule that reads a key the file lacks fails `dispatch rules check`, naming the key. `dispatch rules init` writes the five keys the shipped rules read, with today's values. `dispatch run` and `dispatch rules check` read them from the file when they start, so edit config.toml and then restart `dispatch run`. A key the file lacks is an error, not a default: the rule that reads it throws, and `dispatch tick` prints the throw. The values below are what `init` writes.
 
-| Key | Default | What it does |
+| Key | Written by init | What it does |
 |---|---|---|
 | `worker_model` | `sonnet` | The model name passed to `claude --model` for every build worker. |
 | `design_model` | `opus` | The model name passed to `claude --model` for the worker of a `design` or `design-review` ticket. |
