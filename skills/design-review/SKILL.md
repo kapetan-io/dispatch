@@ -5,7 +5,7 @@ description: "Review a feature ticket's blueprint with the user, audit it agains
 
 # Review a Blueprint
 
-You are the review worker for one `design-review` ticket, a child of the feature ticket that holds the blueprint as a Linear document. The dispatcher started you in a leased worktree, and you own the review ticket until it is Done or in Needs Human. Load `dispatch:converse` with the Skill tool first, and open a todolist for the steps below. You run unattended until a question needs the user, so ask through AskUserQuestion. Never run `/loop`, cron, `treehouse return`, or `dispatch tick` after your own move to Done, which would tear down the workspace you run in. The tick in `dispatch:breakdown`'s Start step runs while you are still In Progress, so it is safe. You never commit. Your tree is discarded.
+You are the review worker for one `design-review` ticket, a child of the feature ticket that holds the blueprint as a Linear document. The dispatcher started you in a leased worktree, and you own the review ticket until it is Done or in Needs Human. Load `dispatch:converse` with the Skill tool first, and open a todolist for the steps below. You run unattended until a question needs the user, so ask in chat, as `dispatch:converse` says. Never run `/loop`, cron, `treehouse return`, or `dispatch tick` after your own move to Done, which would tear down the workspace you run in. The tick in `dispatch:breakdown`'s Start step runs while you are still In Progress, so it is safe. You never commit. Your tree is discarded.
 
 ## Goal
 
@@ -20,7 +20,7 @@ Make the blueprint **buildable**: an engineer can build the right feature from i
 2. **Pre-work**, below.
 3. **The loop**, Phases 1 to 6, at most 5 rounds.
 4. **Five rounds without PASS.** Comment the remaining blockers on the review ticket, opening with `## In plain English`, move it to Needs Human, file nothing and stop. The user reads the ticket, not your scrollback.
-5. **ADR audit.** When the repo has `docs/adr/`, run `design-adr-audit` on the blueprint. A fix it causes always gets one more Phase 6 run, even when round 5 already passed, since an unvalidated fix could break the blueprint. That run counts as a round, and if it fails with all 5 used, follow step 4 without a further round. Ask its closing question through AskUserQuestion.
+5. **ADR audit.** When the repo has `docs/adr/`, run `design-adr-audit` on the blueprint. A fix it causes always gets one more Phase 6 run, even when round 5 already passed, since an unvalidated fix could break the blueprint. That run counts as a round, and if it fails with all 5 used, follow step 4 without a further round. Ask its closing question in chat.
 6. **End steps**, below.
 7. **Break down.** Invoke `dispatch:breakdown` on the feature ticket.
 8. **Finish.** After the user answers start or hold, comment a summary on the review ticket that says how to start held work, then move it to Done. You never move the review to Done before `design` is off on "start now". A crash between the two leaves the review In Progress, and step 1 finishes it. Open the comment with the final summary:
@@ -94,7 +94,7 @@ Drop false positives and implementation details. With no survivors, skip to Phas
 
 Apply each auto-apply fix as a patch, and note it for the step 8 comment.
 
-For each surface-to-user finding, ask through AskUserQuestion, framed "Finding N: <title> (<category>)", with the consequence of leaving it open in the question text, the recommended option first marked "(Recommended)", and trade-offs in each option's description. A clarification finding frames the ambiguity as the question. Apply the answer at once, and log it. If the user says it's already in the blueprint, re-read that section before going on.
+For each surface-to-user finding, ask one chat message per finding, headed "Finding N: <title>", with the category in plain words. Say what leaving it open would cost, then give your recommendation with the trade-off of each alternative, and wait for the answer before the next finding. A clarification finding frames the ambiguity as the question. Apply the answer at once, and log it. If the user says it's already in the blueprint, re-read that section before going on.
 
 ## Phase 6: Goal validation
 
