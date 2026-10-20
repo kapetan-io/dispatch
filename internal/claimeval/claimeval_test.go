@@ -38,14 +38,42 @@ func gitRepo(t *testing.T) string {
 	write(t, filepath.Join(dir, "evals", "build", "key.md"), "answer key\n")
 	for _, args := range [][]string{
 		{"init", "-q"}, {"add", "-A"},
-		{"-c", "user.name=dev", "-c", "user.email=dev@example.com", "commit", "-qm", "start"},
+		// Git detaches a background maintenance run after a commit, and it can
+		// still be writing to .git when TempDir cleanup removes the directory.
+		{"-c", "user.name=dev", "-c", "user.email=dev@example.com", "-c", "maintenance.auto=false", "-c", "gc.auto=0", "commit", "-qm", "start"},
 	} {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
 		out, err := cmd.CombinedOutput()
 		require.NoError(t, err, string(out))
 	}
+	logLateGitEntries(t, dir)
 	return dir
+}
+
+// logLateGitEntries names anything that appears directly in .git after setup,
+// because CI once failed TempDir cleanup with ENOTEMPTY on .git and the writer
+// is unknown. It runs before TempDir's RemoveAll, and the output shows only
+// when the test fails.
+func logLateGitEntries(t *testing.T, dir string) {
+	t.Helper()
+	list := func() map[string]bool {
+		entries, err := os.ReadDir(filepath.Join(dir, ".git"))
+		require.NoError(t, err)
+		names := make(map[string]bool, len(entries))
+		for _, entry := range entries {
+			names[entry.Name()] = true
+		}
+		return names
+	}
+	before := list()
+	t.Cleanup(func() {
+		for name := range list() {
+			if !before[name] {
+				t.Logf("entry added to .git after setup: %s", name)
+			}
+		}
+	})
 }
 
 const skillText = "# Build\n\n## Steps\n\n1. **Orient.** Old wording.\n2. **Implement.** Code it.\n"
