@@ -234,3 +234,17 @@ func TestTickReturnsTheTreeOfACanceledDesignTicket(t *testing.T) {
 	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
 	assert.Equal(t, []string{h.repo + "|" + filepath.Join(h.dir, "trees", "ENG-1") + "|ENG-1"}, h.returns())
 }
+
+func TestTickNamesTheRulesKeyAMissingConfigLeavesOut(t *testing.T) {
+	h := newHarness(t)
+	h.exactRules = true
+	h.config("[rules]\nworker_model = \"sonnet\"\nlaunch_failure_limit = 2\n")
+	h.tickets(withLabel(designTicket("ENG-1", "In Progress"), "design-review"))
+
+	out, err := h.run("tick")
+
+	require.NoError(t, err)
+	assert.Empty(t, h.launches())
+	assert.Contains(t, out, `ENG-1 launch-worker threw: Error: config.toml has no [rules] key "design_model". Add design_model = ... under [rules]`)
+	assert.Contains(t, out, "restart dispatch run")
+}

@@ -163,6 +163,15 @@ func (l *Loop) report(w *waiter) Response {
 			lines = append(lines, fmt.Sprintf("%s held: %s", h.Subject, h.Reason))
 		}
 	}
+	for _, t := range l.result.Throws {
+		if w.ticket == "" || t.Subject == w.ticket {
+			how := "threw"
+			if t.Timeout {
+				how = "ran out of time"
+			}
+			lines = append(lines, fmt.Sprintf("%s %s %s: %s", t.Subject, t.Rule, how, t.Error))
+		}
+	}
 	return Response{Lines: dedupe(lines), Code: code, Error: strings.Join(failures, "; ")}
 }
 
