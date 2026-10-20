@@ -430,4 +430,4 @@ They overlap but differ in intent. **Integration testing** asks "do these compon
 
 Surface tests boot the full application, so internal components are integrating — but integration is a side effect, not the goal. Surface tests also explicitly fake external boundaries to stay fast, deterministic, and focused on *this* system's behavior; integration tests typically wire real things together. Complementary, not interchangeable.
 
-**Internal library boundaries** sit at the intersection of both: a domain-complete package within the codebase defines its own surface and warrants its own surface tests, independent of the systems that consume it. When integration tests wire two components together, an internal library boundary is where you draw the line — it is a first-class surface, not an internal seam to cut through.
+**Internal library boundaries** sit at the intersection of both: a domain-complete package within the codebase defines its own surface. Test it directly only under the conditions in "Enter at the highest surface" in SKILL.md. Anything the product tests already drive stays covered there.
