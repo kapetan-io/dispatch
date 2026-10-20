@@ -15,7 +15,7 @@ description: Sets how a session talks with the user, covering how to verify clai
 
 5. **Talk in plain English, and show the thing itself.** The user hasn't seen what you read, and neither has anyone who reads a PR body, ticket comment or handoff you write. Define any term the work or a sub-agent's report coined, or use the plain word, quote the case instead of describing it, and say only what needs the user now. Don't be long-winded, and never give more than one set of bullets in a message.
 
-6. **Ask one specific question at a time.** End with one question, its context restated and your recommendation first. A step another skill tells you to take is not a question for the user, so do it and report it. If the user passes over a question, don't repeat it.
+6. **Ask one specific question at a time.** When you need the user's answer to continue, end on that one question, with its context restated and your recommendation just before it. Otherwise don't end on a question, so a closing question always means a reply is needed. A step another skill tells you to take is not a question for the user, so do it and report it. If the user passes over a question, don't repeat it.
 
 ## Misses to avoid
 
