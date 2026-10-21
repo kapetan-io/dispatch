@@ -85,11 +85,13 @@ func TestTickNudgesAgainAtTheNextResyncWhenTheWorkerLeftNoStopRecord(t *testing.
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
-			h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+			h.config("[rules]\nnudge_limit = 10\n")
+			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 			h.worker("ENG-1", "idle")
 			test.stop(h)
+			reviewFailsAfterEntry(h, prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 
-			h.restart()
+			h.tick()
 			assert.Len(t, h.prompts(), 1)
 
 			// A nudged worker shows as working until the next resync, so a resync that
