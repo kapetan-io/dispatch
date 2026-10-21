@@ -28,7 +28,7 @@ func TestTurnsAndTurnAreDescribedInTheGeneratedTypes(t *testing.T) {
 func TestCommandsAndCommandAreDescribedInTheGeneratedTypes(t *testing.T) {
 	decl := rules.Declarations(config.ShippedRules())
 
-	assert.Contains(t, decl, "/** A slash command the worker's current Claude session received. */\n  export interface Command {")
+	assert.Contains(t, decl, "/** A slash command the worker's current Claude session took. */\n  export interface Command {")
 	assert.Contains(t, decl, "    readonly commands: Command[];")
 	assert.Contains(t, decl, `by: "person" | "dispatch";`)
 	for _, field := range reflect.VisibleFields(reflect.TypeFor[rules.Command]()) {

@@ -20,7 +20,7 @@ var helperTypes = []reflect.Type{
 
 // typeDocs are the descriptions of the helper types that have one.
 var typeDocs = map[reflect.Type]string{
-	reflect.TypeFor[Command](): "A slash command the worker's current Claude session received.",
+	reflect.TypeFor[Command](): "A slash command the worker's current Claude session took.",
 	reflect.TypeFor[Turn]():    "A turn the worker's current Claude session ended.",
 }
 

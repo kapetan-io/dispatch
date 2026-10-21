@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -50,6 +51,15 @@ func (h *harness) lastComment() string {
 	return comments[len(comments)-1]
 }
 
+// lastCommentOrEmpty is lastComment, or empty before any rule has commented.
+func (h *harness) lastCommentOrEmpty() string {
+	comments := h.turnComments()
+	if len(comments) == 0 {
+		return ""
+	}
+	return comments[len(comments)-1]
+}
+
 // useCommandsRule has dispatch run only the rule that comments what a worker's commands read as.
 func (h *harness) useCommandsRule() {
 	h.t.Helper()
@@ -70,17 +80,30 @@ func (h *harness) worktreeOf(ticket string) string {
 	return tree
 }
 
-// recordCommand runs the prompt hook as the Claude session in tree, and returns what the hook printed.
-// It starts the loop first, because the hook reports to a running dispatch.
+// sendPrompt runs the UserPromptSubmit hook as the Claude session in tree, and returns what the hook printed.
+func (h *harness) sendPrompt(tree, session, prompt string) (stdout, stderr string) {
+	h.t.Helper()
+	input, err := json.Marshal(map[string]string{"hook_event_name": "UserPromptSubmit", "session_id": session, "cwd": tree, "prompt": prompt})
+	require.NoError(h.t, err)
+	stdout, stderr, err = h.runWith(context.Background(), dispatch.Options{Stdin: bytes.NewReader(input)}, "wake")
+	require.NoError(h.t, err)
+	return stdout, stderr
+}
+
+// recordCommand is sendPrompt with a running dispatch, which it waits on, because the hook reports to
+// the loop and does not wait for it.
 func (h *harness) recordCommand(tree, session, prompt string) (stdout, stderr string) {
 	h.t.Helper()
 	if h.running == nil {
 		require.NoError(h.t, h.startLoop(dispatch.Options{}))
 	}
-	input, err := json.Marshal(map[string]string{"hook_event_name": "UserPromptSubmit", "session_id": session, "cwd": tree, "prompt": prompt})
+	before, err := loop.Ask(context.Background(), h.state, loop.Request{Op: loop.OpIdle})
 	require.NoError(h.t, err)
-	stdout, stderr, err = h.runWith(context.Background(), dispatch.Options{Stdin: bytes.NewReader(input)}, "wake")
-	require.NoError(h.t, err)
+	stdout, stderr = h.sendPrompt(tree, session, prompt)
+	require.Eventually(h.t, func() bool {
+		resp, err := loop.Ask(context.Background(), h.state, loop.Request{Op: loop.OpIdle})
+		return err == nil && !resp.Busy && resp.Idle > before.Idle
+	}, 20*time.Second, 2*time.Millisecond)
 	return stdout, stderr
 }
 
@@ -423,6 +446,7 @@ func TestANudgeThatTimedOutKeepsItsSendBecauseTheTextMayHaveBeenTyped(t *testing
 
 func TestEachSendMatchesOneCommandWhenManyHooksRace(t *testing.T) {
 	h := newHarness(t)
+	h.useCommandsRule()
 	h.checkedOutWorker("ENG-1", "idle")
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	_, err := h.run("tell", "ENG-1", "/merge-it 42")
@@ -445,7 +469,9 @@ func TestEachSendMatchesOneCommandWhenManyHooksRace(t *testing.T) {
 	}
 	wg.Wait()
 
-	read := h.commandsRead()
+	// The hooks do not wait for the loop, so wait until it has read all eight.
+	require.Eventually(t, func() bool { return strings.HasSuffix(h.lastCommentOrEmpty(), " of 8") }, 10*time.Second, 5*time.Millisecond)
+	read := h.lastComment()
 	assert.Equal(t, 1, strings.Count(read, "|dispatch"))
 	assert.Equal(t, 7, strings.Count(read, "|person"))
 }
@@ -491,6 +517,7 @@ func TestReturningATreeDropsItsCommands(t *testing.T) {
 }
 
 func TestTheHookNeverBlocksOrAddsTextWhateverGoesWrong(t *testing.T) {
+	var accepted atomic.Int32
 	for _, test := range []struct {
 		name    string
 		breakIt func(h *harness)
@@ -507,6 +534,7 @@ func TestTheHookNeverBlocksOrAddsTextWhateverGoesWrong(t *testing.T) {
 					if err != nil {
 						return
 					}
+					accepted.Add(1)
 					t.Cleanup(func() { _ = conn.Close() })
 				}
 			}()
@@ -525,12 +553,15 @@ func TestTheHookNeverBlocksOrAddsTextWhateverGoesWrong(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Empty(t, stdout)
-			assert.Less(t, time.Since(started), 3*time.Second)
+			assert.Less(t, time.Since(started), 500*time.Millisecond)
+			if test.name == "StuckDispatch" {
+				assert.Eventually(t, func() bool { return accepted.Load() == 1 }, time.Second, 5*time.Millisecond)
+			}
 		})
 	}
 }
 
-func TestRecordCommandDoesNothingOutsideAWorkerTree(t *testing.T) {
+func TestTheHookReportsNothingOutsideAWorkerTree(t *testing.T) {
 	h := newHarness(t)
 	h.checkedOutWorker("ENG-1", "idle")
 	h.typeInto("ENG-1", "/merge-it 42")
@@ -547,8 +578,9 @@ func TestRecordCommandDoesNothingOutsideAWorkerTree(t *testing.T) {
 		{"NotARepo", func() string { return t.TempDir() }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			h.recordCommand(test.cwd(), "worker", "/merge-it 42")
+			h.sendPrompt(test.cwd(), "worker", "/merge-it 42")
 
+			assert.Never(t, func() bool { return len(sessionLogs(t, h.state)) != len(logsBefore) }, 200*time.Millisecond, 20*time.Millisecond)
 			assert.Equal(t, logsBefore, sessionLogs(t, h.state))
 		})
 	}
@@ -557,7 +589,7 @@ func TestRecordCommandDoesNothingOutsideAWorkerTree(t *testing.T) {
 	assert.Equal(t, logsBefore, sessionLogs(t, h.state))
 }
 
-func TestARecordCommandForAMessageThatIsNotACommandWritesNothing(t *testing.T) {
+func TestAPromptThatIsNotACommandAddsNothingToTheLog(t *testing.T) {
 	h := newHarness(t)
 	h.checkedOutWorker("ENG-1", "idle")
 
@@ -572,7 +604,7 @@ func TestWorkerFixtureTakesCommands(t *testing.T) {
 		"dispatch.ts": `import { whenever, known } from "dispatch";
 whenever({ name: "person-merged", each: "linear.ticket", if: (t, ctx) => {
     const w = ctx.herdr.worker(t);
-    return t.status === "in_progress" && known(() => w.commands) && w.commands.some((c) => c.name === "merge-it" && c.by === "person" && c.args === "42" && !c.cut);
+    return t.status === "in_progress" && known(() => w.commands) && w.commands.some((c) => c.name === "merge-it" && c.by === "person" && c.args === "42" && !c.cut && c.at === ctx.now + 1000);
   }, then: (t, ctx) => ctx.herdr.queueNudge(t, "hi", { once: ["merged", t.id] }) });
 whenever({ name: "commands-unread", each: "linear.ticket", if: (t, ctx) => t.status === "in_progress" && !known(() => ctx.herdr.worker(t).commands),
   then: (t, ctx) => ctx.herdr.queueNudge(t, "hi", { once: ["unread", t.id] }) });`,
@@ -645,4 +677,93 @@ func TestAKickoffHerdrNeverConfirmedLeavesNoNoteForAPersonsCommandToMatch(t *tes
 
 	h.workerOn("ENG-1", tree, "w-ENG-1", "working")
 	assert.Equal(t, "commands dispatch:build|ENG-1|false|person of 1", h.commandsRead())
+}
+
+const nudgeRule = `
+whenever({ name: "nudge", each: "linear.ticket", if: (t) => t.status === "in_progress",
+  then: (t, ctx) => ctx.herdr.queueNudge(t, "/merge-it 42", { once: ["nudge", t.id] }) });`
+
+const anyStatusRule = `
+whenever({ name: "anystatus", each: "linear.ticket", if: () => true,
+  then: (t, ctx) => {
+    const w = ctx.herdr.worker(t);
+    const body = known(() => w.commands) ? "known " + w.commands.length : "unknown";
+    return ctx.linear.queueComment(t, body, { once: ["anystatus", t.id, body] });
+  } });`
+
+func TestARuleNudgeThatStartsWithASlashReadsAsSentByDispatch(t *testing.T) {
+	h := newHarness(t)
+	h.config("[dispatch]\nrules = " + `"` + oneRule(t, commandsRule+nudgeRule) + `"` + "\n")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.checkedOutWorker("ENG-1", "idle")
+	h.tick()
+	require.Equal(t, []string{"w-ENG-1:p1|/merge-it 42"}, h.prompts())
+
+	h.typeInto("ENG-1", "/merge-it 42")
+	h.advance(5 * time.Minute)
+	h.tick()
+
+	assert.Equal(t, "commands merge-it|42|false|dispatch of 1", h.lastComment())
+}
+
+func TestTheLaunchSubcommandKickoffReadsAsSentByDispatch(t *testing.T) {
+	h := newHarness(t)
+	h.builtinLauncher = true
+	t.Setenv("DISPATCH_PLUGIN_ROOT", "/plugin")
+	tree := h.pool()
+	require.NoError(t, h.startLoop(dispatch.Options{}))
+	t.Cleanup(func() { _ = h.stopLoop() })
+	_, _, err := h.runWith(t.Context(), dispatch.Options{Dir: h.repo}, "launch", "ENG-1", "br-eng-1")
+	require.NoError(t, err)
+	require.Len(t, h.tools.Herdr.Kicked(), 1)
+
+	pane := h.tools.Herdr.Kicked()[0]
+	h.tools.Herdr.SetSession(pane[:len(pane)-len("|/dispatch:build ENG-1")], "launched")
+	h.recordCommand(tree, "launched", "/dispatch:build ENG-1")
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.useCommandsRule()
+
+	assert.Equal(t, "commands dispatch:build|ENG-1|false|dispatch of 1", h.commandsRead())
+}
+
+func TestANudgeMatchesThePromptWhateverTrailingWhiteSpaceItHas(t *testing.T) {
+	h := newHarness(t)
+	h.useCommandsRule()
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.checkedOutWorker("ENG-1", "idle")
+	_, err := h.run("tell", "ENG-1", "/merge-it 42")
+	require.NoError(t, err)
+
+	h.typeInto("ENG-1", "/merge-it 42\n")
+	h.tick()
+
+	assert.Equal(t, "commands merge-it|42|false|dispatch of 1", h.lastComment())
+}
+
+func TestANudgeToOneWorkerIsNotAnsweredByAPersonsCommandInAnother(t *testing.T) {
+	h := newHarness(t)
+	h.useCommandsRule()
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
+	h.checkedOutWorker("ENG-1", "idle")
+	h.checkedOutWorker("ENG-2", "idle")
+	_, err := h.run("tell", "ENG-1", "/merge-it 42")
+	require.NoError(t, err)
+
+	h.typeInto("ENG-2", "/merge-it 42")
+	h.tick()
+
+	assert.Contains(t, h.turnComments(), "commands merge-it|42|false|person of 1")
+	assert.NotContains(t, h.turnComments(), "commands merge-it|42|false|dispatch of 1")
+}
+
+func TestCommandsAreUnknownForAWorkerOfATicketThatIsNotInProgressOrInReview(t *testing.T) {
+	h := newHarness(t)
+	h.config("[dispatch]\nrules = " + `"` + oneRule(t, anyStatusRule) + `"` + "\n")
+	h.tickets(ticket("ENG-1", "Todo", "dispatch"))
+	h.checkedOutWorker("ENG-1", "idle")
+	h.typeInto("ENG-1", "/merge-it 42")
+
+	h.tick()
+
+	assert.Equal(t, "unknown", h.lastComment())
 }

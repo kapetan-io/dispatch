@@ -11,7 +11,7 @@ declare module "dispatch" {
   export interface Stop {
     at: number;
   }
-  /** A slash command the worker's current Claude session received. */
+  /** A slash command the worker's current Claude session took. */
   export interface Command {
     /** The command's name without the slash, such as merge-it for /merge-it 42. */
     name: string;

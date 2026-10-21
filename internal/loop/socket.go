@@ -122,6 +122,13 @@ func Ask(ctx context.Context, stateDir string, req Request) (Response, error) {
 // uses it, because a prompt must not wait on a cycle. It returns ErrNotRunning when
 // nothing listens.
 func Wake(ctx context.Context, stateDir string) error {
+	return Send(ctx, stateDir, Request{Op: OpWake})
+}
+
+// Send writes req to the loop over stateDir and does not wait for the answer, so a hook that
+// reports to a loop that is busy or stuck still returns at once. It gives up after a second. It
+// returns ErrNotRunning when nothing listens.
+func Send(ctx context.Context, stateDir string, req Request) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	var d net.Dialer
@@ -131,7 +138,7 @@ func Wake(ctx context.Context, stateDir string) error {
 	}
 	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(time.Second))
-	return json.NewEncoder(conn).Encode(Request{Op: OpWake})
+	return json.NewEncoder(conn).Encode(req)
 }
 
 // Typing returns the notes of a launch that runs apart from the loop over stateDir, which tell

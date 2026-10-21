@@ -1,6 +1,6 @@
 // Package typed remembers the messages dispatch typed into workers, so the running dispatch can
-// tell a command it sent from one a person typed. It lives in memory, because only the
-// running dispatch types and only it hears the hooks.
+// tell a command it sent from one a person typed. It lives in the loop's memory, because only
+// the loop hears the hooks. A launch in another process reports its notes to the loop over the socket.
 package typed
 
 import (
@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/treekey"
 )
 
@@ -21,9 +22,10 @@ type Log struct {
 	sent map[string][]string
 }
 
-// Note records that text is about to be typed into the Claude in tree.
+// Note records that text is about to be typed into the Claude in tree. Text that is not a command is
+// not kept, because the hook never reports it.
 func (l *Log) Note(tree, text string) {
-	if l == nil {
+	if _, ok := sessionlog.ParseCommand(text); !ok || l == nil {
 		return
 	}
 	key, text := treekey.Of(tree), strings.TrimSpace(text)

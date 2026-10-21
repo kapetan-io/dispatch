@@ -139,8 +139,8 @@ func (l *Loop) onStop(s *Stop) Response {
 }
 
 // onPrompt stores a command a worker's Claude session took, with who typed it, where the next
-// read finds it. A message that is not a command is only a wake. The loop is the only writer, and
-// dispatch's own sends sit in its memory, so one send answers exactly one message.
+// read finds it. A message that is not a command is only a wake. Take answers one message per
+// send, so a person who types the same text afterward reads as a person.
 func (l *Loop) onPrompt(p *Prompt) Response {
 	if p == nil || p.Tree == "" || p.Session == "" {
 		return Response{Code: CodeFailed, Error: "a prompt report needs a tree and a session"}

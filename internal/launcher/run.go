@@ -31,15 +31,16 @@ const (
 	StatusInjectionUnconfirmed = "injection_unconfirmed"
 )
 
-// Options names the tools a Local launcher drives and the places it runs them.
-// Zero values take the defaults.
-// Typing is where a launch notes what it types into the worker. A note for the Claude it is
-// about to start replaces whatever an earlier Claude in that tree was sent.
+// Typing is where a launch notes what it types into the worker, so the prompt hook can tell
+// dispatch's messages from a person's. A note for the Claude it is about to start replaces
+// whatever an earlier Claude in that tree was sent.
 type Typing interface {
 	Note(tree, text string)
 	Clear(tree string)
 }
 
+// Options names the tools a Local launcher drives and the places it runs them.
+// Zero values take the defaults.
 type Options struct {
 	// PluginRoot holds scripts/shims and is handed to the worker as its plugin.
 	// It has no default.
@@ -57,7 +58,7 @@ type Options struct {
 	// loop's clock. Defaults to the wall clock.
 	Now func() time.Time
 	// Typed is told the kickoff before it is typed, so the prompt hook labels it as dispatch's.
-	// Nil tells no one.
+	// Nil notes nothing.
 	Typed Typing
 	// PreflightTimeout bounds the wait for the herdr server. Defaults to 60s.
 	PreflightTimeout time.Duration
