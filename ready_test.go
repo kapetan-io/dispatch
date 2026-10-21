@@ -244,8 +244,8 @@ func TestTickKeepsAWorkspaceThatHasTheShortLabel(t *testing.T) {
 
 func TestTickStillFindsAWorkerWhoseLabelChanged(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
+	h.config("[rules]\nnudge_limit = 10\n")
+	h.failingPR()
 
 	// The first tick renames the workspace and nudges the worker in it.
 	h.tick()
@@ -253,7 +253,7 @@ func TestTickStillFindsAWorkerWhoseLabelChanged(t *testing.T) {
 	h.recordStop("ENG-1", noTasks)
 	h.tick()
 
-	assert.Equal(t, []string{stallPrompt, stallPrompt}, h.prompts())
+	assert.Equal(t, []string{prPrompt("a failed check"), prPrompt("a failed check")}, h.prompts())
 	assert.Empty(t, h.launches())
 }
 
