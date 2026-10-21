@@ -412,7 +412,7 @@ func (s Scope) ReadsPR(t linear.Ticket, state WorkerState) bool {
 // kickoffRan reports whether the worker's Claude ended a turn after at, which proves its
 // kickoff ran even if the launch that marked it was killed before it said so. A Stop from
 // another session in the tree proves nothing. With no session known it falls back to the
-// newest Stop of any session, as `stoppedSinceLastNudge` does. A Stop record that exists but can't
+// newest Stop of any session. A Stop record that exists but can't
 // be read is unknown, so it counts as ran and the worker is not closed.
 func kickoffRan(stateDir string, wk Worker, at time.Time) bool {
 	if stops.Unreadable(stateDir, wk.TreePath, wk.Session) {

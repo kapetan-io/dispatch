@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -260,7 +261,7 @@ func TestWakeStaysSilentForAWorkerWhenTheLoopIsNotRunningAndPrintsNothingToStder
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.recordStop("ENG-1", noTasks)
-	input := `{"hook_event_name":"UserPromptSubmit","session_id":"worker","cwd":` + quote(filepath.Join(h.dir, "trees", "ENG-1")) + `}`
+	input := fmt.Sprintf(`{"hook_event_name":"UserPromptSubmit","session_id":"worker","cwd":%q}`, filepath.Join(h.dir, "trees", "ENG-1"))
 
 	out, stderr, err := h.runWith(context.Background(), dispatch.Options{Stdin: strings.NewReader(input)}, "wake")
 
@@ -291,9 +292,4 @@ func TestWakeHooksRunDispatchWakeAndNeverFailTheSession(t *testing.T) {
 			assert.Contains(t, command, "2>/dev/null")
 		})
 	}
-}
-
-func quote(s string) string {
-	b, _ := json.Marshal(s)
-	return string(b)
 }

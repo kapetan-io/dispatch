@@ -72,7 +72,7 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 		case cfg.InReview:
 			pr, ok := wd.PRs[t.Identifier]
 			// An unreadable PR must not change a label that came from reading it.
-			if !ok && wd.PRReadFailed[t.Identifier] && slices.ContainsFunc([]string{emojiReadyForReview, emojiChecksRunning, emojiWaiting, emojiBusy}, func(e string) bool {
+			if !ok && wd.PRReadFailed[t.Identifier] && slices.ContainsFunc(prLabels, func(e string) bool {
 				return strings.HasPrefix(current[w.WorkspaceID], e)
 			}) {
 				continue
@@ -102,6 +102,9 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 	return workspaces, tabs
 }
 
+// prLabels are the labels a read PR can give an In Review worker.
+var prLabels = []string{emojiReadyForReview, emojiChecksRunning, emojiWaiting, emojiBusy}
+
 // workspaceEmoji is the label for a ticket in progress or in review. A worker with no
 // Stop record, or one whose Stop did not list its tasks, may still be busy, so it stays
 // green. A Stop that lists a running task keeps it green even while the PR's checks run.
@@ -110,15 +113,13 @@ func (l *Loop) workspaceEmoji(w world.Worker, pr pullrequest.PullRequest) string
 	if w.State == world.Blocked {
 		return emojiNeedsHuman
 	}
-	if w.State == world.Idle && w.UnconfirmedSince != 0 {
-		w.State = world.NoWorker
-	}
-	idle := w.State == world.Idle
-	if pr.Ready && (idle || w.State == world.NoWorker) {
+	gone := w.State == world.NoWorker || w.State == world.Idle && w.UnconfirmedSince != 0
+	idle := w.State == world.Idle && !gone
+	if pr.Ready && (idle || gone) {
 		return emojiReadyForReview
 	}
 	if !idle {
-		if w.State == world.NoWorker && pr.ChecksRunning {
+		if gone && pr.ChecksRunning {
 			return emojiChecksRunning
 		}
 		return emojiBusy

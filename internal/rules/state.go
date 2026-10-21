@@ -642,18 +642,3 @@ func (s *State) target(r *record) map[string]string {
 	}
 	return out
 }
-
-// LastStop is when a ticket's idle worker last ended a turn, in milliseconds, and
-// whether it still has background work running. ok is false when the worker has no
-// known stop.
-func (s *State) LastStop(ticket string) (at int64, busy, ok bool) {
-	r, found := s.workers[ticket]
-	if !found {
-		return 0, false, false
-	}
-	w := r.v.Interface().(*Worker)
-	if w.LastStop.Unknown != "" || w.LastStop.Value == nil {
-		return 0, false, false
-	}
-	return w.LastStop.Value.At, w.Busy.Value, true
-}
