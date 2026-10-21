@@ -5,26 +5,24 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/kapetan-io/dispatch/internal/executor"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/pullrequest"
+	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
-// Status emoji at the front of a worker's workspace label.
+// Emoji at the front of a worker's workspace label, by who the ticket is waiting on.
 const (
-	emojiInProgress = "🟢"
-	emojiInReview   = "🟡"
-	emojiReady      = "👀"
-	emojiNeedsHuman = "🔴"
-	emojiPaused     = "⏸️"
-	emojiQuiet      = "💤"
+	emojiBusy           = "🟢"
+	emojiChecksRunning  = "🟡"
+	emojiReadyForReview = "👀"
+	emojiNeedsHuman     = "🔴"
+	emojiPaused         = "⏸️"
+	emojiWaiting        = "💤"
 )
-
-// unresponsiveAfter is how long a design worker sits idle before its label says so.
-const unresponsiveAfter = time.Hour
 
 type rename struct{ id, label string }
 
@@ -70,22 +68,16 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 		}
 		switch t.Status {
 		case cfg.InProgress:
-			emoji := emojiInProgress
-			if l.quiet(t, w) {
-				emoji = emojiQuiet
-			}
-			add(t, w, emoji)
+			add(t, w, l.workspaceEmoji(w, pullrequest.PullRequest{}))
 		case cfg.InReview:
-			emoji := emojiInReview
 			pr, ok := wd.PRs[t.Identifier]
-			if ok && pr.Ready && w.State == world.Idle {
-				emoji = emojiReady
-			}
-			// An unreadable PR must not flip a 👀 label to 🟡 until it is read again.
-			if !ok && wd.PRReadFailed[t.Identifier] && strings.HasPrefix(current[w.WorkspaceID], emojiReady) {
+			// An unreadable PR must not change a label that came from reading it.
+			if !ok && wd.PRReadFailed[t.Identifier] && slices.ContainsFunc(prLabels, func(e string) bool {
+				return strings.HasPrefix(current[w.WorkspaceID], e)
+			}) {
 				continue
 			}
-			add(t, w, emoji)
+			add(t, w, l.workspaceEmoji(w, pr))
 		case cfg.NeedsHuman:
 			add(t, w, emojiNeedsHuman)
 		}
@@ -110,15 +102,38 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 	return workspaces, tabs
 }
 
-// quiet reports whether t is a design or review ticket whose worker ended its
-// last turn at least an hour ago. Nothing nudges these, so the label is the only
-// sign the worker stopped without asking anything.
-func (l *Loop) quiet(t linear.Ticket, w world.Worker) bool {
-	if w.State != world.Idle || !slices.ContainsFunc(world.DesignLabels, t.HasLabel) || l.state == nil {
-		return false
+// prLabels are the labels a read PR can give an In Review worker.
+var prLabels = []string{emojiReadyForReview, emojiChecksRunning, emojiWaiting, emojiBusy}
+
+// workspaceEmoji is the label for a ticket in progress or in review. A worker with no
+// Stop record, or one whose Stop did not list its tasks, may still be busy, so it stays
+// green. A Stop that lists a running task keeps it green even while the PR's checks run.
+// A ready PR shows 👀 once the worker is idle or gone.
+func (l *Loop) workspaceEmoji(w world.Worker, pr pullrequest.PullRequest) string {
+	if w.State == world.Blocked {
+		return emojiNeedsHuman
 	}
-	stop, busy, ok := l.state.LastStop(t.Identifier)
-	return ok && !busy && l.clock.Now().Sub(time.UnixMilli(stop)) >= unresponsiveAfter
+	gone := w.State == world.NoWorker || w.State == world.Idle && w.UnconfirmedSince != 0
+	idle := w.State == world.Idle && !gone
+	if pr.Ready && (idle || gone) {
+		return emojiReadyForReview
+	}
+	if !idle {
+		if gone && pr.ChecksRunning {
+			return emojiChecksRunning
+		}
+		return emojiBusy
+	}
+	stop, ok := stops.Read(l.o.Sources.StateDir, w.TreePath, w.Session)
+	switch {
+	case ok && stop.Busy(l.clock.Now()):
+		return emojiBusy
+	case pr.ChecksRunning:
+		return emojiChecksRunning
+	case !ok || !stop.Reported:
+		return emojiBusy
+	}
+	return emojiWaiting
 }
 
 // renameWorkspaces fixes the labels that differ, off the loop goroutine. A failed

@@ -223,48 +223,6 @@ func TestTickMessagesFollowersAboutAMerge(t *testing.T) {
 	assert.Equal(t, []string{mergedText1}, h.notifications())
 }
 
-func TestTickMessagesFollowersAboutAnUnresponsiveWorker(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-	h.recordStop("ENG-1", noTasks)
-	// The nudge must start after the Stop it answers, and the fake clock only moves when told.
-	h.advance(time.Second)
-	h.tick()
-	socket, lines := sessionSocket(t)
-	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
-	_, err := h.run("watch", "ENG-1")
-	require.NoError(t, err)
-
-	h.advance(61 * time.Minute)
-	h.tick()
-
-	got := next(t, lines)
-	assert.Contains(t, got, "ENG-1: the worker hasn't responded to its nudge in an hour")
-	assert.Contains(t, got, "https://linear.app/team/issue/ENG-1")
-}
-
-func TestTickMessagesFollowersAboutStallNudgeCounts(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-	socket, lines := sessionSocket(t)
-	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
-	_, err := h.run("watch", "ENG-1")
-	require.NoError(t, err)
-
-	// The first nudge starts when dispatch first sees the ticket, so the count leaves it out.
-	for range 7 {
-		h.advance(5 * time.Minute)
-		h.recordStop("ENG-1", noTasks)
-		h.tick()
-	}
-
-	got := next(t, lines)
-	assert.Contains(t, got, "ENG-1 has had 6 stall nudges with no status change")
-	assert.Contains(t, got, "https://linear.app/team/issue/ENG-1")
-}
-
 func TestTickMessagesFollowersAboutAnEscalation(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))

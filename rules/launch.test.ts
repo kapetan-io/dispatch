@@ -274,12 +274,6 @@ scenario(rules, "close-unconfirmed-worker leaves a worker that is running its ki
   s.expect([]);
 });
 
-scenario(rules, "close-unconfirmed-worker leaves a confirmed idle worker to the stall nudge", s => {
-  s.given(ticket("ENG-1", build), worker("ENG-1", "idle"));
-  s.advance(600_000);
-  s.expect([["nudge-stall", "herdr.nudge", "ENG-1"]]);
-});
-
 scenario(rules, "a closed unconfirmed worker is relaunched", s => {
   s.given(ticket("ENG-1", build), worker("ENG-1", "idle", { unconfirmed: 0 }));
   s.advance(300_000);

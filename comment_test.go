@@ -47,21 +47,6 @@ func TestTickNudgesNoWorkerAboutANewTicketComment(t *testing.T) {
 	}
 }
 
-func TestTickStallNudgeIgnoresANewTicketComment(t *testing.T) {
-	h := newHarness(t)
-	h.worker("ENG-1", "working")
-	h.recordStop("ENG-1", noTasks)
-	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment1))
-	h.tick()
-	h.advance(time.Second)
-	h.setWorkerStatus("ENG-1", "idle")
-	h.tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment2))
-
-	h.tick()
-
-	assert.Equal(t, []string{stallPrompt}, h.prompts())
-}
-
 func TestTickPRNudgeIsNotHeldBackByATicketComment(t *testing.T) {
 	h := newHarness(t)
 	h.worker("ENG-1", "idle")

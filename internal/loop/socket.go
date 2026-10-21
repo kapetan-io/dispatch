@@ -115,3 +115,19 @@ func Ask(ctx context.Context, stateDir string, req Request) (Response, error) {
 	}
 	return resp, nil
 }
+
+// Wake asks the loop over stateDir to read herdr again and run a cycle, and does not wait for it. A hook
+// uses it, because a prompt must not wait on a cycle. It returns ErrNotRunning when
+// nothing listens.
+func Wake(ctx context.Context, stateDir string) error {
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "unix", SocketPath(stateDir))
+	if err != nil {
+		return ErrNotRunning
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(time.Second))
+	return json.NewEncoder(conn).Encode(Request{Op: OpWake})
+}

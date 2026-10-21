@@ -27,7 +27,7 @@ Run `dispatch watch <ticket>` only when the user asks you to follow it, or says 
 - After a ticket moves, whether you or the user moved it, run `dispatch tick`.
 - After posting review findings on a worker's PR, run `dispatch tick` so the nudge reaches the worker now instead of at the next resync.
 - Before moving a ticket, read its status from Linear, not from memory. A merged PR has already moved its ticket to Done, so ask the user before moving a ticket out of Done.
-- To type into a worker by hand, run `dispatch tell <ticket> "<text>"`. It fails when the worker is blocked on a question or absent.
+- To type into a worker by hand, run `dispatch tell <ticket> "<text>"`. It fails when the worker is blocked on a question popup or absent.
 
 ### Breaking down and starting work
 
@@ -41,5 +41,6 @@ A message starting `dispatch event` comes from the dispatcher. Act on it once, t
 
 - **PR ready for review**: run the PR review flow (a critical-review sub-agent, then a validator per finding) on that ticket's PR. Don't merge it.
 - **Needs Human**: read the ticket's comments and tell the user what it is waiting for.
-- **Worker blocked on a question**: tell the user which ticket is waiting in its herdr workspace. Never answer for them.
+- **Worker blocked on a question popup**: tell the user which ticket is waiting in its herdr workspace. Never answer for them.
+- **Workspace shows 💤**: the worker is waiting on the user or stopped early. Tell the user which window to open.
 - **Anything else**: tell the user the event and its link.

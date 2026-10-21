@@ -25,7 +25,6 @@ Behavior that differs from the tick, each a result of the rules table:
 - A refused return or merge, and a failed alert or nudge, make `dispatch tick` exit 1.
 - `relaunch-for-pr` is keyed on `goneSince`, so it relaunches once per absence of the worker.
 - `comment-kept-tree` comments once per kept tree, not once per ticket.
-- A worker with no Stop record is nudged again only at a resync and never trips `notify-unresponsive`.
 - An escalation for a PR the worker keeps ignoring comes one tick earlier.
 
 Added after review, none of it in the blueprint:
@@ -85,7 +84,7 @@ State invariants, each with its enforcement.
 
 | Invariant | Enforced by |
 |---|---|
-| A worker never goes idle while its ticket is In Progress and not marked Needs Human. | Worker contract. The dispatcher nudges an idle worker once per Stop, leaves a worker waiting on background tasks alone, and never escalates a stalled worker. |
+| A worker never goes idle while its ticket is In Progress and not marked Needs Human. | Worker contract. An idle worker is not nudged to keep going. Its workspace label shows 💤 when nothing else is pending, and the dispatcher never escalates a stalled worker. |
 | A ticket has at most one live worker. | Dispatcher lock. Liveness lookup through the ticket's treehouse lease before launch. The launcher refuses when a live Claude pane already sits in the ticket's workspace. |
 | A parent ticket never gets a dispatched worker. | The dispatcher skips any ticket that has sub-issues. A parent still notifies on Needs Human. |
 | The dispatcher touches only tickets assigned to you that carry the `ai` label. | The Linear query filters on both. Tickets you work by hand lack the label. |
@@ -102,7 +101,7 @@ Behavioral constraints.
 - The dispatcher comments on a ticket only when it sets Needs Human, when it refuses to tear down a dirty tree, or when it holds an In Progress ticket for its blockers. It never comments to record a nudge.
 - A worker never stops on a failing check. A flake gets its own ticket and a re-run. A real failure gets fixed.
 - The dispatcher decides when a PR merges, not GitHub. GitHub-side auto-merge on a branch with no required review would merge the moment checks pass, before CodeRabbit weighs in. In a repo listed in `auto_merge`, the dispatcher merges once a review approves the head commit.
-- A worker may ask you a question in its terminal through AskUserQuestion, which herdr shows as blocked. Needs Human is for things you do outside the window, such as approving a design or settling a disputed review.
+- A worker asks you a question in its terminal, in chat, and the workspace label shows 💤 while it waits. A question popup still shows in herdr as blocked, and the label is 🔴. Needs Human is for things you do outside the window, such as approving a design or settling a disputed review.
 
 ### Acceptance Criteria
 
@@ -111,10 +110,10 @@ Each criterion is checked through the dispatcher's surface (`dispatch tick`, `di
 1. A standalone Todo ticket moved to In Progress gets, within one tick, a treehouse lease held by the ticket id, a herdr workspace on that tree, and a Claude worker running the ticket kickoff.
 2. A parent in In Progress with child A (Todo, unblocked) and child B (Todo, blocked by A) gets A promoted and launched on the next tick. B is promoted on the first tick after A is Done.
 3. A parent whose children are all Done, Canceled or Duplicate is set to Done on the next tick.
-4. An In Progress ticket with an idle worker receives one stall nudge per Stop, unless its latest Stop under 60 minutes ago listed running background tasks. The ticket is never moved to Needs Human for stalling. The user gets a notification on the 6th stall nudge with no status change and every 6th after, and when a worker has not stopped again an hour after a nudge.
+4. An In Progress ticket with an idle worker receives no nudge to keep going. Its workspace shows 💤 once its latest Stop lists no running background task, and the ticket is never moved to Needs Human for stalling.
 5. A ticket moved from Needs Human back to In Progress receives the resume nudge on the next tick, and the dispatcher posts no comment.
 6. For an In Review ticket, a push that moves the PR head resets the nudge count, so a review that arrives days later starts a fresh count.
-7. A blocked worker, one asking you a question through AskUserQuestion, triggers a macOS notification on the first tick it is blocked and again on later ticks while it stays blocked. The dispatcher never dismisses the dialog and never sets Needs Human for it (decision 9).
+7. A blocked worker, one asking you a question through a popup, triggers a macOS notification on the first tick it is blocked and again on later ticks while it stays blocked. The dispatcher never dismisses the dialog and never sets Needs Human for it (decision 9).
 8. Two consecutive failed launches set Needs Human with the launcher's error. `pool_exhausted` never counts as a failure.
 9. An In Review ticket whose PR has a failing check, changes requested on its head or a merge conflict, and whose worker is idle or gone, receives the PR nudge naming the problem. A gone worker is resumed first.
 10. A Done, Canceled or Duplicate ticket with a clean, pushed tree has its workspace closed and its tree returned. `treehouse status` shows the slot available.
@@ -183,7 +182,6 @@ Fixed text, no source tag. `<ticket>`, `<pr>` (the PR's URL) and `<problem>` (su
 
 | Situation | Text |
 |---|---|
-| Stall (In Progress, worker idle) | `<ticket> is still In Progress. Re-read the ticket and its latest comments, then keep going. If the PR is ready, move it to In Review. If you need a decision from me, move it to Needs Human and comment what you need.` |
 | Resume (Needs Human back to In Progress) | `I answered on <ticket>. Read the latest comments and continue.` |
 | PR (In Review, PR needs work) | `PR <pr> for <ticket> has <problem>. Handle it as your build skill's step 7 says, and push.` |
 
@@ -201,7 +199,7 @@ The build-worker skill (`skills/build/SKILL.md`, invoked as `/dispatch:build <ti
 6. The worker runs no `/loop`, cron or babysit-pr polling. A nudge is its only wake-up.
 7. The worker reports only through its ticket's status and comments.
 8. Nudges and `dispatch tell` text are treated as coming from you.
-9. The worker may ask you a question in its terminal through AskUserQuestion. It writes each answer down on the ticket.
+9. The worker asks you a question in its terminal, in chat. It writes each answer down on the ticket.
 
 #### Launcher
 
@@ -264,7 +262,7 @@ Cheap actions run before launches, because one launch can take over 5 minutes.
 |---|---|---|
 | In Progress | none | Wait while any blocker is not at `blocker_done`, with one comment naming the blockers, or set Needs Human for a canceled or duplicate blocker. Otherwise launch, typing `/dispatch:build <ticket>`. A ticket labeled `design` launches the design skill instead, typing `/dispatch:design <ticket>` on the `design_model`, and a ticket labeled `design-review` launches `/dispatch:design-review <ticket>` on the `design_model`. On `pool_exhausted` or a full cap, wait for the next tick. After 2 failed launches in a row, set Needs Human with the launcher's error. |
 | In Progress | working | Nothing. |
-| In Progress | idle | Send the resume nudge if the cache's last-seen status was Needs Human. Otherwise do nothing while the worker's latest Stop is under 60 minutes old and lists running background tasks, and send one stall nudge per Stop. Notify you on the 6th stall nudge with no status change and every 6th after, and once when no newer Stop arrives 60 minutes after a nudge. Never set Needs Human. A `design` ticket's idle worker gets none of this, because a design waiting on you is normal. |
+| In Progress | idle | Send the resume nudge if the cache's last-seen status was Needs Human. Otherwise do nothing: the workspace shows 💤 when the latest Stop lists no running background task. Never set Needs Human. |
 | In Progress or In Review | blocked | The worker is asking you a question. Notify you, and notify again if it stays unanswered. Never dismiss the dialog. |
 | In Review | none | If the PR needs work or an open review thread has an unseen comment, launch to resume, then send the PR nudge once the relaunched worker is idle (the next tick). A relaunch for an open thread's new comment sends no nudge, because the relaunched worker reads the PR itself. Otherwise nothing, and the tree stays leased. |
 | In Review | idle | If the PR needs work, send the PR nudge. After 2 PR nudges with no push, set Needs Human. If the PR is ready for review and the cache has not notified about its head, notify you. |
@@ -275,7 +273,7 @@ A PR needs work when any check has failed, a reviewer's latest review requests c
 
 #### Workspace labels
 
-The label format is `<emoji> <ticket>`, with no title. 🟢 means In Progress, 🟡 In Review with the PR not ready, 👀 In Review with the PR ready for review, 🔴 Needs Human, ⏸️ paused (Backlog or Todo with a kept tree and a workspace still open). A workspace is renamed only when its current label differs from the wanted one.
+The label format is `<emoji> <ticket>`, with no title. The emoji says who the ticket is waiting on, and `docs/worker-states.md` lists every state. 🟢 means the worker is busy, 🟡 In Review with the worker idle, gone or unconfirmed and the PR's checks running, 👀 In Review with the PR ready for review, 💤 the worker idle with nothing pending, 🔴 Needs Human or a worker blocked on a popup, ⏸️ paused (Backlog or Todo with a kept tree and a workspace still open). A workspace is renamed only when its current label differs from the wanted one.
 
 A PR is ready for review when the ticket is In Review, its worker is idle, every check has finished and passed, no review thread is unresolved, no reviewer's latest review requests changes on the head, and `mergeable` is `MERGEABLE`. A running check or a `mergeable` of `UNKNOWN` is not ready. The notification names the ticket and the PR and fires once per head commit.
 
@@ -310,11 +308,8 @@ At work, where there is no admin right to add a Needs Human status, the design i
   "ENG-123": {
     "last_status": "In Progress",
     "nudges": 1,
-    "stall_nudges": 1,
     "idle_since": "2026-10-09T01:20:00Z",
     "nudged_stop": "2026-10-09T01:20:00Z",
-    "nudged_at": "2026-10-09T01:25:00Z",
-    "nudge_notified": false,
     "pr_head": "9f2c1e0",
     "ready_head": "9f2c1e0",
     "launch_failures": 0,
@@ -326,7 +321,7 @@ At work, where there is no admin right to add a Needs Human status, the design i
 }
 ```
 
-`nudges` resets when the status changes, and for In Review tickets also when `pr_head` moves. In Progress tickets never read it. `stall_nudges` counts stall nudges since the status last changed and drives the notification on every 6th. `idle_since` is when the worker's current stretch of idling began as the dispatcher saw it, and stands in for the Stop time when the worker left no usable Stop record. `nudged_stop` is the Stop the last stall or resume nudge answered, so each Stop is nudged once. `nudged_at` is when the stall nudge went out, and `nudge_notified` marks that the user was told the worker ignored it for an hour. The Stop records themselves live apart from the cache, one file per worker tree under `~/.local/state/dispatch/stops/`, written by the Stop hook. Workers are not required to commit as they go, so commits are never a progress signal while In Progress. `launch_failures` resets on a successful launch. `blocked_ticks` resets when the worker is not blocked. `resume_pending` is set when a ticket moves from Needs Human back to In Progress and cleared once the resume nudge lands, so a worker that was blocked or working at that moment still gets it. `notify_pending` marks a Needs Human notification that failed to show, retried each tick. A ticket missing from the Linear read (paused or finished) keeps only `launch_failures`, an unposted escalation comment (`pending_comment`) and its teardown warning, so a ticket that returns starts its nudge count fresh. `ready_head` is the PR head the ready-for-review notification (in a draft repo, the reviews-handled one) last fired for. A failed notification leaves it unset so the next tick retries. A ticket that leaves In Review and returns at the same head is not notified again, and the entry keeps `ready_head` while the ticket holds a lease. `draft_ready_head` is the same for a draft in a repo with `open_pr_as = "draft"`, so opening the draft at the same head still earns the "reviews are handled" notification stored in `ready_head`. `hold_noted` is the comment that told a held ticket which blockers it waits on, kept so a ticket held across ticks gets it once, and cleared when the ticket stops waiting. `teardown_warned` keeps the dirty-tree comment to one per ticket. Entries for tickets with no lease and a terminal status are dropped.
+`nudges` resets when the status changes, and for In Review tickets also when `pr_head` moves. In Progress tickets never read it. `idle_since` is when the worker's current stretch of idling began as the dispatcher saw it, and stands in for the Stop time when the worker left no usable Stop record. `nudged_stop` is the Stop the last nudge answered, so each Stop is nudged once. The Stop records themselves live apart from the cache, one file per worker tree under `~/.local/state/dispatch/stops/`, written by the Stop hook. Workers are not required to commit as they go, so commits are never a progress signal while In Progress. `launch_failures` resets on a successful launch. `blocked_ticks` resets when the worker is not blocked. `resume_pending` is set when a ticket moves from Needs Human back to In Progress and cleared once the resume nudge lands, so a worker that was blocked or working at that moment still gets it. `notify_pending` marks a Needs Human notification that failed to show, retried each tick. A ticket missing from the Linear read (paused or finished) keeps only `launch_failures`, an unposted escalation comment (`pending_comment`) and its teardown warning, so a ticket that returns starts its nudge count fresh. `ready_head` is the PR head the ready-for-review notification (in a draft repo, the reviews-handled one) last fired for. A failed notification leaves it unset so the next tick retries. A ticket that leaves In Review and returns at the same head is not notified again, and the entry keeps `ready_head` while the ticket holds a lease. `draft_ready_head` is the same for a draft in a repo with `open_pr_as = "draft"`, so opening the draft at the same head still earns the "reviews are handled" notification stored in `ready_head`. `hold_noted` is the comment that told a held ticket which blockers it waits on, kept so a ticket held across ticks gets it once, and cleared when the ticket stops waiting. `teardown_warned` keeps the dirty-tree comment to one per ticket. Entries for tickets with no lease and a terminal status are dropped.
 
 ### Security
 

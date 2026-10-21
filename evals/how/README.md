@@ -10,7 +10,7 @@ Status 2026-10-10: the wording in the PR, unchanged, met the bar. Attempt 1 pass
 
 | Case | Question | Held out | Expected |
 |---|---|---|---|
-| how-nudge | How does a dispatch tick decide whether to nudge an idle worker? | no | Stall nudge for an idle In Progress worker, count compared with `NudgeLimit`, escalation at the limit. |
+| how-nudge | How does a dispatch tick decide whether to nudge an idle worker? | no | No keep-going nudge for an idle In Progress worker, the PR nudge for an idle In Review worker whose PR needs work, count compared with `nudge_limit`, escalation at the limit. |
 | why-unknown-keys | Why does dispatch reject unknown config keys? | no | Cites commit `334430a`. A typo would otherwise fall back to a default unnoticed. |
 | how-ready | How does dispatch decide that a pull request is ready for review? | yes | The six ready conditions, driving a notification and a label. |
 | how-tick | Give me a full architectural overview of the dispatch tick, covering where it reads state, how it decides what to do, and how it acts. | no | Reads Linear, herdr and GitHub, plans in `internal/reconcile`, acts, saves the cache. Also needs 2 or more sonnet explorers. |
