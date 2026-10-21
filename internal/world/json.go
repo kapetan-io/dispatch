@@ -8,6 +8,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
+	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
@@ -25,6 +26,8 @@ type worldRecord struct {
 	PoolErrs     map[string]string                  `json:"poolErrs,omitempty"`
 	Workers      map[string]Worker                  `json:"workers,omitempty"`
 	Stops        map[string]stops.Record            `json:"stops,omitempty"`
+	Sessions     map[string]sessionlog.Log          `json:"sessions,omitempty"`
+	SessionErrs  map[string]string                  `json:"sessionErrs,omitempty"`
 	LeaseHolders []linear.Ticket                    `json:"leaseHolders,omitempty"`
 	HoldersErr   string                             `json:"holdersErr,omitempty"`
 	Leases       map[string][]Worker                `json:"leases,omitempty"`
@@ -51,7 +54,7 @@ type treeRecord struct {
 func (w World) MarshalJSON() ([]byte, error) {
 	r := worldRecord{
 		At: w.At, Tickets: w.Tickets, LinearErr: errText(w.LinearErr), Snapshot: w.Snapshot, HerdrErr: errText(w.HerdrErr),
-		PoolErrs: errTexts(w.PoolErrs), Workers: w.Workers, Stops: w.Stops, LeaseHolders: w.LeaseHolders,
+		PoolErrs: errTexts(w.PoolErrs), Workers: w.Workers, Stops: w.Stops, Sessions: w.Sessions, SessionErrs: errTexts(w.SessionErrs), LeaseHolders: w.LeaseHolders,
 		HoldersErr: errText(w.HoldersErr), Leases: w.Leases, Leased: w.Leased, Children: w.Children,
 		ChildrenErr: errText(w.ChildrenErr), Unfinished: w.Unfinished, Work: w.Work, CheckErrors: errTexts(w.CheckErrors),
 		Untracked: w.Untracked, PRs: w.PRs, PRReadFailed: w.PRReadFailed, UnreadRepos: w.UnreadRepos, Nudged: w.Nudged,
@@ -70,7 +73,7 @@ func (w *World) UnmarshalJSON(b []byte) error {
 	}
 	*w = World{
 		At: r.At, Tickets: r.Tickets, LinearErr: asError(r.LinearErr), Snapshot: r.Snapshot, HerdrErr: asError(r.HerdrErr),
-		PoolErrs: asErrors(r.PoolErrs), Workers: r.Workers, Stops: r.Stops, LeaseHolders: r.LeaseHolders,
+		PoolErrs: asErrors(r.PoolErrs), Workers: r.Workers, Stops: r.Stops, Sessions: r.Sessions, SessionErrs: asErrors(r.SessionErrs), LeaseHolders: r.LeaseHolders,
 		HoldersErr: asError(r.HoldersErr), Leases: r.Leases, Leased: r.Leased, Children: r.Children,
 		ChildrenErr: asError(r.ChildrenErr), Unfinished: r.Unfinished, Work: r.Work, CheckErrors: asErrors(r.CheckErrors),
 		Untracked: r.Untracked, PRs: r.PRs, PRReadFailed: r.PRReadFailed, UnreadRepos: r.UnreadRepos, Nudged: r.Nudged,

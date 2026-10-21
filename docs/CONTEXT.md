@@ -94,3 +94,19 @@ _Avoid_: result, audit entry
 **Executor**:
 Starts each action a cycle wants whose once key the ledger doesn't cover, off the loop, and writes its receipt.
 _Avoid_: runner, worker (a worker is a Claude session)
+
+**Command**:
+A message to a worker that starts with `/name`, as Claude took it, recorded with its arguments (cut at 1KB), the time and whether a person or dispatch sent it.
+_Avoid_: prompt, message (both include text that isn't a command), skill (a skill the model loads by itself is not a command)
+
+**Turn**:
+One reply a worker's Claude session finished, ending in a Stop, with whether a background task was still running.
+_Avoid_: stop (a Stop record keeps only the latest turn)
+
+**Session log**:
+The file of one worker session's commands and turns, appended by the plugin's hooks and read by the world.
+_Avoid_: transcript (Claude's own file), history (dispatch's segments)
+
+**Send record**:
+A hash of a slash command dispatch typed into a tree, written before typing and claimed by the command it matches.
+_Avoid_: ledger entry, receipt (both are in history)

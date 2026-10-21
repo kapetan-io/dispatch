@@ -6,6 +6,7 @@ package world
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -16,6 +17,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
+	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
@@ -26,7 +28,7 @@ type Sources struct {
 	Herdr        herdr.Herdr
 	Treehouse    treehouse.Pool
 	PullRequests pullrequest.Repository
-	// StateDir holds the Stop records.
+	// StateDir holds the Stop records and session logs.
 	StateDir string
 	// Stderr receives one line for each read that failed without stopping the read.
 	Stderr io.Writer
@@ -80,6 +82,12 @@ type World struct {
 	// Stops maps an In Progress ticket identifier to its idle worker's latest Stop.
 	// Tickets without a record are absent.
 	Stops map[string]stops.Record
+	// Sessions maps an In Progress or In Review ticket identifier to the log of its
+	// worker's current Claude session. SessionErrs holds the tickets whose log could not
+	// be read, which is unknown, not empty. A ticket in neither map has no worker or is
+	// not In Progress or In Review.
+	Sessions    map[string]sessionlog.Log
+	SessionErrs map[string]error
 	// LeaseHolders holds the tickets that hold a lease and aren't in Tickets,
 	// which is how finished and paused tickets are found. HoldersErr is set when
 	// the lookup failed, so who holds a tree is unknown.
@@ -225,6 +233,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		}
 		snap := w.Snapshot
 		w.Workers, w.Stops = map[string]Worker{}, map[string]stops.Record{}
+		w.Sessions, w.SessionErrs = map[string]sessionlog.Log{}, map[string]error{}
 		for _, t := range w.Tickets {
 			wk := FindWorker(t.Identifier, w.Trees, snap)
 			if at, ok := kickoffs.Since(src.StateDir, wk.TreePath); ok && wk.State != NoWorker && !kickoffRan(src.StateDir, wk, at) {
@@ -235,6 +244,9 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 				if rec, ok := stops.Read(src.StateDir, wk.TreePath, wk.Session); ok {
 					w.Stops[t.Identifier] = rec
 				}
+			}
+			if wk.State != NoWorker && (t.Status == scope.Statuses.InProgress || t.Status == scope.Statuses.InReview) {
+				w.readSession(src.StateDir, t.Identifier, wk)
 			}
 		}
 		w.Leases = map[string][]Worker{}
@@ -266,6 +278,22 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		w.readPRs(ctx, src, scope)
 	}
 	return w, nil
+}
+
+// readSession reads the log of the worker's current session. With no session from herdr
+// the log is unknown, never another session's, because a tree holds the logs of every
+// session that ran in it.
+func (w *World) readSession(stateDir, ticket string, wk Worker) {
+	if wk.Session == "" {
+		w.SessionErrs[ticket] = errors.New("herdr reports no Claude session for the worker")
+		return
+	}
+	log, err := sessionlog.Read(stateDir, wk.TreePath, wk.Session)
+	if err != nil {
+		w.SessionErrs[ticket] = err
+		return
+	}
+	w.Sessions[ticket] = log
 }
 
 // leaseHolders reads the tickets that hold a tree but are not among the

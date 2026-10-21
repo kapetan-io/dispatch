@@ -13,6 +13,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
+	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -32,6 +33,8 @@ func full() world.World {
 		PoolErrs:     map[string]error{"tiger": errors.New("pool tiger unread")},
 		Workers:      map[string]world.Worker{"ENG-1": worker},
 		Stops:        map[string]stops.Record{"ENG-1": {At: time.UnixMilli(1760450000000).UTC(), Reported: true, Running: 2}},
+		Sessions:     map[string]sessionlog.Log{"ENG-1": {Turns: []sessionlog.Turn{{At: 1760450000000, Running: true}}}},
+		SessionErrs:  map[string]error{"ENG-6": errors.New("session unread")},
 		LeaseHolders: []linear.Ticket{{Identifier: "ENG-3"}},
 		HoldersErr:   errors.New("holders unread"),
 		Leases:       map[string][]world.Worker{"ENG-3": {worker}},

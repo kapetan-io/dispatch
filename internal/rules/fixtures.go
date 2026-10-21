@@ -1,6 +1,8 @@
 package rules
 
 import (
+	"cmp"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -9,6 +11,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
+	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -43,15 +46,19 @@ type scenarioModel struct {
 	parent  map[string]string
 	workers map[string]*world.Worker
 	stops   map[string]stops.Record
-	prs     map[string]*pullrequest.PullRequest
-	trees   []*treeModel
-	stamps  map[string]*stamp
+	// sessions are the turns a worker's session ended, and sessionUnread the
+	// workers whose session record can't be read, with the reason.
+	sessions      map[string]sessionlog.Log
+	sessionUnread map[string]string
+	prs           map[string]*pullrequest.PullRequest
+	trees         []*treeModel
+	stamps        map[string]*stamp
 }
 
 func newModel() *scenarioModel {
 	return &scenarioModel{
 		tickets: map[string]*linear.Ticket{}, parent: map[string]string{}, workers: map[string]*world.Worker{},
-		stops: map[string]stops.Record{}, prs: map[string]*pullrequest.PullRequest{}, stamps: map[string]*stamp{},
+		stops: map[string]stops.Record{}, sessions: map[string]sessionlog.Log{}, sessionUnread: map[string]string{}, prs: map[string]*pullrequest.PullRequest{}, stamps: map[string]*stamp{},
 	}
 }
 
@@ -239,6 +246,18 @@ func (s *scenario) applyWorker(id, state string, fields map[string]any) {
 		wk.UnconfirmedSince = scenarioStart.UnixMilli() + toInt(v)
 	}
 	m.workers[id] = wk
+	if v, ok := fields["turns"].([]any); ok {
+		log := sessionlog.Log{Turns: []sessionlog.Turn{}}
+		for _, item := range v {
+			turn, _ := item.(map[string]any)
+			running, _ := boolean(turn, "running")
+			log.Turns = append(log.Turns, sessionlog.Turn{At: scenarioStart.UnixMilli() + toInt(turn["at"]), Running: running})
+		}
+		m.sessions[id] = log
+	}
+	if v, ok := str(fields, "sessionUnread"); ok {
+		m.sessionUnread[id] = cmp.Or(v, "the session's record can't be read")
+	}
 	if v, ok := fields["lastStop"]; ok {
 		at := scenarioStart.UnixMilli() + toInt(v)
 		busy, _ := boolean(fields, "busy")
@@ -347,6 +366,7 @@ func (s *scenario) world() world.World {
 	scope := world.ScopeOf(cfg)
 	w := world.World{
 		At: s.now, Workers: map[string]world.Worker{}, Stops: map[string]stops.Record{},
+		Sessions: map[string]sessionlog.Log{}, SessionErrs: map[string]error{},
 		Leases: map[string][]world.Worker{}, Leased: map[string]bool{}, Children: map[string][]linear.Ticket{},
 		Unfinished: map[string]string{}, Work: map[string]treehouse.Work{}, CheckErrors: map[string]error{},
 		Untracked: map[string][]string{}, PRs: map[string]pullrequest.PullRequest{}, PRReadFailed: map[string]bool{},
@@ -368,6 +388,15 @@ func (s *scenario) world() world.World {
 			w.Workers[id] = workerOf(id)
 			if rec, ok := m.stops[id]; ok && w.Workers[id].State == world.Idle {
 				w.Stops[id] = rec
+			}
+			if w.Workers[id].State != world.NoWorker && (t.Status == cfg.Plugins.Linear.Statuses.InProgress || t.Status == cfg.Plugins.Linear.Statuses.InReview) {
+				if reason, ok := m.sessionUnread[id]; ok {
+					w.SessionErrs[id] = errors.New(reason)
+				} else if log, ok := m.sessions[id]; ok {
+					w.Sessions[id] = log
+				} else {
+					w.Sessions[id] = sessionlog.Log{Turns: []sessionlog.Turn{}}
+				}
 			}
 		}
 	}

@@ -5,13 +5,13 @@
 package stops
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/kapetan-io/dispatch/internal/treekey"
 )
 
 // BusyExpiry is how long a Stop that listed running tasks still counts as
@@ -23,8 +23,8 @@ const BusyExpiry = 60 * time.Minute
 type Record struct {
 	At time.Time `json:"at"`
 	// Reported is false when the Stop carried no background_tasks field, which
-	// Claude Code omits when its task registry is unreachable. That means
-	// unknown, not idle.
+	// only a Claude Code version that predates it omits. That means unknown,
+	// not idle.
 	Reported bool `json:"reported"`
 	// Running counts the tasks the Stop listed as running.
 	Running int `json:"running"`
@@ -43,18 +43,9 @@ func Dir(stateDir string) string {
 
 // treeDir holds the records of the worker in tree, one file for each Claude
 // session that stopped there. Any session whose working directory is the tree
-// fires the hook, so the reader must pick the worker's own session out. Two
-// spellings of one tree must share records, so the tree is resolved first.
+// fires the hook, so the reader must pick the worker's own session out.
 func treeDir(stateDir, tree string) string {
-	if resolved, err := filepath.EvalSymlinks(tree); err == nil {
-		tree = resolved
-	}
-	return filepath.Join(Dir(stateDir), hash(tree))
-}
-
-func hash(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:8])
+	return filepath.Join(Dir(stateDir), treekey.Of(tree))
 }
 
 // Write replaces the record of session in the tree.
@@ -80,7 +71,7 @@ func Write(stateDir, tree, session string, r Record) error {
 		_ = os.Remove(tmp.Name())
 		return fmt.Errorf("while writing stop record: %w", err)
 	}
-	return os.Rename(tmp.Name(), filepath.Join(dir, hash(session)+".json"))
+	return os.Rename(tmp.Name(), filepath.Join(dir, treekey.Hash(session)+".json"))
 }
 
 // Read returns the latest Stop of session in the tree. With no session known,
@@ -89,7 +80,7 @@ func Write(stateDir, tree, session string, r Record) error {
 func Read(stateDir, tree, session string) (Record, bool) {
 	dir := treeDir(stateDir, tree)
 	if session != "" {
-		return readFile(filepath.Join(dir, hash(session)+".json"))
+		return readFile(filepath.Join(dir, treekey.Hash(session)+".json"))
 	}
 	files, _ := filepath.Glob(filepath.Join(dir, "*.json"))
 	var latest Record
@@ -107,7 +98,7 @@ func Read(stateDir, tree, session string) (Record, bool) {
 // Stop holds instead.
 func Unreadable(stateDir, tree, session string) bool {
 	dir := treeDir(stateDir, tree)
-	files := []string{filepath.Join(dir, hash(session)+".json")}
+	files := []string{filepath.Join(dir, treekey.Hash(session)+".json")}
 	if session == "" {
 		files, _ = filepath.Glob(filepath.Join(dir, "*.json"))
 	}
