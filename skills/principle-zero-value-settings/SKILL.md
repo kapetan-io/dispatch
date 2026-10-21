@@ -9,7 +9,7 @@ A setting left unset must mean one thing. `AllowELF: false` can read as "refuse 
 
 **Why:** Marking "not set" afterwards takes a pointer or a magic value, which is a sign the setting is badly named. Fix the name, not the type.
 
-- **Unset is invalid or the default.** A zero that is not a usable value (`MaxFileSize: 0` is no real limit) is invalid, and the server applies the default for it.
+- **Unset is invalid or the default.** A zero that is not a usable value (`MaxFileSize: 0` is no real limit) is never a setting, so the server applies the default for it instead of rejecting it or reading it as "no limit".
 - **Name a default-on switch for turning it off.** `DisableRetries`, not `EnableRetries` defaulting to true, so the unset value is the default.
 - **When zero is a real choice, add an explicit switch.** `EnableRetries: true, MaxRetries: 0`, not `MaxRetries: 0` silently meaning no retries, which implementations forget to handle. The count is read only when the switch is on.
 - **No pointer or magic value to mark "not set".** If an "off" value is still needed, `Unlimited = math.MaxInt64` is safe in comparisons but overflows under arithmetic.
