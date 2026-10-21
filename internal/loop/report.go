@@ -10,6 +10,8 @@ import (
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/rules"
+	"github.com/kapetan-io/dispatch/internal/sessionlog"
+	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -97,10 +99,54 @@ func (l *Loop) onRequest(r request) error {
 	case OpTell:
 		l.readAgain(world.FromLocal)
 		l.afterRead = append(l.afterRead, func() error { return l.tell(r) })
+	case OpStop:
+		r.reply <- l.onStop(r.Stop)
+	case OpWatch, OpUnwatch:
+		r.reply <- l.onFollow(r)
 	default:
 		r.reply <- Response{Code: CodeFailed, Error: fmt.Sprintf("unknown request %q", r.Op)}
 	}
 	return nil
+}
+
+// onStop stores a turn a worker's Claude session ended, where the next read finds it. The
+// loop is the only writer, so a read never races a half-written record.
+func (l *Loop) onStop(s *Stop) Response {
+	if s == nil || s.Tree == "" || s.Session == "" {
+		return Response{Code: CodeFailed, Error: "a stop report needs a tree and a session"}
+	}
+	rec := stops.Record{At: time.UnixMilli(s.At).UTC(), Reported: s.Reported, Running: s.Running}
+	// A report that waited in the inbox past its hook's timeout can arrive after a newer one, and
+	// is dropped so the session's turns stay in order. A stored time ahead of the loop's clock came
+	// from a clock that has since stepped back, and must not shut out every report after it.
+	cur, ok := stops.Read(l.o.StateDir, s.Tree, s.Session)
+	if ok && rec.At.Before(cur.At) && !cur.At.After(l.clock.Now()) {
+		return Response{}
+	}
+	if err := stops.Write(l.o.StateDir, s.Tree, s.Session, rec); err != nil {
+		return Response{Code: CodeFailed, Error: err.Error()}
+	}
+	turn := sessionlog.Turn{At: s.At, Running: s.Running > 0}
+	if err := sessionlog.AppendTurn(l.o.StateDir, s.Tree, s.Session, turn); err != nil {
+		return Response{Code: CodeFailed, Error: err.Error()}
+	}
+	return Response{}
+}
+
+// onFollow adds or removes a session on a ticket's followers.
+func (l *Loop) onFollow(r request) Response {
+	if l.o.Executor == nil {
+		return Response{Code: CodeFailed, Error: "this dispatch has no followers to keep"}
+	}
+	f := l.o.Executor.Followers
+	if r.Op == OpUnwatch {
+		f.Unfollow(r.Ticket, r.Socket)
+		return Response{}
+	}
+	if err := f.Follow(r.Ticket, r.Socket); err != nil {
+		return Response{Code: CodeFailed, Error: err.Error()}
+	}
+	return Response{}
 }
 
 // release answers the ticks that were waiting for the loop to settle.

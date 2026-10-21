@@ -1,6 +1,6 @@
 // Package sessionlog keeps the file of what one worker session did, one line
-// for each turn it ended. The plugin's hooks append to it and only the world
-// reads it, so a rule sees every turn of the session and not just the latest.
+// for each turn it ended. The running dispatch appends to it from the Stop hook's report and only
+// the world reads it, so a rule sees every turn of the session and not just the latest.
 package sessionlog
 
 import (

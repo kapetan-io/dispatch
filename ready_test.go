@@ -107,6 +107,7 @@ func TestTickRetriesAReadyNotificationThatFailed(t *testing.T) {
 
 func TestTickKeepsAReadyNoticeFromFollowersWhenTheAlertFailsAndRunsItAgain(t *testing.T) {
 	h := newHarness(t)
+	h.startBeforeTheEvents()
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", cleanPR("a1"))

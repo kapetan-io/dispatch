@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +29,8 @@ import (
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/lineartest"
 	"github.com/kapetan-io/dispatch/internal/loop"
+	"github.com/kapetan-io/dispatch/internal/sessionlog"
+	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/tooltest"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -520,6 +523,9 @@ type harness struct {
 	clock *fakeClock
 	// running is the loop started by the first command that needs one.
 	running *runningLoop
+	// earlier answers Stop reports until a loop starts, standing in for the dispatch that
+	// ran before this one and left its records in the state directory.
+	earlier net.Listener
 	// rulesDir is the directory of rules the loop runs.
 	rulesDir string
 	// exactRules keeps the [rules] table as the test wrote it, without filling in the shipped keys.
@@ -549,6 +555,11 @@ func newHarness(t *testing.T) *harness {
 		pages:    map[string][]byte{},
 	}
 	t.Cleanup(func() { _ = h.stopLoop() })
+	t.Cleanup(func() {
+		if h.earlier != nil {
+			_ = h.earlier.Close()
+		}
+	})
 	h.linear = &linearHarness{Workspace: h.tools.Linear}
 	h.tools.Linear.Now = h.clock.Now
 	require.NoError(t, os.MkdirAll(h.repo, 0o755))
@@ -678,7 +689,10 @@ func (h *harness) withHistory(extra string) string {
 // runWith runs a command with the harness's fakes, over the Options given. A
 // command that needs the loop starts one first.
 func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...string) (string, string, error) {
-	if len(args) > 0 && (args[0] == "tick" || args[0] == "tell") && h.running == nil {
+	if len(args) > 0 && args[0] == "record-stop" && h.running == nil {
+		h.answerStopsOfAnEarlierRun()
+	}
+	if len(args) > 0 && slices.Contains([]string{"tick", "tell", "watch", "unwatch"}, args[0]) && h.running == nil {
 		if err := h.startLoop(extra); err != nil {
 			return "", "", err
 		}
@@ -693,6 +707,35 @@ func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...s
 	opts.Stdout, opts.Stderr = &stdout, &stderr
 	err := dispatch.Run(ctx, args, opts)
 	return stdout.String(), stderr.String(), err
+}
+
+// answerStopsOfAnEarlierRun stores the Stop reports that arrive before any loop runs. A
+// worker's Stop is in the state directory when a restarted dispatch first reads, so the first
+// read sees it, as it does a Stop that came in while a loop ran.
+func (h *harness) answerStopsOfAnEarlierRun() {
+	if h.earlier != nil {
+		return
+	}
+	ln, err := net.Listen("unix", loop.SocketPath(h.state))
+	require.NoError(h.t, err)
+	h.earlier = ln
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			var req loop.Request
+			if json.NewDecoder(conn).Decode(&req) == nil && req.Op == loop.OpStop {
+				s := req.Stop
+				rec := stops.Record{At: time.UnixMilli(s.At).UTC(), Reported: s.Reported, Running: s.Running}
+				_ = stops.Write(h.state, s.Tree, s.Session, rec)
+				_ = sessionlog.AppendTurn(h.state, s.Tree, s.Session, sessionlog.Turn{At: s.At, Running: s.Running > 0})
+			}
+			_ = json.NewEncoder(conn).Encode(loop.Response{})
+			_ = conn.Close()
+		}
+	}()
 }
 
 // tickSinceStart is `dispatch tick [ticket]` for the tick that starts the loop: it reports
@@ -745,6 +788,10 @@ type runningLoop struct {
 // returns once it answers on its socket, or with the error that stopped it.
 func (h *harness) startLoop(extra dispatch.Options) error {
 	h.t.Helper()
+	if h.earlier != nil {
+		_ = h.earlier.Close()
+		h.earlier = nil
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &runningLoop{cancel: cancel, done: make(chan error, 1), out: &syncBuffer{}, err: &syncBuffer{}}
 	opts := h.options(extra)
@@ -766,6 +813,14 @@ func (h *harness) startLoop(extra dispatch.Options) error {
 	}
 	cancel()
 	return errors.New("the loop did not start in 20 seconds")
+}
+
+// startBeforeTheEvents starts the loop ahead of the tickets, workers and pull requests a
+// test sets up, because a session follows a ticket only while a dispatch runs and hears
+// events that come after it asks.
+func (h *harness) startBeforeTheEvents() {
+	h.t.Helper()
+	require.NoError(h.t, h.startLoop(dispatch.Options{}))
 }
 
 // stopLoop stops the loop and returns what it stopped with.

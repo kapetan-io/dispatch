@@ -71,10 +71,14 @@ type Result struct {
 }
 
 // Executor runs actions.
-type Executor struct{ Env }
+type Executor struct {
+	Env
+	// Followers is the sessions following each ticket, which a notify messages.
+	Followers *delivery.Followers
+}
 
 // New returns an executor over env.
-func New(env Env) *Executor { return &Executor{Env: env} }
+func New(env Env) *Executor { return &Executor{Env: env, Followers: &delivery.Followers{}} }
 
 // WhyNotLaunch says why a launch must not start whatever the rule asked, or "" when it
 // may. A worker that is present or unknown means a second one could start beside it.
@@ -482,7 +486,7 @@ func (e *Executor) notify(ctx context.Context, w rules.Want, wd world.World) Res
 	if t.Identifier == "" {
 		t.Identifier = w.Subject
 	}
-	post := delivery.Post{Herdr: e.Herdr, Alerts: e.Alerts, StateDir: e.StateDir, Stderr: e.Stderr}
+	post := delivery.Post{Herdr: e.Herdr, Alerts: e.Alerts, Followers: e.Followers, Stderr: e.Stderr}
 	ev := delivery.Event{Ticket: t, Reason: Reason(w), Text: text}
 	if always, _ := w.Options["followersAlways"].(bool); always {
 		// Nothing retries a merge notice, so followers hear it whether or not the alert showed.

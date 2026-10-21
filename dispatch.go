@@ -140,9 +140,10 @@ const usage = `usage: dispatch run
                JSON result and exits 0 only when a worker is running
   claude-shim  run the real claude with the plugin and worker flags added. The claude shim in
                scripts/shims runs it
-  record-stop  read a Stop hook's JSON on stdin and record when the worker in this tree last ended a
-               turn and whether it still has background tasks running; does nothing outside a
-               worktree of a repo listed under [repos]. The plugin's Stop hook runs it
+  record-stop  read a Stop hook's JSON on stdin and report to the running dispatch when the worker in
+               this tree last ended a turn and whether it still has background tasks running.
+               Drops the report when no dispatch runs, and does nothing outside a worktree of a
+               repo listed under [repos]. The plugin's Stop hook runs it
   wake         read a Notification or UserPromptSubmit hook's JSON on stdin and ask the running loop
                to read herdr again and run a cycle without waiting for it, so the worker's workspace
                label follows within seconds. Does nothing outside a worktree of a repo listed under [repos] or when no
@@ -150,8 +151,9 @@ const usage = `usage: dispatch run
   watch        make this Claude Code session follow the ticket, so each notice dispatch sends about
                it is also sent to this session as a message. A session can follow several
                tickets, and a ticket can have several followers. Fails outside a Claude Code
-               session or when the socket path is not absolute
-  unwatch      stop this session following the ticket`
+               session, when the socket path is not absolute, or when no dispatch is running.
+               Dispatch keeps followers in memory, so run it again after a restart
+  unwatch      stop this session following the ticket; fails when no dispatch is running`
 
 // Run executes one dispatch command. main is a thin wrapper around it.
 func Run(ctx context.Context, args []string, opts Options) error {
@@ -202,7 +204,7 @@ func Run(ctx context.Context, args []string, opts Options) error {
 			_, _ = fmt.Fprintln(opts.Stderr, usage)
 			return fmt.Errorf("%s takes a ticket", args[0])
 		}
-		return follow(opts, args[0] == "watch", strings.ToUpper(args[1]))
+		return follow(ctx, opts, args[0] == "watch", strings.ToUpper(args[1]))
 	case "run":
 		if len(args) != 1 {
 			_, _ = fmt.Fprintln(opts.Stderr, usage)
@@ -335,7 +337,7 @@ func linearViewer(ctx context.Context, opts Options) error {
 }
 
 // follow makes the calling Claude Code session start or stop following a ticket.
-func follow(opts Options, watch bool, ticket string) error {
+func follow(ctx context.Context, opts Options, watch bool, ticket string) error {
 	if !ticketID.MatchString(ticket) {
 		return fmt.Errorf("%q is not a ticket identifier such as ENG-123", ticket)
 	}
@@ -343,17 +345,21 @@ func follow(opts Options, watch bool, ticket string) error {
 	if socket == "" {
 		return fmt.Errorf("%s is not set, so this is not a Claude Code session; run watch from one", messagingSocketEnv)
 	}
-	if !watch {
-		if err := delivery.Unwatch(opts.StateDir, ticket, socket); err != nil {
-			return err
-		}
-		_, _ = fmt.Fprintf(opts.Stdout, "unwatching %s\n", ticket)
-		return nil
+	op, verb := loop.OpUnwatch, "unwatching"
+	if watch {
+		op, verb = loop.OpWatch, "watching"
 	}
-	if err := delivery.Watch(opts.StateDir, ticket, socket); err != nil {
+	resp, err := loop.Ask(ctx, opts.StateDir, loop.Request{Op: op, Ticket: ticket, Socket: socket})
+	if errors.Is(err, loop.ErrNotRunning) {
+		return notRunning()
+	}
+	if err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(opts.Stdout, "watching %s\n", ticket)
+	if resp.Error != "" {
+		return errors.New(resp.Error)
+	}
+	_, _ = fmt.Fprintf(opts.Stdout, "%s %s\n", verb, ticket)
 	return nil
 }
 

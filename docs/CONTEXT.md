@@ -104,7 +104,7 @@ One reply a worker's Claude session finished, ending in a Stop, with whether a b
 _Avoid_: stop (a Stop record keeps only the latest turn)
 
 **Session log**:
-The file of one worker session's commands and turns, appended by the plugin's hooks and read by the world.
+The file of one worker session's commands and turns, appended by the running dispatch from the hooks' reports and read by the world.
 _Avoid_: transcript (Claude's own file), history (dispatch's segments)
 
 **Send record**:

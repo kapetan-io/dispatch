@@ -1,7 +1,7 @@
 // Package stops keeps the record of each worker's latest Stop, the moment
-// Claude Code ended a turn. The plugin's Stop hook writes it and the rules
-// read it, because the hook is the only place Claude Code says whether an
-// idle session is waiting on background work.
+// Claude Code ended a turn. The running dispatch writes it from the Stop hook's
+// report and the rules read it, because the hook is the only place Claude Code
+// says whether an idle session is waiting on background work.
 package stops
 
 import (

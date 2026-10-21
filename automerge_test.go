@@ -150,6 +150,7 @@ func TestTickTellsFollowersAboutAMergeNoticeWhenTheAlertFails(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
 			h.repoSettings("dispatch", autoMergeSetting)
+			h.startBeforeTheEvents()
 			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 			h.worker("ENG-1", "idle")
 			h.pr("ENG-1", approvedPR("a1"))
