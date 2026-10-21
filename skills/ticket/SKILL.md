@@ -32,7 +32,7 @@ Use these sections in this order.
 1. **In plain English.** Two to four sentences. Someone who has never seen the code should be able to repeat the problem back, so name no file, function or filter. Say what is wrong or missing for whoever uses the thing, and what happens because of it.
 2. **What it delivers.** A bullet list. Each item must be observable at the surface (a command's output, an API response, a file that appears). For a bug, put `## What happened` and `## Cause` sections, with your evidence, between In plain English and this section.
 3. **Governing design.** The documents the worker must read, by path or link, and the part of each that applies. Say what the change touches and whether it ships additively or behind a flag, or "none" if there is no design.
-4. **Not decided here (ask, don't assume).** The product behavior, public contract, security default or ADR questions the worker must put to the user, or "Nothing open". Don't write a guess as if it were settled.
+4. **Not decided here (ask, don't assume).** Product behavior, public contract, security default and ADR questions are the user's. Sort each one, including any the review below turns up. If this conversation has the facts the user needs to answer it, ask the user before you save and write the answer into the ticket as theirs ("the user wants X"). Otherwise list it here, which means one of three things: answering needs research you can't do now, no user is present (a worker breaking down its own ticket), or the user chose not to decide it. With none listed, write "Nothing open". Don't write a guess as if it were settled. A `design` or `design-review` ticket keeps its questions for the design session.
 5. **Notes for the worker.** Anything that saves time, such as an example ticket in the same format, a trap you hit, a binary it must not touch, or a suggested approach labelled as one.
 
 When the ticket's purpose is to create, change or evaluate a skill, Notes for the worker also carries these three instructions, stated as the user's requirements. Left alone, workers invent eval loops of 40 to 270 runs, which is why the no-evals line must be written out. They also skip reviewing the skill itself, and write long, prescriptive prose.
@@ -60,7 +60,7 @@ You judge each finding, because only you know what the conversation settled. Che
 - **Settled in the conversation.** Write the decision into the ticket, as the user's ("the user wants X"). "We discussed it" is not a reason to drop a finding unless what was discussed is now in the ticket.
 - **Deliberately out of play.** Say so in the ticket (non-goal, or "Nothing open" with the reason), so the worker doesn't rediscover it.
 - **Moot question.** Delete it.
-- **A call the user hasn't made.** Ask the user now, or list it under "Not decided".
+- **A call the user hasn't made.** Ask or list it as "Not decided here" says.
 - **Wrong.** Set it aside only with the evidence that disproves it.
 
 Review again only if you changed what the ticket asks for, not for wording. Tell the user in a line what the review changed.
@@ -71,6 +71,7 @@ Review again only if you changed what the ticket asks for, not for wording. Tell
 - Write a GitHub issue or pull request as its full URL, never a bare `#N`. Linear links a bare number to whichever repo's item of that number it finds first.
 - Count the title's characters. Over 50, shorten it.
 - Unless it's a `design` or `design-review` ticket, confirm the review ran and each finding landed in the ticket or was set aside with evidence.
+- Confirm each "Not decided" entry needs research, has no one to ask, or was declined, and that you asked every other call.
 - Re-read In plain English as the user would. If it needs the code open to make sense, rewrite it.
 - On a ticket that touches a skill, confirm Notes for the worker carries each skill instruction listed above.
 - Confirm the ticket has the team, AI label, repo label, assignee and paused status. A missing one means the dispatcher never sees it or sees it too soon. A `design` ticket waits in Backlog on purpose, and the user moves it to In Progress to start the design skill.
