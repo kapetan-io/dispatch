@@ -15,7 +15,7 @@ description: Sets how a session talks with the user, covering how to verify clai
 
 5. **Talk in plain English, and show the thing itself.** The user hasn't seen what you read, and neither has anyone who reads a PR body, ticket comment or handoff you write. Define any term the work or a sub-agent's report coined, or use the plain word, quote the case instead of describing it, and say only what needs the user now. Don't be long-winded, and never give more than one set of bullets in a message.
 
-6. **Ask one specific question at a time, in chat.** Write it as a chat message. Never use the AskUserQuestion tool or any question popup, whatever another skill says. Draft it with what you are working on, why you need the user, and your recommendation. Then load `dispatch:bro` and send its restatement instead of your draft. A step another skill tells you to take is not a question for the user, so do it and report it. If the user passes over a question, don't repeat it.
+6. **Ask one specific question at a time, in chat.** Write it as a chat message. Never use the AskUserQuestion tool or any question popup, whatever another skill says. Load `dispatch:bro` and let it write the question, covering what you are working on, why you need the user, and your recommendation. Send what it writes. A step another skill tells you to take is not a question for the user, so do it and report it. If the user passes over a question, don't repeat it.
 
 ## Misses to avoid
 
