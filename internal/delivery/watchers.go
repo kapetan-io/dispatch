@@ -7,80 +7,70 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
 
-const (
-	watchersFile = "watchers"
-	sendTimeout  = 5 * time.Second
-)
+const sendTimeout = 5 * time.Second
 
-// Watch records that a Claude Code session follows a ticket, so Notify sends
+// Followers holds which Claude Code sessions follow which ticket. It lives in memory only,
+// because a session's inbox socket dies with the session and a list read back after a restart
+// would be mostly dead sockets.
+type Followers struct {
+	mu      sync.Mutex
+	sockets map[string][]string
+}
+
+// Follow records that a Claude Code session follows a ticket, so Notify sends
 // that ticket's events to the session's inbox socket. Only an absolute path is
 // taken, because the sender may run from any directory.
-func Watch(stateDir, ticket, socket string) error {
+func (f *Followers) Follow(ticket, socket string) error {
 	if !filepath.IsAbs(socket) {
 		return fmt.Errorf("socket path %q is not absolute", socket)
 	}
-	// Each line holds a ticket, one space and a socket path, and trims the line.
-	if socket != strings.TrimSpace(socket) || strings.Contains(socket, "\n") {
-		return fmt.Errorf("socket path %q has a newline or surrounding whitespace", socket)
+	if ticket == "" {
+		return errors.New("a follower needs a ticket")
 	}
-	if ticket == "" || strings.ContainsAny(ticket, " \t\r\n") {
-		return fmt.Errorf("ticket %q is not a ticket identifier", ticket)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.sockets == nil {
+		f.sockets = map[string][]string{}
 	}
-	line := ticket + " " + socket
-	return updateWatchers(stateDir, func(list []string) []string {
-		if slices.Contains(list, line) {
-			return list
-		}
-		return append(list, line)
-	})
+	if !slices.Contains(f.sockets[ticket], socket) {
+		f.sockets[ticket] = append(f.sockets[ticket], socket)
+	}
+	return nil
 }
 
-// Unwatch stops a session following a ticket. A session that was not
+// Unfollow stops a session following a ticket. A session that was not
 // following it is not an error.
-func Unwatch(stateDir, ticket, socket string) error {
-	return updateWatchers(stateDir, func(list []string) []string {
-		return slices.DeleteFunc(list, func(line string) bool { return line == ticket+" "+socket })
-	})
+func (f *Followers) Unfollow(ticket, socket string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.sockets == nil {
+		return
+	}
+	f.sockets[ticket] = slices.DeleteFunc(f.sockets[ticket], func(s string) bool { return s == socket })
 }
 
-// Watchers lists the sockets of the sessions following a ticket.
-func Watchers(stateDir, ticket string) ([]string, error) {
-	lines, err := readWatchers(stateDir)
-	if err != nil {
-		return nil, err
-	}
-	var sockets []string
-	for _, line := range lines {
-		if id, socket, ok := strings.Cut(line, " "); ok && id == ticket {
-			sockets = append(sockets, socket)
-		}
-	}
-	return sockets, nil
+// Of lists the sockets of the sessions following a ticket.
+func (f *Followers) Of(ticket string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.sockets[ticket])
 }
 
-func readWatchers(stateDir string) ([]string, error) {
-	b, err := os.ReadFile(filepath.Join(stateDir, watchersFile))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+// drop forgets the sockets of sessions that have exited, for every ticket they followed.
+func (f *Followers) drop(gone []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for ticket, list := range f.sockets {
+		f.sockets[ticket] = slices.DeleteFunc(list, func(s string) bool { return slices.Contains(gone, s) })
 	}
-	if err != nil {
-		return nil, fmt.Errorf("while reading watchers: %w", err)
-	}
-	var list []string
-	for line := range strings.SplitSeq(string(b), "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			list = append(list, line)
-		}
-	}
-	return list, nil
 }
 
 // tellWatchers sends ev to every session following its ticket. A socket that
@@ -88,13 +78,11 @@ func readWatchers(stateDir string) ([]string, error) {
 // exited, so every ticket it followed is dropped. Any other failure keeps the
 // follower, because the session may be only briefly busy.
 func (p Post) tellWatchers(ctx context.Context, ev Event) {
-	list, err := Watchers(p.StateDir, ev.Ticket.Identifier)
-	if err != nil {
-		p.warn("%v", err)
+	if p.Followers == nil {
 		return
 	}
 	var gone []string
-	for _, socket := range list {
+	for _, socket := range p.Followers.Of(ev.Ticket.Identifier) {
 		err := send(ctx, socket, message(ev))
 		switch {
 		case err == nil:
@@ -105,18 +93,7 @@ func (p Post) tellWatchers(ctx context.Context, ev Event) {
 			p.warn("while messaging watcher %s: %v", socket, err)
 		}
 	}
-	if len(gone) == 0 {
-		return
-	}
-	err = updateWatchers(p.StateDir, func(list []string) []string {
-		return slices.DeleteFunc(list, func(line string) bool {
-			_, socket, _ := strings.Cut(line, " ")
-			return slices.Contains(gone, socket)
-		})
-	})
-	if err != nil {
-		p.warn("%v", err)
-	}
+	p.Followers.drop(gone)
 }
 
 // warn reports a watcher failure without failing the action.
@@ -162,31 +139,4 @@ func send(ctx context.Context, socket, text string) error {
 	_ = conn.SetWriteDeadline(time.Now().Add(sendTimeout))
 	_, err = conn.Write(append(line, '\n'))
 	return err
-}
-
-// updateWatchers rewrites the list under a lock, because the loop dropping a
-// dead socket can overlap a session watching a ticket.
-func updateWatchers(stateDir string, change func([]string) []string) error {
-	if err := os.MkdirAll(stateDir, 0o755); err != nil {
-		return fmt.Errorf("while creating %s: %w", stateDir, err)
-	}
-	lock, err := os.OpenFile(filepath.Join(stateDir, watchersFile+".lock"), os.O_RDWR|os.O_CREATE, 0o644)
-	if err != nil {
-		return fmt.Errorf("while locking watchers: %w", err)
-	}
-	defer func() { _ = lock.Close() }()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
-		return fmt.Errorf("while locking watchers: %w", err)
-	}
-	list, err := readWatchers(stateDir)
-	if err != nil {
-		return err
-	}
-	list = change(list)
-	path := filepath.Join(stateDir, watchersFile)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(strings.Join(list, "\n")+"\n"), 0o644); err != nil {
-		return fmt.Errorf("while writing watchers: %w", err)
-	}
-	return os.Rename(tmp, path)
 }

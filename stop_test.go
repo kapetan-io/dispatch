@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kapetan-io/dispatch"
+	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,6 +33,13 @@ func (h *harness) recordStop(ticket, tasks string) {
 // recordStopFrom is recordStop for the Claude session with the given id.
 func (h *harness) recordStopFrom(session, ticket, tasks string) {
 	h.t.Helper()
+	_, _, err := h.runWith(context.Background(), dispatch.Options{Stdin: strings.NewReader(h.stopInput(session, ticket, tasks))}, "record-stop")
+	require.NoError(h.t, err)
+}
+
+// stopInput is what Claude Code hands the Stop hook for a session in the ticket's tree.
+func (h *harness) stopInput(session, ticket, tasks string) string {
+	h.t.Helper()
 	tree := filepath.Join(h.dir, "trees", ticket)
 	if _, err := os.Stat(filepath.Join(h.repo, ".git")); err != nil {
 		hintGit(h.t, h.repo, "init", "-q")
@@ -43,8 +52,7 @@ func (h *harness) recordStopFrom(session, ticket, tasks string) {
 	if tasks != "" {
 		input += "," + tasks
 	}
-	_, _, err := h.runWith(context.Background(), dispatch.Options{Stdin: strings.NewReader(input + "}")}, "record-stop")
-	require.NoError(h.t, err)
+	return input + "}"
 }
 
 func TestTickLeavesAWorkerWaitingOnBackgroundTasksAlone(t *testing.T) {
@@ -470,6 +478,65 @@ func TestRecordStopStaysSilentWithoutAConfig(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, stdout.String())
 	assert.Empty(t, stderr.String())
+}
+
+func TestRecordStopDropsItsReportWhenNoDispatchRuns(t *testing.T) {
+	h := newHarness(t)
+	var stdout, stderr strings.Builder
+	opts := h.options(dispatch.Options{Stdin: strings.NewReader(h.stopInput("worker", "ENG-1", noTasks))})
+	opts.Stdout, opts.Stderr = &stdout, &stderr
+
+	err := dispatch.Run(t.Context(), []string{"record-stop"}, opts)
+
+	require.NoError(t, err)
+	assert.Empty(t, stdout.String())
+	assert.Empty(t, stderr.String())
+	assert.Empty(t, stopRecords(t, h.state))
+	assert.NoDirExists(t, filepath.Join(h.state, "sessions"))
+}
+
+func TestRecordStopDoesNotWaitOnAStuckDispatch(t *testing.T) {
+	h := newHarness(t)
+	input := h.stopInput("worker", "ENG-1", noTasks)
+	ln, err := net.Listen("unix", loop.SocketPath(h.state))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { _ = conn.Close() })
+		}
+	}()
+	var stdout, stderr strings.Builder
+	opts := h.options(dispatch.Options{Stdin: strings.NewReader(input)})
+	opts.Stdout, opts.Stderr = &stdout, &stderr
+	start := time.Now()
+
+	err = dispatch.Run(t.Context(), []string{"record-stop"}, opts)
+
+	require.NoError(t, err)
+	assert.Less(t, time.Since(start), 5*time.Second)
+	assert.Empty(t, stdout.String())
+	assert.Empty(t, stderr.String())
+}
+
+func TestRecordStopTellsTheRunningDispatch(t *testing.T) {
+	h := newHarness(t)
+	h.startBeforeTheEvents()
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.worker("ENG-1", "done")
+
+	h.recordStop("ENG-1", runningTasks)
+
+	for range 3 {
+		h.advance(5 * time.Minute)
+		h.tick()
+	}
+	assert.NotEmpty(t, stopRecords(t, h.state))
+	assert.Empty(t, h.prompts())
 }
 
 func TestStopHookRunsRecordStop(t *testing.T) {

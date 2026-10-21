@@ -6,11 +6,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kapetan-io/dispatch"
 )
 
 // sessionSocket stands in for a Claude Code session's inbox and collects the
@@ -72,9 +75,17 @@ func TestWatchRecordsTheSessionsSocket(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "watching ENG-1\n", out)
-	b, err := os.ReadFile(filepath.Join(h.state, "watchers"))
-	require.NoError(t, err)
-	assert.Equal(t, "ENG-1 /tmp/cc-socks/42.sock\n", string(b))
+	assert.NoFileExists(t, filepath.Join(h.state, "watchers"))
+}
+
+func TestWatchFailsWhenNoDispatchRuns(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/cc-socks/42.sock")
+
+	for _, command := range []string{"watch", "unwatch"} {
+		err := dispatch.Run(t.Context(), []string{command, "ENG-1"}, h.options(dispatch.Options{}))
+		require.ErrorContains(t, err, "not running")
+	}
 }
 
 func TestWatchRefusesARelativeSocket(t *testing.T) {
@@ -88,6 +99,7 @@ func TestWatchRefusesARelativeSocket(t *testing.T) {
 
 func TestTickMessagesFollowersAboutAReadyPR(t *testing.T) {
 	h := newHarness(t)
+	h.startBeforeTheEvents()
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", cleanPR("a1"))
@@ -114,6 +126,7 @@ func TestTickMessagesFollowersAboutAReadyPR(t *testing.T) {
 
 func TestTickMessagesFollowersThatReviewsAreHandledNotThatAPRIsReady(t *testing.T) {
 	h := draftHarness(t)
+	h.startBeforeTheEvents()
 	h.pr("ENG-1", cleanPR("a1"))
 	socket, lines := sessionSocket(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
@@ -137,6 +150,7 @@ func TestTickMessagesFollowersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
+			h.startBeforeTheEvents()
 			h.tickets(ticket("ENG-1", test.status, "dispatch"))
 			h.worker("ENG-1", test.worker)
 			socket, lines := sessionSocket(t)
@@ -156,10 +170,11 @@ func TestTickMessagesFollowersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
 
 func TestTickDropsAFollowerWhoseSessionExited(t *testing.T) {
 	h := newHarness(t)
+	h.startBeforeTheEvents()
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", cleanPR("a1"))
-	socket, _ := sessionSocket(t)
+	socket, lines := sessionSocket(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
 	_, err := h.run("watch", "ENG-1")
 	require.NoError(t, err)
@@ -178,13 +193,12 @@ func TestTickDropsAFollowerWhoseSessionExited(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{readyText1}, h.notifications())
 	assert.Contains(t, h.loopErr(), "dropped watcher socket "+dead)
-	b, err := os.ReadFile(filepath.Join(h.state, "watchers"))
-	require.NoError(t, err)
-	assert.Equal(t, "ENG-1 "+socket+"\n", string(b))
+	assert.Contains(t, next(t, lines), "ENG-1 is ready for review")
 }
 
 func TestTickMessagesEveryFollowerOfATicket(t *testing.T) {
 	h := newHarness(t)
+	h.startBeforeTheEvents()
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", cleanPR("a1"))
@@ -206,6 +220,7 @@ func TestTickMessagesEveryFollowerOfATicket(t *testing.T) {
 func TestTickMessagesFollowersAboutAMerge(t *testing.T) {
 	h := newHarness(t)
 	h.repoSettings("dispatch", autoMergeSetting)
+	h.startBeforeTheEvents()
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", approvedPR("a1"))
@@ -267,6 +282,7 @@ func TestTickMessagesFollowersAboutStallNudgeCounts(t *testing.T) {
 
 func TestTickMessagesFollowersAboutAnEscalation(t *testing.T) {
 	h := newHarness(t)
+	h.startBeforeTheEvents()
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	h.launchResult(`{"status":"pool_error","detail":"treehouse lease failed"}`)
 	socket, lines := sessionSocket(t)
@@ -301,6 +317,7 @@ func TestTickTellsFollowersAboutAMergeWhenTheAlertFails(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
 			h.repoSettings("dispatch", autoMergeSetting)
+			h.startBeforeTheEvents()
 			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 			h.worker("ENG-1", "idle")
 			h.pr("ENG-1", approvedPR("a1"))
@@ -348,6 +365,7 @@ func TestWatchUppercasesTheTicket(t *testing.T) {
 
 func TestTickMessagesOnlyTheSessionFollowingTheTicket(t *testing.T) {
 	h := newHarness(t)
+	h.startBeforeTheEvents()
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.worker("ENG-2", "idle")
@@ -374,6 +392,7 @@ func TestTickMessagesOnlyTheSessionFollowingTheTicket(t *testing.T) {
 
 func TestTickMessagesASessionFollowingSeveralTickets(t *testing.T) {
 	h := newHarness(t)
+	h.startBeforeTheEvents()
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.worker("ENG-2", "idle")
@@ -413,6 +432,7 @@ func TestTickRaisesTheAlertForATicketNobodyFollows(t *testing.T) {
 
 func TestUnwatchStopsMessagesForThatTicketOnly(t *testing.T) {
 	h := newHarness(t)
+	h.startBeforeTheEvents()
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.worker("ENG-2", "idle")
@@ -455,6 +475,7 @@ func TestUnwatchFailsOutsideAClaudeSession(t *testing.T) {
 
 func TestTickDroppingADeadSessionStopsItFollowingEveryTicket(t *testing.T) {
 	h := newHarness(t)
+	h.startBeforeTheEvents()
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.pr("ENG-1", cleanPR("a1"))
@@ -472,10 +493,14 @@ func TestTickDroppingADeadSessionStopsItFollowingEveryTicket(t *testing.T) {
 
 	_, err = h.run("tick")
 	require.NoError(t, err)
-
-	b, err := os.ReadFile(filepath.Join(h.state, "watchers"))
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
+	h.worker("ENG-2", "idle")
+	h.pr("ENG-2", cleanPR("b1"))
+	_, err = h.run("tick")
 	require.NoError(t, err)
-	assert.Equal(t, "\n", string(b))
+
+	// ENG-2's event finds no follower left to try.
+	assert.Equal(t, 1, strings.Count(h.loopErr(), "dropped watcher socket "+dead))
 }
 
 func TestWatchRefusesAnythingButATicketIdentifier(t *testing.T) {
@@ -492,30 +517,42 @@ func TestWatchRefusesAnythingButATicketIdentifier(t *testing.T) {
 
 func TestUnwatchAcceptsALowercaseTicket(t *testing.T) {
 	h := newHarness(t)
-	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/cc-socks/42.sock")
+	h.startBeforeTheEvents()
+	socket, lines := sessionSocket(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
 	_, err := h.run("watch", "ENG-1")
 	require.NoError(t, err)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", cleanPR("a1"))
 
 	_, err = h.run("unwatch", "eng-1")
 	require.NoError(t, err)
-
-	b, err := os.ReadFile(filepath.Join(h.state, "watchers"))
+	_, err = h.run("tick")
 	require.NoError(t, err)
-	assert.Equal(t, "\n", string(b))
+
+	assert.Equal(t, []string{readyText1}, h.notifications())
+	assert.Empty(t, lines)
 }
 
-func TestWatchingATicketTwiceRecordsItOnce(t *testing.T) {
+func TestWatchingATicketTwiceMessagesTheSessionOnce(t *testing.T) {
 	h := newHarness(t)
-	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/cc-socks/42.sock")
-
+	h.startBeforeTheEvents()
+	socket, lines := sessionSocket(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
 	for range 2 {
 		_, err := h.run("watch", "ENG-1")
 		require.NoError(t, err)
 	}
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", cleanPR("a1"))
 
-	b, err := os.ReadFile(filepath.Join(h.state, "watchers"))
+	_, err := h.run("tick")
 	require.NoError(t, err)
-	assert.Equal(t, "ENG-1 /tmp/cc-socks/42.sock\n", string(b))
+
+	assert.Contains(t, next(t, lines), "ENG-1 is ready for review")
+	assert.Empty(t, lines)
 }
 
 func TestSubscribeIsGone(t *testing.T) {

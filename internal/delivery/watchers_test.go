@@ -105,11 +105,11 @@ var ready = delivery.Event{
 }
 
 func TestNotifyMessagesEveryWatcher(t *testing.T) {
-	state := t.TempDir()
+	followers := &delivery.Followers{}
 	one, two := newInbox(t, "one.sock"), newInbox(t, "two.sock")
-	require.NoError(t, delivery.Watch(state, "ENG-1", one.path))
-	require.NoError(t, delivery.Watch(state, "ENG-1", two.path))
-	post := delivery.Post{Alerts: deliverytest.New(&journal.Journal{}), StateDir: state}
+	require.NoError(t, followers.Follow("ENG-1", one.path))
+	require.NoError(t, followers.Follow("ENG-1", two.path))
+	post := delivery.Post{Alerts: deliverytest.New(&journal.Journal{}), Followers: followers}
 
 	require.NoError(t, post.Notify(context.Background(), ready))
 
@@ -124,7 +124,7 @@ func TestNotifyMessagesEveryWatcher(t *testing.T) {
 
 func TestNotifyShowsTheAlertWithNoWatchers(t *testing.T) {
 	alerts := deliverytest.New(&journal.Journal{})
-	post := delivery.Post{Alerts: alerts, StateDir: t.TempDir()}
+	post := delivery.Post{Alerts: alerts, Followers: &delivery.Followers{}}
 
 	require.NoError(t, post.Notify(context.Background(), ready))
 
@@ -132,51 +132,49 @@ func TestNotifyShowsTheAlertWithNoWatchers(t *testing.T) {
 }
 
 func TestNotifyDropsASocketThatRefuses(t *testing.T) {
-	state := t.TempDir()
+	followers := &delivery.Followers{}
 	live := newInbox(t, "live.sock")
 	dead := deadSocket(t)
-	require.NoError(t, delivery.Watch(state, "ENG-1", dead))
-	require.NoError(t, delivery.Watch(state, "ENG-1", live.path))
+	require.NoError(t, followers.Follow("ENG-1", dead))
+	require.NoError(t, followers.Follow("ENG-1", live.path))
 	var stderr bytes.Buffer
-	post := delivery.Post{Alerts: deliverytest.New(&journal.Journal{}), StateDir: state, Stderr: &stderr}
+	post := delivery.Post{Alerts: deliverytest.New(&journal.Journal{}), Followers: followers, Stderr: &stderr}
 
 	require.NoError(t, post.Notify(context.Background(), ready))
 
 	live.content(t)
 	assert.Contains(t, stderr.String(), "dropped watcher socket "+dead)
-	list, err := delivery.Watchers(state, "ENG-1")
-	require.NoError(t, err)
+	list := followers.Of("ENG-1")
 	assert.Equal(t, []string{live.path}, list)
 }
 
 func TestNotifyDropsASocketWhoseFileIsGone(t *testing.T) {
-	state := t.TempDir()
+	followers := &delivery.Followers{}
 	missing := filepath.Join(shortDir(t), "gone.sock")
-	require.NoError(t, delivery.Watch(state, "ENG-1", missing))
-	post := delivery.Post{Alerts: deliverytest.New(&journal.Journal{}), StateDir: state, Stderr: &bytes.Buffer{}}
+	require.NoError(t, followers.Follow("ENG-1", missing))
+	post := delivery.Post{Alerts: deliverytest.New(&journal.Journal{}), Followers: followers, Stderr: &bytes.Buffer{}}
 
 	require.NoError(t, post.Notify(context.Background(), ready))
 
-	list, err := delivery.Watchers(state, "ENG-1")
-	require.NoError(t, err)
+	list := followers.Of("ENG-1")
 	assert.Empty(t, list)
 }
 
 func TestNotifyErrorIsTheAlertsAlone(t *testing.T) {
-	state := t.TempDir()
-	require.NoError(t, delivery.Watch(state, "ENG-1", deadSocket(t)))
-	post := delivery.Post{Alerts: deliverytest.New(&journal.Journal{}), StateDir: state, Stderr: &bytes.Buffer{}}
+	followers := &delivery.Followers{}
+	require.NoError(t, followers.Follow("ENG-1", deadSocket(t)))
+	post := delivery.Post{Alerts: deliverytest.New(&journal.Journal{}), Followers: followers, Stderr: &bytes.Buffer{}}
 
 	require.NoError(t, post.Notify(context.Background(), ready))
 }
 
 func TestNotifyMessagesWatchersOnlyOnceTheAlertShowed(t *testing.T) {
-	state := t.TempDir()
+	followers := &delivery.Followers{}
 	live := newInbox(t, "live.sock")
-	require.NoError(t, delivery.Watch(state, "ENG-1", live.path))
+	require.NoError(t, followers.Follow("ENG-1", live.path))
 	alerts := deliverytest.New(&journal.Journal{})
 	alerts.Fail(errors.New("exit status 1: denied"))
-	post := delivery.Post{Alerts: alerts, StateDir: state}
+	post := delivery.Post{Alerts: alerts, Followers: followers}
 
 	for range 3 {
 		err := post.Notify(context.Background(), ready)
@@ -186,42 +184,34 @@ func TestNotifyMessagesWatchersOnlyOnceTheAlertShowed(t *testing.T) {
 	assert.Empty(t, live.lines)
 }
 
-func TestWatchRecordsEachSocketOnce(t *testing.T) {
-	state := t.TempDir()
+func TestFollowRecordsEachSocketOnce(t *testing.T) {
+	followers := &delivery.Followers{}
 
-	require.NoError(t, delivery.Watch(state, "ENG-1", "/tmp/a.sock"))
-	require.NoError(t, delivery.Watch(state, "ENG-1", "/tmp/b.sock"))
-	require.NoError(t, delivery.Watch(state, "ENG-1", "/tmp/a.sock"))
+	require.NoError(t, followers.Follow("ENG-1", "/tmp/a.sock"))
+	require.NoError(t, followers.Follow("ENG-1", "/tmp/b.sock"))
+	require.NoError(t, followers.Follow("ENG-1", "/tmp/a.sock"))
 
-	list, err := delivery.Watchers(state, "ENG-1")
-	require.NoError(t, err)
+	list := followers.Of("ENG-1")
 	assert.Equal(t, []string{"/tmp/a.sock", "/tmp/b.sock"}, list)
 }
 
-func TestWatchRefusesARelativePath(t *testing.T) {
-	state := t.TempDir()
+func TestFollowRefusesARelativePath(t *testing.T) {
+	followers := &delivery.Followers{}
 
-	err := delivery.Watch(state, "ENG-1", "cc-socks/1.sock")
+	err := followers.Follow("ENG-1", "cc-socks/1.sock")
 
 	require.ErrorContains(t, err, "not absolute")
-	list, err := delivery.Watchers(state, "ENG-1")
-	require.NoError(t, err)
+	list := followers.Of("ENG-1")
 	assert.Empty(t, list)
 }
 
-func TestWatchRefusesAPathTheListCannotHold(t *testing.T) {
-	for _, path := range []string{"/tmp/a\nb/sock", "/tmp/a/sock "} {
-		require.ErrorContains(t, delivery.Watch(t.TempDir(), "ENG-1", path), "whitespace")
-	}
-}
-
 func TestNotifyOnceMessagesWatchersWhenTheAlertFails(t *testing.T) {
-	state := t.TempDir()
+	followers := &delivery.Followers{}
 	live := newInbox(t, "live.sock")
-	require.NoError(t, delivery.Watch(state, "ENG-1", live.path))
+	require.NoError(t, followers.Follow("ENG-1", live.path))
 	alerts := deliverytest.New(&journal.Journal{})
 	alerts.Fail(errors.New("exit status 1: denied"))
-	post := delivery.Post{Alerts: alerts, StateDir: state}
+	post := delivery.Post{Alerts: alerts, Followers: followers}
 
 	err := post.NotifyOnce(context.Background(), ready)
 

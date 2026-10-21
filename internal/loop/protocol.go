@@ -9,6 +9,11 @@ const (
 	OpTell    = "tell"
 	OpIdle    = "idle"
 	OpPending = "pending"
+	// OpStop carries a Stop hook's report, which the loop stores.
+	OpStop = "stop"
+	// OpWatch and OpUnwatch add or remove a Claude Code session on a ticket's followers.
+	OpWatch   = "watch"
+	OpUnwatch = "unwatch"
 )
 
 // Exit codes a client reports for a response.
@@ -24,6 +29,22 @@ type Request struct {
 	Op     string `json:"op"`
 	Ticket string `json:"ticket,omitempty"`
 	Text   string `json:"text,omitempty"`
+	// Socket is the inbox of the Claude Code session that watches or unwatches Ticket.
+	Socket string `json:"socket,omitempty"`
+	// Stop is what the Stop hook saw.
+	Stop *Stop `json:"stop,omitempty"`
+}
+
+// Stop is a Stop hook's report of one turn a Claude session ended in a worker's tree.
+type Stop struct {
+	Tree    string `json:"tree"`
+	Session string `json:"session"`
+	// At is when the turn ended, in milliseconds.
+	At int64 `json:"at"`
+	// Reported is false when the hook input carried no background_tasks field.
+	Reported bool `json:"reported"`
+	// Running counts the background tasks the hook listed as running.
+	Running int `json:"running"`
 }
 
 // Response is the loop's answer. Lines are printed to stdout, one per ticket.

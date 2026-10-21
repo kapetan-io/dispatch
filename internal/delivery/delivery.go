@@ -18,14 +18,14 @@ import (
 // would answer the question, so no route is tried.
 var ErrBlocked = errors.New("worker is blocked on a question")
 
-// Post delivers messages through Herdr and Alerts. StateDir holds the list of
-// sessions following each ticket that Notify also messages, and Stderr is where
-// a failed or dropped watcher message is reported.
+// Post delivers messages through Herdr and Alerts. Followers lists the sessions
+// following each ticket that Notify also messages, and Stderr is where a failed
+// or dropped watcher message is reported.
 type Post struct {
-	Herdr    herdr.Herdr
-	Alerts   Alerts
-	StateDir string
-	Stderr   io.Writer
+	Herdr     herdr.Herdr
+	Alerts    Alerts
+	Followers *Followers
+	Stderr    io.Writer
 }
 
 // Event is something the user should hear about.
