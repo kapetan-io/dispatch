@@ -13,7 +13,7 @@ Each worker's herdr workspace is labeled `<emoji> <ticket>`, and the emoji says 
 | 🔴 | You | Needs Human, or the worker is blocked on a question popup |
 | ⏸️ | Nobody | Paused (Backlog or Todo) with the tree kept and a workspace still open |
 
-💤 changes the label and nothing else. It sends no notification and no reminder, and it goes back to 🟢 within seconds of you typing into the window.
+💤 changes the label and nothing else. It sends no notification and no reminder, and it goes back to 🟢 within seconds of you typing into the window. That depends on herdr already reporting the worker as working when the hook fires. Otherwise 💤 stays until the next Notification or resync.
 
 ## How the label is chosen
 
