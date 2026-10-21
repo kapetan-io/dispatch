@@ -101,6 +101,11 @@ func (l *Loop) onRequest(r request) error {
 		l.afterRead = append(l.afterRead, func() error { return l.tell(r) })
 	case OpStop:
 		r.reply <- l.onStop(r.Stop)
+	case OpPrompt:
+		r.reply <- l.onPrompt(r.Prompt)
+		l.readAgain(world.FromLocal)
+	case OpTyped:
+		r.reply <- l.onTyped(r.Typed)
 	case OpWatch, OpUnwatch:
 		r.reply <- l.onFollow(r)
 	default:
@@ -129,6 +134,40 @@ func (l *Loop) onStop(s *Stop) Response {
 	turn := sessionlog.Turn{At: s.At, Running: s.Running > 0}
 	if err := sessionlog.AppendTurn(l.o.StateDir, s.Tree, s.Session, turn); err != nil {
 		return Response{Code: CodeFailed, Error: err.Error()}
+	}
+	return Response{}
+}
+
+// onPrompt stores a command a worker's Claude session took, with who typed it, where the next
+// read finds it. A message that is not a command is only a wake. The loop is the only writer, and
+// dispatch's own sends sit in its memory, so one send answers exactly one message.
+func (l *Loop) onPrompt(p *Prompt) Response {
+	if p == nil || p.Tree == "" || p.Session == "" {
+		return Response{Code: CodeFailed, Error: "a prompt report needs a tree and a session"}
+	}
+	cmd, ok := sessionlog.ParseCommand(p.Text)
+	if !ok {
+		return Response{}
+	}
+	cmd.At, cmd.By = p.At, sessionlog.ByPerson
+	if l.o.Typed.Take(p.Tree, p.Text) {
+		cmd.By = sessionlog.ByDispatch
+	}
+	if err := sessionlog.AppendCommand(l.o.StateDir, p.Tree, p.Session, cmd); err != nil {
+		return Response{Code: CodeFailed, Error: err.Error()}
+	}
+	return Response{}
+}
+
+// onTyped keeps the note of a launch that runs in another process.
+func (l *Loop) onTyped(t *Typed) Response {
+	if t == nil || t.Tree == "" {
+		return Response{Code: CodeFailed, Error: "a typed report needs a tree"}
+	}
+	if t.Clear {
+		l.o.Typed.Clear(t.Tree)
+	} else {
+		l.o.Typed.Note(t.Tree, t.Text)
 	}
 	return Response{}
 }

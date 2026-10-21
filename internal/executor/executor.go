@@ -29,6 +29,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/typed"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -51,6 +52,8 @@ type Env struct {
 	HTTP         httpservice.Services
 	StateDir     string
 	Stderr       io.Writer
+	// Typed is what dispatch typed into workers, shared with the launcher and the loop.
+	Typed *typed.Log
 	// LaunchDeadline and Deadline override the defaults, so a test can see a launch time out.
 	LaunchDeadline time.Duration
 	Deadline       time.Duration
@@ -229,7 +232,7 @@ func (e *Executor) nudge(ctx context.Context, w rules.Want, wd world.World) Resu
 		return failed("%s has no worker", w.Subject)
 	}
 	text, _ := w.Args["text"].(string)
-	err := delivery.Post{Herdr: e.Herdr}.Nudge(ctx, wk, text)
+	err := delivery.Post{Herdr: e.Herdr, Typed: e.Typed}.Nudge(ctx, wk, text)
 	switch {
 	case errors.Is(err, delivery.ErrBlocked), errors.Is(err, herdr.ErrAgentBlocked):
 		return failed("blocked")
@@ -252,6 +255,7 @@ func (e *Executor) closeWorkspace(ctx context.Context, w rules.Want) Result {
 	// onto the next Claude there.
 	if tree := w.Target["tree"]; tree != "" {
 		kickoffs.Clear(e.StateDir, tree)
+		e.Typed.Clear(tree)
 	}
 	if len(w.Once) > 0 && w.Once[0] == "close-unconfirmed" {
 		res.Detail = "closed workspace " + id + ": its launch died before the kickoff ran"

@@ -17,6 +17,12 @@ const (
 	// OpWake reads herdr and the pools again and runs a cycle, without a resync, and
 	// answers at once. A hook asks for it, so it must not retry what failed or wait.
 	OpWake = "wake"
+	// OpPrompt carries a UserPromptSubmit hook's report of a slash command, which the loop
+	// stores and then wakes as OpWake does.
+	OpPrompt = "prompt"
+	// OpTyped tells the loop dispatch is about to type text into a worker, or clears what it
+	// typed there, from a process that is not the loop.
+	OpTyped = "typed"
 )
 
 // Exit codes a client reports for a response.
@@ -36,6 +42,27 @@ type Request struct {
 	Socket string `json:"socket,omitempty"`
 	// Stop is what the Stop hook saw.
 	Stop *Stop `json:"stop,omitempty"`
+	// Prompt is what the UserPromptSubmit hook saw.
+	Prompt *Prompt `json:"prompt,omitempty"`
+	// Typed is what a launch typed.
+	Typed *Typed `json:"typed,omitempty"`
+}
+
+// Prompt is a UserPromptSubmit hook's report of a message a Claude session in a worker's tree took.
+type Prompt struct {
+	Tree    string `json:"tree"`
+	Session string `json:"session"`
+	// At is when Claude took the message, in milliseconds.
+	At   int64  `json:"at"`
+	Text string `json:"text"`
+}
+
+// Typed is a launch's note that it typed Text into the Claude in Tree, or with Clear set that
+// it closed that Claude.
+type Typed struct {
+	Tree  string `json:"tree"`
+	Text  string `json:"text,omitempty"`
+	Clear bool   `json:"clear,omitempty"`
 }
 
 // Stop is a Stop hook's report of one turn a Claude session ended in a worker's tree.

@@ -33,6 +33,13 @@ const (
 
 // Options names the tools a Local launcher drives and the places it runs them.
 // Zero values take the defaults.
+// Typing is where a launch notes what it types into the worker. A note for the Claude it is
+// about to start replaces whatever an earlier Claude in that tree was sent.
+type Typing interface {
+	Note(tree, text string)
+	Clear(tree string)
+}
+
 type Options struct {
 	// PluginRoot holds scripts/shims and is handed to the worker as its plugin.
 	// It has no default.
@@ -49,6 +56,9 @@ type Options struct {
 	// Now is the time a launch's kickoff record carries, which the rules compare with the
 	// loop's clock. Defaults to the wall clock.
 	Now func() time.Time
+	// Typed is told the kickoff before it is typed, so the prompt hook labels it as dispatch's.
+	// Nil tells no one.
+	Typed Typing
 	// PreflightTimeout bounds the wait for the herdr server. Defaults to 60s.
 	PreflightTimeout time.Duration
 	// Pace is the unit of waiting between polls for the herdr server, which waits 5 units.
@@ -175,12 +185,19 @@ func (l *launch) run(ctx context.Context) Result {
 	if !ok {
 		return r
 	}
+	if l.opts.Typed != nil {
+		l.opts.Typed.Clear(l.tree)
+		l.opts.Typed.Note(l.tree, req.Kickoff)
+	}
 
 	// An unconfirmed kickoff closes the workspace. Left open, its idle Claude
 	// would look like a live worker, and no cycle would retry or escalate.
 	if err := l.opts.Herdr.Kickoff(ctx, started.Pane, req.Kickoff); err != nil {
 		if l.opts.Herdr.CloseWorkspace(context.WithoutCancel(ctx), l.workspace) != nil {
 			l.workspaceOpen = true
+		}
+		if l.opts.Typed != nil {
+			l.opts.Typed.Clear(l.tree)
 		}
 		detail := "Claude started but herdr"
 		switch {

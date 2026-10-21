@@ -38,6 +38,7 @@ func TestingDeclarations() string {
   }): Fixture;
   export function worker(ticket: string, state: "none" | "working" | "idle" | "blocked", fields?: {
     lastStop?: number; busy?: boolean; unconfirmed?: number;
+    commands?: { name: string; args?: string; cut?: boolean; at: number; by: "person" | "dispatch" }[];
     turns?: { at: number; running: boolean }[]; sessionUnread?: string;
   }): Fixture;
   export function pool(repo: string, fields?: { free?: number; returns?: number }): Fixture;

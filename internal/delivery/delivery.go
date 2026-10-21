@@ -12,6 +12,7 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/typed"
 )
 
 // ErrBlocked is returned for a worker waiting on a question. Typing into it
@@ -26,6 +27,8 @@ type Post struct {
 	Alerts    Alerts
 	Followers *Followers
 	Stderr    io.Writer
+	// Typed notes each nudge, so the prompt hook can tell it from a person's message.
+	Typed *typed.Log
 }
 
 // Event is something the user should hear about.
@@ -42,7 +45,13 @@ func (p Post) Nudge(ctx context.Context, w world.Worker, text string) error {
 	if w.State == world.Blocked {
 		return ErrBlocked
 	}
+	p.Typed.Note(w.TreePath, text)
 	if err := p.Herdr.Prompt(ctx, w.PaneID, text); err != nil {
+		// Only a refusal proves the text was not typed. Any other failure, a timeout included, may have typed it.
+		var refusal *herdr.Refusal
+		if errors.As(err, &refusal) && (refusal.Code == "agent_blocked" || refusal.Code == "agent_not_found") {
+			p.Typed.Withdraw(w.TreePath, text)
+		}
 		return fmt.Errorf("while prompting herdr pane %s: %w", w.PaneID, err)
 	}
 	return nil
