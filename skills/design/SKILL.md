@@ -33,11 +33,10 @@ Load `dispatch:converse` with the Skill tool. Open a todolist with one entry per
 3. List every file in `docs/adr/` and read each title. Read the full ADR for two kinds of title. A scope-capping title (users, tenancy, regions, roles, deployment targets) limits what the product can ask for, so frame product questions that do not invite answers it rules out, and surface the ADR if the user wants something it forbids. A title on a topic this design's technical half touches (storage, API patterns, auth, errors) sets precedent to honor. A departure is itself a decision that needs a new or superseding ADR.
 4. Read the code this feature will live in: existing patterns, related modules and prior art. Technical questions must ask where the feature fits in this codebase, not run a generic checklist.
 5. State the ticket's intent in one sentence: the problem and the outcome wanted.
-6. List the questions the blueprint must settle. Leave out any the ticket, its scope, the intent, the docs or the code already answers. How the system behaves today is a lookup, not a question.
-7. Have a fresh sub-agent mark each question:
-   - **Settled:** the answer is stated or strongly implied by those sources or standard practice. Give the source.
-   - **Ask:** a real choice, trade-off or policy call where reasonable people would disagree. "Not decided here" items are ask unless the ticket's scope rules them out.
-8. Show the user the intent, the ask questions and the settled answers with sources, then start on the first question. Log settled answers as "agent assumed".
+6. Work out what the blueprint must decide, and try to answer each item from what you read before treating it as a question. An agent wrote the ticket, so read it the way a senior engineer would: a claim it makes about the code may be wrong, and an item it lists under "Not decided here" may already be answered by the code, the docs or the ticket itself. How the system behaves today is a lookup, not a question.
+   - **Settled:** you can point to what decides it (the code, an ADR, a doc, a run, the ticket's stated need or scope, or a ticket claim the code bears out) and no reasonable alternative is left. Likely is not settled.
+   - **Ask:** a real choice, such as a trade-off, a policy or a preference, that the sources leave open. An answer you inferred goes here with your recommendation.
+7. Show the user the intent, the ask questions and each settled answer with what settled it. Point out any settled item the ticket listed as not decided. Log settled answers as "agent assumed" so the user can override them, then start on the first question.
 
 ## The discussion
 
