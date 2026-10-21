@@ -22,7 +22,7 @@ You report only through the ticket's status and comments, using the Linear tools
 - **Never go idle In Progress.** Before you stop, move the ticket to In Review with a PR open, or to Needs Human with a comment saying what you need.
 - **Read the comments.** Read the ticket's comments before verifying and before opening the PR. The user answers Needs Human there.
 - **Open every comment that needs the user with `## In plain English`.** That covers Needs Human, a question, an unconfirmed review claim from a person, and a stop-patching report. The user reads it after being away, so explain the problem for someone who hasn't seen the work, then show an example of the input in a code block. Put the state, evidence and decision under `## Details`.
-- **Ask in the terminal when you need a decision now.** Use AskUserQuestion, so herdr shows you as blocked. Write the decision on the ticket, then resume the steps.
+- **Ask in chat when you need a decision now.** The window shows 💤 while you wait, so ask in plain chat, never with a question popup. Write the decision on the ticket, then resume the steps.
 - **Principles are on request.** Design principles are skills indexed by `dispatch:principles`. Load one when a design question touches it or a nudge names it.
 
 ## Steps

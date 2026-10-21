@@ -101,6 +101,7 @@ const usage = `usage: dispatch run
        dispatch launch <ticket> <branch> [--base REF] [--model NAME] [--kickoff TEXT] [--title TEXT]
        dispatch claude-shim [CLAUDE ARGS]
        dispatch record-stop
+       dispatch wake
        dispatch watch <ticket>
        dispatch unwatch <ticket>
 
@@ -142,6 +143,10 @@ const usage = `usage: dispatch run
   record-stop  read a Stop hook's JSON on stdin and record when the worker in this tree last ended a
                turn and whether it still has background tasks running; does nothing outside a
                worktree of a repo listed under [repos]. The plugin's Stop hook runs it
+  wake         read a Notification or UserPromptSubmit hook's JSON on stdin and ask the running loop
+               to run a cycle without waiting for it, so the worker's workspace label follows within
+               seconds. Does nothing outside a worktree of a repo listed under [repos] or when no
+               loop runs. The plugin's Notification and UserPromptSubmit hooks run it
   watch        make this Claude Code session follow the ticket, so each notice dispatch sends about
                it is also sent to this session as a message. A session can follow several
                tickets, and a ticket can have several followers. Fails outside a Claude Code
@@ -188,6 +193,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		return launchWorker(ctx, opts, args[1:])
 	case "claude-shim":
 		return claudeShim(args[1:])
+	case "wake":
+		return wakeLoop(ctx, opts)
 	case "record-stop":
 		return recordStop(ctx, opts)
 	case "watch", "unwatch":

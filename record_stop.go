@@ -36,25 +36,8 @@ func recordStop(ctx context.Context, opts Options) error {
 	if json.NewDecoder(opts.Stdin).Decode(&in) != nil {
 		return nil
 	}
-	cfg, err := config.Load(opts.ConfigPath)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
-		return nil
-	}
-	tree, ok := worktreeRoot(ctx, in.CWD)
+	tree, ok := workerTree(ctx, opts, in.CWD)
 	if !ok {
-		return nil
-	}
-	clone, ok := cloneRoot(ctx, in.CWD)
-	// Workers run in treehouse worktrees, never in the clone itself, which
-	// is where the supervising session works.
-	if !ok || clone == tree {
-		return nil
-	}
-	if _, _, managed := repoAt(ctx, cfg, in.CWD); !managed {
 		return nil
 	}
 	rec := stops.Record{At: opts.Clock.Now().UTC(), Reported: in.BackgroundTasks != nil}
@@ -73,6 +56,34 @@ func recordStop(ctx context.Context, opts Options) error {
 		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
 	}
 	return nil
+}
+
+// workerTree returns the managed worktree a worker runs in when dir is inside one. The
+// plugin's hooks run in every Claude session on the machine, so a session outside a pool
+// tree of a repo listed under [repos] gets false and the hook stays silent.
+func workerTree(ctx context.Context, opts Options, dir string) (string, bool) {
+	cfg, err := config.Load(opts.ConfigPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", false
+	}
+	if err != nil {
+		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
+		return "", false
+	}
+	tree, ok := worktreeRoot(ctx, dir)
+	if !ok {
+		return "", false
+	}
+	clone, ok := cloneRoot(ctx, dir)
+	// Workers run in treehouse worktrees, never in the clone itself, which
+	// is where the supervising session works.
+	if !ok || clone == tree {
+		return "", false
+	}
+	if _, _, managed := repoAt(ctx, cfg, dir); !managed {
+		return "", false
+	}
+	return tree, true
 }
 
 // worktreeRoot returns the top of the working tree containing dir.
