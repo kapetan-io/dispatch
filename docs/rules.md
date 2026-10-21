@@ -85,14 +85,15 @@ whenever({
   name: "long-loop-in-review",
   each: "linear.ticket",
   if:   (t, ctx) => {
+    if (t.status !== "in_review") return false;
     const turns = ctx.herdr.worker(t).turns;
-    return t.status === "in_review" && turns.length >= 20 && turns.every((turn) => turn.running);
+    return turns.length >= 20 && turns.every((turn) => turn.running);
   },
   then: (t, ctx) => ctx.linear.queueComment(t, "this worker has run in the background for 20 turns", { once: ["long-loop", t.id] }),
 });
 ```
 
-- It is read for a worker in any state on an In Progress or In Review ticket. It is empty for a session that has ended no turns, and unknown when herdr reports no session, the session's record can't be read, or the ticket is in another status.
+- Check the ticket's status before reading it, as the example does, because a read that throws `Unknown` holds the rule for every other ticket. It is read for a worker in any state on an In Progress or In Review ticket. It is empty for a session that has ended no turns, and unknown when herdr reports no session, the session's record can't be read, or the ticket is in another status.
 - A worker relaunched in a new session reads an empty list, even on the same tree. The lists survive a restart and `dispatch state reset`, and turns ended while `dispatch run` was down are there after it starts, at the next read of local sources.
 - `dispatch trace` prints the turns a decision read, and `dispatch replay` reproduces it from the recorded read. In `rules test`, `worker("ENG-1", "idle", { turns: [{ at: 1000, running: true }] })` sets them, and `sessionUnread: "reason"` makes them unknown.
 
