@@ -11,6 +11,19 @@ declare module "dispatch" {
   export interface Stop {
     at: number;
   }
+  /** A slash command the worker's current Claude session took. */
+  export interface Command {
+    /** The command's name without the slash, such as merge-it for /merge-it 42. */
+    name: string;
+    /** The rest of the message, trimmed and cut at 1KB. Whatever the sender typed, so a rule that forwards it should treat it as untrusted text. */
+    args: string;
+    /** True when args was longer than 1KB and was cut. */
+    cut: boolean;
+    /** When Claude took the message, in milliseconds since the epoch. A message sent to a working Claude waits for the turn to end, so at follows that turn's end. */
+    at: number;
+    /** Who typed the command, person or dispatch. Dispatch's kickoff and every nudge that starts with a slash are dispatch's, including one a dispatch tell asked for. */
+    by: "person" | "dispatch";
+  }
   /** A turn the worker's current Claude session ended. */
   export interface Turn {
     /** When the turn ended, in milliseconds since the epoch. */
@@ -70,6 +83,8 @@ declare module "dispatch" {
     readonly unconfirmedSince: number | undefined;
     readonly lastStop: Stop | undefined;
     readonly busy: boolean;
+    /** Every slash command the worker's current Claude session has taken, oldest first, for a worker on an In Progress or In Review ticket. A message counts when it starts with /name, so a message that only mentions one does not. A skill the model loads by itself is not a command. Empty for a session that has taken none, and unknown when herdr reports no session or the session's record can't be read. A worker relaunched in a new session starts over. */
+    readonly commands: Command[];
     /** Every turn the worker's current Claude session has ended, oldest first, for a worker on an In Progress or In Review ticket. Empty for a session that has ended none, and unknown when herdr reports no session or the session's record can't be read. A worker relaunched in a new session starts over. */
     readonly turns: Turn[];
   }

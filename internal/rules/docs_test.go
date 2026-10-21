@@ -24,3 +24,19 @@ func TestTurnsAndTurnAreDescribedInTheGeneratedTypes(t *testing.T) {
 	turns, _ := reflect.TypeFor[rules.Worker]().FieldByName("Turns")
 	assert.NotEmpty(t, turns.Tag.Get("doc"))
 }
+
+func TestCommandsAndCommandAreDescribedInTheGeneratedTypes(t *testing.T) {
+	decl := rules.Declarations(config.ShippedRules())
+
+	assert.Contains(t, decl, "/** A slash command the worker's current Claude session took. */\n  export interface Command {")
+	assert.Contains(t, decl, "    readonly commands: Command[];")
+	assert.Contains(t, decl, `by: "person" | "dispatch";`)
+	for _, field := range reflect.VisibleFields(reflect.TypeFor[rules.Command]()) {
+		t.Run(field.Name, func(t *testing.T) {
+			assert.NotEmpty(t, field.Tag.Get("doc"))
+			assert.Equal(t, field.Tag.Get("js"), field.Tag.Get("json"))
+		})
+	}
+	commands, _ := reflect.TypeFor[rules.Worker]().FieldByName("Commands")
+	assert.NotEmpty(t, commands.Tag.Get("doc"))
+}

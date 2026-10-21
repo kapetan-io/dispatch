@@ -24,6 +24,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/rules"
+	"github.com/kapetan-io/dispatch/internal/typed"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -38,6 +39,8 @@ type Options struct {
 	// Sources are the tools one read goes through. The loop sets Tolerant and Resilient.
 	Sources  world.Sources
 	Executor *executor.Executor
+	// Typed is what dispatch typed into workers, which the loop compares with the commands the hooks report.
+	Typed *typed.Log
 	// HTTP is how a rule's then reaches the services config.toml names.
 	HTTP   httpservice.Services
 	Herdr  herdr.Herdr

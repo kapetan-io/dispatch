@@ -16,6 +16,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/typed"
 )
 
 // Statuses Run reports besides the ones in launcher.go.
@@ -30,6 +31,14 @@ const (
 	StatusAgentStartFailed     = "agent_start_failed"
 	StatusInjectionUnconfirmed = "injection_unconfirmed"
 )
+
+// Typing is where a launch notes what it types into the worker, so the prompt hook can tell
+// dispatch's messages from a person's. A note for the Claude it is about to start replaces
+// whatever an earlier Claude in that tree was sent.
+type Typing interface {
+	Note(tree, text string)
+	Clear(tree string)
+}
 
 // Options names the tools a Local launcher drives and the places it runs them.
 // Zero values take the defaults.
@@ -49,6 +58,9 @@ type Options struct {
 	// Now is the time a launch's kickoff record carries, which the rules compare with the
 	// loop's clock. Defaults to the wall clock.
 	Now func() time.Time
+	// Typed is told the kickoff before it is typed, so the prompt hook labels it as dispatch's.
+	// Defaults to noting nothing.
+	Typed Typing
 	// PreflightTimeout bounds the wait for the herdr server. Defaults to 60s.
 	PreflightTimeout time.Duration
 	// Pace is the unit of waiting between polls for the herdr server, which waits 5 units.
@@ -71,6 +83,10 @@ func (o Options) withDefaults() Options {
 	}
 	if o.Pace == 0 {
 		o.Pace = time.Second
+	}
+	if o.Typed == nil {
+		// A nil log notes nothing.
+		o.Typed = (*typed.Log)(nil)
 	}
 	if o.Now == nil {
 		o.Now = time.Now
@@ -175,6 +191,8 @@ func (l *launch) run(ctx context.Context) Result {
 	if !ok {
 		return r
 	}
+	l.opts.Typed.Clear(l.tree)
+	l.opts.Typed.Note(l.tree, req.Kickoff)
 
 	// An unconfirmed kickoff closes the workspace. Left open, its idle Claude
 	// would look like a live worker, and no cycle would retry or escalate.
@@ -182,6 +200,7 @@ func (l *launch) run(ctx context.Context) Result {
 		if l.opts.Herdr.CloseWorkspace(context.WithoutCancel(ctx), l.workspace) != nil {
 			l.workspaceOpen = true
 		}
+		l.opts.Typed.Clear(l.tree)
 		detail := "Claude started but herdr"
 		switch {
 		case errors.Is(err, herdr.ErrEnterNotSent):

@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/kapetan-io/dispatch/internal/launcher"
 )
 
 // SocketName is the loop's socket inside the state directory.
@@ -120,6 +122,13 @@ func Ask(ctx context.Context, stateDir string, req Request) (Response, error) {
 // uses it, because a prompt must not wait on a cycle. It returns ErrNotRunning when
 // nothing listens.
 func Wake(ctx context.Context, stateDir string) error {
+	return Send(ctx, stateDir, Request{Op: OpWake})
+}
+
+// Send writes req to the loop over stateDir and does not wait for the answer, so a hook that
+// reports to a loop that is busy or stuck still returns at once. It gives up after a second. It
+// returns ErrNotRunning when nothing listens.
+func Send(ctx context.Context, stateDir string, req Request) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	var d net.Dialer
@@ -129,5 +138,21 @@ func Wake(ctx context.Context, stateDir string) error {
 	}
 	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(time.Second))
-	return json.NewEncoder(conn).Encode(Request{Op: OpWake})
+	return json.NewEncoder(conn).Encode(req)
+}
+
+// Typing returns the notes of a launch that runs apart from the loop over stateDir, which tell
+// the running loop what the launch types. They are dropped when no loop runs, as the hooks'
+// reports are, because nothing then reads either.
+func Typing(stateDir string) launcher.Typing { return typing(stateDir) }
+
+type typing string
+
+func (t typing) Note(tree, text string) { t.ask(Typed{Tree: tree, Text: text}) }
+func (t typing) Clear(tree string)      { t.ask(Typed{Tree: tree, Clear: true}) }
+
+func (t typing) ask(note Typed) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, _ = Ask(ctx, string(t), Request{Op: OpTyped, Typed: &note})
 }

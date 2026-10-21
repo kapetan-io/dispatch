@@ -14,6 +14,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/launcher"
+	"github.com/kapetan-io/dispatch/internal/loop"
 )
 
 // launchWorker implements `dispatch launch`. It prints one JSON result on
@@ -63,7 +64,7 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 			if cli, ok := opts.Herdr.(*herdr.CLI); ok {
 				cli.WithProgress(opts.Stderr)
 			}
-			res = launcherFor(opts, root, opts.Stderr).Launch(ctx, req)
+			res = launcherFor(opts, root, opts.Stderr, loop.Typing(opts.StateDir)).Launch(ctx, req)
 		}
 	}
 	enc := json.NewEncoder(opts.Stdout)
@@ -95,8 +96,9 @@ func pluginRoot(opts Options) (string, error) {
 }
 
 // launcherFor is the launcher a launch goes through, which is Options.Launcher
-// when a test or caller set one. Progress goes to the writer given, and nil discards it.
-func launcherFor(opts Options, root string, progress io.Writer) launcher.Launcher {
+// when a test or caller set one. Progress goes to the writer given, and nil discards it. typed is told
+// the kickoff, so the prompt hook can tell it from a person's message.
+func launcherFor(opts Options, root string, progress io.Writer, typed launcher.Typing) launcher.Launcher {
 	if opts.Launcher != nil {
 		return opts.Launcher
 	}
@@ -107,6 +109,7 @@ func launcherFor(opts Options, root string, progress io.Writer) launcher.Launche
 		Pace:       opts.LaunchPace,
 		Stderr:     progress,
 		StateDir:   opts.StateDir,
+		Typed:      typed,
 	}
 	if opts.Clock != nil {
 		lo.Now = opts.Clock.Now

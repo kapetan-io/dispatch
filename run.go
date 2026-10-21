@@ -19,6 +19,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/lock"
 	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/kapetan-io/dispatch/internal/rules"
+	"github.com/kapetan-io/dispatch/internal/typed"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -237,11 +238,12 @@ func runCommand(ctx context.Context, opts Options) error {
 		_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while asking Linear who owns the key: %v\n", err)
 	}
 	services := servicesFor(opts, cfg)
+	sent := &typed.Log{}
 	exec := executor.New(executor.Env{
 		Config: cfg, Linear: func() linear.Workspace { return lin }, Herdr: opts.Herdr, Treehouse: opts.Treehouse,
-		PullRequests: opts.PullRequests, Launcher: launcherFor(opts, cfg.Plugins.Herdr.PluginRoot, nil), Alerts: opts.Alerts,
+		PullRequests: opts.PullRequests, Launcher: launcherFor(opts, cfg.Plugins.Herdr.PluginRoot, nil, sent), Alerts: opts.Alerts,
 		StateDir: opts.StateDir, Stderr: opts.Stderr, LaunchDeadline: opts.LaunchTimeout, Deadline: opts.ActionTimeout,
-		HTTP: services,
+		HTTP: services, Typed: sent,
 	})
 	return loop.New(loop.Options{
 		Config: cfg, ConfigText: string(text), StateDir: opts.StateDir, Rules: loaded, Clock: opts.Clock,
@@ -249,7 +251,7 @@ func runCommand(ctx context.Context, opts Options) error {
 			Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
 			StateDir: opts.StateDir, Stderr: opts.Stderr,
 		},
-		Executor: exec, HTTP: services, Herdr: opts.Herdr, Alerts: opts.Alerts, Usage: lin.Usage, Unauthorized: lin.reset,
+		Executor: exec, Typed: sent, HTTP: services, Herdr: opts.Herdr, Alerts: opts.Alerts, Usage: lin.Usage, Unauthorized: lin.reset,
 		Viewer: viewer.Name, Out: opts.Stdout, Err: opts.Stderr,
 	}).Run(ctx)
 }

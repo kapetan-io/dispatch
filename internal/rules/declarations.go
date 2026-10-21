@@ -15,12 +15,13 @@ const ticketMethods = "  hasLabel(name: string): boolean;\n"
 
 // helperTypes are the plain value types records hold, named in the order they are declared.
 var helperTypes = []reflect.Type{
-	reflect.TypeFor[Seen](), reflect.TypeFor[Label](), reflect.TypeFor[Stop](), reflect.TypeFor[Turn](), reflect.TypeFor[Blocker](),
+	reflect.TypeFor[Seen](), reflect.TypeFor[Label](), reflect.TypeFor[Stop](), reflect.TypeFor[Command](), reflect.TypeFor[Turn](), reflect.TypeFor[Blocker](),
 }
 
 // typeDocs are the descriptions of the helper types that have one.
 var typeDocs = map[reflect.Type]string{
-	reflect.TypeFor[Turn](): "A turn the worker's current Claude session ended.",
+	reflect.TypeFor[Command](): "A slash command the worker's current Claude session took.",
+	reflect.TypeFor[Turn]():    "A turn the worker's current Claude session ended.",
 }
 
 // Declarations returns the contents of dispatch.d.ts. rules is the user's
