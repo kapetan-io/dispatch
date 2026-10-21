@@ -26,7 +26,7 @@ scenario(rules, "the cap counts an idle and a blocked worker", s => {
   s.given(ticket("ENG-1", waiting), worker("ENG-1", "idle"),
           ticket("ENG-2", waiting), worker("ENG-2", "blocked"),
           ticket("ENG-3", waiting));
-  s.expect([["notify-blocked", "notify.send", "ENG-2"], ["nudge-stall", "herdr.nudge", "ENG-1"]]);
+  s.expect([["notify-blocked", "notify.send", "ENG-2"]]);
   s.expectWaiting("launch-worker", "ENG-3");
 });
 

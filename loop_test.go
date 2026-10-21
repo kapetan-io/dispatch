@@ -352,8 +352,9 @@ func TestALaunchThatLandsAfterItsDeadlineGetsNoSecondWorker(t *testing.T) {
 
 func TestANudgeThatTimesOutCountsAsToldAndIsNeverRepeated(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	h.recordStop("ENG-1", noTasks)
 	h.tools.Herdr.StallPrompts()
 

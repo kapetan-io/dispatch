@@ -139,8 +139,9 @@ func TestInvariantAnUnreadHerdrHoldsALaunchAndPlanSaysWhy(t *testing.T) {
 
 func TestInvariantANudgeToldBeforeARestartIsNotToldAgain(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	h.tools.Herdr.StallPrompts()
 	_, _, err := h.runWith(t.Context(), dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tick")
 	require.NoError(t, err)
@@ -158,8 +159,9 @@ func TestInvariantANudgeToldBeforeARestartIsNotToldAgain(t *testing.T) {
 
 func TestInvariantAWakeFromSleepActsOnFreshLinearFacts(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	h.tick()
 	require.Len(t, h.prompts(), 1)
 	callsBefore := h.linear.calls()
@@ -276,7 +278,7 @@ func TestInvariantAFailedHerdrReadDoesNotMakeAFullPoolRetry(t *testing.T) {
 // A segment that was created but never given its snapshot holds nothing, so the one before it is the state.
 func TestInvariantAHalfWrittenSegmentDoesNotStopTheStart(t *testing.T) {
 	h := newHarness(t)
-	h.seedHistory(nil, ledger.Receipt{Kind: "nudge", Subject: "ENG-1", Once: ledger.Once{"stall", float64(1)}, Rule: "nudge-stall", Outcome: ledger.Done, Started: 1})
+	h.seedHistory(nil, ledger.Receipt{Kind: "nudge", Subject: "ENG-1", Once: ledger.Once{"resume", float64(1)}, Rule: "nudge-resume", Outcome: ledger.Done, Started: 1})
 	events := filepath.Join(h.state, "events")
 	torn := filepath.Join(events, "events-"+h.clock.Now().Add(-30*time.Minute).UTC().Format("20060102T150405Z")+".jsonl")
 	require.NoError(t, os.WriteFile(torn, []byte(`{"line":"header","why":"start","at":1}`+"\n"), 0o600))
@@ -286,7 +288,7 @@ func TestInvariantAHalfWrittenSegmentDoesNotStopTheStart(t *testing.T) {
 	require.NoError(t, err)
 	var seeded int
 	for _, rc := range h.ledgerNow() {
-		if rc.Rule == "nudge-stall" && rc.Outcome == ledger.Done {
+		if rc.Rule == "nudge-resume" && rc.Outcome == ledger.Done {
 			seeded++
 		}
 	}
