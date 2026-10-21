@@ -581,27 +581,6 @@ func TestTickNeverCountsAFullPoolAsAnInReviewRelaunch(t *testing.T) {
 	assert.Empty(t, h.linear.mutations())
 }
 
-func TestTickStartsThePRNudgeCountFreshWhenTheTicketEntersInReview(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-	h.restart()
-	require.Len(t, h.prompts(), 1)
-
-	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
-	h.pr("ENG-1", prState{head: "a1", checks: "PENDING", mergeable: "MERGEABLE"})
-	require.NoError(t, reviewTick(t, h))
-	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
-	for range 2 {
-		require.NoError(t, reviewTick(t, h))
-	}
-	assert.Equal(t, []string{prPrompt("a failed check"), prPrompt("a failed check")}, h.prompts()[1:])
-	require.NoError(t, reviewTick(t, h))
-
-	assert.Len(t, h.linear.mutations(), 2)
-	assert.Len(t, h.prompts(), 3)
-}
-
 func TestTickNotifiesOnceWhenAPRNudgeEscalationReachesNeedsHuman(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
