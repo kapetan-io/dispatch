@@ -46,7 +46,7 @@ type scenarioModel struct {
 	parent  map[string]string
 	workers map[string]*world.Worker
 	stops   map[string]stops.Record
-	// sessions are the turns a worker's session ended, and sessionUnread the
+	// sessions are the commands a worker's session took and the turns it ended, and sessionUnread the
 	// workers whose session record can't be read, with the reason.
 	sessions      map[string]sessionlog.Log
 	sessionUnread map[string]string
@@ -246,12 +246,24 @@ func (s *scenario) applyWorker(id, state string, fields map[string]any) {
 		wk.UnconfirmedSince = scenarioStart.UnixMilli() + toInt(v)
 	}
 	m.workers[id] = wk
-	if v, ok := fields["turns"].([]any); ok {
-		log := sessionlog.Log{Turns: []sessionlog.Turn{}}
-		for _, item := range v {
+	turns, hasTurns := fields["turns"].([]any)
+	commands, hasCommands := fields["commands"].([]any)
+	if hasTurns || hasCommands {
+		log := sessionlog.Log{Commands: []sessionlog.Command{}, Turns: []sessionlog.Turn{}}
+		for _, item := range turns {
 			turn, _ := item.(map[string]any)
 			running, _ := boolean(turn, "running")
 			log.Turns = append(log.Turns, sessionlog.Turn{At: scenarioStart.UnixMilli() + toInt(turn["at"]), Running: running})
+		}
+		for _, item := range commands {
+			cmd, _ := item.(map[string]any)
+			name, _ := str(cmd, "name")
+			args, _ := str(cmd, "args")
+			cut, _ := boolean(cmd, "cut")
+			by, _ := str(cmd, "by")
+			log.Commands = append(log.Commands, sessionlog.Command{
+				At: scenarioStart.UnixMilli() + toInt(cmd["at"]), Name: name, Args: args, Cut: cut, By: sessionlog.Sender(by),
+			})
 		}
 		m.sessions[id] = log
 	}
@@ -395,7 +407,7 @@ func (s *scenario) world() world.World {
 				} else if log, ok := m.sessions[id]; ok {
 					w.Sessions[id] = log
 				} else {
-					w.Sessions[id] = sessionlog.Log{Turns: []sessionlog.Turn{}}
+					w.Sessions[id] = sessionlog.Log{Commands: []sessionlog.Command{}, Turns: []sessionlog.Turn{}}
 				}
 			}
 		}

@@ -315,7 +315,7 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 	}
 
 	for _, t := range w.Tickets {
-		s.workerRecord(w, t.Identifier, w.Workers[t.Identifier], w.Stops[t.Identifier], s.turnsOf(w, t.Identifier))
+		s.workerRecord(w, t.Identifier, w.Workers[t.Identifier], w.Stops[t.Identifier], s.sessionOf(w, t.Identifier))
 	}
 	for _, holder := range w.LeaseHolders {
 		for i, wk := range w.Leases[holder.Identifier] {
@@ -323,7 +323,7 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 			if i > 0 {
 				id += "@" + wk.TreePath
 			}
-			s.workerRecord(w, id, wk, stops.Record{}, Unread[[]Turn](turnsNotRead))
+			s.workerRecord(w, id, wk, stops.Record{}, unreadSession(sessionNotRead))
 		}
 	}
 	for holder := range w.Leased {
@@ -351,13 +351,13 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 func (s *State) addIdleWorkers(w world.World) {
 	for _, t := range slices.Clone(s.kinds["linear.ticket"]) {
 		if _, ok := s.workers[t.id]; !ok {
-			s.workerRecord(w, t.id, world.Worker{State: world.NoWorker}, stops.Record{}, Unread[[]Turn](noWorkerTurns))
+			s.workerRecord(w, t.id, world.Worker{State: world.NoWorker}, stops.Record{}, unreadSession(noWorkerSession))
 			s.workers[t.id].hidden = true
 		}
 	}
 	for _, tree := range slices.Clone(s.kinds["treehouse.tree"]) {
 		if _, ok := s.workersByTree[tree.id]; !ok {
-			s.workerRecord(w, "tree:"+tree.id, world.Worker{State: world.NoWorker, TreePath: tree.id}, stops.Record{}, Unread[[]Turn](noWorkerTurns))
+			s.workerRecord(w, "tree:"+tree.id, world.Worker{State: world.NoWorker, TreePath: tree.id}, stops.Record{}, unreadSession(noWorkerSession))
 			s.workersByTree[tree.id].hidden = true
 		}
 	}
@@ -386,37 +386,53 @@ func (s *State) leasedUnknown(w world.World, r *record) {
 }
 
 const (
-	noWorkerTurns = "the ticket has no worker, so no session ended any turns"
-	turnsNotRead  = "turns are read only for the worker of an In Progress or In Review ticket"
+	noWorkerSession = "the ticket has no worker, so no session took any commands or ended any turns"
+	sessionNotRead  = "commands and turns are read only for the worker of an In Progress or In Review ticket"
 )
 
-// turnsOf is the turns of the worker serving a ticket, as the world read them.
-func (s *State) turnsOf(w world.World, ticket string) Fact[[]Turn] {
+// sessionFacts are what a worker's current Claude session did.
+type sessionFacts struct {
+	commands Fact[[]Command]
+	turns    Fact[[]Turn]
+}
+
+func unreadSession(reason string) sessionFacts {
+	return sessionFacts{commands: Unread[[]Command](reason), turns: Unread[[]Turn](reason)}
+}
+
+// sessionOf is the commands and turns of the worker serving a ticket, as the world read them.
+func (s *State) sessionOf(w world.World, ticket string) sessionFacts {
 	if err := w.SessionErrs[ticket]; err != nil {
-		return Unread[[]Turn](err.Error())
+		return unreadSession(err.Error())
 	}
 	log, ok := w.Sessions[ticket]
 	if !ok {
 		if w.Workers[ticket].State == world.NoWorker {
-			return Unread[[]Turn](noWorkerTurns)
+			return unreadSession(noWorkerSession)
 		}
-		return Unread[[]Turn](turnsNotRead)
+		return unreadSession(sessionNotRead)
+	}
+	commands := make([]Command, len(log.Commands))
+	for i, c := range log.Commands {
+		commands[i] = Command{Name: c.Name, Args: c.Args, Cut: c.Cut, At: c.At, By: string(c.By)}
 	}
 	turns := make([]Turn, len(log.Turns))
 	for i, t := range log.Turns {
 		turns[i] = Turn{At: t.At, Running: t.Running}
 	}
-	return Known(turns, s.ms())
+	at := s.ms()
+	return sessionFacts{commands: Known(commands, at), turns: Known(turns, at)}
 }
 
-func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop stops.Record, turns Fact[[]Turn]) {
+func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop stops.Record, session sessionFacts) {
 	at := s.ms()
 	subject := strings.SplitN(id, "@", 2)[0]
 	rec := &Worker{
 		State:     Known(string(wk.State), at),
 		Ticket:    Known(Ref{Kind: "linear.ticket", ID: subject}, at),
 		Busy:      Known(false, at),
-		Turns:     turns,
+		Commands:  session.commands,
+		Turns:     session.turns,
 		SeenAt:    Known(at, at),
 		GoneSince: Known(at, at),
 	}

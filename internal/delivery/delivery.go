@@ -12,6 +12,7 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/sends"
 )
 
 // ErrBlocked is returned for a worker waiting on a question. Typing into it
@@ -42,7 +43,19 @@ func (p Post) Nudge(ctx context.Context, w world.Worker, text string) error {
 	if w.State == world.Blocked {
 		return ErrBlocked
 	}
+	var send string
+	if p.StateDir != "" {
+		var err error
+		if send, err = sends.Record(p.StateDir, w.TreePath, w.Session, text); err != nil && p.Stderr != nil {
+			_, _ = fmt.Fprintln(p.Stderr, "dispatch:", err)
+		}
+	}
 	if err := p.Herdr.Prompt(ctx, w.PaneID, text); err != nil {
+		// Only a refusal proves the text was not typed. Any other failure, a timeout included, may have typed it.
+		var refusal *herdr.Refusal
+		if p.StateDir != "" && errors.As(err, &refusal) && (refusal.Code == "agent_blocked" || refusal.Code == "agent_not_found") {
+			sends.Withdraw(p.StateDir, w.TreePath, send)
+		}
 		return fmt.Errorf("while prompting herdr pane %s: %w", w.PaneID, err)
 	}
 	return nil

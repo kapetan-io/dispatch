@@ -14,7 +14,7 @@ dispatch: while reading config /Users/you/.config/dispatch/config.toml: unknown 
   max_in_progress
 ```
 
-`dispatch run`, `dispatch plan` and `dispatch rules` load the file this way. `dispatch run` reads the file once, at start, and the rules with it, so a change to either takes effect when you stop `dispatch run` and start it again. `dispatch ticket-hint` and `dispatch record-stop` run in every Claude Code session, so they print the error to stderr and exit 0 instead.
+`dispatch run`, `dispatch plan` and `dispatch rules` load the file this way. `dispatch run` reads the file once, at start, and the rules with it, so a change to either takes effect when you stop `dispatch run` and start it again. `dispatch ticket-hint`, `dispatch record-stop` and `dispatch record-command` run in every Claude Code session, so they print the error to stderr and exit 0 instead.
 
 Every `toml` block in the docs is loaded by a test through the same loader, so these examples cannot drift from the code.
 

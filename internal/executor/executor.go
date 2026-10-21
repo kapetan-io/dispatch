@@ -26,6 +26,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
+	"github.com/kapetan-io/dispatch/internal/sends"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
@@ -225,7 +226,7 @@ func (e *Executor) nudge(ctx context.Context, w rules.Want, wd world.World) Resu
 		return failed("%s has no worker", w.Subject)
 	}
 	text, _ := w.Args["text"].(string)
-	err := delivery.Post{Herdr: e.Herdr}.Nudge(ctx, wk, text)
+	err := delivery.Post{Herdr: e.Herdr, StateDir: e.StateDir, Stderr: e.Stderr}.Nudge(ctx, wk, text)
 	switch {
 	case errors.Is(err, delivery.ErrBlocked), errors.Is(err, herdr.ErrAgentBlocked):
 		return failed("blocked")
@@ -248,6 +249,7 @@ func (e *Executor) closeWorkspace(ctx context.Context, w rules.Want) Result {
 	// onto the next Claude there.
 	if tree := w.Target["tree"]; tree != "" {
 		kickoffs.Clear(e.StateDir, tree)
+		sends.Clear(e.StateDir, tree)
 	}
 	if len(w.Once) > 0 && w.Once[0] == "close-unconfirmed" {
 		res.Detail = "closed workspace " + id + ": its launch died before the kickoff ran"
@@ -413,6 +415,7 @@ func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World)
 	stops.Remove(e.StateDir, path)
 	sessionlog.Remove(e.StateDir, path)
 	kickoffs.Clear(e.StateDir, path)
+	sends.Clear(e.StateDir, path)
 	res.Outcome, res.Detail = ledger.Done, detail
 	return res
 }

@@ -101,6 +101,7 @@ const usage = `usage: dispatch run
        dispatch launch <ticket> <branch> [--base REF] [--model NAME] [--kickoff TEXT] [--title TEXT]
        dispatch claude-shim [CLAUDE ARGS]
        dispatch record-stop
+       dispatch record-command
        dispatch watch <ticket>
        dispatch unwatch <ticket>
 
@@ -142,6 +143,10 @@ const usage = `usage: dispatch run
   record-stop  read a Stop hook's JSON on stdin and record when the worker in this tree last ended a
                turn and whether it still has background tasks running; does nothing outside a
                worktree of a repo listed under [repos]. The plugin's Stop hook runs it
+  record-command  read a UserPromptSubmit hook's JSON on stdin and record the slash command the
+               message starts with, and whether a person or dispatch typed it; does nothing for
+               other messages or outside a worktree of a repo listed under [repos]. The plugin's
+               UserPromptSubmit hook runs it
   watch        make this Claude Code session follow the ticket, so each notice dispatch sends about
                it is also sent to this session as a message. A session can follow several
                tickets, and a ticket can have several followers. Fails outside a Claude Code
@@ -190,6 +195,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		return claudeShim(args[1:])
 	case "record-stop":
 		return recordStop(ctx, opts)
+	case "record-command":
+		return recordCommand(ctx, opts)
 	case "watch", "unwatch":
 		if len(args) != 2 {
 			_, _ = fmt.Fprintln(opts.Stderr, usage)

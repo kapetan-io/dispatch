@@ -98,6 +98,29 @@ whenever({
 - A worker relaunched in a new session reads an empty list, even on the same tree. The lists survive a restart and `dispatch state reset`, and turns ended while `dispatch run` was down are there after it starts, at the next read of local sources.
 - `dispatch trace` prints the turns a decision read, and `dispatch replay` reproduces it from the recorded read. In `rules test`, `worker("ENG-1", "idle", { turns: [{ at: 1000, running: true }] })` sets them, and `sessionUnread: "reason"` makes them unknown.
 
+## Reading a worker's commands
+
+`ctx.herdr.worker(t).commands` lists every slash command the worker's current Claude session has taken, oldest first, each as `{ name, args, cut, at, by }`. A person can take a worker over by typing a command such as a repo's own merge command into its pane, and dispatch cannot see that happen any other way, so a rule reads `commands` to tell a worker a person is driving from one that went quiet:
+
+```ts
+whenever({
+  name: "person-took-over",
+  each: "linear.ticket",
+  if:   (t, ctx) => {
+    if (t.status !== "in_progress") return false;
+    return ctx.herdr.worker(t).commands.some((c) => c.by === "person" && c.name === "merge-it");
+  },
+  then: (t, ctx) => ctx.linear.queueComment(t, "a person ran /merge-it in this worker, so dispatch is leaving it alone", { once: ["took-over", t.id] }),
+});
+```
+
+- A message is a command when it starts with `/` and a name of letters, digits and `: _ . -`, and then white space or its end. `/merge-it 42` is `merge-it` with `42`. `when should I run /merge-it?`, `/Users/x` and ` /x` are not commands, and a skill the model loads by itself never is. `args` is the rest of the message, trimmed and cut at 1KB with `cut` set when it was longer. It is whatever the sender typed, so a rule that forwards it should treat it as untrusted text.
+- `by` says who typed it. Dispatch's kickoff (`/dispatch:build ENG-457`) and every nudge that starts with a slash, `dispatch tell` included, are `"dispatch"`. The same text typed by a person afterward is `"person"`, because each send matches one command. A send whose text never reaches Claude, without herdr refusing it, can make one later identical command from a person read as dispatch's.
+- `at` is when Claude took the message. A message typed while Claude is working waits for the turn to end, so its `at` follows that turn's end.
+- Check the ticket's status before reading it, as the example does, for the reason given under turns above. It is empty for a session that has taken no commands, and unknown when herdr reports no session, the session's record can't be read, or the ticket is in another status. A half line in the session's record makes `commands` and `turns` unknown for the rest of that session.
+- A worker relaunched in a new session, or after `/clear`, reads an empty list. The list survives a restart and `dispatch state reset`, and `dispatch trace` and `dispatch replay` show and reproduce what a decision read. In `rules test`, `worker("ENG-1", "idle", { commands: [{ name: "merge-it", args: "42", at: 1000, by: "person" }] })` sets them.
+- The plugin's `UserPromptSubmit` hook runs `dispatch record-command` and never blocks, delays or adds text to a prompt, whatever goes wrong.
+
 ## Calling a service
 
 A rule can call the services `config.toml` names under `[http.<name>]`, with dispatch adding the token:

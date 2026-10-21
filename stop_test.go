@@ -28,8 +28,8 @@ func (h *harness) recordStop(ticket, tasks string) {
 	h.recordStopFrom("worker", ticket, tasks)
 }
 
-// recordStopFrom is recordStop for the Claude session with the given id.
-func (h *harness) recordStopFrom(session, ticket, tasks string) {
+// worktreeOf is the path of ticket's tree, made a real git worktree of the harness repo.
+func (h *harness) worktreeOf(ticket string) string {
 	h.t.Helper()
 	tree := filepath.Join(h.dir, "trees", ticket)
 	if _, err := os.Stat(filepath.Join(h.repo, ".git")); err != nil {
@@ -39,6 +39,13 @@ func (h *harness) recordStopFrom(session, ticket, tasks string) {
 	if _, err := os.Stat(tree); err != nil {
 		hintGit(h.t, h.repo, "worktree", "add", "-q", "-b", "br-"+ticket, tree)
 	}
+	return tree
+}
+
+// recordStopFrom is recordStop for the Claude session with the given id.
+func (h *harness) recordStopFrom(session, ticket, tasks string) {
+	h.t.Helper()
+	tree := h.worktreeOf(ticket)
 	input := fmt.Sprintf(`{"hook_event_name":"Stop","session_id":%q,"cwd":%q`, session, tree)
 	if tasks != "" {
 		input += "," + tasks

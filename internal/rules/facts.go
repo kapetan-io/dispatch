@@ -59,6 +59,16 @@ type Turn struct {
 	Running bool  `js:"running" json:"running" doc:"True when a background task of the session was still running as the turn ended. A Claude Code version that doesn't report background tasks reads as false. Nothing links the task to a command, only the session and the order of at."`
 }
 
+// Command is a slash command a worker's Claude session took. It mirrors sessionlog.Command, which
+// carries no js tags.
+type Command struct {
+	Name string `js:"name" json:"name" doc:"The command's name without the slash, such as merge-it for /merge-it 42."`
+	Args string `js:"args" json:"args" doc:"The rest of the message, trimmed and cut at 1KB. Whatever the sender typed, so a rule that forwards it should treat it as untrusted text."`
+	Cut  bool   `js:"cut" json:"cut" doc:"True when args was longer than 1KB and was cut."`
+	At   int64  `js:"at" json:"at" doc:"When Claude took the message, in milliseconds since the epoch. A message sent to a working Claude waits for the turn to end, so at follows that turn's end."`
+	By   string `js:"by" json:"by" ts:"\"person\" | \"dispatch\"" doc:"Who typed the command, person or dispatch. Dispatch's kickoff and every nudge that starts with a slash are dispatch's, including one a dispatch tell asked for."`
+}
+
 // Blocker is a ticket that blocks another.
 type Blocker struct {
 	ID        string `js:"id"`
@@ -97,10 +107,11 @@ type Worker struct {
 	BlockedSince Fact[*int64]  `js:"blockedSince"`
 	// UnconfirmedSince is when the launch that started this worker began, while its
 	// kickoff is still unconfirmed. A launch killed before the kickoff leaves it set.
-	UnconfirmedSince Fact[*int64] `js:"unconfirmedSince"`
-	LastStop         Fact[*Stop]  `js:"lastStop"`
-	Busy             Fact[bool]   `js:"busy"`
-	Turns            Fact[[]Turn] `js:"turns" doc:"Every turn the worker's current Claude session has ended, oldest first, for a worker on an In Progress or In Review ticket. Empty for a session that has ended none, and unknown when herdr reports no session or the session's record can't be read. A worker relaunched in a new session starts over."`
+	UnconfirmedSince Fact[*int64]    `js:"unconfirmedSince"`
+	LastStop         Fact[*Stop]     `js:"lastStop"`
+	Busy             Fact[bool]      `js:"busy"`
+	Commands         Fact[[]Command] `js:"commands" doc:"Every slash command the worker's current Claude session has taken, oldest first, for a worker on an In Progress or In Review ticket. A message counts when it starts with /name, so a message that only mentions one does not. A skill the model loads by itself is not a command. Empty for a session that has taken none, and unknown when herdr reports no session or the session's record can't be read. A worker relaunched in a new session starts over."`
+	Turns            Fact[[]Turn]    `js:"turns" doc:"Every turn the worker's current Claude session has ended, oldest first, for a worker on an In Progress or In Review ticket. Empty for a session that has ended none, and unknown when herdr reports no session or the session's record can't be read. A worker relaunched in a new session starts over."`
 }
 
 // PR is the open pull request of an In Review ticket.

@@ -28,33 +28,16 @@ type stopInput struct {
 
 // recordStop runs as a Stop hook. It stores when the session ended its turn and
 // how many background tasks were still running, and adds the turn to the
-// session's log, for the rules to read. It
-// succeeds silently everywhere else, because the hook runs in every Claude
-// session on the machine and a failure would show in all of them.
+// session's log, for the rules to read. It succeeds silently everywhere else,
+// because the hook runs in every Claude session on the machine and a failure
+// would show in all of them.
 func recordStop(ctx context.Context, opts Options) error {
 	var in stopInput
 	if json.NewDecoder(opts.Stdin).Decode(&in) != nil {
 		return nil
 	}
-	cfg, err := config.Load(opts.ConfigPath)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
-		return nil
-	}
-	tree, ok := worktreeRoot(ctx, in.CWD)
+	tree, ok := workerTree(ctx, opts, in.CWD)
 	if !ok {
-		return nil
-	}
-	clone, ok := cloneRoot(ctx, in.CWD)
-	// Workers run in treehouse worktrees, never in the clone itself, which
-	// is where the supervising session works.
-	if !ok || clone == tree {
-		return nil
-	}
-	if _, _, managed := repoAt(ctx, cfg, in.CWD); !managed {
 		return nil
 	}
 	rec := stops.Record{At: opts.Clock.Now().UTC(), Reported: in.BackgroundTasks != nil}
@@ -73,6 +56,33 @@ func recordStop(ctx context.Context, opts Options) error {
 		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
 	}
 	return nil
+}
+
+// workerTree returns the tree a hook running in dir belongs to, or false when dir is not a
+// dispatch worker's tree. Workers run in treehouse worktrees of a configured repo, never in the
+// clone itself, which is where the supervising session works. A config that can't be read
+// is reported on stderr, and the hook records nothing.
+func workerTree(ctx context.Context, opts Options, dir string) (string, bool) {
+	cfg, err := config.Load(opts.ConfigPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", false
+	}
+	if err != nil {
+		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
+		return "", false
+	}
+	tree, ok := worktreeRoot(ctx, dir)
+	if !ok {
+		return "", false
+	}
+	clone, ok := cloneRoot(ctx, dir)
+	if !ok || clone == tree {
+		return "", false
+	}
+	if _, _, managed := repoAt(ctx, cfg, dir); !managed {
+		return "", false
+	}
+	return tree, true
 }
 
 // worktreeRoot returns the top of the working tree containing dir.

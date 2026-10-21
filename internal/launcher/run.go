@@ -15,6 +15,7 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
+	"github.com/kapetan-io/dispatch/internal/sends"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
@@ -175,12 +176,16 @@ func (l *launch) run(ctx context.Context) Result {
 	if !ok {
 		return r
 	}
+	l.recordSend(req.Kickoff)
 
 	// An unconfirmed kickoff closes the workspace. Left open, its idle Claude
 	// would look like a live worker, and no cycle would retry or escalate.
 	if err := l.opts.Herdr.Kickoff(ctx, started.Pane, req.Kickoff); err != nil {
 		if l.opts.Herdr.CloseWorkspace(context.WithoutCancel(ctx), l.workspace) != nil {
 			l.workspaceOpen = true
+		}
+		if l.opts.StateDir != "" {
+			sends.Clear(l.opts.StateDir, l.tree)
 		}
 		detail := "Claude started but herdr"
 		switch {
@@ -214,6 +219,18 @@ func (l *launch) beginKickoff() {
 		return
 	}
 	l.markID = id
+}
+
+// recordSend notes that the kickoff is about to be typed, so the prompt hook labels it as dispatch's.
+// Records left by an earlier launch on this tree can't match this Claude.
+func (l *launch) recordSend(kickoff string) {
+	if l.opts.StateDir == "" {
+		return
+	}
+	sends.Clear(l.opts.StateDir, l.tree)
+	if _, err := sends.Record(l.opts.StateDir, l.tree, "", kickoff); err != nil {
+		l.log("%v", err)
+	}
 }
 
 // clearKickoff runs on every return, because a launch that reports its own failure has
