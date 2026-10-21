@@ -6,7 +6,6 @@ package kickoffs
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/kapetan-io/dispatch/internal/treekey"
 )
 
 // dir is where a state directory keeps its records.
@@ -22,14 +23,9 @@ func dir(stateDir string) string {
 	return filepath.Join(stateDir, "kickoffs")
 }
 
-// file names the record of the launch on tree. Two spellings of one tree must
-// share it, so the tree is resolved first.
+// file names the record of the launch on tree.
 func file(stateDir, tree string) string {
-	if resolved, err := filepath.EvalSymlinks(tree); err == nil {
-		tree = resolved
-	}
-	sum := sha256.Sum256([]byte(tree))
-	return filepath.Join(dir(stateDir), hex.EncodeToString(sum[:8]))
+	return filepath.Join(dir(stateDir), treekey.Of(tree))
 }
 
 // Mark records that a launch on tree started at the given time and returns the

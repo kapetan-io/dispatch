@@ -26,6 +26,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
+	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -410,6 +411,7 @@ func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World)
 		return failed("while returning %s to the pool: %v", path, err)
 	}
 	stops.Remove(e.StateDir, path)
+	sessionlog.Remove(e.StateDir, path)
 	kickoffs.Clear(e.StateDir, path)
 	res.Outcome, res.Detail = ledger.Done, detail
 	return res

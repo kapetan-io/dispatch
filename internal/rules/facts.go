@@ -52,6 +52,13 @@ type Stop struct {
 	At int64 `js:"at"`
 }
 
+// Turn is one reply a worker's Claude session finished. It mirrors sessionlog.Turn, which
+// carries no js tags.
+type Turn struct {
+	At      int64 `js:"at" json:"at" doc:"When the turn ended, in milliseconds since the epoch."`
+	Running bool  `js:"running" json:"running" doc:"True when a background task of the session was still running as the turn ended. A Claude Code version that doesn't report background tasks reads as false. Nothing links the task to a command, only the session and the order of at."`
+}
+
 // Blocker is a ticket that blocks another.
 type Blocker struct {
 	ID        string `js:"id"`
@@ -93,6 +100,7 @@ type Worker struct {
 	UnconfirmedSince Fact[*int64] `js:"unconfirmedSince"`
 	LastStop         Fact[*Stop]  `js:"lastStop"`
 	Busy             Fact[bool]   `js:"busy"`
+	Turns            Fact[[]Turn] `js:"turns" doc:"Every turn the worker's current Claude session has ended, oldest first, for a worker on an In Progress or In Review ticket. Empty for a session that has ended none, and unknown when herdr reports no session or the session's record can't be read. A worker relaunched in a new session starts over."`
 }
 
 // PR is the open pull request of an In Review ticket.

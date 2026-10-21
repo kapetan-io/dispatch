@@ -11,12 +11,13 @@ import (
 	"strings"
 
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
 )
 
 // stopInput is the part of Claude Code's Stop hook input that dispatch reads.
-// BackgroundTasks is a pointer so a missing field, which means Claude Code
-// could not read its task registry, differs from an empty list.
+// BackgroundTasks is a pointer so a missing field, which means a Claude Code
+// version that predates it, differs from an empty list.
 type stopInput struct {
 	SessionID       string `json:"session_id"`
 	CWD             string `json:"cwd"`
@@ -26,7 +27,8 @@ type stopInput struct {
 }
 
 // recordStop runs as a Stop hook. It stores when the session ended its turn and
-// how many background tasks were still running, for the rules to read. It
+// how many background tasks were still running, and adds the turn to the
+// session's log, for the rules to read. It
 // succeeds silently everywhere else, because the hook runs in every Claude
 // session on the machine and a failure would show in all of them.
 func recordStop(ctx context.Context, opts Options) error {
@@ -64,6 +66,10 @@ func recordStop(ctx context.Context, opts Options) error {
 		}
 	}
 	if err := stops.Write(opts.StateDir, tree, in.SessionID, rec); err != nil {
+		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
+	}
+	turn := sessionlog.Turn{At: rec.At.UnixMilli(), Running: rec.Running > 0}
+	if err := sessionlog.AppendTurn(opts.StateDir, tree, in.SessionID, turn); err != nil {
 		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
 	}
 	return nil

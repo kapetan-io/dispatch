@@ -315,7 +315,7 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 	}
 
 	for _, t := range w.Tickets {
-		s.workerRecord(w, t.Identifier, w.Workers[t.Identifier], w.Stops[t.Identifier])
+		s.workerRecord(w, t.Identifier, w.Workers[t.Identifier], w.Stops[t.Identifier], s.turnsOf(w, t.Identifier))
 	}
 	for _, holder := range w.LeaseHolders {
 		for i, wk := range w.Leases[holder.Identifier] {
@@ -323,7 +323,7 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 			if i > 0 {
 				id += "@" + wk.TreePath
 			}
-			s.workerRecord(w, id, wk, stops.Record{})
+			s.workerRecord(w, id, wk, stops.Record{}, Unread[[]Turn](turnsNotRead))
 		}
 	}
 	for holder := range w.Leased {
@@ -351,13 +351,13 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 func (s *State) addIdleWorkers(w world.World) {
 	for _, t := range slices.Clone(s.kinds["linear.ticket"]) {
 		if _, ok := s.workers[t.id]; !ok {
-			s.workerRecord(w, t.id, world.Worker{State: world.NoWorker}, stops.Record{})
+			s.workerRecord(w, t.id, world.Worker{State: world.NoWorker}, stops.Record{}, Unread[[]Turn](noWorkerTurns))
 			s.workers[t.id].hidden = true
 		}
 	}
 	for _, tree := range slices.Clone(s.kinds["treehouse.tree"]) {
 		if _, ok := s.workersByTree[tree.id]; !ok {
-			s.workerRecord(w, "tree:"+tree.id, world.Worker{State: world.NoWorker, TreePath: tree.id}, stops.Record{})
+			s.workerRecord(w, "tree:"+tree.id, world.Worker{State: world.NoWorker, TreePath: tree.id}, stops.Record{}, Unread[[]Turn](noWorkerTurns))
 			s.workersByTree[tree.id].hidden = true
 		}
 	}
@@ -385,13 +385,38 @@ func (s *State) leasedUnknown(w world.World, r *record) {
 	}
 }
 
-func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop stops.Record) {
+const (
+	noWorkerTurns = "the ticket has no worker, so no session ended any turns"
+	turnsNotRead  = "turns are read only for the worker of an In Progress or In Review ticket"
+)
+
+// turnsOf is the turns of the worker serving a ticket, as the world read them.
+func (s *State) turnsOf(w world.World, ticket string) Fact[[]Turn] {
+	if err := w.SessionErrs[ticket]; err != nil {
+		return Unread[[]Turn](err.Error())
+	}
+	log, ok := w.Sessions[ticket]
+	if !ok {
+		if w.Workers[ticket].State == world.NoWorker {
+			return Unread[[]Turn](noWorkerTurns)
+		}
+		return Unread[[]Turn](turnsNotRead)
+	}
+	turns := make([]Turn, len(log.Turns))
+	for i, t := range log.Turns {
+		turns[i] = Turn{At: t.At, Running: t.Running}
+	}
+	return Known(turns, s.ms())
+}
+
+func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop stops.Record, turns Fact[[]Turn]) {
 	at := s.ms()
 	subject := strings.SplitN(id, "@", 2)[0]
 	rec := &Worker{
 		State:     Known(string(wk.State), at),
 		Ticket:    Known(Ref{Kind: "linear.ticket", ID: subject}, at),
 		Busy:      Known(false, at),
+		Turns:     turns,
 		SeenAt:    Known(at, at),
 		GoneSince: Known(at, at),
 	}

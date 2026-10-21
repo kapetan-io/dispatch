@@ -76,6 +76,28 @@ whenever({
 - `Date` is pinned to `ctx.now`, `Math.random` throws, and `eval`, `Function`, `Promise`, async functions and generators aren't available.
 - Each `if` has one second and each `then` thirty. A rule that throws or times out wants nothing for that record, and every other rule goes ahead.
 
+## Reading a worker's turns
+
+`ctx.herdr.worker(t).turns` lists every turn the worker's current Claude session has ended, oldest first, each as `{ at, running }`. `running` says some background task of the session (a shell, subagent or monitor) was still running as the turn ended, so a rule can tell a worker looping on a background job from one that stalled:
+
+```ts
+whenever({
+  name: "long-loop-in-review",
+  each: "linear.ticket",
+  if:   (t, ctx) => {
+    if (t.status !== "in_review") return false;
+    const turns = ctx.herdr.worker(t).turns;
+    return turns.length >= 20 && turns.every((turn) => turn.running);
+  },
+  then: (t, ctx) => ctx.linear.queueComment(t, "this worker has run in the background for 20 turns", { once: ["long-loop", t.id] }),
+});
+```
+
+- Check the ticket's status before reading it, as the example does, because a read that throws `Unknown` holds the rule for every other ticket. It is read for a worker in any state on an In Progress or In Review ticket. It is empty for a session that has ended no turns, and unknown when herdr reports no session, the session's record can't be read, or the ticket is in another status.
+- A hook killed in the middle of writing a turn leaves a half line, and the next turn starts a new line after it. From then on `turns` is unknown for the rest of that session, because a list with a hole in it would pass for a shorter one. A rule that reads it without `known(...)` is held for that worker until the session ends or the worker is relaunched.
+- A worker relaunched in a new session reads an empty list, even on the same tree. The lists survive a restart and `dispatch state reset`, and turns ended while `dispatch run` was down are there after it starts, at the next read of local sources.
+- `dispatch trace` prints the turns a decision read, and `dispatch replay` reproduces it from the recorded read. In `rules test`, `worker("ENG-1", "idle", { turns: [{ at: 1000, running: true }] })` sets them, and `sessionUnread: "reason"` makes them unknown.
+
 ## Calling a service
 
 A rule can call the services `config.toml` names under `[http.<name>]`, with dispatch adding the token:

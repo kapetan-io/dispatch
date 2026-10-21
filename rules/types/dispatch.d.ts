@@ -11,6 +11,13 @@ declare module "dispatch" {
   export interface Stop {
     at: number;
   }
+  /** A turn the worker's current Claude session ended. */
+  export interface Turn {
+    /** When the turn ended, in milliseconds since the epoch. */
+    at: number;
+    /** True when a background task of the session was still running as the turn ended. A Claude Code version that doesn't report background tasks reads as false. Nothing links the task to a command, only the session and the order of at. */
+    running: boolean;
+  }
   export interface Blocker {
     id: string;
     status: string;
@@ -63,6 +70,8 @@ declare module "dispatch" {
     readonly unconfirmedSince: number | undefined;
     readonly lastStop: Stop | undefined;
     readonly busy: boolean;
+    /** Every turn the worker's current Claude session has ended, oldest first, for a worker on an In Progress or In Review ticket. Empty for a session that has ended none, and unknown when herdr reports no session or the session's record can't be read. A worker relaunched in a new session starts over. */
+    readonly turns: Turn[];
   }
   export interface Tree {
     readonly path: string;
