@@ -352,14 +352,14 @@ func TestALaunchThatLandsAfterItsDeadlineGetsNoSecondWorker(t *testing.T) {
 
 func TestANudgeThatTimesOutCountsAsToldAndIsNeverRepeated(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))
 	h.worker("ENG-1", "idle")
-	h.recordStop("ENG-1", noTasks)
-	h.tools.Herdr.StallPrompts()
-
 	_, _, err := h.runWith(t.Context(), dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tick")
 	require.NoError(t, err)
-	for range 2 {
+	h.tools.Herdr.StallPrompts()
+	h.advance(time.Minute)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	for range 3 {
 		h.advance(time.Hour)
 		_, err = h.run("tick")
 		require.NoError(t, err)

@@ -3,20 +3,16 @@ package dispatch
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io/fs"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/loop"
 )
 
 // stopTimeout caps the wait on dispatch because the hook runs after every turn. A report lost
-// to it costs little, since a worker with no record is treated as stopped when first seen idle.
+// to it costs little, since a worker with no record keeps its busy label until the next Stop.
 const stopTimeout = time.Second
 
 // stopInput is the part of Claude Code's Stop hook input that dispatch reads.
@@ -31,33 +27,16 @@ type stopInput struct {
 }
 
 // recordStop runs as a Stop hook. It tells the running dispatch when the session ended its
-// turn and how many background tasks were still running, for the rules to read. It
-// succeeds silently everywhere else, because the hook runs in every Claude
-// session on the machine and a failure would show in all of them.
+// turn and how many background tasks were still running, for the workspace label and the
+// rules' turn log to read. It succeeds silently everywhere else, because the hook runs in
+// every Claude session on the machine and a failure would show in all of them.
 func recordStop(ctx context.Context, opts Options) error {
 	var in stopInput
 	if json.NewDecoder(opts.Stdin).Decode(&in) != nil {
 		return nil
 	}
-	cfg, err := config.Load(opts.ConfigPath)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
-		return nil
-	}
-	tree, ok := worktreeRoot(ctx, in.CWD)
+	tree, ok := workerTree(ctx, opts, in.CWD)
 	if !ok {
-		return nil
-	}
-	clone, ok := cloneRoot(ctx, in.CWD)
-	// Workers run in treehouse worktrees, never in the clone itself, which
-	// is where the supervising session works.
-	if !ok || clone == tree {
-		return nil
-	}
-	if _, _, managed := repoAt(ctx, cfg, in.CWD); !managed {
 		return nil
 	}
 	report := loop.Stop{Tree: tree, Session: in.SessionID, At: opts.Clock.Now().UnixMilli(), Reported: in.BackgroundTasks != nil}

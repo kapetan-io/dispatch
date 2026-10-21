@@ -40,7 +40,7 @@ Load `dispatch:converse` with the Skill tool. Open a todolist with one entry per
 
 ## The discussion
 
-Ask in plain chat, one question at a time, not through AskUserQuestion. The dispatcher never nudges a design session, and a picker squeezes out the context and recommendation the user needs after stepping away.
+Ask in plain chat, one question at a time. Never use the AskUserQuestion tool. The dispatcher never nudges a design session, and a picker squeezes out the context and recommendation the user needs after stepping away.
 
 In each question, say what is being decided and why you need it, then give your recommendation.
 

@@ -15,21 +15,20 @@ import (
 )
 
 const (
-	stallText1  = "ENG-1 is still In Progress. Re-read the ticket and its latest comments, then keep going. If the PR is ready, move it to In Review. If you need a decision from me, move it to Needs Human and comment what you need."
 	resumeText1 = "I answered on ENG-1. Read the latest comments and continue."
-	stallPrompt = "w-ENG-1:p1|" + stallText1
 )
 
 func TestTickNudgesAnIdleWorkerWithoutCommenting(t *testing.T) {
 	for _, status := range []string{"idle", "done"} {
 		t.Run(status, func(t *testing.T) {
 			h := newHarness(t)
-			h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 			h.worker("ENG-1", status)
+			reviewFailsAfterEntry(h, prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 
-			h.tick()
+			require.NoError(t, reviewTick(t, h))
 
-			assert.Equal(t, []string{stallPrompt}, h.prompts())
+			assert.Equal(t, []string{prPrompt("a failed check")}, h.prompts())
 			assert.Empty(t, h.linear.mutations())
 			assert.Empty(t, h.launches())
 		})
@@ -66,12 +65,13 @@ func TestTickLeavesWorkingAndDesignWorkersAlone(t *testing.T) {
 
 func TestTickDoesNotCountANudgeHerdrRefused(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
+	reviewFailsAfterEntry(h, prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	h.blockAfterSnapshot("ENG-1")
 
 	for range 4 {
-		_, err := h.run("tick")
+		err := reviewTick(t, h)
 		require.ErrorContains(t, err, "ENG-1 nudge failed: blocked")
 	}
 
@@ -91,7 +91,8 @@ func TestTickSendsTheResumeNudgeWhenAnswerMovesTicketBack(t *testing.T) {
 	h := newHarness(t)
 	h.worker("ENG-1", "working")
 	h.recordStop("ENG-1", noTasks)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	h.tick()
 	// The nudge has to come after dispatch first saw the worker, as it does outside a test.
 	h.advance(time.Second)
@@ -105,13 +106,13 @@ func TestTickSendsTheResumeNudgeWhenAnswerMovesTicketBack(t *testing.T) {
 
 	// A worker gets no nudge of any kind until it stops after the last one.
 	h.tick()
-	assert.Equal(t, []string{stallPrompt}, h.prompts())
+	assert.Equal(t, []string{prPrompt("a failed check")}, h.prompts())
 
 	h.advance(time.Minute)
 	h.recordStop("ENG-1", noTasks)
 	h.tick()
 
-	assert.Equal(t, []string{stallPrompt, "w-ENG-1:p1|" + resumeText1}, h.prompts())
+	assert.Equal(t, []string{prPrompt("a failed check"), "w-ENG-1:p1|" + resumeText1}, h.prompts())
 	assert.Empty(t, h.linear.mutations())
 }
 
@@ -441,46 +442,54 @@ func TestTickTracksBlockedTicksPerTicket(t *testing.T) {
 
 func TestTickNudgesAfterABlockedWorkerGoesIdle(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "blocked")
+	reviewFailsAfterEntry(h, prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	for range 4 {
 		h.tick()
 	}
 	h.setWorkerStatus("ENG-1", "idle")
 
-	h.tick()
+	require.NoError(t, reviewTick(t, h))
 
-	assert.Equal(t, []string{stallPrompt}, h.prompts())
+	assert.Equal(t, []string{prPrompt("a failed check")}, h.prompts())
 	assert.Empty(t, h.linear.mutations())
 }
 
 func TestTickNudgesAgainWhenTheHistoryIsDeleted(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
-	h.tick()
+	reviewFailsAfterEntry(h, prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
+	require.NoError(t, reviewTick(t, h))
 	require.NoError(t, h.stopLoop())
 	require.NoError(t, os.RemoveAll(filepath.Join(h.state, "events")))
 	h.advance(5 * time.Minute)
 
 	h.tick()
 
-	assert.Equal(t, []string{stallPrompt, stallPrompt}, h.prompts())
+	assert.Equal(t, []string{prPrompt("a failed check"), prPrompt("a failed check")}, h.prompts())
 	assert.Empty(t, h.linear.mutations())
 }
 
 func TestTickNudgesEachIdleTicketIndependently(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
 	h.worker("ENG-2", "working")
+	h.pr("ENG-1", prState{head: "a1", checks: "PENDING", mergeable: "MERGEABLE"})
+	h.pr("ENG-2", prState{head: "a1", checks: "PENDING", mergeable: "MERGEABLE"})
+	h.restart()
+	h.advance(time.Second)
+	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
+	h.pr("ENG-2", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	h.tick()
 	h.tick()
 	h.setWorkerStatus("ENG-2", "idle")
 
-	h.tick()
+	require.NoError(t, reviewTick(t, h))
 
-	assert.Equal(t, []string{stallPrompt, "w-ENG-2:p1|" + strings.ReplaceAll(stallText1, "ENG-1", "ENG-2")}, h.prompts())
+	assert.Equal(t, []string{prPrompt("a failed check"), strings.ReplaceAll(prPrompt("a failed check"), "ENG-1", "ENG-2")}, h.prompts())
 	assert.Empty(t, h.linear.mutations())
 }
 
@@ -542,22 +551,22 @@ func TestTickSendsTheResumeNudgeToAWorkerThatWasBlockedWhenTheTicketMovedBack(t 
 func TestTickSendsTheResumeNudgeAfterANeedsHumanNotificationFailed(t *testing.T) {
 	h := newHarness(t)
 	h.worker("ENG-1", "idle")
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	reviewFailsAfterEntry(h, prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
+	require.NoError(t, reviewTick(t, h))
 	h.tickets(ticket("ENG-1", "Needs Human", "dispatch"))
 	h.tools.Alerts.Fail(errors.New("exit status 1"))
-	_, err = h.run("tick")
+	_, err := h.run("tick")
 	require.ErrorContains(t, err, "ENG-1 notify failed")
 	h.tools.Alerts.Fail(nil)
 	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
-	// The stall nudge went first, so the worker has to stop before it hears the resume.
+	// The PR nudge went first, so the worker has to stop before it hears the resume.
 	h.advance(time.Minute)
 	h.recordStop("ENG-1", noTasks)
 	h.tick()
 
-	assert.Equal(t, []string{stallPrompt, "w-ENG-1:p1|" + resumeText1}, h.prompts())
+	assert.Equal(t, []string{prPrompt("a failed check"), "w-ENG-1:p1|" + resumeText1}, h.prompts())
 }
 
 func TestTickNotifiesWhenAReviewWorkerIsBlockedOnAQuestion(t *testing.T) {
@@ -600,8 +609,9 @@ func TestTickNotifiesWhenAReviewTicketEntersNeedsHuman(t *testing.T) {
 func TestTickStartsFreshWhenAPausedTicketReturns(t *testing.T) {
 	h := newHarness(t)
 	h.worker("ENG-1", "idle")
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.tick()
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	reviewFailsAfterEntry(h, prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
+	require.NoError(t, reviewTick(t, h))
 	h.tick()
 	// Moved to Todo, the ticket is paused and its worker is closed.
 	h.tickets()
@@ -609,7 +619,7 @@ func TestTickStartsFreshWhenAPausedTicketReturns(t *testing.T) {
 	h.advance(time.Minute)
 	h.tick()
 	h.linear.setElsewhere()
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.advance(time.Minute)
 
 	h.tick()
@@ -664,34 +674,36 @@ func TestTickRenotifyIntervalIsTheConfiguredMinutes(t *testing.T) {
 	assert.Equal(t, []int{1, 1, 2, 2}, counts)
 }
 
-func TestTickNudgedWorkerGetsNoStallNudgeBeforeTheNextResync(t *testing.T) {
+func TestTickNudgedWorkerGetsNoPRNudgeBeforeTheNextResync(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
+	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	h.restart()
-	require.Equal(t, []string{stallPrompt}, h.prompts())
+	require.Equal(t, []string{prPrompt("a failed check")}, h.prompts())
 
 	// herdr still reports the nudged worker idle a second later. A tell reads herdr
 	// without a resync, and the worker must still count as busy.
 	h.advance(time.Second)
 	_, err := h.run("tell", "ENG-1", "check the logs")
 	require.NoError(t, err)
-	assert.Equal(t, []string{stallPrompt, "w-ENG-1:p1|check the logs"}, h.prompts())
+	assert.Equal(t, []string{prPrompt("a failed check"), "w-ENG-1:p1|check the logs"}, h.prompts())
 
-	// The next resync believes herdr again, and a worker still idle then gets its stall nudge.
+	// The next resync believes herdr again, and a worker still idle then gets its PR nudge.
 	h.advance(time.Second)
 	h.tick()
-	assert.Equal(t, []string{stallPrompt, "w-ENG-1:p1|check the logs", stallPrompt}, h.prompts())
+	assert.Equal(t, []string{prPrompt("a failed check"), "w-ENG-1:p1|check the logs", prPrompt("a failed check")}, h.prompts())
 }
 
 func TestTickWorkerWithNoStopRecordIsNudgedAgainOnlyAtAResync(t *testing.T) {
 	t.Run("TickOnTheSameClock", func(t *testing.T) {
 		h := newHarness(t)
-		h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+		h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 		h.worker("ENG-1", "idle")
+		h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 
 		h.restart()
-		assert.Equal(t, []string{stallPrompt}, h.prompts())
+		assert.Equal(t, []string{prPrompt("a failed check")}, h.prompts())
 
 		h.tick()
 		h.tick()
@@ -702,8 +714,10 @@ func TestTickWorkerWithNoStopRecordIsNudgedAgainOnlyAtAResync(t *testing.T) {
 
 	t.Run("ResyncPasses", func(t *testing.T) {
 		h := newHarness(t)
-		h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+		h.config("[rules]\nnudge_limit = 9\n")
+		h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 		h.worker("ENG-1", "idle")
+		h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 
 		h.restart()
 		assert.Len(t, h.prompts(), 1)
@@ -764,21 +778,20 @@ func TestTickNeverSendsANudgeAttemptedBeforeACrash(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
-			h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 			h.worker("ENG-1", "idle")
 			h.recordStop("ENG-1", noTasks)
-			stopped := h.clock.Now().UnixMilli()
+			h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 			h.advance(time.Second)
 			if test.seeded {
 				// The crashed run wrote the receipt before it typed the text, and never learned how it ended.
 				h.seedHistory(nil, ledger.Receipt{
-					Kind: "nudge", Subject: "ENG-1", Once: ledger.Once{"stall", stopped}, Rule: "nudge-stall",
+					Kind: "nudge", Subject: "ENG-1", Once: ledger.Once{"pr", "a1", h.clock.Now().UnixMilli(), 0}, Rule: "nudge-pr-needs-work",
 					Started: h.clock.Now().Add(-time.Minute).UnixMilli(),
 				})
 			}
 
 			h.tick()
-			h.advance(5 * time.Minute)
 			h.tick()
 
 			assert.Len(t, h.prompts(), test.prompts)

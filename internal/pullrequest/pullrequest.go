@@ -87,6 +87,8 @@ type PullRequest struct {
 	// merges cleanly. A running check, such as a bot review still in progress,
 	// or a merge state GitHub has not computed yet, is not ready.
 	Ready bool
+	// ChecksRunning means a check on the head has not finished.
+	ChecksRunning bool
 }
 
 // NeedsWork reports whether the PR has a failed check, changes requested on its
@@ -547,6 +549,7 @@ func Find(ctx context.Context, branch string, src Source, rules Rules) (PullRequ
 	if n.Mergeable == "CONFLICTING" {
 		pr.Problems = append(pr.Problems, "a merge conflict")
 	}
+	pr.ChecksRunning = checksRunning
 	pr.Ready = !pr.NeedsWork() && !pr.UnresolvedThreads && checksPassed && n.Mergeable == "MERGEABLE"
 	return pr, true, nil
 }

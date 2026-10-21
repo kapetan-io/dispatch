@@ -4,13 +4,6 @@ const rules = rulesFrom("./dispatch");
 
 const build = { status: "in_progress", optedIn: true, repo: "dispatch" };
 const review = { status: "in_review", optedIn: true, repo: "dispatch" };
-const hour = 60 * 60 * 1000;
-
-// A worker that stops again: it works, then idles.
-const stopsAgain = (s: { see: (...f: ReturnType<typeof worker>[]) => void }, id: string) => {
-  s.see(worker(id, "working"));
-  s.see(worker(id, "idle"));
-};
 
 scenario(rules, "notify-needs-human notifies once per stretch in Needs Human", s => {
   s.given(ticket("ENG-1", { status: "needs_human", optedIn: true, repo: "dispatch" }));
@@ -153,48 +146,6 @@ scenario(rules, "notify-ready-for-review is held when the PR could not be read",
 scenario(rules, "notify-ready-for-review is silent for a working worker", s => {
   s.given(ticket("ENG-1", review), worker("ENG-1", "working"), pr("ENG-1", { ready: true }));
   s.expect([]);
-});
-
-scenario(rules, "notify-stall-count notifies at every sixth stall nudge", s => {
-  s.given(ticket("ENG-1", build), worker("ENG-1", "idle"));
-  for (let i = 1; i <= 5; i++) {
-    s.expect([["nudge-stall", "herdr.nudge", "ENG-1"]]);
-    s.land("herdr.nudge", "ENG-1");
-    stopsAgain(s, "ENG-1");
-  }
-  s.expect([["nudge-stall", "herdr.nudge", "ENG-1"]]);
-  s.land("herdr.nudge", "ENG-1");
-  s.expect([["notify-stall-count", "notify.send", "ENG-1"]]);
-  s.land("notify.send", "ENG-1");
-  s.expect([]);
-});
-
-scenario(rules, "notify-stall-count is silent before the sixth nudge", s => {
-  s.given(ticket("ENG-1", build), worker("ENG-1", "idle"));
-  s.land("herdr.nudge", "ENG-1");
-  stopsAgain(s, "ENG-1");
-  s.land("herdr.nudge", "ENG-1");
-  stopsAgain(s, "ENG-1");
-  s.expect([["nudge-stall", "herdr.nudge", "ENG-1"]]);
-});
-
-scenario(rules, "notify-unresponsive notifies an hour after a stall nudge nobody answered", s => {
-  s.given(ticket("ENG-1", build), worker("ENG-1", "idle"));
-  s.land("herdr.nudge", "ENG-1");
-  s.advance(59 * 60 * 1000);
-  s.expect([]);
-  s.advance(2 * 60 * 1000);
-  s.expect([["notify-unresponsive", "notify.send", "ENG-1"]]);
-  s.land("notify.send", "ENG-1");
-  s.expect([]);
-});
-
-scenario(rules, "notify-unresponsive is silent once the worker stops again", s => {
-  s.given(ticket("ENG-1", build), worker("ENG-1", "idle"));
-  s.land("herdr.nudge", "ENG-1");
-  s.advance(2 * hour);
-  stopsAgain(s, "ENG-1");
-  s.expect([["nudge-stall", "herdr.nudge", "ENG-1"]]);
 });
 
 scenario(rules, "notify-merge-failed tells the followers once per head after a refused merge", s => {

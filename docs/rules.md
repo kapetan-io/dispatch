@@ -30,7 +30,7 @@ blocked_renotify_minutes = 15
 linear.ticket      37 tracked tickets (assigned to Ada Lovelace; teams ENG; statuses Todo, In Progress, In Review, Needs Human)
 ...
 launch-worker      whenever  linear.ticket   wants launch now for ENG-12, ENG-15
-nudge-stall        whenever  linear.ticket   wants nothing now
+nudge-resume       whenever  linear.ticket   wants nothing now
 ```
 
 A record whose rule read something that couldn't be read is listed as `held for ENG-9`. It exits 1 on any finding: a rule that fails to load, a rule that throws or runs out of time, a queued action with no once key, a rule that reads a `[rules]` key the file lacks, and, when `tsc` is installed, a type error from `tsc --noEmit --strict`.
@@ -128,7 +128,7 @@ Add a rule by creating a file and importing it from `dispatch.ts`, which is the 
 | File | What it is |
 |---|---|
 | `dispatch.ts` | Imports every file that runs. |
-| `workers.ts`, `trees.ts`, `parents.ts`, `escalations.ts`, `nudges.ts`, `notices.ts`, `merge.ts` | The 28 rules, grouped by job. |
+| `workers.ts`, `trees.ts`, `parents.ts`, `escalations.ts`, `nudges.ts`, `notices.ts`, `merge.ts` | The 25 rules, grouped by job. [Worker states](worker-states.md) lists when they nudge, notify or escalate a worker in each state, so read it before changing one. |
 | `shared.ts`, `texts.ts` | Helpers and the nudge texts the `dispatch:build` skill relies on word for word. |
 | `types/dispatch.d.ts`, `types/testing.d.ts` | Generated from dispatch's Go types, and rewritten by `rules check`. They sit in `types/` because `tsc` ignores a `dispatch.d.ts` that has a `dispatch.ts` beside it. |
 | `config.schema.json` | A JSON schema for `config.toml`, generated from the same structs the loader reads. |

@@ -110,3 +110,7 @@ _Avoid_: transcript (Claude's own file), history (dispatch's segments)
 **Send record**:
 A hash of a slash command dispatch typed into a tree, written before typing and claimed by the command it matches.
 _Avoid_: ledger entry, receipt (both are in history)
+
+**Workspace emoji**:
+The first word of a worker's herdr workspace label. It says who the ticket is waiting on: the worker (🟢), CI (🟡), you (👀, 💤 or 🔴), or nobody (⏸️). `worker-states.md` lists every state, its emoji, and what dispatch does in it.
+_Avoid_: status icon, status

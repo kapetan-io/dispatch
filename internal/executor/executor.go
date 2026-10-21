@@ -546,13 +546,6 @@ func Reason(w rules.Want) string {
 		return "reviews handled"
 	case "draft-ready":
 		return "draft ready for review"
-	case "stall-count":
-		if len(w.Once) > 2 {
-			return fmt.Sprintf("%v stall nudges with no status change", w.Once[2])
-		}
-		return "stall nudges with no status change"
-	case "unresponsive":
-		return "worker hasn't responded to its nudge in an hour"
 	case "merged", "merge-failed":
 		return "PR approved"
 	}

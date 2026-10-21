@@ -95,19 +95,19 @@ It reads every source and runs a cycle at start, then again every `resync` perio
 7. **Merge.** The PR merges, either you or dispatch (when its repo sets [`auto_merge = true`](config.md#auto-merge) and a review has approved the head commit), and Linear moves the ticket to Done.
 8. **Teardown.** The next resync closes the worker's workspace and returns the tree to the pool, unless the tree holds modified or staged tracked files, or unpushed commits. Untracked files are deleted first.
 
-A question the worker asks in its terminal shows in herdr as blocked. dispatch notifies you, never answers for you, and never sets Needs Human for it.
+A worker asks its questions in chat, and its window shows 💤 while it waits. A question popup shows in herdr as blocked and the window shows 🔴. dispatch notifies you of a popup, never answers for you, and never sets Needs Human for it.
 
 ## Nudges and notifications
 
-While `dispatch run` is running, an In Progress ticket whose worker is idle or finished gets the stall nudge (a `design` ticket never does, see [From design to build tickets](#from-design-to-build-tickets)) typed into its session, unless the worker is waiting on its own background work. The plugin's Stop hook runs `dispatch record-stop` each time a worker ends a turn, which reports the time and the background tasks (Monitors, background shells and subagents) still running to the running dispatch over its socket. Dispatch stores the Stop and adds the turn to the session's log that rules read as `worker.turns` (see [rules](rules.md#reading-a-workers-turns)). With no dispatch running the report is dropped. A worker whose latest Stop is under 60 minutes old and lists running tasks is left alone. Any other idle worker gets one stall nudge per Stop, so a worker that stops again is reminded again. A worker with no record, or a record without the task list, is treated as stopped when the dispatcher first saw it idle. A stalled worker is never moved to Needs Human, because workers may legitimately run for hours. You get a notification instead, with no change to the ticket, on the 6th stall nudge with no status change and every 6th after, and once when a worker has not stopped again 60 minutes after a stall nudge. A ticket you move from Needs Human back to In Progress gets the resume nudge at the next resync, whatever the Stop record says, with no comment.
+While `dispatch run` is running, an idle In Progress worker is not nudged to keep going. An idle worker is either waiting on you or stopped early, and the workspace label tells you which to look at ([Worker states](worker-states.md) lists every state, its emoji, and what dispatch does in it). The plugin's Stop hook runs `dispatch record-stop` each time a worker ends a turn, which reports the time and the background tasks (Monitors, background shells and subagents) still running to the running dispatch over its socket. Dispatch stores the Stop and adds the turn to the session's log that rules read as `worker.turns` (see [rules](rules.md#reading-a-workers-turns)). With no dispatch running the report is dropped. Its Notification and UserPromptSubmit hooks run `dispatch wake`, which asks the running loop to read herdr again and run a cycle, so the label follows a prompt within seconds and an idle worker about a minute after its turn ends. A ticket you move from Needs Human back to In Progress gets the resume nudge at the next resync, whatever the Stop record says, with no comment.
 
 An In Review ticket whose worker is idle gets the PR nudge when its PR has a failed check, changes requested on its current head or a merge conflict. A request on a commit the worker has since pushed past, or one made while a check on the head is still running (a review bot re-reviewing), does not nudge or escalate. The nudge names the problem and tells the worker to handle it as its build skill's step 7 says. A worker that is gone is relaunched on its existing tree, then nudged once a later read shows it idle. After `nudge_limit` PR nudges with no push, the ticket goes to Needs Human with one comment, and a push that moves the PR head resets the count. The dispatcher reads PRs through `gh`, so it must be authenticated.
 
 An idle In Review worker also gets the activity nudge when its PR gains a review, a conversation comment or a comment on an open review thread newer than the newest one dispatch has put to it. This covers a review with only a written body, which opens no thread and sets no `reviewDecision`, so none of the reasons above catches it. An approval with no body, a dismissal and a draft review don't count. An open review thread is not nudged about on every cycle, only when it gets a new comment, and it still keeps the PR from being ready. The nudge names the review or comment and fires once per new item. A worker that is busy gets it once it is idle. A PR with no worker is relaunched only for a comment on an open review thread, and that relaunch does not count toward `nudge_limit`.
 
-The activity nudge counts toward neither the stall nor the PR limit, and it goes ahead of the ready notification and auto-merge, so a review nobody has read is never merged past. A PR that needs work gets the PR nudge first, and the activity nudge follows once those problems clear. When a ticket enters In Review, its worker is nudged about any review or comment already on the PR. dispatch can't tell your reply on the PR from the worker's own, so a worker's reply draws one more nudge, which tells it to say nothing if there is nothing to act on.
+The activity nudge doesn't count toward the PR limit, and it goes ahead of the ready notification and auto-merge, so a review nobody has read is never merged past. A PR that needs work gets the PR nudge first, and the activity nudge follows once those problems clear. When a ticket enters In Review, its worker is nudged about any review or comment already on the PR. dispatch can't tell your reply on the PR from the worker's own, so a worker's reply draws one more nudge, which tells it to say nothing if there is nothing to act on.
 
-A worker blocked on a question (AskUserQuestion), on an In Progress or In Review ticket, fires a notification (a macOS notification through `osascript` on macOS, a herdr notification through `herdr notification show` elsewhere) on its first blocked cycle and again every `blocked_renotify_minutes` minutes (default 15) while it stays blocked. The dispatcher never answers the question and never sets Needs Human for it. A ticket entering Needs Human fires one notification, a parent included.
+A worker blocked on a question popup (AskUserQuestion), on an In Progress or In Review ticket, fires a notification (a macOS notification through `osascript` on macOS, a herdr notification through `herdr notification show` elsewhere) on its first blocked cycle and again every `blocked_renotify_minutes` minutes (default 15) while it stays blocked. The dispatcher never answers the question and never sets Needs Human for it. A ticket entering Needs Human fires one notification, a parent included.
 
 A PR is ready for review when its ticket is In Review, its worker is idle, every check has finished and passed (a PR with no checks counts as passed), no review thread is unresolved, no reviewer's latest review requests changes on the head, and GitHub reports the PR as mergeable. A check still running, such as CodeRabbit's while its review is in progress, or a merge state GitHub has not computed yet, keeps the PR from being ready. The dispatcher fires one notification naming the ticket and its PR, once per PR head commit. A push that leaves the PR ready again notifies again, and no cycle in between repeats it.
 
@@ -129,16 +129,18 @@ Without it, a session that skips permission prompts holds each message behind an
 
 ## Workspace labels
 
-After every cycle, each worker's herdr workspace is labeled `<emoji> <ticket>`.
+After every cycle, each worker's herdr workspace is labeled `<emoji> <ticket>`, and the emoji says who the ticket is waiting on.
 
 | Emoji | Meaning |
 |---|---|
-| 🟢 | In Progress |
-| 🟡 | In Review, PR not ready |
-| 👀 | In Review, ready for review (the same condition as the notification) |
-| 💤 | Design or review worker idle In Progress for an hour. It is never nudged, so look at it. Goes back to 🟢 when it works again |
-| 🔴 | Needs Human |
+| 🟢 | The worker is busy, or dispatch just nudged it |
+| 🟡 | In Review, the worker is idle, gone or unconfirmed, the PR isn't ready and its checks are still running |
+| 👀 | In Review, ready for review (the notification also needs an idle worker) |
+| 💤 | The worker is idle with nothing running and nothing else pending. It needs you. Goes back to 🟢 within seconds of you typing into it |
+| 🔴 | Needs Human, or the worker is blocked on a question popup |
 | ⏸️ | Paused (Backlog or Todo) with the tree kept and a workspace still open |
+
+[Worker states](worker-states.md) lists every combination of ticket status, worker, background work and PR with its emoji and what dispatch does.
 
 A workspace is renamed only when its label differs from the one its ticket's status calls for. The dispatcher finds a worker by its tree path, so a renamed workspace is still found.
 
@@ -146,7 +148,7 @@ A workspace is renamed only when its label differs from the one its ticket's sta
 
 A feature that needs a design goes through four steps, and you decide two of them.
 
-1. **Design.** A ticket labeled `design` (with the `ai` and repo labels) waits in Backlog. Move it to In Progress and the next resync launches a worker typed `/dispatch:design <ticket>` on `[rules].design_model` (`dispatch rules init` writes `opus`), where builds use `[rules].worker_model`. The worker designs with you and saves the blueprint as a Linear document on the feature ticket. It is never nudged about a stall, a comment or a PR, never escalated, and stopped only when you move the ticket out of In Progress, because a design waiting on you is normal. It holds a tree, so it counts toward `max_in_progress`.
+1. **Design.** A ticket labeled `design` (with the `ai` and repo labels) waits in Backlog. Move it to In Progress and the next resync launches a worker typed `/dispatch:design <ticket>` on `[rules].design_model` (`dispatch rules init` writes `opus`), where builds use `[rules].worker_model`. The worker designs with you and saves the blueprint as a Linear document on the feature ticket. It is never nudged about a comment or a PR, never escalated, and stopped only when you move the ticket out of In Progress, because a design waiting on you is normal. It holds a tree, so it counts toward `max_in_progress`.
 2. **Review, or not.** At the end the design worker asks whether the design gets a review. Choosing review files a `design-review` child of the feature ticket, moves it to In Progress and runs `dispatch tick`. The loop then launches a worker typed `/dispatch:design-review <ticket>` on `design_model`. It reviews the blueprint with you in its window, audits it against the repo's ADRs, then runs `dispatch:breakdown`. A review that is still failing after 5 rounds comments its blockers, moves to Needs Human and files nothing. Like a design worker it holds a tree, counts toward `max_in_progress` and is never nudged. It ends Done whether you start the work or hold it, and the next resync returns its tree like a build's. Choosing no review makes the design worker break the design down itself. A design that ends with nothing filed leaves its feature ticket in Backlog, so no new design worker starts.
 3. **Break down.** `dispatch:breakdown` sizes the design. A design that fits one PR gets one build ticket, and a larger one gets one per piece. Each is a Todo child of the feature ticket with the `ai` and repo labels, blocked by the first piece and by the pieces it builds on, and its body cites the blueprint instead of copying it. A rerun files no second ticket for a piece. You can ask any session or worker to break down a design or a ticket. A worker breaking down its own ticket keeps the first piece and its branch, and files the other pieces as new tickets blocked by it.
 4. **Start or hold.** Whichever step files the tickets asks whether to start the work now or hold it. The feature ticket keeps `design` until the work starts, and the dispatcher never promotes the children of a `design` parent, so nothing starts early. Starting removes `design` from an In Progress feature ticket. It is then an ordinary [parent](#parent-tickets), whose first piece is promoted at the next resync. Held work starts when you tell any session "start ENG-N's work".
@@ -178,7 +180,7 @@ A `design` ticket is torn down and paused like a build, since its design worker 
 `dispatch run` prints a start line, then one line when an action starts and one when it ends, and a resync line after each resync. They read like this:
 
 ```
-16:05:07 start: 12 tracked tickets, 28 rules, ledger 31 receipts from events-20261015T160507Z.jsonl
+16:05:07 start: 12 tracked tickets, 25 rules, ledger 31 receipts from events-20261015T160507Z.jsonl
 16:05:08 launch ENG-9 (launch-worker)
 16:05:31 launch ENG-9 ok: workspace w3
 16:05:32 launch ENG-4 (launch-worker)
@@ -264,7 +266,7 @@ To type into a worker yourself:
 dispatch tell ENG-228 "use the v2 endpoint"
 ```
 
-It needs the running loop, and exits 3 with `dispatch: not running` without one. It fails when the ticket's worker is blocked on a question or absent.
+It needs the running loop, and exits 3 with `dispatch: not running` without one. It fails when the ticket's worker is blocked on a question popup or absent.
 
 ## Troubleshooting
 

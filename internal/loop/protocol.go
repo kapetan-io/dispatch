@@ -14,6 +14,9 @@ const (
 	// OpWatch and OpUnwatch add or remove a Claude Code session on a ticket's followers.
 	OpWatch   = "watch"
 	OpUnwatch = "unwatch"
+	// OpWake reads herdr and the pools again and runs a cycle, without a resync, and
+	// answers at once. A hook asks for it, so it must not retry what failed or wait.
+	OpWake = "wake"
 )
 
 // Exit codes a client reports for a response.

@@ -97,7 +97,7 @@ scenario(rules, "auto-merge is not held back by a ticket comment", s => {
 scenario(rules, "auto-merge leaves a ticket not in review", s => {
   s.config({ repos: { dispatch: { autoMerge: true } } });
   s.given(ticket("ENG-1", { ...review, status: "in_progress" }), worker("ENG-1", "idle"), pr("ENG-1", approved));
-  s.expect([["nudge-stall", "herdr.nudge", "ENG-1"]]);
+  s.expect([]);
 });
 
 scenario(rules, "auto-merge leaves a design ticket", s => {

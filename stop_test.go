@@ -2,7 +2,6 @@ package dispatch_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -55,60 +54,12 @@ func (h *harness) stopInput(session, ticket, tasks string) string {
 	return input + "}"
 }
 
-func TestTickLeavesAWorkerWaitingOnBackgroundTasksAlone(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "done")
-	h.recordStop("ENG-1", runningTasks)
-
-	for range 3 {
-		h.advance(5 * time.Minute)
-		h.tick()
-	}
-	plan, err := h.run("plan")
-	require.NoError(t, err)
-
-	assert.NotRegexp(t, `(?m)^act\s`, plan)
-	assert.Empty(t, h.prompts())
-	assert.Empty(t, h.linear.mutations())
-	assert.Empty(t, h.notifications())
-}
-
-func TestTickNudgesAWorkerOnceForEachStopWithNoRunningTasks(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+// failingPR puts ENG-1 In Review with an idle worker and a PR whose check failed.
+func (h *harness) failingPR() {
+	h.t.Helper()
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 	h.worker("ENG-1", "idle")
-	h.recordStop("ENG-1", noTasks)
-
-	h.tick()
-	assert.Equal(t, []string{stallPrompt}, h.prompts())
-	h.advance(5 * time.Minute)
-	h.tick()
-	h.tick()
-	assert.Len(t, h.prompts(), 1)
-
-	// A newer Stop gets its own nudge.
-	h.advance(5 * time.Minute)
-	h.recordStop("ENG-1", noTasks)
-	h.tick()
-	h.tick()
-	assert.Equal(t, []string{stallPrompt, stallPrompt}, h.prompts())
-}
-
-func TestTickNudgesAWorkerWhoseStopRanOutOfBusyTime(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-	h.recordStop("ENG-1", runningTasks)
-
-	h.advance(59 * time.Minute)
-	h.tick()
-	assert.Empty(t, h.prompts())
-
-	h.advance(2 * time.Minute)
-	h.tick()
-	h.tick()
-	assert.Equal(t, []string{stallPrompt}, h.prompts())
+	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 }
 
 func TestTickNudgesAgainAtTheNextResyncWhenTheWorkerLeftNoStopRecord(t *testing.T) {
@@ -121,11 +72,13 @@ func TestTickNudgesAgainAtTheNextResyncWhenTheWorkerLeftNoStopRecord(t *testing.
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
-			h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+			h.config("[rules]\nnudge_limit = 10\n")
+			h.tickets(ticket("ENG-1", "In Review", "dispatch"))
 			h.worker("ENG-1", "idle")
 			test.stop(h)
+			reviewFailsAfterEntry(h, prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 
-			h.restart()
+			h.tick()
 			assert.Len(t, h.prompts(), 1)
 
 			// A nudged worker shows as working until the next resync, so a resync that
@@ -147,215 +100,10 @@ func TestTickNudgesAgainAtTheNextResyncWhenTheWorkerLeftNoStopRecord(t *testing.
 	}
 }
 
-func TestTickNeverEscalatesAnInProgressWorkerForStalling(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-
-	for range 8 {
-		h.advance(5 * time.Minute)
-		h.recordStop("ENG-1", noTasks)
-		h.tick()
-	}
-
-	assert.Len(t, h.prompts(), 8)
-	assert.Empty(t, h.linear.mutations())
-}
-
-func TestTickIgnoresNudgeLimitForInProgressTickets(t *testing.T) {
-	h := newHarness(t)
-	h.config("[rules]\nnudge_limit = 1\n")
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-
-	for range 3 {
-		h.advance(5 * time.Minute)
-		h.recordStop("ENG-1", noTasks)
-		h.tick()
-	}
-
-	assert.Len(t, h.prompts(), 3)
-	assert.Empty(t, h.linear.mutations())
-}
-
-func TestTickNotifiesOnEverySixthStallNudge(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "working")
-	h.tick()
-	h.setWorkerStatus("ENG-1", "idle")
-
-	for i := 1; i <= 12; i++ {
-		h.advance(5 * time.Minute)
-		h.recordStop("ENG-1", noTasks)
-		h.tick()
-		assert.Len(t, h.prompts(), i)
-		assert.Len(t, h.notifications(), i/6)
-	}
-
-	assert.Equal(t, []string{
-		"ENG-1 has had 6 stall nudges with no status change",
-		"ENG-1 has had 12 stall nudges with no status change",
-	}, h.notifications())
-	assert.Empty(t, h.linear.mutations())
-}
-
-func TestTickRestartsTheStallNotificationCountWhenStatusChanges(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-	for range 5 {
-		h.advance(5 * time.Minute)
-		h.recordStop("ENG-1", noTasks)
-		h.tick()
-	}
-	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
-	h.tick()
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-
-	for range 5 {
-		h.advance(5 * time.Minute)
-		h.recordStop("ENG-1", noTasks)
-		h.tick()
-	}
-
-	assert.Empty(t, h.notifications())
-}
-
-func TestTickDoesNotNotifyAboutANudgeHerdrRefused(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-	for range 5 {
-		h.advance(5 * time.Minute)
-		h.recordStop("ENG-1", noTasks)
-		h.tick()
-	}
-	h.blockAfterSnapshot("ENG-1")
-	h.advance(5 * time.Minute)
-	h.recordStop("ENG-1", noTasks)
-
-	_, err := h.run("tick")
-
-	require.ErrorContains(t, err, "ENG-1 nudge failed: blocked")
-	assert.Empty(t, h.notifications())
-}
-
-func TestTickNotifiesOnceWhenAWorkerIgnoresItsNudgeForAnHour(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-	h.recordStop("ENG-1", noTasks)
-	// The nudge has to come after the Stop it answers, as it does outside a test.
-	h.advance(time.Second)
-	h.tick()
-	assert.Len(t, h.prompts(), 1)
-
-	h.advance(59 * time.Minute)
-	h.tick()
-	assert.Empty(t, h.notifications())
-
-	h.advance(2 * time.Minute)
-	h.tick()
-	assert.Equal(t, []string{"ENG-1: the worker hasn't responded to its nudge in an hour"}, h.notifications())
-
-	h.advance(time.Hour)
-	h.tick()
-	assert.Len(t, h.notifications(), 1)
-	assert.Empty(t, h.linear.mutations())
-
-	// The next nudged Stop can raise it once more.
-	h.recordStop("ENG-1", noTasks)
-	h.advance(time.Second)
-	h.tick()
-	assert.Len(t, h.prompts(), 2)
-	h.advance(61 * time.Minute)
-	h.tick()
-	assert.Len(t, h.notifications(), 2)
-}
-
-func TestTickRetriesTheSixthStallNotificationThatFailed(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "working")
-	h.tick()
-	h.setWorkerStatus("ENG-1", "idle")
-	for range 5 {
-		h.advance(5 * time.Minute)
-		h.recordStop("ENG-1", noTasks)
-		h.tick()
-	}
-	h.advance(5 * time.Minute)
-	h.recordStop("ENG-1", noTasks)
-	h.tools.Alerts.Fail(errors.New("exit status 1"))
-
-	_, err := h.run("tick")
-	require.ErrorContains(t, err, "ENG-1 notify failed")
-	assert.Empty(t, h.notifications())
-
-	h.tools.Alerts.Fail(nil)
-	h.advance(5 * time.Minute)
-	assert.Equal(t, []string{"ENG-1 has had 6 stall nudges with no status change"}, h.notifications())
-
-	h.advance(5 * time.Minute)
-	h.tick()
-	assert.Len(t, h.notifications(), 1)
-}
-
-func TestTickRetriesTheUnresponsiveWorkerNotificationThatFailed(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-	h.recordStop("ENG-1", noTasks)
-	h.advance(time.Second)
-	h.tick()
-	h.tools.Alerts.Fail(errors.New("exit status 1"))
-	h.advance(61 * time.Minute)
-
-	_, err := h.run("tick")
-	require.ErrorContains(t, err, "ENG-1 notify failed")
-	assert.Empty(t, h.notifications())
-
-	h.tools.Alerts.Fail(nil)
-	h.tick()
-
-	assert.Equal(t, []string{"ENG-1: the worker hasn't responded to its nudge in an hour"}, h.notifications())
-}
-
-func TestTickStaysQuietWhenANewerStopIsBusyAfterAnIgnoredNudge(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-	h.recordStop("ENG-1", noTasks)
-	h.advance(time.Second)
-	h.tick()
-	h.advance(30 * time.Minute)
-	h.recordStop("ENG-1", runningTasks)
-
-	h.advance(40 * time.Minute)
-	h.tick()
-
-	assert.Len(t, h.prompts(), 1)
-	assert.Empty(t, h.notifications())
-}
-
-func TestTickLeavesAWorkerAloneWhenAnotherSessionInItsTreeStops(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-	h.recordStopFrom("worker", "ENG-1", runningTasks)
-	h.advance(5 * time.Minute)
-
-	h.recordStopFrom("stranger", "ENG-1", noTasks)
-	h.tick()
-
-	assert.Empty(t, h.prompts())
-}
-
 func TestTickNudgesAnIdleWorkerAfterAnotherSessionStopsBusyInItsTree(t *testing.T) {
 	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
+	h.config("[rules]\nnudge_limit = 10\n")
+	h.failingPR()
 	h.recordStopFrom("worker", "ENG-1", noTasks)
 	h.tick()
 	assert.Len(t, h.prompts(), 1)
@@ -367,35 +115,6 @@ func TestTickNudgesAnIdleWorkerAfterAnotherSessionStopsBusyInItsTree(t *testing.
 	h.tick()
 
 	assert.Len(t, h.prompts(), 2)
-}
-
-func TestTickDoesNotNudgeAgainWhenAnotherSessionStopsIdleInTheTree(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-	h.recordStopFrom("worker", "ENG-1", noTasks)
-	h.tick()
-	assert.Len(t, h.prompts(), 1)
-
-	h.advance(5 * time.Minute)
-	h.recordStopFrom("stranger", "ENG-1", noTasks)
-	h.tick()
-
-	assert.Len(t, h.prompts(), 1)
-}
-
-func TestTickNudgesARelaunchedWorkerWhoseOldSessionWasBusy(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.worker("ENG-1", "idle")
-	h.recordStopFrom("worker", "ENG-1", runningTasks)
-	h.advance(5 * time.Minute)
-
-	h.setWorkerSession("ENG-1", "relaunched")
-	h.recordStopFrom("relaunched", "ENG-1", noTasks)
-	h.tick()
-
-	assert.Len(t, h.prompts(), 1)
 }
 
 func TestTickSendsTheResumeNudgeWhateverTheStopRecordSays(t *testing.T) {

@@ -93,6 +93,9 @@ func (l *Loop) onRequest(r request) error {
 			return err
 		}
 		l.waiters = append(l.waiters, &waiter{ticket: strings.ToUpper(r.Ticket), reply: r.reply, seen: seen})
+	case OpWake:
+		l.readAgain(world.FromLocal)
+		r.reply <- Response{}
 	case OpTell:
 		l.readAgain(world.FromLocal)
 		l.afterRead = append(l.afterRead, func() error { return l.tell(r) })
