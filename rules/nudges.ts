@@ -1,6 +1,6 @@
 import { whenever, minutes } from "dispatch";
 import { nudgeable, resumeOwed, heard, prNudges, escalate, stoppedSinceLastNudge, nudgeLimit } from "./shared";
-import { STALL_NUDGE, RESUME_NUDGE, ACTIVITY_NUDGE, PR_NUDGE } from "./texts";
+import { RESUME_NUDGE, ACTIVITY_NUDGE, PR_NUDGE } from "./texts";
 
 // Each nudge's once key names what it told the worker, in the source's own time, such
 // as the PR activity time or the Stop it answered. A nudge is owed while there's something
@@ -15,21 +15,6 @@ whenever({
   if:   (t, ctx) => nudgeable(t) && ctx.herdr.worker(t).state === "idle" && resumeOwed(t, ctx)
            && stoppedSinceLastNudge(t, ctx),
   then: (t, ctx) => ctx.herdr.queueNudge(t, RESUME_NUDGE(t), { once: ["resume", t.statusSince] }),
-});
-
-// Once per Stop. A Stop with background tasks still running counts as busy for an
-// hour after it, and the next cycle after that hour sees it end. A worker with no Stop
-// record has a lastStop from when dispatch first saw it idle.
-whenever({
-  name: "nudge-stall",
-  each: "linear.ticket",
-  if:   (t, ctx) => {
-    const w = ctx.herdr.worker(t);
-    return t.status === "in_progress" && nudgeable(t) && w.state === "idle" && !w.busy
-        && w.lastStop !== undefined && !resumeOwed(t, ctx)
-        && stoppedSinceLastNudge(t, ctx);
-  },
-  then: (t, ctx) => ctx.herdr.queueNudge(t, STALL_NUDGE(t), { once: ["stall", ctx.herdr.worker(t).lastStop!.at] }),
 });
 
 // Once per activity time, a GitHub time compared with GitHub times.

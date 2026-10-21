@@ -1,6 +1,6 @@
-import { whenever, known, minutes, hours } from "dispatch";
-import type { Ctx, PR, Ticket } from "dispatch";
-import { nudgeable, skill, heard, sent, STALL_NOTIFY_EVERY } from "./shared";
+import { whenever, known, minutes } from "dispatch";
+import type { Ctx, PR } from "dispatch";
+import { nudgeable, skill, heard } from "./shared";
 
 // Notifications go to macOS and to every session following the ticket. A design
 // worker waits on you by design, so its ticket doesn't notify. A review does.
@@ -50,35 +50,6 @@ whenever({
            && ctx.herdr.worker(pr.ticket).state === "idle" && heard(pr.ticket, "activity", pr.lastActivity, ctx)
            && !(pr.approved && pr.autoMerge && !pr.draft),
   then: (pr, ctx) => ctx.notify.queueSend(pr.ticket, readyNotice(pr).text, { once: [readyNotice(pr).topic, pr.head] }),
-});
-
-// Its own rule rather than a step after the stall nudge, so a failed notification
-// is retried while the count still stands.
-const stallNudges = (t: Ticket, ctx: Ctx) => ctx.ledger.receipts(t, { kind: "nudge", topic: "stall" })
-  .filter(r => sent(r) && r.started >= t.statusSince).length;
-whenever({
-  name: "notify-stall-count",
-  each: "linear.ticket",
-  if:   (t, ctx) => t.status === "in_progress" && stallNudges(t, ctx) > 0 && stallNudges(t, ctx) % STALL_NOTIFY_EVERY === 0,
-  then: (t, ctx) => ctx.notify.queueSend(t, `${t.id} has had ${stallNudges(t, ctx)} stall nudges with no status change`,
-           { once: ["stall-count", t.statusSince, stallNudges(t, ctx)] }),
-});
-
-// A stall nudge has gone unanswered for an hour. It was the last nudge, and the worker
-// hasn't stopped since. A worker with no lastStop yet holds nothing back and never throws.
-const lastNudge = (t: Ticket, ctx: Ctx) => ctx.ledger.receipts(t, { kind: "nudge" }).find(sent);
-whenever({
-  name: "notify-unresponsive",
-  each: "linear.ticket",
-  if:   (t, ctx) => {
-    const w = ctx.herdr.worker(t);
-    const n = lastNudge(t, ctx);
-    return t.status === "in_progress" && w.state === "idle" && !w.busy
-        && n?.once[0] === "stall" && (w.lastStop === undefined || w.lastStop.at < n.started)
-        && ctx.now >= n.started + hours(1);
-  },
-  then: (t, ctx) => ctx.notify.queueSend(t, `${t.id}: the worker hasn't responded to its nudge in an hour`,
-           { once: ["unresponsive", lastNudge(t, ctx)!.once[1]] }),
 });
 
 // Once per head. The merge's receipt says it was refused, and a push moves the head.

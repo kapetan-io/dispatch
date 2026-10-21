@@ -62,7 +62,7 @@ func TestRulesCheckPrintsWhatEachRuleWantsNow(t *testing.T) {
 	require.NoError(t, err)
 	assert.Regexp(t, `linear\.ticket +2 tracked tickets \(assigned to .*; teams ENG; statuses Todo, In Progress, In Review, Needs Human\)`, out)
 	assert.Regexp(t, `launch-worker +whenever +linear\.ticket +wants launch now for ENG-1\n`, out)
-	assert.Regexp(t, `nudge-stall +whenever +linear\.ticket +wants nothing now\n`, out)
+	assert.Regexp(t, `nudge-resume +whenever +linear\.ticket +wants nothing now\n`, out)
 	assert.Contains(t, out, "herdr.worker")
 	assert.Contains(t, out, "treehouse.tree")
 }
@@ -79,9 +79,9 @@ func TestRulesCheckListsEveryShippedRule(t *testing.T) {
 		"launch-worker", "relaunch-for-pr", "stop-paused-worker", "teardown-clean-tree", "stop-worker-on-kept-tree",
 		"comment-kept-tree", "close-parent", "promote-child", "escalate-launch-failures", "escalate-relaunch-limit",
 		"escalate-truncated-labels", "escalate-missing-repo", "escalate-abandoned-blocker", "escalate-abandoned-blocker-child",
-		"note-blocker-hold", "retry-escalation-comment", "nudge-resume", "nudge-stall", "nudge-pr-activity",
-		"nudge-pr-needs-work", "notify-needs-human", "notify-blocked", "notify-ready-for-review", "notify-stall-count",
-		"notify-unresponsive", "notify-merge-failed", "auto-merge",
+		"note-blocker-hold", "retry-escalation-comment", "nudge-resume", "nudge-pr-activity",
+		"nudge-pr-needs-work", "notify-needs-human", "notify-blocked", "notify-ready-for-review",
+		"notify-merge-failed", "auto-merge",
 	} {
 		assert.Regexp(t, `(?m)^`+name+` +whenever `, out)
 	}

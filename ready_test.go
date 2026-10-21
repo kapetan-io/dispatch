@@ -152,7 +152,7 @@ func TestTickLabelsEachWorkspaceWithItsStatusEmoji(t *testing.T) {
 	}{
 		{name: "InProgress", status: "In Progress", agent: "working", label: "🟢 ENG-1"},
 		{name: "InReviewPRNotReady", status: "In Review", agent: "idle", pr: &prState{head: "a1", checks: "PENDING", mergeable: "MERGEABLE"}, label: "🟡 ENG-1"},
-		{name: "InReviewWorkerBusy", status: "In Review", agent: "working", label: "🟡 ENG-1"},
+		{name: "InReviewWorkerBusy", status: "In Review", agent: "working", label: "🟢 ENG-1"},
 		{name: "InReviewReady", status: "In Review", agent: "idle", pr: new(cleanPR("a1")), label: "👀 ENG-1"},
 		{name: "NeedsHuman", status: "Needs Human", agent: "idle", label: "🔴 ENG-1"},
 	} {
@@ -197,6 +197,8 @@ func TestTickRelabelsWhenTheStatusChanges(t *testing.T) {
 	require.NoError(t, err)
 
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.setWorkerStatus("ENG-1", "idle")
+	h.pr("ENG-1", prState{head: "a1", checks: "PENDING", mergeable: "MERGEABLE"})
 	_, err = h.run("tick")
 	require.NoError(t, err)
 
@@ -648,13 +650,14 @@ func TestTickDropsTheReadyLabelWhenThePRIsClosed(t *testing.T) {
 	require.NoError(t, err)
 
 	// The PR is closed without merging, so the branch has no open PR.
+	h.recordStop("ENG-1", noTasks)
 	h.closePR("ENG-1")
 	for range 2 {
 		_, err = h.run("tick")
 		require.NoError(t, err)
 	}
 
-	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1", "w-ENG-1|🟡 ENG-1"}, h.renames())
+	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1", "w-ENG-1|💤 ENG-1"}, h.renames())
 }
 
 func TestTickNamesAWorkersTabByTicketAndTitle(t *testing.T) {

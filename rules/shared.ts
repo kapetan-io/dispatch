@@ -7,9 +7,6 @@ import type { Ticket, Ctx, Receipt, Seen, Once } from "dispatch";
 export const launchFailureLimit = (ctx: Ctx): number => ctx.config.rules.launch_failure_limit;
 export const nudgeLimit = (ctx: Ctx): number => ctx.config.rules.nudge_limit;
 
-// One notice for every this many stall nudges with no status change.
-export const STALL_NOTIFY_EVERY = 6;
-
 export const isDesign = (t: Ticket) => t.hasLabel("design") || t.hasLabel("design-review");
 
 // The skill a ticket's worker runs. A ticket carrying both design labels is a review.
