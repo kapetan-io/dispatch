@@ -79,7 +79,7 @@ type World struct {
 	PoolErrs map[string]error
 	// Workers maps a ticket identifier to what the lookup found.
 	Workers map[string]Worker
-	// Stops maps an In Progress or In Review ticket identifier to its idle worker's latest Stop.
+	// Stops maps an In Progress ticket identifier to its idle worker's latest Stop.
 	// Tickets without a record are absent.
 	Stops map[string]stops.Record
 	// Sessions maps an In Progress or In Review ticket identifier to the log of its
@@ -240,7 +240,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 				wk.UnconfirmedSince = at.UnixMilli()
 			}
 			w.Workers[t.Identifier] = wk
-			if wk.State == Idle && (t.Status == scope.Statuses.InProgress || t.Status == scope.Statuses.InReview) {
+			if wk.State == Idle && t.Status == scope.Statuses.InProgress {
 				if rec, ok := stops.Read(src.StateDir, wk.TreePath, wk.Session); ok {
 					w.Stops[t.Identifier] = rec
 				}
@@ -412,7 +412,7 @@ func (s Scope) ReadsPR(t linear.Ticket, state WorkerState) bool {
 // kickoffRan reports whether the worker's Claude ended a turn after at, which proves its
 // kickoff ran even if the launch that marked it was killed before it said so. A Stop from
 // another session in the tree proves nothing. With no session known it falls back to the
-// newest Stop of any session, as the nudge rules do. A Stop record that exists but can't
+// newest Stop of any session, as `stoppedSinceLastNudge` does. A Stop record that exists but can't
 // be read is unknown, so it counts as ran and the worker is not closed.
 func kickoffRan(stateDir string, wk Worker, at time.Time) bool {
 	if stops.Unreadable(stateDir, wk.TreePath, wk.Session) {

@@ -10,17 +10,18 @@ import (
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
+	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
 // Emoji at the front of a worker's workspace label, by who the ticket is waiting on.
 const (
-	emojiBusy       = "🟢"
-	emojiChecks     = "🟡"
-	emojiReady      = "👀"
-	emojiNeedsHuman = "🔴"
-	emojiPaused     = "⏸️"
-	emojiIdle       = "💤"
+	emojiBusy           = "🟢"
+	emojiChecksRunning  = "🟡"
+	emojiReadyForReview = "👀"
+	emojiNeedsHuman     = "🔴"
+	emojiPaused         = "⏸️"
+	emojiWaiting        = "💤"
 )
 
 type rename struct{ id, label string }
@@ -67,16 +68,16 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 		}
 		switch t.Status {
 		case cfg.InProgress:
-			add(t, w, l.emoji(w, pullrequest.PullRequest{}, t))
+			add(t, w, l.workspaceEmoji(w, pullrequest.PullRequest{}))
 		case cfg.InReview:
 			pr, ok := wd.PRs[t.Identifier]
 			// An unreadable PR must not change a label that came from reading it.
-			if !ok && wd.PRReadFailed[t.Identifier] && slices.ContainsFunc([]string{emojiReady, emojiChecks, emojiIdle}, func(e string) bool {
+			if !ok && wd.PRReadFailed[t.Identifier] && slices.ContainsFunc([]string{emojiReadyForReview, emojiChecksRunning, emojiWaiting, emojiBusy}, func(e string) bool {
 				return strings.HasPrefix(current[w.WorkspaceID], e)
 			}) {
 				continue
 			}
-			add(t, w, l.emoji(w, pr, t))
+			add(t, w, l.workspaceEmoji(w, pr))
 		case cfg.NeedsHuman:
 			add(t, w, emojiNeedsHuman)
 		}
@@ -101,10 +102,11 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 	return workspaces, tabs
 }
 
-// emoji is the label for a ticket in progress or in review. A worker with no Stop
-// record, or one whose Stop did not say what was running, may still be busy, so it
-// stays green. A ready PR shows 👀 whatever the worker is doing, as the notice does.
-func (l *Loop) emoji(w world.Worker, pr pullrequest.PullRequest, t linear.Ticket) string {
+// workspaceEmoji is the label for a ticket in progress or in review. A worker with no
+// Stop record, or one whose Stop did not list its tasks, may still be busy, so it stays
+// green. A Stop that lists a running task keeps it green even while the PR's checks run.
+// A ready PR shows 👀 once the worker is idle or gone.
+func (l *Loop) workspaceEmoji(w world.Worker, pr pullrequest.PullRequest) string {
 	if w.State == world.Blocked {
 		return emojiNeedsHuman
 	}
@@ -113,24 +115,24 @@ func (l *Loop) emoji(w world.Worker, pr pullrequest.PullRequest, t linear.Ticket
 	}
 	idle := w.State == world.Idle
 	if pr.Ready && (idle || w.State == world.NoWorker) {
-		return emojiReady
+		return emojiReadyForReview
 	}
 	if !idle {
 		if w.State == world.NoWorker && pr.ChecksRunning {
-			return emojiChecks
+			return emojiChecksRunning
 		}
 		return emojiBusy
 	}
-	stop, ok := l.wd.Stops[t.Identifier]
+	stop, ok := stops.Read(l.o.Sources.StateDir, w.TreePath, w.Session)
 	switch {
 	case ok && stop.Busy(l.clock.Now()):
 		return emojiBusy
 	case pr.ChecksRunning:
-		return emojiChecks
+		return emojiChecksRunning
 	case !ok || !stop.Reported:
 		return emojiBusy
 	}
-	return emojiIdle
+	return emojiWaiting
 }
 
 // renameWorkspaces fixes the labels that differ, off the loop goroutine. A failed

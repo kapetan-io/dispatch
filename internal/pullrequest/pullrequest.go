@@ -87,8 +87,7 @@ type PullRequest struct {
 	// merges cleanly. A running check, such as a bot review still in progress,
 	// or a merge state GitHub has not computed yet, is not ready.
 	Ready bool
-	// ChecksRunning means a check on the head has not finished. Nothing is asked of
-	// the worker or the user until it does.
+	// ChecksRunning means a check on the head has not finished.
 	ChecksRunning bool
 }
 

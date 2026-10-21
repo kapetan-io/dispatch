@@ -3,7 +3,7 @@ import { nudgeable, resumeOwed, heard, prNudges, escalate, stoppedSinceLastNudge
 import { RESUME_NUDGE, ACTIVITY_NUDGE, PR_NUDGE } from "./texts";
 
 // Each nudge's once key names what it told the worker, in the source's own time, such
-// as the PR activity time or the Stop it answered. A nudge is owed while there's something
+// as the PR activity time or the head commit. A nudge is owed while there's something
 // newer, so activity that arrives while the worker is stuck in a question dialog is still
 // owed when the dialog closes. No nudge of any kind goes out until the worker has stopped
 // since the last one (stoppedSinceLastNudge).

@@ -89,3 +89,36 @@ func TestWakeIgnoresASessionOutsideEveryRepo(t *testing.T) {
 	require.NoError(t, err)
 	assert.Never(t, func() bool { return len(h.renames()) > 1 }, 300*time.Millisecond, 10*time.Millisecond)
 }
+
+func TestWakeDoesNotRetryWhatFailedAtTheLastResync(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
+	h.worker("ENG-2", "working")
+	h.launchResult(`{"status":"pool_error","detail":"treehouse lease failed"}`)
+	_, err := h.run("tick")
+	require.Error(t, err)
+	require.Len(t, h.launches(), 1)
+	h.recordStop("ENG-2", noTasks)
+
+	_, err = h.wake(filepath.Join(h.dir, "trees", "ENG-2"))
+
+	require.NoError(t, err)
+	assert.Never(t, func() bool { return len(h.launches()) > 1 }, 300*time.Millisecond, 10*time.Millisecond)
+}
+
+func TestWakeKeepsANudgedWorkerGreenWhileHerdrStillSaysIdle(t *testing.T) {
+	h := newHarness(t)
+	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
+	h.worker("ENG-1", "idle")
+	h.recordStop("ENG-1", noTasks)
+	reviewFailsAfterEntry(h, prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
+	require.NoError(t, reviewTick(t, h))
+	require.Equal(t, []string{prPrompt("a failed check")}, h.prompts())
+	renames := h.renames()
+
+	_, err := h.wake(filepath.Join(h.dir, "trees", "ENG-1"))
+
+	require.NoError(t, err)
+	assert.Never(t, func() bool { return len(h.prompts()) > 1 || len(h.renames()) > len(renames) }, 300*time.Millisecond, 10*time.Millisecond)
+	assert.Equal(t, "w-ENG-1|🟢 ENG-1", h.renames()[len(h.renames())-1])
+}

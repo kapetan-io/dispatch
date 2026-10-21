@@ -144,8 +144,8 @@ const usage = `usage: dispatch run
                turn and whether it still has background tasks running; does nothing outside a
                worktree of a repo listed under [repos]. The plugin's Stop hook runs it
   wake         read a Notification or UserPromptSubmit hook's JSON on stdin and ask the running loop
-               to run a cycle without waiting for it, so the worker's workspace label follows within
-               seconds. Does nothing outside a worktree of a repo listed under [repos] or when no
+               to read herdr again and run a cycle without waiting for it, so the worker's workspace
+               label follows within seconds. Does nothing outside a worktree of a repo listed under [repos] or when no
                loop runs. The plugin's Notification and UserPromptSubmit hooks run it
   watch        make this Claude Code session follow the ticket, so each notice dispatch sends about
                it is also sent to this session as a message. A session can follow several

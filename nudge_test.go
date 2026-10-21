@@ -792,7 +792,6 @@ func TestTickNeverSendsANudgeAttemptedBeforeACrash(t *testing.T) {
 			}
 
 			h.tick()
-			h.advance(time.Minute)
 			h.tick()
 
 			assert.Len(t, h.prompts(), test.prompts)

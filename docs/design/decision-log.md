@@ -84,9 +84,9 @@ Three kinds of ticket appear below. The **feature ticket** holds the blueprint a
    - For an existing service, the spec document holds the repo's current spec with the design's changes merged in, and `duh lint` runs on that whole file.
    - Linear can't edit an uploaded attachment, so anything a later step changes must be a document. Attachments are only for read-only material, such as grill experiments.
 9. **Workers may ask questions in the terminal.**
-   - Build workers ask in plain chat, like design and design-review workers (changed by ENG-465, 2026-10-21). The stall nudge used to read a plain-text question as the user's go-ahead, so build workers asked through AskUserQuestion to show as blocked in herdr. The stall nudge is gone, and an idle worker shows 💤. A popup a worker still opens is handled as before.
+   - Build workers ask in plain chat, like design and design-review workers. An idle worker shows 💤, and a popup still shows as blocked and 🔴 (changed by ENG-465, 2026-10-21).
    - herdr sees the question only when Claude runs without `--name`. A named session draws its name in a rule below the dialog, and herdr's Claude detector reads only the text after the last rule, so it reported the ENG-228 pilot worker as idle and a test session as done, never blocked. The launcher and the `claude` shim no longer pass `--name` (2026-10-08).
-   - Build workers load `dispatch:converse` at startup (ENG-302). Converse sets how a question is asked, which is plain chat unless the skill that started the session names another way. 
+   - Build workers load `dispatch:converse` at startup (ENG-302). Converse sets how a question is asked, which is plain chat unless the skill that started the session names another way.
    - When a worker blocks on a question, the dispatcher labels its workspace and notifies you, and notifies again if it stays unanswered. It never dismisses the dialog.
    - Workers write each answer down. Answers that change the design are appended to the blueprint's decision log with a `save_document` patch, never a full save, so parallel workers don't overwrite each other. Build workers re-read the blueprint at the same checkpoints where they re-read comments.
    - Needs Human stays for things you do outside the window, such as approving a design or settling a disputed human review on a PR.
@@ -152,8 +152,7 @@ herdr reports `done` for a worker waiting on Monitors or background shells, and 
 
 - **An idle In Progress worker is never moved to Needs Human for stalling.** Workers may run for hours. `nudge_limit` keeps its name and default and now caps only In Review PR nudges and relaunches of a gone In Review worker.
 - **The Stop hook is the busy signal.** Claude Code passes `background_tasks` to a Stop hook, and a worker only goes idle right after a Stop. `dispatch record-stop` stores the latest Stop per worker tree under the state directory, and does nothing outside a worktree of a configured repo. The record is keyed by the tree's resolved path, which is what the treehouse lease and herdr workspace already name. Any Claude session whose working directory is the tree fires the hook (a nested `claude -p`, a plugin eval), so each session gets its own record under the tree, and the tick reads the one whose id matches the `agent_session` herdr reports for the worker's pane. A relaunched worker has a new id, so it starts with no record. With no id from herdr, the tick falls back to the newest record of any session.
-- **Nudges follow Stops, not ticks.** (Stall nudge removed by ENG-465, 2026-10-21. The Stop record now decides the 💤 label.) A Stop listing running tasks counts as busy for 60 minutes, after which it counts as a Stop with no running tasks. A missing record, or one without `background_tasks`, leaves the label 🟢. The resume nudge ignores the record.
-- **The user sees it instead.** (Changed by ENG-465, 2026-10-21.) The notifications on every 6th stall nudge and on an unanswered one are gone with the nudge. An idle worker shows 💤.
+- **The Stop record decides the 💤 label.** A Stop listing running tasks counts as busy for 60 minutes, after which it counts as a Stop with no running tasks. A missing record, or one without `background_tasks`, leaves the label 🟢. The resume nudge ignores the record (ENG-465).
 
 ## Workspace emoji say who the ticket waits on (ENG-465, 2026-10-21)
 
@@ -225,7 +224,7 @@ The decisions above contradict or extend `blueprint.md` in these places.
 - Step 5 treats the children of a Canceled or Backlog feature ticket as paused.
 - Step 7 never promotes a `design` ticket, and never promotes a Todo child that still holds a lease. Today, pausing a child by moving it to Todo gets it promoted again in the same tick. (The lease half is applied, ENG-247. The `design` half waits for the grill and review skills.)
 - Parents notify on Needs Human like any other ticket, where `blueprint.md` skipped them. You decided this on 2026-10-09. (applied, ENG-247)
-- The label picks the kickoff and the nudge text. The kickoff differs by label. The review worker's stall nudge, since removed (ENG-465), never mentioned In Review or a PR.
+- The label picks the kickoff and the nudge text. The kickoff differs by label.
 - Notify you when a launch has waited on `pool_exhausted` for several ticks. Today that wait is silent.
 - The party and statuses tables gain the new writers. You approve a design by moving the review ticket to Done, the review worker creates build tickets, and an agent moves tickets when you tell it to. Done no longer means only "Merged".
 - Rewrite the worker contract without the old skill names, and fold the build stage above into it.

@@ -3,14 +3,11 @@ package dispatch
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
 )
@@ -27,8 +24,8 @@ type stopInput struct {
 }
 
 // recordStop runs as a Stop hook. It stores when the session ended its turn and
-// how many background tasks were still running, and adds the turn to the
-// session's log, for the rules to read. It
+// how many background tasks were still running, and adds the turn to the session's log,
+// for the nudge rules, the workspace label and the rules' turn log to read. It
 // succeeds silently everywhere else, because the hook runs in every Claude
 // session on the machine and a failure would show in all of them.
 func recordStop(ctx context.Context, opts Options) error {
@@ -56,34 +53,6 @@ func recordStop(ctx context.Context, opts Options) error {
 		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
 	}
 	return nil
-}
-
-// workerTree returns the managed worktree a worker runs in when dir is inside one. The
-// plugin's hooks run in every Claude session on the machine, so a session outside a pool
-// tree of a repo listed under [repos] gets false and the hook stays silent.
-func workerTree(ctx context.Context, opts Options, dir string) (string, bool) {
-	cfg, err := config.Load(opts.ConfigPath)
-	if errors.Is(err, fs.ErrNotExist) {
-		return "", false
-	}
-	if err != nil {
-		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
-		return "", false
-	}
-	tree, ok := worktreeRoot(ctx, dir)
-	if !ok {
-		return "", false
-	}
-	clone, ok := cloneRoot(ctx, dir)
-	// Workers run in treehouse worktrees, never in the clone itself, which
-	// is where the supervising session works.
-	if !ok || clone == tree {
-		return "", false
-	}
-	if _, _, managed := repoAt(ctx, cfg, dir); !managed {
-		return "", false
-	}
-	return tree, true
 }
 
 // worktreeRoot returns the top of the working tree containing dir.

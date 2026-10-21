@@ -54,27 +54,6 @@ func (h *harness) failingPR() {
 	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 }
 
-func TestTickNudgesAWorkerOnceForEachStopWithNoRunningTasks(t *testing.T) {
-	h := newHarness(t)
-	h.config("[rules]\nnudge_limit = 10\n")
-	h.failingPR()
-	h.recordStop("ENG-1", noTasks)
-
-	h.tick()
-	assert.Equal(t, []string{prPrompt("a failed check")}, h.prompts())
-	h.advance(5 * time.Minute)
-	h.tick()
-	h.tick()
-	assert.Len(t, h.prompts(), 1)
-
-	// A newer Stop gets its own nudge.
-	h.advance(5 * time.Minute)
-	h.recordStop("ENG-1", noTasks)
-	h.tick()
-	h.tick()
-	assert.Equal(t, []string{prPrompt("a failed check"), prPrompt("a failed check")}, h.prompts())
-}
-
 func TestTickNudgesAgainAtTheNextResyncWhenTheWorkerLeftNoStopRecord(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -128,21 +107,6 @@ func TestTickNudgesAnIdleWorkerAfterAnotherSessionStopsBusyInItsTree(t *testing.
 	h.tick()
 
 	assert.Len(t, h.prompts(), 2)
-}
-
-func TestTickDoesNotNudgeAgainWhenAnotherSessionStopsIdleInTheTree(t *testing.T) {
-	h := newHarness(t)
-	h.config("[rules]\nnudge_limit = 10\n")
-	h.failingPR()
-	h.recordStopFrom("worker", "ENG-1", noTasks)
-	h.tick()
-	assert.Len(t, h.prompts(), 1)
-
-	h.advance(5 * time.Minute)
-	h.recordStopFrom("stranger", "ENG-1", noTasks)
-	h.tick()
-
-	assert.Len(t, h.prompts(), 1)
 }
 
 func TestTickSendsTheResumeNudgeWhateverTheStopRecordSays(t *testing.T) {

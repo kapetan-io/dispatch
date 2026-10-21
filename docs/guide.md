@@ -95,11 +95,11 @@ It reads every source and runs a cycle at start, then again every `resync` perio
 7. **Merge.** The PR merges, either you or dispatch (when its repo sets [`auto_merge = true`](config.md#auto-merge) and a review has approved the head commit), and Linear moves the ticket to Done.
 8. **Teardown.** The next resync closes the worker's workspace and returns the tree to the pool, unless the tree holds modified or staged tracked files, or unpushed commits. Untracked files are deleted first.
 
-A question the worker asks in its terminal shows in herdr as blocked. dispatch notifies you, never answers for you, and never sets Needs Human for it.
+A worker asks its questions in chat, and its window shows 💤 while it waits. A question popup shows in herdr as blocked and the window shows 🔴. dispatch notifies you of a popup, never answers for you, and never sets Needs Human for it.
 
 ## Nudges and notifications
 
-While `dispatch run` is running, an idle In Progress worker is not nudged to keep going. An idle worker is either waiting on you or stopped early, and the workspace label tells you which to look at ([Worker states](worker-states.md) lists every state, its emoji, and what dispatch does in it). The plugin's Stop hook runs `dispatch record-stop` each time a worker ends a turn, which records the time and the background tasks (Monitors, background shells and subagents) still running, and adds the turn to the session's log that rules read as `worker.turns` (see [rules](rules.md#reading-a-workers-turns)). Its Notification and UserPromptSubmit hooks run `dispatch wake`, which asks the running loop for a cycle so the label follows the worker within seconds. A ticket you move from Needs Human back to In Progress gets the resume nudge at the next resync, whatever the Stop record says, with no comment.
+While `dispatch run` is running, an idle In Progress worker is not nudged to keep going. An idle worker is either waiting on you or stopped early, and the workspace label tells you which to look at ([Worker states](worker-states.md) lists every state, its emoji, and what dispatch does in it). The plugin's Stop hook runs `dispatch record-stop` each time a worker ends a turn, which records the time and the background tasks (Monitors, background shells and subagents) still running, and adds the turn to the session's log that rules read as `worker.turns` (see [rules](rules.md#reading-a-workers-turns)). Its Notification and UserPromptSubmit hooks run `dispatch wake`, which asks the running loop to read herdr again and run a cycle, so the label follows the worker within seconds. A ticket you move from Needs Human back to In Progress gets the resume nudge at the next resync, whatever the Stop record says, with no comment.
 
 An In Review ticket whose worker is idle gets the PR nudge when its PR has a failed check, changes requested on its current head or a merge conflict. A request on a commit the worker has since pushed past, or one made while a check on the head is still running (a review bot re-reviewing), does not nudge or escalate. The nudge names the problem and tells the worker to handle it as its build skill's step 7 says. A worker that is gone is relaunched on its existing tree, then nudged once a later read shows it idle. After `nudge_limit` PR nudges with no push, the ticket goes to Needs Human with one comment, and a push that moves the PR head resets the count. The dispatcher reads PRs through `gh`, so it must be authenticated.
 
@@ -134,8 +134,8 @@ After every cycle, each worker's herdr workspace is labeled `<emoji> <ticket>`, 
 | Emoji | Meaning |
 |---|---|
 | 🟢 | The worker is busy, or dispatch just nudged it |
-| 🟡 | In Review, the worker is idle, the PR isn't ready and its checks are still running |
-| 👀 | In Review, ready for review (the same condition as the notification) |
+| 🟡 | In Review, the worker is idle, gone or unconfirmed, the PR isn't ready and its checks are still running |
+| 👀 | In Review, ready for review (the notification also needs an idle worker) |
 | 💤 | The worker is idle with nothing running and nothing else pending. It needs you. Goes back to 🟢 within seconds of you typing into it |
 | 🔴 | Needs Human, or the worker is blocked on a question popup |
 | ⏸️ | Paused (Backlog or Todo) with the tree kept and a workspace still open |
@@ -266,7 +266,7 @@ To type into a worker yourself:
 dispatch tell ENG-228 "use the v2 endpoint"
 ```
 
-It needs the running loop, and exits 3 with `dispatch: not running` without one. It fails when the ticket's worker is blocked on a question or absent.
+It needs the running loop, and exits 3 with `dispatch: not running` without one. It fails when the ticket's worker is blocked on a question popup or absent.
 
 ## Troubleshooting
 
