@@ -49,7 +49,7 @@ func (p Post) Nudge(ctx context.Context, w world.Worker, text string) error {
 	if err := p.Herdr.Prompt(ctx, w.PaneID, text); err != nil {
 		// Only a refusal proves the text was not typed. Any other failure, a timeout included, may have typed it.
 		var refusal *herdr.Refusal
-		if errors.As(err, &refusal) && (refusal.Code == "agent_blocked" || refusal.Code == "agent_not_found") {
+		if errors.Is(err, herdr.ErrAgentBlocked) || errors.As(err, &refusal) && refusal.Code == "agent_not_found" {
 			p.Typed.Withdraw(w.TreePath, text)
 		}
 		return fmt.Errorf("while prompting herdr pane %s: %w", w.PaneID, err)

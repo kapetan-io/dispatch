@@ -25,7 +25,10 @@ type Log struct {
 // Note records that text is about to be typed into the Claude in tree. Text that is not a command is
 // not kept, because the hook never reports it.
 func (l *Log) Note(tree, text string) {
-	if _, ok := sessionlog.ParseCommand(text); !ok || l == nil {
+	if l == nil {
+		return
+	}
+	if _, ok := sessionlog.ParseCommand(text); !ok {
 		return
 	}
 	key, text := treekey.Of(tree), strings.TrimSpace(text)
