@@ -69,6 +69,7 @@ Each finding has a category, half (Product, Technical, Stories, Cross-half), pri
 - Technical: *Gap (technical)* (a topic the product half requires and the technical half omits), *Drift from code* (quote both the passage and the code location), *Ambiguous implementation decision* (name two incompatible interpretations), *Missing testing surface*, *Missing failure mode*, *Implementation leakage* (function bodies, full SQL, pinned versions; a frozen signature for an internal surface; consumer-facing signatures stay).
 - Correctness translation, only with a Correctness Constraints section: *Missing invariant preservation*, *Representable illegal state*, *Infeasible behavioral constraint*.
 - *Domain boundary leak*: a domain branching on which implementation backs an interface, or relying on an implementation property that is not part of the interface contract.
+- *Ambiguous unset setting*: a setting whose unset (Go zero) value could mean two things, or one named for what it holds rather than what the code does with it, per `dispatch:principle-zero-value-settings`. Quote the setting and both readings.
 - Stories, only with a User Stories section: *Incorrect story*, *Missing story*, *Missing acceptance criterion*, *Story scope issue*, *Unverifiable criterion*, *Invariant violation (stories)*, *Missing correctness story*.
 - *Product/technical inconsistency*: quote both passages that diverge.
 
