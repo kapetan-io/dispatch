@@ -25,5 +25,5 @@ graders:
     match: "not_contains"
   - name: flow
     type: llm
-    criteria: "PASS if the answer says an idle In Progress worker gets a stall nudge, that the count of earlier nudges is compared with a limit (NudgeLimit), and that the ticket is escalated instead of nudged once the limit is reached. FAIL if any of the three is missing or wrong."
+    criteria: "PASS if the answer says an idle In Progress worker gets no nudge to keep going (only a resume nudge after the ticket returns from Needs Human), that an idle In Review worker whose PR needs work gets the PR nudge with the count of earlier nudges compared with the nudge_limit setting, and that the ticket is escalated to Needs Human instead of nudged once the limit is reached. FAIL if any of the three is missing or wrong."
     focus: { source: "file", path: "answer.md" }
