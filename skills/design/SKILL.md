@@ -28,15 +28,15 @@ Load `dispatch:converse` with the Skill tool. Open a todolist with one entry per
 
 ### Orient
 
-1. Read the feature ticket and its comments. A design in the ticket's Notes is a suggestion. Carry it to the arena's premise list, not into the grounding as a constraint.
+1. Read the feature ticket and its comments, the documents its Governing design names, and the feature's parent and blocking tickets. A design in the ticket's Notes is a suggestion. Carry it to the arena's premise list, not into the grounding as a constraint.
 2. Read the domain glossary: `CONTEXT.md` files in the `docs/` directories this feature touches. Use them to catch terminology conflicts in both halves.
 3. List every file in `docs/adr/` and read each title. Read the full ADR for two kinds of title. A scope-capping title (users, tenancy, regions, roles, deployment targets) limits what the product can ask for, so frame product questions that do not invite answers it rules out, and surface the ADR if the user wants something it forbids. A title on a topic this design's technical half touches (storage, API patterns, auth, errors) sets precedent to honor. A departure is itself a decision that needs a new or superseding ADR.
 4. Read the code this feature will live in: existing patterns, related modules and prior art. Technical questions must ask where the feature fits in this codebase, not run a generic checklist.
-5. Write the full list of product and technical questions the blueprint must settle, tailored to this feature.
-6. Have a fresh sub-agent mark each question **settled** or **ask**. Give it the list, the ticket, the glossary, the relevant ADRs and the code scan, and these rules, and check each reason yourself before accepting it.
-   - A technical question is settled by the code, an ADR or standard practice for this stack, with a one-line reason.
-   - A product question is settled only when the ticket or the design it governs states the answer, quoted. An instruction that answers it indirectly counts ("follow `dispatch:design-review` as written" settles how much the review asks). An inference, a reasonable default or a partial answer does not. Anything under the ticket's "Not decided here" is ask.
-7. Show the user the questions marked ask, and the settled product questions with their quoted lines, then start on the first one without asking whether to start. The user can redirect at any point. Record each settled answer in the decision log as "agent assumed", with the quoted line (product) or the one-line reason (technical), so the user can override it.
+5. State the ticket's intent in one sentence: the problem and the outcome wanted.
+6. Work out what the blueprint must decide, and try to answer each item from what you read before treating it as a question. An agent wrote the ticket, so read it the way a senior engineer would: a claim it makes about the code may be wrong, and an item it lists under "Not decided here" may already be answered by the code, the docs or the ticket itself. How the system behaves today is a lookup, not a question.
+   - **Settled:** you can point to what decides it (the code, an ADR, a doc, a run, the ticket's stated need or scope, or a ticket claim the code bears out) and no reasonable alternative is left. Likely is not settled.
+   - **Ask:** a real choice, such as a trade-off, a policy or a preference, that the sources leave open. An answer you inferred goes here with your recommendation.
+7. Show the user the intent, the ask questions and each settled answer with what settled it. Point out any settled item the ticket listed as not decided. Log settled answers as "agent assumed" so the user can override them, then start on the first question.
 
 ## The discussion
 
