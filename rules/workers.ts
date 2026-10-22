@@ -10,15 +10,15 @@ import { openBlockers, abandonedBlocker, nudgeable, launchAs, heard, launchFailu
 // so dispatch never starts a second worker beside one it can't see.
 whenever({
   name: "launch-worker",
-  each: "linear.ticket",
+  each: "ticket",
   if:   (t, ctx) => t.status === "in_progress" && t.optedIn && !t.hasChildren
            && ctx.config.hasRepo(t.repo)
            && openBlockers(t, ctx).length === 0 && !abandonedBlocker(t, ctx)
            && launchFailures(t, ctx) < launchFailureLimit(ctx)
-           && ctx.herdr.worker(t).state === "none",
-  then: (t, ctx) => ctx.herdr.queueLaunch(t, {
+           && ctx.worker.of(t).state === "none",
+  then: (t, ctx) => ctx.worker.queueLaunch(t, {
            ...launchAs(t, ctx),
-           once: ["launch", ctx.herdr.worker(t).goneSince, ctx.treehouse.pool(t.repo).returns],
+           once: ["launch", ctx.worker.of(t).goneSince, ctx.tree.pool(t.repo).returns],
          }),  // waits for a slot under max_in_progress, oldest ticket first
 });
 
@@ -29,17 +29,17 @@ whenever({
 // pool's returns, as launch-worker's does, so a full pool is retried only after a tree comes back.
 whenever({
   name: "relaunch-for-pr",
-  each: "github.pr",
+  each: "pr",
   if:   (pr, ctx) => !pr.closed && pr.ticket.status === "in_review" && nudgeable(pr.ticket)
            && ctx.config.hasRepo(pr.ticket.repo)
-           && ctx.herdr.worker(pr.ticket).state === "none"
+           && ctx.worker.of(pr.ticket).state === "none"
            && (pr.needsWork || !heard(pr.ticket, "activity", pr.lastThread, ctx))
            && (!pr.needsWork || relaunches(pr.ticket, pr.head, ctx) < nudgeLimit(ctx))
            && launchFailures(pr.ticket, ctx) < launchFailureLimit(ctx),
-  then: (pr, ctx) => ctx.herdr.queueLaunch(pr.ticket, {
+  then: (pr, ctx) => ctx.worker.queueLaunch(pr.ticket, {
            ...launchAs(pr.ticket, ctx), uncapped: true,
-           once: [pr.needsWork ? "relaunch" : "relaunch-thread", pr.head, ctx.herdr.worker(pr.ticket).goneSince,
-                  ctx.treehouse.pool(pr.ticket.repo).returns],
+           once: [pr.needsWork ? "relaunch" : "relaunch-thread", pr.head, ctx.worker.of(pr.ticket).goneSince,
+                  ctx.tree.pool(pr.ticket.repo).returns],
          }),
 });
 
@@ -47,9 +47,9 @@ whenever({
 // stays leased for when you resume it.
 whenever({
   name: "stop-paused-worker",
-  each: "herdr.worker",
+  each: "worker",
   if:   (w) => w.state !== "none" && w.ticket.paused,
-  then: (w, ctx) => ctx.herdr.queueClose(w, { once: ["close", w.tree, w.seenAt] }),
+  then: (w, ctx) => ctx.worker.queueClose(w, { once: ["close", w.tree, w.seenAt] }),
 });
 
 // A launch killed after Claude started and before its kickoff ran leaves a Claude that is
@@ -65,8 +65,8 @@ whenever({
 const KICKOFF_GRACE = minutes(5);
 whenever({
   name: "close-unconfirmed-worker",
-  each: "herdr.worker",
+  each: "worker",
   if:   (w, ctx) => w.state === "idle" && w.unconfirmedSince !== undefined
            && !w.ticket.paused && ctx.now - w.unconfirmedSince >= KICKOFF_GRACE,
-  then: (w, ctx) => ctx.herdr.queueClose(w, { once: [UNCONFIRMED_CLOSE, w.tree, w.unconfirmedSince] }),
+  then: (w, ctx) => ctx.worker.queueClose(w, { once: [UNCONFIRMED_CLOSE, w.tree, w.unconfirmedSince] }),
 });

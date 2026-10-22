@@ -242,7 +242,7 @@ func (s *State) ticketRecord(t linear.Ticket) *record {
 			rec.Repo = Known(&repo, at)
 		}
 	}
-	r := newRecord("linear.ticket", t.Identifier, t.Identifier, rec)
+	r := newRecord("ticket", t.Identifier, t.Identifier, rec)
 	r.created = t.CreatedAt
 	list := make([]Blocker, len(t.Blockers))
 	for i, b := range t.Blockers {
@@ -283,7 +283,7 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 		s.linearUnread = "Linear unread: " + w.LinearErr.Error()
 	}
 	for _, t := range w.LeaseHolders {
-		if _, ok := s.lookup("linear.ticket", t.Identifier); !ok {
+		if _, ok := s.lookup("ticket", t.Identifier); !ok {
 			s.ticketRecord(t)
 		}
 	}
@@ -303,12 +303,12 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 			if !(c.Mine && slices.Contains(cfg.Plugins.Linear.Teams, c.Team)) {
 				// Someone else's ticket still counts toward "every child is finished",
 				// but dispatch has nothing to do for it.
-				if _, ok := s.lookup("linear.ticket", c.Identifier); !ok {
+				if _, ok := s.lookup("ticket", c.Identifier); !ok {
 					s.ticketRecordHidden(c)
 				}
 				continue
 			}
-			if _, ok := s.lookup("linear.ticket", c.Identifier); !ok {
+			if _, ok := s.lookup("ticket", c.Identifier); !ok {
 				s.ticketRecord(c)
 			}
 		}
@@ -330,7 +330,7 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 		s.leased[holder] = true
 	}
 	for _, t := range s.index {
-		if t.kind == "linear.ticket" {
+		if t.kind == "ticket" {
 			s.leasedUnknown(w, t)
 		}
 	}
@@ -339,7 +339,7 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 	s.addEscalations()
 	s.addIdleWorkers(w)
 	if s.linearUnread != "" {
-		for _, r := range s.kinds["linear.ticket"] {
+		for _, r := range s.kinds["ticket"] {
 			r.unknownAll(s.linearUnread)
 		}
 	}
@@ -349,13 +349,13 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 // addIdleWorkers gives every ticket and tree that has no worker record the
 // record of a missing worker, so a rule can always ask. These are never run over.
 func (s *State) addIdleWorkers(w world.World) {
-	for _, t := range slices.Clone(s.kinds["linear.ticket"]) {
+	for _, t := range slices.Clone(s.kinds["ticket"]) {
 		if _, ok := s.workers[t.id]; !ok {
 			s.workerRecord(w, t.id, world.Worker{State: world.NoWorker}, stops.Record{}, unreadSession(noWorkerSession))
 			s.workers[t.id].hidden = true
 		}
 	}
-	for _, tree := range slices.Clone(s.kinds["treehouse.tree"]) {
+	for _, tree := range slices.Clone(s.kinds["tree"]) {
 		if _, ok := s.workersByTree[tree.id]; !ok {
 			s.workerRecord(w, "tree:"+tree.id, world.Worker{State: world.NoWorker, TreePath: tree.id}, stops.Record{}, unreadSession(noWorkerSession))
 			s.workersByTree[tree.id].hidden = true
@@ -429,7 +429,7 @@ func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop sto
 	subject := strings.SplitN(id, "@", 2)[0]
 	rec := &Worker{
 		State:     Known(string(wk.State), at),
-		Ticket:    Known(Ref{Kind: "linear.ticket", ID: subject}, at),
+		Ticket:    Known(Ref{Kind: "ticket", ID: subject}, at),
 		Busy:      Known(false, at),
 		Commands:  session.commands,
 		Turns:     session.turns,
@@ -465,12 +465,12 @@ func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop sto
 	case world.Blocked:
 		rec.BlockedSince = Known(&at, at)
 	}
-	r := newRecord("herdr.worker", id, subject, rec)
+	r := newRecord("worker", id, subject, rec)
 	r.stopFallback = fallback
 	if w.HerdrErr != nil {
 		r.unknownAll(s.herdrUnread)
 	} else if wk.State == world.NoWorker {
-		if t, ok := s.lookup("linear.ticket", subject); ok {
+		if t, ok := s.lookup("ticket", subject); ok {
 			if repo, ok := repoOf(t); ok && w.UnreadRepos[repo] {
 				r.unknownAll(s.pools[repo].unknown)
 			}
@@ -503,7 +503,7 @@ func (s *State) treeRecords(w world.World) {
 		case holder == "":
 			rec.Holder = Known(Ref{}, at)
 		default:
-			if _, ok := s.lookup("linear.ticket", holder); !ok {
+			if _, ok := s.lookup("ticket", holder); !ok {
 				if w.HoldersErr != nil {
 					rec.Holder = Unread[Ref]("the tickets that hold trees were not read: " + w.HoldersErr.Error())
 				} else {
@@ -511,7 +511,7 @@ func (s *State) treeRecords(w world.World) {
 				}
 			}
 			if rec.Holder.Unknown == "" {
-				rec.Holder = Known(Ref{Kind: "linear.ticket", ID: holder}, at)
+				rec.Holder = Known(Ref{Kind: "ticket", ID: holder}, at)
 			}
 		}
 		inspected, tried := w.Work[tree.Path], false
@@ -531,7 +531,7 @@ func (s *State) treeRecords(w world.World) {
 			rec.Unfinished = Known(w.Unfinished[tree.Path], at)
 			rec.Untracked, rec.CleanSince = Known(strings.Join(w.Untracked[tree.Path], "\n"), at), Known(at, at)
 		}
-		r := newRecord("treehouse.tree", tree.Path, holder, rec)
+		r := newRecord("tree", tree.Path, holder, rec)
 		if holder == "" {
 			r.subject = tree.Path
 		}
@@ -545,7 +545,7 @@ func (s *State) foreignTicket(id string) {
 	at := s.ms()
 	reason := id + " isn't one of your tickets"
 	rec := &Ticket{ID: Known(id, at), Finished: Known(false, at), Paused: Known(false, at)}
-	r := newRecord("linear.ticket", id, id, rec)
+	r := newRecord("ticket", id, id, rec)
 	r.unknownExcept(reason, "id", "finished", "paused")
 	r.hidden = true
 	s.add(r)
@@ -573,7 +573,7 @@ func (s *State) prRecords(w world.World) {
 		repo, _ := t.LabelIn(s.Config.Plugins.Linear.RepoLabelGroup)
 		settings := s.Config.Repos[repo]
 		rec := &PR{
-			Ticket:          Known(Ref{Kind: "linear.ticket", ID: t.Identifier}, at),
+			Ticket:          Known(Ref{Kind: "ticket", ID: t.Identifier}, at),
 			Number:          Known(int64(pr.Number), at),
 			URL:             Known(pr.URL, at),
 			Head:            Known(pr.Head, at),
@@ -593,7 +593,7 @@ func (s *State) prRecords(w world.World) {
 		if pr.ThreadAt != "" {
 			rec.LastThread = Known(&Seen{At: pr.ThreadAt, SeenAt: at}, at)
 		}
-		r := newRecord("github.pr", t.Identifier, t.Identifier, rec)
+		r := newRecord("pr", t.Identifier, t.Identifier, rec)
 		if failed {
 			r.unknownExcept("the PR for "+t.Identifier+" could not be read", "ticket")
 		}
@@ -624,17 +624,17 @@ func (s *State) addEscalations() {
 		}
 		// The ticket may have left the tracked set since, and a rule that finishes the
 		// comment still has to name it.
-		if _, ok := s.lookup("linear.ticket", rc.Subject); !ok {
+		if _, ok := s.lookup("ticket", rc.Subject); !ok {
 			s.foreignTicket(rc.Subject)
 		}
 		e := &Escalation{
-			Ticket:    Known(Ref{Kind: "linear.ticket", ID: rc.Subject}, at),
+			Ticket:    Known(Ref{Kind: "ticket", ID: rc.Subject}, at),
 			Reason:    Known(rc.Detail, at),
 			Moved:     Known(step("move"), at),
 			Commented: Known(step("comment"), at),
 			Started:   Known(rc.Started, at),
 		}
-		s.add(newRecord("ledger.escalation", fmt.Sprintf("%s@%d", rc.Subject, rc.Started), rc.Subject, e))
+		s.add(newRecord("escalation", fmt.Sprintf("%s@%d", rc.Subject, rc.Started), rc.Subject, e))
 	}
 }
 

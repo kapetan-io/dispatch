@@ -151,7 +151,7 @@ func TestReplayWithOtherRulesStopsAtTheFirstActionThatDiffers(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
 	d.Stop()
-	quiet := oneRule(t, `whenever({ name: "launch-worker", each: "linear.ticket", if: () => false, then: () => [] });`)
+	quiet := oneRule(t, `whenever({ name: "launch-worker", each: "ticket", if: () => false, then: () => [] });`)
 
 	res := d.Run("replay", "--rules", quiet)
 
@@ -768,7 +768,7 @@ func TestTraceFailsWhenItCannotWriteItsReport(t *testing.T) {
 func TestReplayWithOtherRulesNoticesAnActionWithTheSameKeyButOtherText(t *testing.T) {
 	t.Parallel()
 	greeting := func(text string) string {
-		return `whenever({ name: "greet", each: "linear.ticket", if: () => true, then: (t, ctx) => ctx.linear.queueComment(t, "` + text + `", { once: ["greet"] }) });`
+		return `whenever({ name: "greet", each: "ticket", if: () => true, then: (t, ctx) => ctx.ticket.queueComment(t, "` + text + `", { once: ["greet"] }) });`
 	}
 	d := newDispatch(t, dispatchOptions{Rules: rule(greeting("hello"))})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -786,7 +786,7 @@ func TestReplayWithOtherRulesNoticesAnActionWithTheSameKeyButOtherText(t *testin
 
 func TestStateResetQuietRefusesWhileARuleFails(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "broken", each: "linear.ticket", if: () => { throw new Error("boom"); }, then: () => {} });`)})
+	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "broken", each: "ticket", if: () => { throw new Error("boom"); }, then: () => {} });`)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	res := d.Run("state", "reset", "--quiet")
@@ -1187,10 +1187,10 @@ func TestTraceRefusesATicketAfterAnEmptyArgument(t *testing.T) {
 
 // readKeptRules fetches in the first cycle and reads the kept answer in a later one.
 const readKeptRules = `
-whenever({ name: "fetch", each: "linear.ticket", if: (t, ctx) => !ctx.ledger.done(t, ["fetch", t.id]),
-  then: (t, ctx) => { ctx.http.get("sentry", "/count"); return ctx.linear.queueComment(t, "fetched", { once: ["fetch", t.id] }); } });
-whenever({ name: "use-kept", each: "linear.ticket", if: (t, ctx) => ctx.ledger.done(t, ["fetch", t.id]) && known(() => ctx.http.last("sentry", "/count")),
-  then: (t, ctx) => ctx.linear.queueComment(t, "kept " + (ctx.http.last("sentry", "/count").body as any).open, { once: ["kept", t.id] }) });`
+whenever({ name: "fetch", each: "ticket", if: (t, ctx) => !ctx.ledger.done(t, ["fetch", t.id]),
+  then: (t, ctx) => { ctx.http.get("sentry", "/count"); return ctx.ticket.queueComment(t, "fetched", { once: ["fetch", t.id] }); } });
+whenever({ name: "use-kept", each: "ticket", if: (t, ctx) => ctx.ledger.done(t, ["fetch", t.id]) && known(() => ctx.http.last("sentry", "/count")),
+  then: (t, ctx) => ctx.ticket.queueComment(t, "kept " + (ctx.http.last("sentry", "/count").body as any).open, { once: ["kept", t.id] }) });`
 
 // httpHistory runs rules that call sentry for a few ticks and stops the loop, leaving history to replay.
 func httpHistory(t *testing.T, body string) (*Dispatch, *httpservicetest.Fake) {
@@ -1242,12 +1242,12 @@ func TestReplayFromALaterCycleRebuildsWhatEarlierCyclesKept(t *testing.T) {
 func TestReplayWithOtherRulesCountsAGetThatDiffersFromTheLiveRunAsADifference(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct{ name, body string }{
-		{"OtherPath", `whenever({ name: "count", each: "linear.ticket", if: (t) => t.status === "in_progress",
-  then: (t, ctx) => ctx.linear.queueComment(t, "open " + (ctx.http.get("sentry", "/other").body as any).open, { once: ["count", t.id] }) });`},
-		{"ExtraGet", `whenever({ name: "count", each: "linear.ticket", if: (t) => t.status === "in_progress",
-  then: (t, ctx) => { ctx.http.get("sentry", "/count"); return ctx.linear.queueComment(t, "open " + (ctx.http.get("sentry", "/count").body as any).open, { once: ["count", t.id] }); } });`},
-		{"SkippedGet", `whenever({ name: "count", each: "linear.ticket", if: (t) => t.status === "in_progress",
-  then: (t, ctx) => ctx.linear.queueComment(t, "open 3", { once: ["count", t.id] }) });`},
+		{"OtherPath", `whenever({ name: "count", each: "ticket", if: (t) => t.status === "in_progress",
+  then: (t, ctx) => ctx.ticket.queueComment(t, "open " + (ctx.http.get("sentry", "/other").body as any).open, { once: ["count", t.id] }) });`},
+		{"ExtraGet", `whenever({ name: "count", each: "ticket", if: (t) => t.status === "in_progress",
+  then: (t, ctx) => { ctx.http.get("sentry", "/count"); return ctx.ticket.queueComment(t, "open " + (ctx.http.get("sentry", "/count").body as any).open, { once: ["count", t.id] }); } });`},
+		{"SkippedGet", `whenever({ name: "count", each: "ticket", if: (t) => t.status === "in_progress",
+  then: (t, ctx) => ctx.ticket.queueComment(t, "open 3", { once: ["count", t.id] }) });`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			d, sentry := httpHistory(t, countRule)
@@ -1321,10 +1321,10 @@ func TestStateResetQuietRefusesWhenAServiceAnswerIsUnknown(t *testing.T) {
 
 // clearedRules comments once the kept answer is gone, which only a resync or a tick brings about.
 const clearedRules = `
-whenever({ name: "fetch", each: "linear.ticket", if: (t, ctx) => !ctx.ledger.done(t, ["fetch", t.id]),
-  then: (t, ctx) => { ctx.http.get("sentry", "/count"); return ctx.linear.queueComment(t, "fetched", { once: ["fetch", t.id] }); } });
-whenever({ name: "cleared", each: "linear.ticket", if: (t, ctx) => ctx.ledger.done(t, ["fetch", t.id]) && !known(() => ctx.http.last("sentry", "/count")),
-  then: (t, ctx) => ctx.linear.queueComment(t, "cleared", { once: ["cleared", t.id] }) });`
+whenever({ name: "fetch", each: "ticket", if: (t, ctx) => !ctx.ledger.done(t, ["fetch", t.id]),
+  then: (t, ctx) => { ctx.http.get("sentry", "/count"); return ctx.ticket.queueComment(t, "fetched", { once: ["fetch", t.id] }); } });
+whenever({ name: "cleared", each: "ticket", if: (t, ctx) => ctx.ledger.done(t, ["fetch", t.id]) && !known(() => ctx.http.last("sentry", "/count")),
+  then: (t, ctx) => ctx.ticket.queueComment(t, "cleared", { once: ["cleared", t.id] }) });`
 
 func TestReplayFromACycleLaterThanTheOneThatKeptTheAnswerRebuildsIt(t *testing.T) {
 	t.Parallel()
@@ -1392,8 +1392,8 @@ func TestReplayWithOtherRulesCountsAnUnrecordedGetAsADifferenceEvenWhenTheAction
 	t.Parallel()
 	d, sentry := httpHistory(t, countRule)
 	live := len(sentry.Requests())
-	other := oneRule(t, `whenever({ name: "count", each: "linear.ticket", if: (t) => t.status === "in_progress",
-  then: (t, ctx) => { known(() => ctx.http.get("sentry", "/other")); return ctx.linear.queueComment(t, "open 3", { once: ["count", t.id] }); } });`)
+	other := oneRule(t, `whenever({ name: "count", each: "ticket", if: (t) => t.status === "in_progress",
+  then: (t, ctx) => { known(() => ctx.http.get("sentry", "/other")); return ctx.ticket.queueComment(t, "open 3", { once: ["count", t.id] }); } });`)
 
 	res := d.Run("replay", "--rules", other)
 
@@ -1420,8 +1420,8 @@ func TestReplayMatchesAGetTwoTicketsEachMade(t *testing.T) {
 
 func TestTraceShowsOnlyTheExchangesOfTheTicketItIsGiven(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "count", each: "linear.ticket", if: (t) => t.status === "in_progress",
-  then: (t, ctx) => ctx.linear.queueComment(t, "open " + (ctx.http.get("sentry", "/count/" + t.id).body as any).open, { once: ["count", t.id] }) });`)})
+	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "count", each: "ticket", if: (t) => t.status === "in_progress",
+  then: (t, ctx) => ctx.ticket.queueComment(t, "open " + (ctx.http.get("sentry", "/count/" + t.id).body as any).open, { once: ["count", t.id] }) });`)})
 	sentry := d.Services.Sentry()
 	sentry.Respond("sentry", "GET", "/count/ENG-1", 200, `{"open":3}`)
 	sentry.Respond("sentry", "GET", "/count/ENG-2", 200, `{"open":4}`)
@@ -1455,10 +1455,10 @@ func TestStateResetQuietWorksOnceTheServiceAnswersAfterRefusing(t *testing.T) {
 
 // markRules says whether the answer fetched earlier is still kept.
 const markRules = `
-whenever({ name: "fetch", each: "linear.ticket", if: (t, ctx) => !ctx.ledger.done(t, ["fetch", t.id]),
-  then: (t, ctx) => { ctx.http.get("sentry", "/count"); return ctx.linear.queueComment(t, "fetched", { once: ["fetch", t.id] }); } });
-whenever({ name: "mark", each: "linear.ticket", if: (t, ctx) => ctx.ledger.done(t, ["fetch", t.id]),
-  then: (t, ctx) => { const state = known(() => ctx.http.last("sentry", "/count")) ? "kept" : "empty"; return ctx.linear.queueComment(t, state, { once: ["mark", t.id, state] }); } });`
+whenever({ name: "fetch", each: "ticket", if: (t, ctx) => !ctx.ledger.done(t, ["fetch", t.id]),
+  then: (t, ctx) => { ctx.http.get("sentry", "/count"); return ctx.ticket.queueComment(t, "fetched", { once: ["fetch", t.id] }); } });
+whenever({ name: "mark", each: "ticket", if: (t, ctx) => ctx.ledger.done(t, ["fetch", t.id]),
+  then: (t, ctx) => { const state = known(() => ctx.http.last("sentry", "/count")) ? "kept" : "empty"; return ctx.ticket.queueComment(t, state, { once: ["mark", t.id, state] }); } });`
 
 func TestReplayStartsTheSegmentAfterARestartWithNothingKept(t *testing.T) {
 	t.Parallel()
@@ -1479,10 +1479,10 @@ func TestReplayStartsTheSegmentAfterARestartWithNothingKept(t *testing.T) {
 func TestReplayMatchesALastReadAfterACycleThatWroteNoLinesRefilledWhatAResyncCleared(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`
-whenever({ name: "poll", each: "linear.ticket", if: (t, ctx) => t.status === "in_progress" && ctx.herdr.worker(t).state === "idle",
-  then: (t, ctx) => { ctx.http.get("sentry", "/count"); return ctx.linear.queueComment(t, "polled", { once: ["poll", t.id] }); } });
-whenever({ name: "working-reader", each: "linear.ticket", if: (t, ctx) => ctx.herdr.worker(t).state === "working" && known(() => ctx.http.last("sentry", "/count")),
-  then: (t, ctx) => ctx.linear.queueComment(t, "working with " + (ctx.http.last("sentry", "/count").body as any).open, { once: ["working", t.id] }) });`)})
+whenever({ name: "poll", each: "ticket", if: (t, ctx) => t.status === "in_progress" && ctx.worker.of(t).state === "idle",
+  then: (t, ctx) => { ctx.http.get("sentry", "/count"); return ctx.ticket.queueComment(t, "polled", { once: ["poll", t.id] }); } });
+whenever({ name: "working-reader", each: "ticket", if: (t, ctx) => ctx.worker.of(t).state === "working" && known(() => ctx.http.last("sentry", "/count")),
+  then: (t, ctx) => ctx.ticket.queueComment(t, "working with " + (ctx.http.last("sentry", "/count").body as any).open, { once: ["working", t.id] }) });`)})
 	d.Services.Sentry().Respond("sentry", "GET", "/count", 200, `{"open":3}`)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -1528,10 +1528,10 @@ func TestTraceShowsAnAnswerThatChangedWhileTheRuleDecidedTheSame(t *testing.T) {
 
 func TestReplayWithOtherRulesMatchesTheSameGetsRegisteredInAnotherOrder(t *testing.T) {
 	t.Parallel()
-	const first = `whenever({ name: "first", each: "linear.ticket", if: (t) => t.status === "in_progress",
-  then: (t, ctx) => ctx.linear.queueComment(t, "a " + (ctx.http.get("sentry", "/a").body as any).n, { once: ["a", t.id] }) });`
-	const second = `whenever({ name: "second", each: "linear.ticket", if: (t) => t.status === "in_progress",
-  then: (t, ctx) => ctx.linear.queueComment(t, "b " + (ctx.http.get("sentry", "/b").body as any).n, { once: ["b", t.id] }) });`
+	const first = `whenever({ name: "first", each: "ticket", if: (t) => t.status === "in_progress",
+  then: (t, ctx) => ctx.ticket.queueComment(t, "a " + (ctx.http.get("sentry", "/a").body as any).n, { once: ["a", t.id] }) });`
+	const second = `whenever({ name: "second", each: "ticket", if: (t) => t.status === "in_progress",
+  then: (t, ctx) => ctx.ticket.queueComment(t, "b " + (ctx.http.get("sentry", "/b").body as any).n, { once: ["b", t.id] }) });`
 	d := newDispatch(t, dispatchOptions{Rules: rule(first + "\n" + second)})
 	sentry := d.Services.Sentry()
 	sentry.Respond("sentry", "GET", "/a", 200, `{"n":1}`)

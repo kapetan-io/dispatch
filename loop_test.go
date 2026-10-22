@@ -318,7 +318,7 @@ func TestLoopRestartAfterALaunchLaunchesNoSecondWorker(t *testing.T) {
 func TestARuleThatThrowsStopsOnlyItsOwnActionsAndRaisesOneAlert(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, `
-whenever({ name: "always-throws", each: "linear.ticket", if: () => { throw new Error("boom"); }, then: () => {} });
+whenever({ name: "always-throws", each: "ticket", if: () => { throw new Error("boom"); }, then: () => {} });
 `)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -766,7 +766,7 @@ func TestRunExitsWhenAnotherRunHoldsTheLock(t *testing.T) {
 
 func TestRunFailsToStartWhenTheRulesDoNotLoad(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "broken", each: "linear.ticket", if: (t) => t.status === , then: () => {} });`)})
+	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "broken", each: "ticket", if: (t) => t.status === , then: () => {} });`)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	res := d.Run("run")
@@ -910,13 +910,13 @@ func TestARuleThatRunsOutOfTimeStopsOnlyItsOwnActionsAndRaisesOneAlert(t *testin
 	}{
 		{
 			name:     "If",
-			rule:     `whenever({ name: "spins-in-if", each: "linear.ticket", if: () => { for (;;) {} }, then: () => {} });`,
+			rule:     `whenever({ name: "spins-in-if", each: "ticket", if: () => { for (;;) {} }, then: () => {} });`,
 			timeout:  dispatch.RuleTimeout{If: 100 * time.Millisecond},
 			deadline: "rule spins-in-if if",
 		},
 		{
 			name:     "Then",
-			rule:     `whenever({ name: "spins-in-then", each: "linear.ticket", if: () => true, then: () => { for (;;) {} } });`,
+			rule:     `whenever({ name: "spins-in-then", each: "ticket", if: () => true, then: () => { for (;;) {} } });`,
 			timeout:  dispatch.RuleTimeout{Then: 100 * time.Millisecond},
 			deadline: "rule spins-in-then then",
 		},
@@ -1069,11 +1069,11 @@ func TestAnOrderedStepThatFailedIsTriedAgainAtTheNextResync(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, `
 whenever({
   name: "ordered-pair",
-  each: "linear.ticket",
+  each: "ticket",
   if:   (t, ctx) => t.status === "in_progress" && ctx.ledger.receipts(t, { kind: "nudge", topic: "ordered-a" }).length === 0,
   then: (t, ctx) => [
-    ctx.herdr.queueNudge(t, "ordered first", { once: ["ordered-a"] }),
-    ctx.linear.queueComment(t, "ordered second", { once: ["ordered-b"] }),
+    ctx.worker.queueNudge(t, "ordered first", { once: ["ordered-a"] }),
+    ctx.ticket.queueComment(t, "ordered second", { once: ["ordered-b"] }),
   ],
 });
 `)})

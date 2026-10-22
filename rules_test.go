@@ -36,11 +36,11 @@ func TestRulesCheckPrintsWhatEachRuleWantsNow(t *testing.T) {
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `linear\.ticket +2 tracked tickets \(assigned to .*; teams ENG; statuses Todo, In Progress, In Review, Needs Human\)`, res.Stdout)
-	assert.Regexp(t, `launch-worker +whenever +linear\.ticket +wants launch now for ENG-1\n`, res.Stdout)
-	assert.Regexp(t, `nudge-resume +whenever +linear\.ticket +wants nothing now\n`, res.Stdout)
-	assert.Contains(t, res.Stdout, "herdr.worker")
-	assert.Contains(t, res.Stdout, "treehouse.tree")
+	assert.Regexp(t, `ticket +2 tracked tickets \(assigned to .*; teams ENG; statuses Todo, In Progress, In Review, Needs Human\)`, res.Stdout)
+	assert.Regexp(t, `launch-worker +whenever +ticket +wants launch now for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `nudge-resume +whenever +ticket +wants nothing now\n`, res.Stdout)
+	assert.Contains(t, res.Stdout, "worker")
+	assert.Contains(t, res.Stdout, "tree")
 }
 
 func TestRulesCheckListsEveryShippedRule(t *testing.T) {
@@ -87,7 +87,7 @@ func TestRulesCheckHoldsWhatItCannotRead(t *testing.T) {
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `launch-worker +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `launch-worker +whenever +ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
 	assert.Empty(t, d.Workers.Launched())
 }
 
@@ -100,7 +100,7 @@ func TestRulesCheckHoldsWhenHerdrCannotBeRead(t *testing.T) {
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `launch-worker +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `launch-worker +whenever +ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
 }
 
 func TestRulesCheckRunsTheTicketsThatCanLaunchBesideTheOnesThatCannot(t *testing.T) {
@@ -111,8 +111,8 @@ func TestRulesCheckRunsTheTicketsThatCanLaunchBesideTheOnesThatCannot(t *testing
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `launch-worker +whenever +linear\.ticket +wants launch now for ENG-1\n`, res.Stdout)
-	assert.Regexp(t, `escalate-missing-repo +whenever +linear\.ticket +wants escalate now for ENG-2\n`, res.Stdout)
+	assert.Regexp(t, `launch-worker +whenever +ticket +wants launch now for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `escalate-missing-repo +whenever +ticket +wants escalate now for ENG-2\n`, res.Stdout)
 }
 
 func TestRulesCheckFailsOnARuleReadingAMissingRulesKey(t *testing.T) {
@@ -130,7 +130,7 @@ func TestRulesCheckFailsOnACustomRulesKeyTheFileLacks(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: "[rules]\nbug_model = \"opus\"\n",
-		Rules:  rule(`whenever({ name: "bug-model", each: "linear.ticket", if: (t, ctx) => ctx.config.rules.bug_model === "opus" && ctx.config.rules.review_model === "x", then: () => {} });`),
+		Rules:  rule(`whenever({ name: "bug-model", each: "ticket", if: (t, ctx) => ctx.config.rules.bug_model === "opus" && ctx.config.rules.review_model === "x", then: () => {} });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -144,15 +144,15 @@ func TestRulesCheckReadsAKeyTheFileHas(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: "[rules]\nbug_model = \"opus\"\n",
-		Rules: rule(`whenever({ name: "bug-model", each: "linear.ticket", if: (t, ctx) => ctx.config.rules.bug_model === "opus",
-  then: (t, ctx) => ctx.herdr.queueNudge(t, "use " + ctx.config.rules.bug_model, { once: ["m", t.id] }) });`),
+		Rules: rule(`whenever({ name: "bug-model", each: "ticket", if: (t, ctx) => ctx.config.rules.bug_model === "opus",
+  then: (t, ctx) => ctx.worker.queueNudge(t, "use " + ctx.config.rules.bug_model, { once: ["m", t.id] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `bug-model +whenever +linear\.ticket +wants nudge now for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `bug-model +whenever +ticket +wants nudge now for ENG-1\n`, res.Stdout)
 }
 
 func TestRulesCheckFindsEachProblemWhenLoading(t *testing.T) {
@@ -164,18 +164,18 @@ func TestRulesCheckFindsEachProblemWhenLoading(t *testing.T) {
 	}{
 		{"UnknownRecordKind", `whenever({ name: "a", each: "linear.tickets", if: () => true, then: () => {} });`, `there is no record kind "linear.tickets"`},
 		{"UnknownEvent", `on({ name: "a", event: "linear.comment.posted2", if: () => true, then: () => {} });`, `there is no event "linear.comment.posted2"`},
-		{"WheneverWithEvent", `whenever({ name: "a", event: "linear.comment.posted", if: () => true, then: () => {} } as any);`, `whenever takes each, not event`},
-		{"OnWithEach", `on({ name: "a", each: "linear.ticket", if: () => true, then: () => {} } as any);`, `on takes event, not each`},
-		{"DuplicateName", `whenever({ name: "a", each: "linear.ticket", if: () => false, then: () => {} });
-whenever({ name: "a", each: "github.pr", if: () => false, then: () => {} });`, `rule "a" is defined twice`},
-		{"NoName", `whenever({ name: "", each: "linear.ticket", if: () => false, then: () => {} });`, `a whenever rule with no name`},
-		{"QueueWithoutOnce", `whenever({ name: "a", each: "linear.ticket", if: () => true,
-  then: (t, ctx) => ctx.herdr.queueNudge(t, "hello", { }) });`, `queueNudge is queued with no once key`},
-		{"AsyncThen", `whenever({ name: "a", each: "linear.ticket", if: () => true, then: async () => {} });`, `async functions are not allowed`},
-		{"Generator", `whenever({ name: "a", each: "linear.ticket", if: () => true, then: function* () {} });`, `generators are not allowed`},
-		{"Promise", `whenever({ name: "a", each: "linear.ticket", if: () => true, then: () => { new Promise(() => {}); } });`, `Promise is not available`},
-		{"EvalCall", `whenever({ name: "a", each: "linear.ticket", if: () => true, then: () => { eval("1"); } });`, `eval is not available`},
-		{"SyntaxError", `whenever({ name: "a", each: "linear.ticket", if: ( => true });`, `Unexpected`},
+		{"WheneverWithEvent", `whenever({ name: "a", event: "comment.posted", if: () => true, then: () => {} } as any);`, `whenever takes each, not event`},
+		{"OnWithEach", `on({ name: "a", each: "ticket", if: () => true, then: () => {} } as any);`, `on takes event, not each`},
+		{"DuplicateName", `whenever({ name: "a", each: "ticket", if: () => false, then: () => {} });
+whenever({ name: "a", each: "pr", if: () => false, then: () => {} });`, `rule "a" is defined twice`},
+		{"NoName", `whenever({ name: "", each: "ticket", if: () => false, then: () => {} });`, `a whenever rule with no name`},
+		{"QueueWithoutOnce", `whenever({ name: "a", each: "ticket", if: () => true,
+  then: (t, ctx) => ctx.worker.queueNudge(t, "hello", { }) });`, `queueNudge is queued with no once key`},
+		{"AsyncThen", `whenever({ name: "a", each: "ticket", if: () => true, then: async () => {} });`, `async functions are not allowed`},
+		{"Generator", `whenever({ name: "a", each: "ticket", if: () => true, then: function* () {} });`, `generators are not allowed`},
+		{"Promise", `whenever({ name: "a", each: "ticket", if: () => true, then: () => { new Promise(() => {}); } });`, `Promise is not available`},
+		{"EvalCall", `whenever({ name: "a", each: "ticket", if: () => true, then: () => { eval("1"); } });`, `eval is not available`},
+		{"SyntaxError", `whenever({ name: "a", each: "ticket", if: ( => true });`, `Unexpected`},
 		{"MissingImport", `import "./nothing";`, `Could not resolve "./nothing"`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -196,7 +196,7 @@ func TestRulesCheckRefusesAThenThatReturnsABoolean(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
-		Rules:  rule(`whenever({ name: "swap", each: "linear.ticket", if: (t) => true, then: ((t: any) => t.status === "in_progress") as any });`),
+		Rules:  rule(`whenever({ name: "swap", each: "ticket", if: (t) => true, then: ((t: any) => t.status === "in_progress") as any });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -211,11 +211,11 @@ func TestRulesCheckIsolatesAFailingRuleFromTheOthers(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`
-whenever({ name: "throws", each: "linear.ticket", if: () => true, then: (t, ctx) => { ctx.herdr.queueNudge(t, "discarded-text", { once: ["x"] }); throw new Error("boom"); } });
-whenever({ name: "loops", each: "linear.ticket", if: () => { for (;;) {} }, then: () => {} });
-whenever({ name: "recurses", each: "linear.ticket", if: () => { const f = (): number => f() + 1; return f() > 0; }, then: () => {} });
-whenever({ name: "healthy", each: "linear.ticket", if: () => true,
-  then: (t, ctx) => ctx.herdr.queueNudge(t, "hello", { once: ["healthy", t.id] }) });`),
+whenever({ name: "throws", each: "ticket", if: () => true, then: (t, ctx) => { ctx.worker.queueNudge(t, "discarded-text", { once: ["x"] }); throw new Error("boom"); } });
+whenever({ name: "loops", each: "ticket", if: () => { for (;;) {} }, then: () => {} });
+whenever({ name: "recurses", each: "ticket", if: () => { const f = (): number => f() + 1; return f() > 0; }, then: () => {} });
+whenever({ name: "healthy", each: "ticket", if: () => true,
+  then: (t, ctx) => ctx.worker.queueNudge(t, "hello", { once: ["healthy", t.id] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
 
@@ -226,8 +226,8 @@ whenever({ name: "healthy", each: "linear.ticket", if: () => true,
 	res := checked()
 
 	require.ErrorContains(t, res.Err, "problems found")
-	assert.Regexp(t, `healthy +whenever +linear\.ticket +wants nudge now for ENG-1, ENG-2\n`, res.Stdout)
-	assert.Regexp(t, `throws +whenever +linear\.ticket +wants nothing now\n`, res.Stdout)
+	assert.Regexp(t, `healthy +whenever +ticket +wants nudge now for ENG-1, ENG-2\n`, res.Stdout)
+	assert.Regexp(t, `throws +whenever +ticket +wants nothing now\n`, res.Stdout)
 	assert.Contains(t, res.Stdout, "finding: throws threw in its then for ENG-1: Error: boom")
 	assert.Contains(t, res.Stdout, "finding: loops ran out of time in its if for ENG-1: took longer than its time budget and was stopped")
 	assert.Contains(t, res.Stdout, "finding: recurses threw in its if for ENG-1: called itself more than 256 levels deep and was stopped")
@@ -239,12 +239,12 @@ func TestRulesCheckHoldsARuleThatCatchesAnUnknownRead(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`
-whenever({ name: "catches", each: "linear.ticket",
-  if: (t, ctx) => { try { return ctx.herdr.worker(t).state === "none"; } catch (e) { return true; } },
-  then: (t, ctx) => ctx.herdr.queueLaunch(t, { once: ["catches", t.id] }) });
-whenever({ name: "asks", each: "linear.ticket",
-  if: (t, ctx) => !known(() => ctx.herdr.worker(t).state),
-  then: (t, ctx) => ctx.linear.queueComment(t, "herdr is unread", { once: ["asks", t.id] }) });`),
+whenever({ name: "catches", each: "ticket",
+  if: (t, ctx) => { try { return ctx.worker.of(t).state === "none"; } catch (e) { return true; } },
+  then: (t, ctx) => ctx.worker.queueLaunch(t, { once: ["catches", t.id] }) });
+whenever({ name: "asks", each: "ticket",
+  if: (t, ctx) => !known(() => ctx.worker.of(t).state),
+  then: (t, ctx) => ctx.ticket.queueComment(t, "herdr is unread", { once: ["asks", t.id] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tools().Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
@@ -252,8 +252,8 @@ whenever({ name: "asks", each: "linear.ticket",
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `catches +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
-	assert.Regexp(t, `asks +whenever +linear\.ticket +wants comment now for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `catches +whenever +ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `asks +whenever +ticket +wants comment now for ENG-1\n`, res.Stdout)
 }
 
 func TestRulesCheckPinsTimeAndRemovesWhatMakesACycleDepend(t *testing.T) {
@@ -270,7 +270,7 @@ func TestRulesCheckPinsTimeAndRemovesWhatMakesACycleDepend(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{
 				Config: shippedRulesConfig,
-				Rules:  rule(`whenever({ name: "a", each: "linear.ticket", if: () => true, then: (t: any) => { ` + test.body + `; } });`),
+				Rules:  rule(`whenever({ name: "a", each: "ticket", if: () => true, then: (t: any) => { ` + test.body + `; } });`),
 			})
 			d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -287,29 +287,29 @@ func TestRulesCheckGivesDateTheTimeOfTheCycle(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`
-whenever({ name: "now", each: "linear.ticket", if: (t, ctx) => Date.now() === ctx.now && new Date().getTime() === ctx.now && new Date().toISOString() === "2026-10-09T12:00:00.000Z",
-  then: (t, ctx) => ctx.linear.queueComment(t, "pinned", { once: ["now", t.id] }) });`),
+whenever({ name: "now", each: "ticket", if: (t, ctx) => Date.now() === ctx.now && new Date().getTime() === ctx.now && new Date().toISOString() === "2026-10-09T12:00:00.000Z",
+  then: (t, ctx) => ctx.ticket.queueComment(t, "pinned", { once: ["now", t.id] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `now +whenever +linear\.ticket +wants comment now for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `now +whenever +ticket +wants comment now for ENG-1\n`, res.Stdout)
 }
 
 func TestRulesCheckRefusesAWriteToARecord(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
-		Rules:  rule(`whenever({ name: "writes", each: "linear.ticket", if: (t: any) => { t.status = "done"; return true; }, then: () => {} });`),
+		Rules:  rule(`whenever({ name: "writes", each: "ticket", if: (t: any) => { t.status = "done"; return true; }, then: () => {} });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	res := d.Run("rules", "check")
 
 	require.Error(t, res.Err)
-	assert.Contains(t, res.Stdout, "linear.ticket/ENG-1 is read-only")
+	assert.Contains(t, res.Stdout, "ticket/ENG-1 is read-only")
 }
 
 func TestRulesCheckLoadsAShadowRuleAndReportsWhatItWouldDo(t *testing.T) {
@@ -317,31 +317,31 @@ func TestRulesCheckLoadsAShadowRuleAndReportsWhatItWouldDo(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`
-whenever({ name: "dry", each: "linear.ticket", shadow: true, if: () => true,
-  then: (t, ctx) => ctx.linear.queueComment(t, "hi", { once: ["dry", t.id] }) });
-on({ name: "check-failed", event: "github.check.completed", shadow: true, if: () => true, then: () => {} });`),
+whenever({ name: "dry", each: "ticket", shadow: true, if: () => true,
+  then: (t, ctx) => ctx.ticket.queueComment(t, "hi", { once: ["dry", t.id] }) });
+on({ name: "check-failed", event: "check.completed", shadow: true, if: () => true, then: () => {} });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `dry +whenever +linear\.ticket +shadow: would comment now for ENG-1\n`, res.Stdout)
-	assert.Regexp(t, `check-failed +on +github\.check\.completed +shadow: reports only\n`, res.Stdout)
+	assert.Regexp(t, `dry +whenever +ticket +shadow: would comment now for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `check-failed +on +check\.completed +shadow: reports only\n`, res.Stdout)
 	assert.Empty(t, d.Linear.Moves())
 	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestRulesCheckFollowsTheDispatchRulesSetting(t *testing.T) {
 	t.Parallel()
-	dir := oneRule(t, `whenever({ name: "mine", each: "linear.ticket", if: () => false, then: () => {} });`)
+	dir := oneRule(t, `whenever({ name: "mine", each: "ticket", if: () => false, then: () => {} });`)
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nrules = " + `"` + dir + `"` + "\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `mine +whenever +linear\.ticket +wants nothing now\n`, res.Stdout)
+	assert.Regexp(t, `mine +whenever +ticket +wants nothing now\n`, res.Stdout)
 }
 
 func TestRulesCheckFailsOnAnUnknownConfigKey(t *testing.T) {
@@ -363,7 +363,7 @@ func TestRulesCheckListsTheOrderedStepsOfAMerge(t *testing.T) {
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `auto-merge +whenever +github\.pr +wants merge now for ENG-1; waiting: notify for ENG-1 \(after the step before it lands\)\n`, res.Stdout)
+	assert.Regexp(t, `auto-merge +whenever +pr +wants merge now for ENG-1; waiting: notify for ENG-1 \(after the step before it lands\)\n`, res.Stdout)
 }
 
 func TestRulesInitWritesTheShippedRules(t *testing.T) {
@@ -426,6 +426,20 @@ func TestRulesInitDescribesTurnsAndCommandsInTheTypes(t *testing.T) {
 	assert.Regexp(t, `/\*\* Every turn the worker's current Claude session has ended[^\n]*\*/\n    readonly turns: Turn\[\];`, string(types))
 }
 
+func TestRulesInitWritesTypesWithoutTheLinearKeySettings(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	dir := filepath.Join(t.TempDir(), "rules")
+	require.NoError(t, d.Run("rules", "init", dir).Err)
+
+	types, err := os.ReadFile(filepath.Join(dir, "types", "dispatch.d.ts"))
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(types), "api_key_command")
+	assert.NotContains(t, string(types), "api_key_keychain")
+	assert.Contains(t, string(types), "ai_label")
+}
+
 func TestRulesInitRefusesToOverwriteAnyFile(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
@@ -471,13 +485,13 @@ func TestRulesTestReportsAFailingScenarioAndRunsTheRest(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: map[string]string{
 		"dispatch.ts": `import { whenever } from "dispatch";
-whenever({ name: "greet", each: "linear.ticket", if: (t) => t.status === "in_progress",
-  then: (t, ctx) => ctx.herdr.queueNudge(t, "hello", { once: ["greet", t.id] }) });`,
+whenever({ name: "greet", each: "ticket", if: (t) => t.status === "in_progress",
+  then: (t, ctx) => ctx.worker.queueNudge(t, "hello", { once: ["greet", t.id] }) });`,
 		"greet.test.ts": `import { scenario, ticket, rulesFrom } from "dispatch/testing";
 const rules = rulesFrom("./dispatch");
 scenario(rules, "wants a greeting", s => {
   s.given(ticket("ENG-1", { status: "in_progress" }));
-  s.expect([["greet", "herdr.nudge", "ENG-1"]]);
+  s.expect([["greet", "nudge", "ENG-1"]]);
 });
 scenario(rules, "expects the wrong thing", s => {
   s.given(ticket("ENG-1", { status: "in_progress" }));
@@ -494,7 +508,7 @@ scenario(rules, "wants nothing for a ticket in review", s => {
 	require.ErrorContains(t, res.Err, "1 of 3 scenarios failed")
 	assert.Contains(t, res.Stdout, "ok   greet.test.ts: wants a greeting")
 	assert.Contains(t, res.Stdout, "FAIL greet.test.ts: expects the wrong thing")
-	assert.Contains(t, res.Stdout, "expected the cycle to want nothing but it wants [greet herdr.nudge ENG-1]")
+	assert.Contains(t, res.Stdout, "expected the cycle to want nothing but it wants [greet nudge ENG-1]")
 	assert.Contains(t, res.Stdout, "ok   greet.test.ts: wants nothing for a ticket in review")
 }
 
@@ -590,7 +604,7 @@ func TestRulesCheckClosesAParentWhoseChildrenAreFinished(t *testing.T) {
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `close-parent +whenever +linear\.ticket +wants move now for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `close-parent +whenever +ticket +wants move now for ENG-1\n`, res.Stdout)
 	assert.Empty(t, d.Linear.Moves())
 	assert.Empty(t, d.Linear.Comments())
 }
@@ -605,7 +619,7 @@ func TestRulesCheckHoldsAParentWhoseChildrenCannotBeRead(t *testing.T) {
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `close-parent +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `close-parent +whenever +ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
 	assert.Empty(t, d.Linear.Moves())
 	assert.Empty(t, d.Linear.Comments())
 }
@@ -621,8 +635,8 @@ func TestRulesCheckHoldsTheRulesOfAPRThatCannotBeRead(t *testing.T) {
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `auto-merge +whenever +github\.pr +wants nothing now; held for ENG-1\n`, res.Stdout)
-	assert.Regexp(t, `notify-ready-for-review +whenever +github\.pr +wants nothing now; held for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `auto-merge +whenever +pr +wants nothing now; held for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `notify-ready-for-review +whenever +pr +wants nothing now; held for ENG-1\n`, res.Stdout)
 	assert.Empty(t, d.Tools().PullRequests.Merged())
 }
 
@@ -636,8 +650,8 @@ func TestRulesCheckHoldsTheTearDownOfATreeItCannotRead(t *testing.T) {
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `teardown-clean-tree +whenever +treehouse\.tree +wants nothing now; held for ENG-1\n`, res.Stdout)
-	assert.Regexp(t, `comment-kept-tree +whenever +treehouse\.tree +wants nothing now; held for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `teardown-clean-tree +whenever +tree +wants nothing now; held for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `comment-kept-tree +whenever +tree +wants nothing now; held for ENG-1\n`, res.Stdout)
 	assert.Empty(t, d.Trees.Returned())
 	assert.Empty(t, d.Linear.Moves())
 	assert.Empty(t, d.Linear.Comments())
@@ -652,7 +666,7 @@ func TestRulesCheckReturnsNothingButWantsTheTearDownOfACleanTree(t *testing.T) {
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `teardown-clean-tree +whenever +treehouse\.tree +wants return now for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `teardown-clean-tree +whenever +tree +wants return now for ENG-1\n`, res.Stdout)
 	assert.Empty(t, d.Trees.Returned())
 }
 
@@ -660,7 +674,7 @@ func TestRulesCheckStopsAnIfAfterOneSecondByDefault(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
-		Rules:  rule(`whenever({ name: "loops", each: "linear.ticket", if: () => { for (;;) {} }, then: () => {} });`),
+		Rules:  rule(`whenever({ name: "loops", each: "ticket", if: () => { for (;;) {} }, then: () => {} });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -679,8 +693,8 @@ func TestRulesCheckStopsAThenThatRunsOutOfTimeAndKeepsTheOthers(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`
-whenever({ name: "slow", each: "linear.ticket", if: () => true, then: (t, ctx) => { ctx.herdr.queueNudge(t, "x", { once: ["slow"] }); for (;;) {} } });
-whenever({ name: "fine", each: "linear.ticket", if: () => true, then: (t, ctx) => ctx.herdr.queueNudge(t, "y", { once: ["fine"] }) });`),
+whenever({ name: "slow", each: "ticket", if: () => true, then: (t, ctx) => { ctx.worker.queueNudge(t, "x", { once: ["slow"] }); for (;;) {} } });
+whenever({ name: "fine", each: "ticket", if: () => true, then: (t, ctx) => ctx.worker.queueNudge(t, "y", { once: ["fine"] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -690,8 +704,8 @@ whenever({ name: "fine", each: "linear.ticket", if: () => true, then: (t, ctx) =
 
 	require.ErrorContains(t, res.Err, "1 problems found")
 	assert.Contains(t, res.Stdout, "finding: slow ran out of time in its then for ENG-1")
-	assert.Regexp(t, `slow +whenever +linear\.ticket +wants nothing now\n`, res.Stdout)
-	assert.Regexp(t, `fine +whenever +linear\.ticket +wants nudge now for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `slow +whenever +ticket +wants nothing now\n`, res.Stdout)
+	assert.Regexp(t, `fine +whenever +ticket +wants nudge now for ENG-1\n`, res.Stdout)
 }
 
 func TestRulesCheckGivesEachRuleCallAFreshRuntime(t *testing.T) {
@@ -700,15 +714,15 @@ func TestRulesCheckGivesEachRuleCallAFreshRuntime(t *testing.T) {
 		Config: shippedRulesConfig,
 		Rules: rule(`
 let calls = 0;
-whenever({ name: "counts", each: "linear.ticket", if: () => { calls++; return calls === 1; },
-  then: (t, ctx) => ctx.linear.queueComment(t, "first", { once: ["counts", t.id] }) });`),
+whenever({ name: "counts", each: "ticket", if: () => { calls++; return calls === 1; },
+  then: (t, ctx) => ctx.ticket.queueComment(t, "first", { once: ["counts", t.id] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
 
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `counts +whenever +linear\.ticket +wants comment now for ENG-1, ENG-2\n`, res.Stdout)
+	assert.Regexp(t, `counts +whenever +ticket +wants comment now for ENG-1, ENG-2\n`, res.Stdout)
 }
 
 func TestRulesCheckHoldsARecordWhoseReadFailedEvenWhenTheRuleCatchesIt(t *testing.T) {
@@ -716,8 +730,8 @@ func TestRulesCheckHoldsARecordWhoseReadFailedEvenWhenTheRuleCatchesIt(t *testin
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`
-whenever({ name: "catches", each: "linear.ticket", if: (t, ctx) => true,
-  then: (t, ctx) => { try { ctx.treehouse.pool(t.repo); } catch (e) {} return ctx.linear.queueComment(t, "x", { once: ["c", t.id] }); } });`),
+whenever({ name: "catches", each: "ticket", if: (t, ctx) => true,
+  then: (t, ctx) => { try { ctx.tree.pool(t.repo); } catch (e) {} return ctx.ticket.queueComment(t, "x", { once: ["c", t.id] }); } });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tools().Treehouse.FailTrees(errors.New("exit status 1"))
@@ -725,15 +739,15 @@ whenever({ name: "catches", each: "linear.ticket", if: (t, ctx) => true,
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `catches +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `catches +whenever +ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
 }
 
 func TestRulesCheckHoldsALeaseQuestionAboutAChildWhenTheRepoLabelGroupIsCustom(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: "[plugins.linear]\nrepo_label_group = \"project\"\n" + shippedRulesConfig,
-		Rules: rule(`whenever({ name: "asks", each: "linear.ticket", if: (t, ctx) => t.status === "todo" && !ctx.treehouse.leased(t),
-  then: (t, ctx) => ctx.linear.queueComment(t, "free", { once: ["asks", t.id] }) });`),
+		Rules: rule(`whenever({ name: "asks", each: "ticket", if: (t, ctx) => t.status === "todo" && !ctx.tree.leased(t),
+  then: (t, ctx) => ctx.ticket.queueComment(t, "free", { once: ["asks", t.id] }) });`),
 	})
 	regroup := func(tk fakeTicket) fakeTicket {
 		tk.Labels = []linear.Label{{Name: "ai"}, {Name: "dispatch", Group: "project"}}
@@ -746,16 +760,16 @@ func TestRulesCheckHoldsALeaseQuestionAboutAChildWhenTheRepoLabelGroupIsCustom(t
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `asks +whenever +linear\.ticket +wants nothing now; held for ENG-2\n`, res.Stdout)
+	assert.Regexp(t, `asks +whenever +ticket +wants nothing now; held for ENG-2\n`, res.Stdout)
 }
 
 func TestRulesCheckHoldsARuleWhoseKnownCallbackCatchesTheUnknownRead(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
-		Rules: rule(`whenever({ name: "swallows", each: "linear.ticket",
-  if: (t, ctx) => known(() => { try { return ctx.herdr.worker(t).state; } catch (e) { return 0; } }),
-  then: (t, ctx) => ctx.linear.queueComment(t, "acted", { once: ["swallows", t.id] }) });`),
+		Rules: rule(`whenever({ name: "swallows", each: "ticket",
+  if: (t, ctx) => known(() => { try { return ctx.worker.of(t).state; } catch (e) { return 0; } }),
+  then: (t, ctx) => ctx.ticket.queueComment(t, "acted", { once: ["swallows", t.id] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tools().Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
@@ -763,15 +777,15 @@ func TestRulesCheckHoldsARuleWhoseKnownCallbackCatchesTheUnknownRead(t *testing.
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `swallows +whenever +linear\.ticket +wants nothing now`, res.Stdout)
+	assert.Regexp(t, `swallows +whenever +ticket +wants nothing now`, res.Stdout)
 }
 
 func TestRulesCheckRecordsAForgedActionHandleAsAThrow(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
-		Rules: rule(`whenever({ name: "forges", each: "linear.ticket", if: () => true, then: () => ({ queued: true, __id: 99 }) as any });
-whenever({ name: "healthy", each: "linear.ticket", if: () => true, then: (t, ctx) => ctx.linear.queueComment(t, "ok", { once: ["h", t.id] }) });`),
+		Rules: rule(`whenever({ name: "forges", each: "ticket", if: () => true, then: () => ({ queued: true, __id: 99 }) as any });
+whenever({ name: "healthy", each: "ticket", if: () => true, then: (t, ctx) => ctx.ticket.queueComment(t, "ok", { once: ["h", t.id] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -779,15 +793,15 @@ whenever({ name: "healthy", each: "linear.ticket", if: () => true, then: (t, ctx
 
 	require.ErrorContains(t, res.Err, "problems found")
 	assert.Contains(t, res.Stdout, "finding: forges threw in its then for ENG-1: then returned something that isn't an action")
-	assert.Regexp(t, `healthy +whenever +linear\.ticket +wants comment now for ENG-1`, res.Stdout)
+	assert.Regexp(t, `healthy +whenever +ticket +wants comment now for ENG-1`, res.Stdout)
 }
 
 func TestRulesCheckNamesAMissingOnceKeyThatTheLintCouldNotSee(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
-		Rules: rule(`whenever({ name: "computed", each: "linear.ticket", if: () => true,
-  then: (t, ctx) => ctx.linear.queueComment(t, "hi", (t.id === "ENG-1" ? {} : { once: ["x"] }) as any) });`),
+		Rules: rule(`whenever({ name: "computed", each: "ticket", if: () => true,
+  then: (t, ctx) => ctx.ticket.queueComment(t, "hi", (t.id === "ENG-1" ? {} : { once: ["x"] }) as any) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -813,16 +827,16 @@ func TestRulesCheckCannotReachTheRealClockThroughDate(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
-		Rules: rule(`whenever({ name: "clock", each: "linear.ticket",
+		Rules: rule(`whenever({ name: "clock", each: "ticket",
   if: (t, ctx) => new (new Date().constructor as any)().getTime() === ctx.now,
-  then: (t, ctx) => ctx.linear.queueComment(t, "pinned", { once: ["c", t.id] }) });`),
+  then: (t, ctx) => ctx.ticket.queueComment(t, "pinned", { once: ["c", t.id] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `clock +whenever +linear\.ticket +wants comment now for ENG-1`, res.Stdout)
+	assert.Regexp(t, `clock +whenever +ticket +wants comment now for ENG-1`, res.Stdout)
 }
 
 func TestRulesCheckRefusesAHandleThatIsNotAnActionOrIsReturnedTwice(t *testing.T) {
@@ -831,14 +845,14 @@ func TestRulesCheckRefusesAHandleThatIsNotAnActionOrIsReturnedTwice(t *testing.T
 		name string
 		then string
 	}{
-		{"NotANumber", `(t: any, ctx: any) => { const a = ctx.linear.queueComment(t, "a", { once: ["a"] }); return [a, { queued: true, __id: "x" }]; }`},
-		{"NaN", `(t: any, ctx: any) => { const a = ctx.linear.queueComment(t, "a", { once: ["a"] }); return [{ queued: true, __id: NaN }, a]; }`},
-		{"Twice", `(t: any, ctx: any) => { const a = ctx.linear.queueComment(t, "a", { once: ["a"] }); return [a, a]; }`},
+		{"NotANumber", `(t: any, ctx: any) => { const a = ctx.ticket.queueComment(t, "a", { once: ["a"] }); return [a, { queued: true, __id: "x" }]; }`},
+		{"NaN", `(t: any, ctx: any) => { const a = ctx.ticket.queueComment(t, "a", { once: ["a"] }); return [{ queued: true, __id: NaN }, a]; }`},
+		{"Twice", `(t: any, ctx: any) => { const a = ctx.ticket.queueComment(t, "a", { once: ["a"] }); return [a, a]; }`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{
 				Config: shippedRulesConfig,
-				Rules:  rule(`whenever({ name: "forges", each: "linear.ticket", if: () => true, then: ` + test.then + ` });`),
+				Rules:  rule(`whenever({ name: "forges", each: "ticket", if: () => true, then: ` + test.then + ` });`),
 			})
 			d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -854,9 +868,9 @@ func TestRulesCheckStopsAGetterInAReturnedObjectWithinTheBudget(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
-		Rules: rule(`whenever({ name: "getter", each: "linear.ticket", if: () => true,
-  then: (t, ctx) => { ctx.linear.queueComment(t, "a", { once: ["a"] }); const returned: any[] = [null]; Object.defineProperty(returned, "0", { get() { for (;;) {} } }); return returned as any; } });
-whenever({ name: "healthy", each: "linear.ticket", if: () => true, then: (t, ctx) => ctx.linear.queueComment(t, "ok", { once: ["h", t.id] }) });`),
+		Rules: rule(`whenever({ name: "getter", each: "ticket", if: () => true,
+  then: (t, ctx) => { ctx.ticket.queueComment(t, "a", { once: ["a"] }); const returned: any[] = [null]; Object.defineProperty(returned, "0", { get() { for (;;) {} } }); return returned as any; } });
+whenever({ name: "healthy", each: "ticket", if: () => true, then: (t, ctx) => ctx.ticket.queueComment(t, "ok", { once: ["h", t.id] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -866,14 +880,14 @@ whenever({ name: "healthy", each: "linear.ticket", if: () => true, then: (t, ctx
 
 	require.ErrorContains(t, res.Err, "problems found")
 	assert.Contains(t, res.Stdout, "finding: getter ran out of time in its then for ENG-1: took longer than its time budget and was stopped")
-	assert.Regexp(t, `healthy +whenever +linear\.ticket +wants comment now for ENG-1`, res.Stdout)
+	assert.Regexp(t, `healthy +whenever +ticket +wants comment now for ENG-1`, res.Stdout)
 }
 
 func TestRulesCheckNamesAMissingKeyInANestedRulesTable(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: "[rules.slack]\nchannel = \"#eng\"\n",
-		Rules:  rule(`whenever({ name: "nested", each: "linear.ticket", if: (t, ctx) => ctx.config.rules.slack.channel === "#eng" && ctx.config.rules.slack.token === "x", then: () => {} });`),
+		Rules:  rule(`whenever({ name: "nested", each: "ticket", if: (t, ctx) => ctx.config.rules.slack.channel === "#eng" && ctx.config.rules.slack.token === "x", then: () => {} });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -891,14 +905,14 @@ func TestRulesCheckShowsWhatWaitsForAWorkerSlot(t *testing.T) {
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `launch-worker +whenever +linear\.ticket +wants launch now for ENG-\d; waiting: launch for ENG-\d \(0 of 1 in progress, 1st in line\)\n`, res.Stdout)
+	assert.Regexp(t, `launch-worker +whenever +ticket +wants launch now for ENG-\d; waiting: launch for ENG-\d \(0 of 1 in progress, 1st in line\)\n`, res.Stdout)
 }
 
 func TestRulesTestFailsAScenarioWhenARuleThrowsUnlessItExpectsTheThrow(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: map[string]string{
 		"dispatch.ts": `import { whenever } from "dispatch";
-whenever({ name: "broken", each: "linear.ticket", if: (t) => t.nothing.deeper === 1, then: () => {} });`,
+whenever({ name: "broken", each: "ticket", if: (t) => t.nothing.deeper === 1, then: () => {} });`,
 		"broken.test.ts": `import { scenario, ticket, rulesFrom } from "dispatch/testing";
 const rules = rulesFrom("./dispatch");
 scenario(rules, "expects nothing from a broken rule", s => {
@@ -924,9 +938,9 @@ func TestRulesCheckRefusesAHugeArrayWithoutBuildingIt(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
-		Rules: rule(`whenever({ name: "huge", each: "linear.ticket", if: () => true, then: () => new Array(1_000_000_000) as any });
-whenever({ name: "huge-once", each: "linear.ticket", if: () => true,
-  then: (t, ctx) => ctx.linear.queueComment(t, "x", { once: new Array(1_000_000_000) as any }) });`),
+		Rules: rule(`whenever({ name: "huge", each: "ticket", if: () => true, then: () => new Array(1_000_000_000) as any });
+whenever({ name: "huge-once", each: "ticket", if: () => true,
+  then: (t, ctx) => ctx.ticket.queueComment(t, "x", { once: new Array(1_000_000_000) as any }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -973,7 +987,7 @@ func TestRulesTestAcknowledgesAThrowOnlyForTheCycleItWasMadeIn(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: map[string]string{
 		"dispatch.ts": `import { whenever } from "dispatch";
-whenever({ name: "broken", each: "linear.ticket", if: (t: any) => t.nothing.deeper === 1, then: () => {} });`,
+whenever({ name: "broken", each: "ticket", if: (t: any) => t.nothing.deeper === 1, then: () => {} });`,
 		"broken.test.ts": `import { scenario, ticket, rulesFrom } from "dispatch/testing";
 const rules = rulesFrom("./dispatch");
 scenario(rules, "acknowledged in the cycle it happens", s => {
@@ -1015,7 +1029,7 @@ func TestTheTurnsExampleInTheRulesGuideIsNotHeldForOtherTickets(t *testing.T) {
 
 	require.NoError(t, res.Err)
 	assert.NotRegexp(t, `held`, res.Stdout)
-	assert.Regexp(t, `long-loop-in-review +whenever +linear\.ticket +wants nothing now`, res.Stdout)
+	assert.Regexp(t, `long-loop-in-review +whenever +ticket +wants nothing now`, res.Stdout)
 }
 
 // The person-took-over rule in docs/rules.md is what readers copy, so it must not hold for tickets it has no opinion on.
@@ -1034,17 +1048,17 @@ func TestTheCommandsExampleInTheRulesGuideIsNotHeldForOtherTickets(t *testing.T)
 
 	require.NoError(t, res.Err)
 	assert.NotRegexp(t, `held`, res.Stdout)
-	assert.Regexp(t, `person-took-over +whenever +linear\.ticket +wants nothing now`, res.Stdout)
+	assert.Regexp(t, `person-took-over +whenever +ticket +wants nothing now`, res.Stdout)
 }
 
 func TestAThenThatCallsGetActsOnTheResponse(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({
-  name: "report-sentry", each: "linear.ticket",
+  name: "report-sentry", each: "ticket",
   if: (t) => t.status === "in_progress",
   then: (t, ctx) => {
     const res = ctx.http.get("sentry", "/issues/?query=is:unresolved");
-    return ctx.linear.queueComment(t, res.status + " " + (res.body as any[]).map((i) => i.title).join(","), { once: ["sentry", t.id] });
+    return ctx.ticket.queueComment(t, res.status + " " + (res.body as any[]).map((i) => i.title).join(","), { once: ["sentry", t.id] });
   },
 });`)})
 	sentry := d.Services.Sentry()
@@ -1061,7 +1075,7 @@ func TestAThenThatCallsGetActsOnTheResponse(t *testing.T) {
 
 func TestAnIfThatCallsGetThrows(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "fetch-in-if", each: "linear.ticket", if: (t, ctx) => ctx.http.get("sentry", "/me").status === 200, then: () => {} });`)})
+	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "fetch-in-if", each: "ticket", if: (t, ctx) => ctx.http.get("sentry", "/me").status === 200, then: () => {} });`)})
 	sentry := d.Services.Sentry()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -1074,7 +1088,7 @@ func TestAnIfThatCallsGetThrows(t *testing.T) {
 
 func TestACallToAServiceConfigDoesNotNameThrowsAtTheCall(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "wrong-service", each: "linear.ticket", if: () => true, then: (t, ctx) => { ctx.http.get("pagerduty", "/me"); } });`)})
+	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "wrong-service", each: "ticket", if: () => true, then: (t, ctx) => { ctx.http.get("pagerduty", "/me"); } });`)})
 	sentry := d.Services.Sentry()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -1099,7 +1113,7 @@ func TestAPathThatLeavesTheServiceThrowsAtTheCall(t *testing.T) {
 		{"EncodedDotsAndSemicolon", "/%2e%2e%3B/admin"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "escape", each: "linear.ticket", if: () => true, then: (t, ctx) => { ctx.http.get("sentry", "` + test.path + `"); } });`)})
+			d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "escape", each: "ticket", if: () => true, then: (t, ctx) => { ctx.http.get("sentry", "` + test.path + `"); } });`)})
 			sentry := d.Services.Sentry()
 			d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -1123,8 +1137,8 @@ func TestAGetThatFailsHoldsTheRule(t *testing.T) {
 		{"NotFound", 404, "GET sentry /me: returned 404"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "ask", each: "linear.ticket", if: () => true,
-  then: (t, ctx) => ctx.linear.queueComment(t, "got " + ctx.http.get("sentry", "/me").status, { once: ["ask", t.id] }) });`)})
+			d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "ask", each: "ticket", if: () => true,
+  then: (t, ctx) => ctx.ticket.queueComment(t, "got " + ctx.http.get("sentry", "/me").status, { once: ["ask", t.id] }) });`)})
 			sentry := d.Services.Sentry()
 			sentry.Respond("sentry", "GET", "/me", test.status, "boom "+sentryToken)
 			d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -1132,7 +1146,7 @@ func TestAGetThatFailsHoldsTheRule(t *testing.T) {
 			res := d.Run("rules", "check")
 
 			require.NoError(t, res.Err)
-			assert.Regexp(t, `ask +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
+			assert.Regexp(t, `ask +whenever +ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
 			assert.NotContains(t, res.Stdout, sentryToken)
 			assert.Empty(t, d.Linear.Comments())
 			require.Len(t, sentry.Requests(), 1)
@@ -1145,8 +1159,8 @@ func TestAGetThatOutlastsTheThenBudgetHoldsTheRuleInsteadOfThrowing(t *testing.T
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		RuleTimeout: dispatch.RuleTimeout{Then: 100 * time.Millisecond},
-		Rules: rule(`whenever({ name: "slow", each: "linear.ticket", if: () => true,
-  then: (t, ctx) => ctx.linear.queueComment(t, "got " + ctx.http.get("sentry", "/slow").status, { once: ["slow", t.id] }) });`),
+		Rules: rule(`whenever({ name: "slow", each: "ticket", if: () => true,
+  then: (t, ctx) => ctx.ticket.queueComment(t, "got " + ctx.http.get("sentry", "/slow").status, { once: ["slow", t.id] }) });`),
 	})
 	sentry := d.Services.Sentry()
 	sentry.Respond("sentry", "GET", "/slow", 200, `{}`)
@@ -1159,21 +1173,21 @@ func TestAGetThatOutlastsTheThenBudgetHoldsTheRuleInsteadOfThrowing(t *testing.T
 
 	require.NoError(t, res.Err)
 	assert.Len(t, sentry.Requests(), 1)
-	assert.Regexp(t, `slow +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `slow +whenever +ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
 }
 
 func TestLastReadsTheResponseAGetKeptUntilTheNextResync(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`
 // Fetches once per ticket, so only the first cycle calls the service.
-whenever({ name: "fetch", each: "linear.ticket", if: (t, ctx) => !ctx.ledger.done(t, ["fetch", t.id]),
-  then: (t, ctx) => { ctx.http.get("sentry", "/count"); return ctx.linear.queueComment(t, "fetched", { once: ["fetch", t.id] }); } });
+whenever({ name: "fetch", each: "ticket", if: (t, ctx) => !ctx.ledger.done(t, ["fetch", t.id]),
+  then: (t, ctx) => { ctx.http.get("sentry", "/count"); return ctx.ticket.queueComment(t, "fetched", { once: ["fetch", t.id] }); } });
 // Reads the kept response from an if, with no request of its own.
-whenever({ name: "use-kept", each: "linear.ticket", if: (t, ctx) => (ctx.http.last("sentry", "/count").body as any).open > 0,
-  then: (t, ctx) => ctx.linear.queueComment(t, "kept " + (ctx.http.last("sentry", "/count").body as any).open, { once: ["kept", t.id] }) });
+whenever({ name: "use-kept", each: "ticket", if: (t, ctx) => (ctx.http.last("sentry", "/count").body as any).open > 0,
+  then: (t, ctx) => ctx.ticket.queueComment(t, "kept " + (ctx.http.last("sentry", "/count").body as any).open, { once: ["kept", t.id] }) });
 // True only while nothing is kept.
-whenever({ name: "forgot", each: "linear.ticket", if: (t, ctx) => !known(() => ctx.http.last("sentry", "/count")) && ctx.ledger.done(t, ["fetch", t.id]),
-  then: (t, ctx) => ctx.linear.queueComment(t, "forgot", { once: ["forgot", t.id] }) });`)})
+whenever({ name: "forgot", each: "ticket", if: (t, ctx) => !known(() => ctx.http.last("sentry", "/count")) && ctx.ledger.done(t, ["fetch", t.id]),
+  then: (t, ctx) => ctx.ticket.queueComment(t, "forgot", { once: ["forgot", t.id] }) });`)})
 	sentry := d.Services.Sentry()
 	sentry.Respond("sentry", "GET", "/count", 200, `{"open":3}`)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -1192,19 +1206,19 @@ whenever({ name: "forgot", each: "linear.ticket", if: (t, ctx) => !known(() => c
 
 func TestLastWithNothingKeptHoldsTheRule(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "peek", each: "linear.ticket", if: (t, ctx) => (ctx.http.last("sentry", "/count").body as any).open > 0, then: () => {} });`)})
+	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "peek", each: "ticket", if: (t, ctx) => (ctx.http.last("sentry", "/count").body as any).open > 0, then: () => {} });`)})
 	d.Services.Sentry()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `peek +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `peek +whenever +ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
 }
 
 func TestAQueuedPostIsSentOnceWithTheServiceTokenAndRetriedWhenItFails(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "resolve", each: "linear.ticket", if: (t) => t.status === "in_progress",
+	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "resolve", each: "ticket", if: (t) => t.status === "in_progress",
   then: (t, ctx) => ctx.http.queuePost("sentry", "/issues/7/resolve", { status: "resolved", by: t.id }, { once: ["resolve", t.id] }) });`)})
 	sentry := d.Services.Sentry()
 	sentry.Respond("sentry", "POST", "/issues/7/resolve", 503, "")
@@ -1243,7 +1257,7 @@ func TestAQueuedPostIsSentOnceWithTheServiceTokenAndRetriedWhenItFails(t *testin
 
 func TestAPostToAServiceConfigDoesNotNameThrowsWhenQueued(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "wrong-post", each: "linear.ticket", if: () => true,
+	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "wrong-post", each: "ticket", if: () => true,
   then: (t, ctx) => ctx.http.queuePost("pagerduty", "/x", {}, { once: ["x", t.id] }) });`)})
 	sentry := d.Services.Sentry()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -1258,11 +1272,11 @@ func TestAPostToAServiceConfigDoesNotNameThrowsWhenQueued(t *testing.T) {
 func TestTheServiceTokenNeverReachesARuleHistoryOrOutput(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`
-whenever({ name: "echo", each: "linear.ticket", if: () => true,
-  then: (t, ctx) => ctx.linear.queueComment(t, JSON.stringify(ctx.http.get("sentry", "/echo").body) + " " + JSON.stringify(ctx.config.http), { once: ["echo", t.id] }) });
-whenever({ name: "boom", each: "linear.ticket", if: () => true,
-  then: (t, ctx) => ctx.linear.queueComment(t, "boom " + ctx.http.get("sentry", "/boom").status, { once: ["boom", t.id] }) });
-whenever({ name: "hook", each: "linear.ticket", if: () => true,
+whenever({ name: "echo", each: "ticket", if: () => true,
+  then: (t, ctx) => ctx.ticket.queueComment(t, JSON.stringify(ctx.http.get("sentry", "/echo").body) + " " + JSON.stringify(ctx.config.http), { once: ["echo", t.id] }) });
+whenever({ name: "boom", each: "ticket", if: () => true,
+  then: (t, ctx) => ctx.ticket.queueComment(t, "boom " + ctx.http.get("sentry", "/boom").status, { once: ["boom", t.id] }) });
+whenever({ name: "hook", each: "ticket", if: () => true,
   then: (t, ctx) => ctx.http.queuePost("sentry", "/hook", { hello: "world" }, { once: ["hook", t.id] }) });`)})
 	sentry := d.Services.Sentry()
 	sentry.Respond("sentry", "GET", "/echo", 200, `{"you":"`+sentryToken+`"}`)
@@ -1291,8 +1305,8 @@ whenever({ name: "hook", each: "linear.ticket", if: () => true,
 
 func TestEachResponseAThenWaitedOnIsShownInTheTrace(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "count", each: "linear.ticket", if: () => true,
-  then: (t, ctx) => ctx.linear.queueComment(t, "open " + (ctx.http.get("sentry", "/count").body as any).open, { once: ["count", t.id] }) });`)})
+	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "count", each: "ticket", if: () => true,
+  then: (t, ctx) => ctx.ticket.queueComment(t, "open " + (ctx.http.get("sentry", "/count").body as any).open, { once: ["count", t.id] }) });`)})
 	d.Services.Sentry().Respond("sentry", "GET", "/count", 200, `{"open":3}`)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -1324,7 +1338,7 @@ func TestRulesTestRunsHTTPScenariosAgainstTheFakeServices(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Rules: map[string]string{
 		"dispatch.ts": `import { whenever, known } from "dispatch";
 whenever({
-  name: "resolve-quiet", each: "linear.ticket",
+  name: "resolve-quiet", each: "ticket",
   if: (t, ctx) => t.status === "in_progress",
   then: (t, ctx) => {
     const issues = ctx.http.get("sentry", "/issues/?query=is:unresolved").body as any[];
@@ -1332,9 +1346,9 @@ whenever({
   },
 });
 whenever({
-  name: "note-open", each: "linear.ticket",
+  name: "note-open", each: "ticket",
   if: (t, ctx) => known(() => ctx.http.last("sentry", "/issues/?query=is:unresolved")) && (ctx.http.last("sentry", "/issues/?query=is:unresolved").body as any[]).length > 0,
-  then: (t, ctx) => ctx.linear.queueComment(t, "open errors", { once: ["open", t.id] }),
+  then: (t, ctx) => ctx.ticket.queueComment(t, "open errors", { once: ["open", t.id] }),
 });
 `,
 		"sentry.test.ts": `import { scenario, ticket, rulesFrom } from "dispatch/testing";
@@ -1345,16 +1359,16 @@ scenario(rules, "posts when sentry has nothing open", s => {
   s.config({ http: { sentry: { baseUrl: "https://sentry.test/api/0" } } });
   s.http("sentry", "/issues/?query=is:unresolved", []);
   s.given(ticket("ENG-1", build));
-  s.expect([["resolve-quiet", "http.post", "sentry"]]);
+  s.expect([["resolve-quiet", "post", "sentry"]]);
 });
 
 scenario(rules, "reads the response a get kept from another rule's if", s => {
   s.config({ http: { sentry: { baseUrl: "https://sentry.test/api/0" } } });
   s.http("sentry", "/issues/?query=is:unresolved", [{ id: "1" }]);
   s.given(ticket("ENG-1", build));
-  s.expect([["note-open", "linear.comment", "ENG-1"]]);
+  s.expect([["note-open", "comment", "ENG-1"]]);
   s.resync();
-  s.expect([["note-open", "linear.comment", "ENG-1"]]);
+  s.expect([["note-open", "comment", "ENG-1"]]);
 });
 
 scenario(rules, "holds while the service has no answer", s => {
@@ -1379,7 +1393,7 @@ func TestAPostThatTimesOutCountsAsSentAndIsNotPostedAgain(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		ActionTimeout: 100 * time.Millisecond,
-		Rules: rule(`whenever({ name: "slow-post", each: "linear.ticket", if: (t) => t.status === "in_progress",
+		Rules: rule(`whenever({ name: "slow-post", each: "ticket", if: (t) => t.status === "in_progress",
   then: (t, ctx) => ctx.http.queuePost("sentry", "/slow", { id: t.id }, { once: ["slow-post", t.id] }) });`),
 	})
 	sentry := d.Services.Sentry()
@@ -1402,8 +1416,8 @@ func TestAPostThatTimesOutCountsAsSentAndIsNotPostedAgain(t *testing.T) {
 
 func TestAGetThatFailsIsShownInTheTraceWithItsReasonAndNoToken(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "down", each: "linear.ticket", if: () => true,
-  then: (t, ctx) => ctx.linear.queueComment(t, "got " + ctx.http.get("sentry", "/down").status, { once: ["down", t.id] }) });`)})
+	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "down", each: "ticket", if: () => true,
+  then: (t, ctx) => ctx.ticket.queueComment(t, "got " + ctx.http.get("sentry", "/down").status, { once: ["down", t.id] }) });`)})
 	d.Services.Sentry().Respond("sentry", "GET", "/down", 503, "oops "+sentryToken)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -1419,14 +1433,14 @@ func TestAGetThatFailsIsShownInTheTraceWithItsReasonAndNoToken(t *testing.T) {
 func TestRulesTestHTTPScenarioErrors(t *testing.T) {
 	t.Parallel()
 	const rulesTS = `import { whenever } from "dispatch";
-whenever({ name: "ask", each: "linear.ticket", if: () => true,
-  then: (t, ctx) => ctx.linear.queueComment(t, "got " + ctx.http.get("sentry", "/me").status, { once: ["ask", t.id] }) });
+whenever({ name: "ask", each: "ticket", if: () => true,
+  then: (t, ctx) => ctx.ticket.queueComment(t, "got " + ctx.http.get("sentry", "/me").status, { once: ["ask", t.id] }) });
 `
 	for _, test := range []struct{ name, body, want string }{
 		{"ServiceNotInScenarioConfig", `s.http("sentry", "/me", {}); s.given(ticket("ENG-1", build)); s.expect([]);`, "the scenario has no such service"},
 		{"ServiceWithoutBaseURL", `s.config({ http: { sentry: {} } });`, "needs a baseUrl"},
-		{"ServiceFailingWith503HoldsTheRule", `s.config({ http: { sentry: { baseUrl: "https://sentry.test" } } }); s.http("sentry", "/me", {}, { status: 503 }); s.given(ticket("ENG-1", build)); s.expect([["ask", "linear.comment", "ENG-1"]]);`, "FAIL"},
-		{"ABodyForAnotherPathIsNotAnAnswer", `s.config({ http: { sentry: { baseUrl: "https://sentry.test" } } }); s.http("sentry", "/other", {}); s.given(ticket("ENG-1", build)); s.expect([["ask", "linear.comment", "ENG-1"]]);`, "FAIL"},
+		{"ServiceFailingWith503HoldsTheRule", `s.config({ http: { sentry: { baseUrl: "https://sentry.test" } } }); s.http("sentry", "/me", {}, { status: 503 }); s.given(ticket("ENG-1", build)); s.expect([["ask", "comment", "ENG-1"]]);`, "FAIL"},
+		{"ABodyForAnotherPathIsNotAnAnswer", `s.config({ http: { sentry: { baseUrl: "https://sentry.test" } } }); s.http("sentry", "/other", {}); s.given(ticket("ENG-1", build)); s.expect([["ask", "comment", "ENG-1"]]);`, "FAIL"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{Rules: map[string]string{
@@ -1450,8 +1464,8 @@ func TestRulesTestHTTPScenarioAnswersAMethodAndStatus(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: map[string]string{
 		"dispatch.ts": `import { whenever } from "dispatch";
-whenever({ name: "ask", each: "linear.ticket", if: () => true,
-  then: (t, ctx) => ctx.linear.queueComment(t, "got " + ctx.http.get("sentry", "/me").status, { once: ["ask", t.id] }) });
+whenever({ name: "ask", each: "ticket", if: () => true,
+  then: (t, ctx) => ctx.ticket.queueComment(t, "got " + ctx.http.get("sentry", "/me").status, { once: ["ask", t.id] }) });
 `,
 		"a.test.ts": `import { scenario, ticket, rulesFrom } from "dispatch/testing";
 const rules = rulesFrom("./dispatch");
@@ -1460,7 +1474,7 @@ scenario(rules, "a 201 reads as a response", s => {
   s.config({ http: { sentry: { baseUrl: "https://sentry.test" } } });
   s.http("sentry", "/me", {}, { status: 201 });
   s.given(ticket("ENG-1", build));
-  s.expect([["ask", "linear.comment", "ENG-1"]]);
+  s.expect([["ask", "comment", "ENG-1"]]);
 });
 scenario(rules, "an answer for POST is not an answer for GET", s => {
   s.config({ http: { sentry: { baseUrl: "https://sentry.test" } } });
@@ -1491,7 +1505,7 @@ func TestAPostIsNotSentAgainAfterHistoryRotates(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: "\n[history]\nrotate = \"1m\"\nkeep = \"1d\"\n",
-		Rules: rule(`whenever({ name: "hook", each: "linear.ticket", if: (t) => t.status === "in_progress",
+		Rules: rule(`whenever({ name: "hook", each: "ticket", if: (t) => t.status === "in_progress",
   then: (t, ctx) => ctx.http.queuePost("sentry", "/hook", { id: t.id }, { once: ["hook", t.id] }) });`),
 	})
 	sentry := d.Services.Sentry()
@@ -1519,7 +1533,7 @@ func TestAPostWhoseTokenCommandOutlastsTheDeadlineSentNothingAndIsTriedAgain(t *
 	d := newDispatch(t, dispatchOptions{
 		Config:        "\n[http.sentry]\nbase_url = \"" + srv.URL + "\"\ntoken_command = \"touch " + started + "; exec sleep 30\"\n",
 		ActionTimeout: 300 * time.Millisecond,
-		Rules: rule(`whenever({ name: "hook", each: "linear.ticket", if: (t) => t.status === "in_progress",
+		Rules: rule(`whenever({ name: "hook", each: "ticket", if: (t) => t.status === "in_progress",
   then: (t, ctx) => ctx.http.queuePost("sentry", "/hook", {}, { once: ["hook", t.id] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -1552,15 +1566,15 @@ func TestRulesCheckCallsNoServiceUnlessGivenOne(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "token-command-ran")
 	d := newDispatch(t, dispatchOptions{
 		Config: "\n[http.sentry]\nbase_url = \"https://sentry.test/api/0\"\ntoken_command = \"touch " + marker + "; echo tok\"\n",
-		Rules: rule(`whenever({ name: "ask", each: "linear.ticket", if: () => true,
-  then: (t, ctx) => ctx.linear.queueComment(t, "got " + ctx.http.get("sentry", "/me").status, { once: ["ask", t.id] }) });`),
+		Rules: rule(`whenever({ name: "ask", each: "ticket", if: () => true,
+  then: (t, ctx) => ctx.ticket.queueComment(t, "got " + ctx.http.get("sentry", "/me").status, { once: ["ask", t.id] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	res := d.Run("rules", "check")
 
 	require.NoError(t, res.Err)
-	assert.Regexp(t, `ask +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `ask +whenever +ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
 	assert.NoFileExists(t, marker)
 }
 

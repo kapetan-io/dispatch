@@ -1958,8 +1958,8 @@ const (
 )
 
 const childCommentRule = `
-whenever({ name: "greet-child", each: "linear.ticket", if: (t) => t.id === "ENG-2",
-  then: (t, ctx) => ctx.linear.queueComment(t, "hello", { once: ["greet", t.statusSince] }) });`
+whenever({ name: "greet-child", each: "ticket", if: (t) => t.id === "ENG-2",
+  then: (t, ctx) => ctx.ticket.queueComment(t, "hello", { once: ["greet", t.statusSince] }) });`
 
 const (
 	sentryToken  = "sntrys_tok_4f9a1c"
@@ -2544,14 +2544,14 @@ func hintGit(t *testing.T, dir string, args ...string) {
 
 // turnsRule comments each time what a worker's turns read as changes, one comment for each reading.
 const turnsRule = `
-whenever({ name: "turns", each: "linear.ticket",
+whenever({ name: "turns", each: "ticket",
   if: (t) => t.status === "in_progress" || t.status === "in_review",
   then: (t, ctx) => {
-    const w = ctx.herdr.worker(t);
+    const w = ctx.worker.of(t);
     const body = known(() => w.turns)
       ? "turns " + w.turns.map((turn) => turn.running ? "running" : "idle").join(",") + " of " + w.turns.length
       : "turns unknown";
-    return ctx.linear.queueComment(t, body, { once: ["turns", t.id, body] });
+    return ctx.ticket.queueComment(t, body, { once: ["turns", t.id, body] });
   } });`
 
 // markLaunch leaves the mark a launch killed before its kickoff would leave, because a
@@ -2603,8 +2603,8 @@ func next(t *testing.T, lines <-chan string) string {
 	}
 }
 
-const countRule = `whenever({ name: "count", each: "linear.ticket", if: (t) => t.status === "in_progress",
-  then: (t, ctx) => ctx.linear.queueComment(t, "open " + (ctx.http.get("sentry", "/count").body as any).open, { once: ["count", t.id] }) });`
+const countRule = `whenever({ name: "count", each: "ticket", if: (t) => t.status === "in_progress",
+  then: (t, ctx) => ctx.ticket.queueComment(t, "open " + (ctx.http.get("sentry", "/count").body as any).open, { once: ["count", t.id] }) });`
 
 // exists is true once path exists, for a test to wait on a file a script writes.
 func exists(path string) bool {

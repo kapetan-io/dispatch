@@ -8,5 +8,5 @@ scenario(rules, "old commands never run on first start", s => {
   s.start();
   s.expect([]);
   s.see(comment("ENG-1", { body: "/dispatch pause" }));
-  s.expect([["comment-command", "linear.move", "ENG-1", "todo"]]);
+  s.expect([["comment-command", "move", "ENG-1", "todo"]]);
 });

@@ -428,10 +428,10 @@ func (s *scenario) respond(service, path string, body, opts sobek.Value) {
 }
 
 // land writes the receipt of a wanted action, as if the executor had run it.
-func (s *scenario) land(kind, subject string, outcome ledger.Outcome, detail string) {
+func (s *scenario) land(receipt, subject string, outcome ledger.Outcome, detail string) {
 	s.ensureCycle()
 	for _, w := range append(slices.Clone(s.last.Wants), waitingWants(s.last)...) {
-		if w.Kind == kind && w.Subject == subject {
+		if w.Receipt == receipt && w.Subject == subject {
 			s.tick()
 			rc := ledger.Receipt{Kind: w.Receipt, Subject: w.Subject, Once: w.Once, Rule: w.Rule, Outcome: outcome, Detail: detail, Started: s.ms(), Ended: s.ms()}
 			if w.Receipt == "escalate" {
@@ -443,7 +443,7 @@ func (s *scenario) land(kind, subject string, outcome ledger.Outcome, detail str
 			return
 		}
 	}
-	s.fail("land(%q, %q): the cycle wants no such action. It wants %s", kind, subject, describeWants(s.last))
+	s.fail("land(%q, %q): the cycle wants no such action. It wants %s", receipt, subject, describeWants(s.last))
 }
 
 func waitingWants(r Result) []Want {
@@ -466,9 +466,9 @@ func describeWants(r Result) string {
 }
 
 func wantLine(w Want) string {
-	line := fmt.Sprintf("[%s %s %s]", w.Rule, w.Kind, w.Subject)
+	line := fmt.Sprintf("[%s %s %s]", w.Rule, w.Receipt, w.Subject)
 	if status, ok := w.Args["status"].(string); ok {
-		line = fmt.Sprintf("[%s %s %s %s]", w.Rule, w.Kind, w.Subject, status)
+		line = fmt.Sprintf("[%s %s %s %s]", w.Rule, w.Receipt, w.Subject, status)
 	}
 	return line
 }
@@ -485,7 +485,7 @@ func (s *scenario) expect(v any) {
 			strs[i] = fmt.Sprint(p)
 		}
 		if len(strs) < 3 {
-			s.fail("expect takes [rule, kind, subject] lists, got %v", item)
+			s.fail("expect takes [rule, receipt, subject] lists, got %v", item)
 		}
 		want = append(want, "["+strings.Join(strs, " ")+"]")
 	}
@@ -493,7 +493,7 @@ func (s *scenario) expect(v any) {
 	for i, w := range s.last.Wants {
 		got[i] = wantLine(w)
 		if _, ok := w.Args["status"].(string); ok && !slices.Contains(want, got[i]) {
-			if short := fmt.Sprintf("[%s %s %s]", w.Rule, w.Kind, w.Subject); slices.Contains(want, short) {
+			if short := fmt.Sprintf("[%s %s %s]", w.Rule, w.Receipt, w.Subject); slices.Contains(want, short) {
 				got[i] = short
 			}
 		}

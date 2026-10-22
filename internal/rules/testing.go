@@ -48,12 +48,12 @@ func TestingDeclarations() string {
     activityAt?: string; activitySummary?: string; threadAt?: string;
   }): Fixture;
   export function tree(path: string, fields?: { holder?: string; pushed?: boolean; trackedChanges?: boolean }): Fixture;
-  export type Expected = [rule: string, kind: string, subject: string, ...rest: string[]];
+  export type Expected = [rule: string, receipt: string, subject: string, ...rest: string[]];
   export interface Scenario {
     config(c: { maxInProgress?: number; rules?: Record<string, unknown>; http?: Record<string, { baseUrl: string }>; repos?: Record<string, { autoMerge?: boolean; openPrAs?: "open" | "draft" }> }): void;
     given(...fixtures: Fixture[]): void;
     see(...fixtures: Fixture[]): void;
-    land(kind: string, subject: string, o?: { outcome?: "done" | "refused" | "failed"; detail?: string }): void;
+    land(receipt: string, subject: string, o?: { outcome?: "done" | "refused" | "failed"; detail?: string }): void;
     http(service: string, path: string, body: unknown, o?: { status?: number; method?: "GET" | "POST" }): void;
     unread(source: "herdr" | "treehouse" | string): void;
     resync(): void;
@@ -94,7 +94,7 @@ func (s *State) Summary(statuses config.Statuses) []SummaryLine {
 		scope = "assigned to " + s.Viewer + "; " + scope
 	}
 	workers, running := 0, 0
-	for _, r := range s.kinds["herdr.worker"] {
+	for _, r := range s.kinds["worker"] {
 		if r.hidden {
 			continue
 		}
@@ -104,10 +104,10 @@ func (s *State) Summary(statuses config.Statuses) []SummaryLine {
 		}
 	}
 	return []SummaryLine{
-		{"linear.ticket", fmt.Sprintf("%d tracked tickets (%s)", count("linear.ticket"), scope)},
-		{"github.pr", fmt.Sprintf("%d open PRs read (In Review tickets whose worker is idle or gone)", count("github.pr"))},
-		{"herdr.worker", fmt.Sprintf("%d workers, %d running", workers, running)},
-		{"treehouse.tree", fmt.Sprintf("%d trees in %d pools", count("treehouse.tree"), len(s.Config.Repos))},
-		{"ledger.escalation", fmt.Sprintf("%d escalations in the ledger", count("ledger.escalation"))},
+		{"ticket", fmt.Sprintf("%d tracked tickets (%s)", count("ticket"), scope)},
+		{"pr", fmt.Sprintf("%d open PRs read (In Review tickets whose worker is idle or gone)", count("pr"))},
+		{"worker", fmt.Sprintf("%d workers, %d running", workers, running)},
+		{"tree", fmt.Sprintf("%d trees in %d pools", count("tree"), len(s.Config.Repos))},
+		{"escalation", fmt.Sprintf("%d escalations in the ledger", count("escalation"))},
 	}
 }

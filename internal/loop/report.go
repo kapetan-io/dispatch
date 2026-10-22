@@ -284,7 +284,7 @@ func (l *Loop) tell(r request) error {
 	}
 	l.tells++
 	want := rules.Want{
-		Rule: "tell", Kind: "herdr.nudge", Receipt: "nudge", Subject: ticket,
+		Rule: "tell", Receipt: "nudge", Subject: ticket,
 		Once: ledger.Once{"tell", l.ingest(), l.tells}, Args: map[string]any{"text": r.Text},
 	}
 	if err := l.begin(want, nil, r.reply); err != nil {

@@ -179,7 +179,7 @@ func (e *Executor) Run(ctx context.Context, w rules.Want, wd world.World) Result
 	case "post":
 		res = e.post(ctx, w)
 	default:
-		res = Result{Outcome: ledger.Failed, Detail: "no executor for " + w.Kind}
+		res = Result{Outcome: ledger.Failed, Detail: "no executor for " + w.Receipt}
 	}
 	// A message that timed out may have landed, and a retry could say it twice.
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) && res.Outcome == ledger.Failed && !SafeToRetry(w.Receipt) && w.Receipt != "post" {
@@ -417,8 +417,7 @@ func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World)
 		return failed("%v", err)
 	}
 	if why != "" {
-		// The "kept: " prefix is read back by comment-kept-tree in rules/trees.ts.
-		res.Outcome, res.Detail = ledger.Refused, "kept: the worker left "+why+" in "+path
+		res.Outcome, res.Detail = ledger.Refused, "the worker left "+why+" in "+path
 		return res
 	}
 	files, err := treehouse.Untracked(ctx, e.Environment, path)
@@ -436,7 +435,7 @@ func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World)
 		}
 		// git clean skips a nested repository, and returning the tree would discard it.
 		if len(left) > 0 {
-			res.Outcome, res.Detail = ledger.Refused, "kept: untracked "+nameList(left)+" in "+path+" survived git clean"
+			res.Outcome, res.Detail = ledger.Refused, "untracked "+nameList(left)+" in "+path+" survived git clean"
 			return res
 		}
 		detail += ", removed untracked " + nameList(files)
@@ -517,7 +516,11 @@ func (e *Executor) notify(ctx context.Context, w rules.Want, wd world.World) Res
 		t.Identifier = w.Subject
 	}
 	post := notify.Post{Alerts: e.Alerts, Followers: e.Followers, Stderr: e.Stderr}
-	n := notify.Notification{Ticket: t, Reason: Reason(w), Text: text}
+	reason, ok := w.Options["reason"].(string)
+	if !ok && len(w.Once) > 0 {
+		reason, _ = w.Once[0].(string)
+	}
+	n := notify.Notification{Ticket: t, Reason: reason, Text: text}
 	if always, _ := w.Options["followersAlways"].(bool); always {
 		// Nothing retries a merge notice, so followers hear it whether or not the alert showed.
 		res := Result{Outcome: ledger.Done}
@@ -556,28 +559,4 @@ func (e *Executor) post(ctx context.Context, w rules.Want) Result {
 		return failed("%v", err)
 	}
 	return Result{Outcome: ledger.Done, Detail: fmt.Sprintf("POST %s %s: %d", w.Subject, path, res.Status)}
-}
-
-// Reason names why a notice went out, the way followers read it. The sessions that follow
-// tickets key on these words (skills/dispatch/SKILL.md).
-func Reason(w rules.Want) string {
-	topic := ""
-	if len(w.Once) > 0 {
-		topic, _ = w.Once[0].(string)
-	}
-	switch topic {
-	case "needs-human", "needs-human-escalated":
-		return "entered Needs Human"
-	case "blocked":
-		return "worker is blocked on a question"
-	case "ready":
-		return "PR ready for review"
-	case "reviews-handled":
-		return "reviews handled"
-	case "draft-ready":
-		return "draft ready for review"
-	case "merged", "merge-failed":
-		return "PR approved"
-	}
-	return topic
 }

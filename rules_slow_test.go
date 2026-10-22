@@ -21,7 +21,7 @@ func TestRulesInitRunsTheRulesItWrote(t *testing.T) {
 
 	check := d.RunWith(dispatch.Options{RulesDir: dir}, "rules", "check")
 	require.NoError(t, check.Err)
-	assert.Regexp(t, `launch-worker +whenever +linear\.ticket +wants launch now for ENG-1\n`, check.Stdout)
+	assert.Regexp(t, `launch-worker +whenever +ticket +wants launch now for ENG-1\n`, check.Stdout)
 
 	test := d.RunWith(dispatch.Options{RulesDir: dir}, "rules", "test")
 	require.NoError(t, test.Err)

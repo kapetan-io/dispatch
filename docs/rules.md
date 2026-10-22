@@ -27,10 +27,10 @@ blocked_renotify_minutes = 15
 `dispatch rules check` lints the rules, reads Linear, herdr, treehouse and GitHub once, runs one cycle, and prints what it found:
 
 ```
-linear.ticket      37 tracked tickets (assigned to Ada Lovelace; teams ENG; statuses Todo, In Progress, In Review, Needs Human)
+ticket             37 tracked tickets (assigned to Ada Lovelace; teams ENG; statuses Todo, In Progress, In Review, Needs Human)
 ...
-launch-worker      whenever  linear.ticket   wants launch now for ENG-12, ENG-15
-nudge-resume       whenever  linear.ticket   wants nothing now
+launch-worker      whenever  ticket  wants launch now for ENG-12, ENG-15
+nudge-resume       whenever  ticket  wants nothing now
 ```
 
 A record whose rule read something that couldn't be read is listed as `held for ENG-9`. It exits 1 on any finding: a rule that fails to load, a rule that throws or runs out of time, a queued action with no once key, a rule that reads a `[rules]` key the file lacks, and, when `tsc` is installed, a type error from `tsc --noEmit --strict`.
@@ -49,8 +49,8 @@ const rules = rulesFrom("./dispatch");
 scenario(rules, "a crashed worker is relaunched once", s => {
   s.given(ticket("ENG-1", { status: "in_progress", optedIn: true, repo: "dispatch" }), worker("ENG-1", "working"));
   s.see(worker("ENG-1", "none"));
-  s.expect([["launch-worker", "herdr.launch", "ENG-1"]]);
-  s.land("herdr.launch", "ENG-1");
+  s.expect([["launch-worker", "launch", "ENG-1"]]);
+  s.land("launch", "ENG-1");
   s.expect([]);
 });
 ```
@@ -64,32 +64,33 @@ import { whenever } from "dispatch";
 
 whenever({
   name: "bugs-get-their-own-model",
-  each: "linear.ticket",
-  if:   (t, ctx) => t.status === "in_progress" && t.optedIn && t.hasLabel("bug") && ctx.herdr.worker(t).state === "none",
-  then: (t, ctx) => ctx.herdr.queueLaunch(t, { model: ctx.config.rules.bug_model, once: ["launch-bug", ctx.herdr.worker(t).goneSince] }),
+  each: "ticket",
+  if:   (t, ctx) => t.status === "in_progress" && t.optedIn && t.hasLabel("bug") && ctx.worker.of(t).state === "none",
+  then: (t, ctx) => ctx.worker.queueLaunch(t, { model: ctx.config.rules.bug_model, once: ["launch-bug", ctx.worker.of(t).goneSince] }),
 });
 ```
 
 - `whenever` wants `then` while `if` is true, for every record of the kind in every cycle. `on` runs once per new event of a type.
 - Every queued action carries `once: [topic, ...values]`. The action runs once per key, so the key says what must change before it runs again.
+- `ctx.notify.queueSend` takes a `reason` option, the words the notification's followers read after `dispatch event (`. With none, the reason is the once key's topic. Following sessions key on the words the shipped rules pass, such as `PR ready for review` (see `skills/dispatch/SKILL.md`), so rewording one changes what a following session does.
 - A rule keeps no state. Reading a fact whose read failed throws `Unknown`, and the rule is held for that record even if it catches the error. Wrap a read in `known(() => ...)` to ask whether it could be read.
 - `Date` is pinned to `ctx.now`, `Math.random` throws, and `eval`, `Function`, `Promise`, async functions and generators aren't available.
 - Each `if` has one second and each `then` thirty. A rule that throws or times out wants nothing for that record, and every other rule goes ahead.
 
 ## Reading a worker's turns
 
-`ctx.herdr.worker(t).turns` lists every turn the worker's current Claude session has ended, oldest first, each as `{ at, running }`. `running` says some background task of the session (a shell, subagent or monitor) was still running as the turn ended, so a rule can tell a worker looping on a background job from one that stalled:
+`ctx.worker.of(t).turns` lists every turn the worker's current Claude session has ended, oldest first, each as `{ at, running }`. `running` says some background task of the session (a shell, subagent or monitor) was still running as the turn ended, so a rule can tell a worker looping on a background job from one that stalled:
 
 ```ts
 whenever({
   name: "long-loop-in-review",
-  each: "linear.ticket",
+  each: "ticket",
   if:   (t, ctx) => {
     if (t.status !== "in_review") return false;
-    const turns = ctx.herdr.worker(t).turns;
+    const turns = ctx.worker.of(t).turns;
     return turns.length >= 20 && turns.every((turn) => turn.running);
   },
-  then: (t, ctx) => ctx.linear.queueComment(t, "this worker has run in the background for 20 turns", { once: ["long-loop", t.id] }),
+  then: (t, ctx) => ctx.ticket.queueComment(t, "this worker has run in the background for 20 turns", { once: ["long-loop", t.id] }),
 });
 ```
 
@@ -100,17 +101,17 @@ whenever({
 
 ## Reading a worker's commands
 
-`ctx.herdr.worker(t).commands` lists every slash command the worker's current Claude session has taken, oldest first, each as `{ name, args, cut, at, by }`. A person can take a worker over by typing a command such as a repo's own merge command into its pane, and dispatch cannot see that happen any other way, so a rule reads `commands` to tell a worker a person is driving from one that went quiet:
+`ctx.worker.of(t).commands` lists every slash command the worker's current Claude session has taken, oldest first, each as `{ name, args, cut, at, by }`. A person can take a worker over by typing a command such as a repo's own merge command into its pane, and dispatch cannot see that happen any other way, so a rule reads `commands` to tell a worker a person is driving from one that went quiet:
 
 ```ts
 whenever({
   name: "person-took-over",
-  each: "linear.ticket",
+  each: "ticket",
   if:   (t, ctx) => {
     if (t.status !== "in_progress") return false;
-    return ctx.herdr.worker(t).commands.some((c) => c.by === "person" && c.name === "merge-it");
+    return ctx.worker.of(t).commands.some((c) => c.by === "person" && c.name === "merge-it");
   },
-  then: (t, ctx) => ctx.linear.queueComment(t, "a person ran /merge-it in this worker, so dispatch is leaving it alone", { once: ["took-over", t.id] }),
+  then: (t, ctx) => ctx.ticket.queueComment(t, "a person ran /merge-it in this worker, so dispatch is leaving it alone", { once: ["took-over", t.id] }),
 });
 ```
 
@@ -128,11 +129,11 @@ A rule can call the services `config.toml` names under `[http.<name>]`, with dis
 ```ts
 whenever({
   name: "note-open-errors",
-  each: "linear.ticket",
+  each: "ticket",
   if:   (t) => t.status === "in_progress",
   then: (t, ctx) => {
     const issues = ctx.http.get("sentry", "/issues/?query=is:unresolved").body as any[];
-    if (issues.length > 0) return ctx.linear.queueComment(t, `${issues.length} unresolved Sentry issues`, { once: ["open-errors", t.id] });
+    if (issues.length > 0) return ctx.ticket.queueComment(t, `${issues.length} unresolved Sentry issues`, { once: ["open-errors", t.id] });
   },
 });
 ```

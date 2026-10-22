@@ -126,19 +126,19 @@ declare module "dispatch" {
     head: string;
     pr: PR;
   }
-  export type RecordKind = "linear.ticket" | "github.pr" | "herdr.worker" | "treehouse.tree" | "ledger.escalation" | "dispatch";
+  export type RecordKind = "ticket" | "pr" | "worker" | "tree" | "escalation" | "dispatch";
   export interface RecordMap {
-    "linear.ticket": Ticket;
-    "github.pr": PR;
-    "herdr.worker": Worker;
-    "treehouse.tree": Tree;
-    "ledger.escalation": Escalation;
+    "ticket": Ticket;
+    "pr": PR;
+    "worker": Worker;
+    "tree": Tree;
+    "escalation": Escalation;
     "dispatch": Dispatch;
   }
   export type RecordOf<K extends RecordKind> = RecordMap[K];
   export interface EventMap {
-    "linear.comment.posted": Comment;
-    "github.check.completed": CheckRun;
+    "comment.posted": Comment;
+    "check.completed": CheckRun;
   }
   export type EventType = keyof EventMap;
   export type EventOf<E extends EventType> = EventMap[E];
@@ -146,7 +146,7 @@ declare module "dispatch" {
     dispatch: { rules: string; max_in_progress: number; resync: string };
     history: { dir: string; rotate: string; keep: string };
     repos: { [label: string]: { path: string; open_pr_as: string; ignore_comment_authors: string[]; ignore_optional_checks: boolean; approval_checks: string[]; auto_merge: boolean } };
-    plugins: { linear: { api_key_command: string; api_key_keychain: string; teams: string[]; ai_label: string; repo_label_group: string; statuses: { todo: string; close_parent: string; blocker_done: string; in_progress: string; in_review: string; needs_human: string; finished: string[]; paused: string[] } }; herdr: { plugin_root: string }; github: {  }; treehouse: {  }; notify: {  } };
+    plugins: { linear: { teams: string[]; ai_label: string; repo_label_group: string; statuses: { todo: string; close_parent: string; blocker_done: string; in_progress: string; in_review: string; needs_human: string; finished: string[]; paused: string[] } }; herdr: { plugin_root: string }; github: {  }; treehouse: {  }; notify: {  } };
     http: { [label: string]: { base_url: string } };
     rules: { "blocked_renotify_minutes": number; "design_model": string; "launch_failure_limit": number; "nudge_limit": number; "worker_model": string; [key: string]: unknown };
     hasRepo(label: string | undefined): boolean;
@@ -189,7 +189,7 @@ declare module "dispatch" {
       receipts(subject: Ticket | PR | Tree | Worker, filter?: { kind?: string | string[]; topic?: string }): Receipt[];
       done(subject: Ticket | PR | Tree | Worker, once: Once): boolean;
     };
-    linear: {
+    ticket: {
       parent(t: Ticket): Ticket | undefined;
       children(t: Ticket): Ticket[];
       blockers(t: Ticket): Blocker[];
@@ -199,23 +199,23 @@ declare module "dispatch" {
       queueComment(t: Ticket, text: string, o: { once: Once }): Action;
       queueEscalate(t: Ticket, why: string, o: { once: Once }): Action;
     };
-    herdr: {
-      worker(t: Ticket): Worker;
-      workerIn(tree: Tree): Worker;
+    worker: {
+      of(t: Ticket): Worker;
+      in(tree: Tree): Worker;
       queueLaunch(t: Ticket, o: { once: Once; model?: string; kickoff?: string; uncapped?: boolean }): Action;
       queueNudge(t: Ticket, text: string, o: { once: Once }): Action;
       queueClose(w: Worker, o: { once: Once }): Action;
     };
-    treehouse: {
+    tree: {
       pool(repo: string | undefined): { returns: number };
       leased(t: Ticket): boolean;
       queueReturn(tree: Tree, o: { once: Once }): Action;
     };
-    github: {
+    pr: {
       queueMerge(pr: PR, o: { once: Once }): Action;
     };
     notify: {
-      queueSend(subject: Ticket, text: string, o: { once: Once; followersAlways?: boolean }): Action;
+      queueSend(subject: Ticket, text: string, o: { once: Once; followersAlways?: boolean; reason?: string }): Action;
     };
     http: {
       get(service: string, path: string): HttpResponse;
