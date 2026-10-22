@@ -57,6 +57,7 @@ func TestTickDoesNotNotifyWhenAPRIsNotReady(t *testing.T) {
 		{name: "NoWorker", status: "", pr: cleanPR("a1")},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			d := newDispatch(t, dispatchOptions{})
 			d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 			d.Workers.Running("ENG-1", test.status)

@@ -105,6 +105,7 @@ func TestTickLabelsEveryStateAWorkerCanBeIn(t *testing.T) {
 		{name: "NeedsHumanNoAgent", status: "Needs Human", want: "🔴"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			d := newDispatch(t, dispatchOptions{})
 			tk := ticket("ENG-1", test.status, "dispatch")
 			if test.design {

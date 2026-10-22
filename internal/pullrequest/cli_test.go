@@ -30,6 +30,8 @@ const onePage = `{"data":{"repository":{"pullRequests":{"nodes":[{"number":7,"ur
 // adapter's command lines and its reading of gh output are tested without a
 // shell script.
 func TestMain(m *testing.M) {
+	// The race detector sleeps 1s at exit by default. The stand-in processes this binary re-execs inherit this setting.
+	_ = os.Setenv("GORACE", strings.TrimSpace(os.Getenv("GORACE")+" atexit_sleep_ms=0"))
 	if code, ok := os.LookupEnv(envExit); ok {
 		if path := os.Getenv(envArgs); path != "" {
 			f, _ := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)

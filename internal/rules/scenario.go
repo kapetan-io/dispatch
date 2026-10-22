@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/grafana/sobek"
@@ -39,10 +40,21 @@ func RunScenarios(dir string, timeouts Timeouts) (Summary, error) {
 		return Summary{}, fmt.Errorf("no *.test.ts files in %s", dir)
 	}
 	slices.Sort(files)
+	// Each file runs in its own runtime, so files run side by side and their results are joined in file order.
+	sums := make([]Summary, len(files))
+	errs := make([]error, len(files))
+	var wg sync.WaitGroup
+	for i, file := range files {
+		wg.Go(func() { errs[i] = runScenarioFile(dir, file, timeouts, &sums[i]) })
+	}
+	wg.Wait()
 	var sum Summary
-	for _, file := range files {
-		if err := runScenarioFile(dir, file, timeouts, &sum); err != nil {
-			return sum, err
+	for i := range files {
+		sum.Lines = append(sum.Lines, sums[i].Lines...)
+		sum.Passed += sums[i].Passed
+		sum.Failed += sums[i].Failed
+		if errs[i] != nil {
+			return sum, errs[i]
 		}
 	}
 	sum.Lines = append(sum.Lines, fmt.Sprintf("%d scenarios, %d passed, %d failed", sum.Passed+sum.Failed, sum.Passed, sum.Failed))

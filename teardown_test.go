@@ -30,6 +30,7 @@ func TestTickReturnsTheTreeOfAFinishedTicket(t *testing.T) {
 		{name: "WorkerBlocked", status: "Canceled", worker: "blocked"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			d := newDispatch(t, dispatchOptions{})
 			path := d.Trees.Clean("ENG-1")
 			d.Workers.Running("ENG-1", test.worker)
@@ -111,6 +112,7 @@ func TestTickKeepsTheTreeOfAFinishedTicketThatHoldsWork(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			d := newDispatch(t, dispatchOptions{})
 			path := d.Trees.Clean("ENG-1")
 			test.strand(d, path)

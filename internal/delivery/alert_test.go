@@ -23,6 +23,8 @@ const (
 // The test binary stands in for osascript when envArgs is set, so the
 // adapter's command line is tested without a shell script.
 func TestMain(m *testing.M) {
+	// The race detector sleeps 1s at exit by default. The stand-in processes this binary re-execs inherit this setting.
+	_ = os.Setenv("GORACE", strings.TrimSpace(os.Getenv("GORACE")+" atexit_sleep_ms=0"))
 	if file, ok := os.LookupEnv(envArgs); ok {
 		if err := os.WriteFile(file, []byte(strings.Join(os.Args[1:], "\x00")), 0o644); err != nil {
 			os.Exit(2)

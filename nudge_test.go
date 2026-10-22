@@ -1865,6 +1865,7 @@ func TestRulesReadTheCommandsASessionTookWithTheirArgumentsOldestFirst(t *testin
 		{"PlainPromptIsNotACommand", []string{"please fix the build"}, "commands  of 0"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			d := newDispatch(t, dispatchOptions{Rules: rule(commandsRule)})
 			d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 			d.Workers.CheckedOut("ENG-1", "working")

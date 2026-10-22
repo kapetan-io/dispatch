@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -885,12 +886,13 @@ func TestClaudeShimFlags(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			dir := t.TempDir()
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
 				[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
 
 			cmd := exec.Command(filepath.Join(shims, "claude"), test.args...)
-			cmd.Env = append(append(env, "AUTONOMOUS_WORKER=", "DISPATCH_PLUGIN_ROOT=", "DISPATCH_WORKER_NAME="), test.env...)
+			cmd.Env = append(append(slices.Clone(env), "AUTONOMOUS_WORKER=", "DISPATCH_PLUGIN_ROOT=", "DISPATCH_WORKER_NAME="), test.env...)
 			cmd.Env = append(cmd.Env, "PATH="+shims+":"+bin+":"+dir+":"+os.Getenv("PATH"))
 			out, err := cmd.CombinedOutput()
 			require.NoError(t, err, string(out))

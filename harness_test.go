@@ -1978,23 +1978,27 @@ var (
 	dispatchBinOnce sync.Once
 )
 
-// buildDispatch builds ./cmd/dispatch once per test run and returns the directory holding the binary.
+// buildDispatch returns the directory holding the dispatch binary TestMain compiled, and compiles it itself if TestMain has not.
 func buildDispatch(t *testing.T) string {
 	t.Helper()
-	dispatchBinOnce.Do(func() {
-		if dispatchBin, dispatchBinErr = os.MkdirTemp("", "dispatch-bin"); dispatchBinErr != nil {
-			return
-		}
-		build := exec.Command("go", "build", "-o", filepath.Join(dispatchBin, "dispatch"), "./cmd/dispatch")
-		// The Go toolchain records its own telemetry under HOME, which is not dispatch writing there.
-		build.Env = append(os.Environ(), "HOME="+dispatchBin)
-		out, err := build.CombinedOutput()
-		if err != nil {
-			dispatchBinErr = fmt.Errorf("while building dispatch: %w\n%s", err, out)
-		}
-	})
+	dispatchBinOnce.Do(compileDispatch)
 	require.NoError(t, dispatchBinErr)
 	return dispatchBin
+}
+
+// compileDispatch builds ./cmd/dispatch into dispatchBin and records a failure in dispatchBinErr.
+func compileDispatch() {
+	var err error
+	if dispatchBin, err = os.MkdirTemp("", "dispatch-bin"); err != nil {
+		dispatchBinErr = err
+		return
+	}
+	build := exec.Command("go", "build", "-o", filepath.Join(dispatchBin, "dispatch"), "./cmd/dispatch")
+	// The Go toolchain records its own telemetry under HOME, which is not dispatch writing there.
+	build.Env = append(os.Environ(), "HOME="+dispatchBin)
+	if out, err := build.CombinedOutput(); err != nil {
+		dispatchBinErr = fmt.Errorf("while building dispatch: %w\n%s", err, out)
+	}
 }
 
 const (
@@ -2330,6 +2334,8 @@ func TestRootTestsImportNoDispatchState(t *testing.T) {
 // The test binary doubles as the tsc these tests put on PATH: a symlink named tsc
 // points at it, and TestMain runs fakeTSCMain when it is started under that name.
 func TestMain(m *testing.M) {
+	// The race detector sleeps 1s at exit by default. The stand-in processes this binary re-execs inherit this setting.
+	_ = os.Setenv("GORACE", strings.TrimSpace(os.Getenv("GORACE")+" atexit_sleep_ms=0"))
 	if filepath.Base(os.Args[0]) == "tsc" {
 		os.Exit(fakeTSCMain(os.Args[1:]))
 	}
@@ -2350,6 +2356,8 @@ func TestMain(m *testing.M) {
 		_ = os.Setenv(name, strings.TrimSpace(string(out)))
 	}
 	_ = os.Setenv("HOME", guard)
+	// Compiled here so no test's measured time includes the build.
+	dispatchBinOnce.Do(compileDispatch)
 	code := m.Run()
 	if dispatchBin != "" {
 		_ = os.RemoveAll(dispatchBin)
