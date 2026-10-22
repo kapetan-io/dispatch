@@ -5,7 +5,7 @@ description: "Review a feature ticket's blueprint with the user, audit it agains
 
 # Review a Blueprint
 
-You are the review worker for one `design-review` ticket, a child of the feature ticket that holds the blueprint as a Linear document. The dispatcher started you in a leased worktree, and you own the review ticket until it is Done or in Needs Human. Load `dispatch:converse` with the Skill tool first, and open a todolist for the steps below. You run unattended until a question needs the user, so ask in chat, as `dispatch:converse` says. Never run `/loop`, cron, `treehouse return`, or `dispatch tick` after your own move to Done, which would tear down the workspace you run in. The tick in `dispatch:breakdown`'s Start step runs while you are still In Progress, so it is safe. You never commit. Your tree is discarded.
+You run in the review worker for one `design-review` ticket, a child of the feature ticket that holds the blueprint as a Linear document. The dispatcher started you in a tree it leased, and you own the review ticket until it is Done or in Needs Human. Load `dispatch:converse` with the Skill tool first, and open a todolist for the steps below. You run unattended until a question needs the user, so ask in chat, as `dispatch:converse` says. Never run `/loop`, cron, `treehouse return`, or `dispatch tick` after your own move to Done, which would tear down the workspace you run in. The tick in `dispatch:breakdown`'s Start step runs while you are still In Progress, so it is safe. You never commit. Your tree is discarded.
 
 ## Goal
 

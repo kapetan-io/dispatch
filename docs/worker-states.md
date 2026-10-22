@@ -6,7 +6,7 @@ Each worker's herdr workspace is labeled `<emoji> <ticket>`, and the emoji says 
 
 | Emoji | Waiting on | Meaning |
 |---|---|---|
-| 🟢 | The worker, or dispatch | The worker is busy, dispatch just nudged it, or dispatch is about to relaunch or close it |
+| 🟢 | The worker, or dispatch | The worker is busy, dispatch just nudged it, or dispatch is about to relaunch it or close its workspace |
 | 🟡 | CI | In Review, the worker is idle, gone or unconfirmed, the PR isn't ready and its checks are still running |
 | 👀 | You | In Review, the PR is ready for your review (the notification also needs an idle worker) |
 | 💤 | You | The worker is idle with no background task running and nothing else pending. Open its window |
@@ -20,11 +20,11 @@ Each worker's herdr workspace is labeled `<emoji> <ticket>`, and the emoji says 
 The first line that fits wins.
 
 1. The ticket is Needs Human: 🔴.
-2. The ticket is paused and its worker is gone: ⏸️.
+2. The ticket is paused and its worker's Claude session is gone: ⏸️.
 3. The worker is blocked on a question popup: 🔴.
 4. The worker is working, or dispatch typed into it since the last resync: 🟢.
 5. The PR is ready and the worker is idle or gone: 👀.
-6. The worker is gone, or its launch isn't confirmed: 🟡 if the PR's checks are running, otherwise 🟢.
+6. The worker's Claude session is gone, or its launch isn't confirmed: 🟡 if the PR's checks are running, otherwise 🟢.
 7. The worker is idle and its last Stop (the Claude Code hook that records when a turn ended) lists a background task still running, and that Stop is under 60 minutes old: 🟢.
 8. The PR's checks are running: 🟡.
 9. The worker has no Stop record, or its Stop didn't say what was running: 🟢. Nothing proves it is waiting.
@@ -36,7 +36,7 @@ The Stop record comes from the plugin's Stop hook (`dispatch record-stop`). The 
 
 ## Every combination
 
-"Gone" means the workspace exists and no Claude runs in it. "Unconfirmed" means the launch's first instruction hasn't run yet. A ticket with no workspace has nothing to label. The tests in `labels_test.go` cover each row.
+"Gone" means the workspace exists and the worker's Claude session is gone (the state `none`). "Unconfirmed" means the launch's first instruction hasn't run yet. A ticket with no workspace has nothing to label. The tests in `labels_test.go` cover each row.
 
 ### In Progress
 
@@ -46,9 +46,9 @@ The Stop record comes from the plugin's Stop hook (`dispatch record-stop`). The 
 | Idle | none, or without the task list | 🟢 | Nothing |
 | Idle | a task still running, under 60 minutes old | 🟢 | Nothing. After 60 minutes it counts as stopped, so 💤 |
 | Idle | stopped, nothing running | 💤 | Nothing. No nudge and no notification |
-| Idle, unconfirmed | any | 🟢 | After 5 minutes, closes the workspace and launches a new worker. The closes count toward `launch_failure_limit` |
+| Idle, unconfirmed | any | 🟢 | After 5 minutes, closes the workspace and relaunches the worker. The closes count toward `launch_failure_limit` |
 | Blocked on a popup | any | 🔴 | Notifies on the first cycle and every `blocked_renotify_minutes`. Never nudges, never moves the ticket |
-| Gone | n/a | 🟢 | Launches a new worker |
+| Gone | n/a | 🟢 | Relaunches the worker |
 | Idle, ticket just moved back from Needs Human | any | 🟢 once nudged | Sends the resume nudge once per move, after the worker has stopped since its last nudge |
 
 ### In Review
@@ -70,9 +70,9 @@ dispatch reads the PR only when the worker is idle or gone.
 | Idle | a task running | anything else | 🟢 | Nudges for a PR that needs work, as above. The label stays 🟢 |
 | Idle | without the task list | checks running | 🟡 | Nothing |
 | Idle | without the task list | anything else | 🟢 | Nudges for a PR that needs work, as above. The label stays 🟢 |
-| Idle, unconfirmed | any | ready | 👀 | Closes the worker after 5 minutes |
-| Idle, unconfirmed | any | checks running | 🟡 | Closes the worker after 5 minutes |
-| Idle, unconfirmed | any | anything else | 🟢 | Closes the worker after 5 minutes |
+| Idle, unconfirmed | any | ready | 👀 | Closes the workspace after 5 minutes |
+| Idle, unconfirmed | any | checks running | 🟡 | Closes the workspace after 5 minutes |
+| Idle, unconfirmed | any | anything else | 🟢 | Closes the workspace after 5 minutes |
 | Gone | n/a | ready | 👀 | Nothing |
 | Gone | n/a | checks running | 🟡 | Nothing |
 | Gone | n/a | anything else | 🟢 | Relaunches the worker for a PR that needs work or an unseen review thread |
@@ -85,7 +85,7 @@ An idle In Review worker whose PR gains a review or comment gets the activity nu
 |---|---|---|---|
 | Needs Human | any | 🔴 | Notifies once on entering the status. A `design` ticket doesn't notify |
 | Paused (Backlog or Todo) | gone, tree kept | ⏸️ | Nothing |
-| Paused | live | unchanged | Closes the worker, then ⏸️ |
+| Paused | live | unchanged | Closes the workspace, then ⏸️ |
 
 A `design` or `design-review` worker is never nudged, and a `design` ticket sends no notification for a blocked popup or for Needs Human. Its label follows the same lines as a build worker's, and 💤 is how you see that a design is waiting on you.
 

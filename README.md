@@ -2,7 +2,7 @@
 
 An autonomous build workflow for Claude Code, packaged as a Claude Code plugin.
 
-You design a feature with Claude in an interactive session. An autonomous review then checks the design and splits it into small Linear build tickets. Once you approve, a dispatcher, running in a herdr window you keep open and re-reading its sources every 5 minutes, starts a Claude worker for each ticket in its own worktree, and each worker carries its ticket to a merged pull request.
+You design a feature with Claude in an interactive session. An autonomous review then checks the design and splits it into small Linear build tickets. Once you approve, a dispatcher, running in a herdr window you keep open and re-reading its sources every 5 minutes, leases a tree for each ticket and starts Claude in it, and each worker carries its ticket to a merged pull request.
 
 ## Status
 

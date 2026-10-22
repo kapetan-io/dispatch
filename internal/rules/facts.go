@@ -95,7 +95,7 @@ type Ticket struct {
 	LastHumanComment Fact[*Seen]   `js:"lastHumanComment"`
 }
 
-// Worker is the Claude session serving a ticket, or the lack of one.
+// Worker is a ticket's place on a tree it holds, and the Claude session there, if any.
 type Worker struct {
 	State        Fact[string]  `js:"state" ts:"\"none\" | \"working\" | \"idle\" | \"blocked\""`
 	Ticket       Fact[Ref]     `js:"ticket" ref:"linear.ticket"`
@@ -105,7 +105,7 @@ type Worker struct {
 	GoneSince    Fact[int64]   `js:"goneSince"`
 	IdleSince    Fact[*int64]  `js:"idleSince"`
 	BlockedSince Fact[*int64]  `js:"blockedSince"`
-	// UnconfirmedSince is when the launch that started this worker began, while its
+	// UnconfirmedSince is when the latest launch on this tree began, while its
 	// kickoff is still unconfirmed. A launch killed before the kickoff leaves it set.
 	UnconfirmedSince Fact[*int64]    `js:"unconfirmedSince"`
 	LastStop         Fact[*Stop]     `js:"lastStop"`
