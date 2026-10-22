@@ -30,7 +30,7 @@ whenever({
 
 // A return the executor refused, because the second look found work or an untracked
 // nested repo that git clean left, has no fact on the tree to point at, so the receipt
-// says why. Its detail is the reason alone, which return in internal/executor writes.
+// says why. Its detail is the reason alone, as the executor's return action writes it.
 const refusedReturn = (tree: Tree, ctx: Ctx) =>
   ctx.ledger.receipts(tree.holder!, { kind: "return" })
     .find(r => r.outcome === "refused" && r.once[1] === tree.path && r.once[2] === tree.leasedSince);

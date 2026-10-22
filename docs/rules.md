@@ -27,10 +27,10 @@ blocked_renotify_minutes = 15
 `dispatch rules check` lints the rules, reads Linear, herdr, treehouse and GitHub once, runs one cycle, and prints what it found:
 
 ```
-ticket      37 tracked tickets (assigned to Ada Lovelace; teams ENG; statuses Todo, In Progress, In Review, Needs Human)
+ticket             37 tracked tickets (assigned to Ada Lovelace; teams ENG; statuses Todo, In Progress, In Review, Needs Human)
 ...
-launch-worker      whenever  ticket   wants launch now for ENG-12, ENG-15
-nudge-resume       whenever  ticket   wants nothing now
+launch-worker      whenever  ticket  wants launch now for ENG-12, ENG-15
+nudge-resume       whenever  ticket  wants nothing now
 ```
 
 A record whose rule read something that couldn't be read is listed as `held for ENG-9`. It exits 1 on any finding: a rule that fails to load, a rule that throws or runs out of time, a queued action with no once key, a rule that reads a `[rules]` key the file lacks, and, when `tsc` is installed, a type error from `tsc --noEmit --strict`.
@@ -72,7 +72,7 @@ whenever({
 
 - `whenever` wants `then` while `if` is true, for every record of the kind in every cycle. `on` runs once per new event of a type.
 - Every queued action carries `once: [topic, ...values]`. The action runs once per key, so the key says what must change before it runs again.
-- `ctx.notify.queueSend` takes a `reason` option, the words the notification's followers read after `dispatch event (`. With none, the reason is the once key's topic. Following sessions act on the words the shipped rules pass (`PR ready for review`, `entered Needs Human` and the rest in `skills/dispatch/SKILL.md`), so rewording one changes what a following session does.
+- `ctx.notify.queueSend` takes a `reason` option, the words the notification's followers read after `dispatch event (`. With none, the reason is the once key's topic. Following sessions key on the words the shipped rules pass, such as `PR ready for review` (see `skills/dispatch/SKILL.md`), so rewording one changes what a following session does.
 - A rule keeps no state. Reading a fact whose read failed throws `Unknown`, and the rule is held for that record even if it catches the error. Wrap a read in `known(() => ...)` to ask whether it could be read.
 - `Date` is pinned to `ctx.now`, `Math.random` throws, and `eval`, `Function`, `Promise`, async functions and generators aren't available.
 - Each `if` has one second and each `then` thirty. A rule that throws or times out wants nothing for that record, and every other rule goes ahead.

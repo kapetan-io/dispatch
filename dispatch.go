@@ -137,7 +137,7 @@ const usage = `usage: dispatch run
                exit 0. Exits 2 when no cycle could be replayed, because the history was written before it
                recorded the world. A segment written before the rule vocabulary was renamed fails to
                load its recorded rules, so replay stops there and exits 1; --from a time after the
-               rename starts past it, and --rules compares truly only over segments written after it
+               rename starts past it, and --rules compares correctly only over segments written after it
   state reset  start a new history segment with an empty ledger, keeping what the world remembers.
                With --quiet, record the messages the first cycle wants as sent, so none is repeated.
                Exits 1 while dispatch run holds the lock
