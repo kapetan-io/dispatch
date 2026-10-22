@@ -181,14 +181,14 @@ func servicesFor(opts Options, cfg config.Config) httpservice.Services {
 	if opts.HTTP != nil {
 		return opts.HTTP
 	}
-	return httpservice.New(cfg.HTTP, nil)
+	return httpservice.New(cfg.HTTP, nil).WithEnv(opts.Env, opts.Dir)
 }
 
 // runCommand starts the reconcile loop and runs it until ctx ends. It fails to start
 // on a bad config key, rules that don't load, a lock another run holds, and a history
 // that can't be written.
 func runCommand(ctx context.Context, opts Options) error {
-	cfg, err := config.Load(opts.ConfigPath)
+	cfg, err := config.Load(opts.ConfigPath, opts.Env)
 	if err != nil {
 		return err
 	}
@@ -243,14 +243,14 @@ func runCommand(ctx context.Context, opts Options) error {
 	exec := executor.New(executor.Env{
 		Config: cfg, Linear: func() linear.Workspace { return lin }, Herdr: opts.Herdr, Treehouse: opts.Treehouse,
 		PullRequests: opts.PullRequests, Launcher: launcherFor(opts, cfg.Plugins.Herdr.PluginRoot, nil, sent), Alerts: opts.Alerts,
-		StateDir: opts.StateDir, Stderr: opts.Stderr, LaunchDeadline: opts.LaunchTimeout, Deadline: opts.ActionTimeout,
+		Environment: opts.Env, StateDir: opts.StateDir, Stderr: opts.Stderr, LaunchDeadline: opts.LaunchTimeout, Deadline: opts.ActionTimeout,
 		HTTP: services, Typed: sent, Clock: opts.Clock,
 	})
 	return loop.New(loop.Options{
 		Config: cfg, ConfigText: string(text), StateDir: opts.StateDir, Rules: loaded, Clock: opts.Clock,
 		Sources: world.Sources{
 			Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
-			StateDir: opts.StateDir, Stderr: opts.Stderr,
+			Env: opts.Env, StateDir: opts.StateDir, Stderr: opts.Stderr,
 		},
 		Executor: exec, Typed: sent, HTTP: services, Herdr: opts.Herdr, Alerts: opts.Alerts, Usage: lin.Usage, Unauthorized: lin.reset,
 		Viewer: viewer.Name, Out: opts.Stdout, Err: opts.Stderr,
@@ -356,7 +356,7 @@ func tellCommand(ctx context.Context, opts Options, ticket, text string) error {
 
 // planCommand prints what the latest cycle wants and holds, from history.
 func planCommand(opts Options) error {
-	cfg, err := config.Load(opts.ConfigPath)
+	cfg, err := config.Load(opts.ConfigPath, opts.Env)
 	if err != nil {
 		return err
 	}

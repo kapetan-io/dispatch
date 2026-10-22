@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/linear"
@@ -28,6 +29,8 @@ type Sources struct {
 	Herdr        herdr.Herdr
 	Treehouse    treehouse.Pool
 	PullRequests pullrequest.Repository
+	// Env is what the git commands that inspect a tree run with.
+	Env environment.Environment
 	// StateDir holds the Stop records and session logs.
 	StateDir string
 	// Stderr receives one line for each read that failed without stopping the read.
@@ -272,7 +275,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		}
 	}
 	if parts&(FromLinear|FromLocal) != 0 {
-		w.inspectTrees(ctx, scope)
+		w.inspectTrees(ctx, src.Env, scope)
 	}
 	if parts&FromGitHub != 0 || prev.At.IsZero() {
 		w.readPRs(ctx, src, scope)
@@ -316,7 +319,7 @@ func leaseHolders(ctx context.Context, lin linear.Workspace, scope Scope, trees 
 
 // inspectTrees reads the git state of each tree of a finished ticket. An
 // unreadable tree is recorded and kept leased.
-func (w *World) inspectTrees(ctx context.Context, scope Scope) {
+func (w *World) inspectTrees(ctx context.Context, env environment.Environment, scope Scope) {
 	w.Unfinished, w.CheckErrors, w.Untracked = map[string]string{}, map[string]error{}, map[string][]string{}
 	w.Work = map[string]treehouse.Work{}
 	for _, t := range w.LeaseHolders {
@@ -325,14 +328,14 @@ func (w *World) inspectTrees(ctx context.Context, scope Scope) {
 		}
 		for _, wk := range w.Leases[t.Identifier] {
 			readCtx, done := bound(ctx)
-			work, err := treehouse.Inspect(readCtx, wk.TreePath)
+			work, err := treehouse.Inspect(readCtx, env, wk.TreePath)
 			done()
 			if err != nil {
 				w.CheckErrors[wk.TreePath] = err
 				continue
 			}
 			readCtx, done = bound(ctx)
-			files, err := treehouse.Untracked(readCtx, wk.TreePath)
+			files, err := treehouse.Untracked(readCtx, env, wk.TreePath)
 			done()
 			if err != nil {
 				w.CheckErrors[wk.TreePath] = err

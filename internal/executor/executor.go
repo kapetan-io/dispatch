@@ -19,6 +19,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/delivery"
+	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
@@ -51,8 +52,10 @@ type Env struct {
 	Launcher     launcher.Launcher
 	Alerts       delivery.Alerts
 	HTTP         httpservice.Services
-	StateDir     string
-	Stderr       io.Writer
+	// Environment is what the git commands that return a tree run with.
+	Environment environment.Environment
+	StateDir    string
+	Stderr      io.Writer
 	// Typed is what dispatch typed into workers, shared with the launcher and the loop.
 	Typed *typed.Log
 	// LaunchDeadline and Deadline override the default budgets, which run on Clock.
@@ -394,7 +397,7 @@ func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World)
 			return failed("while closing herdr workspace %s: %v", id, err)
 		}
 	}
-	why, err := treehouse.Unfinished(ctx, path)
+	why, err := treehouse.Unfinished(ctx, e.Environment, path)
 	if err != nil {
 		return failed("%v", err)
 	}
@@ -403,16 +406,16 @@ func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World)
 		res.Outcome, res.Detail = ledger.Refused, "kept: the worker left "+why+" in "+path
 		return res
 	}
-	files, err := treehouse.Untracked(ctx, path)
+	files, err := treehouse.Untracked(ctx, e.Environment, path)
 	if err != nil {
 		return failed("%v", err)
 	}
 	detail := "returned " + path
 	if len(files) > 0 {
-		if err := treehouse.RemoveUntracked(ctx, path); err != nil {
+		if err := treehouse.RemoveUntracked(ctx, e.Environment, path); err != nil {
 			return failed("%v", err)
 		}
-		left, err := treehouse.Untracked(ctx, path)
+		left, err := treehouse.Untracked(ctx, e.Environment, path)
 		if err != nil {
 			return failed("%v", err)
 		}

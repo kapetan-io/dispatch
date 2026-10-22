@@ -3,7 +3,6 @@ package dispatch
 import (
 	"context"
 	"encoding/json"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -57,8 +56,8 @@ func recordStop(ctx context.Context, opts Options) error {
 }
 
 // worktreeRoot returns the top of the working tree containing dir.
-func worktreeRoot(ctx context.Context, dir string) (string, bool) {
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
+func worktreeRoot(ctx context.Context, opts Options, dir string) (string, bool) {
+	cmd := opts.Env.Command(ctx, "git", "rev-parse", "--show-toplevel")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {

@@ -54,6 +54,7 @@ func (w *Workers) lastRename(t *testing.T) string {
 }
 
 func TestTickLabelsEveryStateAWorkerCanBeIn(t *testing.T) {
+	t.Parallel()
 	pending := &prState{head: "a1", checks: "PENDING", mergeable: "MERGEABLE"}
 	failed := &prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"}
 	ready := new(cleanPR("a1"))
@@ -142,6 +143,7 @@ func TestTickLabelsEveryStateAWorkerCanBeIn(t *testing.T) {
 }
 
 func TestTickShowsAnIdleWorkerAsSoonAsItsTurnEnds(t *testing.T) {
+	t.Parallel()
 	for _, label := range []string{"design", "design-review"} {
 		t.Run(label, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -161,6 +163,7 @@ func TestTickShowsAnIdleWorkerAsSoonAsItsTurnEnds(t *testing.T) {
 }
 
 func TestTickShowsAnIdleBuildWorkerAsWaitingOnTheUserWithoutNudgingIt(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -177,6 +180,7 @@ func TestTickShowsAnIdleBuildWorkerAsWaitingOnTheUserWithoutNudgingIt(t *testing
 }
 
 func TestTickShowsGreenAgainWhenTheUserTypesIntoAnIdleWorker(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -190,6 +194,7 @@ func TestTickShowsGreenAgainWhenTheUserTypesIntoAnIdleWorker(t *testing.T) {
 }
 
 func TestTickShowsAnIdleWorkerAsWaitingOnceItsBackgroundTaskStopCountExpires(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -206,6 +211,7 @@ func TestTickShowsAnIdleWorkerAsWaitingOnceItsBackgroundTaskStopCountExpires(t *
 }
 
 func TestTickShowsAnInReviewWorkerAsWaitingWhenItsChecksFinishWithoutAnythingToDo(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -220,6 +226,7 @@ func TestTickShowsAnInReviewWorkerAsWaitingWhenItsChecksFinishWithoutAnythingToD
 }
 
 func TestTickLabelsEveryRowOfTheInReviewTableWhoseWorkerIsGoneOrUnconfirmed(t *testing.T) {
+	t.Parallel()
 	pending := prState{head: "a1", checks: "PENDING", mergeable: "MERGEABLE"}
 	failed := prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"}
 	unresolved := prState{head: "a1", checks: "SUCCESS", mergeable: "MERGEABLE", unresolved: 1}
@@ -255,6 +262,7 @@ func TestTickLabelsEveryRowOfTheInReviewTableWhoseWorkerIsGoneOrUnconfirmed(t *t
 }
 
 func TestTickShowsAnIdleStoppedInReviewWorkerAsWaitingOnTheUserWhenItsPRHasNothingForTheWorkerToDo(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name string
 		pr   prState
@@ -282,6 +290,7 @@ func TestTickShowsAnIdleStoppedInReviewWorkerAsWaitingOnTheUserWhenItsPRHasNothi
 }
 
 func TestTickShowsAnInReviewWorkerWithAFailingPRAsGreenOnceNudged(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name string
 		pr   prState
@@ -306,6 +315,7 @@ func TestTickShowsAnInReviewWorkerWithAFailingPRAsGreenOnceNudged(t *testing.T) 
 }
 
 func TestTickKeepsTheLabelThePRGaveWhenThePRCannotBeRead(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name string
 		pr   prState
@@ -335,6 +345,7 @@ func TestTickKeepsTheLabelThePRGaveWhenThePRCannotBeRead(t *testing.T) {
 }
 
 func TestTickKeepsTheWaitingLabelOfANudgedWorkerWhenThePRCannotBeRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[rules]\nnudge_limit = 10\n"})
 	withFailingPR(d)
 	d.Workers.Stop("ENG-1", stopTasks{})
@@ -352,6 +363,7 @@ func TestTickKeepsTheWaitingLabelOfANudgedWorkerWhenThePRCannotBeRead(t *testing
 }
 
 func TestTickShowsAnInReviewWorkerWithAStaleBackgroundTaskAsWaitingOnCIOnceTheTaskStopCountExpires(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -369,6 +381,7 @@ func TestTickShowsAnInReviewWorkerWithAStaleBackgroundTaskAsWaitingOnCIOnceTheTa
 }
 
 func TestTickIgnoresAStopOfAnotherSessionWhenLabelingAnIdleWorker(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"In Progress", "In Review"} {
 		t.Run(status, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -386,6 +399,7 @@ func TestTickIgnoresAStopOfAnotherSessionWhenLabelingAnIdleWorker(t *testing.T) 
 }
 
 func TestTickShowsAnIdleWorkerAsBusyWhileAnotherSessionsStopSaysNothingOfItsOwnTasks(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -398,6 +412,7 @@ func TestTickShowsAnIdleWorkerAsBusyWhileAnotherSessionsStopSaysNothingOfItsOwnT
 }
 
 func TestTickStillNudgesAnInReviewWorkerWhoseStopLeftABackgroundTaskRunning(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[rules]\nnudge_limit = 10\n"})
 	withFailingPR(d)
 	d.Workers.Stop("ENG-1", stopTasks{Running: 1})
@@ -408,6 +423,7 @@ func TestTickStillNudgesAnInReviewWorkerWhoseStopLeftABackgroundTaskRunning(t *t
 }
 
 func TestTickNeverNudgesAnIdleInReviewWorkerWhosePRNeedsNothingFromIt(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -425,6 +441,7 @@ func TestTickNeverNudgesAnIdleInReviewWorkerWhosePRNeedsNothingFromIt(t *testing
 }
 
 func TestWakeIgnoresAHookPayloadItCannotUse(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name  string
 		input string
@@ -453,6 +470,7 @@ func TestWakeIgnoresAHookPayloadItCannotUse(t *testing.T) {
 }
 
 func TestWakeStaysSilentForAWorkerWhenTheLoopIsNotRunningAndPrintsNothingToStderr(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -467,6 +485,7 @@ func TestWakeStaysSilentForAWorkerWhenTheLoopIsNotRunningAndPrintsNothingToStder
 
 // Reads the plugin's hooks file: no command prints which hooks Claude Code runs.
 func TestWakeHooksRunDispatchWakeAndNeverFailTheSession(t *testing.T) {
+	t.Parallel()
 	body, err := os.ReadFile("hooks/hooks.json")
 	require.NoError(t, err)
 	var plugin struct {
@@ -491,6 +510,7 @@ func TestWakeHooksRunDispatchWakeAndNeverFailTheSession(t *testing.T) {
 }
 
 func TestWakeRelabelsAnIdleWorkerWithoutWaitingForTheNextResync(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -506,6 +526,7 @@ func TestWakeRelabelsAnIdleWorkerWithoutWaitingForTheNextResync(t *testing.T) {
 }
 
 func TestWakeRelabelsAWorkerThePromptSentBackToWork(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -519,6 +540,7 @@ func TestWakeRelabelsAWorkerThePromptSentBackToWork(t *testing.T) {
 }
 
 func TestWakeIgnoresASessionInTheCloneItself(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -530,6 +552,7 @@ func TestWakeIgnoresASessionInTheCloneItself(t *testing.T) {
 }
 
 func TestWakeIgnoresASessionOutsideEveryRepo(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -541,6 +564,7 @@ func TestWakeIgnoresASessionOutsideEveryRepo(t *testing.T) {
 }
 
 func TestWakeDoesNotRetryWhatFailedAtTheLastResync(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-2", "working")
@@ -554,6 +578,7 @@ func TestWakeDoesNotRetryWhatFailedAtTheLastResync(t *testing.T) {
 }
 
 func TestWakeKeepsANudgedWorkerGreenWhileHerdrStillSaysIdle(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -569,6 +594,7 @@ func TestWakeKeepsANudgedWorkerGreenWhileHerdrStillSaysIdle(t *testing.T) {
 }
 
 func TestTickLabelsEachWorkspaceWithItsStatusEmoji(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		status string
@@ -602,6 +628,7 @@ func TestTickLabelsEachWorkspaceWithItsStatusEmoji(t *testing.T) {
 }
 
 func TestTickLabelsAPausedTicketsWorkspace(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "")
@@ -613,6 +640,7 @@ func TestTickLabelsAPausedTicketsWorkspace(t *testing.T) {
 }
 
 func TestTickRelabelsWhenTheStatusChanges(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -627,6 +655,7 @@ func TestTickRelabelsWhenTheStatusChanges(t *testing.T) {
 }
 
 func TestTickLeavesTheTitleOutOfTheLabel(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	long := ticket("ENG-1", "In Progress", "dispatch")
 	long.Title = strings.Repeat("word ", 30)
@@ -639,6 +668,7 @@ func TestTickLeavesTheTitleOutOfTheLabel(t *testing.T) {
 }
 
 func TestTickRenamesAWorkspaceThatHasTheOldTitledLabel(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -650,6 +680,7 @@ func TestTickRenamesAWorkspaceThatHasTheOldTitledLabel(t *testing.T) {
 }
 
 func TestTickKeepsAWorkspaceThatHasTheShortLabel(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -661,6 +692,7 @@ func TestTickKeepsAWorkspaceThatHasTheShortLabel(t *testing.T) {
 }
 
 func TestTickStillFindsAWorkerWhoseLabelChanged(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[rules]\nnudge_limit = 10\n"})
 	withFailingPR(d)
 
@@ -675,6 +707,7 @@ func TestTickStillFindsAWorkerWhoseLabelChanged(t *testing.T) {
 }
 
 func TestTickLabelsABacklogTicketsKeptWorkspace(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "")
@@ -686,6 +719,7 @@ func TestTickLabelsABacklogTicketsKeptWorkspace(t *testing.T) {
 }
 
 func TestTickDoesNotRenameATicketWithoutAWorkspace(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "Needs Human", "dispatch"))
 
@@ -695,6 +729,7 @@ func TestTickDoesNotRenameATicketWithoutAWorkspace(t *testing.T) {
 }
 
 func TestTickRetriesARenameHerdrRefused(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -711,6 +746,7 @@ func TestTickRetriesARenameHerdrRefused(t *testing.T) {
 }
 
 func TestTickLabelsEveryWorkerAfterOneTick(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(
 		ticket("ENG-1", "In Progress", "dispatch"),
@@ -732,6 +768,7 @@ func TestTickLabelsEveryWorkerAfterOneTick(t *testing.T) {
 }
 
 func TestTickRelabelsAReviewTicketWhenItsPRBecomesReady(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -745,6 +782,7 @@ func TestTickRelabelsAReviewTicketWhenItsPRBecomesReady(t *testing.T) {
 }
 
 func TestTickLabelsAnEscalatedTicketNeedsHumanOnTheSameTick(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -763,6 +801,7 @@ func TestTickLabelsAnEscalatedTicketNeedsHumanOnTheSameTick(t *testing.T) {
 }
 
 func TestTickDoesNotLaunchASecondWorkerForARenamedWorkspace(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -776,6 +815,7 @@ func TestTickDoesNotLaunchASecondWorkerForARenamedWorkspace(t *testing.T) {
 }
 
 func TestTickKeepsTheReadyLabelWhenThePRCannotBeRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -789,6 +829,7 @@ func TestTickKeepsTheReadyLabelWhenThePRCannotBeRead(t *testing.T) {
 }
 
 func TestTickDropsTheReadyLabelWhenThePRIsClosed(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -806,6 +847,7 @@ func TestTickDropsTheReadyLabelWhenThePRIsClosed(t *testing.T) {
 }
 
 func TestTickNamesAWorkersTabByTicketAndTitle(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"In Progress", "In Review", "Needs Human"} {
 		t.Run(status, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -824,6 +866,7 @@ func TestTickNamesAWorkersTabByTicketAndTitle(t *testing.T) {
 }
 
 func TestTickKeepsTheFullTitleInATabName(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	long := ticket("ENG-1", "In Progress", "dispatch")
 	long.Title = strings.TrimSpace(strings.Repeat("word ", 21))
@@ -836,6 +879,7 @@ func TestTickKeepsTheFullTitleInATabName(t *testing.T) {
 }
 
 func TestTickRenamesATabWhenTheTitleChanges(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -850,6 +894,7 @@ func TestTickRenamesATabWhenTheTitleChanges(t *testing.T) {
 }
 
 func TestTickRenamesATabLeftBehindByTheLauncher(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -861,6 +906,7 @@ func TestTickRenamesATabLeftBehindByTheLauncher(t *testing.T) {
 }
 
 func TestTickLeavesAWorkspaceLabelAloneWhenNamingTabs(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -871,6 +917,7 @@ func TestTickLeavesAWorkspaceLabelAloneWhenNamingTabs(t *testing.T) {
 }
 
 func TestTickStillWorksWhenTabListFails(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")

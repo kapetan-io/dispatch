@@ -7,10 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/kapetan-io/dispatch/internal/environment"
 )
 
 // Tree is one worktree in a repo's pool.
@@ -56,10 +57,19 @@ func StatusError(repoDir string, err error) error {
 }
 
 // CLI is the Pool that runs the installed treehouse command.
-type CLI struct{ bin string }
+type CLI struct {
+	bin string
+	env environment.Environment
+}
 
 // NewCLI returns a Pool that runs bin.
 func NewCLI(bin string) *CLI { return &CLI{bin: bin} }
+
+// WithEnv runs treehouse, and finds it, with env instead of the process's environment.
+func (c *CLI) WithEnv(env environment.Environment) *CLI {
+	c.env = env
+	return c
+}
 
 func (c *CLI) Trees(ctx context.Context, repoDir string) ([]Tree, error) {
 	cmd := c.command(ctx, repoDir, "status", "--json")
@@ -104,7 +114,7 @@ func (c *CLI) Return(ctx context.Context, repoDir, path, holder string) error {
 }
 
 func (c *CLI) command(ctx context.Context, repoDir string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, c.bin, args...)
+	cmd := c.env.Command(ctx, c.bin, args...)
 	cmd.Dir = repoDir
 	return cmd
 }
@@ -117,8 +127,8 @@ func (c *CLI) command(ctx context.Context, repoDir string, args ...string) *exec
 // and RemoveUntracked deal with them. The result is empty when the tree has no
 // tracked changes and its HEAD is pushed. A squash-merged branch whose remote
 // copy was pruned counts as unpushed.
-func Unfinished(ctx context.Context, path string) (string, error) {
-	work, err := Inspect(ctx, path)
+func Unfinished(ctx context.Context, env environment.Environment, path string) (string, error) {
+	work, err := Inspect(ctx, env, path)
 	if err != nil {
 		return "", err
 	}
@@ -135,12 +145,12 @@ type Work struct {
 
 // Inspect reads what returning the tree at path would destroy. See Unfinished
 // for what counts.
-func Inspect(ctx context.Context, path string) (Work, error) {
-	status, err := git(ctx, path, "status", "--porcelain", "--untracked-files=no")
+func Inspect(ctx context.Context, env environment.Environment, path string) (Work, error) {
+	status, err := git(ctx, env, path, "status", "--porcelain", "--untracked-files=no")
 	if err != nil {
 		return Work{}, err
 	}
-	count, err := git(ctx, path, "rev-list", "--count", "HEAD", "--not", "--remotes")
+	count, err := git(ctx, env, path, "rev-list", "--count", "HEAD", "--not", "--remotes")
 	if err != nil {
 		return Work{}, err
 	}
@@ -168,8 +178,8 @@ func (w Work) String() string {
 
 // Untracked lists the files in the tree at path that git does not track and
 // .gitignore does not cover. It only reads.
-func Untracked(ctx context.Context, path string) ([]string, error) {
-	out, err := git(ctx, path, "ls-files", "--others", "--exclude-standard", "-z")
+func Untracked(ctx context.Context, env environment.Environment, path string) ([]string, error) {
+	out, err := git(ctx, env, path, "ls-files", "--others", "--exclude-standard", "-z")
 	if err != nil {
 		return nil, err
 	}
@@ -184,10 +194,10 @@ func Untracked(ctx context.Context, path string) ([]string, error) {
 
 // RemoveUntracked deletes the untracked files and directories in the tree at
 // path. Ignored files stay, so build output is left alone.
-func RemoveUntracked(ctx context.Context, path string) error {
-	cmd := exec.CommandContext(ctx, "git", "clean", "-f", "-d")
+func RemoveUntracked(ctx context.Context, env environment.Environment, path string) error {
+	cmd := env.Command(ctx, "git", "clean", "-f", "-d")
 	cmd.Dir = path
-	cmd.Env = gitEnv()
+	cmd.Env = gitEnv(env)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("while removing untracked files in %s: %w: %s", path, err, strings.TrimSpace(string(out)))
 	}
@@ -195,10 +205,10 @@ func RemoveUntracked(ctx context.Context, path string) error {
 }
 
 // git runs a read-only git command in dir.
-func git(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+func git(ctx context.Context, env environment.Environment, dir string, args ...string) (string, error) {
+	cmd := env.Command(ctx, "git", args...)
 	cmd.Dir = dir
-	cmd.Env = gitEnv()
+	cmd.Env = gitEnv(env)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("while running git %s in %s: %w", strings.Join(args, " "), dir, err)
@@ -211,15 +221,7 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 // started from a git hook inherits them and they would point git, and the
 // delete in RemoveUntracked, at another repository. It also takes no optional
 // locks, so checking a tree can't collide with a worker's own git commands.
-func gitEnv() []string {
-	var env []string
-	for _, kv := range os.Environ() {
-		switch name, _, _ := strings.Cut(kv, "="); name {
-		case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
-			"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_PREFIX":
-		default:
-			env = append(env, kv)
-		}
-	}
-	return append(env, "GIT_OPTIONAL_LOCKS=0")
+func gitEnv(env environment.Environment) []string {
+	return env.Without("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_PREFIX").With("GIT_OPTIONAL_LOCKS", "0")
 }

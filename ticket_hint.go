@@ -1,11 +1,11 @@
 package dispatch
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -19,7 +19,7 @@ const ticketHintText = "This repo is managed by dispatch. Before you create or r
 // cannot make it fire. It prints nothing and succeeds everywhere else, even with
 // a missing or broken config, because the hook runs in every session on the machine.
 func ticketHint(ctx context.Context, opts Options) error {
-	cfg, err := config.Load(opts.ConfigPath)
+	cfg, err := config.Load(opts.ConfigPath, opts.Env)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
@@ -28,17 +28,17 @@ func ticketHint(ctx context.Context, opts Options) error {
 		_, _ = fmt.Fprintln(opts.Stderr, "dispatch:", err)
 		return nil
 	}
-	if _, _, ok := repoAt(ctx, cfg, ""); ok {
+	if _, _, ok := repoAt(ctx, opts, cfg, ""); ok {
 		_, _ = fmt.Fprintln(opts.Stdout, ticketHintText)
 	}
 	return nil
 }
 
 // repoAt returns the label and settings of the configured repo whose clone
-// holds dir, or the working directory when dir is empty. A worktree of the
+// holds dir, or the working directory (Options.Dir) when dir is empty. A worktree of the
 // clone counts as inside it. Two repos that resolve to one clone match nothing.
-func repoAt(ctx context.Context, cfg config.Config, dir string) (string, config.Repo, bool) {
-	labels, _ := reposAt(ctx, cfg, dir)
+func repoAt(ctx context.Context, opts Options, cfg config.Config, dir string) (string, config.Repo, bool) {
+	labels, _ := reposAt(ctx, opts, cfg, dir)
 	if len(labels) != 1 {
 		return "", config.Repo{}, false
 	}
@@ -47,8 +47,8 @@ func repoAt(ctx context.Context, cfg config.Config, dir string) (string, config.
 
 // reposAt returns every label whose path resolves to the clone holding dir, and
 // that clone.
-func reposAt(ctx context.Context, cfg config.Config, dir string) ([]string, string) {
-	clone, ok := cloneRoot(ctx, dir)
+func reposAt(ctx context.Context, opts Options, cfg config.Config, dir string) ([]string, string) {
+	clone, ok := cloneRoot(ctx, opts, dir)
 	if !ok {
 		return nil, ""
 	}
@@ -66,9 +66,9 @@ func reposAt(ctx context.Context, cfg config.Config, dir string) ([]string, stri
 // or of the working directory when dir is empty. A worktree shares its clone's
 // git common dir, so both resolve to the clone. A bare repo has no such
 // directory and never matches.
-func cloneRoot(ctx context.Context, dir string) (string, bool) {
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
-	cmd.Dir = dir
+func cloneRoot(ctx context.Context, opts Options, dir string) (string, bool) {
+	cmd := opts.Env.Command(ctx, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	cmd.Dir = cmp.Or(dir, opts.Dir)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", false

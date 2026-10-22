@@ -3,7 +3,6 @@ package dispatch
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/kapetan-io/dispatch/internal/config"
 )
@@ -12,18 +11,17 @@ import (
 // working directory. Every failure is an error, because a worker acting on the
 // wrong settings is worse than one that stops.
 func repoSettings(ctx context.Context, opts Options) error {
-	cfg, err := config.Load(opts.ConfigPath)
+	cfg, err := config.Load(opts.ConfigPath, opts.Env)
 	if err != nil {
 		return err
 	}
-	labels, clone := reposAt(ctx, cfg, "")
+	labels, clone := reposAt(ctx, opts, cfg, "")
 	if len(labels) > 1 {
 		return fmt.Errorf("repos.%s and repos.%s both resolve to %s: give each repo its own clone", labels[0], labels[1], clone)
 	}
-	label, repo, ok := repoAt(ctx, cfg, "")
+	label, repo, ok := repoAt(ctx, opts, cfg, "")
 	if !ok {
-		dir, _ := os.Getwd()
-		return fmt.Errorf("%s is not inside a repo under [repos] in %s", dir, opts.ConfigPath)
+		return fmt.Errorf("%s is not inside a repo under [repos] in %s", opts.Dir, opts.ConfigPath)
 	}
 	table, err := repo.Encode(label)
 	if err != nil {

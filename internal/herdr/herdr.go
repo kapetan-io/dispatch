@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/kapetan-io/dispatch/internal/environment"
 )
 
 // Snapshot is herdr's view of every workspace, tab, pane and agent at one moment.
@@ -173,12 +175,20 @@ type CLI struct {
 	pace     time.Duration
 	trace    string
 	progress io.Writer
+	env      environment.Environment
 }
 
 // NewCLI returns a Herdr that runs bin. Arguments in global come before every
 // subcommand, such as "--session", "name" to act on a named session.
 func NewCLI(bin string, global ...string) *CLI {
 	return &CLI{bin: bin, global: global, pace: time.Second, progress: io.Discard}
+}
+
+// WithEnv runs herdr, and finds it, with env instead of the process's environment. Workers it
+// starts get the PATH of env, ahead of their shims.
+func (c *CLI) WithEnv(env environment.Environment) *CLI {
+	c.env = env
+	return c
 }
 
 // WithPace sets the unit of waiting between polls while a worker starts. The
@@ -324,7 +334,7 @@ func (c *CLI) list(ctx context.Context, out any, args ...string) error {
 }
 
 func (c *CLI) command(ctx context.Context, args ...string) *exec.Cmd {
-	return exec.CommandContext(ctx, c.bin, append(append([]string{}, c.global...), args...)...)
+	return c.env.Command(ctx, c.bin, append(append([]string{}, c.global...), args...)...)
 }
 
 var _ Herdr = (*CLI)(nil)

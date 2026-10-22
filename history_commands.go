@@ -45,7 +45,7 @@ func traceCommand(opts Options, ticket string, asJSON bool) error {
 	if !ticketID.MatchString(ticket) {
 		return fmt.Errorf("%q is not a ticket identifier such as ENG-123", ticket)
 	}
-	cfg, err := config.Load(opts.ConfigPath)
+	cfg, err := config.Load(opts.ConfigPath, opts.Env)
 	if err != nil {
 		return err
 	}
@@ -73,12 +73,12 @@ func replayCommand(opts Options, args []string) error {
 	if fs.NArg() > 0 {
 		return errors.New("replay takes flags only")
 	}
-	cfg, err := config.Load(opts.ConfigPath)
+	cfg, err := config.Load(opts.ConfigPath, opts.Env)
 	if err != nil {
 		return err
 	}
 	now := opts.Clock.Now()
-	options := loop.ReplayOptions{Dir: cfg.History.Dir}
+	options := loop.ReplayOptions{Dir: cfg.History.Dir, Env: opts.Env}
 	if options.From, err = parseWhen("--from", *from, now); err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func replayCommand(opts Options, args []string) error {
 		return err
 	}
 	if *rulesDir != "" {
-		if options.Rules, err = loadRulesIn(opts, config.ExpandHome(*rulesDir)); err != nil {
+		if options.Rules, err = loadRulesIn(opts, opts.abs(opts.Env.ExpandHome(*rulesDir))); err != nil {
 			return err
 		}
 	}
@@ -162,7 +162,7 @@ func stateCommand(ctx context.Context, opts Options, args []string) error {
 // wait starts again. With quiet, the messages the first cycle wants get a Done receipt flagged as reset,
 // so a restart does not tell every worker again what it was told before.
 func resetState(ctx context.Context, opts Options, quiet bool) error {
-	cfg, err := config.Load(opts.ConfigPath)
+	cfg, err := config.Load(opts.ConfigPath, opts.Env)
 	if err != nil {
 		return err
 	}
@@ -229,7 +229,7 @@ func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *wo
 		return nil, nil, err
 	}
 	wd, err := world.Read(ctx, world.Sources{
-		Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
+		Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests, Env: opts.Env,
 		StateDir: opts.StateDir, Stderr: opts.Stderr, Tolerant: true, Resilient: true,
 	}, world.ScopeOf(cfg), at)
 	if err != nil {

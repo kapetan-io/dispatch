@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -22,6 +22,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/delivery"
+	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/launcher"
@@ -72,9 +73,16 @@ type Options struct {
 	// Launcher starts the workers. Defaults to leasing a tree from Treehouse and
 	// starting the worker in Herdr.
 	Launcher launcher.Launcher
-	// Dir is where `dispatch launch` looks for the target repo. Defaults to the
-	// working directory.
+	// Dir is the working directory of the command. It is where `dispatch launch` looks for the
+	// target repo, where ticket-hint and repo-settings find the repo they are in, what a relative
+	// rules directory is relative to, and the directory every child process starts in.
+	// Defaults to the process's working directory.
 	Dir string
+	// Env is every environment variable dispatch reads (HOME, PATH, LINEAR_API_KEY and its own),
+	// and the environment of every child process it starts, except the claude-shim, which
+	// replaces itself with the real claude and keeps the process's. Defaults to the process's
+	// environment.
+	Env environment.Environment
 	// LaunchPace is the pause between launcher polls of herdr. Defaults to 1 second.
 	LaunchPace time.Duration
 	// RulesDir overrides [dispatch].rules, so tests run the repo's rules/ directory.
@@ -228,23 +236,26 @@ func Run(ctx context.Context, args []string, opts Options) error {
 }
 
 func withDefaults(o Options) Options {
+	if o.Dir == "" {
+		o.Dir, _ = os.Getwd()
+	}
 	if o.ConfigPath == "" {
-		o.ConfigPath = config.ExpandHome("~/.config/dispatch/config.toml")
+		o.ConfigPath = o.Env.ExpandHome("~/.config/dispatch/config.toml")
 	}
 	if o.StateDir == "" {
-		o.StateDir = config.ExpandHome("~/.local/state/dispatch")
+		o.StateDir = o.Env.ExpandHome("~/.local/state/dispatch")
 	}
 	if o.Linear == nil {
 		o.Linear = func(key string) linear.Workspace { return linear.NewClient(linear.DefaultURL, key) }
 	}
 	if o.Treehouse == nil {
-		o.Treehouse = treehouse.NewCLI("treehouse")
+		o.Treehouse = treehouse.NewCLI("treehouse").WithEnv(o.Env)
 	}
 	if o.PullRequests == nil {
-		o.PullRequests = pullrequest.NewCLI("gh")
+		o.PullRequests = pullrequest.NewCLI("gh", pullrequest.WithEnv(o.Env))
 	}
 	if o.Alerts == nil {
-		o.Alerts = delivery.NewAlerts(runtime.GOOS)
+		o.Alerts = delivery.NewAlerts(runtime.GOOS, o.Env)
 	}
 	if o.Clock == nil {
 		o.Clock = clock.Wall{}
@@ -260,7 +271,7 @@ func withDefaults(o Options) Options {
 	}
 	if o.Herdr == nil {
 		// DISPATCH_LAUNCH_TRACE=<file> records every screen the kickoff step reads.
-		o.Herdr = herdr.NewCLI("herdr").WithPace(o.LaunchPace).WithTrace(os.Getenv("DISPATCH_LAUNCH_TRACE"))
+		o.Herdr = herdr.NewCLI("herdr").WithEnv(o.Env).WithPace(o.LaunchPace).WithTrace(o.Env.Get("DISPATCH_LAUNCH_TRACE"))
 	}
 	return o
 }
@@ -278,7 +289,7 @@ func (k *keyLookup) find(ctx context.Context, opts Options, cfg config.Config) (
 	if opts.LinearKey != "" {
 		return opts.LinearKey, nil
 	}
-	if env := os.Getenv("LINEAR_API_KEY"); env != "" {
+	if env := opts.Env.Get("LINEAR_API_KEY"); env != "" {
 		return env, nil
 	}
 	if cmd := cfg.Plugins.Linear.APIKeyCommand; cmd != "" {
@@ -294,7 +305,9 @@ func (k *keyLookup) find(ctx context.Context, opts Options, cfg config.Config) (
 	if runtime.GOOS != "darwin" {
 		return "", errors.New("no Linear API key: LINEAR_API_KEY is unset and api_key_command is not set (only macOS has a keychain lookup)")
 	}
-	out, err := exec.CommandContext(ctx, "security", "find-generic-password", "-s", cfg.Plugins.Linear.APIKeyKeychain, "-w").Output()
+	keychain := opts.Env.Command(ctx, "security", "find-generic-password", "-s", cfg.Plugins.Linear.APIKeyKeychain, "-w")
+	keychain.Dir = opts.Dir
+	out, err := keychain.Output()
 	if err != nil {
 		return "", fmt.Errorf("no Linear API key: LINEAR_API_KEY is unset, api_key_command is not set, and the keychain has no %q entry", cfg.Plugins.Linear.APIKeyKeychain)
 	}
@@ -310,7 +323,8 @@ func keyFromCommand(ctx context.Context, opts Options, command string) (string, 
 	}
 	ctx, cancel := clock.WithTimeout(ctx, opts.Clock, "api_key_command", timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd := opts.Env.Command(ctx, "sh", "-c", command)
+	cmd.Dir = opts.Dir
 	cmd.Stderr = opts.Stderr
 	// A process the command started can hold stdout open after sh is killed.
 	cmd.WaitDelay = time.Second
@@ -331,7 +345,7 @@ func keyFromCommand(ctx context.Context, opts Options, command string) (string, 
 // linearViewer prints the owner of the API key, so skills can assign tickets
 // without handling the key.
 func linearViewer(ctx context.Context, opts Options) error {
-	cfg, err := config.Load(opts.ConfigPath)
+	cfg, err := config.Load(opts.ConfigPath, opts.Env)
 	if err != nil {
 		return err
 	}
@@ -351,7 +365,7 @@ func follow(ctx context.Context, opts Options, watch bool, ticket string) error 
 	if !ticketID.MatchString(ticket) {
 		return fmt.Errorf("%q is not a ticket identifier such as ENG-123", ticket)
 	}
-	socket := os.Getenv(messagingSocketEnv)
+	socket := opts.Env.Get(messagingSocketEnv)
 	if socket == "" {
 		return fmt.Errorf("%s is not set, so this is not a Claude Code session; run watch from one", messagingSocketEnv)
 	}
@@ -378,3 +392,11 @@ var ticketID = regexp.MustCompile(`^[A-Z][A-Z0-9]*-[0-9]+$`)
 
 // messagingSocketEnv names the variable Claude Code sets to a session's inbox socket.
 const messagingSocketEnv = "CLAUDE_CODE_MESSAGING_SOCKET"
+
+// abs makes a relative path relative to the command's working directory.
+func (o Options) abs(path string) string {
+	if path == "" || filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(o.Dir, path)
+}

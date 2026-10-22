@@ -1,6 +1,7 @@
 package dispatch_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -28,6 +29,7 @@ import (
 const shippedRulesConfig = "[rules]\nworker_model = \"sonnet\"\ndesign_model = \"opus\"\nlaunch_failure_limit = 2\nnudge_limit = 2\nblocked_renotify_minutes = 15\n"
 
 func TestRulesCheckPrintsWhatEachRuleWantsNow(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-2", "working")
@@ -43,6 +45,7 @@ func TestRulesCheckPrintsWhatEachRuleWantsNow(t *testing.T) {
 }
 
 func TestRulesCheckListsEveryShippedRule(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -62,6 +65,7 @@ func TestRulesCheckListsEveryShippedRule(t *testing.T) {
 }
 
 func TestRulesCheckActsOnNothing(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "Needs Human", "dispatch"))
 
@@ -76,6 +80,7 @@ func TestRulesCheckActsOnNothing(t *testing.T) {
 }
 
 func TestRulesCheckHoldsWhatItCannotRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tools().Treehouse.FailTrees(errors.New("exit status 1"))
@@ -88,6 +93,7 @@ func TestRulesCheckHoldsWhatItCannotRead(t *testing.T) {
 }
 
 func TestRulesCheckHoldsWhenHerdrCannotBeRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tools().Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
@@ -99,6 +105,7 @@ func TestRulesCheckHoldsWhenHerdrCannotBeRead(t *testing.T) {
 }
 
 func TestRulesCheckRunsTheTicketsThatCanLaunchBesideTheOnesThatCannot(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", ""))
 
@@ -110,6 +117,7 @@ func TestRulesCheckRunsTheTicketsThatCanLaunchBesideTheOnesThatCannot(t *testing
 }
 
 func TestRulesCheckFailsOnARuleReadingAMissingRulesKey(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[rules]\nworker_model = \"sonnet\"\n", ExactRules: true})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -120,6 +128,7 @@ func TestRulesCheckFailsOnARuleReadingAMissingRulesKey(t *testing.T) {
 }
 
 func TestRulesCheckFailsOnACustomRulesKeyTheFileLacks(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: "[rules]\nbug_model = \"opus\"\n",
 		Rules:  rule(`whenever({ name: "bug-model", each: "linear.ticket", if: (t, ctx) => ctx.config.rules.bug_model === "opus" && ctx.config.rules.review_model === "x", then: () => {} });`),
@@ -133,6 +142,7 @@ func TestRulesCheckFailsOnACustomRulesKeyTheFileLacks(t *testing.T) {
 }
 
 func TestRulesCheckReadsAKeyTheFileHas(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: "[rules]\nbug_model = \"opus\"\n",
 		Rules: rule(`whenever({ name: "bug-model", each: "linear.ticket", if: (t, ctx) => ctx.config.rules.bug_model === "opus",
@@ -147,6 +157,7 @@ func TestRulesCheckReadsAKeyTheFileHas(t *testing.T) {
 }
 
 func TestRulesCheckFindsEachProblemWhenLoading(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name string
 		body string
@@ -183,6 +194,7 @@ whenever({ name: "a", each: "github.pr", if: () => false, then: () => {} });`, `
 }
 
 func TestRulesCheckRefusesAThenThatReturnsABoolean(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules:  rule(`whenever({ name: "swap", each: "linear.ticket", if: (t) => true, then: ((t: any) => t.status === "in_progress") as any });`),
@@ -196,6 +208,7 @@ func TestRulesCheckRefusesAThenThatReturnsABoolean(t *testing.T) {
 }
 
 func TestRulesCheckIsolatesAFailingRuleFromTheOthers(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`
@@ -223,6 +236,7 @@ whenever({ name: "healthy", each: "linear.ticket", if: () => true,
 }
 
 func TestRulesCheckHoldsARuleThatCatchesAnUnknownRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`
@@ -244,6 +258,7 @@ whenever({ name: "asks", each: "linear.ticket",
 }
 
 func TestRulesCheckPinsTimeAndRemovesWhatMakesACycleDepend(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name string
 		body string
@@ -269,6 +284,7 @@ func TestRulesCheckPinsTimeAndRemovesWhatMakesACycleDepend(t *testing.T) {
 }
 
 func TestRulesCheckGivesDateTheTimeOfTheCycle(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`
@@ -284,6 +300,7 @@ whenever({ name: "now", each: "linear.ticket", if: (t, ctx) => Date.now() === ct
 }
 
 func TestRulesCheckRefusesAWriteToARecord(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules:  rule(`whenever({ name: "writes", each: "linear.ticket", if: (t: any) => { t.status = "done"; return true; }, then: () => {} });`),
@@ -297,6 +314,7 @@ func TestRulesCheckRefusesAWriteToARecord(t *testing.T) {
 }
 
 func TestRulesCheckLoadsAShadowRuleAndReportsWhatItWouldDo(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`
@@ -316,6 +334,7 @@ on({ name: "check-failed", event: "github.check.completed", shadow: true, if: ()
 }
 
 func TestRulesCheckFollowsTheDispatchRulesSetting(t *testing.T) {
+	t.Parallel()
 	dir := oneRule(t, `whenever({ name: "mine", each: "linear.ticket", if: () => false, then: () => {} });`)
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nrules = " + `"` + dir + `"` + "\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -327,6 +346,7 @@ func TestRulesCheckFollowsTheDispatchRulesSetting(t *testing.T) {
 }
 
 func TestRulesCheckFailsOnAnUnknownConfigKey(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progres = 4\n"})
 
 	res := d.Run("rules", "check")
@@ -335,6 +355,7 @@ func TestRulesCheckFailsOnAnUnknownConfigKey(t *testing.T) {
 }
 
 func TestRulesCheckListsTheOrderedStepsOfAMerge(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig, RepoSettings: "auto_merge = true\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -347,6 +368,7 @@ func TestRulesCheckListsTheOrderedStepsOfAMerge(t *testing.T) {
 }
 
 func TestRulesInitWritesTheShippedRules(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	dir := filepath.Join(t.TempDir(), "rules")
 
@@ -371,6 +393,7 @@ func TestRulesInitWritesTheShippedRules(t *testing.T) {
 }
 
 func TestRulesInitDescribesTurnsAndCommandsInTheTypes(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	dir := filepath.Join(t.TempDir(), "rules")
 	require.NoError(t, d.Run("rules", "init", dir).Err)
@@ -405,6 +428,7 @@ func TestRulesInitDescribesTurnsAndCommandsInTheTypes(t *testing.T) {
 }
 
 func TestRulesInitRunsTheRulesItWrote(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	dir := filepath.Join(t.TempDir(), "rules")
@@ -420,6 +444,7 @@ func TestRulesInitRunsTheRulesItWrote(t *testing.T) {
 }
 
 func TestRulesInitRefusesToOverwriteAnyFile(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	dir := rulesDir(t, map[string]string{"shared.ts": "// mine\n", "extra-notes.md": "keep\n"})
 
@@ -434,6 +459,7 @@ func TestRulesInitRefusesToOverwriteAnyFile(t *testing.T) {
 }
 
 func TestRulesInitTwiceRefusesTheSecond(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	dir := filepath.Join(t.TempDir(), "rules")
 	require.NoError(t, d.Run("rules", "init", dir).Err)
@@ -448,6 +474,7 @@ func TestRulesInitTwiceRefusesTheSecond(t *testing.T) {
 }
 
 func TestRulesInitWritesToTheConfiguredDirectory(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "configured")
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nrules = " + `"` + dir + `"` + "\n"})
 
@@ -458,6 +485,7 @@ func TestRulesInitWritesToTheConfiguredDirectory(t *testing.T) {
 }
 
 func TestRulesTestRunsTheShippedScenarios(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 
 	res := d.Run("rules", "test")
@@ -468,6 +496,7 @@ func TestRulesTestRunsTheShippedScenarios(t *testing.T) {
 }
 
 func TestRulesTestReportsAFailingScenarioAndRunsTheRest(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: map[string]string{
 		"dispatch.ts": `import { whenever } from "dispatch";
 whenever({ name: "greet", each: "linear.ticket", if: (t) => t.status === "in_progress",
@@ -498,6 +527,7 @@ scenario(rules, "wants nothing for a ticket in review", s => {
 }
 
 func TestRulesTestFailsWithNoScenarios(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: map[string]string{"dispatch.ts": ""}})
 
 	res := d.Run("rules", "test")
@@ -506,6 +536,7 @@ func TestRulesTestFailsWithNoScenarios(t *testing.T) {
 }
 
 func TestRulesCommandNeedsASubcommand(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 
 	bare := d.Run("rules")
@@ -517,6 +548,7 @@ func TestRulesCommandNeedsASubcommand(t *testing.T) {
 }
 
 func TestRulesCheckStillReadsLinearThroughItsPortOnly(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	before := d.Tools().Linear.Calls()
@@ -543,6 +575,7 @@ func generated() map[string]string {
 // a config key changes without the committed declarations and schema. Run it
 // with UPDATE_GENERATED=1 to rewrite them.
 func TestGeneratedFilesMatchTheGoTypes(t *testing.T) {
+	t.Parallel()
 	for path, want := range generated() {
 		if os.Getenv("UPDATE_GENERATED") != "" {
 			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
@@ -556,6 +589,7 @@ func TestGeneratedFilesMatchTheGoTypes(t *testing.T) {
 
 // A repo check, not a behavior test: the committed schema must name every table the config loader reads.
 func TestConfigSchemaNamesEveryTableTheLoaderReads(t *testing.T) {
+	t.Parallel()
 	var schema struct {
 		Properties map[string]struct {
 			AdditionalProperties any `json:"additionalProperties"`
@@ -574,6 +608,7 @@ func TestConfigSchemaNamesEveryTableTheLoaderReads(t *testing.T) {
 }
 
 func TestRulesCheckClosesAParentWhoseChildrenAreFinished(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	d.Linear.Children(child("ENG-2", "ENG-1", "Done"))
@@ -587,6 +622,7 @@ func TestRulesCheckClosesAParentWhoseChildrenAreFinished(t *testing.T) {
 }
 
 func TestRulesCheckHoldsAParentWhoseChildrenCannotBeRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	d.Linear.Children(child("ENG-2", "ENG-1", "Done"))
@@ -601,6 +637,7 @@ func TestRulesCheckHoldsAParentWhoseChildrenCannotBeRead(t *testing.T) {
 }
 
 func TestRulesCheckHoldsTheRulesOfAPRThatCannotBeRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig, RepoSettings: "auto_merge = true\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -616,6 +653,7 @@ func TestRulesCheckHoldsTheRulesOfAPRThatCannotBeRead(t *testing.T) {
 }
 
 func TestRulesCheckHoldsTheTearDownOfATreeItCannotRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	// The tree's directory is gone, so git can't say whether it held work.
 	d.Workers.Running("ENG-1", "idle")
@@ -632,6 +670,7 @@ func TestRulesCheckHoldsTheTearDownOfATreeItCannotRead(t *testing.T) {
 }
 
 func TestRulesCheckReturnsNothingButWantsTheTearDownOfACleanTree(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Trees.CleanLeased("ENG-1")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
@@ -644,6 +683,7 @@ func TestRulesCheckReturnsNothingButWantsTheTearDownOfACleanTree(t *testing.T) {
 }
 
 func TestRulesCheckStopsAnIfAfterOneSecondByDefault(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules:  rule(`whenever({ name: "loops", each: "linear.ticket", if: () => { for (;;) {} }, then: () => {} });`),
@@ -661,6 +701,7 @@ func TestRulesCheckStopsAnIfAfterOneSecondByDefault(t *testing.T) {
 }
 
 func TestRulesCheckStopsAThenThatRunsOutOfTimeAndKeepsTheOthers(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`
@@ -680,6 +721,7 @@ whenever({ name: "fine", each: "linear.ticket", if: () => true, then: (t, ctx) =
 }
 
 func TestRulesCheckGivesEachRuleCallAFreshRuntime(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`
@@ -696,6 +738,7 @@ whenever({ name: "counts", each: "linear.ticket", if: () => { calls++; return ca
 }
 
 func TestRulesCheckHoldsARecordWhoseReadFailedEvenWhenTheRuleCatchesIt(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`
@@ -712,6 +755,7 @@ whenever({ name: "catches", each: "linear.ticket", if: (t, ctx) => true,
 }
 
 func TestRulesCheckHoldsALeaseQuestionAboutAChildWhenTheRepoLabelGroupIsCustom(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: "[plugins.linear]\nrepo_label_group = \"project\"\n" + shippedRulesConfig,
 		Rules: rule(`whenever({ name: "asks", each: "linear.ticket", if: (t, ctx) => t.status === "todo" && !ctx.treehouse.leased(t),
@@ -732,6 +776,7 @@ func TestRulesCheckHoldsALeaseQuestionAboutAChildWhenTheRepoLabelGroupIsCustom(t
 }
 
 func TestRulesCheckHoldsARuleWhoseKnownCallbackCatchesTheUnknownRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`whenever({ name: "swallows", each: "linear.ticket",
@@ -748,6 +793,7 @@ func TestRulesCheckHoldsARuleWhoseKnownCallbackCatchesTheUnknownRead(t *testing.
 }
 
 func TestRulesCheckRecordsAForgedActionHandleAsAThrow(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`whenever({ name: "forges", each: "linear.ticket", if: () => true, then: () => ({ queued: true, __id: 99 }) as any });
@@ -763,6 +809,7 @@ whenever({ name: "healthy", each: "linear.ticket", if: () => true, then: (t, ctx
 }
 
 func TestRulesCheckNamesAMissingOnceKeyThatTheLintCouldNotSee(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`whenever({ name: "computed", each: "linear.ticket", if: () => true,
@@ -777,6 +824,7 @@ func TestRulesCheckNamesAMissingOnceKeyThatTheLintCouldNotSee(t *testing.T) {
 }
 
 func TestRulesCheckStopsALoopAtTheTopOfARuleFile(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig, Rules: rule(`for (;;) {}`)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -788,6 +836,7 @@ func TestRulesCheckStopsALoopAtTheTopOfARuleFile(t *testing.T) {
 }
 
 func TestRulesCheckCannotReachTheRealClockThroughDate(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`whenever({ name: "clock", each: "linear.ticket",
@@ -803,6 +852,7 @@ func TestRulesCheckCannotReachTheRealClockThroughDate(t *testing.T) {
 }
 
 func TestRulesCheckRefusesAHandleThatIsNotAnActionOrIsReturnedTwice(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name string
 		then string
@@ -827,6 +877,7 @@ func TestRulesCheckRefusesAHandleThatIsNotAnActionOrIsReturnedTwice(t *testing.T
 }
 
 func TestRulesCheckStopsAGetterInAReturnedObjectWithinTheBudget(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`whenever({ name: "getter", each: "linear.ticket", if: () => true,
@@ -845,6 +896,7 @@ whenever({ name: "healthy", each: "linear.ticket", if: () => true, then: (t, ctx
 }
 
 func TestRulesCheckNamesAMissingKeyInANestedRulesTable(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: "[rules.slack]\nchannel = \"#eng\"\n",
 		Rules:  rule(`whenever({ name: "nested", each: "linear.ticket", if: (t, ctx) => ctx.config.rules.slack.channel === "#eng" && ctx.config.rules.slack.token === "x", then: () => {} });`),
@@ -858,6 +910,7 @@ func TestRulesCheckNamesAMissingKeyInANestedRulesTable(t *testing.T) {
 }
 
 func TestRulesCheckShowsWhatWaitsForAWorkerSlot(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n" + shippedRulesConfig})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
 
@@ -868,6 +921,7 @@ func TestRulesCheckShowsWhatWaitsForAWorkerSlot(t *testing.T) {
 }
 
 func TestRulesTestFailsAScenarioWhenARuleThrowsUnlessItExpectsTheThrow(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: map[string]string{
 		"dispatch.ts": `import { whenever } from "dispatch";
 whenever({ name: "broken", each: "linear.ticket", if: (t) => t.nothing.deeper === 1, then: () => {} });`,
@@ -893,6 +947,7 @@ scenario(rules, "expects the break", s => {
 }
 
 func TestRulesCheckRefusesAHugeArrayWithoutBuildingIt(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: shippedRulesConfig,
 		Rules: rule(`whenever({ name: "huge", each: "linear.ticket", if: () => true, then: () => new Array(1_000_000_000) as any });
@@ -910,9 +965,10 @@ whenever({ name: "huge-once", each: "linear.ticket", if: () => true,
 }
 
 func TestRulesCheckTypeChecksWithTscThroughAConfigOfItsOwn(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	record := fakeTSC(t, 0, "")
+	record := d.fakeTSC(0, "")
 
 	res := d.Run("rules", "check")
 
@@ -928,9 +984,10 @@ func TestRulesCheckTypeChecksWithTscThroughAConfigOfItsOwn(t *testing.T) {
 }
 
 func TestRulesCheckReportsWhatTscFinds(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	fakeTSC(t, 2, "shared.ts(6,57): error TS2322: Type 'unknown' is not assignable to type 'number'.")
+	d.fakeTSC(2, "shared.ts(6,57): error TS2322: Type 'unknown' is not assignable to type 'number'.")
 
 	res := d.Run("rules", "check")
 
@@ -939,6 +996,7 @@ func TestRulesCheckReportsWhatTscFinds(t *testing.T) {
 }
 
 func TestRulesTestAcknowledgesAThrowOnlyForTheCycleItWasMadeIn(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: map[string]string{
 		"dispatch.ts": `import { whenever } from "dispatch";
 whenever({ name: "broken", each: "linear.ticket", if: (t: any) => t.nothing.deeper === 1, then: () => {} });`,
@@ -969,6 +1027,7 @@ scenario(rules, "not acknowledged in the next cycle", s => {
 
 // The long-loop rule in docs/rules.md is what readers copy, so it must not hold for tickets it has no opinion on.
 func TestTheTurnsExampleInTheRulesGuideIsNotHeldForOtherTickets(t *testing.T) {
+	t.Parallel()
 	guide, err := os.ReadFile("docs/rules.md")
 	require.NoError(t, err)
 	example := regexp.MustCompile("(?s)```ts\nwhenever\\(\\{\n  name: \"long-loop-in-review\".*?\n\\}\\);\n```").Find(guide)
@@ -987,6 +1046,7 @@ func TestTheTurnsExampleInTheRulesGuideIsNotHeldForOtherTickets(t *testing.T) {
 
 // The person-took-over rule in docs/rules.md is what readers copy, so it must not hold for tickets it has no opinion on.
 func TestTheCommandsExampleInTheRulesGuideIsNotHeldForOtherTickets(t *testing.T) {
+	t.Parallel()
 	guide, err := os.ReadFile("docs/rules.md")
 	require.NoError(t, err)
 	example := regexp.MustCompile("(?s)```ts\nwhenever\\(\\{\n  name: \"person-took-over\".*?\n\\}\\);\n```").Find(guide)
@@ -1004,6 +1064,7 @@ func TestTheCommandsExampleInTheRulesGuideIsNotHeldForOtherTickets(t *testing.T)
 }
 
 func TestAThenThatCallsGetActsOnTheResponse(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({
   name: "report-sentry", each: "linear.ticket",
   if: (t) => t.status === "in_progress",
@@ -1025,6 +1086,7 @@ func TestAThenThatCallsGetActsOnTheResponse(t *testing.T) {
 }
 
 func TestAnIfThatCallsGetThrows(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "fetch-in-if", each: "linear.ticket", if: (t, ctx) => ctx.http.get("sentry", "/me").status === 200, then: () => {} });`)})
 	sentry := d.Services.Sentry()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -1037,6 +1099,7 @@ func TestAnIfThatCallsGetThrows(t *testing.T) {
 }
 
 func TestACallToAServiceConfigDoesNotNameThrowsAtTheCall(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "wrong-service", each: "linear.ticket", if: () => true, then: (t, ctx) => { ctx.http.get("pagerduty", "/me"); } });`)})
 	sentry := d.Services.Sentry()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -1049,6 +1112,7 @@ func TestACallToAServiceConfigDoesNotNameThrowsAtTheCall(t *testing.T) {
 }
 
 func TestAPathThatLeavesTheServiceThrowsAtTheCall(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct{ name, path string }{
 		{"NoLeadingSlash", "issues"},
 		{"OtherHost", "//evil.example/x"},
@@ -1075,6 +1139,7 @@ func TestAPathThatLeavesTheServiceThrowsAtTheCall(t *testing.T) {
 }
 
 func TestAGetThatFailsHoldsTheRule(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		status int
@@ -1103,6 +1168,7 @@ func TestAGetThatFailsHoldsTheRule(t *testing.T) {
 }
 
 func TestAGetThatOutlastsTheThenBudgetHoldsTheRuleInsteadOfThrowing(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		RuleTimeout: dispatch.RuleTimeout{Then: 100 * time.Millisecond},
 		Rules: rule(`whenever({ name: "slow", each: "linear.ticket", if: () => true,
@@ -1123,6 +1189,7 @@ func TestAGetThatOutlastsTheThenBudgetHoldsTheRuleInsteadOfThrowing(t *testing.T
 }
 
 func TestLastReadsTheResponseAGetKeptUntilTheNextResync(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`
 // Fetches once per ticket, so only the first cycle calls the service.
 whenever({ name: "fetch", each: "linear.ticket", if: (t, ctx) => !ctx.ledger.done(t, ["fetch", t.id]),
@@ -1150,6 +1217,7 @@ whenever({ name: "forgot", each: "linear.ticket", if: (t, ctx) => !known(() => c
 }
 
 func TestLastWithNothingKeptHoldsTheRule(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "peek", each: "linear.ticket", if: (t, ctx) => (ctx.http.last("sentry", "/count").body as any).open > 0, then: () => {} });`)})
 	d.Services.Sentry()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -1161,6 +1229,7 @@ func TestLastWithNothingKeptHoldsTheRule(t *testing.T) {
 }
 
 func TestAQueuedPostIsSentOnceWithTheServiceTokenAndRetriedWhenItFails(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "resolve", each: "linear.ticket", if: (t) => t.status === "in_progress",
   then: (t, ctx) => ctx.http.queuePost("sentry", "/issues/7/resolve", { status: "resolved", by: t.id }, { once: ["resolve", t.id] }) });`)})
 	sentry := d.Services.Sentry()
@@ -1199,6 +1268,7 @@ func TestAQueuedPostIsSentOnceWithTheServiceTokenAndRetriedWhenItFails(t *testin
 }
 
 func TestAPostToAServiceConfigDoesNotNameThrowsWhenQueued(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "wrong-post", each: "linear.ticket", if: () => true,
   then: (t, ctx) => ctx.http.queuePost("pagerduty", "/x", {}, { once: ["x", t.id] }) });`)})
 	sentry := d.Services.Sentry()
@@ -1212,6 +1282,7 @@ func TestAPostToAServiceConfigDoesNotNameThrowsWhenQueued(t *testing.T) {
 }
 
 func TestTheServiceTokenNeverReachesARuleHistoryOrOutput(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`
 whenever({ name: "echo", each: "linear.ticket", if: () => true,
   then: (t, ctx) => ctx.linear.queueComment(t, JSON.stringify(ctx.http.get("sentry", "/echo").body) + " " + JSON.stringify(ctx.config.http), { once: ["echo", t.id] }) });
@@ -1254,6 +1325,7 @@ whenever({ name: "hook", each: "linear.ticket", if: () => true,
 }
 
 func TestEachResponseAThenWaitedOnIsShownInTheTrace(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "count", each: "linear.ticket", if: () => true,
   then: (t, ctx) => ctx.linear.queueComment(t, "open " + (ctx.http.get("sentry", "/count").body as any).open, { once: ["count", t.id] }) });`)})
 	d.Services.Sentry().Respond("sentry", "GET", "/count", 200, `{"open":3}`)
@@ -1267,6 +1339,7 @@ func TestEachResponseAThenWaitedOnIsShownInTheTrace(t *testing.T) {
 }
 
 func TestABaseURLThatIsNotAnHTTPURLStopsTheStart(t *testing.T) {
+	t.Parallel()
 	for _, base := range []string{
 		"ftp://sentry.test", "sentry.test/api", "https://", "https://user:pw@sentry.test",
 		"https://sentry.test/api?org=1", "https://sentry.test/api?", "https://sentry.test/api#top",
@@ -1282,6 +1355,7 @@ func TestABaseURLThatIsNotAnHTTPURLStopsTheStart(t *testing.T) {
 }
 
 func TestRulesTestRunsHTTPScenariosAgainstTheFakeServices(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: map[string]string{
 		"dispatch.ts": `import { whenever, known } from "dispatch";
 whenever({
@@ -1337,6 +1411,7 @@ scenario(rules, "holds while the service has no answer", s => {
 }
 
 func TestAPostThatTimesOutCountsAsSentAndIsNotPostedAgain(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		ActionTimeout: 100 * time.Millisecond,
 		Rules: rule(`whenever({ name: "slow-post", each: "linear.ticket", if: (t) => t.status === "in_progress",
@@ -1361,6 +1436,7 @@ func TestAPostThatTimesOutCountsAsSentAndIsNotPostedAgain(t *testing.T) {
 }
 
 func TestAGetThatFailsIsShownInTheTraceWithItsReasonAndNoToken(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "down", each: "linear.ticket", if: () => true,
   then: (t, ctx) => ctx.linear.queueComment(t, "got " + ctx.http.get("sentry", "/down").status, { once: ["down", t.id] }) });`)})
 	d.Services.Sentry().Respond("sentry", "GET", "/down", 503, "oops "+sentryToken)
@@ -1376,6 +1452,7 @@ func TestAGetThatFailsIsShownInTheTraceWithItsReasonAndNoToken(t *testing.T) {
 }
 
 func TestRulesTestHTTPScenarioErrors(t *testing.T) {
+	t.Parallel()
 	const rulesTS = `import { whenever } from "dispatch";
 whenever({ name: "ask", each: "linear.ticket", if: () => true,
   then: (t, ctx) => ctx.linear.queueComment(t, "got " + ctx.http.get("sentry", "/me").status, { once: ["ask", t.id] }) });
@@ -1405,6 +1482,7 @@ scenario(rules, "case", s => { ` + test.body + ` });
 }
 
 func TestRulesTestHTTPScenarioAnswersAMethodAndStatus(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: map[string]string{
 		"dispatch.ts": `import { whenever } from "dispatch";
 whenever({ name: "ask", each: "linear.ticket", if: () => true,
@@ -1445,6 +1523,7 @@ scenario(rules, "a failing status holds the rule", s => {
 }
 
 func TestAPostIsNotSentAgainAfterHistoryRotates(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Config: "\n[history]\nrotate = \"1m\"\nkeep = \"1d\"\n",
 		Rules: rule(`whenever({ name: "hook", each: "linear.ticket", if: (t) => t.status === "in_progress",
@@ -1464,6 +1543,7 @@ func TestAPostIsNotSentAgainAfterHistoryRotates(t *testing.T) {
 }
 
 func TestAPostWhoseTokenCommandOutlastsTheDeadlineSentNothingAndIsTriedAgain(t *testing.T) {
+	t.Parallel()
 	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
@@ -1503,6 +1583,7 @@ func TestAPostWhoseTokenCommandOutlastsTheDeadlineSentNothingAndIsTriedAgain(t *
 }
 
 func TestRulesCheckCallsNoServiceUnlessGivenOne(t *testing.T) {
+	t.Parallel()
 	marker := filepath.Join(t.TempDir(), "token-command-ran")
 	d := newDispatch(t, dispatchOptions{
 		Config: "\n[http.sentry]\nbase_url = \"https://sentry.test/api/0\"\ntoken_command = \"touch " + marker + "; echo tok\"\n",
@@ -1526,4 +1607,37 @@ func countPosts(sentry *httpservicetest.Fake) int {
 		}
 	}
 	return posts
+}
+
+func TestRulesInitPlacesARelativeDirectoryInTheWorkingDirectory(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	parent := t.TempDir()
+
+	res := d.RunIn(parent, "rules", "init", "mine")
+
+	require.NoError(t, res.Err)
+	assert.FileExists(t, filepath.Join(parent, "mine", "dispatch.ts"))
+}
+
+func TestRulesInitExpandsTildeToTheHomeItWasGiven(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+
+	res := d.Run("rules", "init", "~/mine")
+
+	require.NoError(t, res.Err)
+	assert.FileExists(t, filepath.Join(d.Home, "mine", "dispatch.ts"))
+}
+
+func TestRulesCheckReadsARelativeRulesDirectoryFromTheWorkingDirectory(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	parent := t.TempDir()
+	require.NoError(t, d.RunIn(parent, "rules", "init", "mine").Err)
+
+	res := d.runIn(context.Background(), parent, dispatch.Options{RulesDir: "mine"}, "rules", "check")
+
+	require.NoError(t, res.Err)
 }

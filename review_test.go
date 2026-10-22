@@ -63,6 +63,7 @@ func (t *Trees) Lease(ticket string) {
 }
 
 func TestTickNudgesAnIdleInReviewWorkerNamingTheProblem(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name    string
 		pr      prState
@@ -91,6 +92,7 @@ func TestTickNudgesAnIdleInReviewWorkerNamingTheProblem(t *testing.T) {
 }
 
 func TestTickLeavesAnInReviewTicketAloneWhenThePRNeedsNothing(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name  string
 		setup func(d *Dispatch)
@@ -117,6 +119,7 @@ func TestTickLeavesAnInReviewTicketAloneWhenThePRNeedsNothing(t *testing.T) {
 }
 
 func TestTickDoesNotReadThePRWhileTheInReviewWorkerIsBusy(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"working", "unknown"} {
 		t.Run(status, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -133,6 +136,7 @@ func TestTickDoesNotReadThePRWhileTheInReviewWorkerIsBusy(t *testing.T) {
 }
 
 func TestTickOnlyNotifiesForABlockedInReviewWorker(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "blocked")
@@ -146,6 +150,7 @@ func TestTickOnlyNotifiesForABlockedInReviewWorker(t *testing.T) {
 }
 
 func TestTickNeverNudgesDesignTicketsAboutPRs(t *testing.T) {
+	t.Parallel()
 	for _, label := range []string{"design", "design-review"} {
 		t.Run(label, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -162,6 +167,7 @@ func TestTickNeverNudgesDesignTicketsAboutPRs(t *testing.T) {
 }
 
 func TestTickReadsOneInReviewPRPerTicketPerTick(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(
 		ticket("ENG-1", "In Review", "dispatch"),
@@ -179,6 +185,7 @@ func TestTickReadsOneInReviewPRPerTicketPerTick(t *testing.T) {
 }
 
 func TestTickEscalatesAnInReviewTicketAfterTwoPRNudgesWithNoPush(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -206,6 +213,7 @@ func TestTickEscalatesAnInReviewTicketAfterTwoPRNudgesWithNoPush(t *testing.T) {
 }
 
 func TestTickResetsThePRNudgeCountWhenTheHeadMoves(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -229,6 +237,7 @@ func TestTickResetsThePRNudgeCountWhenTheHeadMoves(t *testing.T) {
 }
 
 func TestTickKeepsThePRNudgeCountAcrossTicksWhereTheWorkerWasBusy(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -247,6 +256,7 @@ func TestTickKeepsThePRNudgeCountAcrossTicksWhereTheWorkerWasBusy(t *testing.T) 
 }
 
 func TestTickResetsThePRNudgeCountWhenAPushLandsWhileTheWorkerWasBusy(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -266,6 +276,7 @@ func TestTickResetsThePRNudgeCountWhenAPushLandsWhileTheWorkerWasBusy(t *testing
 }
 
 func TestTickRelaunchesAnInReviewWorkerThatIsGoneThenNudgesItOnceIdle(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "")
@@ -286,6 +297,7 @@ func TestTickRelaunchesAnInReviewWorkerThatIsGoneThenNudgesItOnceIdle(t *testing
 }
 
 func TestTickRelaunchesAnInReviewWorkerWhenTheWorkerCapIsFull(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.Linear.Tickets(
 		ticket("ENG-1", "In Progress", "dispatch"),
@@ -301,6 +313,7 @@ func TestTickRelaunchesAnInReviewWorkerWhenTheWorkerCapIsFull(t *testing.T) {
 }
 
 func TestTickEscalatesAnInReviewTicketWhoseRelaunchKeepsFailing(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "")
@@ -315,6 +328,7 @@ func TestTickEscalatesAnInReviewTicketWhoseRelaunchKeepsFailing(t *testing.T) {
 }
 
 func TestTickSkipsATicketWhosePRCannotBeRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -329,6 +343,7 @@ func TestTickSkipsATicketWhosePRCannotBeRead(t *testing.T) {
 }
 
 func TestTickEscalatesAnInReviewTicketWhoseRelaunchedWorkerNeverPushes(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "")
@@ -350,6 +365,7 @@ func TestTickEscalatesAnInReviewTicketWhoseRelaunchedWorkerNeverPushes(t *testin
 }
 
 func TestTickNeverCountsAFullPoolAsAnInReviewRelaunch(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "")
@@ -368,6 +384,7 @@ func TestTickNeverCountsAFullPoolAsAnInReviewRelaunch(t *testing.T) {
 }
 
 func TestTickNotifiesOnceWhenAPRNudgeEscalationReachesNeedsHuman(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -385,6 +402,7 @@ func TestTickNotifiesOnceWhenAPRNudgeEscalationReachesNeedsHuman(t *testing.T) {
 }
 
 func TestTickReportsAPRWithMoreReviewThreadsThanItReads(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -397,6 +415,7 @@ func TestTickReportsAPRWithMoreReviewThreadsThanItReads(t *testing.T) {
 }
 
 func TestTickIgnoresInReviewParentTickets(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Linear.Children(child("ENG-2", "ENG-1", "Backlog"))
@@ -409,6 +428,7 @@ func TestTickIgnoresInReviewParentTickets(t *testing.T) {
 }
 
 func TestTickGivesARelaunchedWorkerTwoPRNudgesBeforeEscalating(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "")
@@ -431,6 +451,7 @@ func TestTickGivesARelaunchedWorkerTwoPRNudgesBeforeEscalating(t *testing.T) {
 }
 
 func TestTickHoldsBackOnlyTheTicketWhosePRReadFailed(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -444,6 +465,7 @@ func TestTickHoldsBackOnlyTheTicketWhosePRReadFailed(t *testing.T) {
 }
 
 func TestTickReportsWhatGHSaidWhenItFails(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -455,6 +477,7 @@ func TestTickReportsWhatGHSaidWhenItFails(t *testing.T) {
 }
 
 func TestTickIgnoresChangesRequestedOnACommitThatIsNoLongerTheHead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -469,6 +492,7 @@ func TestTickIgnoresChangesRequestedOnACommitThatIsNoLongerTheHead(t *testing.T)
 }
 
 func TestTickDoesNotNudgeOverChangesRequestedWhileACheckOnTheHeadRuns(t *testing.T) {
+	t.Parallel()
 	for _, checks := range []string{"PENDING", "EXPECTED"} {
 		t.Run(checks, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -487,6 +511,7 @@ func TestTickDoesNotNudgeOverChangesRequestedWhileACheckOnTheHeadRuns(t *testing
 }
 
 func TestTickNudgesOverChangesRequestedOnTheHeadOnceChecksFinish(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -501,6 +526,7 @@ func TestTickNudgesOverChangesRequestedOnTheHeadOnceChecksFinish(t *testing.T) {
 }
 
 func TestTickStillNudgesForAFailedCheckWhileChangesRequestedIsStale(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -512,6 +538,7 @@ func TestTickStillNudgesForAFailedCheckWhileChangesRequestedIsStale(t *testing.T
 }
 
 func TestTickNudgesWhenOneReviewerIsStaleAndAnotherRequestsChangesOnTheHead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -536,6 +563,7 @@ func requiredOnlyDispatch(t *testing.T, p prState) *Dispatch {
 }
 
 func TestTickIgnoresAnOptionalCheckThatFails(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name     string
 		checks   string
@@ -558,6 +586,7 @@ func TestTickIgnoresAnOptionalCheckThatFails(t *testing.T) {
 }
 
 func TestTickCountsARequiredCheckThatFails(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name     string
 		checks   string
@@ -579,6 +608,7 @@ func TestTickCountsARequiredCheckThatFails(t *testing.T) {
 }
 
 func TestTickWaitsOnARequiredCheckThatHasNotFinished(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name     string
 		checks   string
@@ -600,6 +630,7 @@ func TestTickWaitsOnARequiredCheckThatHasNotFinished(t *testing.T) {
 }
 
 func TestTickLeavesAnExpectedRollupNotReadyWithoutAskingForChecks(t *testing.T) {
+	t.Parallel()
 	d := requiredOnlyDispatch(t, prState{head: "a1", checks: "EXPECTED", decision: "APPROVED", mergeable: "MERGEABLE"})
 
 	d.Tick()
@@ -610,6 +641,7 @@ func TestTickLeavesAnExpectedRollupNotReadyWithoutAskingForChecks(t *testing.T) 
 }
 
 func TestTickNudgesOverChangesRequestedWhileOnlyAnOptionalCheckRuns(t *testing.T) {
+	t.Parallel()
 	d := requiredOnlyDispatch(t, prState{head: "b2", checks: "PENDING", decision: "CHANGES_REQUESTED", mergeable: "MERGEABLE",
 		contexts: []checkContext{{"test", "SUCCESS", true}, {"CodeRabbit", "IN_PROGRESS", false}}})
 
@@ -620,6 +652,7 @@ func TestTickNudgesOverChangesRequestedWhileOnlyAnOptionalCheckRuns(t *testing.T
 }
 
 func TestTickMutesChangesRequestedWhileARequiredCheckRuns(t *testing.T) {
+	t.Parallel()
 	d := requiredOnlyDispatch(t, prState{head: "b2", checks: "PENDING", decision: "CHANGES_REQUESTED", mergeable: "MERGEABLE",
 		contexts: []checkContext{{"test", "IN_PROGRESS", true}}})
 
@@ -629,6 +662,7 @@ func TestTickMutesChangesRequestedWhileARequiredCheckRuns(t *testing.T) {
 }
 
 func TestTickErrorsWhenChecksNeedASecondPage(t *testing.T) {
+	t.Parallel()
 	d := requiredOnlyDispatch(t, prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	d.GitHub.RespondChecks("a1", []checkContext{{"test", "SUCCESS", true}}, true)
 
@@ -639,6 +673,7 @@ func TestTickErrorsWhenChecksNeedASecondPage(t *testing.T) {
 }
 
 func TestTickCountsEveryCheckInARepoWithoutTheSetting(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -652,6 +687,7 @@ func TestTickCountsEveryCheckInARepoWithoutTheSetting(t *testing.T) {
 }
 
 func TestTickDoesNotAskForChecksWhenTheRollupPassed(t *testing.T) {
+	t.Parallel()
 	d := requiredOnlyDispatch(t, cleanPR("a1"))
 
 	d.Tick()
@@ -661,6 +697,7 @@ func TestTickDoesNotAskForChecksWhenTheRollupPassed(t *testing.T) {
 }
 
 func TestTickWaitsWhenAPushLandsBetweenReadingThePRAndItsChecks(t *testing.T) {
+	t.Parallel()
 	d := requiredOnlyDispatch(t, prState{head: "a1", checks: "FAILURE", decision: "APPROVED", mergeable: "MERGEABLE"})
 	d.GitHub.RespondChecks("b2", []checkContext{{"test", "SUCCESS", true}}, false)
 
@@ -671,6 +708,7 @@ func TestTickWaitsWhenAPushLandsBetweenReadingThePRAndItsChecks(t *testing.T) {
 }
 
 func TestTickIgnoresAFailedRollupThatListsNoChecks(t *testing.T) {
+	t.Parallel()
 	d := requiredOnlyDispatch(t, prState{head: "a1", checks: "FAILURE", decision: "APPROVED", mergeable: "MERGEABLE", contexts: []checkContext{}})
 
 	d.Tick()
@@ -680,6 +718,7 @@ func TestTickIgnoresAFailedRollupThatListsNoChecks(t *testing.T) {
 }
 
 func TestTickReadsStatusContextsByWhetherTheyAreRequired(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name     string
 		required bool
@@ -707,6 +746,7 @@ func TestTickReadsStatusContextsByWhetherTheyAreRequired(t *testing.T) {
 }
 
 func TestTickCountsEveryCheckWhenOnlyAnotherRepoIgnoresOptionalOnes(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: tigerRepo(t, requiredOnly)})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -730,6 +770,7 @@ func approvalDispatch(t *testing.T, settings string, p prState) *Dispatch {
 }
 
 func TestTickIgnoresAnApprovalCheckThatHasNotPassed(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name     string
 		settings string
@@ -754,6 +795,7 @@ func TestTickIgnoresAnApprovalCheckThatHasNotPassed(t *testing.T) {
 }
 
 func TestTickCountsABuildCheckThatFailsBesideAnApprovalCheck(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name     string
 		settings string
@@ -775,6 +817,7 @@ func TestTickCountsABuildCheckThatFailsBesideAnApprovalCheck(t *testing.T) {
 }
 
 func TestTickWaitsOnABuildCheckThatRunsBesideAnApprovalCheck(t *testing.T) {
+	t.Parallel()
 	d := approvalDispatch(t, approvalGate, prState{head: "a1", checks: "FAILURE", decision: "APPROVED", mergeable: "MERGEABLE",
 		contexts: []checkContext{{"Mergify Merge Protections", "FAILURE", true}, {"premerge", "IN_PROGRESS", true}}})
 
@@ -785,6 +828,7 @@ func TestTickWaitsOnABuildCheckThatRunsBesideAnApprovalCheck(t *testing.T) {
 }
 
 func TestTickCountsAnApprovalCheckInARepoThatDoesNotListIt(t *testing.T) {
+	t.Parallel()
 	d := approvalDispatch(t, "", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE",
 		contexts: []checkContext{{"Mergify Merge Protections", "FAILURE", true}, {"premerge", "SUCCESS", true}}})
 
@@ -795,6 +839,7 @@ func TestTickCountsAnApprovalCheckInARepoThatDoesNotListIt(t *testing.T) {
 }
 
 func TestTickDoesNotAutoMergeWhileAnApprovalCheckHasNotPassed(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name     string
 		checks   string
@@ -816,6 +861,7 @@ func TestTickDoesNotAutoMergeWhileAnApprovalCheckHasNotPassed(t *testing.T) {
 }
 
 func TestTickAutoMergesOnceTheApprovalCheckPasses(t *testing.T) {
+	t.Parallel()
 	pr := prState{head: "a1", checks: "SUCCESS", mergeable: "MERGEABLE", approved: []string{"a1"},
 		contexts: []checkContext{{"Mergify Merge Protections", "SUCCESS", true}, {"premerge", "SUCCESS", true}}}
 	d := approvalDispatch(t, approvalGate+autoMergeSetting, pr)
@@ -839,6 +885,7 @@ func draftPR(head string) prState {
 }
 
 func TestTickNotifiesOncePerHeadWhenADraftIsReady(t *testing.T) {
+	t.Parallel()
 	d := draftDispatch(t)
 	d.GitHub.PullRequest("ENG-1", draftPR("a1"))
 
@@ -856,6 +903,7 @@ func TestTickNotifiesOncePerHeadWhenADraftIsReady(t *testing.T) {
 }
 
 func TestTickNotifiesAgainWhenTheUserOpensAReadyDraft(t *testing.T) {
+	t.Parallel()
 	d := draftDispatch(t)
 	d.GitHub.PullRequest("ENG-1", draftPR("a1"))
 	d.Tick()
@@ -876,6 +924,7 @@ func TestTickNotifiesAgainWhenTheUserOpensAReadyDraft(t *testing.T) {
 }
 
 func TestTickStaysSilentForADraftThatIsNotReady(t *testing.T) {
+	t.Parallel()
 	d := draftDispatch(t)
 	pr := draftPR("a1")
 	pr.unresolved = 1
@@ -887,6 +936,7 @@ func TestTickStaysSilentForADraftThatIsNotReady(t *testing.T) {
 }
 
 func TestTickKeepsTheDraftNotificationAcrossALeasedTicketsAbsence(t *testing.T) {
+	t.Parallel()
 	d := draftDispatch(t)
 	d.GitHub.PullRequest("ENG-1", draftPR("a1"))
 	d.Tick()
@@ -902,6 +952,7 @@ func TestTickKeepsTheDraftNotificationAcrossALeasedTicketsAbsence(t *testing.T) 
 }
 
 func TestTickNeverMergesADraft(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name     string
 		settings string
@@ -932,6 +983,7 @@ func TestTickNeverMergesADraft(t *testing.T) {
 }
 
 func TestTickKeepsTodaysNotificationInAnOpenRepoForADraft(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -945,6 +997,7 @@ func TestTickKeepsTodaysNotificationInAnOpenRepoForADraft(t *testing.T) {
 }
 
 func TestTickMergesAnApprovedOpenPRInADraftRepoWithAutoMerge(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting + draftSetting})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -956,6 +1009,7 @@ func TestTickMergesAnApprovedOpenPRInADraftRepoWithAutoMerge(t *testing.T) {
 }
 
 func TestTickNotifiesReviewsHandledOncePerHeadForAnOpenPRInADraftRepo(t *testing.T) {
+	t.Parallel()
 	d := draftDispatch(t)
 	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
 
@@ -972,6 +1026,7 @@ func TestTickNotifiesReviewsHandledOncePerHeadForAnOpenPRInADraftRepo(t *testing
 }
 
 func TestTickMergesADraftOnceTheUserOpensItAtTheSameHead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting + draftSetting})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -988,6 +1043,7 @@ func TestTickMergesADraftOnceTheUserOpensItAtTheSameHead(t *testing.T) {
 }
 
 func TestTickRetriesADraftNotificationThatFailed(t *testing.T) {
+	t.Parallel()
 	d := draftDispatch(t)
 	d.GitHub.PullRequest("ENG-1", draftPR("a1"))
 	d.Alerts.Fail(errors.New("exit status 1"))
@@ -1002,6 +1058,7 @@ func TestTickRetriesADraftNotificationThatFailed(t *testing.T) {
 }
 
 func TestTickAppliesOpenPRAsOnlyToItsOwnRepo(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: tigerRepo(t, draftSetting)})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")

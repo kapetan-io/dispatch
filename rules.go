@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -67,18 +66,18 @@ func rulesCommand(ctx context.Context, opts Options, args []string) error {
 func rulesDir(opts Options, arg string, cfg *config.Config) (string, error) {
 	switch {
 	case arg != "":
-		return config.ExpandHome(arg), nil
+		return opts.abs(opts.Env.ExpandHome(arg)), nil
 	case opts.RulesDir != "":
-		return opts.RulesDir, nil
+		return opts.abs(opts.RulesDir), nil
 	case cfg != nil:
-		return cfg.Dispatch.Rules, nil
+		return opts.abs(cfg.Dispatch.Rules), nil
 	}
-	return config.ExpandHome("~/Development/dispatch/rules"), nil
+	return opts.Env.ExpandHome("~/Development/dispatch/rules"), nil
 }
 
 func rulesInit(opts Options, arg string) error {
 	var cfg *config.Config
-	if c, err := config.Load(opts.ConfigPath); err == nil {
+	if c, err := config.Load(opts.ConfigPath, opts.Env); err == nil {
 		cfg = &c
 	} else if _, statErr := os.Stat(opts.ConfigPath); statErr == nil {
 		return err
@@ -141,7 +140,7 @@ func rulesInit(opts Options, arg string) error {
 }
 
 func rulesCheck(ctx context.Context, opts Options, arg string) error {
-	cfg, err := config.Load(opts.ConfigPath)
+	cfg, err := config.Load(opts.ConfigPath, opts.Env)
 	if err != nil {
 		return err
 	}
@@ -177,7 +176,7 @@ func rulesCheck(ctx context.Context, opts Options, arg string) error {
 		return err
 	}
 	w, err := world.Read(ctx, world.Sources{
-		Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
+		Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests, Env: opts.Env,
 		StateDir: opts.StateDir, Stderr: opts.Stderr, Tolerant: true,
 	}, world.ScopeOf(cfg), opts.Clock.Now())
 	if err != nil {
@@ -197,7 +196,7 @@ func rulesCheck(ctx context.Context, opts Options, arg string) error {
 		}
 		findings = append(findings, fmt.Sprintf("%s %s in its %s for %s: %s", t.Rule, how, t.Phase, t.Subject, t.Error))
 	}
-	findings = append(findings, typeCheck(ctx, dir)...)
+	findings = append(findings, typeCheck(ctx, opts, dir)...)
 	for _, f := range findings {
 		_, _ = fmt.Fprintln(opts.Stdout, "finding:", f)
 	}
@@ -235,8 +234,8 @@ func writeTypes(dir string, cfg config.Config) error {
 // It hands tsc a config of its own, because the flags that name files can't be
 // mixed with a tsconfig.json on every tsc version, and "node" module resolution
 // is gone from the newest ones.
-func typeCheck(ctx context.Context, dir string) []string {
-	tsc, err := exec.LookPath("tsc")
+func typeCheck(ctx context.Context, opts Options, dir string) []string {
+	tsc, err := opts.Env.LookPath("tsc")
 	if err != nil {
 		return nil
 	}
@@ -257,7 +256,7 @@ func typeCheck(ctx context.Context, dir string) []string {
 	if err != nil {
 		return []string{"tsc: " + err.Error()}
 	}
-	tmp, err := os.MkdirTemp("", "dispatch-tsc-")
+	tmp, err := os.MkdirTemp(opts.Env.Get("TMPDIR"), "dispatch-tsc-")
 	if err != nil {
 		return []string{"tsc: " + err.Error()}
 	}
@@ -266,7 +265,7 @@ func typeCheck(ctx context.Context, dir string) []string {
 	if err := os.WriteFile(confPath, conf, 0o644); err != nil {
 		return []string{"tsc: " + err.Error()}
 	}
-	cmd := exec.CommandContext(ctx, tsc, "-p", confPath)
+	cmd := opts.Env.Command(ctx, tsc, "-p", confPath)
 	cmd.Dir = abs
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -366,7 +365,7 @@ func heldSummary(result rules.Result, rule string) string {
 
 func rulesTest(opts Options, arg string) error {
 	var cfgPtr *config.Config
-	if loaded, err := config.Load(opts.ConfigPath); err == nil {
+	if loaded, err := config.Load(opts.ConfigPath, opts.Env); err == nil {
 		cfgPtr = &loaded
 	}
 	dir, err := rulesDir(opts, arg, cfgPtr)

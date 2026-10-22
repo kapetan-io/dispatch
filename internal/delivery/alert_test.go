@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch/internal/delivery"
+	"github.com/kapetan-io/dispatch/internal/environment"
 )
 
 const (
@@ -98,7 +99,7 @@ func TestAlertsOnLinuxShowAHerdrNotification(t *testing.T) {
 	argsFile := t.TempDir() + "/args"
 	t.Setenv(envArgs, argsFile)
 
-	err := delivery.NewAlerts("linux").Show(context.Background(), "-ENG-1 needs you")
+	err := delivery.NewAlerts("linux", environment.Process()).Show(context.Background(), "-ENG-1 needs you")
 
 	require.NoError(t, err)
 	got, err := os.ReadFile(argsFile)
@@ -114,7 +115,7 @@ func TestAlertsOnLinuxReportWhatHerdrSaid(t *testing.T) {
 	t.Setenv(envExit, "1")
 	t.Setenv(envStderr, "no herdr server\n")
 
-	err := delivery.NewAlerts("linux").Show(context.Background(), "x")
+	err := delivery.NewAlerts("linux", environment.Process()).Show(context.Background(), "x")
 
 	require.ErrorContains(t, err, "exit status 1: no herdr server")
 }
@@ -125,7 +126,7 @@ func TestAlertsOnMacOSShowAnOsascriptNotification(t *testing.T) {
 	argsFile := t.TempDir() + "/args"
 	t.Setenv(envArgs, argsFile)
 
-	err := delivery.NewAlerts("darwin").Show(context.Background(), "ENG-1")
+	err := delivery.NewAlerts("darwin", environment.Process()).Show(context.Background(), "ENG-1")
 
 	require.NoError(t, err)
 	got, err := os.ReadFile(argsFile)

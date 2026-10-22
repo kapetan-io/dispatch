@@ -22,6 +22,7 @@ whenever({ name: "busy", each: "linear.ticket", if: (t) => t.status === "in_prog
   } });`
 
 func TestRulesReadEveryTurnTheSessionEndedOldestFirst(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -37,6 +38,7 @@ func TestRulesReadEveryTurnTheSessionEndedOldestFirst(t *testing.T) {
 }
 
 func TestRulesReadTurnsOfAWorkerInAnyStateOnAnInProgressOrInReviewTicket(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, status, worker string
 	}{
@@ -59,6 +61,7 @@ func TestRulesReadTurnsOfAWorkerInAnyStateOnAnInProgressOrInReviewTicket(t *test
 }
 
 func TestRulesReadNoTurnsOfASessionThatEndedNone(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -69,6 +72,7 @@ func TestRulesReadNoTurnsOfASessionThatEndedNone(t *testing.T) {
 }
 
 func TestRulesReadATurnWithoutBackgroundTaskReportingAsNotRunning(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -80,6 +84,7 @@ func TestRulesReadATurnWithoutBackgroundTaskReportingAsNotRunning(t *testing.T) 
 }
 
 func TestRulesReadTurnsAsUnknownWhenHerdrReportsNoSession(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -93,6 +98,7 @@ func TestRulesReadTurnsAsUnknownWhenHerdrReportsNoSession(t *testing.T) {
 
 // Unreachable from the CLI: only a writer that died mid-line leaves a hole in a session log.
 func TestRulesReadTurnsAsUnknownWhenTheSessionLogHasAHole(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -107,6 +113,7 @@ func TestRulesReadTurnsAsUnknownWhenTheSessionLogHasAHole(t *testing.T) {
 
 // Unreachable from the CLI: only a writer that died mid-line leaves a hole in a session log.
 func TestRulesSkipAHalfWrittenLastLineAndReadTurnsAsUnknownOnceItIsBuriedMidFile(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -124,6 +131,7 @@ func TestRulesSkipAHalfWrittenLastLineAndReadTurnsAsUnknownOnceItIsBuriedMidFile
 }
 
 func TestRulesReadTurnsOfAWorkerRelaunchedInANewSessionAsEmpty(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -136,6 +144,7 @@ func TestRulesReadTurnsOfAWorkerRelaunchedInANewSessionAsEmpty(t *testing.T) {
 }
 
 func TestRulesReadTurnsOfOnlyTheCurrentSession(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -149,6 +158,7 @@ func TestRulesReadTurnsOfOnlyTheCurrentSession(t *testing.T) {
 }
 
 func TestRulesReadTurnsAsUnknownForATicketThatIsNeitherInProgressNorInReview(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`
 whenever({ name: "turns", each: "linear.ticket", if: (t) => t.status === "needs_human",
   then: (t, ctx) => ctx.linear.queueComment(t, known(() => ctx.herdr.worker(t).turns) ? "known" : "unknown", { once: ["turns", t.id] }) });`)})
@@ -162,6 +172,7 @@ whenever({ name: "turns", each: "linear.ticket", if: (t) => t.status === "needs_
 }
 
 func TestTurnsEndedBeforeDispatchStartsAreReadAtItsFirstTick(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -174,6 +185,7 @@ func TestTurnsEndedBeforeDispatchStartsAreReadAtItsFirstTick(t *testing.T) {
 }
 
 func TestTurnsSurviveARestartAndAStateReset(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -192,6 +204,7 @@ func TestTurnsSurviveARestartAndAStateReset(t *testing.T) {
 }
 
 func TestATurnEndedWhileTheLoopRunsReachesRulesAtTheNextTick(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -205,6 +218,7 @@ func TestATurnEndedWhileTheLoopRunsReachesRulesAtTheNextTick(t *testing.T) {
 }
 
 func TestATurnEndedWhileTheLoopRunsReachesRulesAtTheNextResync(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -218,6 +232,7 @@ func TestATurnEndedWhileTheLoopRunsReachesRulesAtTheNextResync(t *testing.T) {
 }
 
 func TestRulesReadTurnsAfterTheLoopRestarts(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -233,6 +248,7 @@ func TestRulesReadTurnsAfterTheLoopRestarts(t *testing.T) {
 }
 
 func TestRulesReadWhenEachTurnEnded(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`
 whenever({ name: "turns", each: "linear.ticket", if: (t) => t.status === "in_progress",
   then: (t, ctx) => {
@@ -252,6 +268,7 @@ whenever({ name: "turns", each: "linear.ticket", if: (t) => t.status === "in_pro
 }
 
 func TestReplayReproducesADecisionThatReadTurnsAndTraceShowsThem(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -277,6 +294,7 @@ func TestReplayReproducesADecisionThatReadTurnsAndTraceShowsThem(t *testing.T) {
 }
 
 func TestTraceShowsTheTurnsADecisionRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -290,6 +308,7 @@ func TestTraceShowsTheTurnsADecisionRead(t *testing.T) {
 }
 
 func TestTurnsOfAReturnedTreeAreNotInheritedByTheNextTicketLeasedIt(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, turnsRule)})
 	d.Workers.Running("ENG-1", "idle")
 	d.Workers.Stop("ENG-1", stopTasks{Running: 1})
@@ -306,6 +325,7 @@ func TestTurnsOfAReturnedTreeAreNotInheritedByTheNextTicketLeasedIt(t *testing.T
 }
 
 func TestReturningATreeLeavesTheTurnsOfOtherTrees(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, turnsRule)})
 	d.Linear.Tickets(ticket("ENG-2", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -322,6 +342,7 @@ func TestReturningATreeLeavesTheTurnsOfOtherTrees(t *testing.T) {
 }
 
 func TestTickForgetsTheStopRecordOfATreeItReturns(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, busyRule)})
 	d.Workers.Running("ENG-1", "idle")
 	d.Workers.Stop("ENG-1", stopTasks{Running: 1})
@@ -338,6 +359,7 @@ func TestTickForgetsTheStopRecordOfATreeItReturns(t *testing.T) {
 }
 
 func TestAnIdleWorkerIsBusyWhileItsLastStopReportedBackgroundTasks(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, busyRule)})
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -354,6 +376,7 @@ func TestAnIdleWorkerIsBusyWhileItsLastStopReportedBackgroundTasks(t *testing.T)
 }
 
 func TestRecordStopReportsTheTurnToTheRunningLoop(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -370,6 +393,7 @@ func TestRecordStopReportsTheTurnToTheRunningLoop(t *testing.T) {
 
 // Unreachable from the CLI: the command line can't hold a report back past its hook's timeout.
 func TestALateStopReportDoesNotReplaceANewerTurn(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -383,6 +407,7 @@ func TestALateStopReportDoesNotReplaceANewerTurn(t *testing.T) {
 }
 
 func TestAStopReportFromBeforeAClockStepIsKeptAsATurn(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -398,6 +423,7 @@ func TestAStopReportFromBeforeAClockStepIsKeptAsATurn(t *testing.T) {
 }
 
 func TestRecordStopDoesNothingOutsideAWorkerTree(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name  string
 		cwd   func(t *testing.T, d *Dispatch) string
@@ -432,6 +458,7 @@ func TestRecordStopDoesNothingOutsideAWorkerTree(t *testing.T) {
 }
 
 func TestRecordStopStaysSilentWithoutAConfig(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 
 	res := d.HookWithoutConfig("record-stop", `{"cwd":"/tmp","background_tasks":[]}`)
@@ -443,6 +470,7 @@ func TestRecordStopStaysSilentWithoutAConfig(t *testing.T) {
 
 // Unreachable from the CLI: a running dispatch can't be made to stop answering.
 func TestRecordStopDoesNotWaitOnAStuckDispatch(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	input := d.Workers.StopInput("ENG-1", stopTasks{})
 	d.BrokenLoop(neverAnswers)
@@ -460,6 +488,7 @@ func TestRecordStopDoesNotWaitOnAStuckDispatch(t *testing.T) {
 
 // Unreachable from the CLI: a running dispatch can't be made to fail these ways.
 func TestRecordStopStaysSilentHoweverTheConnectionFails(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name  string
 		fault loopFault
@@ -486,6 +515,7 @@ func TestRecordStopStaysSilentHoweverTheConnectionFails(t *testing.T) {
 }
 
 func TestRecordStopExitsCleanlyOnABadConfig(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "this is = = not toml"})
 	entries := d.StateEntries()
 
@@ -497,6 +527,7 @@ func TestRecordStopExitsCleanlyOnABadConfig(t *testing.T) {
 }
 
 func TestWorkerFixtureTakesTurnsAndASessionThatCannotBeRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	dir := rulesDir(t, map[string]string{
 		"dispatch.ts": `import { whenever, known } from "dispatch";
@@ -539,6 +570,7 @@ scenario(rules, "a worker with no session has no turns to read", s => {
 }
 
 func TestTickNudgesAgainAtTheNextResyncWhenTheWorkerLeftNoStopRecord(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name string
 		stop func(d *Dispatch)
@@ -580,6 +612,7 @@ func TestTickNudgesAgainAtTheNextResyncWhenTheWorkerLeftNoStopRecord(t *testing.
 }
 
 func TestTickNudgesAnIdleWorkerAfterAnotherSessionStopsBusyInItsTree(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[rules]\nnudge_limit = 10\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -598,6 +631,7 @@ func TestTickNudgesAnIdleWorkerAfterAnotherSessionStopsBusyInItsTree(t *testing.
 }
 
 func TestTickSendsTheResumeNudgeWhateverTheStopRecordSays(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Workers.Running("ENG-1", "idle")
 	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
@@ -613,6 +647,7 @@ func TestTickSendsTheResumeNudgeWhateverTheStopRecordSays(t *testing.T) {
 }
 
 func TestStopHookRunsRecordStop(t *testing.T) {
+	t.Parallel()
 	body, err := os.ReadFile("hooks/hooks.json")
 	require.NoError(t, err)
 
@@ -621,6 +656,7 @@ func TestStopHookRunsRecordStop(t *testing.T) {
 }
 
 func TestALateStopReportDoesNotReplaceTheStopRecordOfANewerOne(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, busyRule)})
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -634,6 +670,7 @@ func TestALateStopReportDoesNotReplaceTheStopRecordOfANewerOne(t *testing.T) {
 }
 
 func TestAStopReportAfterAClockStepReplacesTheStopRecordStampedAhead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, busyRule)})
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -651,6 +688,7 @@ func TestAStopReportAfterAClockStepReplacesTheStopRecordStampedAhead(t *testing.
 
 // Unreachable from the CLI: no command makes the session log directory unwritable.
 func TestTheRunningLoopKeepsTheStopRecordWhenTheSessionLogCannotBeWritten(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, busyRule)})
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -665,6 +703,7 @@ func TestTheRunningLoopKeepsTheStopRecordWhenTheSessionLogCannotBeWritten(t *tes
 }
 
 func TestAStopReportDroppedWhileNoDispatchRunsIsNeverRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")

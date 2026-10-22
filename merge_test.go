@@ -15,6 +15,7 @@ import (
 func (d *Dispatch) EditRepoSettings(settings string) { d.repoSettings("dispatch", settings) }
 
 func TestTickNotifiesOnceWhenAnInReviewPRIsReady(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -38,6 +39,7 @@ func TestTickNotifiesOnceWhenAnInReviewPRIsReady(t *testing.T) {
 }
 
 func TestTickDoesNotNotifyWhenAPRIsNotReady(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		status string
@@ -70,6 +72,7 @@ func TestTickDoesNotNotifyWhenAPRIsNotReady(t *testing.T) {
 }
 
 func TestTickNotifiesWhenAPRMidReviewFinishesItsChecks(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -85,6 +88,7 @@ func TestTickNotifiesWhenAPRMidReviewFinishesItsChecks(t *testing.T) {
 }
 
 func TestTickRetriesAReadyNotificationThatFailed(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -101,6 +105,7 @@ func TestTickRetriesAReadyNotificationThatFailed(t *testing.T) {
 }
 
 func TestTickNotifiesWhenAReadyPRHasNoChecks(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -112,6 +117,7 @@ func TestTickNotifiesWhenAReadyPRHasNoChecks(t *testing.T) {
 }
 
 func TestTickNotifiesForPRsThatAreStillReady(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name string
 		pr   prState
@@ -134,6 +140,7 @@ func TestTickNotifiesForPRsThatAreStillReady(t *testing.T) {
 }
 
 func TestTickDoesNotNotifyForMoreNotReadyPRs(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name string
 		pr   prState
@@ -157,6 +164,7 @@ func TestTickDoesNotNotifyForMoreNotReadyPRs(t *testing.T) {
 }
 
 func TestTickNotifiesOnlyForIdleWorkersOfInReviewTickets(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"In Progress", "Needs Human", "Backlog", "Todo"} {
 		t.Run(status, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -174,6 +182,7 @@ func TestTickNotifiesOnlyForIdleWorkersOfInReviewTickets(t *testing.T) {
 }
 
 func TestTickNotifiesWhenAWorkingWorkerGoesIdleOnAReadyPR(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -188,6 +197,7 @@ func TestTickNotifiesWhenAWorkingWorkerGoesIdleOnAReadyPR(t *testing.T) {
 }
 
 func TestTickDoesNotRepeatTheNotificationWhenTheSameHeadIsReadyAgain(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -204,6 +214,7 @@ func TestTickDoesNotRepeatTheNotificationWhenTheSameHeadIsReadyAgain(t *testing.
 }
 
 func TestTickDoesNotRepeatTheNotificationWhenThePRIsUnreadableForATick(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -219,6 +230,7 @@ func TestTickDoesNotRepeatTheNotificationWhenThePRIsUnreadableForATick(t *testin
 }
 
 func TestTickNotifiesForTheNewHeadWhenAFailedNotificationIsFollowedByAPush(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -236,6 +248,7 @@ func TestTickNotifiesForTheNewHeadWhenAFailedNotificationIsFollowedByAPush(t *te
 }
 
 func TestTickNotifiesOncePerReadyTicket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -249,6 +262,7 @@ func TestTickNotifiesOncePerReadyTicket(t *testing.T) {
 }
 
 func TestTickDoesNotNotifyForAReadyPRWhileTheTicketIsNotInReview(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -263,6 +277,7 @@ func TestTickDoesNotNotifyForAReadyPRWhileTheTicketIsNotInReview(t *testing.T) {
 }
 
 func TestTickDoesNotRepeatTheReadyNotificationAfterTheTicketLeavesAndReturnsToInReview(t *testing.T) {
+	t.Parallel()
 	for _, between := range []string{"Needs Human", "In Progress"} {
 		t.Run(between, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -288,6 +303,7 @@ func TestTickDoesNotRepeatTheReadyNotificationAfterTheTicketLeavesAndReturnsToIn
 }
 
 func TestTickDoesNotRepeatTheReadyNotificationAfterTheTicketDropsOutOfTheManagedRead(t *testing.T) {
+	t.Parallel()
 	for _, between := range []string{"In Review", "Todo"} {
 		t.Run(between, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -317,6 +333,7 @@ func TestTickDoesNotRepeatTheReadyNotificationAfterTheTicketDropsOutOfTheManaged
 }
 
 func TestTickNotifiesWhenTheOnlyChangesRequestedIsOnAnOlderCommit(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -329,6 +346,7 @@ func TestTickNotifiesWhenTheOnlyChangesRequestedIsOnAnOlderCommit(t *testing.T) 
 }
 
 func TestTickMergesAnApprovedReadyPRInAListedRepo(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -347,6 +365,7 @@ func TestTickMergesAnApprovedReadyPRInAListedRepo(t *testing.T) {
 }
 
 func TestTickDoesNotMergeInARepoWithoutAutoMerge(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name     string
 		settings string
@@ -371,6 +390,7 @@ func TestTickDoesNotMergeInARepoWithoutAutoMerge(t *testing.T) {
 }
 
 func TestTickDoesNotMergeAPRWithoutAnApprovalOnItsHead(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name string
 		pr   prState
@@ -393,6 +413,7 @@ func TestTickDoesNotMergeAPRWithoutAnApprovalOnItsHead(t *testing.T) {
 }
 
 func TestTickDoesNotMergeAnApprovedPRThatIsNotReady(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name string
 		pr   prState
@@ -416,6 +437,7 @@ func TestTickDoesNotMergeAnApprovedPRThatIsNotReady(t *testing.T) {
 }
 
 func TestTickMergesAfterAnApprovalArrivesOnAnAlreadyAnnouncedHead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -432,6 +454,7 @@ func TestTickMergesAfterAnApprovalArrivesOnAnAlreadyAnnouncedHead(t *testing.T) 
 }
 
 func TestTickTellsFollowersAboutAMergeNoticeWhenTheAlertFails(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name    string
 		refused bool
@@ -481,6 +504,7 @@ func TestTickTellsFollowersAboutAMergeNoticeWhenTheAlertFails(t *testing.T) {
 }
 
 func TestTickWaitsForANewApprovalAfterAPush(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -496,6 +520,7 @@ func TestTickWaitsForANewApprovalAfterAPush(t *testing.T) {
 }
 
 func TestTickReportsAFailedMergeOnceAndRetriesOnlyAfterAPush(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -535,6 +560,7 @@ func TestTickReportsAFailedMergeOnceAndRetriesOnlyAfterAPush(t *testing.T) {
 }
 
 func TestTickMergesNothingWhenThePRHeadMovesAfterTheApprovalWasRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -566,6 +592,7 @@ func TestTickMergesNothingWhenThePRHeadMovesAfterTheApprovalWasRead(t *testing.T
 }
 
 func TestTickReadsAutoMergeOnRestart(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -586,6 +613,7 @@ func TestTickReadsAutoMergeOnRestart(t *testing.T) {
 }
 
 func TestTickDoesNotMergeWhenTheReviewOnTheHeadIsNotAnApproval(t *testing.T) {
+	t.Parallel()
 	for _, state := range []string{"CHANGES_REQUESTED", "COMMENTED", "DISMISSED"} {
 		t.Run(state, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
@@ -602,6 +630,7 @@ func TestTickDoesNotMergeWhenTheReviewOnTheHeadIsNotAnApproval(t *testing.T) {
 }
 
 func TestTickDoesNotRetryAFailedMergeOnAHeadAnnouncedAsReady(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -620,6 +649,7 @@ func TestTickDoesNotRetryAFailedMergeOnAHeadAnnouncedAsReady(t *testing.T) {
 }
 
 func TestTickDoesNotRetryAFailedMergeAfterTheTicketLeavesTheReadAndReturns(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -644,6 +674,7 @@ func TestTickDoesNotRetryAFailedMergeAfterTheTicketLeavesTheReadAndReturns(t *te
 // Without branch protection GitHub leaves reviewDecision empty even when a
 // reviewer's latest review requests changes.
 func TestTickDoesNotMergeOverAnotherReviewersChangesRequested(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -655,6 +686,7 @@ func TestTickDoesNotMergeOverAnotherReviewersChangesRequested(t *testing.T) {
 }
 
 func TestTickDoesNotMergeAForkPRThatSharesTheWorkersBranchName(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -672,6 +704,7 @@ func TestTickDoesNotMergeAForkPRThatSharesTheWorkersBranchName(t *testing.T) {
 }
 
 func TestTickUsesTheWorkersPRWhenAForkPRSharesItsBranchName(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -685,6 +718,7 @@ func TestTickUsesTheWorkersPRWhenAForkPRSharesItsBranchName(t *testing.T) {
 }
 
 func TestTickFindsTheWorkersPRBehindAFullPageOfForkPRs(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -702,6 +736,7 @@ func TestTickFindsTheWorkersPRBehindAFullPageOfForkPRs(t *testing.T) {
 }
 
 func TestTickReportsABranchWhoseForkPRsFillEveryPageItReads(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
