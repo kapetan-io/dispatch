@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -126,31 +125,6 @@ func TestTicketHintGivesUpWhenGitHangsPastTheContext(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Less(t, time.Since(start), 5*time.Second)
-}
-
-func newHintRepo(t *testing.T) string {
-	t.Helper()
-	// Resolved so a /var versus /private/var symlink cannot hide a match.
-	dir, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
-	hintGit(t, dir, "init", "-q")
-	hintGit(t, dir, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
-	return dir
-}
-
-func writeHintConfig(t *testing.T, body string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "config.toml")
-	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
-	return path
-}
-
-func hintGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(out))
 }
 
 func runTicketHint(t *testing.T, dir, configPath string) string {

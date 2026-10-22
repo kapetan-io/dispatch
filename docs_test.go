@@ -40,13 +40,6 @@ func docExamples(t *testing.T) map[string]string {
 	return examples
 }
 
-func loadExample(t *testing.T, body string) (config.Config, error) {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "config.toml")
-	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
-	return config.Load(path)
-}
-
 func TestDocConfigExamplesLoad(t *testing.T) {
 	examples := docExamples(t)
 	require.NotEmpty(t, examples)

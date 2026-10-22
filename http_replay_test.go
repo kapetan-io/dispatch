@@ -14,9 +14,6 @@ import (
 	"github.com/kapetan-io/dispatch"
 )
 
-const countRule = `whenever({ name: "count", each: "linear.ticket", if: (t) => t.status === "in_progress",
-  then: (t, ctx) => ctx.linear.queueComment(t, "open " + (ctx.http.get("sentry", "/count").body as any).open, { once: ["count", t.id] }) });`
-
 // readKeptRules fetches in the first cycle and reads the kept answer in a later one.
 const readKeptRules = `
 whenever({ name: "fetch", each: "linear.ticket", if: (t, ctx) => !ctx.ledger.done(t, ["fetch", t.id]),

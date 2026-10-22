@@ -14,19 +14,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 )
 
-const (
-	autoMergeSetting = "auto_merge = true\n"
-	mergedText1      = "ENG-1 was approved and merged: " + prURL1
-	mergeCall1       = prURL1 + "|a1"
-	mergeRefused     = "Pull request is not mergeable: the base branch policy prohibits the merge"
-)
-
-func approvedPR(head string) prState {
-	pr := cleanPR(head)
-	pr.approved = []string{head}
-	return pr
-}
-
 func TestTickMergesAnApprovedReadyPRInAListedRepo(t *testing.T) {
 	h := newHarness(t)
 	h.repoSettings("dispatch", autoMergeSetting)

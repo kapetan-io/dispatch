@@ -228,6 +228,27 @@ dispatch trace ENG-301
 
 `trace` reads every kept segment and prints a cycle only when what the rules decided for the ticket changed since the cycle before, and again after `dispatch run` starts or `state reset`. The number after `cycle #` is the cycle line's position in this printout, which moves when old segments are deleted. Each line names the rule, what it wanted, waited for, was held on, threw or dropped, and what it read. An `http <rule> GET <service> <path> <status body>` line (or `no answer: <reason>`) shows each response a rule waited on for the ticket. It prints with a changed decision, and also when an answer changed while the decision didn't. History written before exchanges named a ticket shows none. Receipts print as they were written, first as `attempted` and then with their outcome, and those from segments already deleted print from the snapshot that carried them. It exits 1 when kept history has no record of the ticket.
 
+To script against a trace, add `--json`. It prints every line the text form prints as one JSON object, so the lines above come out as:
+
+```sh
+dispatch trace ENG-301 --json
+```
+
+```
+{"type":"cycle","time":"2026-10-09T12:00:00Z","cycle":1,"why":"start","rule":"launch-worker","decision":"wants","kind":"launch","subject":"ENG-301","once":"[launch - 3]","read":["status=in_progress","worker=none"]}
+{"type":"receipt","time":"2026-10-09T12:00:11Z","rule":"launch-worker","kind":"launch","subject":"ENG-301","state":"attempted","once":"[launch - 3]"}
+{"type":"receipt","time":"2026-10-09T12:00:11Z","rule":"launch-worker","kind":"launch","subject":"ENG-301","state":"done","once":"[launch - 3]","detail":"ok: workspace w3"}
+{"type":"cycle","time":"2026-10-09T12:00:11Z","cycle":2,"why":"event","rule":"launch-worker","decision":"covered","kind":"launch","subject":"ENG-301","once":"[launch - 3]","detail":"done 12:00"}
+```
+
+Every line has a `type` of `cycle`, `http` or `receipt`, and a `time` in UTC. The text form prints the local time of day. A field that doesn't apply to a line, or is empty, is left out.
+
+* A `cycle` line has the `cycle` number, the same position in this printout that the text form shows (it moves when old segments are deleted, so it is not an id), `why`, `rule`, `subject`, and a `decision` of `wants`, `waits`, `held`, `dropped`, `covered`, `threw`, `timeout` or `nothing` (a ticket history knows but no rule has wanted anything for, which has no `rule`). A `wants` or `covered` line has the `kind` and `once` key, a `waits` line has its `kind`, and `waits`, `held`, `dropped`, `covered`, `threw` and `timeout` lines put the reason or error in `detail`. `read` lists what the rule read.
+* An `http` line has the `cycle`, `why`, `rule`, `subject`, `service`, `path`, and either the `status` of the response and its `body`, the JSON the service answered with (left out when the response had none), or `unknown`, the reason no answer is known.
+* A `receipt` line has the `rule`, `kind`, `subject`, `state`, `once` key and `detail`. `time` is when the receipt started for `attempted` and when it ended otherwise. `reset` is true for a receipt `state reset --quiet` recorded for something never sent.
+
+A receipt prints as `attempted` and again with its outcome, so a script that wants one result per action keeps the last line for each `kind`, `subject` and `once`.
+
 To check that the rules still decide what they decided, or to try a changed rule on what really happened:
 
 ```sh

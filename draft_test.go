@@ -10,24 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	draftSetting    = "open_pr_as = \"draft\"\n"
-	draftReadyText1 = "ENG-1's draft is ready for your review: " + prURL1
-	reviewsHandled1 = "ENG-1's reviews are handled: " + prURL1
-)
-
 func draftPR(head string) prState {
 	pr := cleanPR(head)
 	pr.draft = true
 	return pr
-}
-
-func draftHarness(t *testing.T) *harness {
-	h := newHarness(t)
-	h.repoSettings("dispatch", draftSetting)
-	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
-	h.worker("ENG-1", "idle")
-	return h
 }
 
 func TestTickNotifiesOncePerHeadWhenADraftIsReady(t *testing.T) {

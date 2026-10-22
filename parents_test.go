@@ -20,37 +20,6 @@ const (
 	doneID       = "state-done"
 )
 
-// child builds a child of parent. blockedBy pairs a blocker's identifier with
-// its status.
-func child(id, parent, status string, blockedBy ...[2]string) fakeTicket {
-	t := ticket(id, status, "dispatch")
-	t.Parent = parent
-	for _, b := range blockedBy {
-		t.Blockers = append(t.Blockers, linear.Blocker{Identifier: b[0], Status: b[1], Abandoned: stateType(b[1]) == "canceled"})
-	}
-	return t
-}
-
-func stateType(status string) string {
-	if status == "Canceled" || status == "Duplicate" {
-		return "canceled"
-	}
-	return "started"
-}
-
-// parent builds a ticket that becomes a parent once a test gives it children
-// with setChildren, as Linear derives it.
-func parent(id, status string) fakeTicket {
-	return ticket(id, status, "dispatch")
-}
-
-// parentsRealLauncher makes launches create a herdr workspace, so a launched worker
-// counts against the cap the way it does in production. The fake launcher leaves no trace.
-func parentsRealLauncher(h *harness) {
-	h.builtinLauncher = true
-	h.pool()
-}
-
 func TestTickPromotesAnUnblockedChildAndHoldsTheBlockedOne(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(parent("ENG-1", "In Progress"))

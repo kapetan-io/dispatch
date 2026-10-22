@@ -73,14 +73,15 @@ func TestRepoSettingsWorksInAWorktreeOfTheRepo(t *testing.T) {
 
 func TestRepoSettingsWorksInASubdirectoryOfTheRepo(t *testing.T) {
 	clone := newHintRepo(t)
-	config := writeHintConfig(t, "[repos.dispatch]\npath = \""+clone+"\"\n")
 	sub := filepath.Join(clone, "pkg", "deep")
 	require.NoError(t, os.MkdirAll(sub, 0o755))
+	d := newDispatch(t, dispatchOptions{Dir: sub, Config: "[repos.work-api]\npath = \"" + clone + "\"\nauto_merge = true\n"})
 
-	out, err := runRepoSettings(t, sub, config)
+	res := d.Run("repo-settings")
 
-	require.NoError(t, err)
-	assert.Contains(t, out, "[repos.dispatch]\n")
+	require.NoError(t, res.Err)
+	assert.Contains(t, res.Stdout, "[repos.work-api]\n")
+	assert.Contains(t, res.Stdout, "auto_merge = true\n")
 }
 
 func TestRepoSettingsOutputLoadsBackThroughTheConfig(t *testing.T) {

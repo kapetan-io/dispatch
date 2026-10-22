@@ -90,7 +90,7 @@ type Options struct {
 const usage = `usage: dispatch run
        dispatch tick [ticket] [--timeout DURATION]
        dispatch plan
-       dispatch trace <ticket>
+       dispatch trace <ticket> [--json]
        dispatch replay [--from TIME] [--to TIME] [--rules DIR]
        dispatch state reset [--quiet]
        dispatch tell <ticket> "<text>"
@@ -114,6 +114,8 @@ const usage = `usage: dispatch run
   trace        print why dispatch acted on the ticket, read from history: each cycle that changed what
                the rules decided for it (a want, wait, hold, throw or dropped event) with what each
                rule read, and each receipt. Exits 1 when kept history has no record of the ticket
+  --json       with trace, print one JSON object per line instead of text, each with a "type" of
+               cycle, http or receipt
   replay       run the cycles in a stretch of history again over the world and ledger they ran over,
                and print "N cycles, N match" and exit 0, or print the first difference and exit 1.
                TIME is RFC 3339, "2006-01-02 15:04" or "15:04" today. With --rules, run the rules in
@@ -169,11 +171,12 @@ func Run(ctx context.Context, args []string, opts Options) error {
 	case "plan":
 		return planCommand(opts)
 	case "trace":
-		if len(args) != 2 {
+		ticket, asJSON, ok := traceArgs(args[1:])
+		if !ok {
 			_, _ = fmt.Fprintln(opts.Stderr, usage)
 			return errors.New("trace takes a ticket")
 		}
-		return traceCommand(opts, args[1])
+		return traceCommand(opts, ticket, asJSON)
 	case "replay":
 		return replayCommand(opts, args[1:])
 	case "state":

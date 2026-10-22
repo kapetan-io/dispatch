@@ -9,29 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch/internal/lineartest"
-
-	"github.com/kapetan-io/dispatch/internal/linear"
 )
-
-// blockedBy gives a standalone ticket blockers, each a blocker identifier and status.
-func blockedBy(t fakeTicket, more bool, blockers ...[2]string) fakeTicket {
-	t.Blockers = nil
-	for _, b := range blockers {
-		t.Blockers = append(t.Blockers, linear.Blocker{Identifier: b[0], Status: b[1], Abandoned: stateType(b[1]) == "canceled"})
-	}
-	t.BlockersTruncated = more
-	return t
-}
-
-func comments(h *harness) []string {
-	var bodies []string
-	for _, m := range h.linear.mutations() {
-		if m.Kind == lineartest.Comment {
-			bodies = append(bodies, m.Body)
-		}
-	}
-	return bodies
-}
 
 func TestTickHoldsABlockedTicketAndSaysWhyOnce(t *testing.T) {
 	h := newHarness(t)

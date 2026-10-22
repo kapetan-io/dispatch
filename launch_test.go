@@ -816,14 +816,6 @@ func isolateShimEnv(t *testing.T) {
 	t.Setenv("AUTONOMOUS_WORKER", "")
 }
 
-func buildDispatch(t *testing.T) string {
-	t.Helper()
-	bin := t.TempDir()
-	out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "dispatch"), "./cmd/dispatch").CombinedOutput()
-	require.NoError(t, err, string(out))
-	return bin
-}
-
 func TestClaudeShimFlags(t *testing.T) {
 	isolateShimEnv(t)
 	shims, err := filepath.Abs("scripts/shims")

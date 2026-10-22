@@ -14,10 +14,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 )
 
-const (
-	resumeText1 = "I answered on ENG-1. Read the latest comments and continue."
-)
-
 func TestTickNudgesAnIdleWorkerWithoutCommenting(t *testing.T) {
 	for _, status := range []string{"idle", "done"} {
 		t.Run(status, func(t *testing.T) {
