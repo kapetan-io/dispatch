@@ -27,6 +27,8 @@ type Pool struct {
 	moves        []leaseMove
 	treesFail    []error
 	leaseFail    error
+	leaseFails   []error
+	leaseTakes   []error
 	treesDelay   time.Duration
 	leaseHold    time.Duration
 	leaseQuorum  int
@@ -101,11 +103,11 @@ func (p *Pool) MoveLeaseAfterRead(path, holder string) {
 	p.moves = append(p.moves, leaseMove{path, holder})
 }
 
-// FailTrees makes the next Trees call fail with err.
-func (p *Pool) FailTrees(err error) {
+// FailTrees makes the next Trees calls fail, one error each.
+func (p *Pool) FailTrees(errs ...error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.treesFail = append(p.treesFail, err)
+	p.treesFail = append(p.treesFail, errs...)
 }
 
 // FailLease makes every Lease call fail with err, as treehouse does when it
@@ -114,6 +116,22 @@ func (p *Pool) FailLease(err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.leaseFail = err
+}
+
+// FailLeasesOnce makes the next len(errs) Lease calls fail, one error each, and later calls
+// lease normally, as treehouse does when it fails for a moment and works on the next try.
+func (p *Pool) FailLeasesOnce(errs ...error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.leaseFails = append(p.leaseFails, errs...)
+}
+
+// FailLeasesAfterTaking makes the next len(errs) Lease calls take a tree, mark it leased and then
+// fail, as treehouse does when it exits nonzero after it recorded the lease.
+func (p *Pool) FailLeasesAfterTaking(errs ...error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.leaseTakes = append(p.leaseTakes, errs...)
 }
 
 // DelayTrees makes the next Trees call take d.
@@ -239,6 +257,11 @@ func (p *Pool) Lease(ctx context.Context, repoDir, ticket string) (treehouse.Tre
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.leasing[key]--
+	if len(p.leaseFails) > 0 {
+		err := p.leaseFails[0]
+		p.leaseFails = p.leaseFails[1:]
+		return treehouse.Tree{}, err
+	}
 	if p.leaseFail != nil {
 		return treehouse.Tree{}, p.leaseFail
 	}
@@ -246,6 +269,11 @@ func (p *Pool) Lease(ctx context.Context, repoDir, ticket string) (treehouse.Tre
 	for i := range trees {
 		if trees[i].Status == "available" {
 			trees[i].Status, trees[i].LeaseHolder = "leased", ticket
+			if len(p.leaseTakes) > 0 {
+				err := p.leaseTakes[0]
+				p.leaseTakes = p.leaseTakes[1:]
+				return treehouse.Tree{}, err
+			}
 			leased := trees[i]
 			leased.RepoDir = repoDir
 			return leased, nil

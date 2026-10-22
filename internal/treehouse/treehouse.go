@@ -75,7 +75,7 @@ func (c *CLI) Trees(ctx context.Context, repoDir string) ([]Tree, error) {
 	cmd := c.command(ctx, repoDir, "status", "--json")
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, err
+		return nil, failure(err, nil, nil)
 	}
 	var trees []Tree
 	if err := json.Unmarshal(out, &trees); err != nil {
@@ -87,15 +87,16 @@ func (c *CLI) Trees(ctx context.Context, repoDir string) ([]Tree, error) {
 	return trees, nil
 }
 
-// Lease fails with treehouse's own stderr as the error text, empty when it
-// printed none, because the launcher reports that text.
+// Lease fails with what treehouse said, which is its exit status and whatever it printed,
+// because the launcher reports that text. It is empty when treehouse exited without a status
+// and printed nothing.
 func (c *CLI) Lease(ctx context.Context, repoDir, ticket string) (Tree, error) {
 	var stderr bytes.Buffer
 	cmd := c.command(ctx, repoDir, "get", "--lease", "--lease-holder", ticket, "--json")
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil || len(bytes.TrimSpace(out)) == 0 {
-		return Tree{}, errors.New(strings.TrimSpace(stderr.String()))
+		return Tree{}, failure(err, out, stderr.Bytes())
 	}
 	var tree Tree
 	if err := json.Unmarshal(out, &tree); err != nil || tree.Path == "" {
@@ -103,6 +104,40 @@ func (c *CLI) Lease(ctx context.Context, repoDir, ticket string) (Tree, error) {
 	}
 	tree.Status, tree.LeaseHolder, tree.RepoDir = "leased", ticket, repoDir
 	return tree, nil
+}
+
+// failure says what a treehouse command did when it failed: what it printed to stderr without
+// its update banner, then its exit status and stdout. The banner is printed on every run and
+// says nothing about the failure.
+func failure(err error, stdout, stderr []byte) error {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && stderr == nil {
+		stderr = exit.Stderr
+	}
+	var kept []string
+	for _, line := range strings.Split(string(stderr), "\n") {
+		if strings.HasPrefix(line, "A new version of treehouse is available") || strings.HasPrefix(line, `Run "treehouse update"`) {
+			continue
+		}
+		if line = strings.TrimSpace(line); line != "" {
+			kept = append(kept, line)
+		}
+	}
+	var extra []string
+	if err != nil {
+		extra = append(extra, err.Error())
+	}
+	if text := strings.TrimSpace(string(stdout)); text != "" {
+		extra = append(extra, "stdout: "+text)
+	}
+	text := strings.Join(kept, "; ")
+	if len(extra) == 0 {
+		return errors.New(text)
+	}
+	if text == "" {
+		return errors.New(strings.Join(extra, ", "))
+	}
+	return fmt.Errorf("%s (%s)", text, strings.Join(extra, ", "))
 }
 
 func (c *CLI) Return(ctx context.Context, repoDir, path, holder string) error {
