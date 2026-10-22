@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/history"
+	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/httpservicetest"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/launcher"
@@ -52,10 +54,23 @@ const (
 	noKey
 )
 
+type launcherKind int
+
+const (
+	// fakeLauncher answers launches from the launcher fake, as most tests need.
+	fakeLauncher launcherKind = iota
+	// builtinLauncher leases a tree and starts the worker through the herdr and treehouse fakes.
+	builtinLauncher
+)
+
 // dispatchOptions is what a test changes about the machine dispatch runs on.
 type dispatchOptions struct {
 	// Config is TOML appended to the generated config.toml.
 	Config string
+	// OwnRepos leaves out the generated [repos.dispatch] table, for a Config that writes its own
+	// [repos] tables. Config with a [repos.dispatch] table and no OwnRepos fails as a duplicate.
+	OwnRepos bool
+	Launcher launcherKind
 	// Rules maps file names to rule files. Nil runs the shipped rules/.
 	Rules map[string]string
 	Key   keySource
@@ -65,6 +80,13 @@ type dispatchOptions struct {
 	// Dir is the working directory commands run in. Empty leaves it alone. Tests set it here and never
 	// call t.Chdir themselves.
 	Dir string
+	// RepoSettings is TOML lines added to the dispatch repo's [repos.dispatch] table.
+	RepoSettings string
+	// ExactRules keeps the [rules] table as Config wrote it, without the shipped keys filled in.
+	ExactRules bool
+	// RuleTimeout and ActionTimeout shorten how long a rule call and an action may take.
+	RuleTimeout   dispatch.RuleTimeout
+	ActionTimeout time.Duration
 }
 
 // Dispatch is dispatch running on a machine of fakes: Linear, herdr, treehouse, GitHub and the
@@ -83,6 +105,8 @@ type Dispatch struct {
 	h *harness
 	// brokenLoop is true while a fake loop holds the socket.
 	brokenLoop bool
+	// loopCalls counts the connections the fake loop accepted.
+	loopCalls atomic.Int32
 }
 
 const ruleHeader = "import { whenever, on, known, minutes, hours } from \"dispatch\";\n"
@@ -129,6 +153,14 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 	if opts.Config != "" {
 		h.config(opts.Config)
 	}
+	h.exactRules = opts.ExactRules
+	if opts.RepoSettings != "" {
+		h.repoSettings("dispatch", opts.RepoSettings)
+	}
+	if opts.OwnRepos {
+		h.repos = nil
+	}
+	h.builtinLauncher = opts.Launcher == builtinLauncher
 	if opts.Rules != nil {
 		h.rulesDir = rulesDir(t, opts.Rules)
 	}
@@ -144,12 +176,7 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 	if opts.Dir != "" {
 		t.Chdir(opts.Dir)
 	}
-	for name, value := range opts.Env {
-		t.Setenv(name, value)
-	}
-	if opts.Dir != "" {
-		t.Chdir(opts.Dir)
-	}
+	h.timeouts = dispatch.Options{RuleTimeout: opts.RuleTimeout, ActionTimeout: opts.ActionTimeout}
 	return d
 }
 
@@ -158,6 +185,35 @@ func (d *Dispatch) Run(args ...string) Result {
 	d.h.t.Helper()
 	return d.result(d.h.runWith(context.Background(), dispatch.Options{}, args...))
 }
+
+// RunWith is Run with Options the test sets, such as a rule time budget.
+func (d *Dispatch) RunWith(extra dispatch.Options, args ...string) Result {
+	d.h.t.Helper()
+	return d.result(d.h.runWith(context.Background(), extra, args...))
+}
+
+// Tools is the fakes behind dispatch, for a test to make one fail or to read what it recorded.
+func (d *Dispatch) Tools() *tooltest.Tools { return d.h.tools }
+
+// RunIn runs one command from dir, as an operator's shell would.
+func (d *Dispatch) RunIn(dir string, args ...string) Result {
+	d.h.t.Helper()
+	return d.runIn(context.Background(), dir, dispatch.Options{}, args...)
+}
+
+func (d *Dispatch) runIn(ctx context.Context, dir string, extra dispatch.Options, args ...string) Result {
+	d.h.t.Helper()
+	// launch takes its directory from Options, so launches from two directories can overlap. The
+	// other commands read the process's working directory.
+	if args[0] != "launch" {
+		d.h.t.Chdir(dir)
+	}
+	extra.Dir = dir
+	return d.result(d.h.runWith(ctx, extra, args...))
+}
+
+// ConfigPath is the config.toml every command reads.
+func (d *Dispatch) ConfigPath() string { return filepath.Join(d.h.dir, "config.toml") }
 
 // Hook runs a hook command the way Claude Code does, with stdin as the hook's input. A Stop
 // report that arrives before any loop runs is kept for the first read, as it is after a restart.
@@ -297,6 +353,7 @@ func (d *Dispatch) BrokenLoop(fault loopFault) {
 			if err != nil {
 				return
 			}
+			d.loopCalls.Add(1)
 			go func() {
 				defer func() { _ = conn.Close() }()
 				switch fault {
@@ -311,6 +368,9 @@ func (d *Dispatch) BrokenLoop(fault loopFault) {
 		}
 	}()
 }
+
+// LoopCalls counts the connections the loop made by BrokenLoop accepted.
+func (d *Dispatch) LoopCalls() int { return int(d.loopCalls.Load()) }
 
 type loopFault int
 
@@ -328,37 +388,6 @@ const (
 func (d *Dispatch) CrashedEarlierRun(receipts ...ledger.Receipt) {
 	d.h.t.Helper()
 	d.h.seedHistory(nil, receipts...)
-}
-
-// earlierReceipt is an action an earlier run left in history, in the words `dispatch trace` uses.
-type earlierReceipt struct {
-	Kind, Subject, Rule string
-	// Once is the once key as trace prints it between brackets: the topic, then the values.
-	Once []any
-	// State is "" for an action that never finished, or "done" or "failed", as trace prints it.
-	State, Detail  string
-	Started, Ended time.Time
-}
-
-// EarlierRun writes history for a run that crashed after the actions given, as CrashedEarlierRun
-// does, without making the test build a ledger (unreachable from the CLI: a fault the product
-// can't inject).
-func (d *Dispatch) EarlierRun(receipts ...earlierReceipt) {
-	d.h.t.Helper()
-	millis := func(at time.Time) int64 {
-		if at.IsZero() {
-			return 0
-		}
-		return at.UnixMilli()
-	}
-	var written []ledger.Receipt
-	for _, r := range receipts {
-		written = append(written, ledger.Receipt{
-			Kind: r.Kind, Subject: r.Subject, Rule: r.Rule, Once: ledger.Once(r.Once),
-			Outcome: ledger.Outcome(r.State), Detail: r.Detail, Started: millis(r.Started), Ended: millis(r.Ended),
-		})
-	}
-	d.h.seedHistory(nil, written...)
 }
 
 // HistoryDatedAhead writes a closed run dated after the clock, as a clock that stepped back
@@ -392,6 +421,62 @@ func (d *Dispatch) EmptyFirstSegment() {
 	require.NoError(d.h.t, os.WriteFile(filepath.Join(events, "events-20260101T000000Z.jsonl"), nil, 0o600))
 }
 
+// earlierReceipt and earlierOnce build the receipts of CrashedEarlierRun without a test importing
+// the ledger.
+type (
+	earlierReceipt = ledger.Receipt
+	earlierOnce    = ledger.Once
+)
+
+// HookAndWait is Hook for a hook that reports to the loop, and returns once the loop has taken the
+// report. It starts a loop first when none runs, because the report has nowhere to go otherwise.
+func (d *Dispatch) HookAndWait(command, stdin string) Result {
+	h := d.h
+	h.t.Helper()
+	if h.running == nil {
+		require.NoError(h.t, h.startLoop(dispatch.Options{}))
+	}
+	before, err := loop.Ask(context.Background(), h.state, loop.Request{Op: loop.OpIdle})
+	require.NoError(h.t, err)
+	res := d.Hook(command, stdin)
+	require.Eventually(h.t, func() bool {
+		resp, err := loop.Ask(context.Background(), h.state, loop.Request{Op: loop.OpIdle})
+		return err == nil && !resp.Busy && resp.Idle > before.Idle
+	}, 20*time.Second, 2*time.Millisecond)
+	return res
+}
+
+// HookTogether runs the hook count times at once, as Claude sessions do. The options are made before
+// any hook runs, because the harness rewrites config.toml for every command.
+func (d *Dispatch) HookTogether(count int, command, stdin string) []Result {
+	d.h.t.Helper()
+	all := make([]dispatch.Options, count)
+	for i := range all {
+		all[i] = d.h.options(dispatch.Options{Stdin: strings.NewReader(stdin)})
+	}
+	results := make([]Result, count)
+	var wg sync.WaitGroup
+	for i := range all {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var stdout, stderr bytes.Buffer
+			all[i].Stdout, all[i].Stderr = &stdout, &stderr
+			err := dispatch.Run(context.Background(), []string{command}, all[i])
+			results[i] = d.result(stdout.String(), stderr.String(), err)
+		}()
+	}
+	wg.Wait()
+	return results
+}
+
+// LoseHistory deletes the history directory, as an operator clearing dispatch's memory by hand does
+// (unreachable from the CLI: no command deletes the directory).
+func (d *Dispatch) LoseHistory() {
+	d.h.t.Helper()
+	require.NoError(d.h.t, os.RemoveAll(filepath.Join(d.h.state, "events")))
+}
+
 // CorruptSessionLog appends text to the end of the only session log there is, as a writer that
 // died mid-line leaves it (unreachable from the CLI: a fault the product can't inject).
 func (d *Dispatch) CorruptSessionLog(text string) {
@@ -420,18 +505,213 @@ func (d *Dispatch) StateEntries() int {
 	return len(entries)
 }
 
+// pastEntry is a decision a rule made in a cycle that WroteHistory writes.
+type pastEntry struct {
+	Rule, Subject, Kind, Reason string
+	Once                        []any
+	Dropped                     bool
+}
+
+// pastThrow is a rule call that threw, or ran out of time, in a written cycle.
+type pastThrow struct {
+	Rule, Subject, Error string
+	Timeout              bool
+}
+
+// pastExchange is an HTTP exchange in a written cycle. Unknown is why it has no answer.
+type pastExchange struct{ Service, Path, Rule, Ticket, Unknown string }
+
+// pastCycle is one cycle of a written run, without the read of the world a loop records.
+type pastCycle struct {
+	Why                           string
+	Wants, Waiting, Held, Covered []pastEntry
+	Throws                        []pastThrow
+	Reads                         map[string][]string
+	HTTP                          []pastExchange
+}
+
+// pastReceipt is a receipt in a written run. Done false leaves it attempted, with no outcome.
+type pastReceipt struct {
+	Kind, Subject, Rule, Detail string
+	Once                        []any
+	Done, Reset                 bool
+}
+
+// pastRun is a history segment WroteHistory writes.
+type pastRun struct {
+	// Why is "start" unless set.
+	Why string
+	// Ago is how long before now the segment began.
+	Ago    time.Duration
+	Cycles []pastCycle
+	// Carried are the receipts the segment's snapshot holds from segments already deleted.
+	Carried []pastReceipt
+	// Receipts follow the cycles as receipt lines.
+	Receipts []pastReceipt
+	// Crashed leaves the segment with no stop line.
+	Crashed bool
+}
+
+// WroteHistory writes a segment the command line can't produce: cycles with no recorded read of the
+// world, or decisions a tick never makes (unreachable from the CLI: a fault the product can't inject).
+func (d *Dispatch) WroteHistory(run pastRun) {
+	d.h.t.Helper()
+	require.Nil(d.h.t, d.h.running)
+	at := d.h.clock.Now().Add(-run.Ago)
+	ledgerOf := func(past []pastReceipt) []ledger.Receipt {
+		var out []ledger.Receipt
+		for _, p := range past {
+			receipt := ledger.Receipt{Kind: p.Kind, Subject: p.Subject, Rule: p.Rule, Once: p.Once, Detail: p.Detail, Started: at.UnixMilli(), Reset: p.Reset}
+			if p.Done {
+				receipt.Outcome, receipt.Ended = ledger.Done, at.UnixMilli()
+			}
+			out = append(out, receipt)
+		}
+		return out
+	}
+	entries := func(past []pastEntry) []history.Entry {
+		var out []history.Entry
+		for _, p := range past {
+			out = append(out, history.Entry{Rule: p.Rule, Subject: p.Subject, Kind: p.Kind, Reason: p.Reason, Once: p.Once, Dropped: p.Dropped})
+		}
+		return out
+	}
+	w, err := history.Start(filepath.Join(d.h.state, "events"), at, history.Header{Why: cmp.Or(run.Why, "start"), At: at.UnixMilli()},
+		history.Snapshot{At: at.UnixMilli(), Ledger: history.LedgerState{Receipts: ledgerOf(run.Carried)}})
+	require.NoError(d.h.t, err)
+	for i, c := range run.Cycles {
+		cycle := history.Cycle{Line: history.LineCycle, Now: at.Add(time.Duration(i) * time.Second).UnixMilli(), Why: c.Why,
+			Wants: entries(c.Wants), Waiting: entries(c.Waiting), Held: entries(c.Held), Covered: entries(c.Covered), Reads: c.Reads}
+		for _, t := range c.Throws {
+			cycle.Throws = append(cycle.Throws, history.Throw{Rule: t.Rule, Subject: t.Subject, Error: t.Error, Timeout: t.Timeout})
+		}
+		for _, x := range c.HTTP {
+			cycle.HTTP = append(cycle.HTTP, httpservice.Exchange{Service: x.Service, Path: x.Path, Rule: x.Rule, Ticket: x.Ticket, Unknown: x.Unknown})
+		}
+		require.NoError(d.h.t, w.Append(cycle))
+	}
+	for _, r := range ledgerOf(run.Receipts) {
+		require.NoError(d.h.t, w.Append(history.Receipt{Line: history.LineReceipt, Receipt: r}))
+	}
+	require.NoError(d.h.t, w.Close(!run.Crashed))
+}
+
+func (d *Dispatch) newestSegment() (string, []string) {
+	d.h.t.Helper()
+	paths, err := history.Segments(filepath.Join(d.h.state, "events"))
+	require.NoError(d.h.t, err)
+	require.NotEmpty(d.h.t, paths)
+	path := paths[len(paths)-1]
+	text, err := os.ReadFile(path)
+	require.NoError(d.h.t, err)
+	return path, strings.Split(strings.TrimSpace(string(text)), "\n")
+}
+
+func (d *Dispatch) rewriteNewestSegment(lines []string) {
+	d.h.t.Helper()
+	path, _ := d.newestSegment()
+	require.NoError(d.h.t, os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600))
+}
+
+// lastRead is the index of the newest read line in lines.
+func lastRead(t *testing.T, lines []string) int {
+	t.Helper()
+	last := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, `{"line":"read"`) {
+			last = i
+		}
+	}
+	require.Positive(t, last)
+	return last
+}
+
+// EditHistory replaces text in the newest history segment, as a different dispatch version or a
+// damaged disk leaves it (unreachable from the CLI: history is written only by the loop).
+func (d *Dispatch) EditHistory(old, replacement string) {
+	d.h.t.Helper()
+	_, lines := d.newestSegment()
+	text := strings.Join(lines, "\n")
+	require.Contains(d.h.t, text, old)
+	d.rewriteNewestSegment(strings.Split(strings.ReplaceAll(text, old, replacement), "\n"))
+}
+
+// CrashedBeforeStopLine drops the stop line of the newest segment, as a crash leaves it (unreachable
+// from the CLI: a fault the product can't inject).
+func (d *Dispatch) CrashedBeforeStopLine() {
+	d.h.t.Helper()
+	_, lines := d.newestSegment()
+	require.Contains(d.h.t, lines[len(lines)-1], `"line":"stop"`)
+	d.rewriteNewestSegment(lines[:len(lines)-1])
+}
+
+// CrashedBeforeLastCycleLine ends the newest segment where a crash left it: after the last read
+// and the memory changes written with it, and before the cycle line (unreachable from the CLI: a
+// crash between two writes).
+func (d *Dispatch) CrashedBeforeLastCycleLine() {
+	d.h.t.Helper()
+	_, lines := d.newestSegment()
+	last := lastRead(d.h.t, lines)
+	keep := lines[:last+1]
+	for _, line := range lines[last+1:] {
+		if !strings.HasPrefix(line, `{"line":"world"`) {
+			break
+		}
+		keep = append(keep, line)
+	}
+	d.rewriteNewestSegment(keep)
+}
+
+// EditLastRead replaces text in the newest read of the world only, in a segment whose last cycle
+// wrote no cycle line (unreachable from the CLI: history is written only by the loop).
+func (d *Dispatch) EditLastRead(old, replacement string) {
+	d.h.t.Helper()
+	_, lines := d.newestSegment()
+	last := lastRead(d.h.t, lines)
+	for _, line := range lines[last+1:] {
+		require.NotContains(d.h.t, line, `{"line":"cycle"`)
+	}
+	require.Contains(d.h.t, lines[last], old)
+	lines[last] = strings.ReplaceAll(lines[last], old, replacement)
+	d.rewriteNewestSegment(lines)
+}
+
+type brokenPipe struct{}
+
+func (brokenPipe) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
+
+// RunWithBrokenOutput runs a command whose stdout and stderr reject every write, as a closed pipe does.
+func (d *Dispatch) RunWithBrokenOutput(args ...string) Result {
+	d.h.t.Helper()
+	opts := d.h.options(dispatch.Options{})
+	opts.Stdout, opts.Stderr = brokenPipe{}, brokenPipe{}
+	return d.result("", "", dispatch.Run(context.Background(), args, opts))
+}
+
+// EditRules rewrites a file of the rules directory the test gave, after a run used it.
+func (d *Dispatch) EditRules(name, text string) {
+	d.h.t.Helper()
+	require.NoError(d.h.t, os.WriteFile(filepath.Join(d.h.rulesDir, name), []byte(text), 0o644))
+}
+
 // Linear is the Linear workspace: tickets, statuses and comments.
 type Linear struct{ d *Dispatch }
 
 // Tickets seeds the tickets that are started and assigned to the key's owner.
 func (l *Linear) Tickets(tickets ...fakeTicket) { l.d.h.tickets(tickets...) }
 
+// Children sets the children Linear returns for open parents.
+func (l *Linear) Children(tickets ...fakeTicket) { l.d.h.linear.setChildren(tickets...) }
+
 // Finished seeds tickets Linear knows that are not started, such as Done or Todo ones, which only
 // a lookup by identifier finds.
 func (l *Linear) Finished(tickets ...fakeTicket) { l.d.h.linear.setElsewhere(tickets...) }
 
-// Children seeds the children Linear returns for open parents.
-func (l *Linear) Children(tickets ...fakeTicket) { l.d.h.linear.setChildren(tickets...) }
+// FailChildren makes Linear fail the reads of a parent's children while on is true.
+func (l *Linear) FailChildren(on bool) { l.d.h.linear.FailOn(lineartest.OnChildren, on) }
+
+// FailManaged makes Linear fail the read of the started tickets while on is true.
+func (l *Linear) FailManaged(on bool) { l.d.h.linear.FailOn(lineartest.OnManaged, on) }
 
 // Moves lists the status changes Linear accepted, as "ENG-1 -> In Review".
 func (l *Linear) Moves() []string {
@@ -557,6 +837,11 @@ func (w *Workers) StopFrom(session, ticket string, tasks stopTasks) {
 // Trees is the treehouse pool over real git worktrees.
 type Trees struct{ d *Dispatch }
 
+// CleanLeased leases the ticket a clean, pushed tree that has no herdr workspace.
+func (t *Trees) CleanLeased(ticket string) {
+	t.d.h.lease(ticket, t.d.h.gitTree(ticket))
+}
+
 // Untracked makes the ticket's tree a clean, pushed clone with a file git has never seen, and
 // returns the tree's path.
 func (t *Trees) Untracked(ticket, name string) string {
@@ -598,23 +883,18 @@ func (a *Alerts) Shown() []string { return a.d.h.notifications() }
 type Services struct{ d *Dispatch }
 
 // Sentry is the fake sentry service, which a rule reaches as ctx.http "sentry".
-func (s *Services) Sentry() *httpservicetest.Fake { return s.d.h.sentry() }
+// It adds its [http.sentry] table to the config the test gave newDispatch.
+func (s *Services) Sentry() *httpservicetest.Fake {
+	h := s.d.h
+	given := h.extra
+	fake := h.sentry()
+	h.config(given + sentryConfig)
+	return fake
+}
 
 func (h *harness) turnsRule() {
 	h.t.Helper()
 	h.config("[dispatch]\nrules = " + `"` + oneRule(h.t, turnsRule) + `"` + "\n")
-}
-
-// turnComments lists the bodies of the comments dispatch posted, which the turns rule makes one for
-// each distinct reading of a worker's turns.
-func (h *harness) turnComments() []string {
-	var out []string
-	for _, c := range h.linear.mutations() {
-		if c.Kind == lineartest.Comment {
-			out = append(out, c.Body)
-		}
-	}
-	return out
 }
 
 func sessionLogs(t *testing.T, stateDir string) []string {
@@ -745,10 +1025,15 @@ type harness struct {
 	pages map[string][]byte
 	// http is the services a rule's ctx.http reaches. Nil leaves Options.HTTP to its default.
 	http *httpservicetest.Fake
+	// timeouts carries the RuleTimeout and ActionTimeout a test set, over every command.
+	timeouts dispatch.Options
 }
 
 func newHarness(t *testing.T) *harness {
-	dir := t.TempDir()
+	// Resolved so a /var versus /private/var symlink cannot hide a match between a path a test gives
+	// a fake and the one dispatch finds through git.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	// A unix socket path is capped near 104 bytes on macOS, which t.TempDir() overruns.
 	state, err := os.MkdirTemp("/tmp", "dsp")
 	require.NoError(t, err)
@@ -828,9 +1113,20 @@ func (h *harness) runContext(ctx context.Context, args ...string) (string, strin
 	return h.runWith(ctx, dispatch.Options{}, args...)
 }
 
+// writeConfig replaces config.toml in one step, so a launch reading it while a concurrent launch
+// writes it sees one whole file.
+func (h *harness) writeConfig(body string) {
+	file, err := os.CreateTemp(h.dir, "config-*.toml")
+	require.NoError(h.t, err)
+	_, err = file.WriteString(body)
+	require.NoError(h.t, err)
+	require.NoError(h.t, file.Close())
+	require.NoError(h.t, os.Rename(file.Name(), filepath.Join(h.dir, "config.toml")))
+}
+
 // options is the Options every command runs over: the harness's fakes.
 func (h *harness) options(extra dispatch.Options) dispatch.Options {
-	h.writeFile("config.toml", h.withRules(h.withHistory(h.extra))+h.historyTOML()+h.reposTOML())
+	h.writeConfig(h.withRules(h.withHistory(h.extra)) + h.historyTOML() + h.reposTOML())
 	extra.ConfigPath = filepath.Join(h.dir, "config.toml")
 	extra.StateDir = h.state
 	if extra.Clock == nil {
@@ -856,6 +1152,12 @@ func (h *harness) options(extra dispatch.Options) dispatch.Options {
 		extra.RulesDir = h.rulesDir
 	}
 	extra.LaunchPace = time.Millisecond
+	if extra.RuleTimeout == (dispatch.RuleTimeout{}) {
+		extra.RuleTimeout = h.timeouts.RuleTimeout
+	}
+	if extra.ActionTimeout == 0 {
+		extra.ActionTimeout = h.timeouts.ActionTimeout
+	}
 	return extra
 }
 
@@ -1875,6 +2177,17 @@ func (h *harness) recordStopFrom(session, ticket, tasks string) {
 // stopInput is what Claude Code hands the Stop hook for a session in the ticket's tree.
 func (h *harness) stopInput(session, ticket, tasks string) string {
 	h.t.Helper()
+	tree := h.worktreeOf(ticket)
+	input := fmt.Sprintf(`{"hook_event_name":"Stop","session_id":%q,"cwd":%q`, session, tree)
+	if tasks != "" {
+		input += "," + tasks
+	}
+	return input + "}"
+}
+
+// worktreeOf is the path of ticket's tree, made a real git worktree of the harness repo.
+func (h *harness) worktreeOf(ticket string) string {
+	h.t.Helper()
 	tree := filepath.Join(h.dir, "trees", ticket)
 	if _, err := os.Stat(filepath.Join(h.repo, ".git")); err != nil {
 		hintGit(h.t, h.repo, "init", "-q")
@@ -1883,11 +2196,7 @@ func (h *harness) stopInput(session, ticket, tasks string) string {
 	if _, err := os.Stat(tree); err != nil {
 		hintGit(h.t, h.repo, "worktree", "add", "-q", "-b", "br-"+ticket, tree)
 	}
-	input := fmt.Sprintf(`{"hook_event_name":"Stop","session_id":%q,"cwd":%q`, session, tree)
-	if tasks != "" {
-		input += "," + tasks
-	}
-	return input + "}"
+	return tree
 }
 
 // failingPR puts ENG-1 In Review with an idle worker and a PR whose check failed.

@@ -30,12 +30,6 @@ func (l *Linear) CommentAttempts() int { return l.d.h.linear.CallsTo(lineartest.
 // PathOf is where the tree of a ticket's worker is.
 func (t *Trees) PathOf(ticket string) string { return filepath.Join(t.d.h.dir, "trees", ticket) }
 
-// Clean makes the ticket's tree a clean, pushed clone, and returns its path.
-func (t *Trees) Clean(ticket string) string { return t.d.h.gitTree(ticket) }
-
-// Kickoffs lists what the launcher typed into a new worker, as "<pane>|<text>".
-func (w *Workers) Kickoffs() []string { return w.d.h.tools.Herdr.Kicked() }
-
 // Started lists the agents the built-in launcher started.
 func (w *Workers) Started() []herdr.Worker { return w.d.h.tools.Herdr.Started() }
 
@@ -133,7 +127,7 @@ func TestTickLaunchesNothingForTicketsThatAreNotInProgress(t *testing.T) {
 func TestTickEscalatesAfterRepeatedLaunchFailures(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Workers.LaunchAnswers(`{"status":"pool_error","detail":"treehouse lease failed"}`)
+	d.Workers.LaunchResult(`{"status":"pool_error","detail":"treehouse lease failed"}`)
 
 	res := d.Run("tick")
 	require.ErrorContains(t, res.Err, "ENG-1 launch failed: pool_error: treehouse lease failed")
@@ -154,7 +148,7 @@ func TestTickEscalatesAfterRepeatedLaunchFailures(t *testing.T) {
 func TestTickNeverEscalatesForAFullPool(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Workers.LaunchAnswers(`{"status":"pool_exhausted","detail":"all 4/4 pool trees are taken"}`)
+	d.Workers.LaunchResult(`{"status":"pool_exhausted","detail":"all 4/4 pool trees are taken"}`)
 	// Another holder has the only tree, so the pool's return count can move when it lets go.
 	other := d.Trees.LeasedTo("other")
 
@@ -171,7 +165,7 @@ func TestTickNeverEscalatesForAFullPool(t *testing.T) {
 	assert.Empty(t, d.Linear.Changes())
 
 	d.Trees.GiveBack(other, "other")
-	d.Workers.LaunchAnswers(`{"status":"ok","ticket":"ENG-1","branch":"thrawn01/eng-1"}`)
+	d.Workers.LaunchResult(`{"status":"ok","ticket":"ENG-1","branch":"thrawn01/eng-1"}`)
 	d.Advance(time.Second)
 	res = d.Run("tick")
 
@@ -581,7 +575,7 @@ func TestTickTypesTheDesignKickoffWithTheBuiltInLauncher(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{"w2:p2|/dispatch:design ENG-1"}, d.Workers.Kickoffs())
+	assert.Equal(t, []string{"w2:p2|/dispatch:design ENG-1"}, d.Workers.Kicked())
 	require.Len(t, d.Workers.Started(), 1)
 	assert.Equal(t, "opus", d.Workers.Started()[0].Model)
 }
@@ -766,7 +760,7 @@ func TestAWorkerWhoseLaunchReturnedIsNotClosedWhateverItsAge(t *testing.T) {
 	d.RealLauncher()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
-	require.Len(t, d.Workers.Kickoffs(), 1)
+	require.Len(t, d.Workers.Kicked(), 1)
 	d.h.tools.Herdr.SetStatus("w2:p2", "idle")
 
 	d.Advance(10 * time.Minute)
@@ -858,7 +852,7 @@ func TestClosingAnUnconfirmedWorkerClearsItsMark(t *testing.T) {
 	d.Advance(time.Minute)
 	d.Tick()
 
-	renames := d.h.renames()
+	renames := d.Workers.Renames()
 	assert.Equal(t, "w-ENG-1|💤 ENG-1", renames[len(renames)-1])
 }
 
@@ -882,9 +876,9 @@ func TestALaunchThatKeepsDyingBeforeItsKickoffReachesNeedsHuman(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	earlier := d.Clock.Now().Add(-30 * time.Minute)
-	d.EarlierRun(earlierReceipt{
-		Kind: "close", Subject: "ENG-1", Rule: "close-unconfirmed-worker", State: "done",
-		Once: []any{"close-unconfirmed", d.Trees.PathOf("ENG-1"), earlier.UnixMilli()}, Started: earlier, Ended: earlier,
+	d.CrashedEarlierRun(earlierReceipt{
+		Kind: "close", Subject: "ENG-1", Rule: "close-unconfirmed-worker", Outcome: "done",
+		Once: earlierOnce{"close-unconfirmed", d.Trees.PathOf("ENG-1"), earlier.UnixMilli()}, Started: earlier.UnixMilli(), Ended: earlier.UnixMilli(),
 	})
 	d.Workers.Running("ENG-1", "idle")
 	d.Workers.UnconfirmedLaunch("ENG-1", d.Clock.Now())

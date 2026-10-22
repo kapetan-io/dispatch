@@ -35,13 +35,6 @@ func (d *Dispatch) RunInStateDir(stateDir string, args ...string) Result {
 	return d.run(opts, args...)
 }
 
-// RunWith runs a command over Options the command line has no flag for. The timeouts it sets run on
-// the real clock, so tests give them short real durations.
-func (d *Dispatch) RunWith(opts dispatch.Options, args ...string) Result {
-	d.h.t.Helper()
-	return d.result(d.h.runWith(context.Background(), opts, args...))
-}
-
 // LoopOut is what dispatch run has printed to stdout so far.
 func (d *Dispatch) LoopOut() string { return d.h.loopOut() }
 
@@ -121,14 +114,8 @@ func (d *Dispatch) ReceiptsOf(kind, ticket string) []Receipt {
 	return found
 }
 
-// LaunchAnswers makes every launch from now on end with this launcher result, as JSON.
-func (w *Workers) LaunchAnswers(result string) { w.d.h.launchResult(result) }
-
 // StallLaunches makes every launch from now on wait until its deadline.
 func (w *Workers) StallLaunches() { w.d.h.tools.Launcher.Stall() }
-
-// Calls counts the requests Linear answered.
-func (l *Linear) Calls() int { return l.d.h.linear.calls() }
 
 // Changes lists the status changes and comments Linear accepted, oldest first, as Moves and
 // Comments print them.
@@ -146,23 +133,11 @@ func (l *Linear) Changes() []string {
 	return out
 }
 
-// FailComments makes Linear fail every comment while on is true.
-func (l *Linear) FailComments(on bool) { l.d.h.linear.failComments(on) }
-
-// FailMoves makes Linear fail every status change.
-func (l *Linear) FailMoves() { l.d.h.linear.failMoves() }
-
 // RefuseMoves makes Linear answer every status change with success=false.
 func (l *Linear) RefuseMoves() { l.d.h.linear.unsuccessfulMoves() }
 
 // RefuseComments makes Linear answer every comment with success=false.
 func (l *Linear) RefuseComments() { l.d.h.linear.unsuccessfulComments() }
-
-// FailChildren makes Linear fail every read of a parent's children.
-func (l *Linear) FailChildren() { l.d.h.linear.failChildren() }
-
-// FailManaged makes Linear fail the read of started tickets while on is true.
-func (l *Linear) FailManaged(on bool) { l.d.h.linear.FailOn(lineartest.OnManaged, on) }
 
 // Overflow gives the user more started tickets than one page of Linear holds.
 func (l *Linear) Overflow() { l.d.h.linear.overflowManaged() }
@@ -235,7 +210,7 @@ func TestTickOfOneTicketPrintsOnlyThatTicket(t *testing.T) {
 func TestTickExitsOneAndPrintsTheFailedAction(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Workers.LaunchAnswers(`{"status":"pool_error","detail":"treehouse lease failed"}`)
+	d.Workers.LaunchResult(`{"status":"pool_error","detail":"treehouse lease failed"}`)
 
 	res := d.Run("tick")
 
@@ -419,7 +394,7 @@ func TestANudgeThatTimesOutCountsAsToldAndIsNeverRepeated(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
 	require.NoError(t, d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tick").Err)
-	d.h.tools.Herdr.StallPrompts()
+	d.Workers.StallPrompts()
 	d.Advance(time.Minute)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	for range 3 {
@@ -586,7 +561,7 @@ func TestRotatingHistoryKeepsTheReceiptsOfChildrenReadThroughTheirParent(t *test
 			require.Len(t, d.ReceiptsOf("comment", "ENG-2"), 1)
 
 			if test.failChildren {
-				d.Linear.FailChildren()
+				d.Linear.FailChildren(true)
 			}
 			for range 4 {
 				d.Advance(2 * time.Hour)
@@ -707,9 +682,9 @@ func TestRunFailsToStartWhenTheRulesDoNotLoad(t *testing.T) {
 func TestACrashAfterAnAttemptedLaunchGetsNoSecondWorker(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.EarlierRun(earlierReceipt{
+	d.CrashedEarlierRun(earlierReceipt{
 		Kind: "launch", Subject: "ENG-1", Rule: "launch-worker",
-		Once: []any{"launch", d.Clock.Now().UnixMilli(), 0}, Started: d.Clock.Now(),
+		Once: earlierOnce{"launch", d.Clock.Now().UnixMilli(), 0}, Started: d.Clock.Now().UnixMilli(),
 	})
 	// The crashed launch got as far as opening the worker, so herdr shows it.
 	d.Workers.Running("ENG-1", "working")
@@ -728,9 +703,9 @@ func TestACrashAfterAnAttemptedLaunchGetsNoSecondWorker(t *testing.T) {
 func TestACrashedLaunchIsDecidedAgainAndNeverCountsAsAFailure(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.EarlierRun(earlierReceipt{
+	d.CrashedEarlierRun(earlierReceipt{
 		Kind: "launch", Subject: "ENG-1", Rule: "launch-worker",
-		Once: []any{"launch", d.Clock.Now().UnixMilli(), 0}, Started: d.Clock.Now(),
+		Once: earlierOnce{"launch", d.Clock.Now().UnixMilli(), 0}, Started: d.Clock.Now().UnixMilli(),
 	})
 
 	d.Tick()
@@ -787,7 +762,7 @@ func TestANudgeToldBeforeARestartIsNotToldAgain(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
 	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
-	d.h.tools.Herdr.StallPrompts()
+	d.Workers.StallPrompts()
 	require.NoError(t, d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tick").Err)
 	require.Len(t, d.ReceiptsOf("nudge", "ENG-1"), 1)
 
@@ -880,7 +855,7 @@ func TestAnEventAfterASleepReadsEverySourceBeforeActing(t *testing.T) {
 func TestATreeReturnedAfterARestartStillLetsAFullPoolRetry(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Workers.LaunchAnswers(`{"status":"pool_exhausted","detail":"all 4/4 pool trees are taken"}`)
+	d.Workers.LaunchResult(`{"status":"pool_exhausted","detail":"all 4/4 pool trees are taken"}`)
 	first, second := d.Trees.LeasedTo("first"), d.Trees.LeasedTo("second")
 	d.Tick()
 	require.Len(t, d.Workers.Launched(), 1)
@@ -901,7 +876,7 @@ func TestATreeReturnedAfterARestartStillLetsAFullPoolRetry(t *testing.T) {
 func TestAFailedHerdrReadDoesNotMakeAFullPoolRetry(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Workers.LaunchAnswers(`{"status":"pool_exhausted","detail":"all 4/4 pool trees are taken"}`)
+	d.Workers.LaunchResult(`{"status":"pool_exhausted","detail":"all 4/4 pool trees are taken"}`)
 	d.Tick()
 	require.Len(t, d.Workers.Launched(), 1)
 
@@ -919,9 +894,9 @@ func TestAFailedHerdrReadDoesNotMakeAFullPoolRetry(t *testing.T) {
 func TestAHalfWrittenSegmentDoesNotStopTheStart(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.EarlierRun(earlierReceipt{
-		Kind: "launch", Subject: "ENG-1", Rule: "launch-worker", Once: []any{"launch", d.Clock.Now().UnixMilli(), 0},
-		State: "done", Started: d.Clock.Now(), Ended: d.Clock.Now(),
+	d.CrashedEarlierRun(earlierReceipt{
+		Kind: "launch", Subject: "ENG-1", Rule: "launch-worker", Once: earlierOnce{"launch", d.Clock.Now().UnixMilli(), 0},
+		Outcome: "done", Started: d.Clock.Now().UnixMilli(), Ended: d.Clock.Now().UnixMilli(),
 	})
 	d.HalfWrittenSegment()
 
