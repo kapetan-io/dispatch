@@ -18,18 +18,10 @@ Start with "Set it up" in the [user guide](docs/guide.md), which takes a fresh M
 
 ## Development
 
-Load the plugin in place for one session (the [user guide](docs/guide.md) installs it for good):
+Put `scripts/shims` first on your PATH, and a plain `claude` loads the plugin from this checkout and accepts messages from other sessions, so a `git pull` reaches your next session with no reinstall. The [user guide](docs/guide.md) has the setup. For one session without the shim, run:
 
 ```sh
-claude --plugin-dir ~/Development/dispatch
-```
-
-To start your supervising session with the plugin loaded and cross-session messages accepted (how dispatch events reach it), put this fish function in `~/.config/fish/functions/claude-dispatch.fish`:
-
-```fish
-function claude-dispatch --wraps claude --description 'claude with cross-session inbound and the local dispatch plugin'
-    claude --settings '{"crossSessionInbound":"accept"}' --plugin-dir ~/Development/dispatch $argv
-end
+claude --plugin-dir ~/Development/dispatch --settings '{"crossSessionInbound":"accept"}'
 ```
 
 ## Running the dispatcher

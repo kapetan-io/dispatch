@@ -138,8 +138,8 @@ const usage = `usage: dispatch run
   launch       lease a tree, open a herdr workspace and start a worker typed --kickoff, which
                defaults to "/dispatch:build <ticket>". Run it from inside the repo. Prints one
                JSON result and exits 0 only when a worker is running
-  claude-shim  run the real claude with the plugin and worker flags added. The claude shim in
-               scripts/shims runs it
+  claude-shim  run the real claude with the plugin, the cross-session setting and, for a worker, the worker flags added. Claude
+               subcommands and print runs pass through. The claude shim in scripts/shims runs it
   record-stop  read a Stop hook's JSON on stdin and report to the running dispatch when the worker in
                this tree last ended a turn and whether it still has background tasks running.
                Drops the report when no dispatch runs, and does nothing outside a worktree of a
@@ -194,7 +194,7 @@ func Run(ctx context.Context, args []string, opts Options) error {
 	case "launch":
 		return launchWorker(ctx, opts, args[1:])
 	case "claude-shim":
-		return claudeShim(args[1:])
+		return claudeShim(opts, args[1:])
 	case "wake":
 		return wakeLoop(ctx, opts)
 	case "record-stop":

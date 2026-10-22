@@ -117,7 +117,7 @@ A rule names the service and a path, and dispatch sends `Authorization: Bearer <
 
 | Setting | Default | What it does |
 |---|---|---|
-| `plugin_root` | `~/Development/dispatch` | Your checkout of this repo. Workers get `scripts/shims` first on their PATH and load the plugin with `--plugin-dir`, both from it. The shim runs the `dispatch` binary that launched the worker (the worker's `DISPATCH_BIN`), so a `dispatch` on PATH that is missing or older does not matter for launches. |
+| `plugin_root` | `~/Development/dispatch` | Your checkout of this repo. Workers get `scripts/shims` first on their PATH and load the plugin with `--plugin-dir`, both from it. Your own sessions load it the same way when you put `scripts/shims` first on your PATH, because the shim falls back to this setting when `DISPATCH_PLUGIN_ROOT` is unset. For a worker the shim runs the `dispatch` binary that launched it (the worker's `DISPATCH_BIN`), so a `dispatch` on PATH that is missing or older does not matter for launches. |
 
 `[plugins.github]`, `[plugins.treehouse]` and `[plugins.notify]` take no settings yet. Write the empty table to say the plugin is on.
 
