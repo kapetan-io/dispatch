@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/clock"
+	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
@@ -67,14 +67,17 @@ type Options struct {
 	// Pace is the unit of waiting between polls for the herdr server, which waits 5 units.
 	// Defaults to 1s.
 	Pace time.Duration
+	// Env is what the launcher's git commands and the default herdr and treehouse run with.
+	// Defaults to the process's environment.
+	Env environment.Environment
 }
 
 func (o Options) withDefaults() Options {
 	if o.Herdr == nil {
-		o.Herdr = herdr.NewCLI("herdr")
+		o.Herdr = herdr.NewCLI("herdr").WithEnv(o.Env)
 	}
 	if o.Treehouse == nil {
-		o.Treehouse = treehouse.NewCLI("treehouse")
+		o.Treehouse = treehouse.NewCLI("treehouse").WithEnv(o.Env)
 	}
 	if o.Stderr == nil {
 		o.Stderr = io.Discard
@@ -472,7 +475,7 @@ func (l *launch) git(ctx context.Context, dir string, args ...string) (string, e
 	if dir != "" {
 		args = append([]string{"-C", dir}, args...)
 	}
-	out, err := exec.CommandContext(ctx, "git", args...).Output()
+	out, err := l.opts.Env.Command(ctx, "git", args...).Output()
 	return string(out), err
 }
 
@@ -507,7 +510,7 @@ func (l *launch) defaultBranch(ctx context.Context) string {
 }
 
 func (l *launch) gitToStderr(ctx context.Context, dir string, args ...string) error {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	cmd := l.opts.Env.Command(ctx, "git", append([]string{"-C", dir}, args...)...)
 	cmd.Stdout, cmd.Stderr = l.opts.Stderr, l.opts.Stderr
 	return cmd.Run()
 }

@@ -17,6 +17,7 @@ import (
 )
 
 func TestTickReturnsTheTreeOfAFinishedTicket(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		status string
@@ -55,6 +56,7 @@ func TestTickReturnsTheTreeOfAFinishedTicket(t *testing.T) {
 }
 
 func TestTickReturnsATreeWhoseWorkspaceIsAlreadyClosed(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Leased("ENG-1", path)
@@ -67,6 +69,7 @@ func TestTickReturnsATreeWhoseWorkspaceIsAlreadyClosed(t *testing.T) {
 }
 
 func TestTickReturnsATreeWhoseWorkspaceHoldsNoAgent(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	// A worker whose Claude exited leaves its workspace open, and the slot only
@@ -81,6 +84,7 @@ func TestTickReturnsATreeWhoseWorkspaceHoldsNoAgent(t *testing.T) {
 }
 
 func TestTickKeepsTheTreeOfAFinishedTicketThatHoldsWork(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		strand func(d *Dispatch, path string)
@@ -135,6 +139,7 @@ func TestTickKeepsTheTreeOfAFinishedTicketThatHoldsWork(t *testing.T) {
 }
 
 func TestTickRemovesUntrackedFilesBeforeReturningTheTree(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Workers.Running("ENG-1", "idle")
 	path := d.Trees.Untracked("ENG-1", "zz_tmp_test.go")
@@ -154,6 +159,7 @@ func TestTickRemovesUntrackedFilesBeforeReturningTheTree(t *testing.T) {
 }
 
 func TestTickLeavesIgnoredFilesAloneWhenRemovingUntrackedOnes(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	require.NoError(t, os.WriteFile(filepath.Join(path, ".gitignore"), []byte("build/\n"), 0o644))
@@ -176,6 +182,7 @@ func TestTickLeavesIgnoredFilesAloneWhenRemovingUntrackedOnes(t *testing.T) {
 }
 
 func TestTickQuotesUntrackedFileNamesThatHoldSpaces(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Leave(path, "sp ace.txt")
@@ -191,6 +198,7 @@ func TestTickQuotesUntrackedFileNamesThatHoldSpaces(t *testing.T) {
 }
 
 func TestTickKeepsTheTreeWhenGitCleanLeavesANestedRepoBehind(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	require.NoError(t, os.MkdirAll(filepath.Join(path, "nested"), 0o755))
@@ -213,6 +221,7 @@ func TestTickKeepsTheTreeWhenGitCleanLeavesANestedRepoBehind(t *testing.T) {
 }
 
 func TestTickIgnoresGitLocationVariablesWhenRemovingUntrackedFiles(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Leave(path, "scratch.txt")
@@ -222,8 +231,7 @@ func TestTickIgnoresGitLocationVariablesWhenRemovingUntrackedFiles(t *testing.T)
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 	// Set after the trees are built, because the setup's own git commands would obey them too.
 	// A dispatcher started from a git hook inherits these, and they would point git at the wrong repository.
-	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
-	t.Setenv("GIT_WORK_TREE", other)
+	d.env = d.env.With("GIT_DIR", filepath.Join(other, ".git")).With("GIT_WORK_TREE", other)
 
 	d.Tick()
 
@@ -235,6 +243,7 @@ func TestTickIgnoresGitLocationVariablesWhenRemovingUntrackedFiles(t *testing.T)
 }
 
 func TestTickReturnsATreeWhoseOnlyLeftoversAreIgnored(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	require.NoError(t, os.WriteFile(filepath.Join(path, ".gitignore"), []byte("*.log\n"), 0o644))
@@ -254,6 +263,7 @@ func TestTickReturnsATreeWhoseOnlyLeftoversAreIgnored(t *testing.T) {
 }
 
 func TestTickKeepsTheTreeAndItsUntrackedFilesWhenTrackedWorkIsAlsoThere(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Dirty(path)
@@ -271,6 +281,7 @@ func TestTickKeepsTheTreeAndItsUntrackedFilesWhenTrackedWorkIsAlsoThere(t *testi
 }
 
 func TestTickKeepsTheTreeWhenATrackedFileIsModifiedButNotStaged(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Leave(path, "tracked.txt")
@@ -292,6 +303,7 @@ func TestTickKeepsTheTreeWhenATrackedFileIsModifiedButNotStaged(t *testing.T) {
 }
 
 func TestTickReturnsTheTreeOnceItsWorkIsPushed(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Commit(path)
@@ -311,6 +323,7 @@ func TestTickReturnsTheTreeOnceItsWorkIsPushed(t *testing.T) {
 }
 
 func TestTickRetriesADirtyTreeCommentThatLinearRefused(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Dirty(path)
@@ -337,6 +350,7 @@ func TestTickRetriesADirtyTreeCommentThatLinearRefused(t *testing.T) {
 }
 
 func TestTickKeepsATreeItCannotRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// The tree's directory is gone, so git can't say whether it held work.
 	d.Workers.Running("ENG-1", "idle")
@@ -353,6 +367,7 @@ func TestTickKeepsATreeItCannotRead(t *testing.T) {
 }
 
 func TestTickKeepsTheTreeWhenTheWorkspaceWillNotClose(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "idle")
@@ -369,6 +384,7 @@ func TestTickKeepsTheTreeWhenTheWorkspaceWillNotClose(t *testing.T) {
 }
 
 func TestTickKeepsTheTreeWhenTreehouseRefusesTheReturn(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "idle")
@@ -385,6 +401,7 @@ func TestTickKeepsTheTreeWhenTreehouseRefusesTheReturn(t *testing.T) {
 }
 
 func TestTickTearsDownOneTreeAndKeepsAnotherOfTheSameTicket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	clean := d.Trees.Clean("ENG-1")
 	stranded := d.Trees.Clean("library")
@@ -404,6 +421,7 @@ func TestTickTearsDownOneTreeAndKeepsAnotherOfTheSameTicket(t *testing.T) {
 }
 
 func TestTickLeavesTheTreesOfTicketsItDoesNotManage(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		ticket fakeTicket
@@ -436,6 +454,7 @@ func TestTickLeavesTheTreesOfTicketsItDoesNotManage(t *testing.T) {
 }
 
 func TestTickIgnoresALeaseHeldByNoTicket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Trees.Clean("scratch")
 	d.Workers.Running("scratch", "idle")
@@ -450,6 +469,7 @@ func TestTickIgnoresALeaseHeldByNoTicket(t *testing.T) {
 }
 
 func TestTickReturnsTheTreeOfAFinishedTicketWhoseLabelsDidNotFitOnePage(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "idle")
@@ -463,6 +483,7 @@ func TestTickReturnsTheTreeOfAFinishedTicketWhoseLabelsDidNotFitOnePage(t *testi
 }
 
 func TestTickReturnsTheCleanTreeOfAFinishedReviewTicket(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"Done", "Canceled"} {
 		t.Run(status, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -479,6 +500,7 @@ func TestTickReturnsTheCleanTreeOfAFinishedReviewTicket(t *testing.T) {
 }
 
 func TestTickKeepsTheDirtyTreeOfADoneReviewTicketWithOneComment(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Dirty(path)
@@ -497,6 +519,7 @@ func TestTickKeepsTheDirtyTreeOfADoneReviewTicketWithOneComment(t *testing.T) {
 }
 
 func TestTickAsksLinearAboutLeasesOnlyWhenAManagedTicketDoesNotHoldThem(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Workers.Running("ENG-1", "working")
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -507,6 +530,7 @@ func TestTickAsksLinearAboutLeasesOnlyWhenAManagedTicketDoesNotHoldThem(t *testi
 }
 
 func TestTickStopsTheWorkerOfAPausedTicketAndKeepsItsTree(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"Todo", "Backlog"} {
 		t.Run(status, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -533,6 +557,7 @@ func TestTickStopsTheWorkerOfAPausedTicketAndKeepsItsTree(t *testing.T) {
 }
 
 func TestTickLeavesAWorkspaceOpenedByHandOnAPausedTicket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Trees.Clean("ENG-1")
 	// A workspace with no Claude agent is not a worker, so it may be yours.
@@ -545,6 +570,7 @@ func TestTickLeavesAWorkspaceOpenedByHandOnAPausedTicket(t *testing.T) {
 }
 
 func TestTickLeavesAWorkspaceOpenedByHandOnAKeptTree(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Dirty(path)
@@ -560,6 +586,7 @@ func TestTickLeavesAWorkspaceOpenedByHandOnAKeptTree(t *testing.T) {
 }
 
 func TestTickDoesNotRepeatTheCommentAfterALeaseLookupFails(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Dirty(path)
@@ -578,6 +605,7 @@ func TestTickDoesNotRepeatTheCommentAfterALeaseLookupFails(t *testing.T) {
 }
 
 func TestTickDoesNotRepeatTheCommentAfterAPoolCannotBeRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Dirty(path)
@@ -599,6 +627,7 @@ func TestTickDoesNotRepeatTheCommentAfterAPoolCannotBeRead(t *testing.T) {
 }
 
 func TestTickReturnsATreeWhileAnotherBranchOfTheRepoHoldsUnpushedWork(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	// Pool trees share one repository, so a branch another ticket is still
@@ -616,6 +645,7 @@ func TestTickReturnsATreeWhileAnotherBranchOfTheRepoHoldsUnpushedWork(t *testing
 }
 
 func TestTickKeepsTickingWhenLinearCannotListTheTicketsHoldingTrees(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "idle")
@@ -630,6 +660,7 @@ func TestTickKeepsTickingWhenLinearCannotListTheTicketsHoldingTrees(t *testing.T
 }
 
 func TestTickRelaunchesAPausedTicketOnItsKeptTree(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "working")
@@ -647,6 +678,7 @@ func TestTickRelaunchesAPausedTicketOnItsKeptTree(t *testing.T) {
 }
 
 func TestTickDoesNotTouchTreesOfTicketsInReviewOrNeedsHuman(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Trees.Clean("ENG-1")
 	d.Trees.Clean("ENG-2")
@@ -664,6 +696,7 @@ func TestTickDoesNotTouchTreesOfTicketsInReviewOrNeedsHuman(t *testing.T) {
 }
 
 func TestTickTeardownFreesATreeForALaunchInTheSameTick(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// The real launcher leaves a workspace behind, as production does, so one launch is one worker.
 	parentsRealLauncher(d)
@@ -681,6 +714,7 @@ func TestTickTeardownFreesATreeForALaunchInTheSameTick(t *testing.T) {
 }
 
 func TestTickReadsDoneAndPausedStatusesFromConfig(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[plugins.linear.statuses]\nfinished = [\"Shipped\"]\npaused = [\"Parked\"]\n"})
 	d.tools.Linear.AddState("Shipped", "completed")
 	d.tools.Linear.AddState("Parked", "backlog")
@@ -704,6 +738,7 @@ func TestTickReadsDoneAndPausedStatusesFromConfig(t *testing.T) {
 }
 
 func TestTickClosesTheWorkspaceBeforeItReturnsTheTree(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "idle")
@@ -725,6 +760,7 @@ func TestTickClosesTheWorkspaceBeforeItReturnsTheTree(t *testing.T) {
 }
 
 func TestTickLeavesNoTabPaneOrAgentOfAClosedWorkspace(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "idle")
@@ -746,6 +782,7 @@ func TestTickLeavesNoTabPaneOrAgentOfAClosedWorkspace(t *testing.T) {
 }
 
 func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "working")
@@ -786,6 +823,7 @@ func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
 }
 
 func TestTickCommentsOnADirtyTreeThatHasNoWorkspace(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Dirty(path)
@@ -803,6 +841,7 @@ func TestTickCommentsOnADirtyTreeThatHasNoWorkspace(t *testing.T) {
 }
 
 func TestTickKeepsATreeWhoseCommitsNoRemoteHas(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// A tree with no remote at all has nowhere its commits could be pushed.
 	path := filepath.Join(d.dir, "trees", "ENG-1")
@@ -821,6 +860,7 @@ func TestTickKeepsATreeWhoseCommitsNoRemoteHas(t *testing.T) {
 }
 
 func TestTickLeavesPausedTicketsItDoesNotManage(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		ticket fakeTicket
@@ -851,6 +891,7 @@ func TestTickLeavesPausedTicketsItDoesNotManage(t *testing.T) {
 }
 
 func TestTickStopsEveryWorkerOfAPausedTicket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	first := d.Trees.Clean("ENG-1")
 	second := d.Trees.Clean("library")
@@ -865,6 +906,7 @@ func TestTickStopsEveryWorkerOfAPausedTicket(t *testing.T) {
 }
 
 func TestTickDoesNothingForAPausedTicketWithNoWorkspace(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Leased("ENG-1", path)
@@ -878,6 +920,7 @@ func TestTickDoesNothingForAPausedTicketWithNoWorkspace(t *testing.T) {
 }
 
 func TestTickStopsTheWorkerOfAPausedReviewTicketAndKeepsItsTree(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "idle")
@@ -890,6 +933,7 @@ func TestTickStopsTheWorkerOfAPausedReviewTicketAndKeepsItsTree(t *testing.T) {
 }
 
 func TestTickCommentsAgainWhenAReopenedTicketFinishesWithWorkInItsTree(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Dirty(path)
@@ -913,6 +957,7 @@ func TestTickCommentsAgainWhenAReopenedTicketFinishesWithWorkInItsTree(t *testin
 }
 
 func TestTickPostsACommentForEachKeptTree(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	first := d.Trees.Clean("ENG-1")
 	second := d.Trees.Clean("library")
@@ -936,6 +981,7 @@ func TestTickPostsACommentForEachKeptTree(t *testing.T) {
 }
 
 func TestPlanNamesEachKeptTreeOfOneTicket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	first := d.Trees.Clean("ENG-1")
 	second := d.Trees.Clean("library")
@@ -961,6 +1007,7 @@ func TestPlanNamesEachKeptTreeOfOneTicket(t *testing.T) {
 }
 
 func TestPlanListsTheCommentOfAKeptTreeAsCoveredOnEveryTick(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Commit(path)
@@ -978,6 +1025,7 @@ func TestPlanListsTheCommentOfAKeptTreeAsCoveredOnEveryTick(t *testing.T) {
 }
 
 func TestTickKeepsATreeWhoseGitStateIsBroken(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "idle")
@@ -998,6 +1046,7 @@ func TestTickKeepsATreeWhoseGitStateIsBroken(t *testing.T) {
 }
 
 func TestTickKeepsATreeThatGainedACommitAfterTheCycleDecidedToReturnIt(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "working")
@@ -1024,6 +1073,7 @@ func TestTickKeepsATreeThatGainedACommitAfterTheCycleDecidedToReturnIt(t *testin
 }
 
 func TestTickKeepsATreeThatGainedANestedRepoAfterTheCycleDecidedToReturnIt(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "working")
@@ -1062,6 +1112,7 @@ func TestTickKeepsATreeThatGainedANestedRepoAfterTheCycleDecidedToReturnIt(t *te
 }
 
 func TestTickDoesNotReturnATreeWhoseGitFailsAfterTheCycleDecidedToReturnIt(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "working")
@@ -1082,6 +1133,7 @@ func TestTickDoesNotReturnATreeWhoseGitFailsAfterTheCycleDecidedToReturnIt(t *te
 }
 
 func TestTickDoesNotRepeatTheKeptTreeCommentAfterOnePoolReadFails(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Dirty(path)

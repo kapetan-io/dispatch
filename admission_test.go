@@ -65,6 +65,7 @@ func (w *Workers) CorruptStopRecords(newestOnly bool) {
 }
 
 func TestTickLaunchesApprovedTicketWithNoWorker(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -76,6 +77,7 @@ func TestTickLaunchesApprovedTicketWithNoWorker(t *testing.T) {
 }
 
 func TestTickLeavesTicketWithLiveWorker(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -87,6 +89,7 @@ func TestTickLeavesTicketWithLiveWorker(t *testing.T) {
 }
 
 func TestTickRelaunchesWhenWorkspaceHasNoClaude(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "")
@@ -97,6 +100,7 @@ func TestTickRelaunchesWhenWorkspaceHasNoClaude(t *testing.T) {
 }
 
 func TestTickWaitsWhenWorkerCapIsFull(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.Linear.Tickets(
 		ticket("ENG-1", "In Progress", "dispatch"),
@@ -111,6 +115,7 @@ func TestTickWaitsWhenWorkerCapIsFull(t *testing.T) {
 }
 
 func TestTickLaunchesNothingForTicketsThatAreNotInProgress(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(
 		ticket("ENG-1", "In Review", "dispatch"),
@@ -125,6 +130,7 @@ func TestTickLaunchesNothingForTicketsThatAreNotInProgress(t *testing.T) {
 }
 
 func TestTickEscalatesAfterRepeatedLaunchFailures(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.LaunchResult(`{"status":"pool_error","detail":"treehouse lease failed"}`)
@@ -146,6 +152,7 @@ func TestTickEscalatesAfterRepeatedLaunchFailures(t *testing.T) {
 }
 
 func TestTickNeverEscalatesForAFullPool(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.LaunchResult(`{"status":"pool_exhausted","detail":"all 4/4 pool trees are taken"}`)
@@ -176,6 +183,7 @@ func TestTickNeverEscalatesForAFullPool(t *testing.T) {
 }
 
 func TestTickAlertsWhenItEscalatesADesignTicket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(withLabel(ticket("ENG-1", "In Progress", ""), "design"))
 
@@ -186,6 +194,7 @@ func TestTickAlertsWhenItEscalatesADesignTicket(t *testing.T) {
 }
 
 func TestTickShowsHerdrNotificationsOffMacOS(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "darwin" {
 		t.Skip("macOS shows alerts through osascript")
 	}
@@ -205,6 +214,7 @@ func TestTickShowsHerdrNotificationsOffMacOS(t *testing.T) {
 }
 
 func TestTickAlertsOnceWhenItEscalatesADesignReviewTicket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(withLabel(ticket("ENG-1", "In Progress", ""), "design-review"))
 
@@ -215,6 +225,7 @@ func TestTickAlertsOnceWhenItEscalatesADesignReviewTicket(t *testing.T) {
 }
 
 func TestTickEscalatesTicketItCannotPlaceInARepo(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name     string
 		repo     string
@@ -247,6 +258,7 @@ func TestTickEscalatesTicketItCannotPlaceInARepo(t *testing.T) {
 }
 
 func TestTickLaunchesOtherTicketsWhenAnEscalationFails(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(
 		ticket("ENG-1", "In Progress", ""),
@@ -266,6 +278,7 @@ func TestTickLaunchesOtherTicketsWhenAnEscalationFails(t *testing.T) {
 }
 
 func TestTickNeverCommentsWhenLinearRefusesTheMove(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", ""))
 	d.Linear.RefuseMoves()
@@ -279,6 +292,7 @@ func TestTickNeverCommentsWhenLinearRefusesTheMove(t *testing.T) {
 }
 
 func TestTickReadsNothingWhenManagedTicketsSpanMoreThanOnePage(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Linear.Overflow()
@@ -298,6 +312,7 @@ func TestTickReadsNothingWhenManagedTicketsSpanMoreThanOnePage(t *testing.T) {
 }
 
 func TestTickHoldsBackOnlyTheRepoWhosePoolCannotBeRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.MovedRepo("tiger")
 	d.Linear.Tickets(
@@ -318,6 +333,7 @@ func TestTickHoldsBackOnlyTheRepoWhosePoolCannotBeRead(t *testing.T) {
 }
 
 func TestTickCountsTicketsInAnUnreadRepoAgainstTheWorkerCap(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.MovedRepo("tiger")
 	d.Linear.Tickets(
@@ -333,6 +349,7 @@ func TestTickCountsTicketsInAnUnreadRepoAgainstTheWorkerCap(t *testing.T) {
 }
 
 func TestTickPostsAnEscalationCommentThatFailedOnAnEarlierTick(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", ""))
 	d.Linear.FailComments(true)
@@ -362,6 +379,7 @@ func TestTickPostsAnEscalationCommentThatFailedOnAnEarlierTick(t *testing.T) {
 }
 
 func TestTickRetriesAnEscalationCommentThatLinearAnsweredWithSuccessFalse(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", ""))
 	d.Linear.RefuseComments()
@@ -374,6 +392,7 @@ func TestTickRetriesAnEscalationCommentThatLinearAnsweredWithSuccessFalse(t *tes
 }
 
 func TestTickEscalatesATicketWhoseLabelsDidNotFitOnePage(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// The design label may be among the labels Linear left off the page, so
 	// this ticket must not be launched as a build.
@@ -392,6 +411,7 @@ func TestTickEscalatesATicketWhoseLabelsDidNotFitOnePage(t *testing.T) {
 }
 
 func TestTickHoldsABlockedTicketAndSaysWhyOnce(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "In Review"}))
 
@@ -408,6 +428,7 @@ func TestTickHoldsABlockedTicketAndSaysWhyOnce(t *testing.T) {
 }
 
 func TestTickLaunchesAHeldTicketOnceEveryBlockerIsDone(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(blockedBy(ticket("ENG-3", "In Progress", "dispatch"), false, [2]string{"ENG-1", "Done"}, [2]string{"ENG-2", "Todo"}))
 	d.Tick()
@@ -420,6 +441,7 @@ func TestTickLaunchesAHeldTicketOnceEveryBlockerIsDone(t *testing.T) {
 }
 
 func TestTickLaunchesTicketsWithNoOpenBlockers(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(
 		ticket("ENG-1", "In Progress", "dispatch"),
@@ -433,6 +455,7 @@ func TestTickLaunchesTicketsWithNoOpenBlockers(t *testing.T) {
 }
 
 func TestTickSendsAHeldTicketWithACanceledBlockerToNeedsHuman(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "Canceled"}))
 
@@ -446,6 +469,7 @@ func TestTickSendsAHeldTicketWithACanceledBlockerToNeedsHuman(t *testing.T) {
 }
 
 func TestTickLeavesARunningWorkerAloneWhenABlockerIsAdded(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "Todo"}))
 	d.Workers.Running("ENG-2", "working")
@@ -459,6 +483,7 @@ func TestTickLeavesARunningWorkerAloneWhenABlockerIsAdded(t *testing.T) {
 }
 
 func TestTickHoldsATicketWhoseBlockersWereCutShort(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), true, [2]string{"ENG-1", "Done"}))
 	d.Tick()
@@ -472,6 +497,7 @@ func TestTickHoldsATicketWhoseBlockersWereCutShort(t *testing.T) {
 }
 
 func TestTickDoesNotLetAHeldTicketTakeAPromotionSlot(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.Linear.Tickets(
 		parent("ENG-1", "In Progress"),
@@ -487,6 +513,7 @@ func TestTickDoesNotLetAHeldTicketTakeAPromotionSlot(t *testing.T) {
 }
 
 func TestTickLeavesARunningWorkerAloneWhenADoneBlockerReopens(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Workers.Running("ENG-2", "working")
 	d.Linear.Tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "Done"}))
@@ -502,6 +529,7 @@ func TestTickLeavesARunningWorkerAloneWhenADoneBlockerReopens(t *testing.T) {
 }
 
 func TestTickDoesNotRepeatTheHoldCommentAfterAnUnreadPool(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	held := blockedBy(ticket("ENG-2", "In Progress", "tiger"), false, [2]string{"ENG-1", "Todo"})
 	tiger := filepath.Join(t.TempDir(), "tiger")
@@ -526,6 +554,7 @@ func TestTickDoesNotRepeatTheHoldCommentAfterAnUnreadPool(t *testing.T) {
 }
 
 func TestTickSendsAHeldTicketWithADuplicateBlockerToNeedsHuman(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "Duplicate"}))
 
@@ -537,6 +566,7 @@ func TestTickSendsAHeldTicketWithADuplicateBlockerToNeedsHuman(t *testing.T) {
 }
 
 func TestTickDoesNotRepeatTheHoldCommentWhenLinearReordersBlockers(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(blockedBy(ticket("ENG-3", "In Progress", "dispatch"), false, [2]string{"ENG-1", "Todo"}, [2]string{"ENG-2", "Todo"}))
 	d.Tick()
@@ -548,18 +578,21 @@ func TestTickDoesNotRepeatTheHoldCommentWhenLinearReordersBlockers(t *testing.T)
 }
 
 func TestTickLaunchesADesignTicketWithTheDesignKickoff(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(designTicket("ENG-1", "In Progress"), ticket("ENG-2", "In Progress", "dispatch"))
 
 	d.Tick()
 
-	assert.Equal(t, []string{
+	// The loop starts both launches at once, so their order at the launcher is not fixed.
+	assert.ElementsMatch(t, []string{
 		d.Repo + " ENG-1 thrawn01/eng-1 --model opus --kickoff /dispatch:design ENG-1",
 		d.Repo + " ENG-2 thrawn01/eng-2 --model sonnet",
 	}, d.Workers.Launched())
 }
 
 func TestTickRunsTheDesignOnTheConfiguredModel(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[rules]\ndesign_model = \"fable\"\n"})
 	d.Linear.Tickets(designTicket("ENG-1", "In Progress"))
 
@@ -569,6 +602,7 @@ func TestTickRunsTheDesignOnTheConfiguredModel(t *testing.T) {
 }
 
 func TestTickTypesTheDesignKickoffWithTheBuiltInLauncher(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.RealLauncher()
 	d.Linear.Tickets(designTicket("ENG-1", "In Progress"))
@@ -581,6 +615,7 @@ func TestTickTypesTheDesignKickoffWithTheBuiltInLauncher(t *testing.T) {
 }
 
 func TestTickNeverNudgesOrEscalatesADesignWorker(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(designTicket("ENG-1", "In Progress"))
 	d.Workers.Running("ENG-1", "idle")
@@ -607,6 +642,7 @@ func TestTickNeverNudgesOrEscalatesADesignWorker(t *testing.T) {
 }
 
 func TestTickKeepsTheDesignWorkerOnceItHasChildren(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(designTicket("ENG-1", "In Progress"))
 	d.Linear.Children(child("ENG-2", "ENG-1", "Backlog"))
@@ -625,6 +661,7 @@ func TestTickKeepsTheDesignWorkerOnceItHasChildren(t *testing.T) {
 }
 
 func TestTickCountsADesignTicketAgainstTheWorkerCap(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.Linear.Tickets(designTicket("ENG-1", "In Progress"), ticket("ENG-2", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -638,6 +675,7 @@ func TestTickCountsADesignTicketAgainstTheWorkerCap(t *testing.T) {
 }
 
 func TestTickHoldsAPromotionForADesignTicketAboutToLaunch(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.RealLauncher()
 	d.Linear.Tickets(parent("ENG-1", "In Progress"), designTicket("ENG-3", "In Progress"))
@@ -653,6 +691,7 @@ func TestTickHoldsAPromotionForADesignTicketAboutToLaunch(t *testing.T) {
 }
 
 func TestTickLaunchesADesignReviewTicketOnTheDesignModel(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[rules]\ndesign_model = \"haiku\"\n"})
 	d.Linear.Tickets(withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"))
 
@@ -664,6 +703,7 @@ func TestTickLaunchesADesignReviewTicketOnTheDesignModel(t *testing.T) {
 }
 
 func TestTickLaunchesADesignReviewTicketThatAlsoCarriesDesignAsAReview(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(withLabel(designTicket("ENG-1", "In Progress"), "design-review"))
 
@@ -675,6 +715,7 @@ func TestTickLaunchesADesignReviewTicketThatAlsoCarriesDesignAsAReview(t *testin
 }
 
 func TestTickCountsADesignReviewAgainstMaxInProgress(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.RealLauncher()
 	d.Linear.Tickets(
@@ -692,6 +733,7 @@ func TestTickCountsADesignReviewAgainstMaxInProgress(t *testing.T) {
 }
 
 func TestTickHoldsAPromotionWhileADesignReviewTakesTheLastSlot(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.RealLauncher()
 	d.Linear.Tickets(parent("ENG-1", "In Progress"), withLabel(ticket("ENG-3", "In Progress", "dispatch"), "design-review"))
@@ -706,6 +748,7 @@ func TestTickHoldsAPromotionWhileADesignReviewTakesTheLastSlot(t *testing.T) {
 }
 
 func TestTickHoldsAPromotionForADesignParentInAnUnreadRepo(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.MovedRepo("tiger")
 	d.Linear.Tickets(parent("ENG-1", "In Progress"), withLabel(ticket("ENG-3", "In Progress", "tiger"), "design"))
@@ -721,6 +764,7 @@ func TestTickHoldsAPromotionForADesignParentInAnUnreadRepo(t *testing.T) {
 }
 
 func TestTickStopsADesignWhoseTicketIsPaused(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "idle")
@@ -732,6 +776,7 @@ func TestTickStopsADesignWhoseTicketIsPaused(t *testing.T) {
 }
 
 func TestTickReturnsTheTreeOfACanceledDesignTicket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	tree := d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "idle")
@@ -744,6 +789,7 @@ func TestTickReturnsTheTreeOfACanceledDesignTicket(t *testing.T) {
 }
 
 func TestTickNamesTheRulesKeyAMissingConfigLeavesOut(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[rules]\nworker_model = \"sonnet\"\nlaunch_failure_limit = 2\n"})
 	d.ExactRules()
 	d.Linear.Tickets(withLabel(designTicket("ENG-1", "In Progress"), "design-review"))
@@ -756,6 +802,7 @@ func TestTickNamesTheRulesKeyAMissingConfigLeavesOut(t *testing.T) {
 }
 
 func TestAWorkerWhoseLaunchReturnedIsNotClosedWhateverItsAge(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.RealLauncher()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -772,6 +819,7 @@ func TestAWorkerWhoseLaunchReturnedIsNotClosedWhateverItsAge(t *testing.T) {
 }
 
 func TestAWorkerWhoseLaunchDiedBeforeItsKickoffIsClosedAndRelaunched(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -793,6 +841,7 @@ func TestAWorkerWhoseLaunchDiedBeforeItsKickoffIsClosedAndRelaunched(t *testing.
 }
 
 func TestAWorkerWhoseKickoffRanIsNotClosedWhateverItsAge(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -806,6 +855,7 @@ func TestAWorkerWhoseKickoffRanIsNotClosedWhateverItsAge(t *testing.T) {
 }
 
 func TestADesignWorkerWhoseLaunchDiedIsClosedToo(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design"))
 	d.Workers.Running("ENG-1", "idle")
@@ -819,6 +869,7 @@ func TestADesignWorkerWhoseLaunchDiedIsClosedToo(t *testing.T) {
 }
 
 func TestADesignReviewWorkerWhoseLaunchDiedIsClosedAndRelaunched(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(withLabel(ticket("ENG-1", "In Progress", "dispatch"), "design-review"))
 	d.Workers.Running("ENG-1", "idle")
@@ -836,6 +887,7 @@ func TestADesignReviewWorkerWhoseLaunchDiedIsClosedAndRelaunched(t *testing.T) {
 }
 
 func TestClosingAnUnconfirmedWorkerClearsItsMark(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -857,6 +909,7 @@ func TestClosingAnUnconfirmedWorkerClearsItsMark(t *testing.T) {
 }
 
 func TestAnIdleWorkerWithAnUnconfirmedKickoffIsNotNudged(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -873,6 +926,7 @@ func TestAnIdleWorkerWithAnUnconfirmedKickoffIsNotNudged(t *testing.T) {
 // A launch that dies every time must end in Needs Human, not loop forever. The earlier
 // close is seeded because a killed launch leaves a crashed receipt, which the limit ignores.
 func TestALaunchThatKeepsDyingBeforeItsKickoffReachesNeedsHuman(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	earlier := d.Clock.Now().Add(-30 * time.Minute)
@@ -892,6 +946,7 @@ func TestALaunchThatKeepsDyingBeforeItsKickoffReachesNeedsHuman(t *testing.T) {
 }
 
 func TestAStopFromTheWorkersOwnSessionConfirmsALaunchKilledAfterItsKickoffRan(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -905,6 +960,7 @@ func TestAStopFromTheWorkersOwnSessionConfirmsALaunchKilledAfterItsKickoffRan(t 
 }
 
 func TestAStopFromAnotherSessionInTheTreeDoesNotConfirmALaunch(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -918,6 +974,7 @@ func TestAStopFromAnotherSessionInTheTreeDoesNotConfirmALaunch(t *testing.T) {
 }
 
 func TestAStopFromAnySessionConfirmsALaunchWhenHerdrNamesNoSession(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -932,6 +989,7 @@ func TestAStopFromAnySessionConfirmsALaunchWhenHerdrNamesNoSession(t *testing.T)
 }
 
 func TestAStopRecordThatCannotBeReadIsNotTakenForNoStop(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -946,6 +1004,7 @@ func TestAStopRecordThatCannotBeReadIsNotTakenForNoStop(t *testing.T) {
 }
 
 func TestAKickoffThatFailedWithTheWorkspaceStuckOpenIsClosedLater(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.RealLauncher()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -963,6 +1022,7 @@ func TestAKickoffThatFailedWithTheWorkspaceStuckOpenIsClosedLater(t *testing.T) 
 }
 
 func TestAnUnreadableStopBesideAReadableOneStillHoldsTheWorker(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")

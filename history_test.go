@@ -54,6 +54,7 @@ func shippedRules(t *testing.T) string {
 }
 
 func TestReplayMatchesTheLiveRun(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -68,6 +69,7 @@ func TestReplayMatchesTheLiveRun(t *testing.T) {
 // Each case leaves the same lines in the world's memory as its first tick and changes what the
 // rules decide, so only a replay over the recorded read can match.
 func TestReplayMatchesWhatMemoryAloneCannotTellApart(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name       string
 		unreadPool bool
@@ -109,6 +111,7 @@ func TestReplayMatchesWhatMemoryAloneCannotTellApart(t *testing.T) {
 }
 
 func TestReplayPrintsTheFirstDifferenceAndExitsOne(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "In Review"}))
 	d.Tick()
@@ -127,6 +130,7 @@ func TestReplayPrintsTheFirstDifferenceAndExitsOne(t *testing.T) {
 }
 
 func TestReplayNamesTheMemoryItFoundDifferent(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "In Review"}))
 	d.Tick()
@@ -142,6 +146,7 @@ func TestReplayNamesTheMemoryItFoundDifferent(t *testing.T) {
 }
 
 func TestReplayWithOtherRulesStopsAtTheFirstActionThatDiffers(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -157,6 +162,7 @@ func TestReplayWithOtherRulesStopsAtTheFirstActionThatDiffers(t *testing.T) {
 }
 
 func TestReplayWithTheSameRulesMatches(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -169,6 +175,7 @@ func TestReplayWithTheSameRulesMatches(t *testing.T) {
 }
 
 func TestReplayUsesTheRulesTheLiveRunHadWhenTheFilesChanged(t *testing.T) {
+	t.Parallel()
 	files := map[string]string{}
 	paths, err := filepath.Glob("rules/*.ts")
 	require.NoError(t, err)
@@ -194,6 +201,7 @@ func TestReplayUsesTheRulesTheLiveRunHadWhenTheFilesChanged(t *testing.T) {
 }
 
 func TestReplayOfHistoryWithoutAReadExitsTwo(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// Unreachable from the CLI: every cycle a tick runs records the read it ran over.
 	d.WroteHistory(pastRun{Cycles: []pastCycle{{}}})
@@ -206,6 +214,7 @@ func TestReplayOfHistoryWithoutAReadExitsTwo(t *testing.T) {
 }
 
 func TestReplayOnlyRunsTheCyclesInTheStretchAsked(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -223,6 +232,7 @@ func TestReplayOnlyRunsTheCyclesInTheStretchAsked(t *testing.T) {
 }
 
 func TestReplayRejectsATimeItCannotRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 
 	res := d.Run("replay", "--from", "yesterday")
@@ -231,6 +241,7 @@ func TestReplayRejectsATimeItCannotRead(t *testing.T) {
 }
 
 func TestTraceShowsWhyATicketWasHeldAndWhatItReceived(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(
 		blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "In Review"}),
@@ -249,6 +260,7 @@ func TestTraceShowsWhyATicketWasHeldAndWhatItReceived(t *testing.T) {
 }
 
 func TestTracePrintsACycleOnlyWhenWhatItDecidedChanged(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -263,6 +275,7 @@ func TestTracePrintsACycleOnlyWhenWhatItDecidedChanged(t *testing.T) {
 }
 
 func TestTraceExitsOneWhenHistoryHasNoRecordOfTheTicket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -276,6 +289,7 @@ func TestTraceExitsOneWhenHistoryHasNoRecordOfTheTicket(t *testing.T) {
 }
 
 func TestTraceExitsOneWithNoHistoryAtAll(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 
 	res := d.Run("trace", "ENG-1")
@@ -285,6 +299,7 @@ func TestTraceExitsOneWithNoHistoryAtAll(t *testing.T) {
 }
 
 func TestTraceShowsAnEventARuleDropped(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// Unreachable from the CLI: a dropped decision needs an event lost while herdr was unread.
 	d.WroteHistory(pastRun{Cycles: []pastCycle{{
@@ -300,6 +315,7 @@ func TestTraceShowsAnEventARuleDropped(t *testing.T) {
 }
 
 func TestStateResetStartsASegmentWithAnEmptyLedger(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -317,6 +333,7 @@ func TestStateResetStartsASegmentWithAnEmptyLedger(t *testing.T) {
 // The ticket's once key is stamped with the time dispatch first saw it, so a key that survives a
 // reset shows the world's memory survived.
 func TestStateResetKeepsWhatTheWorldRemembers(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(childCommentRule)})
 	d.Linear.Tickets(ticket("ENG-2", "In Progress", "dispatch"))
 	d.Tick()
@@ -331,6 +348,7 @@ func TestStateResetKeepsWhatTheWorldRemembers(t *testing.T) {
 }
 
 func TestStateResetExitsOneWhileRunHoldsTheLock(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -342,6 +360,7 @@ func TestStateResetExitsOneWhileRunHoldsTheLock(t *testing.T) {
 }
 
 func TestStateResetQuietRecordsTheMessagesTheFirstCycleWantsAsSent(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "In Review"}))
 	d.Tick()
@@ -363,6 +382,7 @@ func TestStateResetQuietRecordsTheMessagesTheFirstCycleWantsAsSent(t *testing.T)
 }
 
 func TestStateResetWithoutQuietSendsTheMessagesAgain(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "In Review"}))
 	d.Tick()
@@ -376,6 +396,7 @@ func TestStateResetWithoutQuietSendsTheMessagesAgain(t *testing.T) {
 }
 
 func TestStateResetRejectsAnythingButReset(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 
 	res := d.Run("state", "wipe")
@@ -385,6 +406,7 @@ func TestStateResetRejectsAnythingButReset(t *testing.T) {
 
 // A restart over a segment this version wrote must see no difference from before the change.
 func TestRestartLoadsASegmentThatHoldsReadLines(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -398,6 +420,7 @@ func TestRestartLoadsASegmentThatHoldsReadLines(t *testing.T) {
 }
 
 func TestReplayRunsCyclesAcrossSegmentRotation(t *testing.T) {
+	t.Parallel()
 	const rotating = "[history]\nrotate = \"1m\"\nkeep = \"24h\"\n"
 	run := func(t *testing.T, config string) *Dispatch {
 		d := newDispatch(t, dispatchOptions{Config: config})
@@ -425,6 +448,7 @@ func TestReplayRunsCyclesAcrossSegmentRotation(t *testing.T) {
 }
 
 func TestReplayRunsASegmentThatHasNoStopLine(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -438,6 +462,7 @@ func TestReplayRunsASegmentThatHasNoStopLine(t *testing.T) {
 }
 
 func TestReplaySkipsARuleCallThatTimedOutInTheLiveRun(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name    string
 		timeout string
@@ -470,6 +495,7 @@ func TestReplaySkipsARuleCallThatTimedOutInTheLiveRun(t *testing.T) {
 }
 
 func TestReplayKeepsTheTicketsAWorkerSlotWasReservedFor(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
 	d.Tick()
@@ -489,6 +515,7 @@ func TestReplayKeepsTheTicketsAWorkerSlotWasReservedFor(t *testing.T) {
 // A resync that reads the same world and decides the same thing writes no cycle, so the cycles
 // replay can run stay the same.
 func TestReplayWritesACycleOnlyWhenItDiffersFromTheLast(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -505,6 +532,7 @@ func TestReplayWritesACycleOnlyWhenItDiffersFromTheLast(t *testing.T) {
 }
 
 func TestReplayStopsAtTheTimeGivenWithTo(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -523,6 +551,7 @@ func TestReplayStopsAtTheTimeGivenWithTo(t *testing.T) {
 }
 
 func TestTraceShowsAThrowAndARuleThatRanOutOfTime(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// Unreachable from the CLI: a rule that runs out of time needs the real rule time budget.
 	d.WroteHistory(pastRun{Cycles: []pastCycle{
@@ -538,6 +567,7 @@ func TestTraceShowsAThrowAndARuleThatRanOutOfTime(t *testing.T) {
 }
 
 func TestTraceReadsASegmentWrittenBeforeReadLinesAndSaysOfAReceiptInIt(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// Unreachable from the CLI: segments from before dispatch recorded reads exist only on disk.
 	d.WroteHistory(pastRun{
@@ -553,6 +583,7 @@ func TestTraceReadsASegmentWrittenBeforeReadLinesAndSaysOfAReceiptInIt(t *testin
 }
 
 func TestReplaySkipsASegmentFromBeforeReadLinesAndReplaysTheNewerOnes(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// Unreachable from the CLI: segments from before dispatch recorded reads exist only on disk.
 	d.WroteHistory(pastRun{Ago: time.Hour, Cycles: []pastCycle{{}}})
@@ -570,6 +601,7 @@ func TestReplaySkipsASegmentFromBeforeReadLinesAndReplaysTheNewerOnes(t *testing
 }
 
 func TestReplayIgnoresACycleACrashLeftUndecided(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -585,6 +617,7 @@ func TestReplayIgnoresACycleACrashLeftUndecided(t *testing.T) {
 }
 
 func TestReplayWithNoHistoryExitsOne(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 
 	res := d.Run("replay")
@@ -594,6 +627,7 @@ func TestReplayWithNoHistoryExitsOne(t *testing.T) {
 }
 
 func TestTraceDoesNotRepeatADecisionWhenASegmentRotates(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[history]\nrotate = \"1m\"\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -613,6 +647,7 @@ func TestTraceDoesNotRepeatADecisionWhenASegmentRotates(t *testing.T) {
 }
 
 func TestTracePrintsTheReceiptsOfSegmentsAlreadyDeleted(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// Unreachable from the CLI: pruning keeps old receipts only in the snapshot of a newer segment.
 	d.WroteHistory(pastRun{Why: "rotate", Carried: []pastReceipt{{
@@ -626,6 +661,7 @@ func TestTracePrintsTheReceiptsOfSegmentsAlreadyDeleted(t *testing.T) {
 }
 
 func TestStateResetQuietRefusesWhilePoolIsUnread(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: fmt.Sprintf("[repos.tiger]\npath = %q\n", filepath.Join(t.TempDir(), "moved"))})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "tiger"))
 
@@ -636,6 +672,7 @@ func TestStateResetQuietRefusesWhilePoolIsUnread(t *testing.T) {
 }
 
 func TestReplayStillComparesMemoryInTheLastCycleOfASegmentThatHasNoStopLine(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "In Review"}))
 	d.Tick()
@@ -657,6 +694,7 @@ func TestReplayStillComparesMemoryInTheLastCycleOfASegmentThatHasNoStopLine(t *t
 }
 
 func TestReplayOfARangeWithNoCyclesIsNotAnUnreplayableSegment(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// Unreachable from the CLI: segments from before dispatch recorded reads exist only on disk.
 	d.WroteHistory(pastRun{Ago: time.Hour, Cycles: []pastCycle{{}}})
@@ -671,6 +709,7 @@ func TestReplayOfARangeWithNoCyclesIsNotAnUnreplayableSegment(t *testing.T) {
 }
 
 func TestReplayExitsTwoWhenTheOnlySegmentsWithCyclesAreFromBeforeReadLines(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// Unreachable from the CLI: segments from before dispatch recorded reads exist only on disk.
 	d.WroteHistory(pastRun{Ago: 2 * time.Hour, Cycles: []pastCycle{{}}})
@@ -684,6 +723,7 @@ func TestReplayExitsTwoWhenTheOnlySegmentsWithCyclesAreFromBeforeReadLines(t *te
 }
 
 func TestTracePrintsACycleOnlyWhenTheDecisionChangedNotWhatTheRuleRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	held := []pastEntry{{Rule: "launch-worker", Subject: "ENG-9", Reason: "herdr unread: herdr down"}}
 	// Unreachable from the CLI: it needs a rule whose reads change while its decision does not.
@@ -699,6 +739,7 @@ func TestTracePrintsACycleOnlyWhenTheDecisionChangedNotWhatTheRuleRead(t *testin
 }
 
 func TestTraceShowsAResetReceiptAsNeverSent(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "In Review"}))
 	d.Tick()
@@ -713,6 +754,7 @@ func TestTraceShowsAResetReceiptAsNeverSent(t *testing.T) {
 }
 
 func TestTraceFailsWhenItCannotWriteItsReport(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -724,6 +766,7 @@ func TestTraceFailsWhenItCannotWriteItsReport(t *testing.T) {
 }
 
 func TestReplayWithOtherRulesNoticesAnActionWithTheSameKeyButOtherText(t *testing.T) {
+	t.Parallel()
 	greeting := func(text string) string {
 		return `whenever({ name: "greet", each: "linear.ticket", if: () => true, then: (t, ctx) => ctx.linear.queueComment(t, "` + text + `", { once: ["greet"] }) });`
 	}
@@ -742,6 +785,7 @@ func TestReplayWithOtherRulesNoticesAnActionWithTheSameKeyButOtherText(t *testin
 }
 
 func TestStateResetQuietRefusesWhileARuleFails(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "broken", each: "linear.ticket", if: () => { throw new Error("boom"); }, then: () => {} });`)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -752,6 +796,7 @@ func TestStateResetQuietRefusesWhileARuleFails(t *testing.T) {
 }
 
 func TestTraceKnowsATicketNoRuleHasWantedAnythingFor(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -786,6 +831,7 @@ func commentsOn(d *Dispatch, id string) int {
 }
 
 func TestAChildKeepsItsOnceKeyAcrossAFailedReadOfItsParentsChildren(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name    string
 		restart bool
@@ -821,6 +867,7 @@ func TestAChildKeepsItsOnceKeyAcrossAFailedReadOfItsParentsChildren(t *testing.T
 }
 
 func TestAChildThatLeftTheParentIsForgottenOnceTheChildrenAreRead(t *testing.T) {
+	t.Parallel()
 	d := childrenOfAParent(t)
 	d.Tick()
 	d.Linear.Children(child("ENG-3", "ENG-1", "Todo"))
@@ -836,6 +883,7 @@ func TestAChildThatLeftTheParentIsForgottenOnceTheChildrenAreRead(t *testing.T) 
 }
 
 func TestAChildIsRememberedThroughALinearOutageBeforeTheChildrenFail(t *testing.T) {
+	t.Parallel()
 	d := childrenOfAParent(t)
 	d.Tick()
 	// Linear is unread across the restart, so no parent exists to list its children.
@@ -866,6 +914,7 @@ func traceJSON(t *testing.T, out string) []map[string]any {
 }
 
 func TestTraceJSONPrintsOneObjectForEveryLineTheTextFormPrints(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(countRule)})
 	d.Services.Sentry().Respond("sentry", "GET", "/count", 200, `{"open":3}`)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -893,6 +942,7 @@ func TestTraceJSONPrintsOneObjectForEveryLineTheTextFormPrints(t *testing.T) {
 }
 
 func TestTraceJSONPrintsACycleLineWithWhatTheRuleWantedAndRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -918,6 +968,7 @@ func TestTraceJSONPrintsACycleLineWithWhatTheRuleWantedAndRead(t *testing.T) {
 }
 
 func TestTraceJSONPrintsAReceiptFirstAttemptedAndThenWithItsOutcome(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -948,6 +999,7 @@ func TestTraceJSONPrintsAReceiptFirstAttemptedAndThenWithItsOutcome(t *testing.T
 }
 
 func TestTraceJSONPrintsAReceiptWithNoOutcomeAsAttempted(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// Unreachable from the CLI: a receipt with no outcome comes from a run that crashed between an action and its result.
 	d.WroteHistory(pastRun{Crashed: true, Carried: []pastReceipt{{Kind: "comment", Subject: "ENG-9", Once: []any{"note", "ENG-9"}, Rule: "note"}}})
@@ -960,6 +1012,7 @@ func TestTraceJSONPrintsAReceiptWithNoOutcomeAsAttempted(t *testing.T) {
 }
 
 func TestTraceJSONPrintsTheExchangesOfATicket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(countRule)})
 	d.Services.Sentry().Respond("sentry", "GET", "/count", 200, `{"open":3}`)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -984,6 +1037,7 @@ func TestTraceJSONPrintsTheExchangesOfATicket(t *testing.T) {
 }
 
 func TestTraceJSONExitsOneWhenHistoryHasNoRecordOfTheTicket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -998,6 +1052,7 @@ func TestTraceJSONExitsOneWhenHistoryHasNoRecordOfTheTicket(t *testing.T) {
 }
 
 func TestTraceTakesTheJSONFlagBeforeOrAfterTheTicketAndNothingElse(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -1018,6 +1073,7 @@ func TestTraceTakesTheJSONFlagBeforeOrAfterTheTicketAndNothingElse(t *testing.T)
 }
 
 func TestTraceJSONNamesEachDecisionARuleMade(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// Unreachable from the CLI: the cycles are written by hand so that one deterministic history holds every decision value.
 	d.WroteHistory(pastRun{Cycles: []pastCycle{
@@ -1051,6 +1107,7 @@ func TestTraceJSONNamesEachDecisionARuleMade(t *testing.T) {
 }
 
 func TestTraceJSONPrintsATicketNoRuleHasWantedAnythingForAsNothing(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -1067,6 +1124,7 @@ func TestTraceJSONPrintsATicketNoRuleHasWantedAnythingForAsNothing(t *testing.T)
 }
 
 func TestTraceJSONMarksAReceiptStateResetRecordedAsNeverSent(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "In Review"}))
 	d.Tick()
@@ -1093,6 +1151,7 @@ func TestTraceJSONMarksAReceiptStateResetRecordedAsNeverSent(t *testing.T) {
 }
 
 func TestTraceJSONPrintsAnExchangeWithNoAnswerAsUnknown(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(countRule)})
 	d.Services.Sentry().Respond("sentry", "GET", "/count", 503, "")
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -1114,6 +1173,7 @@ func TestTraceJSONPrintsAnExchangeWithNoAnswerAsUnknown(t *testing.T) {
 }
 
 func TestTraceRefusesATicketAfterAnEmptyArgument(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -1147,6 +1207,7 @@ func httpHistory(t *testing.T, body string) (*Dispatch, *httpservicetest.Fake) {
 }
 
 func TestReplayMatchesARunWhoseRuleCalledGet(t *testing.T) {
+	t.Parallel()
 	d, sentry := httpHistory(t, countRule)
 	live := len(sentry.Requests())
 
@@ -1158,6 +1219,7 @@ func TestReplayMatchesARunWhoseRuleCalledGet(t *testing.T) {
 }
 
 func TestReplayMatchesALastReadOfAnAnswerAnEarlierCycleKept(t *testing.T) {
+	t.Parallel()
 	d, _ := httpHistory(t, readKeptRules)
 	require.Contains(t, strings.Join(d.Linear.Comments(), "\n"), "kept 3")
 
@@ -1168,6 +1230,7 @@ func TestReplayMatchesALastReadOfAnAnswerAnEarlierCycleKept(t *testing.T) {
 }
 
 func TestReplayFromALaterCycleRebuildsWhatEarlierCyclesKept(t *testing.T) {
+	t.Parallel()
 	d, _ := httpHistory(t, readKeptRules)
 
 	res := d.Run("replay", "--from", d.Clock.Now().Add(-30*time.Second).Format(time.RFC3339))
@@ -1177,6 +1240,7 @@ func TestReplayFromALaterCycleRebuildsWhatEarlierCyclesKept(t *testing.T) {
 }
 
 func TestReplayWithOtherRulesCountsAGetThatDiffersFromTheLiveRunAsADifference(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct{ name, body string }{
 		{"OtherPath", `whenever({ name: "count", each: "linear.ticket", if: (t) => t.status === "in_progress",
   then: (t, ctx) => ctx.linear.queueComment(t, "open " + (ctx.http.get("sentry", "/other").body as any).open, { once: ["count", t.id] }) });`},
@@ -1199,6 +1263,7 @@ func TestReplayWithOtherRulesCountsAGetThatDiffersFromTheLiveRunAsADifference(t 
 }
 
 func TestReplayWithOtherRulesMatchesWhenTheGetsAreTheSame(t *testing.T) {
+	t.Parallel()
 	d, _ := httpHistory(t, countRule)
 
 	cycles, matched := replayOf(t, d, "--rules", oneRule(t, countRule))
@@ -1208,6 +1273,7 @@ func TestReplayWithOtherRulesMatchesWhenTheGetsAreTheSame(t *testing.T) {
 }
 
 func TestTraceShowsTheExchangesOfATicket(t *testing.T) {
+	t.Parallel()
 	d, _ := httpHistory(t, countRule)
 
 	res := d.Run("trace", "ENG-1")
@@ -1217,6 +1283,7 @@ func TestTraceShowsTheExchangesOfATicket(t *testing.T) {
 }
 
 func TestReplayOfHistoryWithoutRuleAndTicketOnItsExchangesStillMatches(t *testing.T) {
+	t.Parallel()
 	d, _ := httpHistory(t, countRule)
 	// Unreachable from the CLI: exchanges recorded before they named a rule and ticket exist only on disk.
 	d.EditHistory(`,"rule":"count","ticket":"ENG-1"`, ``)
@@ -1228,6 +1295,7 @@ func TestReplayOfHistoryWithoutRuleAndTicketOnItsExchangesStillMatches(t *testin
 }
 
 func TestStateResetQuietRecordsTheMessagesAnHTTPRuleWants(t *testing.T) {
+	t.Parallel()
 	d, _ := httpHistory(t, countRule)
 	require.Equal(t, []string{"ENG-1: open 3"}, d.Linear.Comments())
 
@@ -1241,6 +1309,7 @@ func TestStateResetQuietRecordsTheMessagesAnHTTPRuleWants(t *testing.T) {
 }
 
 func TestStateResetQuietRefusesWhenAServiceAnswerIsUnknown(t *testing.T) {
+	t.Parallel()
 	d, sentry := httpHistory(t, countRule)
 	sentry.Respond("sentry", "GET", "/count", 503, "")
 
@@ -1258,6 +1327,7 @@ whenever({ name: "cleared", each: "linear.ticket", if: (t, ctx) => ctx.ledger.do
   then: (t, ctx) => ctx.linear.queueComment(t, "cleared", { once: ["cleared", t.id] }) });`
 
 func TestReplayFromACycleLaterThanTheOneThatKeptTheAnswerRebuildsIt(t *testing.T) {
+	t.Parallel()
 	d, _ := httpHistory(t, readKeptRules)
 	start := d.Clock.Now().Add(-time.Minute)
 	// Unreachable from the CLI: the cycle that reads the kept answer moves to 20s after the cycle that
@@ -1274,6 +1344,7 @@ func TestReplayFromACycleLaterThanTheOneThatKeptTheAnswerRebuildsIt(t *testing.T
 }
 
 func TestReplayClearsWhatWasKeptAtATickTheLiveRunClearedItAt(t *testing.T) {
+	t.Parallel()
 	d, _ := httpHistory(t, clearedRules)
 	require.Equal(t, []string{"ENG-1: fetched", "ENG-1: cleared"}, d.Linear.Comments())
 
@@ -1284,6 +1355,7 @@ func TestReplayClearsWhatWasKeptAtATickTheLiveRunClearedItAt(t *testing.T) {
 }
 
 func TestReplayClearsWhatWasKeptAtAResyncTheLiveRunClearedItAt(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(clearedRules)})
 	d.Services.Sentry().Respond("sentry", "GET", "/count", 200, `{"open":3}`)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -1299,6 +1371,7 @@ func TestReplayClearsWhatWasKeptAtAResyncTheLiveRunClearedItAt(t *testing.T) {
 }
 
 func TestReplayOfAGetThatFailedLiveHoldsTheRuleAgain(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(countRule)})
 	sentry := d.Services.Sentry()
 	sentry.Respond("sentry", "GET", "/count", 503, ``)
@@ -1316,6 +1389,7 @@ func TestReplayOfAGetThatFailedLiveHoldsTheRuleAgain(t *testing.T) {
 }
 
 func TestReplayWithOtherRulesCountsAnUnrecordedGetAsADifferenceEvenWhenTheActionsMatch(t *testing.T) {
+	t.Parallel()
 	d, sentry := httpHistory(t, countRule)
 	live := len(sentry.Requests())
 	other := oneRule(t, `whenever({ name: "count", each: "linear.ticket", if: (t) => t.status === "in_progress",
@@ -1330,12 +1404,13 @@ func TestReplayWithOtherRulesCountsAnUnrecordedGetAsADifferenceEvenWhenTheAction
 }
 
 func TestReplayMatchesAGetTwoTicketsEachMade(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(countRule)})
 	d.Services.Sentry().Respond("sentry", "GET", "/count", 200, `{"open":3}`)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
 	d.Tick()
 	d.Stop()
-	require.Equal(t, []string{"ENG-1: open 3", "ENG-2: open 3"}, d.Linear.Comments())
+	require.ElementsMatch(t, []string{"ENG-1: open 3", "ENG-2: open 3"}, d.Linear.Comments())
 
 	cycles, matched := replayOf(t, d)
 
@@ -1344,6 +1419,7 @@ func TestReplayMatchesAGetTwoTicketsEachMade(t *testing.T) {
 }
 
 func TestTraceShowsOnlyTheExchangesOfTheTicketItIsGiven(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "count", each: "linear.ticket", if: (t) => t.status === "in_progress",
   then: (t, ctx) => ctx.linear.queueComment(t, "open " + (ctx.http.get("sentry", "/count/" + t.id).body as any).open, { once: ["count", t.id] }) });`)})
 	sentry := d.Services.Sentry()
@@ -1365,6 +1441,7 @@ func TestTraceShowsOnlyTheExchangesOfTheTicketItIsGiven(t *testing.T) {
 }
 
 func TestStateResetQuietWorksOnceTheServiceAnswersAfterRefusing(t *testing.T) {
+	t.Parallel()
 	d, sentry := httpHistory(t, countRule)
 	sentry.Respond("sentry", "GET", "/count", 503, "")
 
@@ -1384,6 +1461,7 @@ whenever({ name: "mark", each: "linear.ticket", if: (t, ctx) => ctx.ledger.done(
   then: (t, ctx) => { const state = known(() => ctx.http.last("sentry", "/count")) ? "kept" : "empty"; return ctx.linear.queueComment(t, state, { once: ["mark", t.id, state] }); } });`
 
 func TestReplayStartsTheSegmentAfterARestartWithNothingKept(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(markRules)})
 	d.Services.Sentry().Respond("sentry", "GET", "/count", 200, `{"open":3}`)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -1399,6 +1477,7 @@ func TestReplayStartsTheSegmentAfterARestartWithNothingKept(t *testing.T) {
 }
 
 func TestReplayMatchesALastReadAfterACycleThatWroteNoLinesRefilledWhatAResyncCleared(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`
 whenever({ name: "poll", each: "linear.ticket", if: (t, ctx) => t.status === "in_progress" && ctx.herdr.worker(t).state === "idle",
   then: (t, ctx) => { ctx.http.get("sentry", "/count"); return ctx.linear.queueComment(t, "polled", { once: ["poll", t.id] }); } });
@@ -1427,6 +1506,7 @@ whenever({ name: "working-reader", each: "linear.ticket", if: (t, ctx) => ctx.he
 }
 
 func TestTraceShowsAnAnswerThatChangedWhileTheRuleDecidedTheSame(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(countRule)})
 	sentry := d.Services.Sentry()
 	sentry.Respond("sentry", "GET", "/count", 200, `{"open":3}`)
@@ -1447,6 +1527,7 @@ func TestTraceShowsAnAnswerThatChangedWhileTheRuleDecidedTheSame(t *testing.T) {
 }
 
 func TestReplayWithOtherRulesMatchesTheSameGetsRegisteredInAnotherOrder(t *testing.T) {
+	t.Parallel()
 	const first = `whenever({ name: "first", each: "linear.ticket", if: (t) => t.status === "in_progress",
   then: (t, ctx) => ctx.linear.queueComment(t, "a " + (ctx.http.get("sentry", "/a").body as any).n, { once: ["a", t.id] }) });`
 	const second = `whenever({ name: "second", each: "linear.ticket", if: (t) => t.status === "in_progress",

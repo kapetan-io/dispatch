@@ -158,6 +158,7 @@ func (t *Trees) GiveBack(path, holder string) {
 }
 
 func TestTellAndTickExitThreeWhenNoLoopRuns(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name string
 		args []string
@@ -178,6 +179,7 @@ func TestTellAndTickExitThreeWhenNoLoopRuns(t *testing.T) {
 }
 
 func TestTickPrintsOneLinePerTicketInPlansWords(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 3\n"})
 	d.MovedRepo("tiger")
 	d.RealLauncher()
@@ -199,6 +201,7 @@ func TestTickPrintsOneLinePerTicketInPlansWords(t *testing.T) {
 }
 
 func TestTickOfOneTicketPrintsOnlyThatTicket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "Needs Human", "dispatch"))
 
@@ -209,6 +212,7 @@ func TestTickOfOneTicketPrintsOnlyThatTicket(t *testing.T) {
 }
 
 func TestTickExitsOneAndPrintsTheFailedAction(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.LaunchResult(`{"status":"pool_error","detail":"treehouse lease failed"}`)
@@ -221,6 +225,7 @@ func TestTickExitsOneAndPrintsTheFailedAction(t *testing.T) {
 }
 
 func TestTickTimeoutSaysWhatIsStillPending(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.StartWithLaunchTimeout(10 * time.Second)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -236,6 +241,7 @@ func TestTickTimeoutSaysWhatIsStillPending(t *testing.T) {
 }
 
 func TestPlanExitsOneWithNoHistory(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 
 	res := d.Run("plan")
@@ -245,6 +251,7 @@ func TestPlanExitsOneWithNoHistory(t *testing.T) {
 }
 
 func TestPlanPrintsStateTicketActionRuleAndDetail(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 2\n"})
 	d.RealLauncher()
 	d.Linear.Tickets(
@@ -263,6 +270,7 @@ func TestPlanPrintsStateTicketActionRuleAndDetail(t *testing.T) {
 }
 
 func TestPlanShowsALaunchThatHasAReceiptAsCovered(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -274,6 +282,7 @@ func TestPlanShowsALaunchThatHasAReceiptAsCovered(t *testing.T) {
 }
 
 func TestPlanHoldsATicketWhoseRepoPoolCouldNotBeRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.MovedRepo("tiger")
 	d.Linear.Tickets(ticket("ENG-2", "In Progress", "tiger"))
@@ -291,6 +300,7 @@ func TestPlanHoldsATicketWhoseRepoPoolCouldNotBeRead(t *testing.T) {
 }
 
 func TestLoopRestartAfterALaunchLaunchesNoSecondWorker(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -306,6 +316,7 @@ func TestLoopRestartAfterALaunchLaunchesNoSecondWorker(t *testing.T) {
 }
 
 func TestARuleThatThrowsStopsOnlyItsOwnActionsAndRaisesOneAlert(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, `
 whenever({ name: "always-throws", each: "linear.ticket", if: () => { throw new Error("boom"); }, then: () => {} });
 `)})
@@ -328,6 +339,7 @@ whenever({ name: "always-throws", each: "linear.ticket", if: () => { throw new E
 
 // Unreachable from the CLI: a history directory that stops taking files is a disk fault the product can't inject.
 func TestAHistoryWriteFailureStopsTheLoopAndAlerts(t *testing.T) {
+	t.Parallel()
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores directory permissions, so the write cannot be made to fail")
 	}
@@ -356,6 +368,7 @@ func TestAHistoryWriteFailureStopsTheLoopAndAlerts(t *testing.T) {
 }
 
 func TestAnIdleHourCostsThreeLinearQueriesPerResync(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// A parent costs a children query, and a tree leased to a ticket nobody tracks costs a lease-holder query.
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -374,6 +387,7 @@ func TestAnIdleHourCostsThreeLinearQueriesPerResync(t *testing.T) {
 }
 
 func TestALaunchThatLandsAfterItsDeadlineGetsNoSecondWorker(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.StallLaunches()
@@ -396,6 +410,7 @@ func TestALaunchThatLandsAfterItsDeadlineGetsNoSecondWorker(t *testing.T) {
 }
 
 func TestANudgeThatTimesOutCountsAsToldAndIsNeverRepeated(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -420,6 +435,7 @@ func TestANudgeThatTimesOutCountsAsToldAndIsNeverRepeated(t *testing.T) {
 }
 
 func TestStoppingTheLoopAnswersATickThatIsWaiting(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.StartWithLaunchTimeout(3 * time.Second)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -431,6 +447,11 @@ func TestStoppingTheLoopAnswersATickThatIsWaiting(t *testing.T) {
 	// Stopping waits for the launch in flight until its deadline, and the loop answers no settle until then.
 	d.Deadline("herdr.launch ENG-1")
 	stopped := later(func() bool { d.Stop(); return true })
+	// The loop refuses or drops requests only once it has begun to stop, so the launch deadline passes after that.
+	require.Eventually(t, func() bool {
+		err := d.RunWhileDown("tell", "ENG-99", "probe").Err
+		return err != nil && (strings.Contains(err.Error(), "dispatch is stopping") || err.Error() == "not running")
+	}, 20*time.Second, 5*time.Millisecond)
 	d.Clock.expire("herdr.launch ENG-1")
 	stopped()
 
@@ -443,6 +464,7 @@ func TestStoppingTheLoopAnswersATickThatIsWaiting(t *testing.T) {
 }
 
 func TestAStateDirectoryThatCannotHoldTheSocketLaunchesNothing(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	long := filepath.Join(t.TempDir(), strings.Repeat("x", 100))
@@ -455,6 +477,7 @@ func TestAStateDirectoryThatCannotHoldTheSocketLaunchesNothing(t *testing.T) {
 }
 
 func TestStoppingTheLoopAnswersATellThatIsWaitingOnARead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -476,6 +499,7 @@ func TestStoppingTheLoopAnswersATellThatIsWaitingOnARead(t *testing.T) {
 }
 
 func TestRotatingHistoryKeepsAnEscalationCommentThatStillHasToBePosted(t *testing.T) {
+	t.Parallel()
 	// An hour of keep with a rotation every minute, so only receipts a new segment carries forward outlive the first one.
 	d := newDispatch(t, dispatchOptions{Config: "[history]\nrotate = \"1m\"\nkeep = \"1h\"\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", ""))
@@ -505,6 +529,7 @@ func TestRotatingHistoryKeepsAnEscalationCommentThatStillHasToBePosted(t *testin
 }
 
 func TestAWorkerThatGoesIdleHasItsPRReadWithoutWaitingForTheResync(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -517,10 +542,12 @@ func TestAWorkerThatGoesIdleHasItsPRReadWithoutWaitingForTheResync(t *testing.T)
 	d.Workers.SetStatus("ENG-1", "idle")
 	require.NoError(t, d.Run("tell", "ENG-1", "hello").Err)
 
-	assert.NotEmpty(t, d.prReads())
+	// The tell is answered once herdr is read. The PR read follows it.
+	require.Eventually(t, func() bool { return len(d.prReads()) > 0 }, 20*time.Second, 5*time.Millisecond)
 }
 
 func TestAnAlertThatHangsDoesNotStopTheLoopAnswering(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Linear.Overflow()
@@ -540,6 +567,7 @@ func TestAnAlertThatHangsDoesNotStopTheLoopAnswering(t *testing.T) {
 }
 
 func TestAnAlertThatHangsIsCutOffWhenTheClockPassesItsDeadlineAndShownAgainLater(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Linear.Overflow()
@@ -564,6 +592,7 @@ func TestAnAlertThatHangsIsCutOffWhenTheClockPassesItsDeadlineAndShownAgainLater
 }
 
 func TestTheOverflowAlertIsShownAgainAfterItFailed(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Linear.Overflow()
@@ -580,6 +609,7 @@ func TestTheOverflowAlertIsShownAgainAfterItFailed(t *testing.T) {
 }
 
 func TestRotatingHistoryKeepsTheReceiptsOfChildrenReadThroughTheirParent(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name         string
 		failChildren bool
@@ -625,6 +655,7 @@ func TestRotatingHistoryKeepsTheReceiptsOfChildrenReadThroughTheirParent(t *test
 }
 
 func TestRotatingHistoryDropsTheReceiptsOfAChildNoParentListsAnymore(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		change func(d *Dispatch)
@@ -659,6 +690,7 @@ func TestRotatingHistoryDropsTheReceiptsOfAChildNoParentListsAnymore(t *testing.
 }
 
 func TestRunRejectsUnknownCommand(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 
 	res := d.Run("deploy")
@@ -667,6 +699,7 @@ func TestRunRejectsUnknownCommand(t *testing.T) {
 }
 
 func TestRunStartsActsAndStopsCleanlyOnCancel(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -682,6 +715,7 @@ func TestRunStartsActsAndStopsCleanlyOnCancel(t *testing.T) {
 }
 
 func TestRunRejectsANonPositiveResync(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nresync = \"0s\"\n"})
 
 	res := d.Run("run")
@@ -690,6 +724,7 @@ func TestRunRejectsANonPositiveResync(t *testing.T) {
 }
 
 func TestRunRejectsArguments(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 
 	res := d.Run("run", "--interval", "20ms")
@@ -698,6 +733,7 @@ func TestRunRejectsArguments(t *testing.T) {
 }
 
 func TestRunExitsWhenAnotherRunHoldsTheLock(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
@@ -709,6 +745,7 @@ func TestRunExitsWhenAnotherRunHoldsTheLock(t *testing.T) {
 }
 
 func TestRunFailsToStartWhenTheRulesDoNotLoad(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`whenever({ name: "broken", each: "linear.ticket", if: (t) => t.status === , then: () => {} });`)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -719,6 +756,7 @@ func TestRunFailsToStartWhenTheRulesDoNotLoad(t *testing.T) {
 }
 
 func TestACrashAfterAnAttemptedLaunchGetsNoSecondWorker(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.CrashedEarlierRun(earlierReceipt{
@@ -740,6 +778,7 @@ func TestACrashAfterAnAttemptedLaunchGetsNoSecondWorker(t *testing.T) {
 // A launch attempted before a crash with no worker visible is decided again from a fresh read.
 // The launcher answers already_running when the worker did land, which is what keeps it single.
 func TestACrashedLaunchIsDecidedAgainAndNeverCountsAsAFailure(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.CrashedEarlierRun(earlierReceipt{
@@ -768,6 +807,7 @@ func TestACrashedLaunchIsDecidedAgainAndNeverCountsAsAFailure(t *testing.T) {
 }
 
 func TestARestartWithALiveWorkerLaunchesNoSecondWorker(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -781,6 +821,7 @@ func TestARestartWithALiveWorkerLaunchesNoSecondWorker(t *testing.T) {
 }
 
 func TestAnUnreadHerdrHoldsALaunchAndPlanSaysWhy(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
@@ -797,6 +838,7 @@ func TestAnUnreadHerdrHoldsALaunchAndPlanSaysWhy(t *testing.T) {
 }
 
 func TestANudgeToldBeforeARestartIsNotToldAgain(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -819,6 +861,7 @@ func TestANudgeToldBeforeARestartIsNotToldAgain(t *testing.T) {
 }
 
 func TestAMissedResyncReadsLinearAgainBeforeActing(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -838,6 +881,7 @@ func TestAMissedResyncReadsLinearAgainBeforeActing(t *testing.T) {
 }
 
 func TestARuleThatRunsOutOfTimeStopsOnlyItsOwnActionsAndRaisesOneAlert(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name     string
 		rule     string
@@ -880,6 +924,7 @@ func TestARuleThatRunsOutOfTimeStopsOnlyItsOwnActionsAndRaisesOneAlert(t *testin
 // An event that finds the clock past a resync that never ran is a wake from sleep: every
 // source is read again before any cycle acts on the facts from before the sleep.
 func TestAnEventAfterASleepReadsEverySourceBeforeActing(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -898,6 +943,7 @@ func TestAnEventAfterASleepReadsEverySourceBeforeActing(t *testing.T) {
 // Pool returns decide whether a full pool is retried, so a restart must not forget one, or the next
 // tree to come back would look like a return that was already answered.
 func TestATreeReturnedAfterARestartStillLetsAFullPoolRetry(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.LaunchResult(`{"status":"pool_exhausted","detail":"all 4/4 pool trees are taken"}`)
@@ -919,6 +965,7 @@ func TestATreeReturnedAfterARestartStillLetsAFullPoolRetry(t *testing.T) {
 
 // A tool that fails for one read says nothing about a worker, so what dispatch knew of it stays.
 func TestAFailedHerdrReadDoesNotMakeAFullPoolRetry(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.LaunchResult(`{"status":"pool_exhausted","detail":"all 4/4 pool trees are taken"}`)
@@ -937,6 +984,7 @@ func TestAFailedHerdrReadDoesNotMakeAFullPoolRetry(t *testing.T) {
 
 // A segment that was created but never given its snapshot holds nothing, so the one before it is the state.
 func TestAHalfWrittenSegmentDoesNotStopTheStart(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.CrashedEarlierRun(earlierReceipt{
@@ -954,6 +1002,7 @@ func TestAHalfWrittenSegmentDoesNotStopTheStart(t *testing.T) {
 // Waits are measured from when dispatch first saw a status, so a start while Linear is down
 // must not forget them, or every notice would be sent again.
 func TestARestartDuringALinearOutageKeepsEveryWait(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
 	d.Tick()
@@ -971,6 +1020,7 @@ func TestARestartDuringALinearOutageKeepsEveryWait(t *testing.T) {
 
 // A first run that crashed before its segment had a header leaves a file with nothing in it.
 func TestAnEmptyFirstSegmentIsNoHistory(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.EmptyFirstSegment()
 
@@ -979,6 +1029,7 @@ func TestAnEmptyFirstSegmentIsNoHistory(t *testing.T) {
 
 // A clock that stepped back must not make a newer run's history look older than an earlier run's.
 func TestAClockThatSteppedBackStillLoadsTheNewestRun(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.HistoryDatedAhead(48 * time.Hour)
@@ -993,6 +1044,7 @@ func TestAClockThatSteppedBackStillLoadsTheNewestRun(t *testing.T) {
 }
 
 func TestAnOrderedStepThatFailedIsTriedAgainAtTheNextResync(t *testing.T) {
+	t.Parallel()
 	// The first step makes the rule's own condition false, so only the loop can run the second again.
 	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, `
 whenever({

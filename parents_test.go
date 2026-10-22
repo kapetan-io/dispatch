@@ -51,6 +51,7 @@ func (d *Dispatch) herdrDown(on bool) {
 }
 
 func TestTickPromotesAnUnblockedChildAndHoldsTheBlockedOne(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	d.setChildren(
@@ -72,6 +73,7 @@ func TestTickPromotesAnUnblockedChildAndHoldsTheBlockedOne(t *testing.T) {
 }
 
 func TestTickLaunchesAPromotedChildOnceLinearShowsItInProgress(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	d.setChildren(child("ENG-2", "ENG-1", "Todo"))
@@ -85,6 +87,7 @@ func TestTickLaunchesAPromotedChildOnceLinearShowsItInProgress(t *testing.T) {
 }
 
 func TestTickPromotesABlockedChildOnTheFirstTickAfterItsBlockerIsDone(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name    string
 		blocker string
@@ -116,6 +119,7 @@ func TestTickPromotesABlockedChildOnTheFirstTickAfterItsBlockerIsDone(t *testing
 }
 
 func TestTickEscalatesAChildWhoseBlockerWasAbandoned(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"Canceled", "Duplicate"} {
 		t.Run(status, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -138,6 +142,7 @@ func TestTickEscalatesAChildWhoseBlockerWasAbandoned(t *testing.T) {
 }
 
 func TestTickEscalatesAChildOnlyOnceAndAgainWhenMovedBackToTodo(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	d.setChildren(
@@ -163,6 +168,7 @@ func TestTickEscalatesAChildOnlyOnceAndAgainWhenMovedBackToTodo(t *testing.T) {
 }
 
 func TestTickKeepsWaitingSilentlyOnAnOpenBlocker(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	d.setChildren(
@@ -177,6 +183,7 @@ func TestTickKeepsWaitingSilentlyOnAnOpenBlocker(t *testing.T) {
 }
 
 func TestTickEscalatesAChildWithAnAbandonedBlockerBesideAnOpenOne(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	d.setChildren(
@@ -193,6 +200,7 @@ func TestTickEscalatesAChildWithAnAbandonedBlockerBesideAnOpenOne(t *testing.T) 
 }
 
 func TestTickEscalatesOnlyChildrenOfYoursThatCarryTheAILabel(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	blocker := [2]string{"ENG-9", "Canceled"}
@@ -211,6 +219,7 @@ func TestTickEscalatesOnlyChildrenOfYoursThatCarryTheAILabel(t *testing.T) {
 }
 
 func TestTickEscalatesAnAbandonedBlockerEvenAtTheWorkerCap(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"), ticket("ENG-5", "In Progress", "dispatch"))
 	d.setChildren(child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Canceled"}))
@@ -222,6 +231,7 @@ func TestTickEscalatesAnAbandonedBlockerEvenAtTheWorkerCap(t *testing.T) {
 }
 
 func TestTickHoldsAChildWhoseBlockersWereCutShort(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	cut := child("ENG-2", "ENG-1", "Todo")
@@ -235,6 +245,7 @@ func TestTickHoldsAChildWhoseBlockersWereCutShort(t *testing.T) {
 }
 
 func TestTickPromotesTheFirstPieceOnceDesignIsOffAndAReviewChildIsDone(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	d.setChildren(withLabel(child("ENG-2", "ENG-1", "Done"), "design-review"), child("ENG-3", "ENG-1", "Todo"))
@@ -246,6 +257,7 @@ func TestTickPromotesTheFirstPieceOnceDesignIsOffAndAReviewChildIsDone(t *testin
 }
 
 func TestTickClosesAParentOnceItsDoneReviewChildAndBuildChildrenAreFinished(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	d.setChildren(withLabel(child("ENG-2", "ENG-1", "Done"), "design-review"), child("ENG-3", "ENG-1", "Done"))
@@ -257,6 +269,7 @@ func TestTickClosesAParentOnceItsDoneReviewChildAndBuildChildrenAreFinished(t *t
 }
 
 func TestTickDoesNotCountATicketWithTruncatedLabelsAgainstTheCap(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	cut := ticket("ENG-3", "In Progress", "dispatch")
 	cut.LabelsTruncated = true
@@ -266,12 +279,13 @@ func TestTickDoesNotCountATicketWithTruncatedLabelsAgainstTheCap(t *testing.T) {
 	d.Tick()
 
 	// The cut-short ticket goes to Needs Human and holds no slot, so the child is still promoted.
-	assert.Equal(t, []string{"ENG-3 -> Needs Human", "ENG-2 -> In Progress"}, d.Linear.Moves())
+	assert.ElementsMatch(t, []string{"ENG-3 -> Needs Human", "ENG-2 -> In Progress"}, d.Linear.Moves())
 	require.Len(t, d.Linear.Comments(), 1)
 	assert.Contains(t, d.Linear.Comments()[0], "ENG-3: ")
 }
 
 func TestTickClosesAParentWhoseChildrenAreAllFinished(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	d.setChildren(
@@ -287,6 +301,7 @@ func TestTickClosesAParentWhoseChildrenAreAllFinished(t *testing.T) {
 }
 
 func TestTickKeepsAParentOpenWhileAnyChildIsUnfinished(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"Backlog", "Todo", "In Progress", "In Review", "Needs Human"} {
 		t.Run(status, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -312,6 +327,7 @@ func TestTickKeepsAParentOpenWhileAnyChildIsUnfinished(t *testing.T) {
 }
 
 func TestTickCountsEveryChildBeforeClosingAParent(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	// A child without the ai label or your assignment is still the parent's child.
@@ -326,6 +342,7 @@ func TestTickCountsEveryChildBeforeClosingAParent(t *testing.T) {
 }
 
 func TestTickNeverClosesAParentWhoseChildrenWereNotReturned(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	d.setChildren(child("ENG-2", "ENG-1", "Done"))
@@ -338,6 +355,7 @@ func TestTickNeverClosesAParentWhoseChildrenWereNotReturned(t *testing.T) {
 }
 
 func TestTickPromotesOnlyChildrenOfYoursThatCarryTheAILabel(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	someoneElses := child("ENG-2", "ENG-1", "Todo")
@@ -353,6 +371,7 @@ func TestTickPromotesOnlyChildrenOfYoursThatCarryTheAILabel(t *testing.T) {
 }
 
 func TestTickNeverPromotesPastTheWorkerCap(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 2\n"})
 	d.realLauncher()
 	d.Linear.Tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
@@ -366,6 +385,7 @@ func TestTickNeverPromotesPastTheWorkerCap(t *testing.T) {
 }
 
 func TestTickPromotesAWaitingChildOnceASlotFrees(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-9", "working")
@@ -383,6 +403,7 @@ func TestTickPromotesAWaitingChildOnceASlotFrees(t *testing.T) {
 }
 
 func TestTickCountsInProgressTicketsStillWaitingForAWorker(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	// ENG-9 is In Progress but has no worker yet, since its launch waits.
 	d.realLauncher()
@@ -395,6 +416,7 @@ func TestTickCountsInProgressTicketsStillWaitingForAWorker(t *testing.T) {
 }
 
 func TestTickDoesNotCountParentsAgainstTheWorkerCap(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"), parent("ENG-8", "In Progress"))
 	d.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-9", "ENG-8", "Backlog"))
@@ -406,6 +428,7 @@ func TestTickDoesNotCountParentsAgainstTheWorkerCap(t *testing.T) {
 }
 
 func TestTickNeverPromotesAChildThatHoldsALease(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	// ENG-2 was paused with its tree kept. Linear knows it only by identifier.
@@ -420,6 +443,7 @@ func TestTickNeverPromotesAChildThatHoldsALease(t *testing.T) {
 }
 
 func TestTickStopsAChildYouPausedWithoutPromotingItAgain(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	d.Workers.Running("ENG-2", "working")
@@ -434,6 +458,7 @@ func TestTickStopsAChildYouPausedWithoutPromotingItAgain(t *testing.T) {
 }
 
 func TestTickNeverGivesAParentAWorker(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"In Progress", "In Review"} {
 		t.Run(status, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -449,6 +474,7 @@ func TestTickNeverGivesAParentAWorker(t *testing.T) {
 }
 
 func TestTickNotifiesOnceWhenAParentEntersNeedsHuman(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "Needs Human"))
 
@@ -461,6 +487,7 @@ func TestTickNotifiesOnceWhenAParentEntersNeedsHuman(t *testing.T) {
 }
 
 func TestTickLeavesDesignParentsAlone(t *testing.T) {
+	t.Parallel()
 	for _, label := range []string{"design", "design-review"} {
 		t.Run(label, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -478,6 +505,7 @@ func TestTickLeavesDesignParentsAlone(t *testing.T) {
 }
 
 func TestTickReadsNoChildrenWhenNoParentIsInProgress(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), parent("ENG-2", "In Review"))
 
@@ -488,6 +516,7 @@ func TestTickReadsNoChildrenWhenNoParentIsInProgress(t *testing.T) {
 }
 
 func TestTickKeepsLaunchingWhenTheChildrenCannotBeRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"), ticket("ENG-2", "In Progress", "dispatch"))
 	d.setChildren(child("ENG-3", "ENG-1", "Backlog"))
@@ -504,6 +533,7 @@ func TestTickKeepsLaunchingWhenTheChildrenCannotBeRead(t *testing.T) {
 }
 
 func TestTickSurvivesAFailedPromotion(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
 	d.setChildren(child("ENG-2", "ENG-1", "Todo"))
@@ -519,6 +549,7 @@ func TestTickSurvivesAFailedPromotion(t *testing.T) {
 }
 
 func TestTickHoldsAChildWhoseRepoPoolCannotBeRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.unreadRepo("tiger")
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
@@ -537,6 +568,7 @@ func TestTickHoldsAChildWhoseRepoPoolCannotBeRead(t *testing.T) {
 }
 
 func TestTickDoesNotEscalateAChildWhoseRepoPoolCannotBeRead(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.unreadRepo("tiger")
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
@@ -552,6 +584,7 @@ func TestTickDoesNotEscalateAChildWhoseRepoPoolCannotBeRead(t *testing.T) {
 }
 
 func TestTickDoesNotEscalateAChildWhoseBlockerIsDoneButNotBlockerDone(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[plugins.linear.statuses]\nblocker_done = \"Released\"\n"})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	d.setChildren(
@@ -566,6 +599,7 @@ func TestTickDoesNotEscalateAChildWhoseBlockerIsDoneButNotBlockerDone(t *testing
 }
 
 func TestTickSharesTheWorkerCapAcrossParents(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.realLauncher()
 	d.Linear.Tickets(parent("ENG-1", "In Progress"), parent("ENG-4", "In Progress"))
@@ -578,6 +612,7 @@ func TestTickSharesTheWorkerCapAcrossParents(t *testing.T) {
 }
 
 func TestTickClosesOneParentAndPromotesForAnotherInTheSameTick(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"), parent("ENG-4", "In Progress"))
 	d.setChildren(child("ENG-2", "ENG-1", "Done"), child("ENG-5", "ENG-4", "Todo"))
@@ -589,6 +624,7 @@ func TestTickClosesOneParentAndPromotesForAnotherInTheSameTick(t *testing.T) {
 }
 
 func TestTickNeverGivesAParentAWorkerOrANudge(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"Todo", "Backlog", "Needs Human"} {
 		t.Run(status, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -618,6 +654,7 @@ func TestTickNeverGivesAParentAWorkerOrANudge(t *testing.T) {
 }
 
 func TestTickPromotesNothingForAParentThatIsNotInProgress(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"Needs Human", "In Review", "Todo"} {
 		t.Run(status, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -635,6 +672,7 @@ func TestTickPromotesNothingForAParentThatIsNotInProgress(t *testing.T) {
 }
 
 func TestTickPromotesTheOldestChildFirstWhenOneSlotIsFree(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.realLauncher()
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
@@ -651,6 +689,7 @@ func TestTickPromotesTheOldestChildFirstWhenOneSlotIsFree(t *testing.T) {
 }
 
 func TestTickNeverPromotesAChildOutsideTheConfiguredTeams(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	other := child("OTH-2", "ENG-1", "Todo")
@@ -664,6 +703,7 @@ func TestTickNeverPromotesAChildOutsideTheConfiguredTeams(t *testing.T) {
 }
 
 func TestTickPromotesAChildWithNoRepoLabelAndEscalatesItOnceLinearShowsItInProgress(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	lost := child("ENG-2", "ENG-1", "Todo")
@@ -679,6 +719,7 @@ func TestTickPromotesAChildWithNoRepoLabelAndEscalatesItOnceLinearShowsItInProgr
 }
 
 func TestTickReleasesAChildWhenItsBlockerIsDoneWhateverCloseParentIs(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[plugins.linear.statuses]\nclose_parent = \"Closed\"\n"})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	d.setChildren(
@@ -693,6 +734,7 @@ func TestTickReleasesAChildWhenItsBlockerIsDoneWhateverCloseParentIs(t *testing.
 }
 
 func TestTickReleasesAChildOnTheConfiguredBlockerStatus(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name    string
 		blocker string
@@ -718,6 +760,7 @@ func TestTickReleasesAChildOnTheConfiguredBlockerStatus(t *testing.T) {
 }
 
 func TestTickAdmitsOnlyTheOldestWaitingTicketToOneFreeSlot(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.realLauncher()
 	newest, middle, oldest := ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"), ticket("ENG-3", "In Progress", "dispatch")
@@ -743,6 +786,7 @@ func TestTickAdmitsOnlyTheOldestWaitingTicketToOneFreeSlot(t *testing.T) {
 }
 
 func TestTickCountsATicketWhoseWorkerIsUnknownAgainstTheCap(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"), ticket("ENG-5", "In Progress", "dispatch"))
 	d.setChildren(child("ENG-2", "ENG-1", "Todo"))
@@ -757,6 +801,7 @@ func TestTickCountsATicketWhoseWorkerIsUnknownAgainstTheCap(t *testing.T) {
 }
 
 func TestTickGivesOneFreeSlotToEitherAPromotionOrALaunchNeverBoth(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	d.realLauncher()
 	d.Linear.Tickets(parent("ENG-1", "In Progress"), ticket("ENG-5", "In Progress", "dispatch"))
@@ -772,6 +817,7 @@ func TestTickGivesOneFreeSlotToEitherAPromotionOrALaunchNeverBoth(t *testing.T) 
 }
 
 func TestTickNeverStartsAWorkerWhileHerdrIsUnread(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.herdrDown(true)

@@ -19,10 +19,12 @@ import (
 
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/linear"
 )
 
 func TestUnknownConfigKeyFailsEveryCommand(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		config string
@@ -49,6 +51,7 @@ func TestUnknownConfigKeyFailsEveryCommand(t *testing.T) {
 }
 
 func TestUnknownConfigKeyTakesNoAction(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "max_in_progres = 9\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -61,6 +64,7 @@ func TestUnknownConfigKeyTakesNoAction(t *testing.T) {
 }
 
 func TestKnownConfigKeysBehaveAsBefore(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n[plugins.linear.statuses]\nin_progress = \"In Progress\"\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -70,6 +74,7 @@ func TestKnownConfigKeysBehaveAsBefore(t *testing.T) {
 }
 
 func TestConfigRejectsABadRepoTable(t *testing.T) {
+	t.Parallel()
 	const path = "~/src/api"
 	for _, test := range []struct {
 		name    string
@@ -99,6 +104,7 @@ func TestConfigRejectsABadRepoTable(t *testing.T) {
 }
 
 func TestConfigSamePathIsComparedAfterHomeExpansion(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	d := newDispatch(t, dispatchOptions{
 		OwnRepos: true,
@@ -112,6 +118,7 @@ func TestConfigSamePathIsComparedAfterHomeExpansion(t *testing.T) {
 }
 
 func TestConfigLoadsTwoReposWhosePathsAreASymlinkAndItsTarget(t *testing.T) {
+	t.Parallel()
 	clone := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
 	require.NoError(t, os.Symlink(clone, link))
@@ -126,6 +133,7 @@ func TestConfigLoadsTwoReposWhosePathsAreASymlinkAndItsTarget(t *testing.T) {
 }
 
 func TestConfigNamesTheKeyOfAWrongTypedSetting(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[repos.api]\npath = \"~/x\"\nauto_merge = 1\n"})
 
 	res := d.Run("plan")
@@ -134,6 +142,7 @@ func TestConfigNamesTheKeyOfAWrongTypedSetting(t *testing.T) {
 }
 
 func TestOldConfigLayoutFailsTheStartNamingItsFirstKey(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		config string
@@ -155,6 +164,7 @@ func TestOldConfigLayoutFailsTheStartNamingItsFirstKey(t *testing.T) {
 }
 
 func TestRulesTableTakesAnyKey(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[rules]\nbug_model = \"opus\"\nreviewers = [\"a\", \"b\"]\n[rules.slack]\nchannel = \"#eng\"\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -164,6 +174,7 @@ func TestRulesTableTakesAnyKey(t *testing.T) {
 }
 
 func TestConfigRejectsValuesThatDecodeButMeanNothing(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		config string
@@ -186,6 +197,7 @@ func TestConfigRejectsValuesThatDecodeButMeanNothing(t *testing.T) {
 }
 
 func TestConfigDaysAreAccepted(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: "[history]\nkeep = \"7d\"\nrotate = \"1d12h\"\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -195,6 +207,7 @@ func TestConfigDaysAreAccepted(t *testing.T) {
 }
 
 func TestRepoSettingsPrintsTheTableOfTheRepoAtTheWorkingDirectory(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 	d := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[repos.dispatch]\npath = \"" + clone + "\"\n"})
 
@@ -211,6 +224,7 @@ func TestRepoSettingsPrintsTheTableOfTheRepoAtTheWorkingDirectory(t *testing.T) 
 }
 
 func TestRepoSettingsPrintsEverySettingAtItsConfiguredValue(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 	other := newHintRepo(t)
 	d := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[repos.dispatch]\npath = \"" + other + "\"\n\n" +
@@ -231,6 +245,7 @@ func TestRepoSettingsPrintsEverySettingAtItsConfiguredValue(t *testing.T) {
 }
 
 func TestRepoSettingsWorksInAWorktreeOfTheRepo(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 	d := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[repos.dispatch]\npath = \"" + clone + "\"\nauto_merge = true\n"})
 	tree := filepath.Join(t.TempDir(), "tree")
@@ -244,6 +259,7 @@ func TestRepoSettingsWorksInAWorktreeOfTheRepo(t *testing.T) {
 }
 
 func TestRepoSettingsWorksInASubdirectoryOfTheRepo(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 	sub := filepath.Join(clone, "pkg", "deep")
 	require.NoError(t, os.MkdirAll(sub, 0o755))
@@ -257,6 +273,7 @@ func TestRepoSettingsWorksInASubdirectoryOfTheRepo(t *testing.T) {
 }
 
 func TestRepoSettingsOutputLoadsBackThroughTheConfig(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 	original := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[repos.work-api]\npath = \"" + clone + "\"\nopen_pr_as = \"draft\"\n" +
 		"ignore_comment_authors = [\"a\", \"b\"]\nignore_optional_checks = true\nauto_merge = true\n"})
@@ -271,6 +288,7 @@ func TestRepoSettingsOutputLoadsBackThroughTheConfig(t *testing.T) {
 }
 
 func TestRepoSettingsQuotesALabelThatIsNotABareKey(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 	original := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[repos.\"my.repo\"]\npath = \"" + clone + "\"\n"})
 	printed := original.RunIn(clone, "repo-settings")
@@ -284,6 +302,7 @@ func TestRepoSettingsQuotesALabelThatIsNotABareKey(t *testing.T) {
 }
 
 func TestRepoSettingsFailsOutsideAConfiguredRepo(t *testing.T) {
+	t.Parallel()
 	managed := newHintRepo(t)
 	elsewhere := newHintRepo(t)
 	d := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[repos.dispatch]\npath = \"" + managed + "\"\n"})
@@ -298,6 +317,7 @@ func TestRepoSettingsFailsOutsideAConfiguredRepo(t *testing.T) {
 }
 
 func TestRepoSettingsFailsOnAConfigThatDoesNotLoad(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 
 	for _, test := range []struct {
@@ -323,6 +343,7 @@ func TestRepoSettingsFailsOnAConfigThatDoesNotLoad(t *testing.T) {
 }
 
 func TestRepoSettingsFailsWhenTwoReposResolveToTheCloneAtTheWorkingDirectory(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 	link := filepath.Join(t.TempDir(), "link")
 	require.NoError(t, os.Symlink(clone, link))
@@ -335,6 +356,7 @@ func TestRepoSettingsFailsWhenTwoReposResolveToTheCloneAtTheWorkingDirectory(t *
 }
 
 func TestRepoSettingsPrintsTheApprovalChecksWhenListed(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 	d := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[repos.dispatch]\npath = \"" + clone + "\"\napproval_checks = [\"Mergify Merge Protections\"]\n"})
 
@@ -347,6 +369,7 @@ func TestRepoSettingsPrintsTheApprovalChecksWhenListed(t *testing.T) {
 const ticketHint = "load the dispatch:ticket skill"
 
 func TestTicketHintNamesTheSkillInAManagedRepo(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 	d := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[repos.dispatch]\npath = \"" + clone + "\"\n"})
 
@@ -354,6 +377,7 @@ func TestTicketHintNamesTheSkillInAManagedRepo(t *testing.T) {
 }
 
 func TestTicketHintNamesTheSkillInAWorktreeOfAManagedRepo(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 	d := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[repos.dispatch]\npath = \"" + clone + "\"\n"})
 	tree := filepath.Join(t.TempDir(), "tree")
@@ -363,6 +387,7 @@ func TestTicketHintNamesTheSkillInAWorktreeOfAManagedRepo(t *testing.T) {
 }
 
 func TestTicketHintExpandsTildeInRepoPaths(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	clone := filepath.Join(home, "src", "repo")
 	require.NoError(t, os.MkdirAll(clone, 0o755))
@@ -377,6 +402,7 @@ func TestTicketHintExpandsTildeInRepoPaths(t *testing.T) {
 }
 
 func TestTicketHintStaysSilentOutsideManagedRepos(t *testing.T) {
+	t.Parallel()
 	managed := newHintRepo(t)
 	other := newHintRepo(t)
 	d := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[plugins.linear]\nteams = [\"ENG\"]\n\n[repos.dispatch]\npath = \"" + managed + "\"\n"})
@@ -386,6 +412,7 @@ func TestTicketHintStaysSilentOutsideManagedRepos(t *testing.T) {
 }
 
 func TestTicketHintIgnoresPathsListedOutsideTheReposTable(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 	d := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[plugins.herdr]\nplugin_root = \"" + clone + "\"\n\n[plugins.linear]\nother = \"" + clone + "\"\n"})
 
@@ -393,6 +420,7 @@ func TestTicketHintIgnoresPathsListedOutsideTheReposTable(t *testing.T) {
 }
 
 func TestTicketHintReadsTheTomlFormsTheDispatcherAccepts(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 
 	for _, test := range []struct {
@@ -413,6 +441,7 @@ func TestTicketHintReadsTheTomlFormsTheDispatcherAccepts(t *testing.T) {
 }
 
 func TestTicketHintReadsEscapesInQuotedPaths(t *testing.T) {
+	t.Parallel()
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	clone := filepath.Join(base, `say "hi"`)
@@ -425,6 +454,7 @@ func TestTicketHintReadsEscapesInQuotedPaths(t *testing.T) {
 }
 
 func TestTicketHintIgnoresACommentedOutRepo(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 	d := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[repos.dispatch]\n# path = \"" + clone + "\"\n"})
 
@@ -432,6 +462,7 @@ func TestTicketHintIgnoresACommentedOutRepo(t *testing.T) {
 }
 
 func TestTicketHintStaysSilentWithoutAConfig(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 	d := newDispatch(t, dispatchOptions{})
 
@@ -442,6 +473,7 @@ func TestTicketHintStaysSilentWithoutAConfig(t *testing.T) {
 }
 
 func TestTicketHintStaysSilentWithABrokenConfig(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 	d := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[repos]\ndispatch = \"~/x\"\n"})
 
@@ -449,6 +481,7 @@ func TestTicketHintStaysSilentWithABrokenConfig(t *testing.T) {
 }
 
 func TestTicketHintGivesUpWhenGitHangsPastTheContext(t *testing.T) {
+	t.Parallel()
 	clone := newHintRepo(t)
 	bin := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nexec sleep 30\n"), 0o755))
@@ -478,7 +511,6 @@ func (d *Dispatch) hintFrom(dir string) string {
 // runInWithoutConfig is RunIn on a machine that has no config.toml.
 func (d *Dispatch) runInWithoutConfig(dir string, args ...string) Result {
 	d.t.Helper()
-	d.t.Chdir(dir)
 	opts := d.options(dispatch.Options{Dir: dir})
 	opts.ConfigPath = filepath.Join(d.dir, "missing.toml")
 	return d.run(opts, args...)
@@ -515,6 +547,7 @@ func (d *Dispatch) runOver(ctx context.Context, extra dispatch.Options, args ...
 }
 
 func TestApiKeyCommandSuppliesTheLinearKey(t *testing.T) {
+	t.Parallel()
 	command, _ := keyScript(t, t.TempDir(), "echo test-key")
 	d := newDispatch(t, dispatchOptions{Key: configuredKey, Config: "[plugins.linear]\napi_key_command = \"" + command + "\"\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -525,6 +558,7 @@ func TestApiKeyCommandSuppliesTheLinearKey(t *testing.T) {
 }
 
 func TestApiKeyCommandWinsOverTheKeychain(t *testing.T) {
+	t.Parallel()
 	command, counter := keyScript(t, t.TempDir(), "echo test-key")
 	d := newDispatch(t, dispatchOptions{Key: configuredKey, Config: "[plugins.linear]\napi_key_command = \"" + command + "\"\napi_key_keychain = \"no-such-service\"\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -535,6 +569,7 @@ func TestApiKeyCommandWinsOverTheKeychain(t *testing.T) {
 }
 
 func TestApiKeyCommandYieldsToTheEnvironmentKey(t *testing.T) {
+	t.Parallel()
 	command, counter := keyScript(t, t.TempDir(), "echo other-key")
 	d := newDispatch(t, dispatchOptions{
 		Key:    configuredKey,
@@ -549,6 +584,7 @@ func TestApiKeyCommandYieldsToTheEnvironmentKey(t *testing.T) {
 }
 
 func TestApiKeyCommandFailureNamesCommandAndStatus(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name string
 		body string
@@ -574,6 +610,7 @@ func TestApiKeyCommandFailureNamesCommandAndStatus(t *testing.T) {
 }
 
 func TestApiKeyCommandRunsOncePerRunProcess(t *testing.T) {
+	t.Parallel()
 	command, counter := keyScript(t, t.TempDir(), "echo test-key")
 	d := newDispatch(t, dispatchOptions{Key: configuredKey, Config: "[plugins.linear]\napi_key_command = \"" + command + "\"\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
@@ -588,6 +625,7 @@ func TestApiKeyCommandRunsOncePerRunProcess(t *testing.T) {
 }
 
 func TestLinearViewerPrintsTheKeyOwner(t *testing.T) {
+	t.Parallel()
 	command, _ := keyScript(t, t.TempDir(), "echo test-key")
 	d := newDispatch(t, dispatchOptions{Key: configuredKey, Config: "[plugins.linear]\napi_key_command = \"" + command + "\"\n"})
 
@@ -598,6 +636,7 @@ func TestLinearViewerPrintsTheKeyOwner(t *testing.T) {
 }
 
 func TestLinearViewerFailsWithoutAKey(t *testing.T) {
+	t.Parallel()
 	command, _ := keyScript(t, t.TempDir(), "exit 1")
 	d := newDispatch(t, dispatchOptions{Key: configuredKey, Config: "[plugins.linear]\napi_key_command = \"" + command + "\"\n"})
 
@@ -608,6 +647,7 @@ func TestLinearViewerFailsWithoutAKey(t *testing.T) {
 }
 
 func TestLinearViewerOffMacOSNamesTheKeySourcesWithoutAKeychain(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "darwin" {
 		t.Skip("macOS looks the key up in the keychain")
 	}
@@ -621,6 +661,7 @@ func TestLinearViewerOffMacOSNamesTheKeySourcesWithoutAKeychain(t *testing.T) {
 }
 
 func TestApiKeyCommandRunsAgainOnTheNextStartAfterLinearRejectsTheKey(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	command, counter := keyScript(t, dir, `if [ "$(wc -l < `+filepath.Join(dir, "runs")+`)" -le 1 ]; then echo bad; else echo test-key; fi`)
 	d := newDispatch(t, dispatchOptions{Key: configuredKey, Config: "[plugins.linear]\napi_key_command = \"" + command + "\"\n"})
@@ -636,6 +677,7 @@ func TestApiKeyCommandRunsAgainOnTheNextStartAfterLinearRejectsTheKey(t *testing
 }
 
 func TestApiKeyCommandStopsWhenRunIsCancelled(t *testing.T) {
+	t.Parallel()
 	// The sleep is a grandchild of the shell that holds the command's stdout.
 	command, counter := keyScript(t, t.TempDir(), "sleep 30")
 	d := newDispatch(t, dispatchOptions{Key: configuredKey, Config: "[plugins.linear]\napi_key_command = \"" + command + "\"\n"})
@@ -656,6 +698,7 @@ func TestApiKeyCommandStopsWhenRunIsCancelled(t *testing.T) {
 }
 
 func TestApiKeyCommandThatBlocksTimesOutAndTheNextStartRetries(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	command, counter := keyScript(t, dir, `if [ "$(wc -l < `+filepath.Join(dir, "runs")+`)" -le 1 ]; then sleep 30; fi; echo test-key`)
 	d := newDispatch(t, dispatchOptions{Key: configuredKey, Config: "[plugins.linear]\napi_key_command = \"" + command + "\"\n"})
@@ -700,6 +743,7 @@ func docExamples(t *testing.T) map[string]string {
 }
 
 func TestDocConfigExamplesLoad(t *testing.T) {
+	t.Parallel()
 	examples := docExamples(t)
 	require.NotEmpty(t, examples)
 
@@ -722,6 +766,7 @@ func TestDocConfigExamplesLoad(t *testing.T) {
 // No command prints the effective config, so this compares the documented defaults to config.Load
 // and the struct's keys directly. It guards the docs against drift from the code.
 func TestDocConfigReferenceListsEveryKeyAtItsDefault(t *testing.T) {
+	t.Parallel()
 	var reference string
 	for _, body := range docExamples(t) {
 		if strings.HasPrefix(body, referenceMarker) {
@@ -736,7 +781,7 @@ func TestDocConfigReferenceListsEveryKeyAtItsDefault(t *testing.T) {
 	require.NoError(t, err)
 	// Repos have no default, so the reference shows one repo at its defaults.
 	assert.Equal(t, config.Repo{
-		Path:                 config.ExpandHome("~/Development/dispatch"),
+		Path:                 environment.Process().ExpandHome("~/Development/dispatch"),
 		OpenPRAs:             "open",
 		IgnoreCommentAuthors: []string{},
 		ApprovalChecks:       []string{},
@@ -783,6 +828,7 @@ func settingKeys(typ reflect.Type, prefix string) []string {
 // The glossary is prose no command prints, so this guards the terms the code uses against being
 // dropped from it.
 func TestContextDefinesTheRepoSettingsTerms(t *testing.T) {
+	t.Parallel()
 	body, err := os.ReadFile("docs/CONTEXT.md")
 	require.NoError(t, err)
 
@@ -794,6 +840,7 @@ func TestContextDefinesTheRepoSettingsTerms(t *testing.T) {
 // The glossary is prose no command prints, so this guards the terms the rules use against being
 // dropped from it.
 func TestContextDefinesTheRuleTerms(t *testing.T) {
+	t.Parallel()
 	body, err := os.ReadFile("docs/CONTEXT.md")
 	require.NoError(t, err)
 
@@ -805,6 +852,7 @@ func TestContextDefinesTheRuleTerms(t *testing.T) {
 // The install command lives in the guide and the plugin manifests, files no command compares, so
 // this guards the guide against a renamed plugin or marketplace.
 func TestGuideInstallCommandsMatchTheMarketplace(t *testing.T) {
+	t.Parallel()
 	var manifest, catalog struct {
 		Name    string `json:"name"`
 		Plugins []struct {
@@ -828,4 +876,25 @@ func TestGuideInstallCommandsMatchTheMarketplace(t *testing.T) {
 	guide, err := os.ReadFile("docs/guide.md")
 	require.NoError(t, err)
 	assert.Contains(t, string(guide), "claude plugin install "+catalog.Plugins[0].Name+"@"+catalog.Name)
+}
+
+func TestApiKeyCommandRunsInTheWorkingDirectoryWithTheEnvironmentItWasGiven(t *testing.T) {
+	t.Parallel()
+	work, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	seen := filepath.Join(t.TempDir(), "seen")
+	command, _ := keyScript(t, t.TempDir(), "pwd -P > "+seen+"\necho \"$MARKER\" >> "+seen+"\necho test-key")
+	d := newDispatch(t, dispatchOptions{
+		Key:    configuredKey,
+		Dir:    work,
+		Env:    map[string]string{"MARKER": "from-options"},
+		Config: "[plugins.linear]\napi_key_command = \"" + command + "\"\n",
+	})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	d.Tick()
+
+	got, err := os.ReadFile(seen)
+	require.NoError(t, err)
+	assert.Equal(t, work+"\nfrom-options\n", string(got))
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/environment"
 )
 
 // tokenTimeout bounds a token_command, such as a password manager waiting on an unlock prompt.
@@ -22,6 +23,8 @@ const tokenTimeout = time.Minute
 type Real struct {
 	services map[string]config.HTTPService
 	client   *http.Client
+	env      environment.Environment
+	dir      string
 
 	mu     sync.Mutex
 	tokens map[string]string
@@ -38,6 +41,13 @@ func New(services map[string]config.HTTPService, client *http.Client) *Real {
 	c := *client
 	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Real{services: services, client: &c, tokens: map[string]string{}, commands: map[string]chan struct{}{}}
+}
+
+// WithEnv runs each token_command in dir with env instead of the process's environment and
+// working directory.
+func (r *Real) WithEnv(env environment.Environment, dir string) *Real {
+	r.env, r.dir = env, dir
+	return r
 }
 
 func (r *Real) Get(ctx context.Context, service, p string) (Response, error) {
@@ -149,7 +159,8 @@ func (r *Real) token(ctx context.Context, service string, svc config.HTTPService
 	}
 	cctx, cancel := context.WithTimeout(ctx, tokenTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(cctx, "sh", "-c", svc.TokenCommand)
+	cmd := r.env.Command(cctx, "sh", "-c", svc.TokenCommand)
+	cmd.Dir = r.dir
 	// A child the command started would otherwise keep the output pipe open after the kill.
 	cmd.WaitDelay = time.Second
 	out, err := cmd.Output()

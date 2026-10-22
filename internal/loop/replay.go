@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/ledger"
@@ -30,6 +31,8 @@ type ReplayOptions struct {
 	// Rules replace the rules each segment recorded. Replay then compares only the actions
 	// the cycles want, and stops at the first one that differs from the live run.
 	Rules *rules.Rules
+	// Env expands the ~ in the paths each segment's config recorded.
+	Env environment.Environment
 }
 
 // Replayed is how a replay came out.
@@ -117,6 +120,7 @@ const (
 // the memory and ledger as they evolve, and the newest read and cycle line.
 type segmentReplay struct {
 	seg   history.Segment
+	env   environment.Environment
 	cfg   config.Config
 	rules *rules.Rules
 	// ready is true once cfg and rules are loaded.
@@ -137,7 +141,7 @@ type segmentReplay struct {
 func replaySegment(seg history.Segment, o ReplayOptions, res *Replayed) (stopped, hadCycles bool, err error) {
 	st := &segmentReplay{
 		seg: seg, mem: seg.Snapshot.World, led: &ledger.Ledger{Entries: slices.Clone(seg.Snapshot.Ledger.Receipts)},
-		read: seg.Snapshot.Read, rules: o.Rules, kept: map[string]rules.Exchange{},
+		read: seg.Snapshot.Read, rules: o.Rules, env: o.Env, kept: map[string]rules.Exchange{},
 	}
 	var pending *cycleRecord
 	flush := func(final bool) error {
@@ -308,7 +312,7 @@ func (st *segmentReplay) run(g cycleRecord, o ReplayOptions, res *Replayed, torn
 // load takes the config the segment ran with, and its rules unless replay was given others.
 func (st *segmentReplay) load() error {
 	h := st.seg.Header
-	cfg, err := config.Parse(h.Config)
+	cfg, err := config.Parse(h.Config, st.env)
 	if err != nil {
 		return fmt.Errorf("while reading the config recorded in %s: %w", baseName(st.seg.Path), err)
 	}

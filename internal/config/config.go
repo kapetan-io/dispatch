@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/kapetan-io/dispatch/internal/environment"
 )
 
 var lastKey = regexp.MustCompile(`\(last key "([^"]*)"\)`)
@@ -166,23 +168,23 @@ func defaults() Config {
 	}
 }
 
-// Load reads path over the defaults and expands a leading ~ in every path. It
+// Load reads path over the defaults and expands a leading ~ in every path to the HOME of env. It
 // fails on a setting dispatch does not know.
-func Load(path string) (Config, error) {
+func Load(path string, env environment.Environment) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("while reading config %s: %w", path, err)
 	}
-	return parse(string(data), path, true)
+	return parse(string(data), path, env, true)
 }
 
 // Parse reads config text as Load reads a file, without requiring the repos' clones to
 // exist, because the text comes from history and a clone may have moved since.
-func Parse(text string) (Config, error) {
-	return parse(text, "recorded in history", false)
+func Parse(text string, env environment.Environment) (Config, error) {
+	return parse(text, "recorded in history", env, false)
 }
 
-func parse(text, path string, checkPaths bool) (Config, error) {
+func parse(text, path string, env environment.Environment, checkPaths bool) (Config, error) {
 	c := defaults()
 	meta, err := toml.Decode(text, &c)
 	if msg, ok := repoProblem(err); ok {
@@ -212,12 +214,12 @@ func parse(text, path string, checkPaths bool) (Config, error) {
 	if err := c.check(); err != nil {
 		return Config{}, fmt.Errorf("while reading config %s: %w", path, err)
 	}
-	c.Plugins.Herdr.PluginRoot = ExpandHome(c.Plugins.Herdr.PluginRoot)
-	c.Dispatch.Rules = ExpandHome(c.Dispatch.Rules)
-	c.History.Dir = ExpandHome(c.History.Dir)
+	c.Plugins.Herdr.PluginRoot = env.ExpandHome(c.Plugins.Herdr.PluginRoot)
+	c.Dispatch.Rules = env.ExpandHome(c.Dispatch.Rules)
+	c.History.Dir = env.ExpandHome(c.History.Dir)
 	for _, label := range c.Repos.Labels() {
 		repo := c.Repos[label]
-		repo.Path = ExpandHome(repo.Path)
+		repo.Path = env.ExpandHome(repo.Path)
 		c.Repos[label] = repo
 	}
 	if checkPaths {
@@ -357,16 +359,4 @@ func (r Repo) Encode(label string) (string, error) {
 		return "", err
 	}
 	return buf.String(), nil
-}
-
-// ExpandHome replaces a leading ~ with the user's home directory.
-func ExpandHome(path string) string {
-	if path != "~" && !strings.HasPrefix(path, "~/") {
-		return path
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return path
-	}
-	return filepath.Join(home, strings.TrimPrefix(path, "~"))
 }

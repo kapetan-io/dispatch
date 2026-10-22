@@ -103,7 +103,7 @@ func (c *CLI) StartWorker(ctx context.Context, w Worker) (Started, error) {
 	// the workspace opened with are closed.
 	shims := filepath.Join(w.PluginRoot, "scripts", "shims")
 	args := []string{"tab", "create", "--workspace", w.Workspace, "--cwd", w.Dir, "--label", w.Label,
-		"--env", "PATH=" + shims + ":" + os.Getenv("PATH"),
+		"--env", "PATH=" + shims + ":" + c.env.Get("PATH"),
 		"--env", "AUTONOMOUS_WORKER=1",
 		"--env", "DISPATCH_PLUGIN_ROOT=" + w.PluginRoot}
 	// The shim runs this binary, so a dispatch on PATH that is older than the

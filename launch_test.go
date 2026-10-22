@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/tooltest"
@@ -27,6 +28,7 @@ import (
 var launchEnv = map[string]string{"DISPATCH_PLUGIN_ROOT": "/plugin", "DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT": "1"}
 
 func TestLaunchStartsAWorkerTypedTheBuildKickoff(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 
@@ -49,6 +51,7 @@ func TestLaunchStartsAWorkerTypedTheBuildKickoff(t *testing.T) {
 }
 
 func TestLaunchLabelsTheTabWithTheTicketAndTitle(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
 
@@ -60,6 +63,7 @@ func TestLaunchLabelsTheTabWithTheTicketAndTitle(t *testing.T) {
 }
 
 func TestLaunchTypesTheKickoffItIsGiven(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
 
@@ -73,6 +77,7 @@ func TestLaunchTypesTheKickoffItIsGiven(t *testing.T) {
 }
 
 func TestLaunchStartsNewBranchesFromTheBase(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	hintGit(t, d.Repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "second")
@@ -85,6 +90,7 @@ func TestLaunchStartsNewBranchesFromTheBase(t *testing.T) {
 }
 
 func TestLaunchReportsAWorkerThatIsAlreadyRunning(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
@@ -102,6 +108,7 @@ func TestLaunchReportsAWorkerThatIsAlreadyRunning(t *testing.T) {
 }
 
 func TestLaunchReusesTheLeaseOfAnEarlierRun(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
@@ -114,6 +121,7 @@ func TestLaunchReusesTheLeaseOfAnEarlierRun(t *testing.T) {
 }
 
 func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		dir    string
@@ -251,6 +259,7 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 }
 
 func TestLaunchNamesTheBaseWhenANewBranchWillNotCheckOut(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
 
@@ -261,6 +270,7 @@ func TestLaunchNamesTheBaseWhenANewBranchWillNotCheckOut(t *testing.T) {
 }
 
 func TestLaunchReturnsALeaseWhenTheBranchWillNotCheckOut(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	// A branch checked out in the main clone cannot be switched to in the pool tree.
@@ -274,6 +284,7 @@ func TestLaunchReturnsALeaseWhenTheBranchWillNotCheckOut(t *testing.T) {
 }
 
 func TestLaunchReturnsALeaseItTookWhenTheWorkspaceFails(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	d.fakes().Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
@@ -286,6 +297,7 @@ func TestLaunchReturnsALeaseItTookWhenTheWorkspaceFails(t *testing.T) {
 }
 
 func TestLaunchKeepsALeaseFromAnEarlierRunWhenTheWorkspaceFails(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	// The tree is already leased to ENG-1, so it may hold a worker's
@@ -300,6 +312,7 @@ func TestLaunchKeepsALeaseFromAnEarlierRunWhenTheWorkspaceFails(t *testing.T) {
 }
 
 func TestLaunchClosesTheWorkspaceBeforeReturningALeaseItTook(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	d.fakes().Herdr.Fail(herdrtest.OpStartTab, errors.New("herdr tab create failed in w2"))
@@ -313,6 +326,7 @@ func TestLaunchClosesTheWorkspaceBeforeReturningALeaseItTook(t *testing.T) {
 }
 
 func TestLaunchKeepsALeaseWhoseWorkspaceWouldNotClose(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
 	d.fakes().Herdr.Fail(herdrtest.OpStartTab, errors.New("herdr tab create failed in w2"))
@@ -327,6 +341,7 @@ func TestLaunchKeepsALeaseWhoseWorkspaceWouldNotClose(t *testing.T) {
 }
 
 func TestLaunchClosesTheTabsTheWorkspaceOpenedWith(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
 	d.fakes().Herdr.AddWorkspace(herdr.Workspace{ID: "w2", Label: "other"})
@@ -344,6 +359,7 @@ func TestLaunchClosesTheTabsTheWorkspaceOpenedWith(t *testing.T) {
 }
 
 func TestLaunchGivesBackTheLeaseWhenTheAgentWillNotStart(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	d.fakes().Herdr.Fail(herdrtest.OpStartAgent, errors.New("herdr agent start failed in pane w2:p2"))
@@ -358,6 +374,7 @@ func TestLaunchGivesBackTheLeaseWhenTheAgentWillNotStart(t *testing.T) {
 }
 
 func TestLaunchNamesARelaunchedWorkerApartFromItsPredecessor(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
 	d.fakes().Herdr.AddWorkspace(herdr.Workspace{ID: "w1", CheckoutPath: "/elsewhere"})
@@ -371,6 +388,7 @@ func TestLaunchNamesARelaunchedWorkerApartFromItsPredecessor(t *testing.T) {
 }
 
 func TestLaunchClosesTheWorkspaceWhenTheKickoffNeverRuns(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
 	d.fakes().Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
@@ -386,6 +404,7 @@ func TestLaunchClosesTheWorkspaceWhenTheKickoffNeverRuns(t *testing.T) {
 }
 
 func TestLaunchReportsClaudeNeverStartedWhenItsCommandStaysAtTheShellPrompt(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
 	d.fakes().Herdr.Fail(herdrtest.OpKickoff, herdr.ErrClaudeNeverStarted)
@@ -399,6 +418,7 @@ func TestLaunchReportsClaudeNeverStartedWhenItsCommandStaysAtTheShellPrompt(t *t
 }
 
 func TestLaunchReportsEnterNotSentWhenHerdrRefusesTheKey(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
 	d.fakes().Herdr.Fail(herdrtest.OpKickoff, herdr.ErrEnterNotSent)
@@ -411,6 +431,7 @@ func TestLaunchReportsEnterNotSentWhenHerdrRefusesTheKey(t *testing.T) {
 }
 
 func TestLaunchExitsCleanlyOnlyWhenTheWorkerIsRunning(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	ok := d.launch("ENG-1", "thrawn01/eng-1")
@@ -425,6 +446,7 @@ func TestLaunchExitsCleanlyOnlyWhenTheWorkerIsRunning(t *testing.T) {
 }
 
 func TestLaunchPutsStatusFirstInEveryResult(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	d.fakes().Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
@@ -437,6 +459,7 @@ func TestLaunchPutsStatusFirstInEveryResult(t *testing.T) {
 }
 
 func TestLaunchAcceptsTheNoFocusFlag(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
 
@@ -446,6 +469,7 @@ func TestLaunchAcceptsTheNoFocusFlag(t *testing.T) {
 }
 
 func TestLaunchChecksOutAnExistingLocalBranch(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	hintGit(t, d.Repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "second")
@@ -459,6 +483,7 @@ func TestLaunchChecksOutAnExistingLocalBranch(t *testing.T) {
 }
 
 func TestLaunchChecksOutABranchOnlyTheRemoteHas(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	remote := filepath.Join(filepath.Dir(d.Repo), "remote.git")
@@ -476,6 +501,7 @@ func TestLaunchChecksOutABranchOnlyTheRemoteHas(t *testing.T) {
 }
 
 func TestLaunchStartsNewBranchesFromTheRemoteBase(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	remote := filepath.Join(filepath.Dir(d.Repo), "remote.git")
@@ -492,6 +518,7 @@ func TestLaunchStartsNewBranchesFromTheRemoteBase(t *testing.T) {
 }
 
 func TestLaunchStartsNewBranchesFromTheCheckedOutBranchWhenThereIsNoRemote(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	hintGit(t, d.Repo, "branch", "-m", "master")
@@ -503,6 +530,7 @@ func TestLaunchStartsNewBranchesFromTheCheckedOutBranchWhenThereIsNoRemote(t *te
 }
 
 func TestLaunchStartsNewBranchesFromTheRemoteDefaultBranch(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	remote := filepath.Join(filepath.Dir(d.Repo), "remote.git")
@@ -522,6 +550,7 @@ func TestLaunchStartsNewBranchesFromTheRemoteDefaultBranch(t *testing.T) {
 }
 
 func TestLaunchFollowsARemoteThatRenamedItsDefaultBranch(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	remote := filepath.Join(filepath.Dir(d.Repo), "remote.git")
@@ -543,6 +572,7 @@ func TestLaunchFollowsARemoteThatRenamedItsDefaultBranch(t *testing.T) {
 }
 
 func TestLaunchSkipsAnUnpushedCheckedOutBranchWhenChoosingTheBase(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	remote := filepath.Join(filepath.Dir(d.Repo), "remote.git")
@@ -561,6 +591,7 @@ func TestLaunchSkipsAnUnpushedCheckedOutBranchWhenChoosingTheBase(t *testing.T) 
 }
 
 func TestLaunchOpensTheWorkspaceFromTheMainCheckout(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	require.NoError(t, os.WriteFile(filepath.Join(tree, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
@@ -574,6 +605,7 @@ func TestLaunchOpensTheWorkspaceFromTheMainCheckout(t *testing.T) {
 }
 
 func TestLaunchReusesAWorkspaceThatHasNoClaudePane(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
@@ -591,6 +623,7 @@ func TestLaunchReusesAWorkspaceThatHasNoClaudePane(t *testing.T) {
 }
 
 func TestTickLaunchesWithTheBuiltInLauncher(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Launcher: builtinLauncher})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	tree := d.Trees.Pooled()
@@ -609,6 +642,7 @@ func TestTickLaunchesWithTheBuiltInLauncher(t *testing.T) {
 }
 
 func TestLaunchTakesFlagsBeforeAndBetweenTheTicketAndBranch(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"--model", "opus", "ENG-1", "thrawn01/eng-1"},
 		{"ENG-1", "--model", "opus", "thrawn01/eng-1"},
@@ -626,6 +660,7 @@ func TestLaunchTakesFlagsBeforeAndBetweenTheTicketAndBranch(t *testing.T) {
 }
 
 func TestLaunchGivesUpAtOnceWhenThePreflightTimeoutIsZero(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Launcher: builtinLauncher, Env: map[string]string{"DISPATCH_PLUGIN_ROOT": "/plugin", "DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT": "0"}})
 	d.Trees.Pooled()
 	d.fakes().Herdr.Fail(herdrtest.OpRead, errors.New("server not running"))
@@ -640,6 +675,7 @@ func TestLaunchGivesUpAtOnceWhenThePreflightTimeoutIsZero(t *testing.T) {
 }
 
 func TestLaunchRefusesAnEmptyPluginRoot(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
 		Launcher: builtinLauncher,
 		Env:      map[string]string{"DISPATCH_PLUGIN_ROOT": "", "DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT": "1"},
@@ -655,6 +691,7 @@ func TestLaunchRefusesAnEmptyPluginRoot(t *testing.T) {
 }
 
 func TestTickRefusesAnEmptyPluginRoot(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Launcher: builtinLauncher, Config: "[plugins.herdr]\nplugin_root = \"\"\n"})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Trees.Pooled()
@@ -670,6 +707,7 @@ func TestTickRefusesAnEmptyPluginRoot(t *testing.T) {
 }
 
 func TestLaunchWrapperNamesThePluginRootForTheGoLauncher(t *testing.T) {
+	t.Parallel()
 	bin := buildDispatch(t)
 	wrapper, err := filepath.Abs("bin/dispatch-launch")
 	require.NoError(t, err)
@@ -688,7 +726,8 @@ func TestLaunchWrapperNamesThePluginRootForTheGoLauncher(t *testing.T) {
 }
 
 func TestClaudeShimRestoresWorkerFlagsWithoutAName(t *testing.T) {
-	isolateShimEnv(t)
+	t.Parallel()
+	env := isolateShimEnv(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
 		[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
@@ -700,7 +739,7 @@ func TestClaudeShimRestoresWorkerFlagsWithoutAName(t *testing.T) {
 	// env, which for workers launched before --name was dropped still holds
 	// DISPATCH_WORKER_NAME.
 	cmd := exec.Command(filepath.Join(shims, "claude"), "--resume")
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(env,
 		"PATH="+shims+":"+bin+":"+dir+":"+os.Getenv("PATH"),
 		"AUTONOMOUS_WORKER=1",
 		"DISPATCH_PLUGIN_ROOT=/plugin",
@@ -715,7 +754,8 @@ func TestClaudeShimRestoresWorkerFlagsWithoutAName(t *testing.T) {
 }
 
 func TestClaudeShimSkipsEveryShimDirectoryOnPath(t *testing.T) {
-	isolateShimEnv(t)
+	t.Parallel()
+	env := isolateShimEnv(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
 		[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
@@ -734,7 +774,7 @@ func TestClaudeShimSkipsEveryShimDirectoryOnPath(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, filepath.Join(shims, "claude"), "--resume")
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(env,
 		"PATH="+strings.Join([]string{shims, other, bin, dir, os.Getenv("PATH")}, ":"),
 		"AUTONOMOUS_WORKER=1",
 		"DISPATCH_PLUGIN_ROOT=/plugin",
@@ -749,16 +789,15 @@ func TestClaudeShimSkipsEveryShimDirectoryOnPath(t *testing.T) {
 
 // isolateShimEnv keeps the maintainer's own session, which may itself be a
 // worker, from reaching the shim through its dispatch, config and plugin root.
-func isolateShimEnv(t *testing.T) {
+func isolateShimEnv(t *testing.T) environment.Environment {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("DISPATCH_BIN", "")
-	t.Setenv("DISPATCH_PLUGIN_ROOT", "")
-	t.Setenv("AUTONOMOUS_WORKER", "")
+	return environment.Process().With("HOME", t.TempDir()).With("DISPATCH_BIN", "").
+		With("DISPATCH_PLUGIN_ROOT", "").With("AUTONOMOUS_WORKER", "")
 }
 
 func TestClaudeShimFlags(t *testing.T) {
-	isolateShimEnv(t)
+	t.Parallel()
+	env := isolateShimEnv(t)
 	shims, err := filepath.Abs("scripts/shims")
 	require.NoError(t, err)
 	bin := buildDispatch(t)
@@ -851,7 +890,7 @@ func TestClaudeShimFlags(t *testing.T) {
 				[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
 
 			cmd := exec.Command(filepath.Join(shims, "claude"), test.args...)
-			cmd.Env = append(append(os.Environ(), "AUTONOMOUS_WORKER=", "DISPATCH_PLUGIN_ROOT=", "DISPATCH_WORKER_NAME="), test.env...)
+			cmd.Env = append(append(env, "AUTONOMOUS_WORKER=", "DISPATCH_PLUGIN_ROOT=", "DISPATCH_WORKER_NAME="), test.env...)
 			cmd.Env = append(cmd.Env, "PATH="+shims+":"+bin+":"+dir+":"+os.Getenv("PATH"))
 			out, err := cmd.CombinedOutput()
 			require.NoError(t, err, string(out))
@@ -864,6 +903,7 @@ func TestClaudeShimFlags(t *testing.T) {
 }
 
 func TestClaudeShimWithNoRealClaudeFailsClearly(t *testing.T) {
+	t.Parallel()
 	shims, err := filepath.Abs("scripts/shims")
 	require.NoError(t, err)
 	bin := buildDispatch(t)
@@ -883,6 +923,7 @@ func TestClaudeShimWithNoRealClaudeFailsClearly(t *testing.T) {
 }
 
 func TestClaudeShimNamesTheMissingDispatchWhenItIsNotOnPath(t *testing.T) {
+	t.Parallel()
 	shims, err := filepath.Abs("scripts/shims")
 	require.NoError(t, err)
 
@@ -897,7 +938,8 @@ func TestClaudeShimNamesTheMissingDispatchWhenItIsNotOnPath(t *testing.T) {
 }
 
 func TestClaudeShimSkipsAShimDirectoryReachedThroughASymlink(t *testing.T) {
-	isolateShimEnv(t)
+	t.Parallel()
+	env := isolateShimEnv(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
 		[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
@@ -910,7 +952,7 @@ func TestClaudeShimSkipsAShimDirectoryReachedThroughASymlink(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, filepath.Join(shims, "claude"), "--resume")
-	cmd.Env = append(os.Environ(), "PATH="+strings.Join([]string{link, bin, dir, os.Getenv("PATH")}, ":"), "AUTONOMOUS_WORKER=", "DISPATCH_PLUGIN_ROOT=")
+	cmd.Env = append(env, "PATH="+strings.Join([]string{link, bin, dir, os.Getenv("PATH")}, ":"), "AUTONOMOUS_WORKER=", "DISPATCH_PLUGIN_ROOT=")
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
 
@@ -920,6 +962,7 @@ func TestClaudeShimSkipsAShimDirectoryReachedThroughASymlink(t *testing.T) {
 }
 
 func TestClaudeShimNamesAStaleDispatchBinary(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/usr/bin/env bash\necho started > \""+filepath.Join(dir, "ran")+"\"\n"), 0o755))
 	stale := t.TempDir()
@@ -940,7 +983,8 @@ func TestClaudeShimNamesAStaleDispatchBinary(t *testing.T) {
 }
 
 func TestClaudeShimRunsTheDispatchThatLaunchedIt(t *testing.T) {
-	isolateShimEnv(t)
+	t.Parallel()
+	env := isolateShimEnv(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
 		[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
@@ -952,7 +996,7 @@ func TestClaudeShimRunsTheDispatchThatLaunchedIt(t *testing.T) {
 
 	// The stale dispatch comes first on PATH, as after a git pull before go install.
 	cmd := exec.Command(filepath.Join(shims, "claude"), "--resume")
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(env,
 		"PATH="+strings.Join([]string{shims, stale, dir, os.Getenv("PATH")}, ":"),
 		"DISPATCH_BIN="+filepath.Join(bin, "dispatch"),
 		"AUTONOMOUS_WORKER=", "DISPATCH_PLUGIN_ROOT=",
@@ -966,14 +1010,15 @@ func TestClaudeShimRunsTheDispatchThatLaunchedIt(t *testing.T) {
 }
 
 func TestClaudeShimLoadsThePluginRootFromTheConfig(t *testing.T) {
-	isolateShimEnv(t)
+	t.Parallel()
+	env := isolateShimEnv(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
 		[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
 	shims, err := filepath.Abs("scripts/shims")
 	require.NoError(t, err)
 	bin := buildDispatch(t)
-	home := os.Getenv("HOME")
+	home := env.Get("HOME")
 	require.NoError(t, os.MkdirAll(filepath.Join(home, ".config", "dispatch"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(home, ".config", "dispatch", "config.toml"),
 		[]byte("[plugins.herdr]\nplugin_root = \"/from-config\"\n"), 0o644))
@@ -988,7 +1033,7 @@ func TestClaudeShimLoadsThePluginRootFromTheConfig(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			cmd := exec.Command(filepath.Join(shims, "claude"), "--resume")
-			cmd.Env = append(os.Environ(), "HOME="+home, "AUTONOMOUS_WORKER=", test.env,
+			cmd.Env = append(env, "HOME="+home, "AUTONOMOUS_WORKER=", test.env,
 				"PATH="+shims+":"+bin+":"+dir+":"+os.Getenv("PATH"))
 			out, err := cmd.CombinedOutput()
 			require.NoError(t, err, string(out))
@@ -1000,6 +1045,7 @@ func TestClaudeShimLoadsThePluginRootFromTheConfig(t *testing.T) {
 	}
 }
 func TestLaunchesIntoOneRepoTakeTurnsLeasing(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
 	second := filepath.Join(filepath.Dir(d.Repo), "tree2")
@@ -1024,6 +1070,7 @@ func TestLaunchesIntoOneRepoTakeTurnsLeasing(t *testing.T) {
 }
 
 func TestLaunchesIntoDifferentReposLeaseTogether(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
 	other := filepath.Join(filepath.Dir(d.Repo), "other")

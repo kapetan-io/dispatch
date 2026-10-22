@@ -29,6 +29,7 @@ import (
 
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
@@ -79,11 +80,11 @@ type dispatchOptions struct {
 	// Rules maps file names to rule files. Nil runs the shipped rules/.
 	Rules map[string]string
 	Key   keySource
-	// Env sets environment variables for the test, after Key has cleared LINEAR_API_KEY. Tests set
-	// them here and never call t.Setenv themselves, so the harness can later give each run its own.
+	// Env sets environment variables for this test's commands, over HOME and an empty LINEAR_API_KEY.
+	// Tests set them here and never call t.Setenv, so each test has its own environment.
 	Env map[string]string
-	// Dir is the working directory commands run in. Empty leaves it alone. Tests set it here and never
-	// call t.Chdir themselves.
+	// Dir is the working directory commands run in. Empty leaves it at the test process's. Tests set it
+	// here and never call t.Chdir.
 	Dir string
 	// RepoSettings is TOML lines added to the dispatch repo's [repos.dispatch] table.
 	RepoSettings string
@@ -108,6 +109,10 @@ type Dispatch struct {
 	Repo string
 	// Home is the HOME every command and hook runs under, a directory of the test's own.
 	Home string
+	// env is the environment every command runs with, and cwd the directory it runs in. Empty cwd
+	// runs in the test process's.
+	env environment.Environment
+	cwd string
 
 	t             *testing.T
 	configuredKey bool
@@ -123,8 +128,10 @@ type Dispatch struct {
 	// builtinAlerts leaves Options.Alerts empty, so alerts go through the
 	// notifier dispatch picks for the operating system.
 	builtinAlerts bool
-	// running is the loop started by the first command that needs one.
+	// running is the loop started by the first command that needs one, and started every loop
+	// this test started, so a failing test can show what they printed.
 	running *runningLoop
+	started []*runningLoop
 	// earlier answers Stop reports until a loop starts, standing in for the dispatch that
 	// ran before this one and left its records in the state directory.
 	earlier net.Listener
@@ -189,8 +196,10 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 	state, err := os.MkdirTemp("/tmp", "dsp")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(state) })
-	shipped, err := filepath.Abs("rules")
-	require.NoError(t, err)
+	// Each test runs the shipped rules from its own copy, because rules init and check write the
+	// generated declarations into the rules directory, which would rewrite the committed ones.
+	shipped := filepath.Join(dir, "shipped-rules")
+	require.NoError(t, os.CopyFS(shipped, os.DirFS("rules")))
 	d := &Dispatch{
 		t:        t,
 		dir:      dir,
@@ -201,6 +210,13 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 		Clock:    &fakeClock{now: time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)},
 	}
 	t.Cleanup(func() { _ = d.stopLoop() })
+	t.Cleanup(func() {
+		if t.Failed() {
+			for _, r := range d.started {
+				t.Logf("loop stderr:\n%s", r.err.String())
+			}
+		}
+	})
 	t.Cleanup(func() {
 		if d.earlier != nil {
 			_ = d.earlier.Close()
@@ -233,16 +249,14 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 		d.config(opts.Config + "\n[plugins.linear]\napi_key_keychain = \"dispatch-test-no-such-entry\"\n")
 	}
 	d.Home = t.TempDir()
-	t.Setenv("HOME", d.Home)
-	for name, value := range opts.Env {
+	d.env = environment.Process().With("HOME", d.Home).With("LINEAR_API_KEY", "")
+	for _, name := range slices.Sorted(maps.Keys(opts.Env)) {
 		if name == "HOME" {
-			d.Home = value
+			d.Home = opts.Env[name]
 		}
-		t.Setenv(name, value)
+		d.env = d.env.With(name, opts.Env[name])
 	}
-	if opts.Dir != "" {
-		t.Chdir(opts.Dir)
-	}
+	d.cwd = opts.Dir
 	d.timeouts = dispatch.Options{RuleTimeout: opts.RuleTimeout, ActionTimeout: opts.ActionTimeout}
 	return d
 }
@@ -295,11 +309,6 @@ func (d *Dispatch) RunIn(dir string, args ...string) Result {
 
 func (d *Dispatch) runIn(ctx context.Context, dir string, extra dispatch.Options, args ...string) Result {
 	d.t.Helper()
-	// launch takes its directory from Options, so launches from two directories can overlap. The
-	// other commands read the process's working directory.
-	if args[0] != "launch" {
-		d.t.Chdir(dir)
-	}
 	extra.Dir = dir
 	return d.result(d.runWith(ctx, extra, args...))
 }
@@ -1087,7 +1096,6 @@ const (
 // does, instead of through Options.LinearKey.
 func (d *Dispatch) useConfiguredKey(t *testing.T) {
 	d.configuredKey = true
-	t.Setenv("LINEAR_API_KEY", "")
 }
 
 func (d *Dispatch) config(extra string) {
@@ -1149,6 +1157,10 @@ func (d *Dispatch) options(extra dispatch.Options) dispatch.Options {
 	d.writeConfig(d.withRules(d.withHistory(d.extra)) + d.historyTOML() + d.reposTOML())
 	extra.ConfigPath = filepath.Join(d.dir, "config.toml")
 	extra.StateDir = d.state
+	extra.Env = d.env
+	if extra.Dir == "" {
+		extra.Dir = d.cwd
+	}
 	if extra.Clock == nil {
 		extra.Clock = d.Clock
 	}
@@ -1329,6 +1341,7 @@ func (d *Dispatch) startLoop(extra dispatch.Options) error {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &runningLoop{cancel: cancel, done: make(chan error, 1), out: &syncBuffer{}, err: &syncBuffer{}}
+	d.started = append(d.started, r)
 	opts := d.options(extra)
 	opts.Stdout, opts.Stderr = r.out, r.err
 	go func() { r.done <- dispatch.Run(ctx, []string{"run"}, opts) }()
@@ -1706,14 +1719,8 @@ func (d *Dispatch) returns() []string {
 func (d *Dispatch) pool() string {
 	tree := filepath.Join(d.dir, "tree")
 	require.NoError(d.t, os.WriteFile(filepath.Join(d.Repo, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
-	for _, args := range [][]string{
-		{"init", "-q", "-b", "main"},
-		{"-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "init"},
-		{"worktree", "add", "-q", "--detach", tree},
-	} {
-		out, err := exec.Command("git", append([]string{"-C", d.Repo}, args...)...).CombinedOutput()
-		require.NoError(d.t, err, string(out))
-	}
+	copyPlainRepo(d.t, d.Repo)
+	hintGit(d.t, d.Repo, "worktree", "add", "-q", "--detach", tree)
 	d.tools.Treehouse.AddTree(d.Repo, tree)
 	return tree
 }
@@ -1867,7 +1874,7 @@ func loadExample(t *testing.T, body string) (config.Config, error) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
-	return config.Load(path)
+	return config.Load(path, environment.Process())
 }
 
 const (
@@ -2225,6 +2232,7 @@ func (d *Dispatch) rules(dir string, args ...string) (string, error) {
 // reads or writes the state behind them, and a rewrite of that state breaks it with no change an
 // operator can see. harness_test.go is the one file that waits on the loop and writes history fixtures.
 func TestRootTestsImportNoDispatchState(t *testing.T) {
+	t.Parallel()
 	forbidden := []string{"ledger", "history", "stops", "sessionlog", "loop", "world"}
 	files, err := filepath.Glob("*_test.go")
 	require.NoError(t, err)
@@ -2273,6 +2281,9 @@ func TestMain(m *testing.M) {
 	if dispatchBin != "" {
 		_ = os.RemoveAll(dispatchBin)
 	}
+	if template, err := plainRepo(); err == nil {
+		_ = os.RemoveAll(template)
+	}
 	if written, _ := os.ReadDir(guard); len(written) > 0 {
 		fmt.Fprintf(os.Stderr, "FAIL: a test wrote under the home directory: %v\n", written)
 		code = 1
@@ -2299,18 +2310,18 @@ func fakeTSCMain(args []string) int {
 	return code
 }
 
-// fakeTSC puts a tsc on PATH and returns the file it records its arguments in.
-func fakeTSC(t *testing.T, exit int, output string) (record string) {
+// fakeTSC puts a tsc on the PATH of d's commands and returns the file it records its arguments in.
+func (d *Dispatch) fakeTSC(exit int, output string) (record string) {
+	t := d.t
 	t.Helper()
 	exe, err := os.Executable()
 	require.NoError(t, err)
 	bin := t.TempDir()
 	require.NoError(t, os.Symlink(exe, filepath.Join(bin, "tsc")))
 	record = filepath.Join(t.TempDir(), "args")
-	t.Setenv("FAKE_TSC_RECORD", record)
-	t.Setenv("FAKE_TSC_OUTPUT", output)
-	t.Setenv("FAKE_TSC_EXIT", strconv.Itoa(exit))
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	d.env = d.env.With("FAKE_TSC_RECORD", record).With("FAKE_TSC_OUTPUT", output).
+		With("FAKE_TSC_EXIT", strconv.Itoa(exit)).
+		With("PATH", bin+string(os.PathListSeparator)+d.env.Get("PATH"))
 	return record
 }
 
@@ -2338,8 +2349,7 @@ func (d *Dispatch) worktreeOf(ticket string) string {
 	d.t.Helper()
 	tree := filepath.Join(d.dir, "trees", ticket)
 	if _, err := os.Stat(filepath.Join(d.Repo, ".git")); err != nil {
-		hintGit(d.t, d.Repo, "init", "-q")
-		hintGit(d.t, d.Repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+		copyPlainRepo(d.t, d.Repo)
 	}
 	if _, err := os.Stat(tree); err != nil {
 		hintGit(d.t, d.Repo, "worktree", "add", "-q", "-b", "br-"+ticket, tree)
@@ -2400,9 +2410,37 @@ func newHintRepo(t *testing.T) string {
 	// Resolved so a /var versus /private/var symlink cannot hide a match.
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
-	hintGit(t, dir, "init", "-q")
-	hintGit(t, dir, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+	copyPlainRepo(t, dir)
 	return dir
+}
+
+// plainRepo is a git repo on main with one empty commit, built once per test run. A test that needs
+// a plain repo copies it, which costs a directory copy instead of three git processes.
+var plainRepo = sync.OnceValues(func() (string, error) {
+	dir, err := os.MkdirTemp("", "dispatch-plain-repo")
+	if err != nil {
+		return "", err
+	}
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("git %v: %w: %s", args, err, out)
+		}
+	}
+	return dir, nil
+})
+
+// copyPlainRepo makes dir a git repo with one empty commit. Tests that need a real worktree still
+// add one to it.
+func copyPlainRepo(t *testing.T, dir string) {
+	t.Helper()
+	template, err := plainRepo()
+	require.NoError(t, err)
+	require.NoError(t, os.CopyFS(dir, os.DirFS(template)))
 }
 
 func writeHintConfig(t *testing.T, body string) string {

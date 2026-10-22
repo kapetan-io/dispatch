@@ -16,7 +16,7 @@ import (
 
 // Session makes the commands that follow run in the Claude session whose inbox is socket.
 func (d *Dispatch) Session(socket string) {
-	d.t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
+	d.env = d.env.With("CLAUDE_CODE_MESSAGING_SOCKET", socket)
 }
 
 // RunWhileDown runs a command with no dispatch running and none started for it.
@@ -41,6 +41,7 @@ func deadSocket(t *testing.T, near string) string {
 
 // Unreachable from the CLI: no command lists the state directory, so the test counts its entries.
 func TestWatchWritesNoFileToTheStateDir(t *testing.T) {
+	t.Parallel()
 	socket, _ := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
 	d.StartBeforeTheEvents()
@@ -53,6 +54,7 @@ func TestWatchWritesNoFileToTheStateDir(t *testing.T) {
 }
 
 func TestFollowersAreForgottenWhenDispatchRestarts(t *testing.T) {
+	t.Parallel()
 	socket, lines := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
 	d.StartBeforeTheEvents()
@@ -69,12 +71,14 @@ func TestFollowersAreForgottenWhenDispatchRestarts(t *testing.T) {
 }
 
 func TestWatchFailsOutsideAClaudeSession(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": ""}})
 
 	require.ErrorContains(t, d.Run("watch", "ENG-1").Err, "CLAUDE_CODE_MESSAGING_SOCKET is not set")
 }
 
 func TestWatchRecordsTheSessionsSocket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/cc-socks/42.sock"}})
 
 	res := d.Run("watch", "ENG-1")
@@ -84,6 +88,7 @@ func TestWatchRecordsTheSessionsSocket(t *testing.T) {
 }
 
 func TestWatchFailsWhenNoDispatchRuns(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/cc-socks/42.sock"}})
 
 	for _, command := range []string{"watch", "unwatch"} {
@@ -92,12 +97,14 @@ func TestWatchFailsWhenNoDispatchRuns(t *testing.T) {
 }
 
 func TestWatchRefusesARelativeSocket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "cc-socks/42.sock"}})
 
 	require.ErrorContains(t, d.Run("watch", "ENG-1").Err, "not absolute")
 }
 
 func TestTickMessagesFollowersAboutAReadyPR(t *testing.T) {
+	t.Parallel()
 	socket, lines := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
 	d.StartBeforeTheEvents()
@@ -121,6 +128,7 @@ func TestTickMessagesFollowersAboutAReadyPR(t *testing.T) {
 }
 
 func TestTickMessagesFollowersThatReviewsAreHandledNotThatAPRIsReady(t *testing.T) {
+	t.Parallel()
 	socket, lines := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{RepoSettings: draftSetting, Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
@@ -135,6 +143,7 @@ func TestTickMessagesFollowersThatReviewsAreHandledNotThatAPRIsReady(t *testing.
 }
 
 func TestTickMessagesFollowersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		status string
@@ -162,6 +171,7 @@ func TestTickMessagesFollowersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
 }
 
 func TestTickDropsAFollowerWhoseSessionExited(t *testing.T) {
+	t.Parallel()
 	socket, lines := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
 	d.StartBeforeTheEvents()
@@ -181,6 +191,7 @@ func TestTickDropsAFollowerWhoseSessionExited(t *testing.T) {
 }
 
 func TestTickDropsAFollowerWhoseSocketFileIsGone(t *testing.T) {
+	t.Parallel()
 	socket, lines := sessionSocket(t)
 	missing := filepath.Join(filepath.Dir(socket), "gone.sock")
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
@@ -206,6 +217,7 @@ func TestTickDropsAFollowerWhoseSocketFileIsGone(t *testing.T) {
 }
 
 func TestTickMessagesNoFollowerWhileTheAlertKeepsFailing(t *testing.T) {
+	t.Parallel()
 	socket, lines := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
 	d.StartBeforeTheEvents()
@@ -230,6 +242,7 @@ func TestTickMessagesNoFollowerWhileTheAlertKeepsFailing(t *testing.T) {
 }
 
 func TestTickMessagesEveryFollowerOfATicket(t *testing.T) {
+	t.Parallel()
 	socket1, lines1 := sessionSocket(t)
 	socket2, lines2 := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{})
@@ -249,6 +262,7 @@ func TestTickMessagesEveryFollowerOfATicket(t *testing.T) {
 }
 
 func TestTickMessagesFollowersAboutAMerge(t *testing.T) {
+	t.Parallel()
 	socket, lines := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting, Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
 	d.StartBeforeTheEvents()
@@ -266,6 +280,7 @@ func TestTickMessagesFollowersAboutAMerge(t *testing.T) {
 }
 
 func TestTickMessagesFollowersAboutAnEscalation(t *testing.T) {
+	t.Parallel()
 	socket, lines := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
 	d.StartBeforeTheEvents()
@@ -289,6 +304,7 @@ func TestTickMessagesFollowersAboutAnEscalation(t *testing.T) {
 }
 
 func TestTickTellsFollowersAboutAMergeWhenTheAlertFails(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name  string
 		fails bool
@@ -324,12 +340,14 @@ func TestTickTellsFollowersAboutAMergeWhenTheAlertFails(t *testing.T) {
 }
 
 func TestWatchRefusesAMissingTicket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/cc-socks/42.sock"}})
 
 	require.ErrorContains(t, d.Run("watch").Err, "watch takes a ticket")
 }
 
 func TestWatchUppercasesTheTicket(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/cc-socks/42.sock"}})
 
 	res := d.Run("watch", "eng-1")
@@ -339,6 +357,7 @@ func TestWatchUppercasesTheTicket(t *testing.T) {
 }
 
 func TestTickMessagesOnlyTheSessionFollowingTheTicket(t *testing.T) {
+	t.Parallel()
 	socket1, lines1 := sessionSocket(t)
 	socket2, lines2 := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{})
@@ -363,6 +382,7 @@ func TestTickMessagesOnlyTheSessionFollowingTheTicket(t *testing.T) {
 }
 
 func TestTickMessagesASessionFollowingSeveralTickets(t *testing.T) {
+	t.Parallel()
 	socket, lines := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
 	d.StartBeforeTheEvents()
@@ -383,6 +403,7 @@ func TestTickMessagesASessionFollowingSeveralTickets(t *testing.T) {
 }
 
 func TestTickRaisesTheAlertForATicketNobodyFollows(t *testing.T) {
+	t.Parallel()
 	socket, lines := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
@@ -397,6 +418,7 @@ func TestTickRaisesTheAlertForATicketNobodyFollows(t *testing.T) {
 }
 
 func TestUnwatchStopsMessagesForThatTicketOnly(t *testing.T) {
+	t.Parallel()
 	socket, lines := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
 	d.StartBeforeTheEvents()
@@ -419,18 +441,21 @@ func TestUnwatchStopsMessagesForThatTicketOnly(t *testing.T) {
 }
 
 func TestUnwatchATicketNeverWatchedSucceeds(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/cc-socks/42.sock"}})
 
 	require.NoError(t, d.Run("unwatch", "ENG-1").Err)
 }
 
 func TestUnwatchFailsOutsideAClaudeSession(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": ""}})
 
 	require.ErrorContains(t, d.Run("unwatch", "ENG-1").Err, "CLAUDE_CODE_MESSAGING_SOCKET is not set")
 }
 
 func TestTickDroppingADeadSessionStopsItFollowingEveryTicket(t *testing.T) {
+	t.Parallel()
 	socket, _ := sessionSocket(t)
 	dead := deadSocket(t, socket)
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": dead}})
@@ -453,6 +478,7 @@ func TestTickDroppingADeadSessionStopsItFollowingEveryTicket(t *testing.T) {
 }
 
 func TestWatchRefusesAnythingButATicketIdentifier(t *testing.T) {
+	t.Parallel()
 	for _, arg := range []string{"banana", "ENG286", "ENG-", "ENG-1x"} {
 		d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/cc-socks/42.sock"}})
 
@@ -461,6 +487,7 @@ func TestWatchRefusesAnythingButATicketIdentifier(t *testing.T) {
 }
 
 func TestUnwatchAcceptsALowercaseTicket(t *testing.T) {
+	t.Parallel()
 	socket, lines := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
 	d.StartBeforeTheEvents()
@@ -477,6 +504,7 @@ func TestUnwatchAcceptsALowercaseTicket(t *testing.T) {
 }
 
 func TestWatchingATicketTwiceMessagesTheSessionOnce(t *testing.T) {
+	t.Parallel()
 	socket, lines := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
 	d.StartBeforeTheEvents()
@@ -495,12 +523,14 @@ func TestWatchingATicketTwiceMessagesTheSessionOnce(t *testing.T) {
 
 // subscribe was replaced by watch and unwatch.
 func TestSubscribeIsGone(t *testing.T) {
+	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/cc-socks/42.sock"}})
 
 	require.Error(t, d.Run("subscribe").Err)
 }
 
 func TestTickKeepsAReadyNoticeFromFollowersWhenTheAlertFailsAndRunsItAgain(t *testing.T) {
+	t.Parallel()
 	socket, lines := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
 	d.StartBeforeTheEvents()

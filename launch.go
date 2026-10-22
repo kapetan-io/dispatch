@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"time"
 
@@ -82,10 +81,10 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 // wrapper names it, since it knows where it sits, and otherwise it comes from
 // the config.
 func pluginRoot(opts Options) (string, error) {
-	if root := os.Getenv("DISPATCH_PLUGIN_ROOT"); root != "" {
+	if root := opts.Env.Get("DISPATCH_PLUGIN_ROOT"); root != "" {
 		return root, nil
 	}
-	cfg, err := config.Load(opts.ConfigPath)
+	cfg, err := config.Load(opts.ConfigPath, opts.Env)
 	if err != nil {
 		return "", fmt.Errorf("no plugin root: set DISPATCH_PLUGIN_ROOT or plugin_root in the config: %w", err)
 	}
@@ -111,10 +110,10 @@ func launcherFor(opts Options, root string, progress io.Writer, typed launcher.T
 		StateDir:   opts.StateDir,
 		Typed:      typed,
 	}
-	lo.Clock = opts.Clock
+	lo.Clock, lo.Env = opts.Clock, opts.Env
 	// DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT=<seconds> bounds the wait for the herdr
 	// server. Zero fails at once, so it becomes the smallest nonzero wait.
-	if secs, err := strconv.Atoi(os.Getenv("DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT")); err == nil {
+	if secs, err := strconv.Atoi(opts.Env.Get("DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT")); err == nil {
 		lo.PreflightTimeout = max(time.Duration(secs)*time.Second, time.Nanosecond)
 	}
 	return launcher.New(lo)

@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/kapetan-io/dispatch/internal/environment"
 )
 
 // Repository is the GitHub repo a clone belongs to, where a ticket's branch has
@@ -570,6 +572,7 @@ func (a *author) name() string {
 type CLI struct {
 	bin     string
 	timeout time.Duration
+	env     environment.Environment
 }
 
 // Option sets how a CLI runs gh.
@@ -579,6 +582,11 @@ type Option func(*CLI)
 // the read that is waiting on it.
 func WithTimeout(d time.Duration) Option {
 	return func(c *CLI) { c.timeout = d }
+}
+
+// WithEnv runs gh, and finds it, with env instead of the process's environment.
+func WithEnv(env environment.Environment) Option {
+	return func(c *CLI) { c.env = env }
 }
 
 const defaultTimeout = 30 * time.Second
@@ -637,7 +645,7 @@ func (c *CLI) Checks(ctx context.Context, repoDir string, number int) ([]byte, e
 func (c *CLI) graphql(ctx context.Context, dir string, args []string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, c.bin, args...)
+	cmd := c.env.Command(ctx, c.bin, args...)
 	cmd.Dir = dir
 	// A child that inherits gh's pipes must not keep Output waiting after the kill.
 	cmd.WaitDelay = time.Second
@@ -657,7 +665,7 @@ func (c *CLI) graphql(ctx context.Context, dir string, args []string) ([]byte, e
 func (c *CLI) Merge(ctx context.Context, prURL, head string) error {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, c.bin, "pr", "merge", prURL, "--merge", "--match-head-commit", head)
+	cmd := c.env.Command(ctx, c.bin, "pr", "merge", prURL, "--merge", "--match-head-commit", head)
 	cmd.WaitDelay = time.Second
 	out, err := cmd.CombinedOutput()
 	if err != nil {
