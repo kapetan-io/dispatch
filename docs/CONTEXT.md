@@ -1,6 +1,6 @@
 # Context
 
-Terms dispatch's tests and docs use for the tools it drives. herdr, treehouse and kickoff keep their definitions from `design/decision-log.md`.
+Terms dispatch's tests and docs use for the tools it drives. herdr is the terminal workspace manager each worker runs in, treehouse is the pool of git worktrees a worker leases, and the kickoff is the first prompt the launcher types into a new worker.
 
 **Tool fake**:
 An in-process Go state model of herdr, treehouse, gh, Linear or osascript that refuses what the real tool refuses.
