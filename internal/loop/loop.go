@@ -48,8 +48,6 @@ type Options struct {
 	Alerts delivery.Alerts
 	// Usage reports the Linear calls made so far.
 	Usage func() linear.Stats
-	// Unauthorized is called when Linear rejects the key, so the next read fetches it again.
-	Unauthorized func()
 	// Viewer names the Linear user whose tickets are tracked.
 	Viewer string
 	Out    io.Writer
@@ -595,9 +593,6 @@ func (l *Loop) onRead(m readDone) error {
 		l.readAgain(world.FromGitHub)
 	}
 	l.alertOverflow(m)
-	if m.w.LinearErr != nil && errors.Is(m.w.LinearErr, linear.ErrUnauthorized) && l.o.Unauthorized != nil {
-		l.o.Unauthorized()
-	}
 	callbacks := l.afterRead
 	l.afterRead = nil
 	l.cycleDue = true

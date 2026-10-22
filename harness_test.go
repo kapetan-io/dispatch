@@ -872,6 +872,9 @@ type Linear struct{ d *Dispatch }
 // Tickets seeds the tickets that are started and assigned to the key's owner.
 func (l *Linear) Tickets(tickets ...fakeTicket) { l.d.tickets(tickets...) }
 
+// AcceptKey makes Linear reject every key but key from now on.
+func (l *Linear) AcceptKey(key string) { l.d.linear.AcceptKey(key) }
+
 // Children sets the children Linear returns for open parents.
 func (l *Linear) Children(tickets ...fakeTicket) { l.d.linear.setChildren(tickets...) }
 

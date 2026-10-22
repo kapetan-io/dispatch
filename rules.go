@@ -166,7 +166,7 @@ func rulesCheck(ctx context.Context, opts Options, arg string) error {
 		return err
 	}
 
-	key, err := (&keyLookup{}).find(ctx, opts, cfg)
+	key, err := findLinearKey(ctx, opts, cfg)
 	if err != nil {
 		return err
 	}

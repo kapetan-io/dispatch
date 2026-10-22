@@ -111,6 +111,13 @@ func (w *Workspace) Connect(key string) linear.Workspace {
 	return &session{w: w, key: key}
 }
 
+// AcceptKey makes the workspace accept only key from now on, as Linear does after the key rotates.
+func (w *Workspace) AcceptKey(key string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.key = key
+}
+
 // AddState gives the team a workflow status of the given Linear type.
 func (w *Workspace) AddState(name, stateType string) {
 	w.mu.Lock()

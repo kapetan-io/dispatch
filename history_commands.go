@@ -14,6 +14,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/ledger"
+	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/lock"
 	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/kapetan-io/dispatch/internal/replay"
@@ -225,8 +226,8 @@ func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *wo
 	if err != nil {
 		return nil, nil, err
 	}
-	lin := &keyedLinear{opts: opts, cfg: cfg, keys: &keyLookup{}}
-	if _, err := lin.workspace(ctx); err != nil {
+	lin := linear.NewRotatingKey(func(ctx context.Context) (string, error) { return findLinearKey(ctx, opts, cfg) }, opts.Linear)
+	if _, err := lin.Workspace(ctx); err != nil {
 		return nil, nil, err
 	}
 	wd, err := world.Read(ctx, world.Sources{
