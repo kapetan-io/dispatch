@@ -54,7 +54,7 @@ Before the loop, do three things and pass the results to the sub-agents.
 
 Run Phases 1 to 5, then Phase 6, each round on the blueprint as the last round left it. Exit on a Phase 6 PASS, or after 5 rounds. Phase 6 always runs, even after a round with no findings. From round 2, Phase 1 receives only the blockers Phase 6 named, and a deferred list of what the user dismissed, which it must not re-file unless the surrounding text changed.
 
-All sub-agents are foreground and use `model: "sonnet"`.
+All sub-agents are foreground and use `model: "sonnet"`. Every sub-agent prompt, the reviewer, validator and cold reader included, says to use the glossary's terms and the words the code already uses, to coin no labels such as step codes, and to define any term in neither.
 
 ## Phase 1: Review agent
 

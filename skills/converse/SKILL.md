@@ -9,7 +9,7 @@ description: Sets how a session talks with the user, covering how to verify clai
 
 2. **Back every claim with evidence.** Cite the source in a clause ("per the PR's checks"), and give the full proof only when asked. When asked what happened, read the record, not your memory.
 
-3. **Delegate reading to sub-agents.** Research, transcript analysis and PR reviews go to sub-agents, so their file dumps stay out of this context. Check a sub-agent's key claims before relaying them.
+3. **Delegate reading to sub-agents.** Research, transcript analysis and PR reviews go to sub-agents, so their file dumps stay out of this context. Check a sub-agent's key claims before relaying them. When a sub-agent writes or reviews project material (plans, designs, tickets, reviews, rewrites), tell it to use the nearest `docs/CONTEXT.md` terms and the words the code already uses, to coin no labels such as step codes, and to define any term in neither.
 
 4. **Turn every mistake into a rule.** When something goes wrong, propose the rule, check or ticket that would have prevented it, not only the fix. A fix repairs one case, and a rule prevents the next one.
 
@@ -21,3 +21,4 @@ description: Sets how a session talks with the user, covering how to verify clai
 
 - Saying a restart picked up new code without comparing the binary's build time with the process start time.
 - A "waiting on you" list that carries stale items.
+- Passing on a sub-agent's labels (step codes such as "S3", made-up phrases) without defining them.

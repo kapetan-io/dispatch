@@ -6,6 +6,8 @@ You are producing one candidate design in the design skill's parallel exploratio
 
 The grounding's Constraints hold only sourced items. Treat everything else in it as a fact to check. Name the premise your shape rests on most. Name any pull between the task, the Objective and the instruction files, and its cost. Don't resolve it silently.
 
+Read the nearest `docs/CONTEXT.md`, name things with its terms and the words the code already uses, and coin no labels such as step codes.
+
 Load `dispatch:principle-problem-domains` with the Skill tool and apply it first, since the user expects it to trump technical-layer architecture in most cases. Then load and apply each of these with the Skill tool: `dispatch:principle-boundary-discipline`, `dispatch:principle-encode-lessons-in-structure`, `dispatch:principle-make-operations-idempotent`, `dispatch:principle-separate-before-serializing-shared-state`, `dispatch:principle-laziness-protocol` and `dispatch:principle-minimize-reader-load`. The index is `dispatch:principles`.
 
 The orchestrator compares candidates on these principles and on three more that no principle skill covers.
