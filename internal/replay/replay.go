@@ -1,10 +1,11 @@
-package loop
+package replay
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -22,8 +23,8 @@ import (
 // segment written before dispatch recorded it.
 var ErrNotReplayable = errors.New("history cannot be replayed")
 
-// ReplayOptions picks the stretch of history to run again.
-type ReplayOptions struct {
+// Options picks the stretch of history to run again.
+type Options struct {
 	// Dir is the history directory.
 	Dir string
 	// From and To bound the cycles replayed by the time they ran. A zero time is no bound.
@@ -49,13 +50,13 @@ type Replayed struct {
 // they ran over, and compares each with what the live run decided. A cycle the live run
 // found identical to the one before wrote no line, so only the cycles that wrote one are
 // run, and each is compared with the last cycle line written.
-func Replay(o ReplayOptions) (Replayed, error) {
+func Replay(o Options) (Replayed, error) {
 	paths, err := history.Segments(o.Dir)
 	if err != nil {
 		return Replayed{}, err
 	}
 	if len(paths) == 0 {
-		return Replayed{}, ErrNoHistory
+		return Replayed{}, history.ErrNoHistory
 	}
 	first := 0
 	if !o.From.IsZero() {
@@ -138,7 +139,7 @@ type segmentReplay struct {
 // replaySegment runs the cycles of one segment again. It returns true once a cycle is past To, and
 // whether the segment held any cycle, in range or not. It returns ErrNotReplayable when the segment
 // holds no record of the world.
-func replaySegment(seg history.Segment, o ReplayOptions, res *Replayed) (stopped, hadCycles bool, err error) {
+func replaySegment(seg history.Segment, o Options, res *Replayed) (stopped, hadCycles bool, err error) {
 	st := &segmentReplay{
 		seg: seg, mem: seg.Snapshot.World, led: &ledger.Ledger{Entries: slices.Clone(seg.Snapshot.Ledger.Receipts)},
 		read: seg.Snapshot.Read, rules: o.Rules, env: o.Env, kept: map[string]rules.Exchange{},
@@ -253,12 +254,12 @@ func (st *segmentReplay) apply(g cycleRecord) {
 }
 
 // run does one cycle again and compares it with the recorded one.
-func (st *segmentReplay) run(g cycleRecord, o ReplayOptions, res *Replayed, torn bool) error {
+func (st *segmentReplay) run(g cycleRecord, o Options, res *Replayed, torn bool) error {
 	if g.read != nil {
 		st.read = g.read
 	}
 	if st.read == nil || st.read.World == nil {
-		return fmt.Errorf("%s holds no record of the world its cycles read: %w", baseName(st.seg.Path), ErrNotReplayable)
+		return fmt.Errorf("%s holds no record of the world its cycles read: %w", filepath.Base(st.seg.Path), ErrNotReplayable)
 	}
 	if !st.ready {
 		if err := st.load(); err != nil {
@@ -285,7 +286,7 @@ func (st *segmentReplay) run(g cycleRecord, o ReplayOptions, res *Replayed, torn
 	line, changed := history.Diff(st.mem, next)
 	line.At = g.now
 	st.mem = next
-	got := cycleLine(g.now, "", st.rules.Cycle(state, nil))
+	got := history.CycleLine(g.now, "", st.rules.Cycle(state, nil))
 	res.Cycles++
 	at := time.UnixMilli(g.now).Format(time.TimeOnly)
 	// A torn segment may end between the read line and the world line, so it only vouches for a world line it has.
@@ -314,18 +315,18 @@ func (st *segmentReplay) load() error {
 	h := st.seg.Header
 	cfg, err := config.Parse(h.Config, st.env)
 	if err != nil {
-		return fmt.Errorf("while reading the config recorded in %s: %w", baseName(st.seg.Path), err)
+		return fmt.Errorf("while reading the config recorded in %s: %w", filepath.Base(st.seg.Path), err)
 	}
 	st.cfg, st.ready = cfg, true
 	if st.rules != nil {
 		return nil
 	}
 	if h.Rules == "" {
-		return fmt.Errorf("%s was written before history recorded the rules: %w", baseName(st.seg.Path), ErrNotReplayable)
+		return fmt.Errorf("%s was written before history recorded the rules: %w", filepath.Base(st.seg.Path), ErrNotReplayable)
 	}
 	loaded, err := rules.Compile("", h.Rules, rules.Timeouts{})
 	if err != nil {
-		return fmt.Errorf("while loading the rules recorded in %s: %w", baseName(st.seg.Path), err)
+		return fmt.Errorf("while loading the rules recorded in %s: %w", filepath.Base(st.seg.Path), err)
 	}
 	st.rules = loaded
 	return nil
@@ -398,7 +399,7 @@ func cycleLines(c history.Cycle, skip map[string]bool, actionsOnly bool) []strin
 	}
 	for _, e := range c.Covered {
 		if !skip[e.Rule+"/"+e.Subject] {
-			out = append(out, fmt.Sprintf("%s has %s covered once %s: %s", e.Subject, e.Kind, FormatOnce(e.Once), e.Reason)+byRule(e))
+			out = append(out, fmt.Sprintf("%s has %s covered once %s: %s", e.Subject, e.Kind, e.Once.String(), e.Reason)+byRule(e))
 		}
 	}
 	for _, t := range c.Throws {
@@ -423,7 +424,7 @@ func byRule(e history.Entry) string { return " (" + e.Rule + ")" }
 
 // wantsText describes a wanted action. Rules compared for their actions alone may be named differently.
 func wantsText(e history.Entry, actionsOnly bool) string {
-	text := fmt.Sprintf("wants %s %s once %s", e.Kind, e.Subject, FormatOnce(e.Once))
+	text := fmt.Sprintf("wants %s %s once %s", e.Kind, e.Subject, e.Once.String())
 	for _, extra := range []struct {
 		name string
 		with map[string]any

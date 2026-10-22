@@ -20,6 +20,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 
 	"github.com/kapetan-io/dispatch/internal/ledger"
+	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -513,4 +514,44 @@ func Prune(dir string, now time.Time, keep time.Duration, current string) error 
 		}
 	}
 	return nil
+}
+
+// ErrNoHistory means there is no history to read.
+var ErrNoHistory = errors.New("there is no history to read")
+
+// CycleLine writes what a rules run decided as the history line for a cycle.
+func CycleLine(now int64, why string, res rules.Result) Cycle {
+	c := Cycle{Line: LineCycle, Now: now, Why: why, Reads: map[string][]string{}}
+	for _, w := range res.Wants {
+		c.Wants = append(c.Wants, Entry{Rule: w.Rule, Subject: w.Subject, Kind: w.Receipt, Once: w.Once, Args: w.Args, Options: w.Options})
+		c.Reads[w.Rule+"/"+w.Subject] = res.Reads[w.Rule+"/"+w.Subject]
+	}
+	for _, w := range res.Waiting {
+		c.Waiting = append(c.Waiting, Entry{Rule: w.Rule, Subject: w.Subject, Kind: w.Receipt, Once: w.Once, Reason: w.Reason})
+	}
+	for _, h := range res.Held {
+		c.Held = append(c.Held, Entry{Rule: h.Rule, Subject: h.Subject, Reason: h.Reason, Dropped: h.Dropped})
+		c.Reads[h.Rule+"/"+h.Subject] = h.Reads
+	}
+	for _, cv := range res.Covered {
+		c.Covered = append(c.Covered, Entry{Rule: cv.Rule, Subject: cv.Subject, Kind: cv.Receipt.Kind, Once: cv.Once, Reason: CoveredBy(cv.Receipt)})
+	}
+	for _, t := range res.Throws {
+		c.Throws = append(c.Throws, Throw{Rule: t.Rule, Subject: t.Subject, Error: t.Error, Timeout: t.Timeout})
+		c.Reads[t.Rule+"/"+t.Subject] = res.Reads[t.Rule+"/"+t.Subject]
+	}
+	c.HTTP = res.HTTP
+	if len(c.Reads) == 0 {
+		c.Reads = nil
+	}
+	return c
+}
+
+// CoveredBy says how a receipt stands in for running an action again.
+func CoveredBy(rc ledger.Receipt) string {
+	outcome := string(rc.Outcome)
+	if outcome == "" {
+		outcome = "attempted"
+	}
+	return outcome + " " + time.UnixMilli(rc.Started).Format("15:04")
 }
