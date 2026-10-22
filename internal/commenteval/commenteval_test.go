@@ -1,4 +1,4 @@
-package dispatch_test
+package commenteval_test
 
 import (
 	"bytes"

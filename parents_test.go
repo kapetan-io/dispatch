@@ -10,53 +10,78 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
-	"github.com/kapetan-io/dispatch/internal/lineartest"
-
 	"github.com/kapetan-io/dispatch/internal/linear"
 )
 
-const (
-	inProgressID = "state-in-progress"
-	doneID       = "state-done"
-)
+// setChildren gives Linear the children a parent's child list returns.
+func (d *Dispatch) setChildren(children ...fakeTicket) { d.h.linear.setChildren(children...) }
+
+// failChildren makes Linear refuse every child list read.
+func (d *Dispatch) failChildren() { d.h.linear.failChildren() }
+
+// failMoves makes Linear refuse every status change.
+func (d *Dispatch) failMoves() { d.h.linear.failMoves() }
+
+// childReads lists the parents each child list read of Linear asked for.
+func (d *Dispatch) childReads() [][]string { return d.h.linear.childReadParents() }
+
+// plan is what `dispatch plan` prints.
+func (d *Dispatch) plan() string {
+	d.h.t.Helper()
+	res := d.Run("plan")
+	require.NoError(d.h.t, res.Err)
+	return res.Stdout
+}
+
+// unreadRepo adds a repo whose clone moved, so treehouse cannot read its pool.
+func (d *Dispatch) unreadRepo(label string) {
+	d.h.addRepo(label, filepath.Join(d.h.dir, "moved"))
+}
+
+// realLauncher makes a launch create a herdr workspace, so a launched worker counts against the cap.
+func (d *Dispatch) realLauncher() { parentsRealLauncher(d.h) }
+
+// herdrDown makes herdr refuse every read, or answer again when on is false.
+func (d *Dispatch) herdrDown(on bool) {
+	var err error
+	if on {
+		err = errors.New("server not running")
+	}
+	d.h.tools.Herdr.Fail(herdrtest.OpRead, err)
+}
 
 func TestTickPromotesAnUnblockedChildAndHoldsTheBlockedOne(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
-	h.linear.setChildren(
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
+	d.setChildren(
 		child("ENG-2", "ENG-1", "Todo"),
 		child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Todo"}),
 	)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 1)
-	assert.Equal(t, lineartest.Move, mutations[0].Kind)
-	assert.Equal(t, "uuid-ENG-2", mutations[0].TicketID)
-	assert.Equal(t, inProgressID, mutations[0].StateID)
-	for _, read := range h.linear.childReadParents() {
+	assert.Equal(t, []string{"ENG-2 -> In Progress"}, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
+	// Surface exception: the child-list reads are Linear traffic that no command prints.
+	for _, read := range d.childReads() {
 		assert.Equal(t, []string{"uuid-ENG-1"}, read)
 	}
 	// Linear shows the promoted child In Progress at the re-read, so it launches in the same tick.
-	assert.Len(t, h.launches(), 1)
-	assert.Contains(t, h.launches()[0], " ENG-2 ")
+	require.Len(t, d.Workers.Launched(), 1)
+	assert.Contains(t, d.Workers.Launched()[0], " ENG-2 ")
 }
 
 func TestTickLaunchesAPromotedChildOnceLinearShowsItInProgress(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
+	d.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	d.Tick()
 
 	// A second tick promotes and launches nothing again.
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	assert.Len(t, h.launches(), 1)
-	assert.Len(t, h.linear.mutations(), 1)
+	assert.Len(t, d.Workers.Launched(), 1)
+	assert.Len(t, d.Linear.Moves(), 1)
 }
 
 func TestTickPromotesABlockedChildOnTheFirstTickAfterItsBlockerIsDone(t *testing.T) {
@@ -71,22 +96,21 @@ func TestTickPromotesABlockedChildOnTheFirstTickAfterItsBlockerIsDone(t *testing
 		{name: "BlockerDone", blocker: "Done", want: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			h := newHarness(t)
-			h.tickets(parent("ENG-1", "In Progress"))
-			h.linear.setChildren(
+			d := newDispatch(t, dispatchOptions{})
+			d.Linear.Tickets(parent("ENG-1", "In Progress"))
+			d.setChildren(
 				child("ENG-2", "ENG-1", test.blocker),
 				child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", test.blocker}),
 			)
 
-			_, err := h.run("tick")
-			require.NoError(t, err)
+			d.Tick()
 
+			assert.Empty(t, d.Linear.Comments())
 			if !test.want {
-				assert.Empty(t, h.linear.mutations())
+				assert.Empty(t, d.Linear.Moves())
 				return
 			}
-			require.Len(t, h.linear.mutations(), 1)
-			assert.Equal(t, "uuid-ENG-3", h.linear.mutations()[0].TicketID)
+			assert.Equal(t, []string{"ENG-3 -> In Progress"}, d.Linear.Moves())
 		})
 	}
 }
@@ -94,653 +118,578 @@ func TestTickPromotesABlockedChildOnTheFirstTickAfterItsBlockerIsDone(t *testing
 func TestTickEscalatesAChildWhoseBlockerWasAbandoned(t *testing.T) {
 	for _, status := range []string{"Canceled", "Duplicate"} {
 		t.Run(status, func(t *testing.T) {
-			h := newHarness(t)
-			h.tickets(parent("ENG-1", "In Progress"))
-			h.linear.setChildren(
+			d := newDispatch(t, dispatchOptions{})
+			d.Linear.Tickets(parent("ENG-1", "In Progress"))
+			d.setChildren(
 				child("ENG-2", "ENG-1", status),
 				child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", status}),
 			)
 
-			_, err := h.run("tick")
-			require.NoError(t, err)
+			d.Tick()
 
-			mutations := h.linear.mutations()
-			require.Len(t, mutations, 2)
-			assert.Equal(t, "uuid-ENG-3", mutations[0].TicketID)
-			assert.Equal(t, needsHumanID, mutations[0].StateID)
-			assert.Equal(t, "uuid-ENG-3", mutations[1].TicketID)
-			assert.Contains(t, mutations[1].Body, "ENG-2 is "+status)
-			assert.Contains(t, mutations[1].Body, "Remove the blocker relation")
-			assert.Empty(t, h.launches())
+			assert.Equal(t, []string{"ENG-3 -> Needs Human"}, d.Linear.Moves())
+			require.Len(t, d.Linear.Comments(), 1)
+			assert.Contains(t, d.Linear.Comments()[0], "ENG-3: ")
+			assert.Contains(t, d.Linear.Comments()[0], "ENG-2 is "+status)
+			assert.Contains(t, d.Linear.Comments()[0], "Remove the blocker relation")
+			assert.Empty(t, d.Workers.Launched())
 		})
 	}
 }
 
 func TestTickEscalatesAChildOnlyOnceAndAgainWhenMovedBackToTodo(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
-	blocked := child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Canceled"})
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Canceled"), blocked)
-	_, err := h.run("tick")
-	require.NoError(t, err)
-	require.Len(t, h.linear.mutations(), 2)
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
+	d.setChildren(
+		child("ENG-2", "ENG-1", "Canceled"),
+		child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Canceled"}),
+	)
+	d.Tick()
+	require.Len(t, d.Linear.Moves(), 1)
+	require.Len(t, d.Linear.Comments(), 1)
 
 	// Needs Human leaves the Todo set, so the next tick stays quiet.
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Canceled"), child("ENG-3", "ENG-1", "Needs Human", [2]string{"ENG-2", "Canceled"}))
-	_, err = h.run("tick")
-	require.NoError(t, err)
-	assert.Len(t, h.linear.mutations(), 2)
+	d.setChildren(child("ENG-2", "ENG-1", "Canceled"), child("ENG-3", "ENG-1", "Needs Human", [2]string{"ENG-2", "Canceled"}))
+	d.Tick()
+	assert.Len(t, d.Linear.Moves(), 1)
+	assert.Len(t, d.Linear.Comments(), 1)
 
 	// The user moves it back to Todo with the blocker still attached, a minute later.
-	h.advance(time.Minute)
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Canceled"), child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Canceled"}))
-	_, err = h.run("tick")
-	require.NoError(t, err)
-	assert.Len(t, h.linear.mutations(), 4)
+	d.Advance(time.Minute)
+	d.setChildren(child("ENG-2", "ENG-1", "Canceled"), child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Canceled"}))
+	d.Tick()
+	assert.Len(t, d.Linear.Moves(), 2)
+	assert.Len(t, d.Linear.Comments(), 2)
 }
 
 func TestTickKeepsWaitingSilentlyOnAnOpenBlocker(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
-	h.linear.setChildren(
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
+	d.setChildren(
 		child("ENG-2", "ENG-1", "In Progress"),
 		child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "In Progress"}),
 	)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	assert.Empty(t, h.linear.mutations())
+	assert.Empty(t, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickEscalatesAChildWithAnAbandonedBlockerBesideAnOpenOne(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
-	h.linear.setChildren(
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
+	d.setChildren(
 		child("ENG-2", "ENG-1", "In Progress"),
 		child("ENG-4", "ENG-1", "Canceled"),
 		child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "In Progress"}, [2]string{"ENG-4", "Canceled"}),
 	)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 2)
-	assert.Equal(t, needsHumanID, mutations[0].StateID)
-	assert.Contains(t, mutations[1].Body, "its blocker ENG-4 is Canceled")
+	assert.Equal(t, []string{"ENG-3 -> Needs Human"}, d.Linear.Moves())
+	require.Len(t, d.Linear.Comments(), 1)
+	assert.Contains(t, d.Linear.Comments()[0], "its blocker ENG-4 is Canceled")
 }
 
 func TestTickEscalatesOnlyChildrenOfYoursThatCarryTheAILabel(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	blocker := [2]string{"ENG-9", "Canceled"}
 	someoneElses := child("ENG-2", "ENG-1", "Todo", blocker)
 	someoneElses.Assignee = "someone-else"
 	unlabeled := child("ENG-3", "ENG-1", "Todo", blocker)
 	unlabeled.Labels = []linear.Label{{Name: "dispatch", Group: "repo"}}
-	leased := child("ENG-4", "ENG-1", "Todo", blocker)
-	h.worker("ENG-4", "")
-	h.linear.setElsewhere(child("ENG-4", "ENG-1", "Todo", blocker))
-	h.linear.setChildren(someoneElses, unlabeled, leased)
+	d.Workers.Running("ENG-4", "")
+	d.Linear.Finished(child("ENG-4", "ENG-1", "Todo", blocker))
+	d.setChildren(someoneElses, unlabeled, child("ENG-4", "ENG-1", "Todo", blocker))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	assert.Empty(t, h.linear.mutations())
+	assert.Empty(t, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickEscalatesAnAbandonedBlockerEvenAtTheWorkerCap(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
-	h.config("[dispatch]\nmax_in_progress = 1\n")
-	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-5", "In Progress", "dispatch"))
-	h.linear.setChildren(child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Canceled"}))
+	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"), ticket("ENG-5", "In Progress", "dispatch"))
+	d.setChildren(child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Canceled"}))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 2)
-	assert.Equal(t, "uuid-ENG-3", mutations[0].TicketID)
-	assert.Equal(t, needsHumanID, mutations[0].StateID)
+	assert.Equal(t, []string{"ENG-3 -> Needs Human"}, d.Linear.Moves())
+	assert.Len(t, d.Linear.Comments(), 1)
 }
 
 func TestTickHoldsAChildWhoseBlockersWereCutShort(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	cut := child("ENG-2", "ENG-1", "Todo")
 	cut.BlockersTruncated = true
-	h.linear.setChildren(cut)
+	d.setChildren(cut)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	assert.Empty(t, h.linear.mutations())
+	assert.Empty(t, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickPromotesTheFirstPieceOnceDesignIsOffAndAReviewChildIsDone(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
-	h.linear.setChildren(withLabel(child("ENG-2", "ENG-1", "Done"), "design-review"), child("ENG-3", "ENG-1", "Todo"))
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
+	d.setChildren(withLabel(child("ENG-2", "ENG-1", "Done"), "design-review"), child("ENG-3", "ENG-1", "Todo"))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-3", mutations[0].TicketID)
-	assert.Equal(t, inProgressID, mutations[0].StateID)
+	assert.Equal(t, []string{"ENG-3 -> In Progress"}, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickClosesAParentOnceItsDoneReviewChildAndBuildChildrenAreFinished(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
-	h.linear.setChildren(withLabel(child("ENG-2", "ENG-1", "Done"), "design-review"), child("ENG-3", "ENG-1", "Done"))
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
+	d.setChildren(withLabel(child("ENG-2", "ENG-1", "Done"), "design-review"), child("ENG-3", "ENG-1", "Done"))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-1", mutations[0].TicketID)
-	assert.Equal(t, doneID, mutations[0].StateID)
+	assert.Equal(t, []string{"ENG-1 -> Done"}, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickDoesNotCountATicketWithTruncatedLabelsAgainstTheCap(t *testing.T) {
-	h := newHarness(t)
-	h.config("[dispatch]\nmax_in_progress = 1\n")
+	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	cut := ticket("ENG-3", "In Progress", "dispatch")
 	cut.LabelsTruncated = true
-	h.tickets(parent("ENG-1", "In Progress"), cut)
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	d.Linear.Tickets(parent("ENG-1", "In Progress"), cut)
+	d.setChildren(child("ENG-2", "ENG-1", "Todo"))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
 	// The cut-short ticket goes to Needs Human and holds no slot, so the child is still promoted.
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 3)
-	assert.Equal(t, "uuid-ENG-3", mutations[0].TicketID)
-	assert.Equal(t, needsHumanID, mutations[0].StateID)
-	assert.Equal(t, "uuid-ENG-2", mutations[2].TicketID)
-	assert.Equal(t, inProgressID, mutations[2].StateID)
+	assert.Equal(t, []string{"ENG-3 -> Needs Human", "ENG-2 -> In Progress"}, d.Linear.Moves())
+	require.Len(t, d.Linear.Comments(), 1)
+	assert.Contains(t, d.Linear.Comments()[0], "ENG-3: ")
 }
 
 func TestTickClosesAParentWhoseChildrenAreAllFinished(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
-	h.linear.setChildren(
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
+	d.setChildren(
 		child("ENG-2", "ENG-1", "Done"),
 		child("ENG-3", "ENG-1", "Canceled"),
 		child("ENG-4", "ENG-1", "Duplicate"),
 	)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-1", mutations[0].TicketID)
-	assert.Equal(t, doneID, mutations[0].StateID)
+	assert.Equal(t, []string{"ENG-1 -> Done"}, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickKeepsAParentOpenWhileAnyChildIsUnfinished(t *testing.T) {
 	for _, status := range []string{"Backlog", "Todo", "In Progress", "In Review", "Needs Human"} {
 		t.Run(status, func(t *testing.T) {
-			h := newHarness(t)
-			h.tickets(parent("ENG-1", "In Progress"))
+			d := newDispatch(t, dispatchOptions{})
+			d.Linear.Tickets(parent("ENG-1", "In Progress"))
 			// Todo and Backlog children are held back by a blocker that never finishes.
-			h.linear.setChildren(
+			d.setChildren(
 				child("ENG-2", "ENG-1", "Done"),
 				child("ENG-3", "ENG-1", status, [2]string{"ENG-9", "Backlog"}),
 			)
 
-			_, err := h.run("tick")
-			require.NoError(t, err)
+			d.Tick()
 
+			assert.Empty(t, d.Linear.Moves())
 			// An In Progress child with no worker gets the blocked comment and nothing else.
-			want := 0
-			if status == "In Progress" {
-				want = 1
+			if status != "In Progress" {
+				assert.Empty(t, d.Linear.Comments())
+				return
 			}
-			assert.Len(t, h.linear.mutations(), want)
-			for _, change := range h.linear.mutations() {
-				assert.Equal(t, lineartest.Comment, change.Kind)
-				assert.Equal(t, "uuid-ENG-3", change.TicketID)
-			}
+			require.Len(t, d.Linear.Comments(), 1)
+			assert.Contains(t, d.Linear.Comments()[0], "ENG-3: ")
 		})
 	}
 }
 
 func TestTickCountsEveryChildBeforeClosingAParent(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	// A child without the ai label or your assignment is still the parent's child.
 	stranger := child("ENG-3", "ENG-1", "Todo")
 	stranger.Assignee = "someone-else"
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Done"), stranger)
+	d.setChildren(child("ENG-2", "ENG-1", "Done"), stranger)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	assert.Empty(t, h.linear.mutations())
+	assert.Empty(t, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickNeverClosesAParentWhoseChildrenWereNotReturned(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Done"))
-	h.linear.failChildren()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
+	d.setChildren(child("ENG-2", "ENG-1", "Done"))
+	d.failChildren()
 
-	_, _, err := h.runContext(t.Context(), "tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	assert.Empty(t, h.linear.mutations())
+	assert.Empty(t, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickPromotesOnlyChildrenOfYoursThatCarryTheAILabel(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	someoneElses := child("ENG-2", "ENG-1", "Todo")
 	someoneElses.Assignee = "someone-else"
 	unlabeled := child("ENG-3", "ENG-1", "Todo")
 	unlabeled.Labels = []linear.Label{{Name: "dispatch", Group: "repo"}}
-	backlog := child("ENG-4", "ENG-1", "Backlog")
-	h.linear.setChildren(someoneElses, unlabeled, backlog, child("ENG-5", "ENG-1", "Todo"))
+	d.setChildren(someoneElses, unlabeled, child("ENG-4", "ENG-1", "Backlog"), child("ENG-5", "ENG-1", "Todo"))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-5", mutations[0].TicketID)
+	assert.Equal(t, []string{"ENG-5 -> In Progress"}, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickNeverPromotesPastTheWorkerCap(t *testing.T) {
-	h := newHarness(t)
-	parentsRealLauncher(h)
-	h.config("[dispatch]\nmax_in_progress = 2\n")
-	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
-	h.worker("ENG-9", "working")
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-3", "ENG-1", "Todo"))
+	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 2\n"})
+	d.realLauncher()
+	d.Linear.Tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-9", "working")
+	d.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-3", "ENG-1", "Todo"))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	plan, err := h.run("plan")
-	require.NoError(t, err)
-	assert.Regexp(t, planRow("waiting", "ENG-3"), plan)
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-2", mutations[0].TicketID)
+	assert.Regexp(t, planRow("waiting", "ENG-3"), d.plan())
+	assert.Equal(t, []string{"ENG-2 -> In Progress"}, d.Linear.Moves())
 }
 
 func TestTickPromotesAWaitingChildOnceASlotFrees(t *testing.T) {
-	h := newHarness(t)
-	h.config("[dispatch]\nmax_in_progress = 1\n")
-	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
-	h.worker("ENG-9", "working")
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-9", "working")
+	d.setChildren(child("ENG-2", "ENG-1", "Todo"))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
-	plan, err := h.run("plan")
-	require.NoError(t, err)
-	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
-	require.Empty(t, h.linear.mutations())
+	d.Tick()
+	assert.Regexp(t, planRow("waiting", "ENG-2"), d.plan())
+	require.Empty(t, d.Linear.Moves())
 
 	// ENG-9 merged.
-	h.tickets(parent("ENG-1", "In Progress"))
-	_, err = h.run("tick")
-	require.NoError(t, err)
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
+	d.Tick()
 
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-2", mutations[0].TicketID)
+	assert.Equal(t, []string{"ENG-2 -> In Progress"}, d.Linear.Moves())
 }
 
 func TestTickCountsInProgressTicketsStillWaitingForAWorker(t *testing.T) {
-	h := newHarness(t)
-	h.config("[dispatch]\nmax_in_progress = 1\n")
+	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
 	// ENG-9 is In Progress but has no worker yet, since its launch waits.
-	parentsRealLauncher(h)
-	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	d.realLauncher()
+	d.Linear.Tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
+	d.setChildren(child("ENG-2", "ENG-1", "Todo"))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	assert.Empty(t, h.linear.mutations())
+	assert.Empty(t, d.Linear.Moves())
 }
 
 func TestTickDoesNotCountParentsAgainstTheWorkerCap(t *testing.T) {
-	h := newHarness(t)
-	h.config("[dispatch]\nmax_in_progress = 1\n")
-	h.tickets(parent("ENG-1", "In Progress"), parent("ENG-8", "In Progress"))
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-9", "ENG-8", "Backlog"))
+	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"), parent("ENG-8", "In Progress"))
+	d.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-9", "ENG-8", "Backlog"))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	assert.Len(t, h.linear.mutations(), 1)
+	assert.Len(t, d.Linear.Moves(), 1)
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickNeverPromotesAChildThatHoldsALease(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	// ENG-2 was paused with its tree kept. Linear knows it only by identifier.
-	h.worker("ENG-2", "")
-	h.linear.setElsewhere(child("ENG-2", "ENG-1", "Todo"))
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-3", "ENG-1", "Todo"))
+	d.Workers.Running("ENG-2", "")
+	d.Linear.Finished(child("ENG-2", "ENG-1", "Todo"))
+	d.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-3", "ENG-1", "Todo"))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-3", mutations[0].TicketID)
+	assert.Equal(t, []string{"ENG-3 -> In Progress"}, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickStopsAChildYouPausedWithoutPromotingItAgain(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
-	h.worker("ENG-2", "working")
-	h.linear.setElsewhere(child("ENG-2", "ENG-1", "Todo"))
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
+	d.Workers.Running("ENG-2", "working")
+	d.Linear.Finished(child("ENG-2", "ENG-1", "Todo"))
+	d.setChildren(child("ENG-2", "ENG-1", "Todo"))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	assert.Equal(t, []string{"w-ENG-2"}, h.closes())
-	assert.Empty(t, h.linear.mutations())
+	assert.Equal(t, []string{"w-ENG-2"}, d.Workers.Closed())
+	assert.Empty(t, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickNeverGivesAParentAWorker(t *testing.T) {
 	for _, status := range []string{"In Progress", "In Review"} {
 		t.Run(status, func(t *testing.T) {
-			h := newHarness(t)
-			h.tickets(parent("ENG-1", status))
-			h.linear.setChildren(child("ENG-2", "ENG-1", "Todo", [2]string{"ENG-9", "Todo"}))
+			d := newDispatch(t, dispatchOptions{})
+			d.Linear.Tickets(parent("ENG-1", status))
+			d.setChildren(child("ENG-2", "ENG-1", "Todo", [2]string{"ENG-9", "Todo"}))
 
-			_, err := h.run("tick")
-			require.NoError(t, err)
+			d.Tick()
 
-			assert.Empty(t, h.launches())
-			assert.Empty(t, h.prompts())
+			assert.Empty(t, d.Workers.Launched())
+			assert.Empty(t, d.Workers.Prompts())
 		})
 	}
 }
 
 func TestTickNotifiesOnceWhenAParentEntersNeedsHuman(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "Needs Human"))
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "Needs Human"))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
+	d.Tick()
 
-	_, err = h.run("tick")
-	require.NoError(t, err)
-
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, h.notifications())
-	assert.Empty(t, h.linear.childReadParents())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Alerts.Shown())
+	// Surface exception: the child-list reads are Linear traffic that no command prints.
+	assert.Empty(t, d.childReads())
 }
 
 func TestTickLeavesDesignParentsAlone(t *testing.T) {
 	for _, label := range []string{"design", "design-review"} {
 		t.Run(label, func(t *testing.T) {
-			h := newHarness(t)
-			h.tickets(withLabel(parent("ENG-1", "In Progress"), label))
-			h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-3", "ENG-1", "Done"))
+			d := newDispatch(t, dispatchOptions{})
+			d.Linear.Tickets(withLabel(parent("ENG-1", "In Progress"), label))
+			d.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-3", "ENG-1", "Done"))
 
-			_, err := h.run("tick")
-			require.NoError(t, err)
+			d.Tick()
 
-			assert.Empty(t, h.linear.mutations())
-			assert.Empty(t, h.linear.childReadParents())
+			assert.Empty(t, d.Linear.Moves())
+			assert.Empty(t, d.Linear.Comments())
+			// Surface exception: the child-list reads are Linear traffic that no command prints.
+			assert.Empty(t, d.childReads())
 		})
 	}
 }
 
 func TestTickReadsNoChildrenWhenNoParentIsInProgress(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"), parent("ENG-2", "In Review"))
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), parent("ENG-2", "In Review"))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	assert.Empty(t, h.linear.childReadParents())
+	// Surface exception: the child-list reads are Linear traffic that no command prints.
+	assert.Empty(t, d.childReads())
 }
 
 func TestTickKeepsLaunchingWhenTheChildrenCannotBeRead(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-2", "In Progress", "dispatch"))
-	h.linear.setChildren(child("ENG-3", "ENG-1", "Backlog"))
-	h.linear.failChildren()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"), ticket("ENG-2", "In Progress", "dispatch"))
+	d.setChildren(child("ENG-3", "ENG-1", "Backlog"))
+	d.failChildren()
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	plan, err := h.run("plan")
-	require.NoError(t, err)
-	assert.Len(t, h.launches(), 1)
+	plan := d.plan()
+	assert.Len(t, d.Workers.Launched(), 1)
 	assert.Regexp(t, planRow("held", "ENG-1"), plan)
 	assert.Contains(t, plan, "the children of ENG-1 were not read")
-	assert.Empty(t, h.linear.mutations())
+	assert.Empty(t, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickSurvivesAFailedPromotion(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
-	h.linear.failMoves()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"), ticket("ENG-9", "In Progress", "dispatch"))
+	d.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	d.failMoves()
 
-	_, err := h.run("tick")
-	require.ErrorContains(t, err, "ENG-2 move failed")
+	res := d.Run("tick")
 
-	assert.Len(t, h.launches(), 1)
-	assert.Contains(t, h.launches()[0], " ENG-9 ")
-	assert.Empty(t, h.linear.mutations())
+	require.ErrorContains(t, res.Err, "ENG-2 move failed")
+	require.Len(t, d.Workers.Launched(), 1)
+	assert.Contains(t, d.Workers.Launched()[0], " ENG-9 ")
+	assert.Empty(t, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickHoldsAChildWhoseRepoPoolCannotBeRead(t *testing.T) {
-	h := newHarness(t)
-	h.addRepo("tiger", h.dir+"/moved")
-	h.tickets(parent("ENG-1", "In Progress"))
+	d := newDispatch(t, dispatchOptions{})
+	d.unreadRepo("tiger")
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	tiger := child("ENG-2", "ENG-1", "Todo")
 	tiger.Labels = []linear.Label{{Name: "ai"}, {Name: "tiger", Group: "repo"}}
-	h.linear.setChildren(tiger)
+	d.setChildren(tiger)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
 	// Whether the child holds a lease in that pool is unknown, so it waits.
-	plan, err := h.run("plan")
-	require.NoError(t, err)
+	plan := d.plan()
 	assert.Regexp(t, planRow("held", "ENG-2"), plan)
 	assert.Contains(t, plan, "treehouse pool tiger unread")
-	assert.Empty(t, h.linear.mutations())
+	assert.Empty(t, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickDoesNotEscalateAChildWhoseRepoPoolCannotBeRead(t *testing.T) {
-	h := newHarness(t)
-	h.addRepo("tiger", h.dir+"/moved")
-	h.tickets(parent("ENG-1", "In Progress"))
+	d := newDispatch(t, dispatchOptions{})
+	d.unreadRepo("tiger")
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	tiger := child("ENG-2", "ENG-1", "Todo", [2]string{"ENG-9", "Canceled"})
 	tiger.Labels = []linear.Label{{Name: "ai"}, {Name: "tiger", Group: "repo"}}
-	h.linear.setChildren(tiger)
+	d.setChildren(tiger)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
 	// A paused child may hold a lease in the unread pool, and escalating it would unpause it.
-	assert.Empty(t, h.linear.mutations())
+	assert.Empty(t, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickDoesNotEscalateAChildWhoseBlockerIsDoneButNotBlockerDone(t *testing.T) {
-	h := newHarness(t)
-	h.config("[plugins.linear.statuses]\nblocker_done = \"Released\"\n")
-	h.tickets(parent("ENG-1", "In Progress"))
-	h.linear.setChildren(
+	d := newDispatch(t, dispatchOptions{Config: "[plugins.linear.statuses]\nblocker_done = \"Released\"\n"})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
+	d.setChildren(
 		child("ENG-2", "ENG-1", "Done"),
 		child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Done"}),
 	)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	assert.Empty(t, h.linear.mutations())
+	assert.Empty(t, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickSharesTheWorkerCapAcrossParents(t *testing.T) {
-	h := newHarness(t)
-	parentsRealLauncher(h)
-	h.config("[dispatch]\nmax_in_progress = 1\n")
-	h.tickets(parent("ENG-1", "In Progress"), parent("ENG-4", "In Progress"))
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-5", "ENG-4", "Todo"))
+	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
+	d.realLauncher()
+	d.Linear.Tickets(parent("ENG-1", "In Progress"), parent("ENG-4", "In Progress"))
+	d.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-5", "ENG-4", "Todo"))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	plan, err := h.run("plan")
-	require.NoError(t, err)
-	assert.Regexp(t, planRow("waiting", "ENG-5"), plan)
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-2", mutations[0].TicketID)
+	assert.Regexp(t, planRow("waiting", "ENG-5"), d.plan())
+	assert.Equal(t, []string{"ENG-2 -> In Progress"}, d.Linear.Moves())
 }
 
 func TestTickClosesOneParentAndPromotesForAnotherInTheSameTick(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"), parent("ENG-4", "In Progress"))
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Done"), child("ENG-5", "ENG-4", "Todo"))
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"), parent("ENG-4", "In Progress"))
+	d.setChildren(child("ENG-2", "ENG-1", "Done"), child("ENG-5", "ENG-4", "Todo"))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 2)
-	states := map[any]any{}
-	for _, m := range mutations {
-		assert.Equal(t, lineartest.Move, m.Kind)
-		states[m.TicketID] = m.StateID
-	}
-	assert.Equal(t, map[any]any{"uuid-ENG-1": doneID, "uuid-ENG-5": inProgressID}, states)
+	assert.ElementsMatch(t, []string{"ENG-1 -> Done", "ENG-5 -> In Progress"}, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickNeverGivesAParentAWorkerOrANudge(t *testing.T) {
 	for _, status := range []string{"Todo", "Backlog", "Needs Human"} {
 		t.Run(status, func(t *testing.T) {
-			h := newHarness(t)
-			h.tickets(parent("ENG-1", status))
+			d := newDispatch(t, dispatchOptions{})
+			d.Linear.Tickets(parent("ENG-1", status))
 
-			_, err := h.run("tick")
-			require.NoError(t, err)
+			d.Tick()
 
-			assert.Empty(t, h.launches())
-			assert.Empty(t, h.prompts())
-			assert.Empty(t, h.linear.mutations())
+			assert.Empty(t, d.Workers.Launched())
+			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Linear.Moves())
+			assert.Empty(t, d.Linear.Comments())
 		})
 	}
 
 	t.Run("IdleWorkerOnAnInProgressParent", func(t *testing.T) {
-		h := newHarness(t)
-		h.tickets(parent("ENG-1", "In Progress"))
-		h.worker("ENG-1", "idle")
-		h.worker("ENG-2", "working")
-		h.linear.setChildren(child("ENG-2", "ENG-1", "In Progress"))
+		d := newDispatch(t, dispatchOptions{})
+		d.Linear.Tickets(parent("ENG-1", "In Progress"))
+		d.Workers.Running("ENG-1", "idle")
+		d.Workers.Running("ENG-2", "working")
+		d.setChildren(child("ENG-2", "ENG-1", "In Progress"))
 
-		_, err := h.run("tick")
-		require.NoError(t, err)
+		d.Tick()
 
-		assert.Empty(t, h.launches())
-		assert.Empty(t, h.prompts())
+		assert.Empty(t, d.Workers.Launched())
+		assert.Empty(t, d.Workers.Prompts())
 	})
 }
 
 func TestTickPromotesNothingForAParentThatIsNotInProgress(t *testing.T) {
 	for _, status := range []string{"Needs Human", "In Review", "Todo"} {
 		t.Run(status, func(t *testing.T) {
-			h := newHarness(t)
-			h.tickets(parent("ENG-1", status))
-			h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-3", "ENG-1", "Done"))
+			d := newDispatch(t, dispatchOptions{})
+			d.Linear.Tickets(parent("ENG-1", status))
+			d.setChildren(child("ENG-2", "ENG-1", "Todo"), child("ENG-3", "ENG-1", "Done"))
 
-			_, err := h.run("tick")
-			require.NoError(t, err)
+			d.Tick()
 
-			assert.Empty(t, h.linear.mutations())
-			assert.Empty(t, h.linear.childReadParents())
+			assert.Empty(t, d.Linear.Moves())
+			assert.Empty(t, d.Linear.Comments())
+			// Surface exception: the child-list reads are Linear traffic that no command prints.
+			assert.Empty(t, d.childReads())
 		})
 	}
 }
 
 func TestTickPromotesTheOldestChildFirstWhenOneSlotIsFree(t *testing.T) {
-	h := newHarness(t)
-	parentsRealLauncher(h)
-	h.config("[dispatch]\nmax_in_progress = 1\n")
-	h.tickets(parent("ENG-1", "In Progress"))
+	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
+	d.realLauncher()
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	older, newer := child("ENG-2", "ENG-1", "Todo"), child("ENG-3", "ENG-1", "Todo")
 	older.CreatedAt = "2026-10-01T09:00:00.000Z"
 	newer.CreatedAt = "2026-10-02T09:00:00.000Z"
 	// Linear may return either order.
-	h.linear.setChildren(newer, older)
+	d.setChildren(newer, older)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	plan, err := h.run("plan")
-	require.NoError(t, err)
-	assert.Regexp(t, planRow("waiting", "ENG-3"), plan)
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-2", mutations[0].TicketID)
+	assert.Regexp(t, planRow("waiting", "ENG-3"), d.plan())
+	assert.Equal(t, []string{"ENG-2 -> In Progress"}, d.Linear.Moves())
 }
 
 func TestTickNeverPromotesAChildOutsideTheConfiguredTeams(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	other := child("OTH-2", "ENG-1", "Todo")
 	other.Team = "OTH"
-	h.linear.setChildren(other)
+	d.setChildren(other)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	assert.Empty(t, h.linear.mutations())
+	assert.Empty(t, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickPromotesAChildWithNoRepoLabelAndEscalatesItOnceLinearShowsItInProgress(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(parent("ENG-1", "In Progress"))
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	lost := child("ENG-2", "ENG-1", "Todo")
 	lost.Labels = []linear.Label{{Name: "ai"}}
-	h.linear.setChildren(lost)
+	d.setChildren(lost)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
 	// The promotion holds its slot until Linear shows the child In Progress, then the user hears why it can't start.
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 3)
-	assert.Equal(t, inProgressID, mutations[0].StateID)
-	assert.Equal(t, needsHumanID, mutations[1].StateID)
-	assert.Contains(t, mutations[2].Body, "it has no repo label")
+	assert.Equal(t, []string{"ENG-2 -> In Progress", "ENG-2 -> Needs Human"}, d.Linear.Moves())
+	require.Len(t, d.Linear.Comments(), 1)
+	assert.Contains(t, d.Linear.Comments()[0], "it has no repo label")
 }
+
 func TestTickReleasesAChildWhenItsBlockerIsDoneWhateverCloseParentIs(t *testing.T) {
-	h := newHarness(t)
-	h.config("[plugins.linear.statuses]\nclose_parent = \"Closed\"\n")
-	h.tickets(parent("ENG-1", "In Progress"))
-	h.linear.setChildren(
+	d := newDispatch(t, dispatchOptions{Config: "[plugins.linear.statuses]\nclose_parent = \"Closed\"\n"})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
+	d.setChildren(
 		child("ENG-2", "ENG-1", "Done"),
 		child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", "Done"}),
 	)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	mutations := h.linear.mutations()
-	require.Len(t, mutations, 1)
-	assert.Equal(t, "uuid-ENG-3", mutations[0].TicketID)
+	assert.Equal(t, []string{"ENG-3 -> In Progress"}, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickReleasesAChildOnTheConfiguredBlockerStatus(t *testing.T) {
@@ -753,116 +702,86 @@ func TestTickReleasesAChildOnTheConfiguredBlockerStatus(t *testing.T) {
 		{name: "DefaultStatus", blocker: "Done", want: false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			h := newHarness(t)
-			h.config("[plugins.linear.statuses]\nblocker_done = \"Released\"\n")
-			h.tools.Linear.AddState("Released", "completed")
-			h.tickets(parent("ENG-1", "In Progress"))
-			h.linear.setChildren(
+			d := newDispatch(t, dispatchOptions{Config: "[plugins.linear.statuses]\nblocker_done = \"Released\"\n"})
+			d.h.tools.Linear.AddState("Released", "completed")
+			d.Linear.Tickets(parent("ENG-1", "In Progress"))
+			d.setChildren(
 				child("ENG-2", "ENG-1", test.blocker),
 				child("ENG-3", "ENG-1", "Todo", [2]string{"ENG-2", test.blocker}),
 			)
 
-			_, err := h.run("tick")
-			require.NoError(t, err)
+			d.Tick()
 
-			assert.Equal(t, test.want, len(h.linear.mutations()) == 1)
+			assert.Equal(t, test.want, len(d.Linear.Moves()) == 1)
 		})
 	}
 }
 
 func TestTickAdmitsOnlyTheOldestWaitingTicketToOneFreeSlot(t *testing.T) {
-	h := newHarness(t)
-	parentsRealLauncher(h)
-	h.config("[dispatch]\nmax_in_progress = 1\n")
+	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
+	d.realLauncher()
 	newest, middle, oldest := ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"), ticket("ENG-3", "In Progress", "dispatch")
 	newest.CreatedAt = "2026-10-03T09:00:00.000Z"
 	middle.CreatedAt = "2026-10-02T09:00:00.000Z"
 	oldest.CreatedAt = "2026-10-01T09:00:00.000Z"
-	h.tickets(newest, middle, oldest)
+	d.Linear.Tickets(newest, middle, oldest)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
 	var launched []string
-	for _, receipt := range h.ledgerNow() {
-		if receipt.Kind == "launch" {
-			launched = append(launched, receipt.Subject)
+	for _, id := range []string{"ENG-1", "ENG-2", "ENG-3"} {
+		for _, receipt := range d.Receipts(id) {
+			if receipt.Kind == "launch" {
+				launched = append(launched, receipt.Subject)
+			}
 		}
 	}
 	assert.Equal(t, []string{"ENG-3"}, launched)
-	plan, err := h.run("plan")
-	require.NoError(t, err)
+	plan := d.plan()
 	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
 	assert.Regexp(t, planRow("waiting", "ENG-1"), plan)
 }
 
 func TestTickCountsATicketWhoseWorkerIsUnknownAgainstTheCap(t *testing.T) {
-	h := newHarness(t)
-	h.config("[dispatch]\nmax_in_progress = 1\n")
-	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-5", "In Progress", "dispatch"))
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
-	h.tools.Herdr.Fail(herdrtest.OpRead, errors.New("server not running"))
+	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"), ticket("ENG-5", "In Progress", "dispatch"))
+	d.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	d.herdrDown(true)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
 	// ENG-5 may already have a worker, so it holds the only slot and the promotion waits.
-	plan, err := h.run("plan")
-	require.NoError(t, err)
-	assert.Regexp(t, planRow("waiting", "ENG-2"), plan)
-	assert.Empty(t, h.linear.mutations())
-	assert.Empty(t, h.launches())
+	assert.Regexp(t, planRow("waiting", "ENG-2"), d.plan())
+	assert.Empty(t, d.Linear.Moves())
+	assert.Empty(t, d.Workers.Launched())
 }
 
 func TestTickGivesOneFreeSlotToEitherAPromotionOrALaunchNeverBoth(t *testing.T) {
-	h := newHarness(t)
-	parentsRealLauncher(h)
-	h.config("[dispatch]\nmax_in_progress = 1\n")
-	h.tickets(parent("ENG-1", "In Progress"), ticket("ENG-5", "In Progress", "dispatch"))
-	h.linear.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n"})
+	d.realLauncher()
+	d.Linear.Tickets(parent("ENG-1", "In Progress"), ticket("ENG-5", "In Progress", "dispatch"))
+	d.setChildren(child("ENG-2", "ENG-1", "Todo"))
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
 	// A promotion holds its slot until Linear shows the child In Progress and its worker is up,
 	// so the launch that wanted the same slot in the same cycle waits.
-	assert.Len(t, h.tools.Herdr.Started(), 1)
-	plan, err := h.run("plan")
-	require.NoError(t, err)
-	assert.Contains(t, plan, "waiting")
+	// Surface exception: herdr's started workspaces are the fake's state, not command output.
+	assert.Len(t, d.h.tools.Herdr.Started(), 1)
+	assert.Contains(t, d.plan(), "waiting")
 }
 
 func TestTickNeverStartsAWorkerWhileHerdrIsUnread(t *testing.T) {
-	h := newHarness(t)
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	h.tools.Herdr.Fail(herdrtest.OpRead, errors.New("server not running"))
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.herdrDown(true)
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	plan, err := h.run("plan")
-	require.NoError(t, err)
-	assert.Regexp(t, planRow("held", "ENG-1"), plan)
-	assert.Empty(t, h.launches())
+	assert.Regexp(t, planRow("held", "ENG-1"), d.plan())
+	assert.Empty(t, d.Workers.Launched())
 
-	h.tools.Herdr.Fail(herdrtest.OpRead, nil)
-	_, err = h.run("tick")
-	require.NoError(t, err)
-	assert.Len(t, h.launches(), 1)
-}
-
-func TestTickNeverStartsAWorkerWhileTheReposPoolIsUnread(t *testing.T) {
-	h := newHarness(t)
-	h.addRepo("tiger", filepath.Join(h.dir, "moved"))
-	h.tickets(ticket("ENG-1", "In Progress", "tiger"), ticket("ENG-2", "In Progress", "dispatch"))
-
-	_, err := h.run("tick")
-	require.NoError(t, err)
-
-	// Only the repo whose pool could not be read is held.
-	plan, err := h.run("plan")
-	require.NoError(t, err)
-	assert.Regexp(t, planRow("held", "ENG-1"), plan)
-	require.Len(t, h.launches(), 1)
-	assert.Contains(t, h.launches()[0], " ENG-2 ")
+	d.herdrDown(false)
+	d.Tick()
+	assert.Len(t, d.Workers.Launched(), 1)
 }

@@ -71,12 +71,6 @@ func withFailingPR(d *Dispatch) {
 	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 }
 
-// RunWith is Run over Options the test sets, such as a shorter ActionTimeout.
-func (d *Dispatch) RunWith(extra dispatch.Options, args ...string) Result {
-	d.h.t.Helper()
-	return d.result(d.h.runWith(context.Background(), extra, args...))
-}
-
 // BlockAfterSnapshot has the worker stop to ask a question after dispatch read herdr, so herdr refuses
 // a prompt that the snapshot said was fine.
 func (w *Workers) BlockAfterSnapshot(ticket string) { w.d.h.blockAfterSnapshot(ticket) }
@@ -133,9 +127,6 @@ func (w *Workers) FailKickoff() {
 
 // LaunchResult sets what the fake launcher answers to a launch, as the launcher's JSON.
 func (w *Workers) LaunchResult(result string) { w.d.h.launchResult(result) }
-
-// Leased holds a clean, pushed tree for the ticket with no herdr workspace on it.
-func (t *Trees) Leased(ticket string) { t.d.h.lease(ticket, t.d.h.gitTree(ticket)) }
 
 // Pool makes the dispatch repo a git repo that treehouse pools, with one tree in it, and returns the
 // tree's path.
@@ -1217,7 +1208,7 @@ func TestTickKeepsPRActivityAcrossATicketAbsentFromTheRead(t *testing.T) {
 	d.GitHub.PullRequest("ENG-1", before)
 	d.Tick()
 	require.Len(t, d.Workers.Prompts(), 1)
-	d.Trees.Leased("ENG-1")
+	d.Trees.Leased("ENG-1", d.Trees.Clean("ENG-1"))
 	d.Linear.Tickets()
 	d.Advance(time.Second)
 	d.Tick()
@@ -2248,7 +2239,7 @@ func TestTheLaunchSubcommandKickoffReadsAsSentByDispatch(t *testing.T) {
 	})
 	tree := d.Trees.Pool()
 	d.StartBeforeTheEvents()
-	require.NoError(t, d.RunWith(dispatch.Options{Dir: d.Repo}, "launch", "ENG-1", "br-eng-1").Err)
+	require.NoError(t, d.RunIn(d.Repo, "launch", "ENG-1", "br-eng-1").Err)
 	require.Len(t, d.Workers.Kicked(), 1)
 
 	pane, _, _ := strings.Cut(d.Workers.Kicked()[0], "|")

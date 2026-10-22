@@ -1,9 +1,9 @@
 name: test
 
+# Paused while the test refactor (ENG-473) runs, to save Actions minutes.
+# Restore `pull_request:` and `push: branches: [main]` to turn CI back on.
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 # The job runs PR code and pushes nothing, so its token stays read-only and
 # out of the checkout's git config.
