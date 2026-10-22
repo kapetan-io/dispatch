@@ -75,6 +75,10 @@ func withFailingPR(d *Dispatch) {
 // a prompt that the snapshot said was fine.
 func (w *Workers) BlockAfterSnapshot(ticket string) { w.d.h.blockAfterSnapshot(ticket) }
 
+// VanishAfterSnapshot closes the worker's pane after dispatch read herdr, so herdr no longer knows a pane
+// the snapshot lists.
+func (w *Workers) VanishAfterSnapshot(ticket string) { w.d.h.vanishAfterSnapshot(ticket) }
+
 // Unblock undoes BlockAfterSnapshot.
 func (w *Workers) Unblock(ticket string) { w.d.h.unblock(ticket) }
 
@@ -397,6 +401,18 @@ func TestTellReportsAWorkerHerdrRefuses(t *testing.T) {
 			assert.Empty(t, d.Workers.Prompts())
 		})
 	}
+}
+
+func TestTellReportsAPaneHerdrNoLongerKnows(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Workers.Running("ENG-1", "idle")
+	d.Workers.VanishAfterSnapshot("ENG-1")
+
+	res := d.Run("tell", "ENG-1", "hi")
+
+	require.ErrorContains(t, res.Err, "agent target w-ENG-1:p1 not found")
+	assert.NotContains(t, res.Err.Error(), "blocked on a question")
+	assert.Empty(t, d.Workers.Prompts())
 }
 
 func TestTellNamesAPoolItCouldNotRead(t *testing.T) {

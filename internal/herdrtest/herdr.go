@@ -46,6 +46,7 @@ type Herdr struct {
 	panes       []herdr.Pane
 	agents      []herdr.Agent
 	shown       map[string]string // pane to the stale status Read reports while the agent is really blocked
+	vanished    map[string]bool   // panes Read still lists although herdr no longer knows them
 	failures    map[string]error
 	prompted    []string
 	renamed     []string
@@ -60,7 +61,7 @@ type Herdr struct {
 
 // New returns an empty Herdr that records its calls in j.
 func New(j *journal.Journal) *Herdr {
-	return &Herdr{journal: j, shown: map[string]string{}, failures: map[string]error{}, names: map[string]string{}}
+	return &Herdr{journal: j, shown: map[string]string{}, vanished: map[string]bool{}, failures: map[string]error{}, names: map[string]string{}}
 }
 
 // AddWorkspace puts a workspace in herdr exactly as given.
@@ -121,6 +122,14 @@ func (h *Herdr) BlockAfterSnapshot(pane string) {
 		h.shown[pane] = a.Status
 		a.Status = "blocked"
 	})
+}
+
+// VanishAfterSnapshot closes the pane after dispatch looked: Read keeps listing the agent and
+// Prompt refuses with agent_not_found, as it does for a pane the user closed in between.
+func (h *Herdr) VanishAfterSnapshot(pane string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.vanished[pane] = true
 }
 
 // Unblock gives the agent in pane the status it had before BlockAfterSnapshot.
@@ -258,7 +267,7 @@ func (h *Herdr) Prompt(ctx context.Context, pane, text string) error {
 	const command = "cli:agent:prompt"
 	i := slices.IndexFunc(h.agents, func(a herdr.Agent) bool { return a.PaneID == pane })
 	switch {
-	case i < 0:
+	case i < 0 || h.vanished[pane]:
 		return &herdr.Refusal{Code: "agent_not_found", Message: fmt.Sprintf("agent target %s not found", pane), Command: command}
 	case h.agents[i].Status == "blocked":
 		return &herdr.Refusal{Code: "agent_blocked", Message: fmt.Sprintf("agent %s is blocked and requires interactive input", pane), Command: command}
