@@ -1,8 +1,9 @@
 name: test
 
-# CI is paused. Restore `pull_request:` and `push: branches: [main]` only when
-# a code PR and a push to main both finish in 5 minutes (ENG-497).
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 # The jobs run PR code and push nothing, so the token stays read-only and out
