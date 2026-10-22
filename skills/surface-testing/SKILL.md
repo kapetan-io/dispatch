@@ -13,6 +13,8 @@ A test should change only when the system's requirements change. Refactors, new 
 
 **Fidelity matters more than speed.** A test is worth the share of the production path it runs: real TCP, real HTTP client, real serialization, real migrations. Every substitution below trades some of that away, so make the trade only where you must.
 
+Tests also have a speed budget, 1 second per test and 5 minutes per suite. Load `dispatch:principle-fast-tests` for how to meet it without giving up fidelity.
+
 ## Core rule
 
 Every test interacts with the system the way its end users would. Never call internal or private functions from a test. If you can't observe a behavior through the surface, fix the design, not the test strategy. Models reach for internals by default, because the function is right there.
