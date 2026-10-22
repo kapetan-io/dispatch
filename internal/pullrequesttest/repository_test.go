@@ -1,5 +1,7 @@
 package pullrequesttest_test
 
+// Package exception: this package is a fake of gh and GitHub, so every test here is a contract test of the fake.
+
 import (
 	"context"
 	"errors"

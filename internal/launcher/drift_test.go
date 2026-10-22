@@ -2,6 +2,8 @@
 
 package launcher_test
 
+// Package exception: drift test that runs the shipped launcher against the real herdr and treehouse.
+
 import (
 	"context"
 	"encoding/json"

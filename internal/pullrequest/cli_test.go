@@ -1,5 +1,7 @@
 package pullrequest_test
 
+// Package exception: this package wraps the gh tool, so every test here is an adapter or contract test of it.
+
 import (
 	"context"
 	"fmt"

@@ -1,5 +1,7 @@
 package herdrtest_test
 
+// Package exception: this package is a fake of herdr, so every test here is a contract test of the fake.
+
 import (
 	"context"
 	"errors"

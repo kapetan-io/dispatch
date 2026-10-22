@@ -1,5 +1,7 @@
 package httpservicetest_test
 
+// Package exception: this package is a fake of ctx.http services, and holds the contract the fake and the real adapter both run.
+
 import (
 	"io"
 	"net/http"

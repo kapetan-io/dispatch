@@ -1,5 +1,7 @@
 package lineartest_test
 
+// Package exception: this package is a fake of Linear, so every test here is a contract test of the fake.
+
 import (
 	"context"
 	"fmt"

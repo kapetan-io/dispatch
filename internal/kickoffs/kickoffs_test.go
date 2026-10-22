@@ -11,6 +11,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
 )
 
+// Package exception: needs concurrent callers, which the CLI cannot arrange.
 func TestAReleaseRacingANewerLaunchNeverErasesTheNewerMark(t *testing.T) {
 	state, tree := t.TempDir(), t.TempDir()
 
@@ -34,6 +35,7 @@ func TestAReleaseRacingANewerLaunchNeverErasesTheNewerMark(t *testing.T) {
 	}
 }
 
+// Package exception: needs a launch replaced between two steps, which the CLI cannot arrange.
 func TestAReleaseByALaunchThatWasReplacedLeavesTheNewerMark(t *testing.T) {
 	state, tree := t.TempDir(), t.TempDir()
 	first, err := kickoffs.Mark(state, tree, time.UnixMilli(1000))

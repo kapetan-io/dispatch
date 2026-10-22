@@ -1,5 +1,7 @@
 package commenteval_test
 
+// No exception needed: these tests run commenteval's own command line through Run, which is that tool's surface.
+
 import (
 	"bytes"
 	"context"

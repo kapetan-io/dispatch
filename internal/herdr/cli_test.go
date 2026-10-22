@@ -1,5 +1,7 @@
 package herdr_test
 
+// Package exception: this package wraps the herdr tool, so every test here is an adapter or contract test of it.
+
 import (
 	"context"
 	"encoding/json"

@@ -2,6 +2,8 @@
 
 package pullrequest_test
 
+// Package exception: this package wraps the gh tool, so every test here is an adapter or contract test of it.
+
 import (
 	"context"
 	"os/exec"
@@ -55,12 +57,9 @@ func TestGitHubStillAcceptsThePRQuery(t *testing.T) {
 // stops accepting isRequired(pullRequestNumber:), and when the check that
 // branch protection requires there is no longer reported as required.
 func TestGitHubStillAnswersWhichChecksAreRequired(t *testing.T) {
-	bin, err := exec.LookPath("gh")
+	out, err := pullrequest.NewCLI("gh").Checks(context.Background(), ".", 76)
+
 	require.NoError(t, err)
-
-	out, err := exec.Command(bin, "api", "graphql", "-F", "owner=kapetan-io", "-F", "repo=dispatch", "-F", "number=76", "-f", "query="+pullrequest.ChecksQuery).CombinedOutput()
-
-	require.NoError(t, err, string(out))
 	require.Contains(t, string(out), `"name":"test"`)
 	require.Contains(t, string(out), `"isRequired":true`)
 }

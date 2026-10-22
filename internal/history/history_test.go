@@ -13,6 +13,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 )
 
+// Package exception: a 65 MiB cycle line is too slow to drive through the CLI on every run.
 func TestASegmentWithAHugeResponseInOneCycleLineReadsBack(t *testing.T) {
 	dir := t.TempDir()
 	at := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
