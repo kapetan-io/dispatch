@@ -71,6 +71,7 @@ func run(ctx context.Context, args []string, opts Options) error {
 	input := fs.String("input", "", "read go test -json output from this `file`, or - for stdin, instead of running go test on the package patterns left after the flags (default ./...)")
 	testLimit := fs.Duration("test-limit", time.Second, "longest a test may run")
 	packageLimit := fs.Duration("package-limit", 5*time.Minute, "longest a package may run")
+	tags := fs.String("tags", "", "build `tags` passed to go test, such as tests_slow to include the tagged slow tests (ignored with -input)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -81,7 +82,7 @@ func run(ctx context.Context, args []string, opts Options) error {
 	var data io.Reader
 	switch *input {
 	case "":
-		out, err := goTest(ctx, fs.Args(), opts.Dir)
+		out, err := goTest(ctx, *tags, fs.Args(), opts.Dir)
 		if err != nil {
 			return err
 		}
@@ -112,11 +113,15 @@ func run(ctx context.Context, args []string, opts Options) error {
 
 // goTest ignores go's exit status because it is 1 whenever a test fails, and
 // the output says which packages failed to build.
-func goTest(ctx context.Context, patterns []string, dir string) (io.Reader, error) {
+func goTest(ctx context.Context, tags string, patterns []string, dir string) (io.Reader, error) {
 	if len(patterns) == 0 {
 		patterns = []string{"./..."}
 	}
-	cmd := exec.CommandContext(ctx, "go", append([]string{"test", "-json", "-count=1"}, patterns...)...)
+	args := []string{"test", "-json", "-count=1"}
+	if tags != "" {
+		args = append(args, "-tags", tags)
+	}
+	cmd := exec.CommandContext(ctx, "go", append(args, patterns...)...)
 	cmd.Dir = dir
 	var out, stderr bytes.Buffer
 	cmd.Stdout = &out

@@ -25,8 +25,8 @@ test-drift: ## Check the fakes against the installed tools (CI skips this)
 	go test -tags drift ./internal/...
 
 .PHONY: test-report
-test-report: ## Report tests over the speed budget
-	@go run ./cmd/slowtests
+test-report: ## Report tests over the speed budget, tagged ones included
+	@go run ./cmd/slowtests -tags tests_slow
 
 .PHONY: ci
 ci: ## Run what CI runs: vet, the whole suite, shellcheck

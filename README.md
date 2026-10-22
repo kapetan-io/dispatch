@@ -32,7 +32,7 @@ claude --plugin-dir ~/Development/dispatch --settings '{"crossSessionInbound":"a
 | `make test-slow` | The whole suite plus the tests tagged `tests_slow`. |
 | `make test-race` | The fast suite under the race detector, for an occasional check. |
 | `make test-drift` | The drift checks against the installed tools. CI does not run it. |
-| `make test-report` | The speed report of tests over budget. |
+| `make test-report` | The speed report of tests over budget, tagged slow tests included. |
 | `make ci` | What CI runs: vet, the whole suite with the slow tests, and shellcheck. |
 
 ## Running the dispatcher
