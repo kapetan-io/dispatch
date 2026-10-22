@@ -366,6 +366,40 @@ func TestRulesInitWritesTheShippedRules(t *testing.T) {
 	assert.NotContains(t, string(entry), `import "./commands"`)
 }
 
+func TestRulesInitDescribesTurnsAndCommandsInTheTypes(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	dir := filepath.Join(t.TempDir(), "rules")
+	require.NoError(t, d.Run("rules", "init", dir).Err)
+
+	types, err := os.ReadFile(filepath.Join(dir, "types", "dispatch.d.ts"))
+	require.NoError(t, err)
+
+	assert.Contains(t, string(types), `  /** A turn the worker's current Claude session ended. */
+  export interface Turn {
+    /** When the turn ended, in milliseconds since the epoch. */
+    at: number;
+    /** True when a background task of the session was still running as the turn ended. A Claude Code version that doesn't report background tasks reads as false. Nothing links the task to a command, only the session and the order of at. */
+    running: boolean;
+  }
+`)
+	assert.Contains(t, string(types), `  /** A slash command the worker's current Claude session took. */
+  export interface Command {
+    /** The command's name without the slash, such as merge-it for /merge-it 42. */
+    name: string;
+    /** The rest of the message, trimmed and cut at 1KB. Whatever the sender typed, so a rule that forwards it should treat it as untrusted text. */
+    args: string;
+    /** True when args was longer than 1KB and was cut. */
+    cut: boolean;
+    /** When Claude took the message, in milliseconds since the epoch. A message sent to a working Claude waits for the turn to end, so at follows that turn's end. */
+    at: number;
+    /** Who typed the command, person or dispatch. Dispatch's kickoff and every nudge that starts with a slash are dispatch's, including one a dispatch tell asked for. */
+    by: "person" | "dispatch";
+  }
+`)
+	assert.Regexp(t, `/\*\* Every slash command the worker's current Claude session has taken[^\n]*\*/\n    readonly commands: Command\[\];`, string(types))
+	assert.Regexp(t, `/\*\* Every turn the worker's current Claude session has ended[^\n]*\*/\n    readonly turns: Turn\[\];`, string(types))
+}
+
 func TestRulesInitRunsTheRulesItWrote(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))

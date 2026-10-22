@@ -1522,6 +1522,12 @@ func (h *harness) blockAfterSnapshot(ticket string) {
 	h.tools.Herdr.BlockAfterSnapshot("w-" + ticket + ":p1")
 }
 
+// vanishAfterSnapshot closes the worker's pane after dispatch's snapshot, so herdr no longer
+// knows a pane the snapshot lists.
+func (h *harness) vanishAfterSnapshot(ticket string) {
+	h.tools.Herdr.VanishAfterSnapshot("w-" + ticket + ":p1")
+}
+
 // unblock undoes blockAfterSnapshot.
 func (h *harness) unblock(ticket string) {
 	h.tools.Herdr.Unblock("w-" + ticket + ":p1")

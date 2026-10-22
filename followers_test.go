@@ -180,6 +180,55 @@ func TestTickDropsAFollowerWhoseSessionExited(t *testing.T) {
 	assert.Contains(t, next(t, lines), "ENG-1 is ready for review")
 }
 
+func TestTickDropsAFollowerWhoseSocketFileIsGone(t *testing.T) {
+	socket, lines := sessionSocket(t)
+	missing := filepath.Join(filepath.Dir(socket), "gone.sock")
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d.StartBeforeTheEvents()
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+	d.Session(missing)
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+
+	d.Tick()
+
+	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Contains(t, d.LoopStderr(), "dropped watcher socket "+missing)
+	assert.Contains(t, next(t, lines), "ENG-1 is ready for review")
+
+	// A dropped follower is not tried again by the next event.
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.GitHub.PullRequest("ENG-1", cleanPR("b1"))
+	d.Tick()
+	assert.Equal(t, 1, strings.Count(d.LoopStderr(), "dropped watcher socket "+missing))
+}
+
+func TestTickMessagesNoFollowerWhileTheAlertKeepsFailing(t *testing.T) {
+	socket, lines := sessionSocket(t)
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d.StartBeforeTheEvents()
+	d.Workers.Running("ENG-1", "working")
+	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+	d.Alerts.Fail(errors.New("exit status 1: denied"))
+
+	for range 3 {
+		res := d.Run("tick")
+		require.ErrorContains(t, res.Err, "ENG-1 notify failed")
+		assert.ErrorContains(t, res.Err, "denied")
+	}
+
+	assert.Empty(t, lines)
+	assert.Empty(t, d.Alerts.Shown())
+
+	d.Alerts.Fail(nil)
+	d.Tick()
+
+	assert.Contains(t, next(t, lines), "ENG-1 is in Needs Human")
+}
+
 func TestTickMessagesEveryFollowerOfATicket(t *testing.T) {
 	socket1, lines1 := sessionSocket(t)
 	socket2, lines2 := sessionSocket(t)
