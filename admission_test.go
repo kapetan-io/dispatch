@@ -19,40 +19,40 @@ import (
 const needsHuman = "ENG-1 -> Needs Human"
 
 // OSAlerts shows alerts through the notifier dispatch picks for the operating system.
-func (d *Dispatch) OSAlerts() { d.h.builtinAlerts = true }
+func (d *Dispatch) OSAlerts() { d.builtinAlerts = true }
 
 // ExactRules keeps the [rules] table as the test wrote it, without the keys the shipped rules read.
-func (d *Dispatch) ExactRules() { d.h.exactRules = true }
+func (d *Dispatch) ExactRules() { d.exactRules = true }
 
 // CommentAttempts counts the comments dispatch asked Linear to post, accepted or not.
-func (l *Linear) CommentAttempts() int { return l.d.h.linear.CallsTo(lineartest.OnComment) }
+func (l *Linear) CommentAttempts() int { return l.d.linear.CallsTo(lineartest.OnComment) }
 
 // PathOf is where the tree of a ticket's worker is.
-func (t *Trees) PathOf(ticket string) string { return filepath.Join(t.d.h.dir, "trees", ticket) }
+func (t *Trees) PathOf(ticket string) string { return filepath.Join(t.d.dir, "trees", ticket) }
 
 // Started lists the agents the built-in launcher started.
-func (w *Workers) Started() []herdr.Worker { return w.d.h.tools.Herdr.Started() }
+func (w *Workers) Started() []herdr.Worker { return w.d.tools.Herdr.Started() }
 
 // UnconfirmedLaunch marks the ticket's tree as one whose launch started Claude at the time given
 // and has not returned (unreachable from the CLI: a test cannot kill a launch halfway).
 func (w *Workers) UnconfirmedLaunch(ticket string, at time.Time) {
-	w.d.h.t.Helper()
-	markLaunch(w.d.h.t, w.d.h.state, w.d.Trees.PathOf(ticket), at)
+	w.d.t.Helper()
+	markLaunch(w.d.t, w.d.state, w.d.Trees.PathOf(ticket), at)
 }
 
 // CorruptStopRecords overwrites the records Stop hooks left, or only the newest one, with text
 // that is not a record (unreachable from the CLI: a disk fault the product can't inject).
 func (w *Workers) CorruptStopRecords(newestOnly bool) {
-	w.d.h.t.Helper()
-	records, err := filepath.Glob(filepath.Join(w.d.h.state, "stops", "*", "*.json"))
-	require.NoError(w.d.h.t, err)
-	require.NotEmpty(w.d.h.t, records)
+	w.d.t.Helper()
+	records, err := filepath.Glob(filepath.Join(w.d.state, "stops", "*", "*.json"))
+	require.NoError(w.d.t, err)
+	require.NotEmpty(w.d.t, records)
 	if newestOnly {
-		require.Greater(w.d.h.t, len(records), 1)
+		require.Greater(w.d.t, len(records), 1)
 		newest, newestBody := "", ""
 		for _, record := range records {
 			body, err := os.ReadFile(record)
-			require.NoError(w.d.h.t, err)
+			require.NoError(w.d.t, err)
 			if string(body) > newestBody {
 				newest, newestBody = record, string(body)
 			}
@@ -60,7 +60,7 @@ func (w *Workers) CorruptStopRecords(newestOnly bool) {
 		records = []string{newest}
 	}
 	for _, record := range records {
-		require.NoError(w.d.h.t, os.WriteFile(record, []byte("not json"), 0o644))
+		require.NoError(w.d.t, os.WriteFile(record, []byte("not json"), 0o644))
 	}
 }
 
@@ -761,7 +761,7 @@ func TestAWorkerWhoseLaunchReturnedIsNotClosedWhateverItsAge(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
 	require.Len(t, d.Workers.Kicked(), 1)
-	d.h.tools.Herdr.SetStatus("w2:p2", "idle")
+	d.tools.Herdr.SetStatus("w2:p2", "idle")
 
 	d.Advance(10 * time.Minute)
 	d.Tick()
@@ -949,12 +949,12 @@ func TestAKickoffThatFailedWithTheWorkspaceStuckOpenIsClosedLater(t *testing.T) 
 	d := newDispatch(t, dispatchOptions{})
 	d.RealLauncher()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.h.tools.Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
-	d.h.tools.Herdr.Fail(herdrtest.OpCloseWorkspace, errors.New("herdr would not close it"))
+	d.tools.Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
+	d.tools.Herdr.Fail(herdrtest.OpCloseWorkspace, errors.New("herdr would not close it"))
 	_ = d.Run("tick")
-	d.h.tools.Herdr.Fail(herdrtest.OpCloseWorkspace, nil)
-	d.h.tools.Herdr.Fail(herdrtest.OpKickoff, nil)
-	d.h.tools.Herdr.SetStatus("w2:p2", "idle")
+	d.tools.Herdr.Fail(herdrtest.OpCloseWorkspace, nil)
+	d.tools.Herdr.Fail(herdrtest.OpKickoff, nil)
+	d.tools.Herdr.SetStatus("w2:p2", "idle")
 
 	d.Advance(10 * time.Minute)
 	d.Tick()

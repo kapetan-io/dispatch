@@ -1231,7 +1231,7 @@ whenever({ name: "hook", each: "linear.ticket", if: () => true,
 	assert.Equal(t, `ENG-1: {"you":"[redacted]"} {"sentry":{"base_url":"https://sentry.test/api/0"}}`, comments[0])
 	var seen []string
 	// The token must not reach any file dispatch keeps, and no command prints them whole.
-	require.NoError(t, filepath.Walk(d.h.state, func(path string, info os.FileInfo, err error) error {
+	require.NoError(t, filepath.Walk(d.state, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || strings.HasSuffix(path, ".sock") {
 			return err
 		}
@@ -1241,7 +1241,7 @@ whenever({ name: "hook", each: "linear.ticket", if: () => true,
 		return nil
 	}))
 	require.NotEmpty(t, seen)
-	for _, body := range append(seen, first.Stdout, second.Stdout, first.Err.Error(), second.Err.Error(), check.Stdout, trace.Stdout, d.h.loopOut(), d.h.loopErr(), strings.Join(d.Alerts.Shown(), "\n"), strings.Join(comments, "\n")) {
+	for _, body := range append(seen, first.Stdout, second.Stdout, first.Err.Error(), second.Err.Error(), check.Stdout, trace.Stdout, d.loopOut(), d.loopErr(), strings.Join(d.Alerts.Shown(), "\n"), strings.Join(comments, "\n")) {
 		assert.NotContains(t, body, sentryToken)
 	}
 }

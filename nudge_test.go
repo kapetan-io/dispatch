@@ -29,7 +29,7 @@ func noLinearChanges(t *testing.T, d *Dispatch) {
 // TickAfterASecond moves the clock a second, so each tick starts a new idle stretch and a nudge sent
 // by the one before it counts as answered, and runs a tick.
 func (d *Dispatch) TickAfterASecond() error {
-	d.h.t.Helper()
+	d.t.Helper()
 	d.Advance(time.Second)
 	return d.Run("tick").Err
 }
@@ -38,7 +38,7 @@ func (d *Dispatch) TickAfterASecond() error {
 // PR to p. A PR that fails after the ticket was seen In Review is what the nudge count measures from,
 // and a nudge in the same instant as that first sight is not counted.
 func (d *Dispatch) PullRequestFailsAfterEntry(p prState) {
-	d.h.t.Helper()
+	d.t.Helper()
 	d.GitHub.PullRequest("ENG-1", prState{head: p.head, checks: "PENDING", mergeable: "MERGEABLE"})
 	d.Restart()
 	d.Advance(time.Second)
@@ -48,9 +48,9 @@ func (d *Dispatch) PullRequestFailsAfterEntry(p prState) {
 // Attempts lists every receipt trace prints for the ticket, one for each attempt and each outcome,
 // where Receipts keeps one for each action.
 func (d *Dispatch) Attempts(ticket string) []Receipt {
-	d.h.t.Helper()
+	d.t.Helper()
 	res := d.Run("trace", ticket, "--json")
-	require.NoError(d.h.t, res.Err)
+	require.NoError(d.t, res.Err)
 	var found []Receipt
 	for _, text := range strings.Split(res.Stdout, "\n") {
 		var line struct {
@@ -66,7 +66,7 @@ func (d *Dispatch) Attempts(ticket string) []Receipt {
 
 // attemptsOf lists every attempt and outcome of one kind that trace prints for the ticket.
 func (d *Dispatch) attemptsOf(ticket, kind string) []Receipt {
-	d.h.t.Helper()
+	d.t.Helper()
 	var found []Receipt
 	for _, receipt := range d.Attempts(ticket) {
 		if receipt.Kind == kind {
@@ -94,103 +94,103 @@ func withFailingPR(d *Dispatch) {
 
 // BlockAfterSnapshot has the worker stop to ask a question after dispatch read herdr, so herdr refuses
 // a prompt that the snapshot said was fine.
-func (w *Workers) BlockAfterSnapshot(ticket string) { w.d.h.blockAfterSnapshot(ticket) }
+func (w *Workers) BlockAfterSnapshot(ticket string) { w.d.blockAfterSnapshot(ticket) }
 
 // VanishAfterSnapshot closes the worker's pane after dispatch read herdr, so herdr no longer knows a pane
 // the snapshot lists.
-func (w *Workers) VanishAfterSnapshot(ticket string) { w.d.h.vanishAfterSnapshot(ticket) }
+func (w *Workers) VanishAfterSnapshot(ticket string) { w.d.vanishAfterSnapshot(ticket) }
 
 // Unblock undoes BlockAfterSnapshot.
-func (w *Workers) Unblock(ticket string) { w.d.h.unblock(ticket) }
+func (w *Workers) Unblock(ticket string) { w.d.unblock(ticket) }
 
 // Gone closes the ticket's herdr workspace, which leaves its tree leased and no worker for dispatch to see.
 func (w *Workers) Gone(ticket string) {
-	require.NoError(w.d.h.t, w.d.h.tools.Herdr.CloseWorkspace(context.Background(), "w-"+ticket))
+	require.NoError(w.d.t, w.d.tools.Herdr.CloseWorkspace(context.Background(), "w-"+ticket))
 }
 
 // StallPrompts makes herdr take a prompt and never answer.
-func (w *Workers) StallPrompts() { w.d.h.tools.Herdr.StallPrompts() }
+func (w *Workers) StallPrompts() { w.d.tools.Herdr.StallPrompts() }
 
 // CheckedOut is Running on a tree that exists as a git worktree, as a worker's tree does when dispatch types into it.
 func (w *Workers) CheckedOut(ticket, status string) string {
-	w.d.h.t.Helper()
-	tree := w.d.h.worktreeOf(ticket)
+	w.d.t.Helper()
+	tree := w.d.worktreeOf(ticket)
 	w.Running(ticket, status)
 	return tree
 }
 
 // Tree is the path of the tree Running leases for a ticket.
-func (w *Workers) Tree(ticket string) string { return filepath.Join(w.d.h.dir, "trees", ticket) }
+func (w *Workers) Tree(ticket string) string { return filepath.Join(w.d.dir, "trees", ticket) }
 
 // Prompt has the person at the Claude session in tree submit a prompt, and returns once the loop has
 // taken what the hook reported.
 func (w *Workers) Prompt(tree, session, prompt string) {
-	w.d.h.t.Helper()
+	w.d.t.Helper()
 	input, err := json.Marshal(map[string]string{"hook_event_name": "UserPromptSubmit", "session_id": session, "cwd": tree, "prompt": prompt})
-	require.NoError(w.d.h.t, err)
-	require.NoError(w.d.h.t, w.d.HookAndWait("wake", string(input)).Err)
+	require.NoError(w.d.t, err)
+	require.NoError(w.d.t, w.d.HookAndWait("wake", string(input)).Err)
 }
 
 // Type has the person of the ticket's worker type a prompt into the "worker" session.
 func (w *Workers) Type(ticket, prompt string) {
-	w.d.h.t.Helper()
-	w.Prompt(w.d.h.worktreeOf(ticket), "worker", prompt)
+	w.d.t.Helper()
+	w.Prompt(w.d.worktreeOf(ticket), "worker", prompt)
 }
 
 // Kicked lists the kickoffs typed into new workers, as "<pane>|<text>".
-func (w *Workers) Kicked() []string { return w.d.h.tools.Herdr.Kicked() }
+func (w *Workers) Kicked() []string { return w.d.tools.Herdr.Kicked() }
 
 // SetPaneSession changes the Claude session id herdr reports for a pane.
 func (w *Workers) SetPaneSession(pane, session string) {
-	w.d.h.tools.Herdr.SetSession(pane, session)
+	w.d.tools.Herdr.SetSession(pane, session)
 }
 
 // FailKickoff makes herdr report that it never confirmed a kickoff.
 func (w *Workers) FailKickoff() {
-	w.d.h.tools.Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
+	w.d.tools.Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
 }
 
 // LaunchResult sets what the fake launcher answers to a launch, as the launcher's JSON.
-func (w *Workers) LaunchResult(result string) { w.d.h.launchResult(result) }
+func (w *Workers) LaunchResult(result string) { w.d.launchResult(result) }
 
 // Pool makes the dispatch repo a git repo that treehouse pools, with one tree in it, and returns the
 // tree's path.
-func (t *Trees) Pool() string { return t.d.h.pool() }
+func (t *Trees) Pool() string { return t.d.pool() }
 
 // Fail makes the notifier fail with err until it is called with nil.
-func (a *Alerts) Fail(err error) { a.d.h.tools.Alerts.Fail(err) }
+func (a *Alerts) Fail(err error) { a.d.tools.Alerts.Fail(err) }
 
 // FailMoves makes Linear refuse every status change.
-func (l *Linear) FailMoves() { l.d.h.linear.failMoves() }
+func (l *Linear) FailMoves() { l.d.linear.failMoves() }
 
 // Merged lists the pull requests that merged, as "<url>|<head>".
-func (g *GitHub) Merged() []string { return g.d.h.merges() }
+func (g *GitHub) Merged() []string { return g.d.merges() }
 
 // Close closes the ticket's PR without merging it.
-func (g *GitHub) Close(ticket string) { g.d.h.closePR(ticket) }
+func (g *GitHub) Close(ticket string) { g.d.closePR(ticket) }
 
 // PushAfterRead has someone push head to the ticket's branch right after dispatch reads the PR.
 func (g *GitHub) PushAfterRead(ticket, head string) {
-	g.d.h.tools.PullRequests.PushAfterRead(prBranch(ticket), head)
+	g.d.tools.PullRequests.PushAfterRead(prBranch(ticket), head)
 }
 
 // Head is the commit the ticket's PR points at.
-func (g *GitHub) Head(ticket string) string { return g.d.h.tools.PullRequests.Head(prBranch(ticket)) }
+func (g *GitHub) Head(ticket string) string { return g.d.tools.PullRequests.Head(prBranch(ticket)) }
 
 // FailRead makes GitHub fail every read of a pull request with err.
-func (g *GitHub) FailRead(err error) { g.d.h.tools.PullRequests.FailRead(err) }
+func (g *GitHub) FailRead(err error) { g.d.tools.PullRequests.FailRead(err) }
 
 // FailMerge makes GitHub refuse every merge with err.
-func (g *GitHub) FailMerge(err error) { g.d.h.tools.PullRequests.FailMerge(err) }
+func (g *GitHub) FailMerge(err error) { g.d.tools.PullRequests.FailMerge(err) }
 
 // RespondOlder sets what GitHub answers for the page of the PR's reviews or comments that ends before
 // the cursor. kind is "reviews" or "comments".
 func (g *GitHub) RespondOlder(kind, before string, items []activity, earlier string) {
-	g.d.h.respondOlder(kind, before, items, earlier)
+	g.d.respondOlder(kind, before, items, earlier)
 }
 
 // OlderReads lists the reads of an older page of reviews or comments.
-func (g *GitHub) OlderReads() []string { return g.d.h.tools.Calls("pullrequest", "older") }
+func (g *GitHub) OlderReads() []string { return g.d.tools.Calls("pullrequest", "older") }
 
 func TestTickNudgesAnIdleWorkerWithoutCommenting(t *testing.T) {
 	for _, status := range []string{"idle", "done"} {

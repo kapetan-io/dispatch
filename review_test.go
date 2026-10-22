@@ -17,19 +17,19 @@ import (
 // Agent starts a Claude agent in a workspace made with an empty status.
 func (w *Workers) Agent(ticket, status string) {
 	id := "w-" + ticket
-	w.d.h.tools.Herdr.AddPane(herdr.Pane{ID: id + ":p1", WorkspaceID: id})
-	w.d.h.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: status, Session: "worker", PaneID: id + ":p1", WorkspaceID: id})
+	w.d.tools.Herdr.AddPane(herdr.Pane{ID: id + ":p1", WorkspaceID: id})
+	w.d.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: status, Session: "worker", PaneID: id + ":p1", WorkspaceID: id})
 }
 
 // Reads lists the branches dispatch read a PR for, with ".<cursor>" after a page past the first.
-func (g *GitHub) Reads() []string { return g.d.h.prReads() }
+func (g *GitHub) Reads() []string { return g.d.prReads() }
 
 // CheckReads lists the times dispatch asked GitHub for the checks behind a PR's rollup.
-func (g *GitHub) CheckReads() []string { return g.d.h.tools.Calls("pullrequest", "checks") }
+func (g *GitHub) CheckReads() []string { return g.d.tools.Calls("pullrequest", "checks") }
 
 // RespondChecks sets the checks GitHub reports for PR 7 at head, and whether more pages follow.
 func (g *GitHub) RespondChecks(head string, contexts []checkContext, more bool) {
-	g.d.h.respondChecks(head, contexts, more)
+	g.d.respondChecks(head, contexts, more)
 }
 
 // escalated requires that dispatch moved ENG-1 to Needs Human and said why in one comment.
@@ -55,11 +55,11 @@ func treeComesBack(t *testing.T, d *Dispatch) {
 }
 
 // EmptyPool has every tree of the dispatch repo go back to the pool.
-func (t *Trees) EmptyPool() { t.d.h.tools.Treehouse.Clear(t.d.Repo) }
+func (t *Trees) EmptyPool() { t.d.tools.Treehouse.Clear(t.d.Repo) }
 
 // Lease has the ticket take its tree from the pool.
 func (t *Trees) Lease(ticket string) {
-	t.d.h.tools.Treehouse.Seed(t.d.Repo, treehouse.Tree{Path: filepath.Join(t.d.h.dir, "trees", ticket), Status: "leased", LeaseHolder: ticket})
+	t.d.tools.Treehouse.Seed(t.d.Repo, treehouse.Tree{Path: filepath.Join(t.d.dir, "trees", ticket), Status: "leased", LeaseHolder: ticket})
 }
 
 func TestTickNudgesAnIdleInReviewWorkerNamingTheProblem(t *testing.T) {

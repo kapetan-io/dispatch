@@ -12,7 +12,7 @@ import (
 
 // EditRepoSettings adds settings to the dispatch repo's table in config.toml, as an operator editing
 // the file does. A running loop keeps the config it started with.
-func (d *Dispatch) EditRepoSettings(settings string) { d.h.repoSettings("dispatch", settings) }
+func (d *Dispatch) EditRepoSettings(settings string) { d.repoSettings("dispatch", settings) }
 
 func TestTickNotifiesOnceWhenAnInReviewPRIsReady(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})

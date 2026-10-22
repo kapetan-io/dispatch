@@ -743,12 +743,6 @@ func TestClaudeShimSkipsEveryShimDirectoryOnPath(t *testing.T) {
 // worker, from reaching the shim through its dispatch, config and plugin root.
 func isolateShimEnv(t *testing.T) {
 	t.Helper()
-	// go build keeps its caches under HOME.
-	for _, name := range []string{"GOCACHE", "GOMODCACHE", "GOPATH"} {
-		out, err := exec.Command("go", "env", name).Output()
-		require.NoError(t, err)
-		t.Setenv(name, strings.TrimSpace(string(out)))
-	}
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("DISPATCH_BIN", "")
 	t.Setenv("DISPATCH_PLUGIN_ROOT", "")
@@ -1056,24 +1050,24 @@ type launchOutput struct {
 
 // launch runs `dispatch launch` from the dispatch repo.
 func (d *Dispatch) launch(ticket, branch string, flags ...string) launchOutput {
-	d.h.t.Helper()
+	d.t.Helper()
 	return d.launchIn(d.Repo, append([]string{ticket, branch}, flags...)...)
 }
 
 func (d *Dispatch) launchIn(dir string, args ...string) launchOutput {
-	d.h.t.Helper()
+	d.t.Helper()
 	res := d.RunIn(dir, append([]string{"launch"}, args...)...)
 	out := launchOutput{raw: res.Stdout, err: res.Err}
-	require.NoError(d.h.t, json.Unmarshal([]byte(res.Stdout), &out.result))
+	require.NoError(d.t, json.Unmarshal([]byte(res.Stdout), &out.result))
 	return out
 }
 
 // fakes is the herdr and treehouse fakes a launch scenario seeds and reads back.
-func (d *Dispatch) fakes() *tooltest.Tools { return d.h.tools }
+func (d *Dispatch) fakes() *tooltest.Tools { return d.tools }
 
 // Pooled makes the dispatch repo a git checkout that treehouse pools, holding one free tree, and
 // returns the tree's path.
-func (t *Trees) Pooled() string { return t.d.h.pool() }
+func (t *Trees) Pooled() string { return t.d.pool() }
 
 // callIndex is the position of the first call to the tool's operation in the order the fakes saw
 // them, or -1 when there was none. Order across herdr and treehouse shows only in the fakes' shared
