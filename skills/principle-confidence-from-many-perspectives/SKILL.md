@@ -5,7 +5,7 @@ description: "Apply when you are about to call a design, plan, ticket or root-ca
 
 # Confidence from Many Perspectives
 
-Before you call a design, plan, ticket, root cause, or a change that would be costly if wrong, done, ask what a lead asks developers before a deploy: "How confident are you it will work?" When the honest answer is "not very", go back instead of forward. Review again from a perspective you haven't used, add tests, or sharpen the acceptance criteria.
+Before you call a design, plan, ticket or root cause done, or a change that would be costly if wrong, ask what a lead asks developers before a deploy: "How confident are you it will work?" When the honest answer is "not very", go back instead of forward. Review again from a perspective you haven't used, add tests, or sharpen the acceptance criteria.
 
 **Why:** Your own certainty is one perspective, and it is the one that wrote the mistake. Confidence comes from independent perspectives that tried to break the work and failed.
 
