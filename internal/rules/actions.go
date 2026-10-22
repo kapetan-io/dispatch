@@ -29,7 +29,7 @@ type ActionSpec struct {
 
 // takesSlot reports whether the queued action counts against max_in_progress.
 func (q *queued) takesSlot() bool {
-	if q.spec.Kind == kindLinearMove {
+	if q.spec.Receipt == "move" {
 		return q.spec.Capped && q.args["status"] == "in_progress"
 	}
 	return q.spec.Capped

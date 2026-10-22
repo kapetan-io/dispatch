@@ -434,7 +434,7 @@ func (s *scenario) land(kind, subject string, outcome ledger.Outcome, detail str
 		if w.Kind == kind && w.Subject == subject {
 			s.tick()
 			rc := ledger.Receipt{Kind: w.Receipt, Subject: w.Subject, Once: w.Once, Rule: w.Rule, Outcome: outcome, Detail: detail, Started: s.ms(), Ended: s.ms()}
-			if w.Kind == kindLinearEscalate {
+			if w.Receipt == "escalate" {
 				rc.Detail, _ = w.Args["why"].(string)
 				rc.Steps = []ledger.Step{{Name: "move", Outcome: outcome}, {Name: "comment", Outcome: outcome}}
 			}

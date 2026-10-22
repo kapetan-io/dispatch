@@ -465,7 +465,7 @@ func (c *call) queueFn(spec ActionSpec) func(sobek.FunctionCall) sobek.Value {
 				q.opts[key] = opts.Get(key).Export()
 			}
 		}
-		if spec.Kind == kindLinearMove {
+		if spec.Receipt == "move" {
 			status, _ := q.args["status"].(string)
 			if _, ok := StatusName(status, c.state.Config.Plugins.Linear.Statuses); !ok {
 				c.throwError("queueMove: %q is not a status key. Use todo, in_progress, in_review, needs_human, close_parent or blocker_done", status)

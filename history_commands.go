@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/executor"
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/lock"
@@ -255,7 +255,8 @@ func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *wo
 		}
 	}
 	for _, want := range result.Wants {
-		if !slices.Contains(loop.MessageKinds, want.Receipt) {
+		// Only actions that may have gone out are recorded as sent; the rest run again.
+		if executor.SafeToRetry(want.Receipt) {
 			continue
 		}
 		receipts = append(receipts, ledger.Receipt{
