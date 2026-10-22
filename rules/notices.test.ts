@@ -160,6 +160,13 @@ scenario(rules, "notify-merge-failed tells the followers once per head after a r
   s.expect([["auto-merge", "github.merge", "ENG-1"]]);
 });
 
+scenario(rules, "notify-merge-failed stays silent while a base-moved refusal is still being retried", s => {
+  s.config({ repos: { dispatch: { autoMerge: true } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", { ready: true, approved: true }));
+  s.land("github.merge", "ENG-1", { outcome: "refused", detail: "Base branch was modified. Review and try the merge again." });
+  s.expect([]);
+});
+
 scenario(rules, "notify-merge-failed is silent after a merge that failed to run, which is tried again", s => {
   s.config({ repos: { dispatch: { autoMerge: true } } });
   s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", { ready: true, approved: true }));

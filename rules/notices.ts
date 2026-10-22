@@ -1,6 +1,6 @@
 import { whenever, known, minutes } from "dispatch";
-import type { Ctx, PR } from "dispatch";
-import { nudgeable, skill, heard } from "./shared";
+import type { PR } from "dispatch";
+import { nudgeable, skill, heard, finalMergeRefusal } from "./shared";
 
 // Notifications go to macOS and to every session following the ticket. A design
 // worker waits on you by design, so its ticket doesn't notify. A review does.
@@ -52,14 +52,13 @@ whenever({
   then: (pr, ctx) => ctx.notify.queueSend(pr.ticket, readyNotice(pr).text, { once: [readyNotice(pr).topic, pr.head] }),
 });
 
-// Once per head. The merge's receipt says it was refused, and a push moves the head.
-// Followers hear it even when the macOS alert fails, as today.
-const mergeRefused = (pr: PR, ctx: Ctx) => ctx.ledger.receipts(pr.ticket, { kind: "merge" })
-  .find(r => r.once[1] === pr.head && r.outcome === "refused");
+// Once per head: the merge's receipt says it was refused, and a push moves the head.
+// A base-moved refusal is reported only after its retries run out. Followers hear it
+// even when the macOS alert fails.
 whenever({
   name: "notify-merge-failed",
   each: "github.pr",
-  if:   (pr, ctx) => !pr.closed && mergeRefused(pr, ctx) !== undefined,
-  then: (pr, ctx) => ctx.notify.queueSend(pr.ticket, `${pr.ticket.id}: merging ${pr.url} failed: ${mergeRefused(pr, ctx)!.detail}`,
+  if:   (pr, ctx) => !pr.closed && finalMergeRefusal(pr, ctx) !== undefined,
+  then: (pr, ctx) => ctx.notify.queueSend(pr.ticket, `${pr.ticket.id}: merging ${pr.url} failed: ${finalMergeRefusal(pr, ctx)!.detail}`,
            { once: ["merge-failed", pr.head], followersAlways: true }),
 });

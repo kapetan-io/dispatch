@@ -1,5 +1,5 @@
-import { known } from "dispatch";
-import type { Ticket, Ctx, Receipt, Seen, Once } from "dispatch";
+import { known, minutes } from "dispatch";
+import type { Ticket, PR, Ctx, Receipt, Seen, Once } from "dispatch";
 
 // A worker gets launch_failure_limit launch attempts in a row, and nudge_limit nudges or
 // relaunches per PR head, before the ticket goes to Needs Human. Both are [rules] keys in
@@ -124,4 +124,41 @@ export const escalate = (t: Ticket, ctx: Ctx, why: string, once: Once) => {
   const move = ctx.linear.queueEscalate(t, why, { once });
   return !known(() => t.labels) || skill(t) !== "design" ? move
     : [move, ctx.notify.queueSend(t, `${t.id} is in Needs Human: ${t.title}`, { once: ["needs-human-escalated", ...once] })];
+};
+
+// Retries of a base-moved refusal, and the pause before each.
+const MERGE_RETRIES = 5;
+const MERGE_RETRY_PAUSE = minutes(1);
+
+// GitHub refuses a merge with this text when another PR merged into the base branch a
+// moment before. The same merge goes through once GitHub catches up. Every other
+// refusal waits for a push.
+const baseMoved = (r: Receipt) => r.detail.includes("Base branch was modified");
+const attemptOf = (r: Receipt) => Number(r.once[2] ?? 0);
+const retryable = (r: Receipt) => baseMoved(r) && attemptOf(r) < MERGE_RETRIES;
+
+// The newest refused merge of the PR's head (receipts come newest first).
+const lastMergeRefusal = (pr: PR, ctx: Ctx) => ctx.ledger.receipts(pr.ticket, { kind: "merge" })
+  .find(r => r.once[1] === pr.head && r.outcome === "refused");
+
+// The once key of the next merge. The first try has no attempt number and each retry
+// appends one, so the ledger counts a retry as a new merge.
+export const mergeOnce = (pr: PR, ctx: Ctx): Once => {
+  const last = lastMergeRefusal(pr, ctx);
+  if (last === undefined) return ["merge", pr.head];
+  const attempt = attemptOf(last) + (retryable(last) ? 1 : 0);
+  return attempt === 0 ? ["merge", pr.head] : ["merge", pr.head, attempt];
+};
+
+// Whether the last refusal will be retried but its pause hasn't passed.
+export const mergeRetryPaused = (pr: PR, ctx: Ctx) => {
+  const last = lastMergeRefusal(pr, ctx);
+  return last !== undefined && retryable(last) && ctx.now < (last.ended ?? last.started) + MERGE_RETRY_PAUSE;
+};
+
+// The refusal the merge-failed notice reports: one that won't be retried. A base-moved
+// refusal still inside its retries isn't reported, because the retry usually lands.
+export const finalMergeRefusal = (pr: PR, ctx: Ctx) => {
+  const last = lastMergeRefusal(pr, ctx);
+  return last !== undefined && !retryable(last) ? last : undefined;
 };
