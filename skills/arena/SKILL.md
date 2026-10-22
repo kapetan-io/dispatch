@@ -25,11 +25,12 @@ Open a todolist with one entry per phase before launching anything.
 The N candidates will receive the same prompt, so the prompt is the contract.
 
 1. State the artifact each candidate is producing.
-2. Derive the rubric. State what success looks like for *this* task, then turn it into 3-6 concrete gradeable criteria, each derived from the Objective or a user decision, and cite which. A criterion that names a shape to score down restates your prior, so rewrite it as the outcome. The rubric is the picker's tool in Phase D. Candidates only see the task. Do not put the criteria in the candidate prompt.
+2. Derive the rubric. State what success looks like for *this* task, then turn it into 3-6 concrete gradeable criteria, each derived from the Objective or a user decision, and cite which. A criterion that names a shape to score down restates your prior, so rewrite it as the outcome. The rubric is the picker's tool in Phase D. Candidates only see the task. Do not put the criteria in the candidate prompt. When the artifact names things, one criterion scores its names against the glossary from step 5, "Avoid" aliases included.
 3. List the premises the question assumes (existing mechanisms, timers, config keys), the artifact's main structural choice (where the boundary sits, who owns each thing), and any premises the caller passes in. For each, ask whether a signal now available (an event, hook or callback) makes it unnecessary. A premise that is a true constraint stays in the candidate prompt as a constraint. A premise that is not a true constraint stays out of the candidate prompt.
 4. Write the candidate prompt so it tells each candidate to name at least one premise of the question and answer "if we built this from scratch with every signal now available, would this mechanism exist?" before answering the question as asked. If the answer is no, the candidate says so first. A candidate has tested a premise when it argues from evidence that the premise is or is not a true constraint, and not merely when it names the premise. The listed premises are a sample. Each candidate also names the premise its own shape rests on most.
-5. Pick the runners. Default to three candidates, one each on the Agent tool's `model` values `opus`, `fable` and `sonnet`. Spawn more when the arena covers multiple design directions. Same model N times when the work is generation-bound rather than judgment-sensitive. Candidates use the default (general-purpose) agent, since they must write files. If a `model` value is rejected, run that seat on the default model and say so in the synthesis record.
-6. Assign output paths. Each candidate writes to its own location (a git worktree where possible, otherwise `<scratchpad>/arena-<slug>/candidate-<n>/`). For a worktree, set `isolation: "worktree"` and read the path from the agent's result. Otherwise assign the path up front. Separate before serializing shared state. When concurrent actors might share mutable state, first ask whether they need the same mutable object. If not, eliminate the sharing. Give each actor its own owned file, key, branch, or state directory, and merge only at the read/reporting boundary.
+5. Find the glossary: the nearest `docs/CONTEXT.md` above the code the task touches, plus the repo-wide one in a monorepo when it exists. Tell each candidate to read it, name things with its terms, and to load the principle skills that apply to the task with the Skill tool (index: `dispatch:principles`), instead of pasting their text into the prompt. If no glossary exists, drop the naming criterion and the Phase F name check, and say so in the note.
+6. Pick the runners. Default to three candidates, one each on the Agent tool's `model` values `opus`, `fable` and `sonnet`. Spawn more when the arena covers multiple design directions. Same model N times when the work is generation-bound rather than judgment-sensitive. Candidates use the default (general-purpose) agent, since they must write files. If a `model` value is rejected, run that seat on the default model and say so in the synthesis record.
+7. Assign output paths. Each candidate writes to its own location (a git worktree where possible, otherwise `<scratchpad>/arena-<slug>/candidate-<n>/`). For a worktree, set `isolation: "worktree"` and read the path from the agent's result. Otherwise assign the path up front. Separate before serializing shared state. When concurrent actors might share mutable state, first ask whether they need the same mutable object. If not, eliminate the sharing. Give each actor its own owned file, key, branch, or state directory, and merge only at the read/reporting boundary.
 
 ## Phase B: Fan out
 
@@ -43,7 +44,7 @@ If a candidate fails to produce output, proceed with N-1 and note the dropout in
 
 ## Phase C: Cross-judge
 
-After all Phase B candidates complete, spawn one readonly judge subagent (`subagent_type: "Plan"`, `model: "opus"`) as a new session, not a fork, and tell it not to write anything. It sees the rubric, the full premise list from Phase A (each marked as a constraint or not) and the candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with the candidates themselves. Don't spawn the judge while candidates are still writing.
+After all Phase B candidates complete, spawn one readonly judge subagent (`subagent_type: "Plan"`, `model: "opus"`) as a new session, not a fork, and tell it not to write anything. It sees the rubric, the glossary path, the full premise list from Phase A (each marked as a constraint or not) and the candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with the candidates themselves. Don't spawn the judge while candidates are still writing.
 
 ## Phase D: Pick a base
 
@@ -69,12 +70,12 @@ When N candidates converge on the same shape, that is a strong agreement signal.
 
 The synthesized artifact has to hold up under the same scrutiny as any other output. Verify every task output by checking the real thing directly. Do not infer from proxies, self-reports, or "it compiles." When verification fails, suspect the observation method before suspecting the system.
 
-Before the final message, re-read the artifact against the grounding material and report what you checked in the synthesis note's verification result.
+Before the final message, re-read the artifact against the grounding material and report what you checked in the synthesis note's verification result. Include a name check. Every package, type or term the artifact introduces is either a glossary term or listed as a new term, with a proposed entry in the format of `../design/CONTEXT-FORMAT.md` and the nearest `CONTEXT.md` it belongs in. Write the entries in the note and do not edit `CONTEXT.md`. Do not ask about each one.
 
 If verification surfaces a problem the arena did not catch, either Phase A was wrong (re-frame and re-run) or one candidate caught it and you missed the graft (go back to Phase E). Don't paper over.
 
 ## Outputs
 
-One synthesized artifact. One short synthesis note alongside, naming the base, the grafts (with source candidate), the rejections, the dropouts if any, the premises tested, and the verification result.
+One synthesized artifact. One short synthesis note alongside, naming the base, the new glossary terms with proposed entries, the grafts (with source candidate), the rejections, the dropouts if any, the premises tested, and the verification result.
 
 The last step is to show the user the result and ask before anything is filed or changed. Do not file tickets, edit files outside the arena's own output paths, open PRs, push, post comments or messages, merge anything or change any external system until the user answers, then act only on what they approve. End the turn with the question.
