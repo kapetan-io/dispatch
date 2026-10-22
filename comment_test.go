@@ -7,16 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const (
-	comment1 = "2026-10-09T00:09:00.000Z"
-	comment2 = "2026-10-09T00:20:00.000Z"
-)
-
-func withComment(t fakeTicket, createdAt string) fakeTicket {
-	t.LastComment = createdAt
-	return t
-}
-
 // A ticket comment is not an event dispatch nudges for. These tests pin that.
 func TestTickNudgesNoWorkerAboutANewTicketComment(t *testing.T) {
 	for _, test := range []struct {

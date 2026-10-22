@@ -8,10 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const requiredOnly = "ignore_optional_checks = true\n"
-
-const readyNotice = "ENG-1 is ready for review: https://github.com/kapetan-io/dispatch/pull/7"
-
 func requiredOnlyHarness(t *testing.T, p prState) *harness {
 	h := newHarness(t)
 	h.repoSettings("dispatch", requiredOnly)

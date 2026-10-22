@@ -9,10 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func designTicket(id, status string) fakeTicket {
-	return withLabel(ticket(id, status, "dispatch"), "design")
-}
-
 func TestTickLaunchesADesignTicketWithTheDesignKickoff(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(designTicket("ENG-1", "In Progress"), ticket("ENG-2", "In Progress", "dispatch"))

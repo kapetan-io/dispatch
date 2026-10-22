@@ -23,8 +23,24 @@ import (
 // codeNotReplayable is the exit code of a replay over history that holds no record of the world.
 const codeNotReplayable = 2
 
+// traceArgs reads the ticket and the --json flag, which may come on either side of it.
+func traceArgs(args []string) (ticket string, asJSON, ok bool) {
+	named := false
+	for _, arg := range args {
+		switch {
+		case arg == "--json" && !asJSON:
+			asJSON = true
+		case arg != "--json" && !named:
+			ticket, named = arg, true
+		default:
+			return "", false, false
+		}
+	}
+	return ticket, asJSON, named
+}
+
 // traceCommand prints why dispatch acted on a ticket, from history.
-func traceCommand(opts Options, ticket string) error {
+func traceCommand(opts Options, ticket string, asJSON bool) error {
 	ticket = strings.ToUpper(ticket)
 	if !ticketID.MatchString(ticket) {
 		return fmt.Errorf("%q is not a ticket identifier such as ENG-123", ticket)
@@ -33,7 +49,11 @@ func traceCommand(opts Options, ticket string) error {
 	if err != nil {
 		return err
 	}
-	err = loop.Trace(cfg.History.Dir, ticket, opts.Stdout)
+	trace := loop.Trace
+	if asJSON {
+		trace = loop.TraceJSON
+	}
+	err = trace(cfg.History.Dir, ticket, opts.Stdout)
 	if errors.Is(err, loop.ErrNoRecord) {
 		return fmt.Errorf("history has no record of %s", ticket)
 	}

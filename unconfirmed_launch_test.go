@@ -16,14 +16,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 )
 
-// markLaunch leaves the mark a launch killed before its kickoff would leave, because a
-// test cannot kill a launch halfway.
-func markLaunch(t *testing.T, state, tree string, at time.Time) {
-	t.Helper()
-	_, err := kickoffs.Mark(state, tree, at)
-	require.NoError(t, err)
-}
-
 func TestAWorkerWhoseLaunchReturnedIsNotClosedWhateverItsAge(t *testing.T) {
 	h := newHarness(t)
 	h.builtinLauncher = true

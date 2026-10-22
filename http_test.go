@@ -15,24 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch"
-	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/httpservicetest"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 )
-
-const (
-	sentryToken  = "sntrys_tok_4f9a1c"
-	sentryConfig = "\n[http.sentry]\nbase_url = \"https://sentry.test/api/0\"\ntoken_command = \"op read op://dev/sentry/token\"\n"
-	unresolved   = "/issues/?query=is:unresolved"
-)
-
-// sentry gives the harness the sentry service its config names.
-func (h *harness) sentry() *httpservicetest.Fake {
-	h.config(sentryConfig)
-	h.http = httpservicetest.New(map[string]config.HTTPService{"sentry": {BaseURL: "https://sentry.test/api/0"}})
-	h.http.Token("sentry", sentryToken)
-	return h.http
-}
 
 // commentBodies lists the text of the comments dispatch posted on Linear.
 func (h *harness) commentBodies() []string {

@@ -6,13 +6,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/ledger"
-	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -139,21 +139,22 @@ func TestTickKeepsTheTreeOfAFinishedTicketThatHoldsWork(t *testing.T) {
 }
 
 func TestTickRemovesUntrackedFilesBeforeReturningTheTree(t *testing.T) {
-	h := newHarness(t)
-	path := h.gitTree("ENG-1")
-	h.untracked(path, "zz_tmp_test.go")
-	h.worker("ENG-1", "idle")
-	h.linear.setElsewhere(ticket("ENG-1", "Done", "dispatch"))
+	d := newDispatch(t, dispatchOptions{})
+	d.Workers.Running("ENG-1", "idle")
+	path := d.Trees.Untracked("ENG-1", "zz_tmp_test.go")
+	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 
-	h.tick()
+	d.Tick()
 
 	assert.NoFileExists(t, filepath.Join(path, "zz_tmp_test.go"))
-	assert.Equal(t, []string{"w-ENG-1"}, h.closes())
-	assert.Equal(t, []string{h.repo + "|" + path + "|ENG-1"}, h.returns())
-	assert.Empty(t, h.linear.mutations())
-	returned := h.receipts("return", "")
-	require.Len(t, returned, 1)
-	assert.Equal(t, "returned "+path+", removed untracked zz_tmp_test.go", returned[0].Detail)
+	assert.Equal(t, []string{"w-ENG-1"}, d.Workers.Closed())
+	assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
+	assert.Empty(t, d.Linear.Moves())
+	assert.Empty(t, d.Linear.Comments())
+	returns := slices.DeleteFunc(d.Receipts("ENG-1"), func(r Receipt) bool { return r.Kind != "return" })
+	require.Len(t, returns, 1)
+	assert.Equal(t, "done", returns[0].State)
+	assert.Equal(t, "returned "+path+", removed untracked zz_tmp_test.go", returns[0].Detail)
 }
 
 func TestTickLeavesIgnoredFilesAloneWhenRemovingUntrackedOnes(t *testing.T) {
@@ -1097,54 +1098,6 @@ func TestTickDoesNotReturnATreeWhoseGitFailsAfterTheCycleDecidedToReturnIt(t *te
 }
 
 // teardownReceipts lists the receipts of one action kind the loop has written.
-
-// gitTree makes a pool tree that is clean and pushed: a clone of a bare
-// remote on main, at <dir>/trees/<name>, the path h.worker uses for a ticket
-// named <name>.
-func (h *harness) gitTree(ticket string) string {
-	path := filepath.Join(h.dir, "trees", ticket)
-	remote := filepath.Join(h.dir, "remotes", ticket+".git")
-	require.NoError(h.t, os.MkdirAll(filepath.Dir(remote), 0o755))
-	h.git(h.dir, "init", "--bare", "--initial-branch=main", remote)
-	require.NoError(h.t, os.MkdirAll(path, 0o755))
-	h.git(path, "init", "--initial-branch=main")
-	h.git(path, "remote", "add", "origin", remote)
-	h.commit(path)
-	h.push(path)
-	return path
-}
-
-// lease holds a tree for a ticket with no herdr workspace on it.
-func (h *harness) lease(ticket, path string) {
-	h.tools.Treehouse.Clear(h.repo)
-	h.tools.Treehouse.Seed(h.repo, treehouse.Tree{Path: path, Status: "leased", LeaseHolder: ticket})
-}
-
-// dirty stages a new file in the tree.
-func (h *harness) dirty(path string) {
-	h.untracked(path, "wip.txt")
-	h.git(path, "add", "wip.txt")
-}
-
-// untracked leaves a file in the tree that git has never seen.
-func (h *harness) untracked(path, name string) {
-	require.NoError(h.t, os.WriteFile(filepath.Join(path, name), []byte("wip"), 0o644))
-}
-
-// commit adds a commit that no remote has.
-func (h *harness) commit(path string) {
-	h.git(path, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "work")
-}
-
-func (h *harness) push(path string) {
-	h.git(path, "push", "origin", "HEAD:main")
-	h.git(path, "fetch", "origin")
-}
-
-func (h *harness) git(dir string, args ...string) {
-	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
-	require.NoError(h.t, err, string(out))
-}
 
 func assignedTo(t fakeTicket, user string) fakeTicket {
 	t.Assignee = user

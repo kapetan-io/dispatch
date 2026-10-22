@@ -1,10 +1,8 @@
 package dispatch_test
 
 import (
-	"bufio"
 	"errors"
 	"net"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,47 +13,6 @@ import (
 
 	"github.com/kapetan-io/dispatch"
 )
-
-// sessionSocket stands in for a Claude Code session's inbox and collects the
-// lines written to it. The path is short because macOS caps socket paths.
-func sessionSocket(t *testing.T) (string, <-chan string) {
-	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "ds")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	path := filepath.Join(dir, "1.sock")
-	ln, err := net.Listen("unix", path)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = ln.Close() })
-	lines := make(chan string, 8)
-	go func() {
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			go func() {
-				defer func() { _ = conn.Close() }()
-				sc := bufio.NewScanner(conn)
-				for sc.Scan() {
-					lines <- sc.Text()
-				}
-			}()
-		}
-	}()
-	return path, lines
-}
-
-func next(t *testing.T, lines <-chan string) string {
-	t.Helper()
-	select {
-	case line := <-lines:
-		return line
-	case <-time.After(5 * time.Second):
-		require.FailNow(t, "no message arrived")
-		return ""
-	}
-}
 
 func TestWatchFailsOutsideAClaudeSession(t *testing.T) {
 	h := newHarness(t)

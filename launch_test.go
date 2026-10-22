@@ -798,14 +798,6 @@ func TestClaudeShimSkipsEveryShimDirectoryOnPath(t *testing.T) {
 	assert.Equal(t, "--resume --plugin-dir /plugin --disallowedTools EnterPlanMode,ExitPlanMode --settings {\"crossSessionInbound\":\"accept\"} --dangerously-skip-permissions\n", string(argv))
 }
 
-func buildDispatch(t *testing.T) string {
-	t.Helper()
-	bin := t.TempDir()
-	out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "dispatch"), "./cmd/dispatch").CombinedOutput()
-	require.NoError(t, err, string(out))
-	return bin
-}
-
 func TestClaudeShimFlags(t *testing.T) {
 	shims, err := filepath.Abs("scripts/shims")
 	require.NoError(t, err)

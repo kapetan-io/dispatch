@@ -10,16 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	time1 = "2026-10-09T10:00:00Z"
-	time2 = "2026-10-09T11:00:00Z"
-	time3 = "2026-10-09T12:00:00Z"
-)
-
-func activityPrompt(by string) string {
-	return fmt.Sprintf("w-ENG-1:p1|PR %s for ENG-1 has new activity, %s. Read it and handle it as your build skill's step 7 says. If it asks for nothing, say nothing.", prURL1, by)
-}
-
 // watched starts an idle In Review worker whose PR has the reviews and
 // comments of before, and runs the tick that records them as seen. The clock
 // then moves, so whatever arrives next is newer than the worker dispatch knows.

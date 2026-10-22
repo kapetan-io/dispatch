@@ -13,8 +13,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 )
 
-const readyText1 = "ENG-1 is ready for review: " + prURL1
-
 func TestTickNotifiesOnceWhenAnInReviewPRIsReady(t *testing.T) {
 	h := newHarness(t)
 	h.tickets(ticket("ENG-1", "In Review", "dispatch"))

@@ -12,9 +12,7 @@ import (
 )
 
 func TestLaunchWrapperNamesThePluginRootForTheGoLauncher(t *testing.T) {
-	bin := t.TempDir()
-	out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "dispatch"), "./cmd/dispatch").CombinedOutput()
-	require.NoError(t, err, string(out))
+	bin := buildDispatch(t)
 	wrapper, err := filepath.Abs("bin/dispatch-launch")
 	require.NoError(t, err)
 	home := t.TempDir()

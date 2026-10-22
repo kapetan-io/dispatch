@@ -16,6 +16,7 @@ import (
 
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/history"
+	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/lineartest"
 )
@@ -935,10 +936,6 @@ func TestHistoryKeepsAChildsMemoryWhileTheChildrenOfItsParentAreUnread(t *testin
 	require.Positive(t, worlds)
 }
 
-const childCommentRule = `
-whenever({ name: "greet-child", each: "linear.ticket", if: (t) => t.id === "ENG-2",
-  then: (t, ctx) => ctx.linear.queueComment(t, "hello", { once: ["greet", t.statusSince] }) });`
-
 func TestAChildKeepsItsOnceKeyAcrossAFailedReadOfItsParentsChildren(t *testing.T) {
 	for _, test := range []struct {
 		name    string
@@ -1057,4 +1054,286 @@ func TestHistoryKeepsAChildsMemoryThroughALinearOutageBeforeTheChildrenFail(t *t
 			assert.False(t, strings.Contains(key, "linear.ticket/ENG-2/") || strings.Contains(key, "herdr.worker/ENG-2/"), key)
 		}
 	}
+}
+
+func traceJSON(t *testing.T, out string) []map[string]any {
+	t.Helper()
+	var lines []map[string]any
+	for _, raw := range strings.Split(strings.TrimSpace(out), "\n") {
+		var line map[string]any
+		require.NoError(t, json.Unmarshal([]byte(raw), &line))
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func TestTraceJSONPrintsOneObjectForEveryLineTheTextFormPrints(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{Rules: rule(countRule)})
+	d.Services.Sentry().Respond("sentry", "GET", "/count", 200, `{"open":3}`)
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Tick()
+	d.Stop()
+
+	text := d.Run("trace", "ENG-1")
+	res := d.Run("trace", "ENG-1", "--json")
+
+	require.NoError(t, text.Err)
+	require.NoError(t, res.Err)
+	textLines := strings.Split(strings.TrimSpace(text.Stdout), "\n")
+	lines := traceJSON(t, res.Stdout)
+	require.Len(t, lines, len(textLines))
+	for i, line := range lines {
+		switch {
+		case strings.Contains(textLines[i], " receipt  "):
+			assert.Equal(t, "receipt", line["type"])
+		case strings.Contains(textLines[i], "  http  "):
+			assert.Equal(t, "http", line["type"])
+		default:
+			assert.Equal(t, "cycle", line["type"])
+		}
+	}
+}
+
+func TestTraceJSONPrintsACycleLineWithWhatTheRuleWantedAndRead(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Tick()
+	d.Stop()
+
+	res := d.Run("trace", "ENG-1", "--json")
+
+	require.NoError(t, res.Err)
+	var wants map[string]any
+	for _, line := range traceJSON(t, res.Stdout) {
+		if line["type"] == "cycle" && line["decision"] == "wants" && line["kind"] == "launch" {
+			wants = line
+		}
+	}
+	require.NotNil(t, wants)
+	assert.Equal(t, "launch-worker", wants["rule"])
+	assert.Equal(t, "ENG-1", wants["subject"])
+	assert.Equal(t, "start", wants["why"])
+	assert.Equal(t, "2026-10-09T12:00:00Z", wants["time"])
+	assert.EqualValues(t, 1, wants["cycle"])
+	assert.NotEmpty(t, wants["once"])
+	assert.NotEmpty(t, wants["read"])
+}
+
+func TestTraceJSONPrintsAReceiptFirstAttemptedAndThenWithItsOutcome(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Tick()
+	d.Stop()
+
+	res := d.Run("trace", "ENG-1", "--json")
+	text := d.Run("trace", "ENG-1")
+
+	require.NoError(t, res.Err)
+	require.NoError(t, text.Err)
+	var launches []map[string]any
+	for _, line := range traceJSON(t, res.Stdout) {
+		if line["type"] == "receipt" && line["kind"] == "launch" {
+			launches = append(launches, line)
+		}
+	}
+	require.Len(t, launches, 2)
+	assert.Equal(t, "attempted", launches[0]["state"])
+	assert.Equal(t, "done", launches[1]["state"])
+	assert.Equal(t, "ENG-1", launches[1]["subject"])
+	assert.Equal(t, "launch-worker", launches[1]["rule"])
+	assert.Equal(t, "2026-10-09T12:00:00Z", launches[1]["time"])
+	assert.NotEmpty(t, launches[1]["detail"])
+	assert.Contains(t, text.Stdout, "launch ENG-1 done once "+launches[1]["once"].(string))
+	assert.Equal(t, []Receipt{{
+		Kind: "launch", Subject: "ENG-1", State: "done", Once: launches[1]["once"].(string), Detail: launches[1]["detail"].(string),
+	}}, d.Receipts("ENG-1"))
+}
+
+// Unreachable from the CLI: a receipt with no outcome comes from a run that crashed between an action and its result.
+func TestTraceJSONPrintsAReceiptWithNoOutcomeAsAttempted(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.CrashedEarlierRun(ledger.Receipt{
+		Kind: "comment", Subject: "ENG-9", Once: ledger.Once{"note", "ENG-9"}, Rule: "note", Started: d.Clock.Now().UnixMilli(),
+	})
+
+	receipts := d.Receipts("ENG-9")
+
+	require.Len(t, receipts, 1)
+	assert.Equal(t, "attempted", receipts[0].State)
+	assert.Equal(t, "comment", receipts[0].Kind)
+}
+
+func TestTraceJSONPrintsTheExchangesOfATicket(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{Rules: rule(countRule)})
+	d.Services.Sentry().Respond("sentry", "GET", "/count", 200, `{"open":3}`)
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Tick()
+	d.Stop()
+
+	res := d.Run("trace", "ENG-1", "--json")
+
+	require.NoError(t, res.Err)
+	var exchange map[string]any
+	for _, line := range traceJSON(t, res.Stdout) {
+		if line["type"] == "http" {
+			exchange = line
+		}
+	}
+	require.NotNil(t, exchange)
+	assert.Equal(t, "count", exchange["rule"])
+	assert.Equal(t, "sentry", exchange["service"])
+	assert.Equal(t, "/count", exchange["path"])
+	assert.EqualValues(t, 200, exchange["status"])
+	assert.Equal(t, map[string]any{"open": float64(3)}, exchange["body"])
+}
+
+func TestTraceJSONExitsOneWhenHistoryHasNoRecordOfTheTicket(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Tick()
+	d.Stop()
+
+	res := d.Run("trace", "ENG-77", "--json")
+
+	require.ErrorContains(t, res.Err, "history has no record of ENG-77")
+	assert.Equal(t, 1, res.Code)
+	assert.Empty(t, res.Stdout)
+	assert.Empty(t, d.Receipts("ENG-77"))
+}
+
+func TestTraceTakesTheJSONFlagBeforeOrAfterTheTicketAndNothingElse(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Tick()
+	d.Stop()
+
+	after := d.Run("trace", "ENG-1", "--json")
+	before := d.Run("trace", "--json", "eng-1")
+
+	require.NoError(t, after.Err)
+	require.NoError(t, before.Err)
+	assert.Equal(t, after.Stdout, before.Stdout)
+	for _, args := range [][]string{{"trace", "--json"}, {"trace", "ENG-1", "--json", "--json"}, {"trace", "ENG-1", "ENG-2", "--json"}} {
+		res := d.Run(args...)
+
+		require.ErrorContains(t, res.Err, "trace takes a ticket")
+		assert.Empty(t, res.Stdout)
+	}
+}
+
+// The cycles are written by hand so that one deterministic history holds every decision value.
+func TestTraceJSONNamesEachDecisionARuleMade(t *testing.T) {
+	h := newHarness(t)
+	now := h.clock.Now().UnixMilli()
+	w, err := history.Start(filepath.Join(h.state, "events"), h.clock.Now(), history.Header{Why: "start"}, history.Snapshot{})
+	require.NoError(t, err)
+	for i, cycle := range []history.Cycle{
+		{Waiting: []history.Entry{{Rule: "launch-worker", Subject: "ENG-4", Kind: "launch", Reason: "1 of 1 in progress"}}},
+		{Held: []history.Entry{{Rule: "launch-worker", Subject: "ENG-4", Reason: "linear unread: down"}}},
+		{Held: []history.Entry{{Rule: "comment-command", Subject: "ENG-4", Reason: "herdr unread", Dropped: true}}},
+		{Throws: []history.Throw{{Rule: "launch-worker", Subject: "ENG-4", Error: "boom"}}},
+		{Throws: []history.Throw{{Rule: "launch-worker", Subject: "ENG-4", Error: "too slow", Timeout: true}}},
+		{Covered: []history.Entry{{Rule: "launch-worker", Subject: "ENG-4", Kind: "launch", Once: ledger.Once{"launch", 3.0}, Reason: "done 12:00"}}},
+	} {
+		cycle.Line, cycle.Now = history.LineCycle, now+int64(i)
+		require.NoError(t, w.Append(cycle))
+	}
+	require.NoError(t, w.Close(true))
+
+	res, err := h.run("trace", "ENG-4", "--json")
+
+	require.NoError(t, err)
+	lines := traceJSON(t, res)
+	require.Len(t, lines, 6)
+	for i, want := range []map[string]any{
+		{"decision": "waits", "kind": "launch", "detail": "1 of 1 in progress"},
+		{"decision": "held", "detail": "linear unread: down"},
+		{"decision": "dropped", "rule": "comment-command", "detail": "herdr unread"},
+		{"decision": "threw", "detail": "boom"},
+		{"decision": "timeout", "detail": "too slow"},
+		{"decision": "covered", "kind": "launch", "once": "[launch 3]", "detail": "done 12:00"},
+	} {
+		assert.Equal(t, "cycle", lines[i]["type"])
+		assert.Equal(t, "ENG-4", lines[i]["subject"])
+		for field, value := range want {
+			assert.Equal(t, value, lines[i][field])
+		}
+	}
+}
+
+func TestTraceJSONPrintsATicketNoRuleHasWantedAnythingForAsNothing(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+	d.Tick()
+	d.Stop()
+
+	res := d.Run("trace", "ENG-1", "--json")
+
+	require.NoError(t, res.Err)
+	lines := traceJSON(t, res.Stdout)
+	require.NotEmpty(t, lines)
+	assert.Equal(t, "nothing", lines[0]["decision"])
+	assert.Equal(t, "ENG-1", lines[0]["subject"])
+}
+
+func TestTraceJSONMarksAReceiptStateResetRecordedAsNeverSent(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), false, [2]string{"ENG-1", "In Review"}))
+	d.Tick()
+	d.Stop()
+	d.Advance(time.Minute)
+	require.NoError(t, d.Run("state", "reset", "--quiet").Err)
+
+	res := d.Run("trace", "ENG-2", "--json")
+
+	require.NoError(t, res.Err)
+	var reset map[string]any
+	for _, line := range traceJSON(t, res.Stdout) {
+		if line["type"] == "receipt" && line["reset"] == true {
+			reset = line
+		}
+	}
+	require.NotNil(t, reset)
+	assert.Equal(t, "comment", reset["kind"])
+	assert.Equal(t, "done", reset["state"])
+	assert.Equal(t, "state reset", reset["detail"])
+	receipts := d.Receipts("ENG-2")
+	require.NotEmpty(t, receipts)
+	assert.True(t, receipts[len(receipts)-1].Reset)
+}
+
+func TestTraceJSONPrintsAnExchangeWithNoAnswerAsUnknown(t *testing.T) {
+	h := newHarness(t)
+	now := h.clock.Now().UnixMilli()
+	w, err := history.Start(filepath.Join(h.state, "events"), h.clock.Now(), history.Header{Why: "start"}, history.Snapshot{})
+	require.NoError(t, err)
+	require.NoError(t, w.Append(history.Cycle{
+		Line: history.LineCycle, Now: now,
+		Wants: []history.Entry{{Rule: "count", Subject: "ENG-1", Kind: "comment", Once: ledger.Once{"count", "ENG-1"}}},
+		HTTP:  []httpservice.Exchange{{Service: "sentry", Path: "/count", Rule: "count", Ticket: "ENG-1", Unknown: "sentry is down"}},
+	}))
+	require.NoError(t, w.Close(true))
+
+	res, err := h.run("trace", "ENG-1", "--json")
+
+	require.NoError(t, err)
+	lines := traceJSON(t, res)
+	require.Len(t, lines, 2)
+	assert.Equal(t, "http", lines[1]["type"])
+	assert.Equal(t, "sentry is down", lines[1]["unknown"])
+	assert.NotContains(t, lines[1], "status")
+	assert.NotContains(t, lines[1], "body")
+}
+
+func TestTraceRefusesATicketAfterAnEmptyArgument(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Tick()
+	d.Stop()
+
+	res := d.Run("trace", "", "ENG-1")
+
+	require.ErrorContains(t, res.Err, "trace takes a ticket")
+	assert.Empty(t, res.Stdout)
 }

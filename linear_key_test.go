@@ -36,16 +36,13 @@ func runCount(t *testing.T, counter string) int {
 }
 
 func TestApiKeyCommandSuppliesTheLinearKey(t *testing.T) {
-	h := newHarness(t)
-	h.useConfiguredKey(t)
-	command, _ := keyScript(t, h.dir, "echo test-key")
-	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\n")
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	command, _ := keyScript(t, t.TempDir(), "echo test-key")
+	d := newDispatch(t, dispatchOptions{Key: configuredKey, Config: "[plugins.linear]\napi_key_command = \"" + command + "\"\n"})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
-	_, err := h.run("tick")
+	d.Tick()
 
-	require.NoError(t, err)
-	assert.Len(t, h.launches(), 1)
+	assert.Len(t, d.Workers.Launched(), 1)
 }
 
 func TestApiKeyCommandWinsOverTheKeychain(t *testing.T) {
@@ -62,16 +59,16 @@ func TestApiKeyCommandWinsOverTheKeychain(t *testing.T) {
 }
 
 func TestApiKeyCommandYieldsToTheEnvironmentKey(t *testing.T) {
-	h := newHarness(t)
-	h.useConfiguredKey(t)
-	t.Setenv("LINEAR_API_KEY", "test-key")
-	command, counter := keyScript(t, h.dir, "echo other-key")
-	h.config("[plugins.linear]\napi_key_command = \"" + command + "\"\n")
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	command, counter := keyScript(t, t.TempDir(), "echo other-key")
+	d := newDispatch(t, dispatchOptions{
+		Key:    configuredKey,
+		Env:    map[string]string{"LINEAR_API_KEY": "test-key"},
+		Config: "[plugins.linear]\napi_key_command = \"" + command + "\"\n",
+	})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
-	_, err := h.run("tick")
+	d.Tick()
 
-	require.NoError(t, err)
 	assert.Equal(t, 0, runCount(t, counter))
 }
 
