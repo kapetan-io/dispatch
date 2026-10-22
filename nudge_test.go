@@ -49,7 +49,7 @@ func (d *Dispatch) PullRequestFailsAfterEntry(p prState) {
 // where Receipts keeps one for each action.
 func (d *Dispatch) Attempts(ticket string) []Receipt {
 	d.t.Helper()
-	res := d.Run("trace", ticket, "--json")
+	res := d.Run("explain", ticket, "--json")
 	require.NoError(d.t, res.Err)
 	var found []Receipt
 	for _, text := range strings.Split(res.Stdout, "\n") {
@@ -2049,7 +2049,7 @@ func TestReplayReproducesADecisionThatReadCommandsAndTraceShowsThem(t *testing.T
 	d.LoseSessionLogs()
 
 	replay := d.Run("replay")
-	trace := d.Run("trace", "eng-1")
+	trace := d.Run("explain", "eng-1")
 
 	require.NoError(t, replay.Err)
 	require.NoError(t, trace.Err)

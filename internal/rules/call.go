@@ -39,7 +39,7 @@ func (q *queued) subjectID() string {
 	return q.subject.subject
 }
 
-// recordName names what the action is about in plans.
+// recordName names what the action is about in dispatch cycle.
 func (q *queued) recordName() string {
 	if q.subject == nil {
 		return "http.service/" + q.service
@@ -197,7 +197,7 @@ func (o *recordObject) Keys() []string {
 	return keys
 }
 
-// exportable turns a fact's value into something fit for a trace line.
+// exportable turns a fact's value into something fit for an explain line.
 func exportable(v reflect.Value) any {
 	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {

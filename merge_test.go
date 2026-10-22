@@ -802,7 +802,7 @@ func TestTickReportsABranchWhoseForkPRsFillEveryPageItReads(t *testing.T) {
 
 	assert.Contains(t, d.LoopStderr(), "while reading the PR for ENG-1")
 	assert.Contains(t, d.LoopStderr(), "none from this repo")
-	assert.Regexp(t, `held\s+ENG-1\s+-\s+auto-merge\s+the PR for ENG-1 could not be read`, d.Run("plan").Stdout)
+	assert.Regexp(t, `held\s+ENG-1\s+-\s+auto-merge\s+the PR for ENG-1 could not be read`, d.Run("cycle").Stdout)
 	assert.Empty(t, d.GitHub.Merged())
 	// Each read of the branch stops after five pages.
 	assert.NotEmpty(t, d.GitHub.Reads())

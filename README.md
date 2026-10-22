@@ -42,4 +42,4 @@ cd ~/Development/dispatch && make install
 dispatch run
 ```
 
-The [user guide](docs/guide.md) covers the setup this needs (herdr, treehouse, `gh`, the Linear API key and statuses), how a ticket flows, pausing, `dispatch tick`, `dispatch plan`, `dispatch trace`, `dispatch replay`, `dispatch state reset`, `dispatch tell`, and what to do when something breaks.
+The [user guide](docs/guide.md) covers the setup this needs (herdr, treehouse, `gh`, the Linear API key and statuses), how a ticket flows, pausing, `dispatch tick`, `dispatch cycle`, `dispatch explain`, `dispatch replay`, `dispatch state reset`, `dispatch tell`, and what to do when something breaks.

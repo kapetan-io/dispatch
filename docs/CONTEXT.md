@@ -68,7 +68,7 @@ A fact whose read failed or came back cut short. A `whenever` rule that reads on
 _Avoid_: missing, empty, null
 
 **Cycle**:
-One run of every rule over the world and the ledger, after an event. It gives what dispatch wants now, what waits for a slot, and what is held and why. `dispatch rules check` runs one against the world as it is now.
+One run of every rule over the world and the ledger, after an event. It gives what dispatch wants now, what waits for a slot, and what is held and why. `dispatch rules check` runs one against the world as it is now. `dispatch cycle` prints the latest recorded one.
 _Avoid_: plan, pass
 
 **Once key**:
@@ -178,6 +178,10 @@ _Avoid_: object, entity, fact (a fact is one value in the world, such as a ticke
 **Replay**:
 Running the cycles in a stretch of history again, over the world and the ledger each one ran over, and comparing each with what the live run decided (`dispatch replay`).
 _Avoid_: rerun, simulation
+
+**Explain**:
+`dispatch explain <ticket>` prints, from saved history, each cycle that changed what the rules decided for the ticket, what they read, and each receipt. With `--json` it prints each of those lines as one JSON object.
+_Avoid_: trace (it follows nothing live), log
 
 **Escalation**:
 A ticket dispatch moved to Needs Human, with the reason and how the move and its comment came out, read from the ledger's escalate receipts.

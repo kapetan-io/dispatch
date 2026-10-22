@@ -167,9 +167,9 @@ Move a parent ticket to In Progress and the dispatcher starts its children for y
 
 - **Close.** A parent whose children are all Done, Canceled or Duplicate is moved to `close_parent` (default Done). A parent whose children couldn't be read is never closed.
 - **Promote.** A child in `todo` (default Todo) that is assigned to you, carries the `ai` label, belongs to a team in `[plugins.linear].teams`, is not a `design` or `design-review` ticket and has no unfinished blocker moves to In Progress, and the next cycle launches its worker. A child waits until every blocker reaches `blocker_done` (default Done), A blocker that is Canceled or Duplicate (any status of Linear's canceled type) never gets there, so the child moves to Needs Human with one comment naming the blocker. It is escalated again if you move it back to Todo with that blocker still attached. A child that holds a treehouse lease was paused with its tree kept, so it stays in Todo until you move it to In Progress yourself. A child whose blocker list ran past one page waits too.
-- **Cap.** Promotion stops when the In Progress tickets other than parents (a `design` parent with a live design worker counts) reach `max_in_progress`. A child waiting for a slot is promoted on a later cycle, and `dispatch plan` lists it as `waiting` meanwhile.
+- **Cap.** Promotion stops when the In Progress tickets other than parents (a `design` parent with a live design worker counts) reach `max_in_progress`. A child waiting for a slot is promoted on a later cycle, and `dispatch cycle` lists it as `waiting` meanwhile.
 
-A parent never gets a worker, whatever its status. A parent labeled `design` keeps the design worker it already has, which is never nudged or escalated. A parent labeled `design-review` is left alone too, and neither kind has its children promoted or the parent closed. If the children can't be read, the parent shows as `held` in `dispatch plan`, nothing is promoted or closed, and everything else runs as usual. Promotion is the only way the dispatcher moves a ticket to In Progress.
+A parent never gets a worker, whatever its status. A parent labeled `design` keeps the design worker it already has, which is never nudged or escalated. A parent labeled `design-review` is left alone too, and neither kind has its children promoted or the parent closed. If the children can't be read, the parent shows as `held` in `dispatch cycle`, nothing is promoted or closed, and everything else runs as usual. Promotion is the only way the dispatcher moves a ticket to In Progress.
 
 ## Teardown and pausing
 
@@ -181,7 +181,7 @@ Each cycle also looks at every tree held by a ticket assigned to you with the `a
 
 "Pushed" means every commit reachable from the tree's HEAD is also reachable from a remote-tracking ref. A branch squash-merged and then pruned from the remote counts as unpushed, so its tree stays leased with the comment until you discard it. A pause or a kept tree closes only a workspace with a Claude session in it, so a workspace you opened by hand there stays open. A tree with nothing to keep is returned whatever workspace is open on it, because a worker whose Claude session exited leaves its workspace behind and the slot has to come back.
 
-A `design` ticket is torn down and paused like a build, since its design worker holds a tree. A `design-review` ticket's tree is returned like a build's. A tree whose git state can't be read stays leased and shows as `held` in `dispatch plan`.
+A `design` ticket is torn down and paused like a build, since its design worker holds a tree. A `design-review` ticket's tree is returned like a build's. A tree whose git state can't be read stays leased and shows as `held` in `dispatch cycle`.
 
 ## Running it
 
@@ -209,7 +209,7 @@ It asks the running loop to re-read every source and waits, for up to 2 minutes 
 To see what the latest cycle wants without asking the loop:
 
 ```sh
-dispatch plan
+dispatch cycle
 ```
 
 It reads the newest history segment, so it works while `dispatch run` is stopped, and fails with `there is no history to read` before the first run. It prints one row per ticket and action: `act` for an action the cycle wants now, `waiting` for one that waits for a worker slot or an earlier step, `held` for a ticket a rule can't decide because a source it reads couldn't be read, and `covered` for an action the ledger already has a receipt for. The columns are the state, the ticket, the action, the rule and a detail, which is the once key, the reason it waits or is held, or the receipt that covers it.
@@ -217,7 +217,7 @@ It reads the newest history segment, so it works while `dispatch run` is stopped
 To see why dispatch acted on a ticket, or didn't:
 
 ```sh
-dispatch trace ENG-301
+dispatch explain ENG-301
 ```
 
 ```
@@ -226,12 +226,12 @@ dispatch trace ENG-301
 12:00:11 cycle #2 (event)  launch-worker  wants launch once [launch - 3], covered: done 12:00
 ```
 
-`trace` reads every kept segment and prints a cycle only when what the rules decided for the ticket changed since the cycle before, and again after `dispatch run` starts or `state reset`. The number after `cycle #` is the cycle line's position in this printout, which moves when old segments are deleted. Each line names the rule, what it wanted, waited for, was held on, threw or dropped, and what it read. An `http <rule> GET <service> <path> <status body>` line (or `no answer: <reason>`) shows each response a rule waited on for the ticket. It prints with a changed decision, and also when an answer changed while the decision didn't. History written before exchanges named a ticket shows none. Receipts print as they were written, first as `attempted` and then with their outcome, and those from segments already deleted print from the snapshot that carried them. It exits 1 when kept history has no record of the ticket.
+`explain` reads every kept segment and prints a cycle only when what the rules decided for the ticket changed since the cycle before, and again after `dispatch run` starts or `state reset`. The number after `cycle #` is the cycle line's position in this printout, which moves when old segments are deleted. Each line names the rule, what it wanted, waited for, was held on, threw or dropped, and what it read. An `http <rule> GET <service> <path> <status body>` line (or `no answer: <reason>`) shows each response a rule waited on for the ticket. It prints with a changed decision, and also when an answer changed while the decision didn't. History written before exchanges named a ticket shows none. Receipts print as they were written, first as `attempted` and then with their outcome, and those from segments already deleted print from the snapshot that carried them. It exits 1 when kept history has no record of the ticket.
 
-To script against a trace, add `--json`. It prints every line the text form prints as one JSON object, so the lines above come out as:
+To script against `dispatch explain`, add `--json`. It prints every line the text form prints as one JSON object, so the lines above come out as:
 
 ```sh
-dispatch trace ENG-301 --json
+dispatch explain ENG-301 --json
 ```
 
 ```
@@ -303,13 +303,13 @@ It needs the running loop, and exits 3 with `dispatch: not running` without one.
 
 **`dispatch run` stops at start with `unknown setting`.** The config has a key dispatch doesn't know, and the message names it and the file. The usual causes are a typo and an example copied from an old design document. See the [config reference](config.md).
 
-**A source can't be read.** The loop prints `dispatch: while reading: ...` and goes on. A ticket whose rule needs the unreadable fact is held, not decided on a guess, and shows as `held` in `dispatch plan` with the reason. The next resync reads again, and the ticket is decided as soon as the read works.
+**A source can't be read.** The loop prints `dispatch: while reading: ...` and goes on. A ticket whose rule needs the unreadable fact is held, not decided on a guess, and shows as `held` in `dispatch cycle` with the reason. The next resync reads again, and the ticket is decided as soon as the read works.
 
 **The run window prints `escalate ENG-4 failed: team ENG has no "Needs Human" status`.** The escalation fails and the ticket keeps its old status. The team lacks that status or calls it something else. Create it in Linear (Started category) or set `needs_human` under `[plugins.linear.statuses]`, then restart `dispatch run`, since it reads the config once. A missing `in_progress` or `close_parent` status fails the same way. A failed action is tried again at the next resync.
 
 **The run window prints `escalate ENG-4 failed: team ENG not found`.** Dispatch found the ticket but Linear's team list has no team under its key. dispatch only reads tickets from the teams in `[plugins.linear].teams`, so a config typo can't cause this. The likely cause is a team archived or deleted after dispatch read the ticket. Check in Linear that the team is still active and that the API key's user can see it. The failed action is tried again at the next resync, so no restart is needed once the team is back.
 
-**An In Progress ticket never launches.** Run `dispatch plan`. The ticket is skipped or escalated when it has no `repo` label, when its label has no `[repos.<label>]` table, or when it has sub-issues (a parent never gets a worker). A `design` ticket launches too, as a design session rather than a build, and a `design-review` ticket as a review session. A ticket that isn't assigned to you or lacks the `ai` label doesn't appear at all. `waiting` means the cap (`max_in_progress`) is reached, and `held` that the repo's pool couldn't be read. A full treehouse pool shows only when the launch runs, as `launch ENG-1 refused: pool_exhausted: all 4/4 pool trees are taken: ...` in the run window and in `dispatch tick`, naming who holds every tree. A `not_pooled` launch means the repo has no `treehouse.toml`.
+**An In Progress ticket never launches.** Run `dispatch cycle`. The ticket is skipped or escalated when it has no `repo` label, when its label has no `[repos.<label>]` table, or when it has sub-issues (a parent never gets a worker). A `design` ticket launches too, as a design session rather than a build, and a `design-review` ticket as a review session. A ticket that isn't assigned to you or lacks the `ai` label doesn't appear at all. `waiting` means the cap (`max_in_progress`) is reached, and `held` that the repo's pool couldn't be read. A full treehouse pool shows only when the launch runs, as `launch ENG-1 refused: pool_exhausted: all 4/4 pool trees are taken: ...` in the run window and in `dispatch tick`, naming who holds every tree. A `not_pooled` launch means the repo has no `treehouse.toml`.
 
 **A worker sits in a state of working.** dispatch never nudges a working worker. Open its herdr workspace and look. To redirect it, run `dispatch tell <ticket> "<text>"`. To restart it, move the ticket to Backlog and back to In Progress. Its tree and branch stay. Wait for a resync to see Backlog before moving it back, because a round trip inside one `resync` period changes nothing.
 

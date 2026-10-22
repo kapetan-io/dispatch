@@ -1276,7 +1276,7 @@ whenever({ name: "hook", each: "linear.ticket", if: () => true,
 	second := d.Run("tick")
 	require.ErrorContains(t, second.Err, "POST sentry /hook: returned 502")
 	check := d.Run("rules", "check")
-	trace := d.Run("trace", "ENG-1")
+	trace := d.Run("explain", "ENG-1")
 
 	comments := d.Linear.Comments()
 	require.Len(t, comments, 1)
@@ -1297,7 +1297,7 @@ func TestEachResponseAThenWaitedOnIsShownInTheTrace(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
 
-	res := d.Run("trace", "ENG-1")
+	res := d.Run("explain", "ENG-1")
 
 	require.NoError(t, res.Err)
 	assert.Contains(t, res.Stdout, `http  count  GET sentry /count  200 {"open":3}`)
@@ -1312,7 +1312,7 @@ func TestABaseURLThatIsNotAnHTTPURLStopsTheStart(t *testing.T) {
 		t.Run(base, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{Config: "\n[http.sentry]\nbase_url = \"" + base + "\"\n"})
 
-			res := d.Run("plan")
+			res := d.Run("cycle")
 
 			require.ErrorContains(t, res.Err, "http.sentry base_url must be an http or https URL")
 		})
@@ -1408,7 +1408,7 @@ func TestAGetThatFailsIsShownInTheTraceWithItsReasonAndNoToken(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
 
-	res := d.Run("trace", "ENG-1")
+	res := d.Run("explain", "ENG-1")
 
 	require.NoError(t, res.Err)
 	assert.Contains(t, res.Stdout, "GET sentry /down: returned 503")

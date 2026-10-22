@@ -28,7 +28,7 @@ type Response struct {
 type Exchange struct {
 	Service string `json:"service"`
 	Path    string `json:"path"`
-	// Rule and Ticket name the rule call that asked, for trace. Replay matches on Service and Path alone.
+	// Rule and Ticket name the rule call that asked, for explain. Replay matches on Service and Path alone.
 	// They are empty in exchanges recorded without them.
 	Rule    string          `json:"rule,omitempty"`
 	Ticket  string          `json:"ticket,omitempty"`

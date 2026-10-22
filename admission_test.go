@@ -293,7 +293,7 @@ func TestTickHoldsBackOnlyTheRepoWhosePoolCannotBeRead(t *testing.T) {
 	assert.Contains(t, d.LoopErr(), "dispatch: while reading the tiger pool:")
 	assert.Equal(t, []string{d.Repo + " ENG-1 thrawn01/eng-1 --model sonnet"}, d.Workers.Launched())
 	assert.Empty(t, d.Linear.Changes())
-	plan := d.Run("plan")
+	plan := d.Run("cycle")
 	require.NoError(t, plan.Err)
 	assert.Regexp(t, `(?m)^held +ENG-2 +- +launch-worker +treehouse pool tiger unread`, plan.Stdout)
 }
@@ -454,7 +454,7 @@ func TestTickHoldsATicketWhoseBlockersWereCutShort(t *testing.T) {
 	d.Linear.Tickets(blockedBy(ticket("ENG-2", "In Progress", "dispatch"), true, [2]string{"ENG-1", "Done"}))
 	d.Tick()
 
-	plan := d.Run("plan")
+	plan := d.Run("cycle")
 
 	require.NoError(t, plan.Err)
 	assert.Contains(t, plan.Stdout, "held")
@@ -633,7 +633,7 @@ func TestTickCountsADesignTicketAgainstTheWorkerCap(t *testing.T) {
 	d.Workers.Running("ENG-1", "idle")
 	d.Tick()
 
-	plan := d.Run("plan")
+	plan := d.Run("cycle")
 
 	require.NoError(t, plan.Err)
 	assert.Regexp(t, planRow("waiting", "ENG-2"), plan.Stdout)
@@ -648,7 +648,7 @@ func TestTickHoldsAPromotionForADesignTicketAboutToLaunch(t *testing.T) {
 	d.Linear.Children(child("ENG-2", "ENG-1", "Todo"))
 	d.Tick()
 
-	plan := d.Run("plan")
+	plan := d.Run("cycle")
 
 	require.NoError(t, plan.Err)
 	assert.Regexp(t, planRow("waiting", "ENG-2"), plan.Stdout)
@@ -690,7 +690,7 @@ func TestTickCountsADesignReviewAgainstMaxInProgress(t *testing.T) {
 	)
 	d.Tick()
 
-	plan := d.Run("plan")
+	plan := d.Run("cycle")
 
 	require.NoError(t, plan.Err)
 	assert.Regexp(t, planRow("waiting", "ENG-2"), plan.Stdout)
@@ -706,7 +706,7 @@ func TestTickHoldsAPromotionWhileADesignReviewTakesTheLastSlot(t *testing.T) {
 	d.Linear.Children(child("ENG-2", "ENG-1", "Todo"))
 	d.Tick()
 
-	plan := d.Run("plan")
+	plan := d.Run("cycle")
 
 	require.NoError(t, plan.Err)
 	assert.Regexp(t, planRow("waiting", "ENG-2"), plan.Stdout)
@@ -722,7 +722,7 @@ func TestTickHoldsAPromotionForADesignParentInAnUnreadRepo(t *testing.T) {
 	d.Tick()
 
 	// The design parent's worker is unknown in the unread repo, so it holds the only slot.
-	plan := d.Run("plan")
+	plan := d.Run("cycle")
 
 	require.NoError(t, plan.Err)
 	assert.Regexp(t, planRow("waiting", "ENG-2"), plan.Stdout)

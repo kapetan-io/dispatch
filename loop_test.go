@@ -88,7 +88,7 @@ func (d *Dispatch) RealLauncher() {
 // went through, where Receipts keeps only the last.
 func (d *Dispatch) TraceReceipts(ticket string) []Receipt {
 	d.t.Helper()
-	res := d.Run("trace", ticket, "--json")
+	res := d.Run("explain", ticket, "--json")
 	require.NoError(d.t, res.Err)
 	var found []Receipt
 	for _, text := range strings.Split(res.Stdout, "\n") {
@@ -244,7 +244,7 @@ func TestPlanExitsOneWithNoHistory(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 
-	res := d.Run("plan")
+	res := d.Run("cycle")
 
 	require.ErrorContains(t, res.Err, "there is no history to read")
 	assert.Equal(t, 1, res.Code)
@@ -262,7 +262,7 @@ func TestPlanPrintsStateTicketActionRuleAndDetail(t *testing.T) {
 	d.Workers.Running("ENG-3", "working")
 	d.Tick()
 
-	res := d.Run("plan")
+	res := d.Run("cycle")
 
 	require.NoError(t, res.Err)
 	assert.Regexp(t, `(?m)^waiting +ENG-2 +launch +launch-worker +2 of 2 in progress, 1st in line$`, res.Stdout)
@@ -275,7 +275,7 @@ func TestPlanShowsALaunchThatHasAReceiptAsCovered(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
 
-	res := d.Run("plan")
+	res := d.Run("cycle")
 
 	require.NoError(t, res.Err)
 	assert.Regexp(t, `(?m)^covered +ENG-1 +launch +launch-worker +done \d\d:\d\d once \[launch `, res.Stdout)
@@ -292,7 +292,7 @@ func TestPlanHoldsATicketWhoseRepoPoolCouldNotBeRead(t *testing.T) {
 	d.Advance(time.Second)
 	d.Tick()
 
-	res := d.Run("plan")
+	res := d.Run("cycle")
 
 	require.NoError(t, res.Err)
 	assert.Empty(t, d.Workers.Launched())
@@ -698,6 +698,26 @@ func TestRunRejectsUnknownCommand(t *testing.T) {
 	require.ErrorContains(t, res.Err, `unknown command "deploy"`)
 }
 
+func TestRunRejectsTheRenamedCommands(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		command string
+	}{
+		{"plan"},
+		{"trace"},
+	} {
+		t.Run(test.command, func(t *testing.T) {
+			t.Parallel()
+			d := newDispatch(t, dispatchOptions{})
+
+			res := d.Run(test.command)
+
+			require.ErrorContains(t, res.Err, `unknown command "`+test.command+`"`)
+		})
+	}
+}
+
 func TestRunStartsActsAndStopsCleanlyOnCancel(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
@@ -830,7 +850,7 @@ func TestAnUnreadHerdrHoldsALaunchAndPlanSaysWhy(t *testing.T) {
 	d.Advance(time.Hour)
 	d.Tick()
 
-	res := d.Run("plan")
+	res := d.Run("cycle")
 
 	require.NoError(t, res.Err)
 	assert.Empty(t, d.Workers.Launched())

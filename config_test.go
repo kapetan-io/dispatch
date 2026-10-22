@@ -32,7 +32,7 @@ func TestUnknownConfigKeyFailsEveryCommand(t *testing.T) {
 		want   string
 	}{
 		{"TickTopLevel", "max_in_progres = 9\n", []string{"tick"}, `unknown setting max_in_progres`},
-		{"Plan", "max_in_progres = 9\n", []string{"plan"}, `unknown setting max_in_progres`},
+		{"Plan", "max_in_progres = 9\n", []string{"cycle"}, `unknown setting max_in_progres`},
 		{"Run", "max_in_progres = 9\n", []string{"run"}, `unknown setting max_in_progres`},
 		{"Tell", "max_in_progres = 9\n", []string{"tell", "ENG-1", "hello"}, `unknown setting max_in_progres`},
 		{"BlueprintNeedsHumanTable", "[plugins.linear.needs_human]\nstatus = \"Needs Human\"\n", []string{"tick"}, "unknown settings:\n  plugins.linear.needs_human\n  plugins.linear.needs_human.status"},
@@ -94,7 +94,7 @@ func TestConfigRejectsABadRepoTable(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{OwnRepos: true, Config: test.config})
 
-			res := d.Run("plan")
+			res := d.Run("cycle")
 
 			require.ErrorContains(t, res.Err, "while reading config "+d.ConfigPath()+": ")
 			require.ErrorContains(t, res.Err, test.wantErr)
@@ -112,7 +112,7 @@ func TestConfigSamePathIsComparedAfterHomeExpansion(t *testing.T) {
 		Config:   "[repos.a]\npath = \"~/src/api\"\n[repos.b]\npath = \"" + home + "/src/api\"\n",
 	})
 
-	res := d.Run("plan")
+	res := d.Run("cycle")
 
 	require.ErrorContains(t, res.Err, "repos.a and repos.b have the same path "+home+"/src/api")
 }
@@ -136,7 +136,7 @@ func TestConfigNamesTheKeyOfAWrongTypedSetting(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[repos.api]\npath = \"~/x\"\nauto_merge = 1\n"})
 
-	res := d.Run("plan")
+	res := d.Run("cycle")
 
 	require.ErrorContains(t, res.Err, "repos.api.auto_merge: incompatible types")
 }

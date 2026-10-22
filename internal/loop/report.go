@@ -179,7 +179,7 @@ var verbs = map[string]string{
 }
 
 // report is what a tick prints once the loop has settled, one line per ticket in
-// plan's words, and the exit code it ends with.
+// `dispatch cycle`'s words, and the exit code it ends with.
 func (l *Loop) report(w *waiter) Response {
 	var lines, failures []string
 	code := CodeSettled
