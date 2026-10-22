@@ -23,7 +23,7 @@ Load `dispatch:converse` with the Skill tool first.
 
 ## Driving dispatch
 
-Run `dispatch watch <ticket>` only when the user asks you to follow it, or says yes when you offer, which you may do after moving a ticket to In Progress or taking over one whose worker is running. When you offer, ask whether to review its PR too. A yes to both is the review request. Check that it printed `watching <ticket>`. The dispatcher then sends that ticket's events here as messages. If you watched a ticket, run `dispatch unwatch <ticket>` once its PR merges or the ticket closes. If watching fails, say so and carry on, since events then arrive only as notifications.
+Run `dispatch watch <ticket>` only when the user asks you to follow it, or says yes when you offer. After moving a ticket to In Progress or taking over one whose worker is running, you may offer to review its PR. A yes means follow the ticket and review the PR when it is ready. Check that it printed `watching <ticket>`. The dispatcher then sends that ticket's events here as messages. If you watched a ticket, run `dispatch unwatch <ticket>` once its PR merges or the ticket closes. If watching fails, say so and carry on, since events then arrive only as notifications.
 
 - After a ticket moves, whether you or the user moved it, run `dispatch tick`.
 - After posting review findings on a worker's PR, run `dispatch tick` so the nudge reaches the worker now instead of at the next resync.
