@@ -25,8 +25,8 @@ jobs:
       - uses: dorny/paths-filter@v3.0.2
         id: filter
         with:
-          # What the Go tests and shellcheck read. No test reads skills/**,
-          # evals/** or CLAUDE.md.
+          # What the Go tests and shellcheck read, testdata/ included. No test
+          # reads skills/**, evals/** or CLAUDE.md.
           filters: |
             code:
               - '**/*.go'
@@ -36,6 +36,7 @@ jobs:
               - 'README.md'
               - 'docs/**'
               - 'rules/**'
+              - 'testdata/**'
               - '.claude-plugin/**'
               - 'hooks/hooks.json'
               - 'bin/dispatch-launch'
