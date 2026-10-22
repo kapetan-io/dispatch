@@ -298,18 +298,54 @@ func (l *launch) trackBranch(ctx context.Context) bool {
 	return false
 }
 
+// launchAttempts is how many times a launch tries a lease or a checkout that may have failed only
+// for the moment, such as another process holding a lock in the clone. A failure that lasts
+// all of them is reported, and counts against the ticket.
+const launchAttempts = 3
+
 // leaseTree reuses the tree already holding this ticket's lease, so a relaunch
 // resumes in place. A tree is never adopted just for having the branch checked
 // out, since it could be the user's own clone or a pool tree treehouse may hand
 // to someone else. If the branch is checked out elsewhere, the switch fails
 // loudly.
 func (l *launch) leaseTree(ctx context.Context, existed bool) (Result, bool) {
+	var res Result
+	for attempt := 1; attempt <= launchAttempts; attempt++ {
+		if attempt > 1 {
+			l.log("retrying (attempt %d of %d): %s", attempt, launchAttempts, res.Detail)
+			if !l.sleep(ctx, 2*l.opts.Pace) {
+				return res, false
+			}
+		}
+		var again bool
+		if res, again = l.leaseOnce(ctx, attempt > 1); res.Status == "" {
+			break
+		} else if !again {
+			return res, false
+		}
+	}
+	if res.Status != "" {
+		return res, false
+	}
+	return l.checkout(ctx, existed)
+}
+
+// leaseOnce takes the lease, or says in again whether the failure it reports could be gone on
+// the next try. A lease it finds on a retry is one an earlier attempt took before treehouse
+// failed, so it counts as this launch's own and gets its checkout.
+func (l *launch) leaseOnce(ctx context.Context, retry bool) (res Result, again bool) {
 	req := l.req
-	trees, _ := l.opts.Treehouse.Trees(ctx, l.repo)
+	trees, err := l.opts.Treehouse.Trees(ctx, l.repo)
+	if err != nil {
+		// An unread pool may hold this ticket's lease already, and leasing again would
+		// take a second tree for it.
+		return Result{Status: StatusPoolError, Detail: treehouse.StatusError(l.repo, err).Error()}, true
+	}
 	for _, t := range trees {
 		if t.LeaseHolder == req.Ticket {
 			l.tree = t.Path
-			return Result{}, true
+			l.fresh = retry
+			return Result{}, false
 		}
 	}
 
@@ -322,36 +358,66 @@ func (l *launch) leaseTree(ctx context.Context, existed bool) (Result, bool) {
 		if err.Error() != "" {
 			l.log("treehouse get: %v", err)
 		}
-		return l.leaseFailure(ctx, err.Error()), false
+		res = l.leaseFailure(ctx, err.Error())
+		return res, res.Status == StatusPoolError
 	}
 	l.tree = leased.Path
 	l.log("leased %s", l.tree)
 	l.fresh = true
+	return Result{}, false
+}
 
-	var switchErr error
+// checkout puts the leased tree on the ticket's branch. The lease goes back to the pool when
+// that fails for good.
+func (l *launch) checkout(ctx context.Context, existed bool) (Result, bool) {
+	// A lease from an earlier run is already on its branch.
+	if !l.fresh {
+		return Result{}, true
+	}
+	req := l.req
 	from := ""
-	if existed {
-		switchErr = l.gitToStderr(ctx, l.tree, "switch", req.Branch)
-	} else {
+	if !existed {
 		from = " from " + req.Base
-		_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", req.Base)
-		switchErr = l.gitToStderr(ctx, l.tree, "switch", "--no-track", "-c", req.Branch, "origin/"+req.Base)
-		if switchErr != nil {
-			switchErr = l.gitToStderr(ctx, l.tree, "switch", "-c", req.Branch, req.Base)
+	}
+	var said string
+	for attempt := 1; attempt <= launchAttempts; attempt++ {
+		if attempt > 1 {
+			l.log("retrying checkout of %s (attempt %d of %d): %s", req.Branch, attempt, launchAttempts, said)
+			if !l.sleep(ctx, 2*l.opts.Pace) {
+				break
+			}
+		}
+		var out strings.Builder
+		var err error
+		if existed {
+			err = l.gitToStderr(ctx, &out, l.tree, "switch", req.Branch)
+		} else {
+			_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", req.Base)
+			err = l.gitToStderr(ctx, &out, l.tree, "switch", "--no-track", "-c", req.Branch, "origin/"+req.Base)
+			if err != nil {
+				err = l.gitToStderr(ctx, &out, l.tree, "switch", "-c", req.Branch, req.Base)
+			}
+		}
+		if err == nil {
+			return Result{}, true
+		}
+		said = strings.Join(strings.Fields(out.String()), " ")
+		if said == "" {
+			said = err.Error()
 		}
 	}
-	if switchErr != nil {
-		l.log("checkout of %s failed in leased tree, returning the lease", req.Branch)
-		l.returnLease(ctx)
-		return Result{Status: StatusCheckoutFailed, Detail: fmt.Sprintf("git switch to %s%s failed in leased tree %s (lease returned)", req.Branch, from, l.tree)}, false
-	}
-	return Result{}, true
+	l.log("checkout of %s failed in leased tree, returning the lease", req.Branch)
+	l.returnLease(ctx)
+	return Result{Status: StatusCheckoutFailed, Detail: fmt.Sprintf("git switch to %s%s failed in leased tree %s (lease returned): %s", req.Branch, from, l.tree, said)}, false
 }
 
 var maxTrees = regexp.MustCompile(`(?m)^max_trees *= *([0-9]+)`)
 
 func (l *launch) leaseFailure(ctx context.Context, leaseErr string) Result {
-	trees, _ := l.opts.Treehouse.Trees(ctx, l.repo)
+	trees, err := l.opts.Treehouse.Trees(ctx, l.repo)
+	if err != nil {
+		return Result{Status: StatusPoolError, Detail: fmt.Sprintf("treehouse lease failed and the pool could not be read: %v. treehouse stderr: %s", treehouse.StatusError(l.repo, err), leaseErr)}
+	}
 	limit := -1
 	if toml, err := os.ReadFile(filepath.Join(l.repo, "treehouse.toml")); err == nil {
 		if m := maxTrees.FindSubmatch(toml); m != nil {
@@ -509,9 +575,15 @@ func (l *launch) defaultBranch(ctx context.Context) string {
 	return "main"
 }
 
-func (l *launch) gitToStderr(ctx context.Context, dir string, args ...string) error {
+// gitToStderr runs git in dir, copying its output to the launcher's stderr as well as to output,
+// which the receipt quotes.
+func (l *launch) gitToStderr(ctx context.Context, output io.Writer, dir string, args ...string) error {
 	cmd := l.opts.Env.Command(ctx, "git", append([]string{"-C", dir}, args...)...)
-	cmd.Stdout, cmd.Stderr = l.opts.Stderr, l.opts.Stderr
+	out := output
+	if l.opts.Stderr != nil {
+		out = io.MultiWriter(output, l.opts.Stderr)
+	}
+	cmd.Stdout, cmd.Stderr = out, out
 	return cmd.Run()
 }
 

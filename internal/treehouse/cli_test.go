@@ -98,6 +98,36 @@ func TestCLIReadsWhatTreehouseSays(t *testing.T) {
 		assert.Contains(t, treehouse.StatusError("/repo", errors.New("exit status 1")).Error(), "while running treehouse status in /repo: exit status 1")
 	})
 
+	t.Run("LeaseFailureDropsTheUpdateBannerAndKeepsTheRest", func(t *testing.T) {
+		t.Setenv(envExit, "1")
+		t.Setenv(envStdout, "partial output")
+		t.Setenv(envStderr, "A new version of treehouse is available: v3.1.2 → v3.1.5\nRun \"treehouse update\" to update\n\n🌳 Setting up worktree...\n")
+
+		_, err := pool.Lease(ctx, t.TempDir(), "ENG-1")
+
+		require.EqualError(t, err, "🌳 Setting up worktree... (exit status 1, stdout: partial output)")
+	})
+
+	t.Run("LeaseFailureWithOnlyABannerStillSaysTheExitStatus", func(t *testing.T) {
+		t.Setenv(envExit, "1")
+		t.Setenv(envStdout, "")
+		t.Setenv(envStderr, "A new version of treehouse is available: v3.1.2 → v3.1.5\nRun \"treehouse update\" to update\n")
+
+		_, err := pool.Lease(ctx, t.TempDir(), "ENG-1")
+
+		require.EqualError(t, err, "exit status 1")
+	})
+
+	t.Run("StatusFailureCarriesTreehousesStderr", func(t *testing.T) {
+		t.Setenv(envExit, "1")
+		t.Setenv(envStdout, "")
+		t.Setenv(envStderr, "database is locked\n")
+
+		_, err := pool.Trees(ctx, t.TempDir())
+
+		require.EqualError(t, err, "database is locked (exit status 1)")
+	})
+
 	t.Run("LeaseWithNoOutputFailsWithNoMessage", func(t *testing.T) {
 		t.Setenv(envExit, "0")
 		t.Setenv(envStdout, "")

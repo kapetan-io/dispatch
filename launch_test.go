@@ -1160,3 +1160,115 @@ func branchIn(t *testing.T, dir string) string {
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }
+
+func (d *Dispatch) calls(tool, name string) int {
+	var n int
+	for _, call := range d.fakes().Journal.Calls() {
+		if call.Tool == tool && call.Name == name {
+			n++
+		}
+	}
+	return n
+}
+
+func TestLaunchLeasesAgainWhenTreehouseFailsOnce(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.fakes().Treehouse.FailLeasesOnce(errors.New("exit status 1"))
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Equal(t, tree, out.result["worktree"])
+	assert.Equal(t, 2, d.calls("treehouse", "lease"))
+}
+
+func TestLaunchReadsThePoolAgainWhenTreehouseStatusFailsOnce(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	d.fakes().Treehouse.FailTrees(errors.New("exit status 1"))
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Equal(t, 1, d.calls("treehouse", "lease"))
+}
+
+func TestLaunchReportsAPoolItCannotRead(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	d.fakes().Treehouse.FailTrees(errors.New("exit status 1 (db locked)"), errors.New("exit status 1 (db locked)"), errors.New("exit status 1 (db locked)"))
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "pool_error", out.result["status"])
+	assert.Contains(t, out.result["detail"], "while running treehouse status in")
+	assert.Contains(t, out.result["detail"], "db locked")
+	assert.Equal(t, 0, d.calls("treehouse", "lease"))
+}
+
+func TestLaunchSwitchesAgainWhenGitRefusesTheBranchOnce(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	// Stands in for another process holding the ref lock: git aborts the first update of the branch.
+	marker := filepath.Join(d.dir, "refuse-once")
+	require.NoError(t, os.WriteFile(marker, nil, 0o644))
+	hook := "#!/bin/sh\n[ \"$1\" = prepared ] && grep -q 'refs/heads/thrawn01/eng-1$' && [ -f " + marker + " ] && rm " + marker + " && exit 1\nexit 0\n"
+	require.NoError(t, os.WriteFile(filepath.Join(d.Repo, ".git", "hooks", "reference-transaction"), []byte(hook), 0o755))
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Equal(t, tree, out.result["worktree"])
+	assert.Empty(t, d.Trees.Returned())
+	assert.Equal(t, "thrawn01/eng-1", strings.TrimSpace(revParseName(t, tree)))
+}
+
+func TestLaunchCarriesGitsMessageWhenTheCheckoutFails(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+
+	out := d.launch("ENG-1", "thrawn01/eng-1", "--base", "nosuch")
+
+	assert.Equal(t, "checkout_failed", out.result["status"])
+	assert.Contains(t, out.result["detail"], "(lease returned): fatal: invalid reference: origin/nosuch")
+	assert.Contains(t, out.result["detail"], "invalid reference: nosuch")
+}
+
+func revParseName(t *testing.T, dir string) string {
+	t.Helper()
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	require.NoError(t, err)
+	return string(out)
+}
+
+func TestLaunchChecksOutTheBranchInATreeTreehouseLeasedBeforeItFailed(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.fakes().Treehouse.FailLeasesAfterTaking(errors.New("exit status 1"))
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Equal(t, tree, out.result["worktree"])
+	assert.Equal(t, "thrawn01/eng-1", strings.TrimSpace(revParseName(t, tree)))
+}
+
+func TestLaunchReturnsATreeTreehouseLeasedBeforeItFailedWhenTheWorkspaceFails(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.fakes().Treehouse.FailLeasesAfterTaking(errors.New("exit status 1"))
+	d.fakes().Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "workspace_failed", out.result["status"])
+	assert.Equal(t, []string{d.Repo + "|" + tree + "|ENG-1"}, d.Trees.Returned())
+}

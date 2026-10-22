@@ -91,7 +91,7 @@ Your own table. Dispatch never interprets it, and a rule reads a key as `ctx.con
 |---|---|---|
 | `worker_model` | `sonnet` | The model name passed to `claude --model` for every build worker. |
 | `design_model` | `opus` | The model name passed to `claude --model` for the worker of a `design` or `design-review` ticket. |
-| `launch_failure_limit` | `2` | Failed launches in a row before the ticket goes to Needs Human with the launcher's error. A full treehouse pool (`pool_exhausted`) never counts. Closing a Claude whose launch died before its kickoff ran counts as one failure. |
+| `launch_failure_limit` | `2` | Failed launches in a row before the ticket goes to Needs Human with the launcher's error. A full treehouse pool (`pool_exhausted`) never counts. A launch tries a failed treehouse lease or git checkout 3 times before it counts as a failure, since a lock held by another process clears in seconds. Closing a Claude whose launch died before its kickoff ran counts as one failure. |
 | `nudge_limit` | `2` | PR nudges to an idle In Review worker with no push before the ticket goes to Needs Human. The count resets when a push moves the PR head, and it also caps relaunches of a gone worker that never pushes. In Progress tickets never read it, since an idle In Progress worker is nudged once per Stop and never escalated. |
 | `blocked_renotify_minutes` | `15` | Minutes between notifications for a worker that stays blocked on a question, a notification can only go out in a cycle, so it can come later than the period by up to one `resync`. The first notification comes on the first cycle that sees the worker blocked. `0` notifies in every cycle while it is blocked. |
 
