@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/loop"
 )
 
@@ -47,7 +48,7 @@ func recordStop(ctx context.Context, opts Options) error {
 			}
 		}
 	}
-	askCtx, cancel := context.WithTimeout(ctx, stopTimeout)
+	askCtx, cancel := clock.WithTimeout(ctx, opts.Clock, "record-stop", stopTimeout)
 	defer cancel()
 	// The hook runs in every session, so a report dispatch can't take is dropped without a word
 	// whether dispatch is not running, stuck or refuses it.

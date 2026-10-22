@@ -9,12 +9,30 @@ import (
 
 	"github.com/evanw/esbuild/pkg/api"
 	"github.com/grafana/sobek"
+
+	"github.com/kapetan-io/dispatch/internal/clock"
 )
 
-// Timeouts bound one rule call on the wall clock. The zero value means 1
-// second for an if and 30 seconds for a then.
+// Timeouts bound one rule call on Clock, which defaults to the wall clock. The zero value
+// means 1 second for an if and 30 seconds for a then.
 type Timeouts struct {
 	If, Then time.Duration
+	Clock    clock.Clock
+}
+
+func (t Timeouts) clock() clock.Clock {
+	if t.Clock == nil {
+		return clock.Wall{}
+	}
+	return t.Clock
+}
+
+func (t Timeouts) now() time.Time { return t.clock().Now() }
+
+// limit interrupts rt once the clock passes the budget of phase, and returns the stop function.
+// what names the deadline, see clock.Clock.NewDeadline.
+func (t Timeouts) limit(rt *sobek.Runtime, what, phase string) (stop func() bool) {
+	return clock.AfterFunc(t.clock(), what, t.forPhase(phase), func() { rt.Interrupt("timeout") })
 }
 
 func (t Timeouts) forPhase(phase string) time.Duration {
@@ -132,7 +150,7 @@ func compile(dir, code string, timeouts Timeouts) (*Rules, error) {
 	if err := reg.install(rt, nil); err != nil {
 		return nil, err
 	}
-	stop := timeLimit(rt, timeouts.forPhase(phaseThen))
+	stop := timeouts.limit(rt, "rules load", phaseThen)
 	_, err = rt.RunProgram(program)
 	stop()
 	if err != nil {

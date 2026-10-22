@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/delivery"
 	"github.com/kapetan-io/dispatch/internal/herdr"
@@ -54,9 +55,11 @@ type Env struct {
 	Stderr       io.Writer
 	// Typed is what dispatch typed into workers, shared with the launcher and the loop.
 	Typed *typed.Log
-	// LaunchDeadline and Deadline override the defaults, so a test can see a launch time out.
+	// LaunchDeadline and Deadline override the default budgets, which run on Clock.
 	LaunchDeadline time.Duration
 	Deadline       time.Duration
+	// Clock runs the deadlines. Defaults to the wall clock.
+	Clock clock.Clock
 }
 
 // Result is how an action ended.
@@ -81,7 +84,12 @@ type Executor struct {
 }
 
 // New returns an executor over env.
-func New(env Env) *Executor { return &Executor{Env: env, Followers: &delivery.Followers{}} }
+func New(env Env) *Executor {
+	if env.Clock == nil {
+		env.Clock = clock.Wall{}
+	}
+	return &Executor{Env: env, Followers: &delivery.Followers{}}
+}
 
 // WhyNotLaunch says why a launch must not start whatever the rule asked, or "" when it
 // may. A worker that is present or unknown means a second one could start beside it.
@@ -141,7 +149,7 @@ func (e *Executor) deadline(kind string) time.Duration {
 
 // Run carries out w against what wd read when the cycle ran.
 func (e *Executor) Run(ctx context.Context, w rules.Want, wd world.World) Result {
-	ctx, cancel := context.WithTimeout(ctx, e.deadline(w.Kind))
+	ctx, cancel := clock.WithTimeout(ctx, e.Clock, w.Kind+" "+w.Subject, e.deadline(w.Kind))
 	defer cancel()
 	var res Result
 	switch w.Kind {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/grafana/sobek"
 
+	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 )
 
@@ -47,7 +48,7 @@ func (c *call) httpAPI() *sobek.Object {
 		if c.state.HTTP == nil {
 			c.unknownRead("ctx.http has no services to call here. rules check calls none, so test the rule with rules test")
 		}
-		ctx, cancel := context.WithDeadline(context.Background(), c.deadline)
+		ctx, cancel := clock.WithTimeout(context.Background(), c.timeouts.clock(), "rule "+c.rule+" http.get", c.deadline.Sub(c.timeouts.now()))
 		defer cancel()
 		res, err := c.state.HTTP.Get(ctx, service, path)
 		if err != nil {

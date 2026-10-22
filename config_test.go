@@ -662,7 +662,11 @@ func TestApiKeyCommandThatBlocksTimesOutAndTheNextStartRetries(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	timeout := dispatch.Options{KeyCommandTimeout: time.Second}
 
-	res := d.runOver(context.Background(), timeout, "tick")
+	ticked := later(func() Result { return d.runOver(context.Background(), timeout, "tick") })
+	require.Eventually(t, func() bool { return runCount(t, counter) == 1 }, 20*time.Second, time.Millisecond)
+	assert.Equal(t, time.Second, d.Deadline("api_key_command"))
+	d.Expire("api_key_command")
+	res := ticked()
 
 	require.ErrorContains(t, res.Err, command)
 	require.ErrorContains(t, res.Err, "timed out after 1s")

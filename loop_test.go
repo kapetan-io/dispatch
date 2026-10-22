@@ -52,6 +52,7 @@ func (d *Dispatch) LoopStops() (string, error) {
 		select {
 		case err = <-running.done:
 			d.running = nil
+			d.loopUp.Store(false)
 			return true
 		default:
 			return false
@@ -230,6 +231,7 @@ func TestTickTimeoutSaysWhatIsStillPending(t *testing.T) {
 	require.ErrorContains(t, res.Err, "timed out after 1s")
 	assert.Equal(t, 1, res.Code)
 	assert.Contains(t, res.Stdout, "ENG-1 launch is still running (launch-worker)")
+	d.Expire("herdr.launch ENG-1")
 	d.Stop()
 }
 
@@ -376,7 +378,11 @@ func TestALaunchThatLandsAfterItsDeadlineGetsNoSecondWorker(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.StallLaunches()
 
-	res := d.RunWith(dispatch.Options{LaunchTimeout: 100 * time.Millisecond}, "tick")
+	ticked := later(func() Result { return d.RunWith(dispatch.Options{LaunchTimeout: 100 * time.Millisecond}, "tick") })
+	require.Eventually(t, func() bool { return len(d.Workers.Launched()) == 1 }, 20*time.Second, time.Millisecond)
+	assert.Equal(t, 100*time.Millisecond, d.Deadline("herdr.launch ENG-1"))
+	d.Expire("herdr.launch ENG-1")
+	res := ticked()
 	require.ErrorContains(t, res.Err, "ENG-1 launch failed")
 	require.Len(t, d.ReceiptsOf("launch", "ENG-1"), 1)
 
@@ -397,7 +403,12 @@ func TestANudgeThatTimesOutCountsAsToldAndIsNeverRepeated(t *testing.T) {
 	d.Workers.StallPrompts()
 	d.Advance(time.Minute)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	for range 3 {
+	advanced := later(func() bool { d.Advance(time.Hour); return true })
+	require.Eventually(t, func() bool { return len(d.tools.Calls("herdr", "prompt")) == 1 }, 20*time.Second, time.Millisecond)
+	d.Expire("herdr.nudge ENG-1")
+	advanced()
+	d.Tick()
+	for range 2 {
 		d.Advance(time.Hour)
 		d.Tick()
 	}
@@ -417,7 +428,11 @@ func TestStoppingTheLoopAnswersATickThatIsWaiting(t *testing.T) {
 	go func() { ticked <- d.Run("tick", "--timeout", "1m") }()
 	require.Eventually(t, func() bool { return len(d.Workers.Launched()) == 1 }, 20*time.Second, 5*time.Millisecond)
 
-	d.Stop()
+	// Stopping waits for the launch in flight until its deadline, and the loop answers no settle until then.
+	d.Deadline("herdr.launch ENG-1")
+	stopped := later(func() bool { d.Stop(); return true })
+	d.Clock.expire("herdr.launch ENG-1")
+	stopped()
 
 	select {
 	case res := <-ticked:
@@ -522,6 +537,30 @@ func TestAnAlertThatHangsDoesNotStopTheLoopAnswering(t *testing.T) {
 		res := d.RunWithoutLoop("tick", "--timeout", "100ms")
 		return res.Err != nil && strings.Contains(res.Err.Error(), "timed out after 100ms")
 	}, 5*time.Second, 20*time.Millisecond)
+}
+
+func TestAnAlertThatHangsIsCutOffWhenTheClockPassesItsDeadlineAndShownAgainLater(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Linear.Overflow()
+	d.tools.Alerts.Stall(true)
+	opts := d.options(dispatch.Options{})
+	opts.Stdout, opts.Stderr = &syncBuffer{}, &syncBuffer{}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- dispatch.Run(ctx, []string{"run"}, opts) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	// The alert in flight stays stalled until its deadline, and the one at the next resync is shown.
+	d.Deadline("alert")
+	d.tools.Alerts.Stall(false)
+	d.Expire("alert")
+	// A tick returns once the loop has taken the cut-off alert out of what it waits on.
+	require.NoError(t, d.RunWithoutLoop("tick").Err)
+	d.Clock.Advance(time.Hour)
+
+	require.Eventually(t, func() bool { return len(d.Alerts.Shown()) == 1 }, 5*time.Second, 5*time.Millisecond)
+	assert.Contains(t, d.Alerts.Shown()[0], "more than 100 started")
 }
 
 func TestTheOverflowAlertIsShownAgainAfterItFailed(t *testing.T) {
@@ -763,7 +802,10 @@ func TestANudgeToldBeforeARestartIsNotToldAgain(t *testing.T) {
 	d.Workers.Running("ENG-1", "idle")
 	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	d.Workers.StallPrompts()
-	require.NoError(t, d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tick").Err)
+	ticked := later(func() Result { return d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tick") })
+	require.Eventually(t, func() bool { return len(d.tools.Calls("herdr", "prompt")) == 1 }, 20*time.Second, time.Millisecond)
+	d.Expire("herdr.nudge ENG-1")
+	require.NoError(t, ticked().Err)
 	require.Len(t, d.ReceiptsOf("nudge", "ENG-1"), 1)
 
 	// Dispatch cannot know the text never arrived, so a restart sends nothing more.
@@ -797,28 +839,31 @@ func TestAMissedResyncReadsLinearAgainBeforeActing(t *testing.T) {
 
 func TestARuleThatRunsOutOfTimeStopsOnlyItsOwnActionsAndRaisesOneAlert(t *testing.T) {
 	for _, test := range []struct {
-		name    string
-		rule    string
-		timeout dispatch.RuleTimeout
+		name     string
+		rule     string
+		timeout  dispatch.RuleTimeout
+		deadline string
 	}{
 		{
-			name:    "If",
-			rule:    `whenever({ name: "spins-in-if", each: "linear.ticket", if: () => { for (;;) {} }, then: () => {} });`,
-			timeout: dispatch.RuleTimeout{If: 100 * time.Millisecond},
+			name:     "If",
+			rule:     `whenever({ name: "spins-in-if", each: "linear.ticket", if: () => { for (;;) {} }, then: () => {} });`,
+			timeout:  dispatch.RuleTimeout{If: 100 * time.Millisecond},
+			deadline: "rule spins-in-if if",
 		},
 		{
-			name:    "Then",
-			rule:    `whenever({ name: "spins-in-then", each: "linear.ticket", if: () => true, then: () => { for (;;) {} } });`,
-			timeout: dispatch.RuleTimeout{Then: 100 * time.Millisecond},
+			name:     "Then",
+			rule:     `whenever({ name: "spins-in-then", each: "linear.ticket", if: () => true, then: () => { for (;;) {} } });`,
+			timeout:  dispatch.RuleTimeout{Then: 100 * time.Millisecond},
+			deadline: "rule spins-in-then then",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, test.rule)})
 			d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
-			require.NoError(t, d.RunWith(dispatch.Options{RuleTimeout: test.timeout}, "tick").Err)
-			d.Advance(time.Second)
-			d.Tick()
+			res := expiring(d, test.deadline, func() Result { return d.RunWith(dispatch.Options{RuleTimeout: test.timeout}, "tick") })
+			require.NoError(t, res.Err)
+			expiring(d, test.deadline, func() bool { d.Advance(time.Second); d.Tick(); return true })
 
 			assert.Len(t, d.Workers.Launched(), 1)
 			var alerts []string

@@ -446,12 +446,14 @@ func TestRecordStopDoesNotWaitOnAStuckDispatch(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	input := d.Workers.StopInput("ENG-1", stopTasks{})
 	d.BrokenLoop(neverAnswers)
-	start := time.Now()
 
-	res := d.Hook("record-stop", input)
+	hooked := later(func() Result { return d.Hook("record-stop", input) })
+	require.Eventually(t, func() bool { return d.LoopCalls() == 1 }, 20*time.Second, time.Millisecond)
+	d.Expire("record-stop")
+	res := hooked()
 
 	require.NoError(t, res.Err)
-	assert.Less(t, time.Since(start), 5*time.Second)
+	assert.Equal(t, 1, d.LoopCalls())
 	assert.Empty(t, res.Stdout)
 	assert.Empty(t, res.Stderr)
 }
@@ -472,14 +474,12 @@ func TestRecordStopStaysSilentHoweverTheConnectionFails(t *testing.T) {
 			input := d.Workers.StopInput("ENG-1", stopTasks{})
 			d.BrokenLoop(test.fault)
 			entries := d.StateEntries()
-			start := time.Now()
 
 			res := d.Hook("record-stop", input)
 
 			require.NoError(t, res.Err)
 			assert.Empty(t, res.Stdout)
 			assert.Empty(t, res.Stderr)
-			assert.Less(t, time.Since(start), 5*time.Second)
 			assert.Equal(t, entries, d.StateEntries())
 		})
 	}

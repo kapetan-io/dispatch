@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/delivery"
 	"github.com/kapetan-io/dispatch/internal/herdr"
@@ -27,11 +28,16 @@ import (
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
+	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
 // RuleTimeout bounds how long one call of a rule's if and then may run.
 type RuleTimeout struct{ If, Then time.Duration }
+
+func (o Options) ruleTimeouts() rules.Timeouts {
+	return rules.Timeouts{If: o.RuleTimeout.If, Then: o.RuleTimeout.Then, Clock: o.Clock}
+}
 
 // Options points the dispatcher at its config, its state and the tools it
 // drives. Zero values take the defaults.
@@ -47,7 +53,7 @@ type Options struct {
 	Linear linear.Connect
 	// LinearKey overrides LINEAR_API_KEY, the config's api_key_command and its keychain entry.
 	LinearKey string
-	// KeyCommandTimeout cuts off an api_key_command that never returns, such as a
+	// KeyCommandTimeout cuts off, on Clock, an api_key_command that never returns, such as a
 	// password manager waiting on an unlock prompt. Defaults to 1 minute.
 	KeyCommandTimeout time.Duration
 	// Herdr is the workspace manager that hosts the workers. Defaults to the installed herdr.
@@ -73,14 +79,14 @@ type Options struct {
 	LaunchPace time.Duration
 	// RulesDir overrides [dispatch].rules, so tests run the repo's rules/ directory.
 	RulesDir string
-	// RuleTimeout cuts off a rule call on the wall clock. Zero means 1 second for
+	// RuleTimeout cuts off a rule call on Clock. Zero means 1 second for
 	// an if and 30 seconds for a then.
 	RuleTimeout RuleTimeout
 	// LaunchTimeout is how long a launch may take before it is given up on, 25 seconds by default,
 	// and ActionTimeout how long every other action may take, 1 minute by default.
 	LaunchTimeout, ActionTimeout time.Duration
-	// Clock owns every timer the loop sets, the resync and history rotation, and
-	// stamps ingest times. Defaults to the wall clock.
+	// Clock runs the loop's timers (the resync and history rotation) and every timeout
+	// below, and stamps ingest times. Defaults to the wall clock.
 	Clock  Clock
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -241,7 +247,7 @@ func withDefaults(o Options) Options {
 		o.Alerts = delivery.NewAlerts(runtime.GOOS)
 	}
 	if o.Clock == nil {
-		o.Clock = loop.WallClock{}
+		o.Clock = clock.Wall{}
 	}
 	if o.Stdin == nil {
 		o.Stdin = os.Stdin
@@ -302,7 +308,7 @@ func keyFromCommand(ctx context.Context, opts Options, command string) (string, 
 	if timeout <= 0 {
 		timeout = time.Minute
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := clock.WithTimeout(ctx, opts.Clock, "api_key_command", timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	cmd.Stderr = opts.Stderr

@@ -65,6 +65,9 @@ type call struct {
 	exchanges []Exchange
 	// deadline is when the call's time budget ends, which bounds an HTTP request.
 	deadline time.Time
+	// timeouts carries the clock the budget runs on, and rule names the rule being called.
+	timeouts Timeouts
+	rule     string
 	queue    []*queued
 	objects  map[string]*sobek.Object
 	// handles maps the object a queue method returned to its place in queue, so a
@@ -720,10 +723,4 @@ func toTree(v reflect.Value) any {
 		return v.Bool()
 	}
 	return v.Interface()
-}
-
-// timeLimit interrupts a runtime when its budget runs out, and returns the stop function.
-func timeLimit(rt *sobek.Runtime, d time.Duration) (stop func() bool) {
-	t := time.AfterFunc(d, func() { rt.Interrupt("timeout") })
-	return t.Stop
 }

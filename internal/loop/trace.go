@@ -196,7 +196,7 @@ func (t *tracing) cycle(c history.Cycle) {
 		return
 	}
 	at := time.UnixMilli(c.Now)
-	prefix := fmt.Sprintf("%s cycle #%d", clock(c.Now), t.cycles)
+	prefix := fmt.Sprintf("%s cycle #%d", clockTime(c.Now), t.cycles)
 	if c.Why != "" {
 		prefix += " (" + c.Why + ")"
 	}
@@ -313,11 +313,11 @@ func (t *tracing) receipt(r ledger.Receipt) {
 	if r.Reset {
 		state += " (reset, never sent)"
 	}
-	text := fmt.Sprintf("%s receipt  %s %s %s once %s", clock(when), r.Kind, r.Subject, state, line.Once)
+	text := fmt.Sprintf("%s receipt  %s %s %s once %s", clockTime(when), r.Kind, r.Subject, state, line.Once)
 	if r.Detail != "" {
 		text += ": " + r.Detail
 	}
 	t.emit(text, line)
 }
 
-func clock(ms int64) string { return time.UnixMilli(ms).Format(time.TimeOnly) }
+func clockTime(ms int64) string { return time.UnixMilli(ms).Format(time.TimeOnly) }
