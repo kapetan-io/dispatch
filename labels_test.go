@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kapetan-io/dispatch/internal/herdrtest"
 )
 
 // Renames lists the workspace renames herdr accepted, as "<workspace>|<label>".
@@ -28,6 +30,21 @@ func (d *Dispatch) Wake(dir string) Result {
 	d.h.t.Helper()
 	return d.Hook("wake", fmt.Sprintf(`{"hook_event_name":"Notification","notification_type":"idle_prompt","session_id":"worker","cwd":%q}`, dir))
 }
+
+// TabRenames lists the tab renames herdr accepted, as "<tab>|<name>".
+func (w *Workers) TabRenames() []string { return w.d.h.tabRenames() }
+
+// LabelWorkspace gives a workspace the label an earlier dispatch or the launcher left on it.
+func (w *Workers) LabelWorkspace(id, label string) { w.d.h.labelWorkspace(id, label) }
+
+// LabelTab gives the ticket's tab the name the launcher left on it.
+func (w *Workers) LabelTab(ticket, label string) { w.d.h.labelTab(ticket, label) }
+
+// FailRenames makes herdr refuse every workspace rename with err until it is called with nil.
+func (w *Workers) FailRenames(err error) { w.d.h.tools.Herdr.Fail(herdrtest.OpRenameWorkspace, err) }
+
+// FailTabList makes herdr fail every read of a workspace's tabs with err.
+func (w *Workers) FailTabList(err error) { w.d.h.tools.Herdr.Fail(herdrtest.OpTabList, err) }
 
 func (w *Workers) lastRename(t *testing.T) string {
 	t.Helper()
@@ -549,4 +566,318 @@ func TestWakeKeepsANudgedWorkerGreenWhileHerdrStillSaysIdle(t *testing.T) {
 	require.NoError(t, d.Wake(d.Workers.Tree("ENG-1")).Err)
 	assert.Never(t, func() bool { return len(d.Workers.Prompts()) > 1 || len(d.Workers.Renames()) > len(renames) }, 300*time.Millisecond, 10*time.Millisecond)
 	assert.Equal(t, "w-ENG-1|🟢 ENG-1", d.Workers.lastRename(t))
+}
+
+func TestTickLabelsEachWorkspaceWithItsStatusEmoji(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		status string
+		agent  string
+		pr     *prState
+		label  string
+	}{
+		{name: "InProgress", status: "In Progress", agent: "working", label: "🟢 ENG-1"},
+		{name: "InReviewPRNotReady", status: "In Review", agent: "idle", pr: &prState{head: "a1", checks: "PENDING", mergeable: "MERGEABLE"}, label: "🟡 ENG-1"},
+		{name: "InReviewWorkerBusy", status: "In Review", agent: "working", label: "🟢 ENG-1"},
+		{name: "InReviewReady", status: "In Review", agent: "idle", pr: new(cleanPR("a1")), label: "👀 ENG-1"},
+		{name: "NeedsHuman", status: "Needs Human", agent: "idle", label: "🔴 ENG-1"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			d := newDispatch(t, dispatchOptions{})
+			d.Linear.Tickets(ticket("ENG-1", test.status, "dispatch"))
+			d.Workers.Running("ENG-1", test.agent)
+			if test.pr != nil {
+				d.GitHub.PullRequest("ENG-1", *test.pr)
+			}
+
+			d.Tick()
+
+			assert.Equal(t, []string{"w-ENG-1|" + test.label}, d.Workers.Renames())
+
+			// The label only changes when the status does.
+			d.Tick()
+			assert.Len(t, d.Workers.Renames(), 1)
+		})
+	}
+}
+
+func TestTickLabelsAPausedTicketsWorkspace(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Trees.Clean("ENG-1")
+	d.Workers.Running("ENG-1", "")
+	d.Linear.Finished(ticket("ENG-1", "Todo", "dispatch"))
+
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1|⏸️ ENG-1"}, d.Workers.Renames())
+}
+
+func TestTickRelabelsWhenTheStatusChanges(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+	d.Tick()
+
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.SetStatus("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "PENDING", mergeable: "MERGEABLE"})
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1", "w-ENG-1|🟡 ENG-1"}, d.Workers.Renames())
+}
+
+func TestTickLeavesTheTitleOutOfTheLabel(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	long := ticket("ENG-1", "In Progress", "dispatch")
+	long.Title = strings.Repeat("word ", 30)
+	d.Linear.Tickets(long)
+	d.Workers.Running("ENG-1", "working")
+
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, d.Workers.Renames())
+}
+
+func TestTickRenamesAWorkspaceThatHasTheOldTitledLabel(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+	d.Workers.LabelWorkspace("w-ENG-1", "🟢 ENG-1 ticket ENG-1")
+
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, d.Workers.Renames())
+}
+
+func TestTickKeepsAWorkspaceThatHasTheShortLabel(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+	d.Workers.LabelWorkspace("w-ENG-1", "🟢 ENG-1")
+
+	d.Tick()
+
+	assert.Empty(t, d.Workers.Renames())
+}
+
+func TestTickStillFindsAWorkerWhoseLabelChanged(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{Config: "[rules]\nnudge_limit = 10\n"})
+	withFailingPR(d)
+
+	// The first tick renames the workspace and nudges the worker in it.
+	d.Tick()
+	d.Advance(5 * time.Minute)
+	d.Workers.Stop("ENG-1", stopTasks{})
+	d.Tick()
+
+	assert.Equal(t, []string{prPrompt("a failed check"), prPrompt("a failed check")}, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Launched())
+}
+
+func TestTickLabelsABacklogTicketsKeptWorkspace(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Trees.Clean("ENG-1")
+	d.Workers.Running("ENG-1", "")
+	d.Linear.Finished(ticket("ENG-1", "Backlog", "dispatch"))
+
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1|⏸️ ENG-1"}, d.Workers.Renames())
+}
+
+func TestTickDoesNotRenameATicketWithoutAWorkspace(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "Needs Human", "dispatch"))
+
+	d.Tick()
+
+	assert.Empty(t, d.Workers.Renames())
+}
+
+func TestTickRetriesARenameHerdrRefused(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+	d.Workers.FailRenames(errors.New("exit status 1"))
+
+	d.Tick()
+	assert.Contains(t, d.LoopStderr(), "while renaming herdr workspace w-ENG-1")
+	assert.Empty(t, d.Workers.Renames())
+
+	d.Workers.FailRenames(nil)
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, d.Workers.Renames())
+}
+
+func TestTickLabelsEveryWorkerAfterOneTick(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(
+		ticket("ENG-1", "In Progress", "dispatch"),
+		ticket("ENG-2", "In Review", "dispatch"),
+		ticket("ENG-3", "Needs Human", "dispatch"),
+	)
+	d.Workers.Running("ENG-1", "working")
+	d.Workers.Running("ENG-2", "idle")
+	d.Workers.Running("ENG-3", "blocked")
+	d.GitHub.PullRequest("ENG-2", cleanPR("a1"))
+
+	d.Tick()
+
+	assert.ElementsMatch(t, []string{
+		"w-ENG-1|🟢 ENG-1",
+		"w-ENG-2|👀 ENG-2",
+		"w-ENG-3|🔴 ENG-3",
+	}, d.Workers.Renames())
+}
+
+func TestTickRelabelsAReviewTicketWhenItsPRBecomesReady(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "PENDING", mergeable: "MERGEABLE"})
+	d.Tick()
+
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1|🟡 ENG-1", "w-ENG-1|👀 ENG-1"}, d.Workers.Renames())
+}
+
+func TestTickLabelsAnEscalatedTicketNeedsHumanOnTheSameTick(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.Tick()
+	d.Advance(time.Second)
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
+	d.Tick()
+	d.Advance(5 * time.Minute)
+	d.Advance(time.Second)
+	d.Workers.Stop("ENG-1", stopTasks{})
+
+	d.Tick()
+	escalated(t, d)
+
+	assert.Equal(t, "w-ENG-1|🔴 ENG-1", d.Workers.Renames()[len(d.Workers.Renames())-1])
+}
+
+func TestTickDoesNotLaunchASecondWorkerForARenamedWorkspace(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+
+	for range 3 {
+		d.Tick()
+	}
+
+	assert.Empty(t, d.Workers.Launched())
+	assert.Empty(t, d.Workers.Closed())
+}
+
+func TestTickKeepsTheReadyLabelWhenThePRCannotBeRead(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	d.Tick()
+
+	d.GitHub.FailRead(errors.New("exit status 1"))
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1"}, d.Workers.Renames())
+}
+
+func TestTickDropsTheReadyLabelWhenThePRIsClosed(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	d.Tick()
+
+	// The PR is closed without merging, so the branch has no open PR.
+	d.Workers.Stop("ENG-1", stopTasks{})
+	d.GitHub.Close("ENG-1")
+	for range 2 {
+		d.Tick()
+	}
+
+	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1", "w-ENG-1|💤 ENG-1"}, d.Workers.Renames())
+}
+
+func TestTickNamesAWorkersTabByTicketAndTitle(t *testing.T) {
+	for _, status := range []string{"In Progress", "In Review", "Needs Human"} {
+		t.Run(status, func(t *testing.T) {
+			d := newDispatch(t, dispatchOptions{})
+			d.Linear.Tickets(ticket("ENG-1", status, "dispatch"))
+			d.Workers.Running("ENG-1", "working")
+
+			d.Tick()
+
+			assert.Equal(t, []string{"w-ENG-1:t1|ENG-1 ticket ENG-1"}, d.Workers.TabRenames())
+
+			// A tab that already matches is not renamed again.
+			d.Tick()
+			assert.Len(t, d.Workers.TabRenames(), 1)
+		})
+	}
+}
+
+func TestTickKeepsTheFullTitleInATabName(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	long := ticket("ENG-1", "In Progress", "dispatch")
+	long.Title = strings.TrimSpace(strings.Repeat("word ", 21))
+	d.Linear.Tickets(long)
+	d.Workers.Running("ENG-1", "working")
+
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1:t1|ENG-1 " + long.Title}, d.Workers.TabRenames())
+}
+
+func TestTickRenamesATabWhenTheTitleChanges(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+	d.Tick()
+
+	renamed := ticket("ENG-1", "In Progress", "dispatch")
+	renamed.Title = "new title"
+	d.Linear.Tickets(renamed)
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1:t1|ENG-1 ticket ENG-1", "w-ENG-1:t1|ENG-1 new title"}, d.Workers.TabRenames())
+}
+
+func TestTickRenamesATabLeftBehindByTheLauncher(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+	d.Workers.LabelTab("ENG-1", "ENG-1")
+
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1:t1|ENG-1 ticket ENG-1"}, d.Workers.TabRenames())
+}
+
+func TestTickLeavesAWorkspaceLabelAloneWhenNamingTabs(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, d.Workers.Renames())
+}
+
+func TestTickStillWorksWhenTabListFails(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+	d.Workers.FailTabList(errors.New("exit status 1"))
+
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, d.Workers.Renames())
+	assert.Empty(t, d.Workers.TabRenames())
 }

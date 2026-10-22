@@ -64,6 +64,27 @@ func (d *Dispatch) Attempts(ticket string) []Receipt {
 	return found
 }
 
+// attemptsOf lists every attempt and outcome of one kind that trace prints for the ticket.
+func (d *Dispatch) attemptsOf(ticket, kind string) []Receipt {
+	d.h.t.Helper()
+	var found []Receipt
+	for _, receipt := range d.Attempts(ticket) {
+		if receipt.Kind == kind {
+			found = append(found, receipt)
+		}
+	}
+	return found
+}
+
+// states is the state of each receipt, in order.
+func states(receipts []Receipt) []string {
+	var out []string
+	for _, receipt := range receipts {
+		out = append(out, receipt.State)
+	}
+	return out
+}
+
 // withFailingPR puts ENG-1 In Review with an idle worker and a PR whose check failed.
 func withFailingPR(d *Dispatch) {
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
@@ -140,6 +161,17 @@ func (l *Linear) FailMoves() { l.d.h.linear.failMoves() }
 
 // Merged lists the pull requests that merged, as "<url>|<head>".
 func (g *GitHub) Merged() []string { return g.d.h.merges() }
+
+// Close closes the ticket's PR without merging it.
+func (g *GitHub) Close(ticket string) { g.d.h.closePR(ticket) }
+
+// PushAfterRead has someone push head to the ticket's branch right after dispatch reads the PR.
+func (g *GitHub) PushAfterRead(ticket, head string) {
+	g.d.h.tools.PullRequests.PushAfterRead(prBranch(ticket), head)
+}
+
+// Head is the commit the ticket's PR points at.
+func (g *GitHub) Head(ticket string) string { return g.d.h.tools.PullRequests.Head(prBranch(ticket)) }
 
 // FailRead makes GitHub fail every read of a pull request with err.
 func (g *GitHub) FailRead(err error) { g.d.h.tools.PullRequests.FailRead(err) }
