@@ -17,6 +17,6 @@ Test targets, with Go as the example:
 | `test` | The fast suite: no race detector, no `tests_slow` tests. |
 | `test-slow` | The suite plus the tests tagged `tests_slow` (`go test -tags tests_slow ./...`). |
 | `test-race` | The fast suite under the race detector, run by hand now and then. |
-| `ci` | Exactly what CI runs: vet, the suite with `tests_slow`, and any linters. Nothing else. |
+| `ci` | Every check CI makes: vet, the suite with `tests_slow`, and any linters. |
 
-CI leaves out the race detector (`dispatch:principle-fast-tests` has the budget). A target that needs tools CI lacks, such as a drift check against installed tools, stays out of `ci`. When the repo has a speed report target, it includes the `tests_slow` tests so tagging a test doesn't hide it from the report.
+The checks live in the target, so a developer can run what CI runs. CI-only environment setup, such as restoring a cache or setting file times, stays in the workflow before the `ci` call, since inside the target it would touch a developer's checkout. CI leaves out the race detector (`dispatch:principle-fast-tests` has the budget). A target that needs tools CI lacks, such as a drift check against installed tools, stays out of `ci`. Without these targets, a test tagged `tests_slow` is run by nothing, so add them before tagging. A speed report target includes the `tests_slow` tests, so tagging a test doesn't hide it from the report.

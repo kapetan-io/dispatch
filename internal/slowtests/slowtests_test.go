@@ -5,6 +5,7 @@ package slowtests_test
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -184,9 +185,9 @@ func TestTaggedNap(t *testing.T) { time.Sleep(150 * time.Millisecond) }
 }
 
 func TestSlowTestsTargetMeasuresTaggedTests(t *testing.T) {
-	makefile, err := os.ReadFile(filepath.Join("..", "..", "Makefile"))
+	out, err := exec.CommandContext(t.Context(), "make", "-n", "-C", filepath.Join("..", ".."), "test-report").Output()
 	require.NoError(t, err)
-	assert.Regexp(t, `(?m)^\t@go run \./cmd/slowtests -tags tests_slow$`, string(makefile))
+	assert.Contains(t, string(out), "-tags tests_slow")
 }
 
 func TestSlowTestsRunOnlyFromItsOwnWorkflow(t *testing.T) {
