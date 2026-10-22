@@ -154,7 +154,7 @@ func TestSlowTestsRunOnlyFromItsOwnWorkflow(t *testing.T) {
 
 	slow, err := os.ReadFile(filepath.Join(workflows, "slow-tests.yml"))
 	require.NoError(t, err)
-	assert.Contains(t, string(slow), "./cmd/slowtests")
+	assert.Contains(t, string(slow), "make test-report")
 	assert.Contains(t, string(slow), "schedule:")
 	assert.Contains(t, string(slow), "workflow_dispatch:")
 	assert.NotContains(t, string(slow), "pull_request")

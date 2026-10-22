@@ -24,10 +24,21 @@ Put `scripts/shims` first on your PATH, and a plain `claude` loads the plugin fr
 claude --plugin-dir ~/Development/dispatch --settings '{"crossSessionInbound":"accept"}'
 ```
 
+`make help` lists the build and test targets.
+
+| Target | Runs |
+| --- | --- |
+| `make test` | The fast suite, with no race detector and no slow tests. |
+| `make test-slow` | The whole suite plus the tests tagged `tests_slow`. |
+| `make test-race` | The fast suite under the race detector, for an occasional check. |
+| `make test-drift` | The drift checks against the installed tools. CI does not run it. |
+| `make test-report` | The speed report of tests over budget. |
+| `make ci` | What CI runs: vet, the whole suite with the slow tests, and shellcheck. |
+
 ## Running the dispatcher
 
 ```sh
-cd ~/Development/dispatch && go install ./cmd/dispatch
+cd ~/Development/dispatch && make install
 dispatch run
 ```
 

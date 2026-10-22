@@ -1,4 +1,4 @@
-//go:build slow_tests
+//go:build tests_slow
 
 package history_test
 

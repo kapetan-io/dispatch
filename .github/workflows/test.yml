@@ -32,6 +32,7 @@ jobs:
               - '**/*.go'
               - 'go.mod'
               - 'go.sum'
+              - 'Makefile'
               - 'README.md'
               - 'docs/**'
               - 'rules/**'
@@ -78,14 +79,10 @@ jobs:
       # go test's result cache compares file and directory times, which a fresh checkout resets.
       - if: needs.changes.outputs.code != 'false' || github.event_name != 'pull_request'
         run: go run ./cmd/committimes
-      - if: needs.changes.outputs.code != 'false' || github.event_name != 'pull_request'
-        run: go vet ./...
       # The surface tests run against fake tools and a real git, which the
-      # runner image provides. The drift check (go test -tags drift
-      # ./internal/...) needs the installed tools and does not run here.
-      # No -race: it multiplies CPU time about 6 times and CI has no
-      # concurrency check the dev box does not already run.
+      # runner image provides. The drift check (make test-drift) needs the
+      # installed tools and does not run here. make ci runs no -race: it
+      # multiplies CPU time about 6 times and CI has no concurrency check the
+      # dev box does not already run.
       - if: needs.changes.outputs.code != 'false' || github.event_name != 'pull_request'
-        run: go test -tags slow_tests ./...
-      - if: needs.changes.outputs.code != 'false' || github.event_name != 'pull_request'
-        run: shellcheck -S warning bin/dispatch-launch scripts/shims/claude
+        run: make ci

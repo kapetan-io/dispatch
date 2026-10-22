@@ -19,7 +19,7 @@ You need a Mac or a Linux machine with these on your PATH. dispatch shells out t
 
 ```sh
 gh repo clone kapetan-io/dispatch ~/Development/dispatch
-cd ~/Development/dispatch && go install ./cmd/dispatch
+cd ~/Development/dispatch && make install
 ```
 
 Put `$GOBIN` (default `~/go/bin`) on your PATH. `bin/dispatch-launch` runs `dispatch launch`, so it needs the binary there.
