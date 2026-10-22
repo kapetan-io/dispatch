@@ -676,6 +676,28 @@ func TestApiKeyCommandRunsAgainOnTheNextStartAfterLinearRejectsTheKey(t *testing
 	assert.Equal(t, 2, runCount(t, counter))
 }
 
+func TestApiKeyCommandRunsAgainWhenLinearRejectsTheKeyMidRun(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	keyFile := filepath.Join(dir, "key")
+	require.NoError(t, os.WriteFile(keyFile, []byte("test-key\n"), 0o644))
+	command, counter := keyScript(t, dir, "cat "+keyFile)
+	d := newDispatch(t, dispatchOptions{Key: configuredKey, Config: "[plugins.linear]\napi_key_command = \"" + command + "\"\n"})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Tick()
+	require.Len(t, d.Workers.Launched(), 1)
+
+	require.NoError(t, os.WriteFile(keyFile, []byte("rotated-key\n"), 0o644))
+	d.Linear.AcceptKey("rotated-key")
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
+	// The first tick's read gets a 401 and drops the key, the second finds the new one.
+	d.Tick()
+	d.Tick()
+
+	assert.Len(t, d.Workers.Launched(), 2)
+	assert.Equal(t, 2, runCount(t, counter))
+}
+
 func TestApiKeyCommandStopsWhenRunIsCancelled(t *testing.T) {
 	t.Parallel()
 	// The sleep is a grandchild of the shell that holds the command's stdout.
