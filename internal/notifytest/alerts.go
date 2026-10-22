@@ -1,17 +1,17 @@
-// Package deliverytest is an in-process stand-in for the notification center
+// Package notifytest is an in-process stand-in for the notification center
 // that records what it was asked to show.
-package deliverytest
+package notifytest
 
 import (
 	"context"
 	"slices"
 	"sync"
 
-	"github.com/kapetan-io/dispatch/internal/delivery"
 	"github.com/kapetan-io/dispatch/internal/journal"
+	"github.com/kapetan-io/dispatch/internal/notify"
 )
 
-// Alerts is a delivery.Alerts backed by memory. It shows every alert unless
+// Alerts is a notify.Alerts backed by memory. It shows every alert unless
 // Fail says the notification center is down.
 type Alerts struct {
 	journal *journal.Journal
@@ -72,4 +72,4 @@ func (a *Alerts) Show(ctx context.Context, text string) error {
 	return nil
 }
 
-var _ delivery.Alerts = (*Alerts)(nil)
+var _ notify.Alerts = (*Alerts)(nil)

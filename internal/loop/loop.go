@@ -17,13 +17,13 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/config"
-	"github.com/kapetan-io/dispatch/internal/delivery"
 	"github.com/kapetan-io/dispatch/internal/executor"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/typed"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -45,7 +45,7 @@ type Options struct {
 	// HTTP is how a rule's then reaches the services config.toml names.
 	HTTP   httpservice.Services
 	Herdr  herdr.Herdr
-	Alerts delivery.Alerts
+	Alerts notify.Alerts
 	// Usage reports the Linear calls made so far.
 	Usage func() linear.Stats
 	// Unauthorized is called when Linear rejects the key, so the next read fetches it again.

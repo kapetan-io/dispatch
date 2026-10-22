@@ -41,3 +41,5 @@ Some programs dispatch runs do not follow the Decision in full. The file and lin
 `sh -c <token_command>` (internal/httpservice/real.go:162) is not listed: it runs inside the httpservice port's real adapter.
 
 Test tooling is outside the Decision. It runs git too: claimeval packs its fixtures with git archive (internal/claimeval/claimeval.go:237), herdrtest makes the drift check's checkout (internal/herdrtest/checkout.go:22), and committimes reads the tracked files and their last commit times for CI (internal/committimes/committimes.go:59,130). claimeval also runs tar and go (claimeval.go:241,247), commenteval runs claude (internal/commenteval/commenteval.go:133), herdrtest runs herdr and go (internal/herdrtest/session.go:46,181), and slowtests runs go test for the speed report (internal/slowtests/slowtests.go:124).
+
+2026-10-22: `delivery.Alerts` is now `notify.Alerts`, in internal/notify/alert.go, and `deliverytest` is `notifytest`.
