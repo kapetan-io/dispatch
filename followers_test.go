@@ -588,3 +588,18 @@ func TestTickMessagesFollowersWithTheReasonARulePasses(t *testing.T) {
 		})
 	}
 }
+
+func TestTickMessagesFollowersThatAMergedPRIsApproved(t *testing.T) {
+	t.Parallel()
+	socket, lines := sessionSocket(t)
+	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting, Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d.StartBeforeTheEvents()
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+
+	d.Tick()
+
+	assert.Contains(t, next(t, lines), "dispatch event (PR approved): ENG-1 was approved and merged")
+}
