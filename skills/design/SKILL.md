@@ -137,7 +137,7 @@ If the discussion resolved domain terms, add a `Glossary changes` section to the
 
 Have a sub-agent compare the blueprint with this session's transcript, and tell it to use the glossary's terms and the code's words, coin no labels such as step codes, and define any term in neither. The sub-agents job is to list each user decision as PRESENT, SUPERSEDED, CHANGED or MISSING against the blueprint and its decision log, with the user's words and time.
 
-Using the report from the audit sub-agent, fix confirmed gaps, and ask the user where the answer isn't clear. A decision fix goes in its section and the decision log.
+Using the report from the audit sub-agent, fix confirmed gaps, and ask the user where the answer isn't clear. A decision fix goes in its section and the decision log. Then load `dispatch:principle-confidence-from-many-perspectives` with the Skill tool and apply it to the design before you ask the user to approve it, so a low answer can still change the design.
 
 ## Review or break down
 
