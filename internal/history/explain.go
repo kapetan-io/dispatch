@@ -1,4 +1,4 @@
-package loop
+package history
 
 import (
 	"encoding/json"
@@ -9,30 +9,29 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 )
 
 // ErrNoRecord means kept history says nothing about a ticket.
 var ErrNoRecord = errors.New("history has no record of the ticket")
 
-// Trace prints why dispatch acted on a ticket, from every segment kept in dir: each cycle that
+// Explain prints why dispatch acted on a ticket, from every segment kept in dir: each cycle that
 // changed what the rules decided for it (a want, wait, hold, throw or dropped event), with
 // what each rule read, and each receipt. It returns ErrNoRecord when history never mentions the ticket.
-func Trace(dir, ticket string, out io.Writer) error { return trace(dir, ticket, out, false) }
+func Explain(dir, ticket string, out io.Writer) error { return trace(dir, ticket, out, false) }
 
-// TraceJSON is Trace printing each line as one JSON object (a TraceLine) instead of text.
-func TraceJSON(dir, ticket string, out io.Writer) error { return trace(dir, ticket, out, true) }
+// ExplainJSON is Explain printing each line as one JSON object (an ExplainLine) instead of text.
+func ExplainJSON(dir, ticket string, out io.Writer) error { return trace(dir, ticket, out, true) }
 
 func trace(dir, ticket string, out io.Writer, asJSON bool) error {
-	paths, err := history.Segments(dir)
+	paths, err := Segments(dir)
 	if err != nil {
 		return err
 	}
 	tr := &tracing{out: out, asJSON: asJSON, ticket: ticket, printed: map[string]bool{}, last: unprinted}
 	for _, p := range paths {
-		seg, err := history.Read(p)
-		if errors.Is(err, history.ErrIncomplete) {
+		seg, err := Read(p)
+		if errors.Is(err, ErrIncomplete) {
 			continue
 		}
 		if err != nil {
@@ -49,9 +48,9 @@ func trace(dir, ticket string, out io.Writer, asJSON bool) error {
 	return nil
 }
 
-// TraceLine is one line of `dispatch trace --json`. Type is "cycle", "http" or "receipt". A field that
+// ExplainLine is one line of `dispatch explain --json`. Type is "cycle", "http" or "receipt". A field that
 // doesn't apply to the line type, or holds its zero value, is left out.
-type TraceLine struct {
+type ExplainLine struct {
 	Type string `json:"type"`
 	// Time is the cycle's time, or when the receipt started (state attempted) or ended.
 	Time time.Time `json:"time"`
@@ -82,7 +81,7 @@ type TraceLine struct {
 }
 
 // with is the cycle's own fields (type, time, cycle number, why and subject) on top of what a rule's line says.
-func (head TraceLine) with(line TraceLine) TraceLine {
+func (head ExplainLine) with(line ExplainLine) ExplainLine {
 	line.Type, line.Time, line.Cycle, line.Why, line.Subject = head.Type, head.Time, head.Cycle, head.Why, head.Subject
 	return line
 }
@@ -110,14 +109,14 @@ type tracing struct {
 // unprinted is the value of tracing.last before any decision has been shown.
 const unprinted = "\x00"
 
-// decision is what one rule decided for the ticket, as the text form prints it and as a TraceLine.
+// decision is what one rule decided for the ticket, as the text form prints it and as an ExplainLine.
 type decision struct {
 	rule, text string
-	line       TraceLine
+	line       ExplainLine
 }
 
 // emit writes one line, as text or as the JSON object for it.
-func (t *tracing) emit(text string, line TraceLine) {
+func (t *tracing) emit(text string, line ExplainLine) {
 	if t.err != nil {
 		return
 	}
@@ -128,7 +127,7 @@ func (t *tracing) emit(text string, line TraceLine) {
 	_, t.err = fmt.Fprintln(t.out, text)
 }
 
-func (t *tracing) segment(seg history.Segment) {
+func (t *tracing) segment(seg Segment) {
 	for _, rc := range seg.Snapshot.Ledger.Receipts {
 		if rc.Subject == t.ticket {
 			t.seen = true
@@ -151,13 +150,13 @@ func (t *tracing) segment(seg history.Segment) {
 		}
 		_ = json.Unmarshal(raw, &head)
 		switch head.Line {
-		case history.LineCycle:
-			var c history.Cycle
+		case LineCycle:
+			var c Cycle
 			if json.Unmarshal(raw, &c) == nil {
 				t.cycle(c)
 			}
-		case history.LineWorld:
-			var w history.World
+		case LineWorld:
+			var w World
 			if json.Unmarshal(raw, &w) == nil {
 				for _, c := range w.Changes {
 					if c.Record == "linear.ticket/"+t.ticket {
@@ -165,8 +164,8 @@ func (t *tracing) segment(seg history.Segment) {
 					}
 				}
 			}
-		case history.LineReceipt:
-			var r history.Receipt
+		case LineReceipt:
+			var r Receipt
 			if json.Unmarshal(raw, &r) == nil && r.Subject == t.ticket {
 				t.seen = true
 				t.receipt(r.Receipt)
@@ -177,7 +176,7 @@ func (t *tracing) segment(seg history.Segment) {
 
 // cycle prints the cycle when what it decided for the ticket differs from the cycle before, and the
 // exchanges the ticket's rules waited on when those differ from the last ones printed.
-func (t *tracing) cycle(c history.Cycle) {
+func (t *tracing) cycle(c Cycle) {
 	t.cycles++
 	decided := t.decisions(c)
 	keys := make([]string, len(decided))
@@ -200,11 +199,11 @@ func (t *tracing) cycle(c history.Cycle) {
 	if c.Why != "" {
 		prefix += " (" + c.Why + ")"
 	}
-	head := TraceLine{Type: "cycle", Time: at.UTC(), Cycle: t.cycles, Why: c.Why, Subject: t.ticket}
+	head := ExplainLine{Type: "cycle", Time: at.UTC(), Cycle: t.cycles, Why: c.Why, Subject: t.ticket}
 	if newDecision {
 		t.last = key
 		if len(decided) == 0 {
-			t.emit(fmt.Sprintf("%s  wants nothing for %s", prefix, t.ticket), head.with(TraceLine{Decision: "nothing"}))
+			t.emit(fmt.Sprintf("%s  wants nothing for %s", prefix, t.ticket), head.with(ExplainLine{Decision: "nothing"}))
 		}
 		for i, d := range decided {
 			read := ""
@@ -224,24 +223,24 @@ func (t *tracing) cycle(c history.Cycle) {
 	}
 }
 
-// exchange is one response a rule waited on, as the text form prints it and as a TraceLine.
+// exchange is one response a rule waited on, as the text form prints it and as an ExplainLine.
 type exchange struct {
 	text string
-	line TraceLine
+	line ExplainLine
 }
 
 // exchanges lists the responses the ticket's rules waited on in the cycle, one line each.
-func (t *tracing) exchanges(c history.Cycle) []exchange {
+func (t *tracing) exchanges(c Cycle) []exchange {
 	var out []exchange
 	for _, ex := range c.HTTP {
 		if ex.Ticket != t.ticket {
 			continue
 		}
 		answer := fmt.Sprintf("%d %s", ex.Status, ex.Body)
-		line := TraceLine{Rule: ex.Rule, Service: ex.Service, Path: ex.Path, Status: ex.Status, Body: ex.Body}
+		line := ExplainLine{Rule: ex.Rule, Service: ex.Service, Path: ex.Path, Status: ex.Status, Body: ex.Body}
 		if ex.Unknown != "" {
 			answer = "no answer: " + ex.Unknown
-			line = TraceLine{Rule: ex.Rule, Service: ex.Service, Path: ex.Path, Unknown: ex.Unknown}
+			line = ExplainLine{Rule: ex.Rule, Service: ex.Service, Path: ex.Path, Unknown: ex.Unknown}
 		}
 		out = append(out, exchange{text: fmt.Sprintf("http  %s  GET %s %s  %s", ex.Rule, ex.Service, ex.Path, answer), line: line})
 	}
@@ -250,21 +249,21 @@ func (t *tracing) exchanges(c history.Cycle) []exchange {
 
 // decisions lists what the cycle decided for the ticket, without what the rules read, so a rule that
 // reads a new value and decides the same thing doesn't make another cycle.
-func (t *tracing) decisions(c history.Cycle) []decision {
+func (t *tracing) decisions(c Cycle) []decision {
 	var out []decision
-	add := func(rule, text string, line TraceLine) {
+	add := func(rule, text string, line ExplainLine) {
 		line.Rule = rule
 		out = append(out, decision{rule: rule, text: text, line: line})
 	}
 	for _, e := range c.Wants {
 		if e.Subject == t.ticket {
 			once := e.Once.String()
-			add(e.Rule, fmt.Sprintf("wants %s once %s", e.Kind, once), TraceLine{Decision: "wants", Kind: e.Kind, Once: once})
+			add(e.Rule, fmt.Sprintf("wants %s once %s", e.Kind, once), ExplainLine{Decision: "wants", Kind: e.Kind, Once: once})
 		}
 	}
 	for _, e := range c.Waiting {
 		if e.Subject == t.ticket {
-			add(e.Rule, fmt.Sprintf("waits to %s: %s", e.Kind, e.Reason), TraceLine{Decision: "waits", Kind: e.Kind, Detail: e.Reason})
+			add(e.Rule, fmt.Sprintf("waits to %s: %s", e.Kind, e.Reason), ExplainLine{Decision: "waits", Kind: e.Kind, Detail: e.Reason})
 		}
 	}
 	for _, e := range c.Held {
@@ -272,15 +271,15 @@ func (t *tracing) decisions(c history.Cycle) []decision {
 			continue
 		}
 		if e.Dropped {
-			add(e.Rule, "dropped: "+e.Reason, TraceLine{Decision: "dropped", Detail: e.Reason})
+			add(e.Rule, "dropped: "+e.Reason, ExplainLine{Decision: "dropped", Detail: e.Reason})
 		} else {
-			add(e.Rule, "held: "+e.Reason, TraceLine{Decision: "held", Detail: e.Reason})
+			add(e.Rule, "held: "+e.Reason, ExplainLine{Decision: "held", Detail: e.Reason})
 		}
 	}
 	for _, e := range c.Covered {
 		if e.Subject == t.ticket {
 			once := e.Once.String()
-			add(e.Rule, fmt.Sprintf("wants %s once %s, covered: %s", e.Kind, once, e.Reason), TraceLine{Decision: "covered", Kind: e.Kind, Once: once, Detail: e.Reason})
+			add(e.Rule, fmt.Sprintf("wants %s once %s, covered: %s", e.Kind, once, e.Reason), ExplainLine{Decision: "covered", Kind: e.Kind, Once: once, Detail: e.Reason})
 		}
 	}
 	for _, e := range c.Throws {
@@ -289,7 +288,7 @@ func (t *tracing) decisions(c history.Cycle) []decision {
 			if e.Timeout {
 				how, word = "ran out of time", "timeout"
 			}
-			add(e.Rule, how+": "+e.Error, TraceLine{Decision: word, Detail: e.Error})
+			add(e.Rule, how+": "+e.Error, ExplainLine{Decision: word, Detail: e.Error})
 		}
 	}
 	slices.SortFunc(out, func(a, b decision) int { return strings.Compare(a.rule+a.text, b.rule+b.text) })
@@ -306,7 +305,7 @@ func (t *tracing) receipt(r ledger.Receipt) {
 		return
 	}
 	t.printed[key] = true
-	line := TraceLine{
+	line := ExplainLine{
 		Type: "receipt", Time: time.UnixMilli(when).UTC(), Kind: r.Kind, Subject: r.Subject, State: state,
 		Once: r.Once.String(), Detail: r.Detail, Reset: r.Reset, Rule: r.Rule,
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/executor"
+	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/lock"
@@ -238,13 +239,13 @@ func tellCommand(ctx context.Context, opts Options, ticket, text string) error {
 	return nil
 }
 
-// planCommand prints what the latest cycle wants and holds, from history.
-func planCommand(opts Options) error {
+// cycleCommand prints what the latest cycle wants and holds, from history.
+func cycleCommand(opts Options) error {
 	cfg, err := config.Load(opts.ConfigPath, opts.Env)
 	if err != nil {
 		return err
 	}
-	rows, err := loop.Plan(cfg.History.Dir)
+	rows, err := history.LatestCycle(cfg.History.Dir)
 	if err != nil {
 		return err
 	}

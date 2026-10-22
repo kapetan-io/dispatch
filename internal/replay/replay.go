@@ -376,7 +376,7 @@ func firstOr(lines []string, none string) string {
 }
 
 // cycleLines lists what a cycle decided, one line each. Replay compares them and prints a difference, so
-// their wording need not match trace or plan.
+// their wording need not match explain or cycle.
 func cycleLines(c history.Cycle, skip map[string]bool, actionsOnly bool) []string {
 	var out []string
 	for _, e := range c.Wants {

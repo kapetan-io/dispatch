@@ -14,7 +14,7 @@ dispatch: while reading config /Users/you/.config/dispatch/config.toml: unknown 
   max_in_progress
 ```
 
-`dispatch run`, `dispatch plan` and `dispatch rules` load the file this way. `dispatch run` reads the file once, at start, and the rules with it, so a change to either takes effect when you stop `dispatch run` and start it again. `dispatch ticket-hint`, `dispatch record-stop` and `dispatch wake` run in every Claude Code session, so they print the error to stderr and exit 0 instead.
+`dispatch run`, `dispatch cycle` and `dispatch rules` load the file this way. `dispatch run` reads the file once, at start, and the rules with it, so a change to either takes effect when you stop `dispatch run` and start it again. `dispatch ticket-hint`, `dispatch record-stop` and `dispatch wake` run in every Claude Code session, so they print the error to stderr and exit 0 instead.
 
 Every `toml` block in the docs is loaded by a test through the same loader, so these examples cannot drift from the code.
 
@@ -72,14 +72,14 @@ Repos have no default, so the block shows one repo with every setting at its def
 | Setting | Default | What it does |
 |---|---|---|
 | `rules` | `~/Development/dispatch/rules` | The directory of TypeScript rules that `dispatch run`, `dispatch rules check` and `dispatch rules test` read. `dispatch rules init` writes the shipped rules there. |
-| `max_in_progress` | `4` | The most workers running at once. Caps running workers, and In Review and Needs Human tickets don't count. A launch counts In Progress tickets that have a worker, plus those in a repo whose pool couldn't be read this cycle, and waits, which `dispatch plan` shows as `waiting` with `N of M in progress, 2nd in line`. Promoting a parent's children counts every In Progress ticket that isn't a parent, `design` tickets included, with or without a worker. A `design` ticket whose design worker has made children counts too, while its worker lives, and waits the same way. |
+| `max_in_progress` | `4` | The most workers running at once. Caps running workers, and In Review and Needs Human tickets don't count. A launch counts In Progress tickets that have a worker, plus those in a repo whose pool couldn't be read this cycle, and waits, which `dispatch cycle` shows as `waiting` with `N of M in progress, 2nd in line`. Promoting a parent's children counts every In Progress ticket that isn't a parent, `design` tickets included, with or without a worker. A `design` ticket whose design worker has made children counts too, while its worker lives, and waits the same way. |
 | `resync` | `5m` | Time between resyncs of `dispatch run`, such as `30s` or `5m`. A resync re-reads every source and runs a cycle, and it is the only clock rules wait on. `dispatch run` refuses a value of zero or less, and takes no flag for it. |
 
 ## `[history]`
 
 | Setting | Default | What it does |
 |---|---|---|
-| `dir` | `~/.local/state/dispatch/events` | Where `dispatch run` keeps its history, one `events-<time>.jsonl` segment at a time. It is dispatch's only state, and `dispatch plan`, `dispatch trace` and `dispatch replay` read it. |
+| `dir` | `~/.local/state/dispatch/events` | Where `dispatch run` keeps its history, one `events-<time>.jsonl` segment at a time. It is dispatch's only state, and `dispatch cycle`, `dispatch explain` and `dispatch replay` read it. |
 | `rotate` | `6h` | How old the current segment gets before `dispatch run` starts a new one, which opens with a snapshot of what dispatch knew and did. |
 | `keep` | `1d` | How long old segments are kept before `dispatch run` deletes them. Days are written `7d`. |
 

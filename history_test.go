@@ -250,7 +250,7 @@ func TestTraceShowsWhyATicketWasHeldAndWhatItReceived(t *testing.T) {
 	d.Tick()
 	d.Stop()
 
-	res := d.Run("trace", "eng-2")
+	res := d.Run("explain", "eng-2")
 
 	require.NoError(t, res.Err)
 	assert.Regexp(t, `cycle #\d+ \(start\)  `, res.Stdout)
@@ -267,7 +267,7 @@ func TestTracePrintsACycleOnlyWhenWhatItDecidedChanged(t *testing.T) {
 	d.Advance(10 * time.Minute)
 	d.Stop()
 
-	res := d.Run("trace", "ENG-1")
+	res := d.Run("explain", "ENG-1")
 
 	require.NoError(t, res.Err)
 	// One cycle wanted the launch and the next found it covered. The resync after ten minutes changed nothing.
@@ -281,7 +281,7 @@ func TestTraceExitsOneWhenHistoryHasNoRecordOfTheTicket(t *testing.T) {
 	d.Tick()
 	d.Stop()
 
-	res := d.Run("trace", "ENG-77")
+	res := d.Run("explain", "ENG-77")
 
 	require.ErrorContains(t, res.Err, "history has no record of ENG-77")
 	assert.Equal(t, 1, res.Code)
@@ -292,7 +292,7 @@ func TestTraceExitsOneWithNoHistoryAtAll(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 
-	res := d.Run("trace", "ENG-1")
+	res := d.Run("explain", "ENG-1")
 
 	require.ErrorContains(t, res.Err, "history has no record of ENG-1")
 	assert.Equal(t, 1, res.Code)
@@ -308,7 +308,7 @@ func TestTraceShowsAnEventARuleDropped(t *testing.T) {
 		Reads: map[string][]string{"comment-command/ENG-9": {"worker=unknown"}},
 	}}})
 
-	res := d.Run("trace", "ENG-9")
+	res := d.Run("explain", "ENG-9")
 
 	require.NoError(t, res.Err)
 	assert.Contains(t, res.Stdout, "comment-command  dropped: herdr unread: herdr down  read worker=unknown")
@@ -559,7 +559,7 @@ func TestTraceShowsAThrowAndARuleThatRanOutOfTime(t *testing.T) {
 		{Throws: []pastThrow{{Rule: "launch-worker", Subject: "ENG-4", Error: "too slow", Timeout: true}}},
 	}})
 
-	res := d.Run("trace", "ENG-4")
+	res := d.Run("explain", "ENG-4")
 
 	require.NoError(t, res.Err)
 	assert.Contains(t, res.Stdout, "launch-worker  threw: boom")
@@ -575,7 +575,7 @@ func TestTraceReadsASegmentWrittenBeforeReadLinesAndSaysOfAReceiptInIt(t *testin
 		Receipts: []pastReceipt{{Kind: "launch", Subject: "ENG-6", Done: true}},
 	})
 
-	res := d.Run("trace", "ENG-6")
+	res := d.Run("explain", "ENG-6")
 
 	require.NoError(t, res.Err)
 	assert.Contains(t, res.Stdout, "launch-worker  wants launch")
@@ -639,7 +639,7 @@ func TestTraceDoesNotRepeatADecisionWhenASegmentRotates(t *testing.T) {
 	// Each rotation opens a segment with its own cycle, so an unrotated run replays 2 cycles.
 	rotated, _ := replayOf(t, d)
 	require.Greater(t, rotated, 2)
-	res := d.Run("trace", "ENG-1")
+	res := d.Run("explain", "ENG-1")
 
 	require.NoError(t, res.Err)
 	// One cycle wanted the launch and the next found it covered. Rotation changed nothing after that.
@@ -654,7 +654,7 @@ func TestTracePrintsTheReceiptsOfSegmentsAlreadyDeleted(t *testing.T) {
 		Kind: "launch", Subject: "ENG-9", Once: []any{"launch", nil, 3.0}, Done: true, Detail: "ok: workspace w3",
 	}}})
 
-	res := d.Run("trace", "ENG-9")
+	res := d.Run("explain", "ENG-9")
 
 	require.NoError(t, res.Err)
 	assert.Contains(t, res.Stdout, "receipt  launch ENG-9 done once [launch - 3]: ok: workspace w3")
@@ -732,7 +732,7 @@ func TestTracePrintsACycleOnlyWhenTheDecisionChangedNotWhatTheRuleRead(t *testin
 		{Held: held, Reads: map[string][]string{"launch-worker/ENG-9": {"worker=unknown", "failures=1"}}},
 	}})
 
-	res := d.Run("trace", "ENG-9")
+	res := d.Run("explain", "ENG-9")
 
 	require.NoError(t, res.Err)
 	assert.Equal(t, 1, strings.Count(res.Stdout, "cycle #"), res.Stdout)
@@ -747,7 +747,7 @@ func TestTraceShowsAResetReceiptAsNeverSent(t *testing.T) {
 	d.Advance(time.Minute)
 	require.NoError(t, d.Run("state", "reset", "--quiet").Err)
 
-	res := d.Run("trace", "ENG-2")
+	res := d.Run("explain", "ENG-2")
 
 	require.NoError(t, res.Err)
 	assert.Regexp(t, `receipt  comment ENG-2 done \(reset, never sent\) once `, res.Stdout)
@@ -760,7 +760,7 @@ func TestTraceFailsWhenItCannotWriteItsReport(t *testing.T) {
 	d.Tick()
 	d.Stop()
 
-	res := d.RunWithBrokenOutput("trace", "ENG-1")
+	res := d.RunWithBrokenOutput("explain", "ENG-1")
 
 	require.ErrorContains(t, res.Err, "broken pipe")
 }
@@ -803,7 +803,7 @@ func TestTraceKnowsATicketNoRuleHasWantedAnythingFor(t *testing.T) {
 	d.Tick()
 	d.Stop()
 
-	res := d.Run("trace", "ENG-1")
+	res := d.Run("explain", "ENG-1")
 
 	require.NoError(t, res.Err)
 	assert.Contains(t, res.Stdout, "wants nothing for ENG-1")
@@ -921,8 +921,8 @@ func TestTraceJSONPrintsOneObjectForEveryLineTheTextFormPrints(t *testing.T) {
 	d.Tick()
 	d.Stop()
 
-	text := d.Run("trace", "ENG-1")
-	res := d.Run("trace", "ENG-1", "--json")
+	text := d.Run("explain", "ENG-1")
+	res := d.Run("explain", "ENG-1", "--json")
 
 	require.NoError(t, text.Err)
 	require.NoError(t, res.Err)
@@ -948,7 +948,7 @@ func TestTraceJSONPrintsACycleLineWithWhatTheRuleWantedAndRead(t *testing.T) {
 	d.Tick()
 	d.Stop()
 
-	res := d.Run("trace", "ENG-1", "--json")
+	res := d.Run("explain", "ENG-1", "--json")
 
 	require.NoError(t, res.Err)
 	var wants map[string]any
@@ -974,8 +974,8 @@ func TestTraceJSONPrintsAReceiptFirstAttemptedAndThenWithItsOutcome(t *testing.T
 	d.Tick()
 	d.Stop()
 
-	res := d.Run("trace", "ENG-1", "--json")
-	text := d.Run("trace", "ENG-1")
+	res := d.Run("explain", "ENG-1", "--json")
+	text := d.Run("explain", "ENG-1")
 
 	require.NoError(t, res.Err)
 	require.NoError(t, text.Err)
@@ -1019,7 +1019,7 @@ func TestTraceJSONPrintsTheExchangesOfATicket(t *testing.T) {
 	d.Tick()
 	d.Stop()
 
-	res := d.Run("trace", "ENG-1", "--json")
+	res := d.Run("explain", "ENG-1", "--json")
 
 	require.NoError(t, res.Err)
 	var exchange map[string]any
@@ -1043,7 +1043,7 @@ func TestTraceJSONExitsOneWhenHistoryHasNoRecordOfTheTicket(t *testing.T) {
 	d.Tick()
 	d.Stop()
 
-	res := d.Run("trace", "ENG-77", "--json")
+	res := d.Run("explain", "ENG-77", "--json")
 
 	require.ErrorContains(t, res.Err, "history has no record of ENG-77")
 	assert.Equal(t, 1, res.Code)
@@ -1058,16 +1058,16 @@ func TestTraceTakesTheJSONFlagBeforeOrAfterTheTicketAndNothingElse(t *testing.T)
 	d.Tick()
 	d.Stop()
 
-	after := d.Run("trace", "ENG-1", "--json")
-	before := d.Run("trace", "--json", "eng-1")
+	after := d.Run("explain", "ENG-1", "--json")
+	before := d.Run("explain", "--json", "eng-1")
 
 	require.NoError(t, after.Err)
 	require.NoError(t, before.Err)
 	assert.Equal(t, after.Stdout, before.Stdout)
-	for _, args := range [][]string{{"trace", "--json"}, {"trace", "ENG-1", "--json", "--json"}, {"trace", "ENG-1", "ENG-2", "--json"}} {
+	for _, args := range [][]string{{"explain", "--json"}, {"explain", "ENG-1", "--json", "--json"}, {"explain", "ENG-1", "ENG-2", "--json"}} {
 		res := d.Run(args...)
 
-		require.ErrorContains(t, res.Err, "trace takes a ticket")
+		require.ErrorContains(t, res.Err, "explain takes a ticket")
 		assert.Empty(t, res.Stdout)
 	}
 }
@@ -1085,7 +1085,7 @@ func TestTraceJSONNamesEachDecisionARuleMade(t *testing.T) {
 		{Covered: []pastEntry{{Rule: "launch-worker", Subject: "ENG-4", Kind: "launch", Once: []any{"launch", 3.0}, Reason: "done 12:00"}}},
 	}})
 
-	res := d.Run("trace", "ENG-4", "--json")
+	res := d.Run("explain", "ENG-4", "--json")
 
 	require.NoError(t, res.Err)
 	lines := traceJSON(t, res.Stdout)
@@ -1114,7 +1114,7 @@ func TestTraceJSONPrintsATicketNoRuleHasWantedAnythingForAsNothing(t *testing.T)
 	d.Tick()
 	d.Stop()
 
-	res := d.Run("trace", "ENG-1", "--json")
+	res := d.Run("explain", "ENG-1", "--json")
 
 	require.NoError(t, res.Err)
 	lines := traceJSON(t, res.Stdout)
@@ -1132,7 +1132,7 @@ func TestTraceJSONMarksAReceiptStateResetRecordedAsNeverSent(t *testing.T) {
 	d.Advance(time.Minute)
 	require.NoError(t, d.Run("state", "reset", "--quiet").Err)
 
-	res := d.Run("trace", "ENG-2", "--json")
+	res := d.Run("explain", "ENG-2", "--json")
 
 	require.NoError(t, res.Err)
 	var reset map[string]any
@@ -1157,7 +1157,7 @@ func TestTraceJSONPrintsAnExchangeWithNoAnswerAsUnknown(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Run("tick")
 
-	res := d.Run("trace", "ENG-1", "--json")
+	res := d.Run("explain", "ENG-1", "--json")
 
 	require.NoError(t, res.Err)
 	var found map[string]any
@@ -1179,9 +1179,9 @@ func TestTraceRefusesATicketAfterAnEmptyArgument(t *testing.T) {
 	d.Tick()
 	d.Stop()
 
-	res := d.Run("trace", "", "ENG-1")
+	res := d.Run("explain", "", "ENG-1")
 
-	require.ErrorContains(t, res.Err, "trace takes a ticket")
+	require.ErrorContains(t, res.Err, "explain takes a ticket")
 	assert.Empty(t, res.Stdout)
 }
 
@@ -1276,7 +1276,7 @@ func TestTraceShowsTheExchangesOfATicket(t *testing.T) {
 	t.Parallel()
 	d, _ := httpHistory(t, countRule)
 
-	res := d.Run("trace", "ENG-1")
+	res := d.Run("explain", "ENG-1")
 
 	require.NoError(t, res.Err)
 	assert.Contains(t, res.Stdout, `http  count  GET sentry /count  200 {"open":3}`)
@@ -1429,8 +1429,8 @@ func TestTraceShowsOnlyTheExchangesOfTheTicketItIsGiven(t *testing.T) {
 	d.Tick()
 	d.Stop()
 
-	res1 := d.Run("trace", "ENG-1")
-	res2 := d.Run("trace", "ENG-2")
+	res1 := d.Run("explain", "ENG-1")
+	res2 := d.Run("explain", "ENG-2")
 
 	require.NoError(t, res1.Err)
 	require.NoError(t, res2.Err)
@@ -1519,7 +1519,7 @@ func TestTraceShowsAnAnswerThatChangedWhileTheRuleDecidedTheSame(t *testing.T) {
 	d.Tick()
 	d.Stop()
 
-	res := d.Run("trace", "ENG-1")
+	res := d.Run("explain", "ENG-1")
 
 	require.NoError(t, res.Err)
 	assert.Contains(t, res.Stdout, `GET sentry /count  200 {"open":3}`)

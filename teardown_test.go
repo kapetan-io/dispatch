@@ -363,7 +363,7 @@ func TestTickKeepsATreeItCannotRead(t *testing.T) {
 	assert.Empty(t, d.Workers.Closed())
 	assert.Empty(t, d.Trees.Returned())
 	assert.Empty(t, d.Linear.Comments())
-	plan := d.Run("plan")
+	plan := d.Run("cycle")
 	require.NoError(t, plan.Err)
 	assert.Regexp(t, `(?m)^held .*teardown-clean-tree`, plan.Stdout)
 }
@@ -994,7 +994,7 @@ func TestPlanNamesEachKeptTreeOfOneTicket(t *testing.T) {
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 	d.Tick()
 
-	plan := d.Run("plan")
+	plan := d.Run("cycle")
 	require.NoError(t, plan.Err)
 
 	// The comment of each tree carries its path in the once key, so the two do not cover each other.
@@ -1019,7 +1019,7 @@ func TestPlanListsTheCommentOfAKeptTreeAsCoveredOnEveryTick(t *testing.T) {
 	require.Len(t, d.Linear.Comments(), 1)
 
 	d.Tick()
-	plan := d.Run("plan")
+	plan := d.Run("cycle")
 	require.NoError(t, plan.Err)
 
 	assert.Regexp(t, `(?m)^covered +ENG-1 +comment +comment-kept-tree +done .*`+regexp.QuoteMeta(path), plan.Stdout)
@@ -1041,7 +1041,7 @@ func TestTickKeepsATreeWhoseGitStateIsBroken(t *testing.T) {
 	assert.Empty(t, d.Trees.Returned())
 	assert.Empty(t, d.Linear.Comments())
 	assert.Empty(t, teardownReceipts(d, "ENG-1", "return"))
-	plan := d.Run("plan")
+	plan := d.Run("cycle")
 	require.NoError(t, plan.Err)
 	assert.Regexp(t, `(?m)^held .*teardown-clean-tree`, plan.Stdout)
 	assert.DirExists(t, path)

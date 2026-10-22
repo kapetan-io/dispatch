@@ -601,7 +601,7 @@ func (s *State) prRecords(w world.World) {
 	}
 }
 
-// String names a record as "kind/id", the way plans and traces do.
+// String names a record as "kind/id", the way dispatch cycle and dispatch explain do.
 func (r *record) String() string { return r.kind + "/" + r.id }
 
 // addEscalations adds an escalation record for each escalate receipt in the ledger.

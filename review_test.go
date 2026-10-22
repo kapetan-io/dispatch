@@ -336,7 +336,7 @@ func TestTickSkipsATicketWhosePRCannotBeRead(t *testing.T) {
 
 	d.Tick()
 
-	assert.Contains(t, d.Run("plan").Stdout, "held")
+	assert.Contains(t, d.Run("cycle").Stdout, "held")
 	assert.Contains(t, d.LoopStderr(), "while reading the PR for ENG-1")
 	assert.Empty(t, d.Workers.Prompts())
 	noLinearChanges(t, d)
@@ -459,7 +459,7 @@ func TestTickHoldsBackOnlyTheTicketWhosePRReadFailed(t *testing.T) {
 
 	d.Tick()
 
-	assert.Contains(t, d.Run("plan").Stdout, "held")
+	assert.Contains(t, d.Run("cycle").Stdout, "held")
 	assert.Contains(t, d.LoopStderr(), "while reading the PR for ENG-1")
 	assert.Len(t, d.Workers.Launched(), 1)
 }

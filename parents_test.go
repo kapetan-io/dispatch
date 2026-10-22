@@ -28,7 +28,7 @@ func (d *Dispatch) childReads() [][]string { return d.linear.childReadParents() 
 // plan is what `dispatch plan` prints.
 func (d *Dispatch) plan() string {
 	d.t.Helper()
-	res := d.Run("plan")
+	res := d.Run("cycle")
 	require.NoError(d.t, res.Err)
 	return res.Stdout
 }

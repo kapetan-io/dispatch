@@ -389,7 +389,7 @@ type Receipt struct {
 // final state, oldest first. A ticket that history has no record of has none.
 func (d *Dispatch) Receipts(ticket string) []Receipt {
 	d.t.Helper()
-	res := d.Run("trace", ticket, "--json")
+	res := d.Run("explain", ticket, "--json")
 	if res.Code == 1 && strings.Contains(res.Err.Error(), "history has no record of") {
 		return nil
 	}

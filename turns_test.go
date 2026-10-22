@@ -280,7 +280,7 @@ func TestReplayReproducesADecisionThatReadTurnsAndTraceShowsThem(t *testing.T) {
 	d.LoseSessionLogs()
 
 	replay := d.Run("replay")
-	trace := d.Run("trace", "eng-1")
+	trace := d.Run("explain", "eng-1")
 
 	require.NoError(t, replay.Err)
 	require.NoError(t, trace.Err)
@@ -301,7 +301,7 @@ func TestTraceShowsTheTurnsADecisionRead(t *testing.T) {
 	d.Workers.Stop("ENG-1", stopTasks{Running: 1})
 	d.Tick()
 
-	res := d.Run("trace", "eng-1")
+	res := d.Run("explain", "eng-1")
 
 	require.NoError(t, res.Err)
 	assert.Regexp(t, `turns.*\{"at":\d+,"running":true\}`, res.Stdout)
