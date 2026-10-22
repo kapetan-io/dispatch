@@ -13,7 +13,7 @@ A test should change only when the system's requirements change. Refactors, new 
 
 **Fidelity matters more than speed.** A test is worth the share of the production path it runs: real TCP, real HTTP client, real serialization, real migrations. Every substitution below trades some of that away, so make the trade only where you must.
 
-Tests also have a speed budget, 1 second per test and 5 minutes per suite. Load `dispatch:principle-fast-tests` for how to meet it without giving up fidelity.
+Tests also have a speed budget, 1 second per test and 5 minutes per suite. Load `dispatch:principle-fast-tests` for how to meet it without giving up fidelity, and for the `tests_slow` tag a test that can't get under 1 second carries. `dispatch:repo-targets` covers the targets that run it.
 
 ## Core rule
 

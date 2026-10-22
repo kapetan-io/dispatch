@@ -5,6 +5,7 @@ package slowtests_test
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -147,6 +148,46 @@ func TestBroken(t *testing.T) { t.Fatal("always fails") }
 	code = slowtests.Run(t.Context(), nil, slowtests.Options{Dir: dir, Stdout: &stdout, Stderr: &stderr})
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr.String(), "did not build")
+}
+
+func TestSlowTestsTags(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.test/tagged\n\ngo 1.21\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "fast_test.go"), []byte("package tagged\n\nimport \"testing\"\n\nfunc TestQuick(t *testing.T) {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "slow_test.go"), []byte(`//go:build tests_slow
+
+package tagged
+
+import (
+	"testing"
+	"time"
+)
+
+func TestTaggedNap(t *testing.T) { time.Sleep(150 * time.Millisecond) }
+`), 0o644))
+
+	for _, test := range []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{"withoutTags", []string{"-test-limit", "100ms"}, false},
+		{"withTags", []string{"-tags", "tests_slow", "-test-limit", "100ms"}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			var stdout, stderr bytes.Buffer
+			code := slowtests.Run(t.Context(), test.args, slowtests.Options{Dir: dir, Stdout: &stdout, Stderr: &stderr})
+			require.Equal(t, 0, code)
+			assert.Equal(t, test.want, strings.Contains(stdout.String(), "example.test/tagged.TestTaggedNap"))
+		})
+	}
+}
+
+func TestSlowTestsTargetMeasuresTaggedTests(t *testing.T) {
+	out, err := exec.CommandContext(t.Context(), "make", "-n", "-C", filepath.Join("..", ".."), "test-report").Output()
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "-tags tests_slow")
 }
 
 func TestSlowTestsRunOnlyFromItsOwnWorkflow(t *testing.T) {
