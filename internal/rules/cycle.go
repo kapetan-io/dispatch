@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/grafana/sobek"
 
@@ -338,13 +337,13 @@ type callResult struct {
 func (r *Rules) run(state *State, def *ruleDef, phase string, rec *record, ev *Event) (callResult, *call) {
 	rt := newRuntime(state.ms())
 	c := &call{state: state, rt: rt, phase: phase, objects: map[string]*sobek.Object{}, handles: map[*sobek.Object]int{},
-		deadline: time.Now().Add(r.timeouts.forPhase(phase))}
+		deadline: r.timeouts.now().Add(r.timeouts.forPhase(phase)), timeouts: r.timeouts, rule: def.name}
 	reg := &registry{}
 	if err := reg.install(rt, c.known); err != nil {
 		return callResult{err: err}, c
 	}
 	// The top level of a rule file runs on every call, so a loop there is bounded too.
-	stop := timeLimit(rt, r.timeouts.forPhase(phase))
+	stop := r.timeouts.limit(rt, "rule "+def.name+" "+phase, phase)
 	defer stop()
 	if _, err := rt.RunProgram(r.program); err != nil {
 		return interpret(c, nil, err), c

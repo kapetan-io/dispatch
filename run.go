@@ -12,6 +12,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/executor"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
@@ -23,12 +24,12 @@ import (
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
-// Clock owns every timer the loop sets and stamps ingest times. Tests swap in a
-// fake to fire a resync without waiting for one.
-type Clock = loop.Clock
+// Clock is the loop's timers, the deadlines on the work dispatch starts, and the ingest time
+// stamps. Tests swap in a fake to fire a resync or a timeout without waiting for one.
+type Clock = clock.Clock
 
 // Timer fires once on C unless stopped.
-type Timer = loop.Timer
+type Timer = clock.Timer
 
 // lockName is the file whose lock allows one `dispatch run` per state directory.
 const lockName = "dispatch.lock"
@@ -243,7 +244,7 @@ func runCommand(ctx context.Context, opts Options) error {
 		Config: cfg, Linear: func() linear.Workspace { return lin }, Herdr: opts.Herdr, Treehouse: opts.Treehouse,
 		PullRequests: opts.PullRequests, Launcher: launcherFor(opts, cfg.Plugins.Herdr.PluginRoot, nil, sent), Alerts: opts.Alerts,
 		StateDir: opts.StateDir, Stderr: opts.Stderr, LaunchDeadline: opts.LaunchTimeout, Deadline: opts.ActionTimeout,
-		HTTP: services, Typed: sent,
+		HTTP: services, Typed: sent, Clock: opts.Clock,
 	})
 	return loop.New(loop.Options{
 		Config: cfg, ConfigText: string(text), StateDir: opts.StateDir, Rules: loaded, Clock: opts.Clock,
@@ -268,7 +269,7 @@ func loadRules(opts Options, cfg config.Config) (*rules.Rules, error) {
 
 // loadRulesIn loads the rules under dir, printing each problem a rule has.
 func loadRulesIn(opts Options, dir string) (*rules.Rules, error) {
-	loaded, err := rules.Load(dir, rulesEntry, rules.Timeouts(opts.RuleTimeout))
+	loaded, err := rules.Load(dir, rulesEntry, opts.ruleTimeouts())
 	var lerr *rules.LoadError
 	if errors.As(err, &lerr) {
 		for _, p := range lerr.Problems {

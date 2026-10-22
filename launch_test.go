@@ -121,6 +121,8 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 		args   []string
 		status string
 		detail string
+		// expire is the deadline the clock passes while the launch runs.
+		expire string
 	}{
 		{
 			name:   "NoArguments",
@@ -160,6 +162,7 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 			args:   []string{"ENG-1", "b"},
 			status: "herdr_unavailable",
 			detail: "herdr server not answering",
+			expire: "launch preflight",
 		},
 		{
 			name: "PoolExhausted",
@@ -234,7 +237,11 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 				dir = test.dir
 			}
 
-			out := d.launchIn(dir, test.args...)
+			launched := later(func() launchOutput { return d.launchIn(dir, test.args...) })
+			if test.expire != "" {
+				d.Expire(test.expire)
+			}
+			out := launched()
 
 			assert.Equal(t, test.status, out.result["status"])
 			assert.Contains(t, out.result["detail"], test.detail)
@@ -623,11 +630,12 @@ func TestLaunchGivesUpAtOnceWhenThePreflightTimeoutIsZero(t *testing.T) {
 	d.Trees.Pooled()
 	d.fakes().Herdr.Fail(herdrtest.OpRead, errors.New("server not running"))
 
-	start := time.Now()
-	out := d.launch("ENG-1", "thrawn01/eng-1")
+	launched := later(func() launchOutput { return d.launch("ENG-1", "thrawn01/eng-1") })
+	assert.Equal(t, time.Nanosecond, d.Deadline("launch preflight"))
+	d.Expire("launch preflight")
+	out := launched()
 
 	assert.Equal(t, "herdr_unavailable", out.result["status"])
-	assert.Less(t, time.Since(start), 4*time.Second)
 	assert.Empty(t, d.fakes().Calls("treehouse", "lease"))
 }
 

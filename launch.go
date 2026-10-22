@@ -111,9 +111,7 @@ func launcherFor(opts Options, root string, progress io.Writer, typed launcher.T
 		StateDir:   opts.StateDir,
 		Typed:      typed,
 	}
-	if opts.Clock != nil {
-		lo.Now = opts.Clock.Now
-	}
+	lo.Clock = opts.Clock
 	// DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT=<seconds> bounds the wait for the herdr
 	// server. Zero fails at once, so it becomes the smallest nonzero wait.
 	if secs, err := strconv.Atoi(os.Getenv("DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT")); err == nil {

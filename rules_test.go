@@ -207,7 +207,11 @@ whenever({ name: "healthy", each: "linear.ticket", if: () => true,
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
 
-	res := d.RunWith(dispatch.Options{RuleTimeout: dispatch.RuleTimeout{If: 50 * time.Millisecond}}, "rules", "check")
+	checked := later(func() Result { return d.Run("rules", "check") })
+	// One if per ticket spins.
+	d.Expire("rule loops if")
+	d.Expire("rule loops if")
+	res := checked()
 
 	require.ErrorContains(t, res.Err, "problems found")
 	assert.Regexp(t, `healthy +whenever +linear\.ticket +wants nudge now for ENG-1, ENG-2\n`, res.Stdout)
@@ -645,14 +649,15 @@ func TestRulesCheckStopsAnIfAfterOneSecondByDefault(t *testing.T) {
 		Rules:  rule(`whenever({ name: "loops", each: "linear.ticket", if: () => { for (;;) {} }, then: () => {} });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	start := time.Now()
 
-	res := d.Run("rules", "check")
+	checked := later(func() Result { return d.Run("rules", "check") })
+	d.advance(d.Deadline("rule loops if") - time.Millisecond)
+	assert.True(t, d.DeadlineRunning("rule loops if"))
+	d.advance(time.Millisecond)
+	res := checked()
 
 	require.ErrorContains(t, res.Err, "1 problems found")
 	assert.Contains(t, res.Stdout, "finding: loops ran out of time in its if for ENG-1")
-	assert.GreaterOrEqual(t, time.Since(start), time.Second)
-	assert.Less(t, time.Since(start), 10*time.Second)
 }
 
 func TestRulesCheckStopsAThenThatRunsOutOfTimeAndKeepsTheOthers(t *testing.T) {
@@ -664,7 +669,9 @@ whenever({ name: "fine", each: "linear.ticket", if: () => true, then: (t, ctx) =
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
-	res := d.RunWith(dispatch.Options{RuleTimeout: dispatch.RuleTimeout{Then: 50 * time.Millisecond}}, "rules", "check")
+	checked := later(func() Result { return d.Run("rules", "check") })
+	d.Expire("rule slow then")
+	res := checked()
 
 	require.ErrorContains(t, res.Err, "1 problems found")
 	assert.Contains(t, res.Stdout, "finding: slow ran out of time in its then for ENG-1")
@@ -772,12 +779,12 @@ func TestRulesCheckNamesAMissingOnceKeyThatTheLintCouldNotSee(t *testing.T) {
 func TestRulesCheckStopsALoopAtTheTopOfARuleFile(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig, Rules: rule(`for (;;) {}`)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	start := time.Now()
 
-	res := d.RunWith(dispatch.Options{RuleTimeout: dispatch.RuleTimeout{Then: 100 * time.Millisecond}}, "rules", "check")
+	checked := later(func() Result { return d.Run("rules", "check") })
+	d.Expire("rules load")
+	res := checked()
 
 	require.Error(t, res.Err)
-	assert.Less(t, time.Since(start), 5*time.Second)
 }
 
 func TestRulesCheckCannotReachTheRealClockThroughDate(t *testing.T) {
@@ -827,12 +834,12 @@ func TestRulesCheckStopsAGetterInAReturnedObjectWithinTheBudget(t *testing.T) {
 whenever({ name: "healthy", each: "linear.ticket", if: () => true, then: (t, ctx) => ctx.linear.queueComment(t, "ok", { once: ["h", t.id] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	start := time.Now()
 
-	res := d.RunWith(dispatch.Options{RuleTimeout: dispatch.RuleTimeout{Then: 100 * time.Millisecond}}, "rules", "check")
+	checked := later(func() Result { return d.Run("rules", "check") })
+	d.Expire("rule getter then")
+	res := checked()
 
 	require.ErrorContains(t, res.Err, "problems found")
-	assert.Less(t, time.Since(start), 5*time.Second)
 	assert.Contains(t, res.Stdout, "finding: getter ran out of time in its then for ENG-1: took longer than its time budget and was stopped")
 	assert.Regexp(t, `healthy +whenever +linear\.ticket +wants comment now for ENG-1`, res.Stdout)
 }
@@ -1106,11 +1113,11 @@ func TestAGetThatOutlastsTheThenBudgetHoldsTheRuleInsteadOfThrowing(t *testing.T
 	sentry.Stall("sentry", "GET", "/slow", 10*time.Second)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
-	start := time.Now()
-	res := d.Run("rules", "check")
+	checked := later(func() Result { return d.Run("rules", "check") })
+	d.Expire("rule slow http.get")
+	res := checked()
 
 	require.NoError(t, res.Err)
-	assert.Less(t, time.Since(start), 5*time.Second)
 	assert.Len(t, sentry.Requests(), 1)
 	assert.Regexp(t, `slow +whenever +linear\.ticket +wants nothing now; held for ENG-1\n`, res.Stdout)
 }
@@ -1340,7 +1347,10 @@ func TestAPostThatTimesOutCountsAsSentAndIsNotPostedAgain(t *testing.T) {
 	sentry.Stall("sentry", "POST", "/slow", 10*time.Second)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
-	d.Tick()
+	ticked := later(func() Result { return d.Run("tick") })
+	require.Eventually(t, func() bool { return countPosts(sentry) == 1 }, 20*time.Second, time.Millisecond)
+	d.Expire("http.post sentry")
+	require.NoError(t, ticked().Err)
 
 	assert.Equal(t, 1, countPosts(sentry))
 
@@ -1460,21 +1470,33 @@ func TestAPostWhoseTokenCommandOutlastsTheDeadlineSentNothingAndIsTriedAgain(t *
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
+	started := filepath.Join(t.TempDir(), "token-command-ran")
 	d := newDispatch(t, dispatchOptions{
-		Config:        "\n[http.sentry]\nbase_url = \"" + srv.URL + "\"\ntoken_command = \"sleep 5; echo tok\"\n",
+		Config:        "\n[http.sentry]\nbase_url = \"" + srv.URL + "\"\ntoken_command = \"touch " + started + "; exec sleep 30\"\n",
 		ActionTimeout: 300 * time.Millisecond,
 		Rules: rule(`whenever({ name: "hook", each: "linear.ticket", if: (t) => t.status === "in_progress",
   then: (t, ctx) => ctx.http.queuePost("sentry", "/hook", {}, { once: ["hook", t.id] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
-	res := d.Run("tick")
+	ticked := later(func() Result { return d.Run("tick") })
+	require.Eventually(t, func() bool { return exists(started) }, 20*time.Second, time.Millisecond)
+	d.Expire("http.post sentry")
+	res := ticked()
 
 	require.Error(t, res.Err)
 	assert.Zero(t, hits.Load())
 
-	d.Advance(5 * time.Minute)
-	retry := d.Run("tick")
+	require.NoError(t, os.Remove(started))
+	advanced := later(func() bool { d.Advance(5 * time.Minute); return true })
+	require.Eventually(t, func() bool { return exists(started) }, 20*time.Second, time.Millisecond)
+	d.Expire("http.post sentry")
+	advanced()
+	require.NoError(t, os.Remove(started))
+	retried := later(func() Result { return d.Run("tick") })
+	require.Eventually(t, func() bool { return exists(started) }, 20*time.Second, time.Millisecond)
+	d.Expire("http.post sentry")
+	retry := retried()
 
 	require.Error(t, retry.Err)
 	assert.Zero(t, hits.Load())

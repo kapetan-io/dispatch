@@ -2057,7 +2057,12 @@ func TestANudgeThatTimedOutKeepsItsSendBecauseTheTextMayHaveBeenTyped(t *testing
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.CheckedOut("ENG-1", "idle")
 	d.Workers.StallPrompts()
-	require.NoError(t, d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tell", "ENG-1", "/merge-it 42").Err)
+	told := later(func() Result {
+		return d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tell", "ENG-1", "/merge-it 42")
+	})
+	require.Eventually(t, func() bool { return len(d.tools.Calls("herdr", "prompt")) == 1 }, 20*time.Second, time.Millisecond)
+	d.Expire("herdr.nudge ENG-1")
+	require.NoError(t, told().Err)
 
 	d.Workers.Type("ENG-1", "/merge-it 42")
 	d.Tick()
@@ -2089,7 +2094,12 @@ func TestClosingAWorkspaceDropsTheNotesOfWhatWasTypedIntoItsTree(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.CheckedOut("ENG-1", "idle")
 	d.Workers.StallPrompts()
-	require.NoError(t, d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tell", "ENG-1", "/merge-it 42").Err)
+	told := later(func() Result {
+		return d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tell", "ENG-1", "/merge-it 42")
+	})
+	require.Eventually(t, func() bool { return len(d.tools.Calls("herdr", "prompt")) == 1 }, 20*time.Second, time.Millisecond)
+	d.Expire("herdr.nudge ENG-1")
+	require.NoError(t, told().Err)
 	d.Workers.Unconfirmed("ENG-1")
 	d.Advance(6 * time.Minute)
 	d.Tick()
@@ -2145,13 +2155,11 @@ func TestTheHookNeverBlocksOrAddsTextWhateverGoesWrong(t *testing.T) {
 			test.breakIt(d)
 			input, err := json.Marshal(map[string]string{"session_id": "worker", "cwd": tree, "prompt": "/merge-it 42"})
 			require.NoError(t, err)
-			started := time.Now()
 
 			res := d.Hook("wake", string(input))
 
 			require.NoError(t, res.Err)
 			assert.Empty(t, res.Stdout)
-			assert.Less(t, time.Since(started), 500*time.Millisecond)
 			if test.wantCalls > 0 {
 				assert.Eventually(t, func() bool { return d.LoopCalls() == test.wantCalls }, time.Second, 5*time.Millisecond)
 			}

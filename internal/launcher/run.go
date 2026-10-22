@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
@@ -55,9 +56,9 @@ type Options struct {
 	// StateDir is where a launch records that its kickoff is unconfirmed, so a
 	// tick can find a Claude the launch died on. Empty records nothing.
 	StateDir string
-	// Now is the time a launch's kickoff record carries, which the rules compare with the
-	// loop's clock. Defaults to the wall clock.
-	Now func() time.Time
+	// Clock stamps a launch's kickoff record, which the rules compare with the loop's clock,
+	// and runs the preflight deadline. Defaults to the wall clock.
+	Clock clock.Clock
 	// Typed is told the kickoff before it is typed, so the prompt hook labels it as dispatch's.
 	// Defaults to noting nothing.
 	Typed Typing
@@ -88,8 +89,8 @@ func (o Options) withDefaults() Options {
 		// A nil log notes nothing.
 		o.Typed = (*typed.Log)(nil)
 	}
-	if o.Now == nil {
-		o.Now = time.Now
+	if o.Clock == nil {
+		o.Clock = clock.Wall{}
 	}
 	return o
 }
@@ -227,7 +228,7 @@ func (l *launch) beginKickoff() {
 	if l.opts.StateDir == "" {
 		return
 	}
-	id, err := kickoffs.Mark(l.opts.StateDir, l.tree, l.opts.Now())
+	id, err := kickoffs.Mark(l.opts.StateDir, l.tree, l.opts.Clock.Now())
 	if err != nil {
 		l.log("%v", err)
 		return
@@ -245,16 +246,20 @@ func (l *launch) clearKickoff() {
 }
 
 func (l *launch) preflight(ctx context.Context) (Result, bool) {
-	deadline := time.Now().Add(l.opts.PreflightTimeout)
+	waitCtx, cancel := clock.WithTimeout(ctx, l.opts.Clock, "launch preflight", l.opts.PreflightTimeout)
+	defer cancel()
 	for {
 		if _, err := l.opts.Herdr.Read(ctx); err == nil {
 			return Result{}, true
 		}
-		if !time.Now().Before(deadline) {
+		if waitCtx.Err() != nil && ctx.Err() == nil {
 			return Result{Status: StatusHerdrUnavailable, Detail: "herdr server not answering"}, false
 		}
 		l.log("waiting for herdr server...")
-		if !l.sleep(ctx, 5*l.opts.Pace) {
+		if !l.sleep(waitCtx, 5*l.opts.Pace) {
+			if ctx.Err() == nil {
+				return Result{Status: StatusHerdrUnavailable, Detail: "herdr server not answering"}, false
+			}
 			return Result{Status: StatusHerdrUnavailable, Detail: "interrupted while waiting for the herdr server"}, false
 		}
 	}

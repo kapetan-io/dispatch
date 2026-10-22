@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/delivery"
 	"github.com/kapetan-io/dispatch/internal/executor"
@@ -35,7 +36,7 @@ type Options struct {
 	// StateDir holds the loop's socket.
 	StateDir string
 	Rules    *rules.Rules
-	Clock    Clock
+	Clock    clock.Clock
 	// Sources are the tools one read goes through. The loop sets Tolerant and Resilient.
 	Sources  world.Sources
 	Executor *executor.Executor
@@ -60,7 +61,7 @@ type Loop struct {
 	// runCtx ends the reads and renames that run off the loop when the loop stops.
 	runCtx context.Context
 	o      Options
-	clock  Clock
+	clock  clock.Clock
 	scope  world.Scope
 	hist   *history.Writer
 	// segStart is when the segment being written began.
@@ -175,7 +176,7 @@ type request struct {
 // New returns a loop over o.
 func New(o Options) *Loop {
 	if o.Clock == nil {
-		o.Clock = WallClock{}
+		o.Clock = clock.Wall{}
 	}
 	o.Sources.Tolerant, o.Sources.Resilient = true, true
 	if o.Sources.Stderr == nil {
@@ -289,7 +290,7 @@ func (l *Loop) wakeIfLate() error {
 func (l *Loop) fatal(err error) {
 	_, _ = fmt.Fprintf(l.o.Err, "%s dispatch: stopping: %v\n", l.clock.Now().Format(time.TimeOnly), err)
 	if l.o.Alerts != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), alertDeadline)
+		ctx, cancel := clock.WithTimeout(context.Background(), l.clock, "alert", alertDeadline)
 		defer cancel()
 		_ = l.o.Alerts.Show(ctx, "dispatch stopped: "+err.Error())
 	}
@@ -761,7 +762,7 @@ func (l *Loop) alert(text string, overflow bool) {
 	}
 	l.alerts++
 	go func() {
-		ctx, cancel := context.WithTimeout(l.runCtx, alertDeadline)
+		ctx, cancel := clock.WithTimeout(l.runCtx, l.clock, "alert", alertDeadline)
 		defer cancel()
 		err := l.o.Alerts.Show(ctx, text)
 		select {

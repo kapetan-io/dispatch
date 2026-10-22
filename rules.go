@@ -155,7 +155,7 @@ func rulesCheck(ctx context.Context, opts Options, arg string) error {
 	if err := writeTypes(dir, cfg); err != nil {
 		return err
 	}
-	loaded, err := rules.Load(dir, rulesEntry, rules.Timeouts(opts.RuleTimeout))
+	loaded, err := rules.Load(dir, rulesEntry, opts.ruleTimeouts())
 	if err != nil {
 		var lerr *rules.LoadError
 		if errors.As(err, &lerr) {
@@ -373,7 +373,7 @@ func rulesTest(opts Options, arg string) error {
 	if err != nil {
 		return err
 	}
-	summary, err := rules.RunScenarios(dir, rules.Timeouts(opts.RuleTimeout))
+	summary, err := rules.RunScenarios(dir, opts.ruleTimeouts())
 	for _, line := range summary.Lines {
 		_, _ = fmt.Fprintln(opts.Stdout, line)
 	}

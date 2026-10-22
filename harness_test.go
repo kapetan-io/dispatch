@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
+	"io"
 	"maps"
 	"net"
 	"os"
@@ -137,6 +138,8 @@ type Dispatch struct {
 	timeouts dispatch.Options
 	// brokenLoop is true while a fake loop holds the socket.
 	brokenLoop bool
+	// loopUp is running != nil, readable from the goroutines later starts.
+	loopUp atomic.Bool
 	// loopCalls counts the connections the fake loop accepted.
 	loopCalls atomic.Int32
 }
@@ -254,6 +257,31 @@ func (d *Dispatch) Run(args ...string) Result {
 func (d *Dispatch) RunWith(extra dispatch.Options, args ...string) Result {
 	d.t.Helper()
 	return d.result(d.runWith(context.Background(), extra, args...))
+}
+
+// later starts a command in the background and returns what waits for its result, so a test can
+// move the clock while the command waits on a deadline.
+func later[T any](run func() T) (wait func() T) {
+	done := make(chan T, 1)
+	go func() { done <- run() }()
+	return func() T { return <-done }
+}
+
+// expiring runs a command that starts the same deadline in every cycle it runs, such as a rule
+// that spins, and fires that deadline each time until the command returns. It does not use
+// Expire, which waits for the loop to settle, and a spinning rule keeps the loop busy.
+func expiring[T any](d *Dispatch, what string, run func() T) T {
+	done := later(run)
+	finished := make(chan T, 1)
+	go func() { finished <- done() }()
+	for {
+		select {
+		case result := <-finished:
+			return result
+		case <-time.After(time.Millisecond):
+			d.Clock.expire(what)
+		}
+	}
 }
 
 // Tools is the fakes behind dispatch, for a test to make one fail or to read what it recorded.
@@ -426,7 +454,7 @@ func (d *Dispatch) BrokenLoop(fault loopFault) {
 				case answersWithAnError:
 					_ = json.NewEncoder(conn).Encode(loop.Response{Code: loop.CodeFailed, Error: "disk full"})
 				case neverAnswers:
-					_, _ = conn.Read(make([]byte, 1))
+					_, _ = io.Copy(io.Discard, conn)
 				}
 			}()
 		}
@@ -1314,6 +1342,7 @@ func (d *Dispatch) startLoop(extra dispatch.Options) error {
 		}
 		if resp, err := loop.Ask(ctx, d.state, loop.Request{Op: loop.OpIdle}); err == nil && !resp.Busy {
 			d.running = r
+			d.loopUp.Store(true)
 			return nil
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -1337,6 +1366,7 @@ func (d *Dispatch) stopLoop() error {
 	}
 	r := d.running
 	d.running = nil
+	d.loopUp.Store(false)
 	r.cancel()
 	select {
 	case err := <-r.done:
@@ -1380,20 +1410,53 @@ func (d *Dispatch) tick() string {
 // waits until the loop has settled.
 func (d *Dispatch) advance(by time.Duration) {
 	d.t.Helper()
+	d.moving(func() int { return d.Clock.Advance(by) })
+}
+
+// moving runs move, which changes the clock and returns how many timers it fired, and waits until
+// the loop has settled after a timer fired.
+func (d *Dispatch) moving(move func() int) {
+	d.t.Helper()
 	var before loop.Response
-	if d.running != nil {
+	if d.loopUp.Load() {
 		var err error
 		before, err = loop.Ask(context.Background(), d.state, loop.Request{Op: loop.OpIdle})
 		require.NoError(d.t, err)
 	}
-	fired := d.Clock.Advance(by)
-	if d.running == nil || fired == 0 {
+	fired := move()
+	if !d.loopUp.Load() || fired == 0 {
 		return
 	}
 	require.Eventually(d.t, func() bool {
 		resp, err := loop.Ask(context.Background(), d.state, loop.Request{Op: loop.OpIdle})
 		return err == nil && !resp.Busy && resp.Idle > before.Idle
 	}, 20*time.Second, 2*time.Millisecond)
+}
+
+// Deadline waits up to 20 seconds for the work to start the deadline on what, such as "herdr.launch ENG-1"
+// or "rule spins if", and returns how far the clock is from passing it.
+func (d *Dispatch) Deadline(what string) time.Duration {
+	d.t.Helper()
+	var left time.Duration
+	require.Eventually(d.t, func() bool {
+		var ok bool
+		left, ok = d.Clock.untilDeadline(what)
+		return ok
+	}, 20*time.Second, time.Millisecond)
+	return left
+}
+
+// DeadlineRunning is true while the work has a deadline on what that the clock has not passed.
+func (d *Dispatch) DeadlineRunning(what string) bool {
+	_, ok := d.Clock.untilDeadline(what)
+	return ok
+}
+
+// Expire fires the deadline on what, as the clock passing it does, and waits until the loop has settled.
+func (d *Dispatch) Expire(what string) {
+	d.t.Helper()
+	d.Deadline(what)
+	d.moving(func() int { return d.Clock.expire(what) })
 }
 
 // seedHistory writes a segment as an earlier run left it, with no stop line as after
@@ -1457,12 +1520,44 @@ func (c *fakeClock) Now() time.Time {
 	return c.now
 }
 
-func (c *fakeClock) NewTimer(d time.Duration) dispatch.Timer {
+func (c *fakeClock) NewTimer(d time.Duration) dispatch.Timer { return c.NewDeadline("", d) }
+
+// NewDeadline starts a timer a test can expire by the name of the work it bounds.
+func (c *fakeClock) NewDeadline(what string, d time.Duration) dispatch.Timer {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	t := &fakeTimer{clock: c, c: make(chan time.Time, 1), at: c.now.Add(d)}
+	t := &fakeTimer{clock: c, c: make(chan time.Time, 1), at: c.now.Add(d), what: what}
 	c.timers = append(c.timers, t)
 	return t
+}
+
+// untilDeadline is how far the clock must move to pass the deadline for what, or false when
+// no deadline for it is running.
+func (c *fakeClock) untilDeadline(what string) (time.Duration, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for _, t := range c.timers {
+		if !t.done && t.what == what {
+			return max(t.at.Sub(c.now), 0), true
+		}
+	}
+	return 0, false
+}
+
+// expire fires the first live deadline named what and leaves the time alone, so deadlines due at
+// the same instant, such as a rule's budget and the request inside it, pass one at a time.
+func (c *fakeClock) expire(what string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, t := range c.timers {
+		if !t.done && t.what == what {
+			t.done = true
+			t.c <- c.now
+			return 1
+		}
+	}
+	return 0
 }
 
 // Skew moves the clock without firing a timer, as a machine that slept through a resync does.
@@ -1493,6 +1588,7 @@ type fakeTimer struct {
 	c     chan time.Time
 	at    time.Time
 	done  bool
+	what  string
 }
 
 func (t *fakeTimer) C() <-chan time.Time { return t.c }
@@ -2387,3 +2483,9 @@ func next(t *testing.T, lines <-chan string) string {
 
 const countRule = `whenever({ name: "count", each: "linear.ticket", if: (t) => t.status === "in_progress",
   then: (t, ctx) => ctx.linear.queueComment(t, "open " + (ctx.http.get("sentry", "/count").body as any).open, { once: ["count", t.id] }) });`
+
+// exists is true once path exists, for a test to wait on a file a script writes.
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
