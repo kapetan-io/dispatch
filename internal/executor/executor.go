@@ -152,7 +152,7 @@ func (e *Executor) deadline(kind string) time.Duration {
 
 // Run carries out w against what wd read when the cycle ran.
 func (e *Executor) Run(ctx context.Context, w rules.Want, wd world.World) Result {
-	ctx, cancel := clock.WithTimeout(ctx, e.Clock, w.Kind+" "+w.Subject, e.deadline(w.Kind))
+	ctx, cancel := clock.WithTimeout(ctx, e.Clock, w.Receipt+" "+w.Subject, e.deadline(w.Kind))
 	defer cancel()
 	var res Result
 	switch w.Kind {

@@ -236,7 +236,7 @@ func TestTickTimeoutSaysWhatIsStillPending(t *testing.T) {
 	require.ErrorContains(t, res.Err, "timed out after 1s")
 	assert.Equal(t, 1, res.Code)
 	assert.Contains(t, res.Stdout, "ENG-1 launch is still running (launch-worker)")
-	d.Expire("herdr.launch ENG-1")
+	d.Expire("launch ENG-1")
 	d.Stop()
 }
 
@@ -287,7 +287,7 @@ func TestPlanHoldsATicketWhoseRepoPoolCouldNotBeRead(t *testing.T) {
 	d.MovedRepo("tiger")
 	d.Linear.Tickets(ticket("ENG-2", "In Progress", "tiger"))
 	// A worker may already run in the repo whose pool nobody could read.
-	d.tools.Herdr.AddWorkspace(herdr.Workspace{ID: "w-ENG-2", Label: "ENG-2", CheckoutPath: filepath.Join(d.dir, "trees", "ENG-2")})
+	d.tools.Herdr.AddWorkspace(herdr.Workspace{ID: "w-ENG-2", Label: "ENG-2", CheckoutPath: d.Trees.PathOf("ENG-2")})
 	d.Tick()
 	d.Advance(time.Second)
 	d.Tick()
@@ -394,8 +394,8 @@ func TestALaunchThatLandsAfterItsDeadlineGetsNoSecondWorker(t *testing.T) {
 
 	ticked := later(func() Result { return d.RunWith(dispatch.Options{LaunchTimeout: 100 * time.Millisecond}, "tick") })
 	require.Eventually(t, func() bool { return len(d.Workers.Launched()) == 1 }, 20*time.Second, time.Millisecond)
-	assert.Equal(t, 100*time.Millisecond, d.Deadline("herdr.launch ENG-1"))
-	d.Expire("herdr.launch ENG-1")
+	assert.Equal(t, 100*time.Millisecond, d.Deadline("launch ENG-1"))
+	d.Expire("launch ENG-1")
 	res := ticked()
 	require.ErrorContains(t, res.Err, "ENG-1 launch failed")
 	require.Len(t, d.ReceiptsOf("launch", "ENG-1"), 1)
@@ -420,7 +420,7 @@ func TestANudgeThatTimesOutCountsAsToldAndIsNeverRepeated(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	advanced := later(func() bool { d.Advance(time.Hour); return true })
 	require.Eventually(t, func() bool { return len(d.tools.Calls("herdr", "prompt")) == 1 }, 20*time.Second, time.Millisecond)
-	d.Expire("herdr.nudge ENG-1")
+	d.Expire("nudge ENG-1")
 	advanced()
 	d.Tick()
 	for range 2 {
@@ -445,14 +445,14 @@ func TestStoppingTheLoopAnswersATickThatIsWaiting(t *testing.T) {
 	require.Eventually(t, func() bool { return len(d.Workers.Launched()) == 1 }, 20*time.Second, 5*time.Millisecond)
 
 	// Stopping waits for the launch in flight until its deadline, and the loop answers no settle until then.
-	d.Deadline("herdr.launch ENG-1")
+	d.Deadline("launch ENG-1")
 	stopped := later(func() bool { d.Stop(); return true })
 	// The loop refuses or drops requests only once it has begun to stop, so the launch deadline passes after that.
 	require.Eventually(t, func() bool {
 		err := d.RunWhileDown("tell", "ENG-99", "probe").Err
 		return err != nil && (strings.Contains(err.Error(), "dispatch is stopping") || err.Error() == "not running")
 	}, 20*time.Second, 5*time.Millisecond)
-	d.Clock.expire("herdr.launch ENG-1")
+	d.Clock.expire("launch ENG-1")
 	stopped()
 
 	select {
@@ -846,7 +846,7 @@ func TestANudgeToldBeforeARestartIsNotToldAgain(t *testing.T) {
 	d.Workers.StallPrompts()
 	ticked := later(func() Result { return d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tick") })
 	require.Eventually(t, func() bool { return len(d.tools.Calls("herdr", "prompt")) == 1 }, 20*time.Second, time.Millisecond)
-	d.Expire("herdr.nudge ENG-1")
+	d.Expire("nudge ENG-1")
 	require.NoError(t, ticked().Err)
 	require.Len(t, d.ReceiptsOf("nudge", "ENG-1"), 1)
 

@@ -844,7 +844,7 @@ func TestTickKeepsATreeWhoseCommitsNoRemoteHas(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	// A tree with no remote at all has nowhere its commits could be pushed.
-	path := filepath.Join(d.dir, "trees", "ENG-1")
+	path := d.Trees.PathOf("ENG-1")
 	require.NoError(t, os.MkdirAll(path, 0o755))
 	d.Trees.Git(path, "init", "--initial-branch=main")
 	d.Trees.Commit(path)

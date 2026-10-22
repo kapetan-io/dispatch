@@ -119,9 +119,6 @@ func (w *Workers) CheckedOut(ticket, status string) string {
 	return tree
 }
 
-// Tree is the path of the tree Running leases for a ticket.
-func (w *Workers) Tree(ticket string) string { return filepath.Join(w.d.dir, "trees", ticket) }
-
 // Prompt has the person at the Claude session in tree submit a prompt, and returns once the loop has
 // taken what the hook reported.
 func (w *Workers) Prompt(tree, session, prompt string) {
@@ -2155,7 +2152,7 @@ func TestANudgeThatTimedOutKeepsItsSendBecauseTheTextMayHaveBeenTyped(t *testing
 		return d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tell", "ENG-1", "/merge-it 42")
 	})
 	require.Eventually(t, func() bool { return len(d.tools.Calls("herdr", "prompt")) == 1 }, 20*time.Second, time.Millisecond)
-	d.Expire("herdr.nudge ENG-1")
+	d.Expire("nudge ENG-1")
 	require.NoError(t, told().Err)
 
 	d.Workers.Type("ENG-1", "/merge-it 42")
@@ -2194,7 +2191,7 @@ func TestClosingAWorkspaceDropsTheNotesOfWhatWasTypedIntoItsTree(t *testing.T) {
 		return d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tell", "ENG-1", "/merge-it 42")
 	})
 	require.Eventually(t, func() bool { return len(d.tools.Calls("herdr", "prompt")) == 1 }, 20*time.Second, time.Millisecond)
-	d.Expire("herdr.nudge ENG-1")
+	d.Expire("nudge ENG-1")
 	require.NoError(t, told().Err)
 	d.Workers.Unconfirmed("ENG-1")
 	d.Advance(6 * time.Minute)

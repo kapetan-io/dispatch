@@ -22,7 +22,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/httpservicetest"
 	"github.com/kapetan-io/dispatch/internal/linear"
-	"github.com/kapetan-io/dispatch/internal/rules"
 )
 
 // shippedRulesConfig is the [rules] table `rules init` asks the user to add.
@@ -562,28 +561,30 @@ func TestRulesCheckStillReadsLinearThroughItsPortOnly(t *testing.T) {
 }
 
 // generated is every file the repo commits that dispatch generates from its Go types.
-func generated() map[string]string {
-	return map[string]string{
-		"rules/types/dispatch.d.ts": rules.Declarations(config.ShippedRules()),
-		"rules/types/testing.d.ts":  rules.TestingDeclarations(),
-		"rules/config.schema.json":  string(config.JSONSchema()),
-	}
-}
+var generated = []string{"types/dispatch.d.ts", "types/testing.d.ts", "config.schema.json"}
 
 // TestGeneratedFilesMatchTheGoTypes is a repo check, not a behavior test: it compares committed
-// files against what the code generates, and fails when a Go type, an action, an event or
+// files against what `dispatch rules init` generates, and fails when a Go type, an action, an event or
 // a config key changes without the committed declarations and schema. Run it
 // with UPDATE_GENERATED=1 to rewrite them.
 func TestGeneratedFilesMatchTheGoTypes(t *testing.T) {
 	t.Parallel()
-	for path, want := range generated() {
+	// The harness fills in default [rules] keys, which would hide a key removed from the shipped table.
+	d := newDispatch(t, dispatchOptions{ExactRules: true})
+	dir := filepath.Join(t.TempDir(), "rules")
+	require.NoError(t, d.Run("rules", "init", dir).Err)
+
+	for _, name := range generated {
+		want, err := os.ReadFile(filepath.Join(dir, name))
+		require.NoError(t, err)
+		path := filepath.Join("rules", name)
 		if os.Getenv("UPDATE_GENERATED") != "" {
 			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
-			require.NoError(t, os.WriteFile(path, []byte(want), 0o644))
+			require.NoError(t, os.WriteFile(path, want, 0o644))
 		}
 		got, err := os.ReadFile(path)
 		require.NoError(t, err)
-		assert.Equal(t, want, string(got), "%s is stale: run UPDATE_GENERATED=1 go test -run TestGeneratedFilesMatchTheGoTypes .", path)
+		assert.Equal(t, string(want), string(got), "%s is stale: run UPDATE_GENERATED=1 go test -run TestGeneratedFilesMatchTheGoTypes .", path)
 	}
 }
 
@@ -1307,17 +1308,8 @@ whenever({ name: "hook", each: "linear.ticket", if: () => true,
 	comments := d.Linear.Comments()
 	require.Len(t, comments, 1)
 	assert.Equal(t, `ENG-1: {"you":"[redacted]"} {"sentry":{"base_url":"https://sentry.test/api/0"}}`, comments[0])
-	var seen []string
 	// The token must not reach any file dispatch keeps, and no command prints them whole.
-	require.NoError(t, filepath.Walk(d.state, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || strings.HasSuffix(path, ".sock") {
-			return err
-		}
-		body, rerr := os.ReadFile(path)
-		require.NoError(t, rerr)
-		seen = append(seen, string(body))
-		return nil
-	}))
+	seen := d.StateFiles()
 	require.NotEmpty(t, seen)
 	for _, body := range append(seen, first.Stdout, second.Stdout, first.Err.Error(), second.Err.Error(), check.Stdout, trace.Stdout, d.loopOut(), d.loopErr(), strings.Join(d.Alerts.Shown(), "\n"), strings.Join(comments, "\n")) {
 		assert.NotContains(t, body, sentryToken)
@@ -1424,7 +1416,7 @@ func TestAPostThatTimesOutCountsAsSentAndIsNotPostedAgain(t *testing.T) {
 
 	ticked := later(func() Result { return d.Run("tick") })
 	require.Eventually(t, func() bool { return countPosts(sentry) == 1 }, 20*time.Second, time.Millisecond)
-	d.Expire("http.post sentry")
+	d.Expire("post sentry")
 	require.NoError(t, ticked().Err)
 
 	assert.Equal(t, 1, countPosts(sentry))
@@ -1561,7 +1553,7 @@ func TestAPostWhoseTokenCommandOutlastsTheDeadlineSentNothingAndIsTriedAgain(t *
 
 	ticked := later(func() Result { return d.Run("tick") })
 	require.Eventually(t, func() bool { return exists(started) }, 20*time.Second, time.Millisecond)
-	d.Expire("http.post sentry")
+	d.Expire("post sentry")
 	res := ticked()
 
 	require.Error(t, res.Err)
@@ -1570,12 +1562,12 @@ func TestAPostWhoseTokenCommandOutlastsTheDeadlineSentNothingAndIsTriedAgain(t *
 	require.NoError(t, os.Remove(started))
 	advanced := later(func() bool { d.Advance(5 * time.Minute); return true })
 	require.Eventually(t, func() bool { return exists(started) }, 20*time.Second, time.Millisecond)
-	d.Expire("http.post sentry")
+	d.Expire("post sentry")
 	advanced()
 	require.NoError(t, os.Remove(started))
 	retried := later(func() Result { return d.Run("tick") })
 	require.Eventually(t, func() bool { return exists(started) }, 20*time.Second, time.Millisecond)
-	d.Expire("http.post sentry")
+	d.Expire("post sentry")
 	retry := retried()
 
 	require.Error(t, retry.Err)
