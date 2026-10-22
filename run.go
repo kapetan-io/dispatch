@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -60,121 +59,6 @@ func notRunning() error {
 	return exitError{code: loop.CodeNotRunning, err: errors.New("not running")}
 }
 
-// keyedLinear is the Linear workspace of the key found the way `run` finds it. A
-// 401 drops the key, so a rotated key is picked up by running api_key_command again.
-type keyedLinear struct {
-	mu   sync.Mutex
-	opts Options
-	cfg  config.Config
-	keys *keyLookup
-	cur  linear.Workspace
-}
-
-func (k *keyedLinear) workspace(ctx context.Context) (linear.Workspace, error) {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	if k.cur != nil {
-		return k.cur, nil
-	}
-	key, err := k.keys.find(ctx, k.opts, k.cfg)
-	if err != nil {
-		return nil, err
-	}
-	k.cur = k.opts.Linear(key)
-	return k.cur, nil
-}
-
-func (k *keyedLinear) rotated(err error) {
-	if errors.Is(err, linear.ErrUnauthorized) {
-		k.reset()
-	}
-}
-
-func (k *keyedLinear) reset() {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	k.cur, k.keys.fromCommand = nil, ""
-}
-
-func (k *keyedLinear) ManagedTickets(ctx context.Context, label string, teams []string) ([]linear.Ticket, error) {
-	ws, err := k.workspace(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out, err := ws.ManagedTickets(ctx, label, teams)
-	k.rotated(err)
-	return out, err
-}
-
-func (k *keyedLinear) LeasedTickets(ctx context.Context, label string, teams, ids []string) ([]linear.Ticket, error) {
-	ws, err := k.workspace(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out, err := ws.LeasedTickets(ctx, label, teams, ids)
-	k.rotated(err)
-	return out, err
-}
-
-func (k *keyedLinear) ParentChildren(ctx context.Context, parents []string) (map[string][]linear.Ticket, error) {
-	ws, err := k.workspace(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out, err := ws.ParentChildren(ctx, parents)
-	k.rotated(err)
-	return out, err
-}
-
-func (k *keyedLinear) StateID(ctx context.Context, team, name string) (string, error) {
-	ws, err := k.workspace(ctx)
-	if err != nil {
-		return "", err
-	}
-	out, err := ws.StateID(ctx, team, name)
-	k.rotated(err)
-	return out, err
-}
-
-func (k *keyedLinear) Move(ctx context.Context, ticketID, stateID string) error {
-	ws, err := k.workspace(ctx)
-	if err != nil {
-		return err
-	}
-	err = ws.Move(ctx, ticketID, stateID)
-	k.rotated(err)
-	return err
-}
-
-func (k *keyedLinear) Comment(ctx context.Context, ticketID, body string) error {
-	ws, err := k.workspace(ctx)
-	if err != nil {
-		return err
-	}
-	err = ws.Comment(ctx, ticketID, body)
-	k.rotated(err)
-	return err
-}
-
-func (k *keyedLinear) Viewer(ctx context.Context) (linear.Viewer, error) {
-	ws, err := k.workspace(ctx)
-	if err != nil {
-		return linear.Viewer{}, err
-	}
-	out, err := ws.Viewer(ctx)
-	k.rotated(err)
-	return out, err
-}
-
-func (k *keyedLinear) Usage() linear.Stats {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	if k.cur == nil {
-		return linear.Stats{}
-	}
-	return k.cur.Usage()
-}
-
 // servicesFor is the services a rule's ctx.http reaches: the ones the caller gave, or the
 // [http.<name>] tables of the config.
 func servicesFor(opts Options, cfg config.Config) httpservice.Services {
@@ -215,11 +99,11 @@ func runCommand(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	lin := &keyedLinear{opts: opts, cfg: cfg, keys: &keyLookup{}}
+	lin := linear.NewRotatingKey(func(ctx context.Context) (string, error) { return findLinearKey(ctx, opts, cfg) }, opts.Linear)
 	// No key, or a key Linear rejects, can't be fixed by waiting. A network that is down at
 	// boot can, and the loop reads Linear again at every resync.
 	// Ctrl-C while the key is still being read is a clean stop, as it is once the loop runs.
-	if _, err := lin.workspace(ctx); err != nil {
+	if _, err := lin.Workspace(ctx); err != nil {
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -252,7 +136,7 @@ func runCommand(ctx context.Context, opts Options) error {
 			Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
 			Env: opts.Env, StateDir: opts.StateDir, Stderr: opts.Stderr,
 		},
-		Executor: exec, Typed: sent, HTTP: services, Herdr: opts.Herdr, Alerts: opts.Alerts, Usage: lin.Usage, Unauthorized: lin.reset,
+		Executor: exec, Typed: sent, HTTP: services, Herdr: opts.Herdr, Alerts: opts.Alerts, Usage: lin.Usage,
 		Viewer: viewer.Name, Out: opts.Stdout, Err: opts.Stderr,
 	}).Run(ctx)
 }

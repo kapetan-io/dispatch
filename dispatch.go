@@ -276,16 +276,9 @@ func withDefaults(o Options) Options {
 	return o
 }
 
-// keyLookup finds the Linear API key. A key printed by api_key_command is kept
-// for the life of the process, so a password manager that prompts to unlock
-// asks once per `dispatch run` instead of on every read.
-type keyLookup struct {
-	fromCommand string
-}
-
-// find tries, in order, Options.LinearKey, LINEAR_API_KEY, the config's
+// findLinearKey tries, in order, Options.LinearKey, LINEAR_API_KEY, the config's
 // api_key_command, and the keychain entry named in the config.
-func (k *keyLookup) find(ctx context.Context, opts Options, cfg config.Config) (string, error) {
+func findLinearKey(ctx context.Context, opts Options, cfg config.Config) (string, error) {
 	if opts.LinearKey != "" {
 		return opts.LinearKey, nil
 	}
@@ -293,14 +286,7 @@ func (k *keyLookup) find(ctx context.Context, opts Options, cfg config.Config) (
 		return env, nil
 	}
 	if cmd := cfg.Plugins.Linear.APIKeyCommand; cmd != "" {
-		if k.fromCommand == "" {
-			key, err := keyFromCommand(ctx, opts, cmd)
-			if err != nil {
-				return "", err
-			}
-			k.fromCommand = key
-		}
-		return k.fromCommand, nil
+		return keyFromCommand(ctx, opts, cmd)
 	}
 	if runtime.GOOS != "darwin" {
 		return "", errors.New("no Linear API key: LINEAR_API_KEY is unset and api_key_command is not set (only macOS has a keychain lookup)")
@@ -349,7 +335,7 @@ func linearViewer(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	key, err := (&keyLookup{}).find(ctx, opts, cfg)
+	key, err := findLinearKey(ctx, opts, cfg)
 	if err != nil {
 		return err
 	}
