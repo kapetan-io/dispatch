@@ -38,12 +38,12 @@ Use these sections in this order.
 When the ticket's purpose is to create, change or evaluate a skill, Notes for the worker also carries these three instructions, stated as the user's requirements. Left alone, workers invent eval loops of 40 to 270 runs, which is why the no-evals line must be written out. They also skip reviewing the skill itself, and write long, prescriptive prose.
 
 - Run no evals. The user has paused evals until they decide whether they're useful.
-- Before opening the PR, a sub-agent loads `anthropic-skills:skill-creator` with the Skill tool, reads the changed skill and reviews it without running any test prompts. The worker addresses the review.
+- Before opening the PR, a sub-agent loads `anthropic-skills:skill-creator` with the Skill tool, reads the changed skill and reviews it without running any test prompts, and is told to use the nearest `docs/CONTEXT.md` terms, coin no labels such as step codes, and define any term in neither. The worker addresses the review.
 - Keep the skill brief. Cut detail and rules the reader would follow without being told.
 
 ## Review before you save (managed repos)
 
-You wrote the draft from a conversation the worker never saw, so you can't see what it leaves out. A guess you stated as a question, or a code fact you didn't check, costs the user a round trip. Skip this for a `design` or `design-review` ticket, which is worked with the user present. For any other ticket, write the draft to a file in your scratchpad, with a copy of any cited design that isn't a repo file, and start a foreground sub-agent (`model: "sonnet"`). Give it those paths, the repo and the name of the branch the worker will build on, and nothing from the conversation, so it sees what the worker sees. Tell it to run `git fetch` and read the code from that branch (`git show origin/<base>:<path>`), not the current checkout, which may be stale.
+You wrote the draft from a conversation the worker never saw, so you can't see what it leaves out. A guess you stated as a question, or a code fact you didn't check, costs the user a round trip. Skip this for a `design` or `design-review` ticket, which is worked with the user present. For any other ticket, write the draft to a file in your scratchpad, with a copy of any cited design that isn't a repo file, and start a foreground sub-agent (`model: "sonnet"`). Give it those paths, the repo and the name of the branch the worker will build on, and nothing from the conversation, so it sees what the worker sees. Tell it to use the nearest `docs/CONTEXT.md` terms and the words the code already uses, to coin no labels such as step codes, and to define any term in neither. Tell it to run `git fetch` and read the code from that branch (`git show origin/<base>:<path>`), not the current checkout, which may be stale.
 
 Ask it to:
 

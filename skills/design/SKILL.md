@@ -83,7 +83,7 @@ Write the grounding to one file in the scratchpad, in three sections. It is what
 - **History.** Each decision quoted in the source's words, with source, date and subject. Do not widen a quote past its subject.
 - **Constraints.** Only items that end in a source: an Objective line, a dated user decision, or a History quote at its own scope.
 
-An inference, however likely, goes to the arena's premise list instead. Before Phase B, a fresh sub-agent lists every should or must sentence in the grounding with its source line. Move the unsourced ones to the premise list and report how many moved in the arena's synthesis note.
+An inference, however likely, goes to the arena's premise list instead. Before Phase B, a fresh sub-agent (told to use the glossary's terms and coin no labels such as step codes) lists every should or must sentence in the grounding with its source line. Move the unsourced ones to the premise list and report how many moved in the arena's synthesis note.
 
 Skip Phase A only when the work is genuinely greenfield with no surrounding system to integrate. Then write "no surrounding system" in the grounding file, so the candidates read a file that says so.
 
@@ -135,7 +135,7 @@ If the discussion resolved domain terms, add a `Glossary changes` section to the
 
 ## Audit the transcript
 
-Have a sub-agent compare the blueprint with this session's transcript. The sub-agents job is to list each user decision as PRESENT, SUPERSEDED, CHANGED or MISSING against the blueprint and its decision log, with the user's words and time.
+Have a sub-agent compare the blueprint with this session's transcript, and tell it to use the glossary's terms and the code's words, coin no labels such as step codes, and define any term in neither. The sub-agents job is to list each user decision as PRESENT, SUPERSEDED, CHANGED or MISSING against the blueprint and its decision log, with the user's words and time.
 
 Using the report from the audit sub-agent, fix confirmed gaps, and ask the user where the answer isn't clear. A decision fix goes in its section and the decision log.
 
