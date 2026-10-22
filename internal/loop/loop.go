@@ -187,11 +187,6 @@ func New(o Options) *Loop {
 	}
 }
 
-// MessageKinds are the receipts whose action may have landed when its outcome
-// is lost, so they count as sent and never run again. `dispatch state reset --quiet` also uses
-// this list to pick the messages it records as already sent.
-var MessageKinds = []string{"nudge", "notify", "comment", "post"}
-
 // ingest is the time the loop stamps an event with. It never goes backward.
 func (l *Loop) ingest() int64 {
 	t := l.clock.Now().UnixMilli()
@@ -371,7 +366,7 @@ func (l *Loop) start(ctx context.Context) error {
 func (l *Loop) closeCrashed(at time.Time) {
 	for i := range l.led.Entries {
 		rc := &l.led.Entries[i]
-		if rc.Outcome != "" || slices.Contains(MessageKinds, rc.Kind) {
+		if rc.Outcome != "" || !executor.SafeToRetry(rc.Kind) {
 			continue
 		}
 		rc.Outcome, rc.Detail, rc.Ended = ledger.Failed, "crashed", at.UnixMilli()
@@ -777,7 +772,7 @@ func (l *Loop) act(res rules.Result) error {
 		if l.failedThisResync(key) {
 			continue
 		}
-		if w.Kind == "herdr.launch" && l.launching[w.Subject] {
+		if w.Receipt == "launch" && l.launching[w.Subject] {
 			continue
 		}
 		if why := l.o.Executor.WhyNotLaunch(w, l.wd); why != "" {
@@ -822,7 +817,7 @@ func (l *Loop) restOf(w rules.Want, res rules.Result) []rules.Want {
 // begin writes the attempted receipt and only then starts the action, so a crash
 // between the two leaves a record that it was tried.
 func (l *Loop) begin(w rules.Want, rest []rules.Want, reply chan Response) error {
-	if w.Kind == "linear.comment" {
+	if w.Receipt == "comment" {
 		w.Target = maps.Clone(w.Target)
 		if w.Target == nil {
 			w.Target = map[string]string{}
@@ -844,7 +839,7 @@ func (l *Loop) begin(w rules.Want, rest []rules.Want, reply chan Response) error
 	l.led.Upsert(rc)
 	f := &flight{want: w, rc: rc, reply: reply}
 	l.flights[w.Key()] = f
-	if w.Kind == "herdr.launch" {
+	if w.Receipt == "launch" {
 		l.launching[w.Subject] = true
 	}
 	l.actions++
@@ -860,7 +855,7 @@ func (l *Loop) begin(w rules.Want, rest []rules.Want, reply chan Response) error
 func (l *Loop) onAction(m actionDone) error {
 	f, res := m.f, m.res
 	delete(l.flights, f.want.Key())
-	if f.want.Kind == "herdr.launch" {
+	if f.want.Receipt == "launch" {
 		delete(l.launching, f.want.Subject)
 	}
 	rc := f.rc

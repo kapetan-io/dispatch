@@ -99,7 +99,7 @@ func New(env Env) *Executor {
 // may. A Claude session running in the worker, or a herdr or repo pool that was not
 // read, means a second session could start beside it.
 func (e *Executor) WhyNotLaunch(w rules.Want, wd world.World) string {
-	if w.Kind != "herdr.launch" {
+	if w.Receipt != "launch" {
 		return ""
 	}
 	if wd.HerdrErr != nil {
@@ -139,8 +139,8 @@ func ticketOf(wd world.World, id string) (linear.Ticket, bool) {
 	return linear.Ticket{}, false
 }
 
-func (e *Executor) deadline(kind string) time.Duration {
-	if kind == "herdr.launch" {
+func (e *Executor) deadline(receipt string) time.Duration {
+	if receipt == "launch" {
 		if e.LaunchDeadline > 0 {
 			return e.LaunchDeadline
 		}
@@ -154,45 +154,49 @@ func (e *Executor) deadline(kind string) time.Duration {
 
 // Run carries out w against what wd read when the cycle ran.
 func (e *Executor) Run(ctx context.Context, w rules.Want, wd world.World) Result {
-	ctx, cancel := clock.WithTimeout(ctx, e.Clock, w.Receipt+" "+w.Subject, e.deadline(w.Kind))
+	ctx, cancel := clock.WithTimeout(ctx, e.Clock, w.Receipt+" "+w.Subject, e.deadline(w.Receipt))
 	defer cancel()
 	var res Result
-	switch w.Kind {
-	case "herdr.launch":
+	switch w.Receipt {
+	case "launch":
 		res = e.launch(ctx, w, wd)
-	case "herdr.nudge":
+	case "nudge":
 		res = e.nudge(ctx, w, wd)
-	case "herdr.close":
+	case "close":
 		res = e.closeWorkspace(ctx, w)
-	case "linear.move":
+	case "move":
 		res = e.move(ctx, w, wd)
-	case "linear.comment":
+	case "comment":
 		res = e.comment(ctx, w, wd)
-	case "linear.escalate":
+	case "escalate":
 		res = e.escalate(ctx, w, wd)
-	case "treehouse.return":
+	case "return":
 		res = e.returnTree(ctx, w, wd)
-	case "github.merge":
+	case "merge":
 		res = e.merge(ctx, w, wd)
-	case "notify.send":
+	case "notify":
 		res = e.notify(ctx, w, wd)
-	case "http.post":
+	case "post":
 		res = e.post(ctx, w)
 	default:
 		res = Result{Outcome: ledger.Failed, Detail: "no executor for " + w.Kind}
 	}
 	// A message that timed out may have landed, and a retry could say it twice.
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) && res.Outcome == ledger.Failed && isMessage(w.Kind) && w.Kind != "http.post" {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) && res.Outcome == ledger.Failed && !SafeToRetry(w.Receipt) && w.Receipt != "post" {
 		res.Outcome, res.Detail = ledger.Done, "timeout"
-		if w.Kind == "herdr.nudge" {
+		if w.Receipt == "nudge" {
 			res.Nudged = w.Subject
 		}
 	}
 	return res
 }
 
-func isMessage(kind string) bool {
-	return slices.Contains([]string{"herdr.nudge", "notify.send", "linear.comment", "http.post"}, kind)
+// SafeToRetry reports whether an action with this receipt name can run again after
+// its outcome was lost. A message whose outcome was lost may have gone out, and a
+// retry could say it twice. Post is on the list, but Run's timeout rule leaves it
+// out, because post decides itself whether a timeout went out.
+func SafeToRetry(receipt string) bool {
+	return !slices.Contains([]string{"nudge", "notify", "comment", "post"}, receipt)
 }
 
 func failed(format string, args ...any) Result {
