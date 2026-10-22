@@ -2,7 +2,7 @@
 // source right before it acts, so a decision made on a stale read fails instead
 // of landing, and ends as a receipt outcome the ledger keeps. The cycle decides
 // what is wanted; the only veto here is a launch while a Claude session runs in the
-// worker or herdr was not read.
+// worker, herdr was not read, or the ticket's repo pool was not read.
 package executor
 
 import (
@@ -96,8 +96,8 @@ func New(env Env) *Executor {
 }
 
 // WhyNotLaunch says why a launch must not start whatever the rule asked, or "" when it
-// may. A Claude session running in the worker, or a herdr that was not read, means a
-// second session could start beside it.
+// may. A Claude session running in the worker, or a herdr or repo pool that was not
+// read, means a second session could start beside it.
 func (e *Executor) WhyNotLaunch(w rules.Want, wd world.World) string {
 	if w.Kind != "herdr.launch" {
 		return ""

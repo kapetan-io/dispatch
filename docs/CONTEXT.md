@@ -108,7 +108,7 @@ The file of one worker session's commands and turns, appended by the running dis
 _Avoid_: transcript (Claude's own file), history (dispatch's segments)
 
 **Send record**:
-The text of a slash command dispatch is about to type into a worker's pane, kept in the running dispatch's memory and claimed by the command it matches, so the session log marks that command as sent by dispatch.
+The text of a slash command dispatch is about to type into a worker's pane, kept in the running dispatch process and claimed by the command it matches, so the session log marks that command as sent by dispatch.
 _Avoid_: ledger entry, receipt (both are in history)
 
 **Workspace emoji**:
@@ -156,7 +156,7 @@ The pop-up that shows you a notification, through osascript on macOS or through 
 _Avoid_: toast, banner
 
 **Follower**:
-A Claude Code session that ran `dispatch watch` on a ticket and gets its notifications as messages. Followers live in memory and end at a restart. The loop's stderr calls a follower's socket a watcher socket.
+A Claude Code session that ran `dispatch watch` on a ticket and gets its notifications as messages. Followers live in the running dispatch process and end at a restart. The loop's stderr calls a follower's socket a watcher socket.
 _Avoid_: subscriber (`dispatch subscribe` is gone)
 
 **Loop**:

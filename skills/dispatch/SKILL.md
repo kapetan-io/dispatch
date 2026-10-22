@@ -19,7 +19,7 @@ Load `dispatch:converse` with the Skill tool first.
 - Name a worker's PR by its ticket, not its number: "the ENG-256 review", with the PR number in parentheses only if needed.
 - Creating or rewriting a ticket without loading `dispatch:ticket` first.
 - Asking the user whether to post a confirmed review finding. Silence on the PR reads as a clean review, and a merged PR shipped that way once (ENG-366).
-- Posting review findings only in the review body. Post each as an inline comment on a line the PR changed, so the dispatcher sees the open thread and nudges an idle worker once per new comment. A finding with no changed line to anchor to goes in the body, and you tell the worker with `dispatch tell`. A blocked Claude session gets neither, so answer its question in herdr first. A gone one is relaunched by the dispatcher, so tell it after the next tick.
+- Posting review findings only in the review body. Post each as an inline comment on a line the PR changed, so the dispatcher sees the open thread and nudges an idle worker once per new comment. A finding with no changed line to anchor to goes in the body, and you tell the worker with `dispatch tell`. A blocked Claude session gets neither, so answer its question in herdr first. A worker whose Claude session is gone is relaunched by the dispatcher, so tell it after the next tick.
 
 ## Driving dispatch
 
