@@ -2608,3 +2608,10 @@ func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// SavedFromMain copies a history segment a build of main wrote, under testdata/, into this test's
+// history directory, so the next loop start resumes from it as a restart does.
+func (d *Dispatch) SavedFromMain(name string) {
+	d.t.Helper()
+	require.NoError(d.t, os.CopyFS(filepath.Join(d.state, "events"), os.DirFS(filepath.Join("testdata", name))))
+}
