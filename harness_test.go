@@ -53,10 +53,23 @@ const (
 	noKey
 )
 
+type launcherKind int
+
+const (
+	// fakeLauncher answers launches from the launcher fake, as most tests need.
+	fakeLauncher launcherKind = iota
+	// builtinLauncher leases a tree and starts the worker through the herdr and treehouse fakes.
+	builtinLauncher
+)
+
 // dispatchOptions is what a test changes about the machine dispatch runs on.
 type dispatchOptions struct {
 	// Config is TOML appended to the generated config.toml.
 	Config string
+	// OwnRepos leaves out the generated [repos.dispatch] table, for a Config that writes its own
+	// [repos] tables. Config with a [repos.dispatch] table and no OwnRepos fails as a duplicate.
+	OwnRepos bool
+	Launcher launcherKind
 	// Rules maps file names to rule files. Nil runs the shipped rules/.
 	Rules map[string]string
 	Key   keySource
@@ -141,6 +154,10 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 	if opts.RepoSettings != "" {
 		h.repoSettings("dispatch", opts.RepoSettings)
 	}
+	if opts.OwnRepos {
+		h.repos = nil
+	}
+	h.builtinLauncher = opts.Launcher == builtinLauncher
 	if opts.Rules != nil {
 		h.rulesDir = rulesDir(t, opts.Rules)
 	}
@@ -149,12 +166,6 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 	}
 	if opts.Key == noKey {
 		h.config(opts.Config + "\n[plugins.linear]\napi_key_keychain = \"dispatch-test-no-such-entry\"\n")
-	}
-	for name, value := range opts.Env {
-		t.Setenv(name, value)
-	}
-	if opts.Dir != "" {
-		t.Chdir(opts.Dir)
 	}
 	for name, value := range opts.Env {
 		t.Setenv(name, value)
@@ -180,6 +191,26 @@ func (d *Dispatch) RunWith(extra dispatch.Options, args ...string) Result {
 
 // Tools is the fakes behind dispatch, for a test to make one fail or to read what it recorded.
 func (d *Dispatch) Tools() *tooltest.Tools { return d.h.tools }
+
+// RunIn runs one command from dir, as an operator's shell would.
+func (d *Dispatch) RunIn(dir string, args ...string) Result {
+	d.h.t.Helper()
+	return d.runIn(context.Background(), dir, dispatch.Options{}, args...)
+}
+
+func (d *Dispatch) runIn(ctx context.Context, dir string, extra dispatch.Options, args ...string) Result {
+	d.h.t.Helper()
+	// launch takes its directory from Options, so launches from two directories can overlap. The
+	// other commands read the process's working directory.
+	if args[0] != "launch" {
+		d.h.t.Chdir(dir)
+	}
+	extra.Dir = dir
+	return d.result(d.h.runWith(ctx, extra, args...))
+}
+
+// ConfigPath is the config.toml every command reads.
+func (d *Dispatch) ConfigPath() string { return filepath.Join(d.h.dir, "config.toml") }
 
 // Hook runs a hook command the way Claude Code does, with stdin as the hook's input. A Stop
 // report that arrives before any loop runs is kept for the first read, as it is after a restart.
@@ -917,7 +948,10 @@ type harness struct {
 }
 
 func newHarness(t *testing.T) *harness {
-	dir := t.TempDir()
+	// Resolved so a /var versus /private/var symlink cannot hide a match between a path a test gives
+	// a fake and the one dispatch finds through git.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	// A unix socket path is capped near 104 bytes on macOS, which t.TempDir() overruns.
 	state, err := os.MkdirTemp("/tmp", "dsp")
 	require.NoError(t, err)
@@ -997,9 +1031,20 @@ func (h *harness) runContext(ctx context.Context, args ...string) (string, strin
 	return h.runWith(ctx, dispatch.Options{}, args...)
 }
 
+// writeConfig replaces config.toml in one step, so a launch reading it while a concurrent launch
+// writes it sees one whole file.
+func (h *harness) writeConfig(body string) {
+	file, err := os.CreateTemp(h.dir, "config-*.toml")
+	require.NoError(h.t, err)
+	_, err = file.WriteString(body)
+	require.NoError(h.t, err)
+	require.NoError(h.t, file.Close())
+	require.NoError(h.t, os.Rename(file.Name(), filepath.Join(h.dir, "config.toml")))
+}
+
 // options is the Options every command runs over: the harness's fakes.
 func (h *harness) options(extra dispatch.Options) dispatch.Options {
-	h.writeFile("config.toml", h.withRules(h.withHistory(h.extra))+h.historyTOML()+h.reposTOML())
+	h.writeConfig(h.withRules(h.withHistory(h.extra)) + h.historyTOML() + h.reposTOML())
 	extra.ConfigPath = filepath.Join(h.dir, "config.toml")
 	extra.StateDir = h.state
 	if extra.Clock == nil {
