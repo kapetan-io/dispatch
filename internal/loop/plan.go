@@ -1,17 +1,11 @@
 package loop
 
 import (
-	"errors"
-	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 )
-
-// ErrNoHistory means there is no history to read a plan from.
-var ErrNoHistory = errors.New("there is no history to read")
 
 // PlanRow is one line of dispatch plan.
 type PlanRow struct {
@@ -26,7 +20,7 @@ func Plan(dir string) ([]PlanRow, error) {
 		return nil, err
 	}
 	if !ok {
-		return nil, ErrNoHistory
+		return nil, history.ErrNoHistory
 	}
 	st, err := seg.Load()
 	if err != nil {
@@ -40,10 +34,10 @@ func Plan(dir string) ([]PlanRow, error) {
 	for _, e := range c.Wants {
 		key := ledger.Key(e.Kind, e.Subject, e.Once)
 		if rc, ok := byKey(st.Ledger, key); ok && rc.Outcome != ledger.Failed {
-			rows = append(rows, PlanRow{"covered", e.Subject, e.Kind, e.Rule, coveredBy(rc) + " once " + FormatOnce(e.Once)})
+			rows = append(rows, PlanRow{"covered", e.Subject, e.Kind, e.Rule, history.CoveredBy(rc) + " once " + e.Once.String()})
 			continue
 		}
-		rows = append(rows, PlanRow{"act", e.Subject, e.Kind, e.Rule, "once " + FormatOnce(e.Once)})
+		rows = append(rows, PlanRow{"act", e.Subject, e.Kind, e.Rule, "once " + e.Once.String()})
 	}
 	for _, e := range c.Waiting {
 		rows = append(rows, PlanRow{"waiting", e.Subject, e.Kind, e.Rule, e.Reason})
@@ -52,7 +46,7 @@ func Plan(dir string) ([]PlanRow, error) {
 		rows = append(rows, PlanRow{"held", e.Subject, "-", e.Rule, e.Reason})
 	}
 	for _, e := range c.Covered {
-		rows = append(rows, PlanRow{"covered", e.Subject, e.Kind, e.Rule, e.Reason + " once " + FormatOnce(e.Once)})
+		rows = append(rows, PlanRow{"covered", e.Subject, e.Kind, e.Rule, e.Reason + " once " + e.Once.String()})
 	}
 	order := map[string]int{"act": 0, "waiting": 1, "held": 2, "covered": 3}
 	slices.SortStableFunc(rows, func(a, b PlanRow) int { return order[a.State] - order[b.State] })
@@ -66,24 +60,4 @@ func byKey(l *ledger.Ledger, key string) (ledger.Receipt, bool) {
 		}
 	}
 	return ledger.Receipt{}, false
-}
-
-// FormatOnce writes a once key as "[launch - 3]", a missing value as "-".
-func FormatOnce(o ledger.Once) string {
-	parts := make([]string, len(o))
-	for i, v := range o {
-		switch v := v.(type) {
-		case nil:
-			parts[i] = "-"
-		case float64:
-			if v == float64(int64(v)) {
-				parts[i] = fmt.Sprint(int64(v))
-			} else {
-				parts[i] = fmt.Sprint(v)
-			}
-		default:
-			parts[i] = fmt.Sprint(v)
-		}
-	}
-	return "[" + strings.Join(parts, " ") + "]"
 }

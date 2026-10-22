@@ -23,42 +23,6 @@ type waiter struct {
 	seen int
 }
 
-func cycleLine(now int64, why string, res rules.Result) history.Cycle {
-	c := history.Cycle{Line: history.LineCycle, Now: now, Why: why, Reads: map[string][]string{}}
-	for _, w := range res.Wants {
-		c.Wants = append(c.Wants, history.Entry{Rule: w.Rule, Subject: w.Subject, Kind: w.Receipt, Once: w.Once, Args: w.Args, Options: w.Options})
-		c.Reads[w.Rule+"/"+w.Subject] = res.Reads[w.Rule+"/"+w.Subject]
-	}
-	for _, w := range res.Waiting {
-		c.Waiting = append(c.Waiting, history.Entry{Rule: w.Rule, Subject: w.Subject, Kind: w.Receipt, Once: w.Once, Reason: w.Reason})
-	}
-	for _, h := range res.Held {
-		c.Held = append(c.Held, history.Entry{Rule: h.Rule, Subject: h.Subject, Reason: h.Reason, Dropped: h.Dropped})
-		c.Reads[h.Rule+"/"+h.Subject] = h.Reads
-	}
-	for _, cv := range res.Covered {
-		c.Covered = append(c.Covered, history.Entry{Rule: cv.Rule, Subject: cv.Subject, Kind: cv.Receipt.Kind, Once: cv.Once, Reason: coveredBy(cv.Receipt)})
-	}
-	for _, t := range res.Throws {
-		c.Throws = append(c.Throws, history.Throw{Rule: t.Rule, Subject: t.Subject, Error: t.Error, Timeout: t.Timeout})
-		c.Reads[t.Rule+"/"+t.Subject] = res.Reads[t.Rule+"/"+t.Subject]
-	}
-	c.HTTP = res.HTTP
-	if len(c.Reads) == 0 {
-		c.Reads = nil
-	}
-	return c
-}
-
-// coveredBy says how a receipt stands in for running an action again.
-func coveredBy(rc ledger.Receipt) string {
-	outcome := string(rc.Outcome)
-	if outcome == "" {
-		outcome = "attempted"
-	}
-	return outcome + " " + time.UnixMilli(rc.Started).Format("15:04")
-}
-
 func sameCycle(a, b history.Cycle) bool {
 	a.Now, b.Now, a.Why, b.Why = 0, 0, "", ""
 	x, _ := json.Marshal(a)

@@ -258,7 +258,7 @@ func (t *tracing) decisions(c history.Cycle) []decision {
 	}
 	for _, e := range c.Wants {
 		if e.Subject == t.ticket {
-			once := FormatOnce(e.Once)
+			once := e.Once.String()
 			add(e.Rule, fmt.Sprintf("wants %s once %s", e.Kind, once), TraceLine{Decision: "wants", Kind: e.Kind, Once: once})
 		}
 	}
@@ -279,7 +279,7 @@ func (t *tracing) decisions(c history.Cycle) []decision {
 	}
 	for _, e := range c.Covered {
 		if e.Subject == t.ticket {
-			once := FormatOnce(e.Once)
+			once := e.Once.String()
 			add(e.Rule, fmt.Sprintf("wants %s once %s, covered: %s", e.Kind, once, e.Reason), TraceLine{Decision: "covered", Kind: e.Kind, Once: once, Detail: e.Reason})
 		}
 	}
@@ -308,7 +308,7 @@ func (t *tracing) receipt(r ledger.Receipt) {
 	t.printed[key] = true
 	line := TraceLine{
 		Type: "receipt", Time: time.UnixMilli(when).UTC(), Kind: r.Kind, Subject: r.Subject, State: state,
-		Once: FormatOnce(r.Once), Detail: r.Detail, Reset: r.Reset, Rule: r.Rule,
+		Once: r.Once.String(), Detail: r.Detail, Reset: r.Reset, Rule: r.Rule,
 	}
 	if r.Reset {
 		state += " (reset, never sent)"

@@ -4,7 +4,9 @@ package ledger
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
+	"strings"
 )
 
 // Outcome is how an action ended. An empty outcome means attempted.
@@ -25,6 +27,26 @@ type Step struct {
 // Once is a once key: a topic and the world values that must change before the
 // action runs again. Items are strings, numbers, booleans or nil.
 type Once []any
+
+// String writes a once key as "[launch - 3]", a missing value as "-".
+func (o Once) String() string {
+	parts := make([]string, len(o))
+	for i, v := range o {
+		switch v := v.(type) {
+		case nil:
+			parts[i] = "-"
+		case float64:
+			if v == float64(int64(v)) {
+				parts[i] = fmt.Sprint(int64(v))
+			} else {
+				parts[i] = fmt.Sprint(v)
+			}
+		default:
+			parts[i] = fmt.Sprint(v)
+		}
+	}
+	return "[" + strings.Join(parts, " ") + "]"
+}
 
 // Receipt is the ledger's entry for one action.
 type Receipt struct {
