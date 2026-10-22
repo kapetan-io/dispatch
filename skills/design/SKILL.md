@@ -137,11 +137,11 @@ If the discussion resolved domain terms, add a `Glossary changes` section to the
 
 Have a sub-agent compare the blueprint with this session's transcript, and tell it to use the glossary's terms and the code's words, coin no labels such as step codes, and define any term in neither. The sub-agents job is to list each user decision as PRESENT, SUPERSEDED, CHANGED or MISSING against the blueprint and its decision log, with the user's words and time.
 
-Using the report from the audit sub-agent, fix confirmed gaps, and ask the user where the answer isn't clear. A decision fix goes in its section and the decision log.
+Using the report from the audit sub-agent, fix confirmed gaps, and ask the user where the answer isn't clear. A decision fix goes in its section and the decision log. Then load `dispatch:principle-confidence-from-many-perspectives` with the Skill tool and apply it to the design before you ask the user to approve it, so a low answer can still change the design.
 
 ## Review or break down
 
-Before you ask, load `dispatch:principle-confidence-from-many-perspectives` with the Skill tool and apply it to the design. After the user approves the design, ask whether it gets a review. Recommend one when the design looks larger than one PR or changes a public contract, because only the review checks the formal spec against the blueprint.
+After the user approves the design, ask whether it gets a review. Recommend one when the design looks larger than one PR or changes a public contract, because only the review checks the formal spec against the blueprint.
 
 - **No review.** Load `dispatch:breakdown` with the Skill tool and follow it on the feature ticket. It sizes the design, files the build tickets, and asks whether to start the work or hold it.
 - **Review.** File a child of the feature ticket labeled `ai`, `design-review` and the repo label, never `design`, assigned to the owner of dispatch's Linear API key, with `dispatch:ticket`. Its body links the blueprint. Move it to In Progress and run `dispatch tick`. The next tick launches the review worker, which reviews the blueprint with the user and then runs `dispatch:breakdown`.
