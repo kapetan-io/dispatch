@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"os/exec"
@@ -1021,8 +1022,6 @@ type harness struct {
 	rulesDir string
 	// exactRules keeps the [rules] table as the test wrote it, without filling in the shipped keys.
 	exactRules bool
-	// pages is what GitHub was last set to answer, by ticket and cursor.
-	pages map[string][]byte
 	// http is the services a rule's ctx.http reaches. Nil leaves Options.HTTP to its default.
 	http *httpservicetest.Fake
 	// timeouts carries the RuleTimeout and ActionTimeout a test set, over every command.
@@ -1048,7 +1047,6 @@ func newHarness(t *testing.T) *harness {
 		rulesDir: rulesDir,
 		tools:    tooltest.New(t),
 		clock:    &fakeClock{now: time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)},
-		pages:    map[string][]byte{},
 	}
 	t.Cleanup(func() { _ = h.stopLoop() })
 	t.Cleanup(func() {
@@ -1788,14 +1786,6 @@ const (
 	reviewsHandled1 = "ENG-1's reviews are handled: " + prURL1
 )
 
-func draftHarness(t *testing.T) *harness {
-	h := newHarness(t)
-	h.repoSettings("dispatch", draftSetting)
-	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
-	h.worker("ENG-1", "idle")
-	return h
-}
-
 const childCommentRule = `
 whenever({ name: "greet-child", each: "linear.ticket", if: (t) => t.id === "ENG-2",
   then: (t, ctx) => ctx.linear.queueComment(t, "hello", { once: ["greet", t.statusSince] }) });`
@@ -1875,8 +1865,6 @@ const readyText1 = "ENG-1 is ready for review: " + prURL1
 
 const requiredOnly = "ignore_optional_checks = true\n"
 
-const readyNotice = "ENG-1 is ready for review: https://github.com/kapetan-io/dispatch/pull/7"
-
 const prURL1 = "https://github.com/kapetan-io/dispatch/pull/7"
 
 func prPrompt(problem string) string {
@@ -1900,6 +1888,15 @@ type prState struct {
 	changesOn []string
 	// fork marks a PR opened from a fork.
 	fork bool
+	// noChecks marks a PR whose head has no checks, which GitHub reports as a null rollup.
+	noChecks bool
+	// forksAhead is how many fork PRs on the same branch name GitHub lists ahead of this PR in its page.
+	forksAhead int
+	// forkPages is how many full pages of fork PRs on the same branch name GitHub lists before the page
+	// holding this PR. The cursor of the nth is "c<n>".
+	forkPages int
+	// endlessForks makes every page after the first point at itself as the next, so this PR is never reached.
+	endlessForks bool
 	// draft marks a PR that has not been opened for review.
 	draft bool
 	// threads are the newest comments of unresolved review threads.
@@ -1921,7 +1918,7 @@ type prState struct {
 }
 
 // checkContext is one check on the head: a CheckRun with a state of
-// "SUCCESS", "FAILURE" or "IN_PROGRESS", or a StatusContext with any rollup state.
+// "SUCCESS", "FAILURE" or "IN_PROGRESS", or a StatusContext, which a state of "EXPECTED" or "ERROR" makes.
 type checkContext struct {
 	name, state string
 	required    bool
@@ -1992,7 +1989,11 @@ func (h *harness) pr(ticket string, p prState) {
 	for _, o := range p.opinions {
 		reviews = append(reviews, map[string]any{"state": o.state, "commit": map[string]string{"oid": o.commit}, "author": map[string]string{"login": o.author}})
 	}
-	h.respond(ticket, "", map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": []any{map[string]any{
+	var rollup any = map[string]string{"state": p.checks}
+	if p.noChecks {
+		rollup = nil
+	}
+	own := map[string]any{
 		"number":                   7,
 		"url":                      prURL1,
 		"isCrossRepository":        p.fork,
@@ -2000,12 +2001,50 @@ func (h *harness) pr(ticket string, p prState) {
 		"mergeable":                p.mergeable,
 		"isDraft":                  p.draft,
 		"reviewDecision":           p.decision,
-		"commits":                  map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]string{"state": p.checks}}}}},
+		"commits":                  map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": rollup}}}},
 		"latestOpinionatedReviews": map[string]any{"nodes": reviews},
 		"reviews":                  activityNodes(p.reviews, p.reviewsBefore),
 		"comments":                 activityNodes(p.comments, p.commentsBefore),
 		"reviewThreads":            map[string]any{"nodes": threads, "pageInfo": map[string]bool{"hasNextPage": p.moreThreads}},
-	}}}}}})
+	}
+	h.respondPages(ticket, p, own)
+}
+
+// respondPages sets the pages of the ticket's PR query: the worker's PR, behind the fork PRs p asks for.
+func (h *harness) respondPages(ticket string, p prState, own map[string]any) {
+	const pageSize = 20
+	forks := func(count int) []any {
+		nodes := []any{}
+		for range count {
+			fork := maps.Clone(own)
+			fork["isCrossRepository"], fork["headRefOid"], fork["url"] = true, "evil", "https://github.com/kapetan-io/dispatch/pull/99"
+			nodes = append(nodes, fork)
+		}
+		return nodes
+	}
+	page := func(nodes []any, next string) map[string]any {
+		pullRequests := map[string]any{"nodes": nodes}
+		if next != "" {
+			pullRequests["pageInfo"] = map[string]any{"hasNextPage": true, "endCursor": next}
+		}
+		return map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": pullRequests}}}
+	}
+	if p.forkPages == 0 {
+		h.respond(ticket, "", page(append(forks(p.forksAhead), own), ""))
+		return
+	}
+	h.respond(ticket, "", page(forks(pageSize), "c1"))
+	for n := 1; n <= p.forkPages; n++ {
+		cursor := fmt.Sprintf("c%d", n)
+		switch {
+		case p.endlessForks:
+			h.respond(ticket, cursor, page(forks(pageSize), cursor))
+		case n < p.forkPages:
+			h.respond(ticket, cursor, page(forks(pageSize), fmt.Sprintf("c%d", n+1)))
+		default:
+			h.respond(ticket, cursor, page([]any{own}, ""))
+		}
+	}
 }
 
 // respondChecks sets what GitHub answers when asked for the checks behind PR 7's rollup.
@@ -2016,8 +2055,8 @@ func (h *harness) respondChecks(head string, contexts []checkContext, more bool)
 		switch c.state {
 		case "IN_PROGRESS":
 			node["status"], node["conclusion"] = "IN_PROGRESS", nil
-		case "EXPECTED":
-			node = map[string]any{"__typename": "StatusContext", "context": c.name, "isRequired": c.required, "state": "EXPECTED"}
+		case "EXPECTED", "ERROR":
+			node = map[string]any{"__typename": "StatusContext", "context": c.name, "isRequired": c.required, "state": c.state}
 		}
 		nodes = append(nodes, node)
 	}
@@ -2040,13 +2079,7 @@ func prBranch(ticket string) string {
 func (h *harness) respond(ticket, cursor string, response any) {
 	b, err := json.Marshal(response)
 	require.NoError(h.t, err)
-	h.pages[ticket+"|"+cursor] = b
 	h.tools.PullRequests.Respond(prBranch(ticket), cursor, json.RawMessage(b))
-}
-
-// responded is what GitHub was last set to answer for the ticket's PR query.
-func (h *harness) responded(ticket, cursor string) []byte {
-	return h.pages[ticket+"|"+cursor]
 }
 
 // closePR closes the ticket's PR without merging it.
@@ -2071,25 +2104,6 @@ func (h *harness) prReads() []string {
 		reads = append(reads, branch)
 	}
 	return reads
-}
-
-// reviewTick advances the clock a second, so each tick starts a new idle stretch and a
-// nudge sent by the one before it counts as answered, and runs a tick.
-func reviewTick(t *testing.T, h *harness) error {
-	h.advance(time.Second)
-	_, err := h.run("tick")
-	return err
-}
-
-// reviewFailsAfterEntry starts the loop with the ticket In Review and its PR quiet, then
-// changes the PR to p. A PR that fails after the ticket was seen In Review is what the
-// nudge count measures from, and a nudge in the same instant as that first sight is not
-// counted.
-func reviewFailsAfterEntry(h *harness, p prState) {
-	h.pr("ENG-1", prState{head: p.head, checks: "PENDING", mergeable: "MERGEABLE"})
-	h.restart()
-	h.advance(time.Second)
-	h.pr("ENG-1", p)
 }
 
 // rulesDir writes the files into a new directory and returns it.
@@ -2160,20 +2174,8 @@ func fakeTSC(t *testing.T, exit int, output string) (record string) {
 	return record
 }
 
-const (
-	noTasks      = `"background_tasks":[]`
-	runningTasks = `"background_tasks":[{"type":"shell","status":"running"}]`
-)
-
-// recordStop runs the Stop hook as the worker of ticket, in a real worktree of the
-// harness repo. tasks is the background_tasks member of the hook input, or ""
-// to leave it out.
-func (h *harness) recordStop(ticket, tasks string) {
-	h.t.Helper()
-	h.recordStopFrom("worker", ticket, tasks)
-}
-
-// recordStopFrom is recordStop for the Claude session with the given id.
+// recordStopFrom runs the Stop hook as the Claude session with the given id, in a real worktree of the
+// harness repo. tasks is the background_tasks member of the hook input, or "" to leave it out.
 func (h *harness) recordStopFrom(session, ticket, tasks string) {
 	h.t.Helper()
 	_, _, err := h.runWith(context.Background(), dispatch.Options{Stdin: strings.NewReader(h.stopInput(session, ticket, tasks))}, "record-stop")
@@ -2203,14 +2205,6 @@ func (h *harness) worktreeOf(ticket string) string {
 		hintGit(h.t, h.repo, "worktree", "add", "-q", "-b", "br-"+ticket, tree)
 	}
 	return tree
-}
-
-// failingPR puts ENG-1 In Review with an idle worker and a PR whose check failed.
-func (h *harness) failingPR() {
-	h.t.Helper()
-	h.tickets(ticket("ENG-1", "In Review", "dispatch"))
-	h.worker("ENG-1", "idle")
-	h.pr("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 }
 
 // gitTree makes a pool tree that is clean and pushed: a clone of a bare

@@ -499,3 +499,34 @@ func TestSubscribeIsGone(t *testing.T) {
 
 	require.Error(t, d.Run("subscribe").Err)
 }
+
+func TestTickKeepsAReadyNoticeFromFollowersWhenTheAlertFailsAndRunsItAgain(t *testing.T) {
+	socket, lines := sessionSocket(t)
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d.StartBeforeTheEvents()
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+	d.Alerts.Fail(errors.New("exit status 1"))
+
+	// A notice that did not reach the alert has not reached a follower either.
+	require.ErrorContains(t, d.Run("tick").Err, "ENG-1 notify failed")
+	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, lines)
+	assert.Equal(t, []string{"attempted", "failed"}, states(d.attemptsOf("ENG-1", "notify")))
+
+	// The next tick runs it again, and the followers hear it once the alert shows.
+	d.Alerts.Fail(nil)
+	d.Advance(time.Second)
+	d.Tick()
+
+	assert.Contains(t, next(t, lines), "ENG-1 is ready for review")
+	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{"attempted", "failed", "attempted", "done"}, states(d.attemptsOf("ENG-1", "notify")))
+
+	d.Advance(time.Second)
+	d.Tick()
+	assert.Empty(t, lines)
+	assert.Len(t, d.attemptsOf("ENG-1", "notify"), 4)
+}
