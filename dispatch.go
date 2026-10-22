@@ -59,7 +59,7 @@ type Options struct {
 	KeyCommandTimeout time.Duration
 	// Herdr is the workspace manager that hosts the workers. Defaults to the installed herdr.
 	Herdr herdr.Herdr
-	// Treehouse is the pool of worktrees. Defaults to the installed treehouse.
+	// Treehouse is the pool of trees. Defaults to the installed treehouse.
 	Treehouse treehouse.Pool
 	// PullRequests is the GitHub repo's pull requests. Defaults to the installed
 	// gh, which cuts each call off after 30 seconds so a stalled network can't
@@ -139,8 +139,8 @@ const usage = `usage: dispatch run
   state reset  start a new history segment with an empty ledger, keeping what the world remembers.
                With --quiet, record the messages the first cycle wants as sent, so none is repeated.
                Exits 1 while dispatch run holds the lock
-  tell         type text into the ticket's worker through the running loop; fails when the worker is
-               blocked or absent
+  tell         type text into the ticket's worker through the running loop; fails when the worker's Claude
+               session is blocked or gone
   rules        init writes the shipped TypeScript rules, check lints them and prints what each wants
                now, and test runs their *.test.ts scenarios
   ticket-hint  print a reminder to use the dispatch:ticket skill when run in a repo listed under
@@ -151,13 +151,13 @@ const usage = `usage: dispatch run
                elsewhere
   linear-viewer  print the id and name of the Linear user who owns dispatch's API key, as one JSON
                object, found the way run finds the key
-  launch       lease a tree, open a herdr workspace and start a worker typed --kickoff, which
+  launch       lease a tree, open a herdr workspace, start Claude there and type --kickoff, which
                defaults to "/dispatch:build <ticket>". Run it from inside the repo. Prints one
-               JSON result and exits 0 only when a worker is running
-  claude-shim  run the real claude with the plugin, the cross-session setting and, for a worker,
+               JSON result and exits 0 only when its Claude session is running
+  claude-shim  run the real claude with the plugin, the cross-session setting and, for a worker's Claude session,
                the worker flags added. Claude subcommands and print runs pass through. The claude
                shim in scripts/shims runs it
-  record-stop  read a Stop hook's JSON on stdin and report to the running dispatch when the worker in
+  record-stop  read a Stop hook's JSON on stdin and report to the running dispatch when the Claude session in
                this tree last ended a turn and whether it still has background tasks running.
                Drops the report when no dispatch runs, and does nothing outside a worktree of a
                repo listed under [repos]. The plugin's Stop hook runs it
@@ -165,7 +165,7 @@ const usage = `usage: dispatch run
                to read herdr again and run a cycle without waiting for it, so the worker's workspace
                label follows within seconds. Does nothing outside a worktree of a repo listed under [repos] or when no
                loop runs. The plugin's Notification and UserPromptSubmit hooks run it
-  watch        make this Claude Code session follow the ticket, so each notice dispatch sends about
+  watch        make this Claude Code session follow the ticket, so each notification dispatch sends about
                it is also sent to this session as a message. A session can follow several
                tickets, and a ticket can have several followers. Fails outside a Claude Code
                session, when the socket path is not absolute, or when no dispatch is running.

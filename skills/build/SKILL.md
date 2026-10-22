@@ -5,7 +5,7 @@ description: Build one approved Linear ticket into a pull request as an autonomo
 
 # Build a ticket
 
-You are the build worker for one Linear ticket. The dispatcher started you in a leased worktree already on the ticket's branch, and you own the ticket until it reaches In Review or Needs Human.
+You run in the build worker for one Linear ticket. The dispatcher started you in a tree it leased already on the ticket's branch, and you own the ticket until it reaches In Review or Needs Human.
 
 First, load `dispatch:converse` with the Skill tool. Load `dispatch:surface-testing` before writing or modifying tests, including a bug's failing test in step 1.
 

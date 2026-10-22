@@ -1,6 +1,6 @@
 # dispatch user guide
 
-dispatch runs Claude workers on your approved Linear tickets. You approve a ticket by moving it to In Progress, and a dispatcher that runs in a herdr window you keep open and re-reads Linear, GitHub, herdr and treehouse every few minutes starts a worker in its own treehouse worktree. The worker carries the ticket to a merged pull request. Every setting is in the [config reference](config.md).
+dispatch runs Claude on your approved Linear tickets. You approve a ticket by moving it to In Progress, and a dispatcher that runs in a herdr window you keep open and re-reads Linear, GitHub, herdr and treehouse every few minutes leases a treehouse tree for the ticket and starts Claude in it. The worker carries the ticket to a merged pull request. Every setting is in the [config reference](config.md).
 
 ## Set it up
 
@@ -9,7 +9,7 @@ You need a Mac or a Linux machine with these on your PATH. dispatch shells out t
 | Tool | Why |
 |---|---|
 | `herdr` 0.9.0 or later | Hosts one workspace per worker, and reports whether each worker is working, idle or blocked. |
-| `treehouse` v3.1.2 or later (`go install github.com/kunchenguid/treehouse/v3@latest`) | Leases a pooled git worktree to each worker. |
+| `treehouse` v3.1.2 or later (`go install github.com/kunchenguid/treehouse/v3@latest`) | Keeps the pools of trees (git worktrees) that tickets lease. |
 | `gh`, signed in with `gh auth login` | The dispatcher reads PR checks, reviews and conflicts, and merges approved PRs in repos with `auto_merge = true`. Workers open PRs with it. |
 | `claude` | The worker itself. |
 | `git` | Used by `dispatch launch` to create the ticket's branch in its tree. |
@@ -113,7 +113,7 @@ While `dispatch run` is running, an idle In Progress worker is not nudged to kee
 
 An In Review ticket whose worker is idle gets the PR nudge when its PR has a failed check, changes requested on its current head or a merge conflict. A request on a commit the worker has since pushed past, or one made while a check on the head is still running (a review bot re-reviewing), does not nudge or escalate. The nudge names the problem and tells the worker to handle it as its build skill's step 7 says. A worker that is gone is relaunched on its existing tree, then nudged once a later read shows it idle. After `nudge_limit` PR nudges with no push, the ticket goes to Needs Human with one comment, and a push that moves the PR head resets the count. The dispatcher reads PRs through `gh`, so it must be authenticated.
 
-An idle In Review worker also gets the activity nudge when its PR gains a review, a conversation comment or a comment on an open review thread newer than the newest one dispatch has put to it. This covers a review with only a written body, which opens no thread and sets no `reviewDecision`, so none of the reasons above catches it. An approval with no body, a dismissal and a draft review don't count. An open review thread is not nudged about on every cycle, only when it gets a new comment, and it still keeps the PR from being ready. The nudge names the review or comment and fires once per new item. A worker that is busy gets it once it is idle. A PR with no worker is relaunched only for a comment on an open review thread, and that relaunch does not count toward `nudge_limit`.
+An idle In Review worker also gets the activity nudge when its PR gains a review, a conversation comment or a comment on an open review thread newer than the newest one dispatch has put to it. This covers a review with only a written body, which opens no thread and sets no `reviewDecision`, so none of the reasons above catches it. An approval with no body, a dismissal and a draft review don't count. An open review thread is not nudged about on every cycle, only when it gets a new comment, and it still keeps the PR from being ready. The nudge names the review or comment and fires once per new item. A worker that is busy gets it once it is idle. A PR whose worker has no Claude session is relaunched only for a comment on an open review thread, and that relaunch does not count toward `nudge_limit`.
 
 The activity nudge doesn't count toward the PR limit, and it goes ahead of the ready notification and auto-merge, so a review nobody has read is never merged past. A PR that needs work gets the PR nudge first, and the activity nudge follows once those problems clear. When a ticket enters In Review, its worker is nudged about any review or comment already on the PR. dispatch can't tell your reply on the PR from the worker's own, so a worker's reply draws one more nudge, which tells it to say nothing if there is nothing to act on.
 
@@ -121,11 +121,11 @@ A worker blocked on a question popup (AskUserQuestion), on an In Progress or In 
 
 A PR is ready for review when its ticket is In Review, its worker is idle, every check has finished and passed (a PR with no checks counts as passed), no review thread is unresolved, no reviewer's latest review requests changes on the head, and GitHub reports the PR as mergeable. A check still running, such as CodeRabbit's while its review is in progress, or a merge state GitHub has not computed yet, keeps the PR from being ready. The dispatcher fires one notification naming the ticket and its PR, once per PR head commit. A push that leaves the PR ready again notifies again, and no cycle in between repeats it.
 
-## Events in your session
+## Notifications in your session
 
 Every notification above, including merge and Needs Human ones, can also reach the Claude Code sessions that follow the ticket, as a message that wakes a session if it is idle. In a session, run `dispatch watch ENG-123` to follow a ticket and `dispatch unwatch ENG-123` to stop. A session can follow several tickets, and a ticket can have several followers. The command asks the running dispatch to follow the session's inbox socket (from `CLAUDE_CODE_MESSAGING_SOCKET`), and fails outside a Claude Code session or when no dispatch is running. Dispatch keeps followers in memory, so after a restart a session runs `dispatch watch` again. A session follows a ticket only when you ask it to. After it moves a ticket to In Progress or takes over a ticket whose worker is running, it may ask whether to follow that ticket, and runs `dispatch watch` only on a yes. A session never follows a ticket you move to In Progress in Linear yourself, a build piece the dispatcher promotes, or a review a design worker starts, so tell a session to follow a ticket when you want to hear about it. A session hears nothing about tickets it does not follow. `dispatch subscribe` is gone, and sessions that ran it are not carried over, so run `dispatch watch` for each ticket you still want to hear about.
 
-Each notification a cycle raises is sent to the sessions following its ticket, after the alert, and the alert fires whether or not anyone follows the ticket. The message names the ticket and the event, and carries the PR URL when the event has one and always the ticket URL. A socket that no longer accepts connections, because its session exited, is dropped from every ticket it followed the first time dispatch tries it, and dispatch prints one line on stderr for each dropped socket. A failed alert holds the messages back until its retry shows, so a broken alert never wakes your session repeatedly. The merge notices are the exception, because nothing retries them, so they reach your session even when the alert fails. Worker nudges are unchanged and still type into the worker's pane.
+Each notification a cycle raises is sent to the sessions following its ticket, after the alert, and the alert fires whether or not anyone follows the ticket. The message names the ticket and what happened, and carries the PR URL when there is one and always the ticket URL. A socket that no longer accepts connections, because its session exited, is dropped from every ticket it followed the first time dispatch tries it, and dispatch prints one line on stderr for each dropped socket. A failed alert holds the messages back until its retry shows, so a broken alert never wakes your session repeatedly. The merge notices are the exception, because nothing retries them, so they reach your session even when the alert fails. Worker nudges are unchanged and still type into the worker's pane.
 
 A session started through the shim from step 6 already accepts these messages. If you installed the plugin instead, add this to your Claude Code user settings (`~/.claude/settings.json`):
 
@@ -133,7 +133,7 @@ A session started through the shim from step 6 already accepts these messages. I
 { "crossSessionInbound": "accept" }
 ```
 
-Without it, a session that skips permission prompts holds each message behind an approval dialog ("the sender did not attest its permission mode"), and the event waits until you open that session and answer. dispatch cannot see a held message, because the socket sends no reply.
+Without it, a session that skips permission prompts holds each message behind an approval dialog ("the sender did not attest its permission mode"), and the message waits until you open that session and answer. dispatch cannot see a held message, because the socket sends no reply.
 
 ## Workspace labels
 
@@ -156,8 +156,8 @@ A workspace is renamed only when its label differs from the one its ticket's sta
 
 A feature that needs a design goes through four steps, and you decide two of them.
 
-1. **Design.** A ticket labeled `design` (with the `ai` and repo labels) waits in Backlog. Move it to In Progress and the next resync launches a worker typed `/dispatch:design <ticket>` on `[rules].design_model` (`dispatch rules init` writes `opus`), where builds use `[rules].worker_model`. The worker designs with you and saves the blueprint as a Linear document on the feature ticket. It is never nudged about a comment or a PR, never escalated, and stopped only when you move the ticket out of In Progress, because a design waiting on you is normal. It holds a tree, so it counts toward `max_in_progress`.
-2. **Review, or not.** At the end the design worker asks whether the design gets a review. Choosing review files a `design-review` child of the feature ticket, moves it to In Progress and runs `dispatch tick`. The loop then launches a worker typed `/dispatch:design-review <ticket>` on `design_model`. It reviews the blueprint with you in its window, audits it against the repo's ADRs, then runs `dispatch:breakdown`. A review that is still failing after 5 rounds comments its blockers, moves to Needs Human and files nothing. Like a design worker it holds a tree, counts toward `max_in_progress` and is never nudged. It ends Done whether you start the work or hold it, and the next resync returns its tree like a build's. Choosing no review makes the design worker break the design down itself. A design that ends with nothing filed leaves its feature ticket in Backlog, so no new design worker starts.
+1. **Design.** A ticket labeled `design` (with the `ai` and repo labels) waits in Backlog. Move it to In Progress and the next resync launches Claude in a tree, typed `/dispatch:design <ticket>` on `[rules].design_model` (`dispatch rules init` writes `opus`), where builds use `[rules].worker_model`. The worker designs with you and saves the blueprint as a Linear document on the feature ticket. It is never nudged about a comment or a PR, never escalated, and stopped only when you move the ticket out of In Progress, because a design waiting on you is normal. It holds a tree, so it counts toward `max_in_progress`.
+2. **Review, or not.** At the end the design worker asks whether the design gets a review. Choosing review files a `design-review` child of the feature ticket, moves it to In Progress and runs `dispatch tick`. The loop then launches Claude in a tree, typed `/dispatch:design-review <ticket>` on `design_model`. It reviews the blueprint with you in its window, audits it against the repo's ADRs, then runs `dispatch:breakdown`. A review that is still failing after 5 rounds comments its blockers, moves to Needs Human and files nothing. Like a design worker it holds a tree, counts toward `max_in_progress` and is never nudged. It ends Done whether you start the work or hold it, and the next resync returns its tree like a build's. Choosing no review makes the design worker break the design down itself. A design that ends with nothing filed leaves its feature ticket in Backlog, so no new design worker starts.
 3. **Break down.** `dispatch:breakdown` sizes the design. A design that fits one PR gets one build ticket, and a larger one gets one per piece. Each is a Todo child of the feature ticket with the `ai` and repo labels, blocked by the first piece and by the pieces it builds on, and its body cites the blueprint instead of copying it. A rerun files no second ticket for a piece. You can ask any session or worker to break down a design or a ticket. A worker breaking down its own ticket keeps the first piece and its branch, and files the other pieces as new tickets blocked by it.
 4. **Start or hold.** Whichever step files the tickets asks whether to start the work now or hold it. The feature ticket keeps `design` until the work starts, and the dispatcher never promotes the children of a `design` parent, so nothing starts early. Starting removes `design` from an In Progress feature ticket. It is then an ordinary [parent](#parent-tickets), whose first piece is promoted at the next resync. Held work starts when you tell any session "start ENG-N's work".
 
@@ -177,9 +177,9 @@ Each cycle also looks at every tree held by a ticket assigned to you with the `a
 
 - A finished ticket whose tree has no tracked changes and is fully pushed has its herdr workspace closed, its untracked files deleted (`git clean -f -d`, which leaves ignored files alone), and its tree returned with `treehouse return --force`, so `treehouse status` shows the slot available.
 - A finished ticket whose tree has modified or staged tracked files, or commits that no remote has, keeps its tree. Its worker's workspace is closed, and the ticket gets one comment saying what the tree holds. Push or discard the work and the next resync returns the tree.
-- A ticket moved back to Backlog or Todo has its worker's workspace closed and keeps its tree. Moving it to In Progress again relaunches a worker on that tree.
+- A ticket moved back to Backlog or Todo has its worker's workspace closed and keeps its tree. Moving it to In Progress again relaunches the worker, with a new Claude session on that tree.
 
-"Pushed" means every commit reachable from the tree's HEAD is also reachable from a remote-tracking ref. A branch squash-merged and then pruned from the remote counts as unpushed, so its tree stays leased with the comment until you discard it. A pause or a kept tree closes only a workspace with a Claude agent in it, so a workspace you opened by hand there stays open. A tree with nothing to keep is returned whatever workspace is open on it, because a worker whose Claude exited leaves an agentless workspace behind and the slot has to come back.
+"Pushed" means every commit reachable from the tree's HEAD is also reachable from a remote-tracking ref. A branch squash-merged and then pruned from the remote counts as unpushed, so its tree stays leased with the comment until you discard it. A pause or a kept tree closes only a workspace with a Claude session in it, so a workspace you opened by hand there stays open. A tree with nothing to keep is returned whatever workspace is open on it, because a worker whose Claude session exited leaves its workspace behind and the slot has to come back.
 
 A `design` ticket is torn down and paused like a build, since its design worker holds a tree. A `design-review` ticket's tree is returned like a build's. A tree whose git state can't be read stays leased and shows as `held` in `dispatch plan`.
 
@@ -264,13 +264,13 @@ To start from an empty ledger, so dispatch acts on every ticket as if for the fi
 dispatch state reset
 ```
 
-To do that without repeating the nudges, notices and comments it already sent:
+To do that without repeating the nudges, notifications and comments it already sent:
 
 ```sh
 dispatch state reset --quiet
 ```
 
-It starts a new history segment with an empty ledger and keeps what the world remembers, so no wait starts over. With `--quiet` it first reads everything once and records the nudges, notices and comments the first cycle wants as already sent, flagged `reset`, so the next `dispatch run` doesn't send them again. It refuses when a source can't be read, because a rule holds back every message for what it can't read and nothing would be recorded. It may make live GETs through the `[http.<name>]` services a rule calls, and refuses when one of them comes back unknown for the same reason. It exits 1 while `dispatch run` is going.
+It starts a new history segment with an empty ledger and keeps what the world remembers, so no wait starts over. With `--quiet` it first reads everything once and records the nudges, notifications and comments the first cycle wants as already sent, flagged `reset`, so the next `dispatch run` doesn't send them again. It refuses when a source can't be read, because a rule holds back every message for what it can't read and nothing would be recorded. It may make live GETs through the `[http.<name>]` services a rule calls, and refuses when one of them comes back unknown for the same reason. It exits 1 while `dispatch run` is going.
 
 dispatch keeps its state in history. History is a series of segments named `events-<time>.jsonl` under `[history].dir`. Each starts with a snapshot of what dispatch knew and did before it, and then appends every event, change, cycle and receipt, and the world each cycle read, which is what `replay` runs again. A cycle line's `http` entries carry the `rule` and `ticket` that asked, which older history omits. The line format is public, and every line has a `line` field naming its type. The field names are those of the types in `internal/history`, except the world inside a `read` line, which `worldRecord` in `internal/world/json.go` names.
 
@@ -287,7 +287,7 @@ dispatch keeps its state in history. History is a series of segments named `even
 
 `dispatch run` loads the newest segment at start, so a restart picks up where it stopped. A new segment starts every `[history].rotate`, and a segment older than `[history].keep` is deleted. `dispatch run` reads the config and the rules once, at start, so a change to either needs a restart.
 
-**Pause** a ticket by moving it to Backlog or Todo. Its worker stops and its tree stays leased. Move it to In Progress to relaunch a worker on that tree. **Cancel** it, and the worker stops and the tree returns, unless it holds unpushed work.
+**Pause** a ticket by moving it to Backlog or Todo. Its worker stops and its tree stays leased. Move it to In Progress to relaunch the worker on that tree. **Cancel** it, and the worker stops and the tree returns, unless it holds unpushed work.
 
 To type into a worker yourself:
 
@@ -295,7 +295,7 @@ To type into a worker yourself:
 dispatch tell ENG-228 "use the v2 endpoint"
 ```
 
-It needs the running loop, and exits 3 with `dispatch: not running` without one. It fails when the ticket's worker is blocked on a question popup or absent.
+It needs the running loop, and exits 3 with `dispatch: not running` without one. It fails when the ticket's worker's Claude session is blocked on a question popup or gone.
 
 ## Troubleshooting
 

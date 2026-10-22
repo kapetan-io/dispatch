@@ -5,12 +5,13 @@ import (
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
-// A worker is found by the join from a ticket to its treehouse lease (the lease
-// holder is the ticket id), to the herdr workspace showing the leased tree, to the
-// Claude agent in that workspace. herdr agent names are not used, because they
-// clear when an agent exits.
+// A worker is found by the join from a ticket to each tree it holds (the lease
+// holder is the ticket id), to the herdr workspace showing that tree, to the
+// Claude session herdr reports there. herdr's own agent names are not used,
+// because they clear when Claude exits.
 
-// WorkerState is how a ticket's worker is doing.
+// WorkerState is what the worker's Claude session is doing. NoWorker is the saved
+// value "none": no Claude session runs in the worker, or the ticket holds no tree.
 type WorkerState string
 
 const (
@@ -20,7 +21,8 @@ const (
 	Blocked  WorkerState = "blocked"
 )
 
-// Worker is what the lookup found for one ticket.
+// Worker is the ticket's place on one tree it holds: the tree, the herdr workspace
+// showing it, and the Claude session there now, if any.
 type Worker struct {
 	State       WorkerState
 	TreePath    string
@@ -28,10 +30,10 @@ type Worker struct {
 	WorkspaceID string
 	PaneID      string
 	TabID       string
-	// Session is the Claude session id herdr reports for the agent, or empty.
+	// Session is the id herdr reports for the Claude session running there, or empty.
 	Session string
-	// UnconfirmedSince is when the launch that started this worker began, in
-	// milliseconds, read from the kickoffs record. Zero means the launch returned.
+	// UnconfirmedSince is when the latest launch on this tree began, in
+	// milliseconds, while its kickoff is unconfirmed, read from the kickoffs record. Zero means the launch returned.
 	UnconfirmedSince int64
 }
 

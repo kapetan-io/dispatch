@@ -1,7 +1,8 @@
 // Package executor carries out the actions a cycle wants. Each action checks the
 // source right before it acts, so a decision made on a stale read fails instead
 // of landing, and ends as a receipt outcome the ledger keeps. The cycle decides
-// what is wanted; the only veto here is a launch beside a worker that is present or unknown.
+// what is wanted; the only veto here is a launch while a Claude session runs in the
+// worker, herdr was not read, or the ticket's repo pool was not read.
 package executor
 
 import (
@@ -95,7 +96,8 @@ func New(env Env) *Executor {
 }
 
 // WhyNotLaunch says why a launch must not start whatever the rule asked, or "" when it
-// may. A worker that is present or unknown means a second one could start beside it.
+// may. A Claude session running in the worker, or a herdr or repo pool that was not
+// read, means a second session could start beside it.
 func (e *Executor) WhyNotLaunch(w rules.Want, wd world.World) string {
 	if w.Kind != "herdr.launch" {
 		return ""

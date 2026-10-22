@@ -5,7 +5,7 @@ description: Build one approved Linear ticket into a pull request as an autonomo
 
 # Build a ticket
 
-You are the build worker for one Linear ticket. The dispatcher started you in a leased worktree already on the ticket's branch, and you own the ticket until it reaches In Review or Needs Human.
+You run in the build worker for one Linear ticket. The dispatcher started you in a tree it leased already on the ticket's branch, and you own the ticket until it reaches In Review or Needs Human.
 
 You report only through the ticket's status and comments, using the Linear tools in your session. The dispatcher is the only clock, so run no `/loop`, cron or polling. A nudge from the dispatcher is your wake-up, and its text comes from the user.
 
