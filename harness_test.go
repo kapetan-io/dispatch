@@ -330,6 +330,68 @@ func (d *Dispatch) CrashedEarlierRun(receipts ...ledger.Receipt) {
 	d.h.seedHistory(nil, receipts...)
 }
 
+// earlierReceipt is an action an earlier run left in history, in the words `dispatch trace` uses.
+type earlierReceipt struct {
+	Kind, Subject, Rule string
+	// Once is the once key as trace prints it between brackets: the topic, then the values.
+	Once []any
+	// State is "" for an action that never finished, or "done" or "failed", as trace prints it.
+	State, Detail  string
+	Started, Ended time.Time
+}
+
+// EarlierRun writes history for a run that crashed after the actions given, as CrashedEarlierRun
+// does, without making the test build a ledger (unreachable from the CLI: a fault the product
+// can't inject).
+func (d *Dispatch) EarlierRun(receipts ...earlierReceipt) {
+	d.h.t.Helper()
+	millis := func(at time.Time) int64 {
+		if at.IsZero() {
+			return 0
+		}
+		return at.UnixMilli()
+	}
+	var written []ledger.Receipt
+	for _, r := range receipts {
+		written = append(written, ledger.Receipt{
+			Kind: r.Kind, Subject: r.Subject, Rule: r.Rule, Once: ledger.Once(r.Once),
+			Outcome: ledger.Outcome(r.State), Detail: r.Detail, Started: millis(r.Started), Ended: millis(r.Ended),
+		})
+	}
+	d.h.seedHistory(nil, written...)
+}
+
+// HistoryDatedAhead writes a closed run dated after the clock, as a clock that stepped back
+// leaves behind (unreachable from the CLI: dispatch never writes history from the future).
+func (d *Dispatch) HistoryDatedAhead(by time.Duration) {
+	d.h.t.Helper()
+	require.Nil(d.h.t, d.h.running)
+	at := d.h.clock.Now().Add(by)
+	w, err := history.Start(filepath.Join(d.h.state, "events"), at,
+		history.Header{Why: "start", At: at.UnixMilli()}, history.Snapshot{At: at.UnixMilli()})
+	require.NoError(d.h.t, err)
+	require.NoError(d.h.t, w.Close(true))
+}
+
+// HalfWrittenSegment adds a history segment that has its header and no snapshot, as a run that
+// crashed while rotating leaves it (unreachable from the CLI: a crash between two writes).
+func (d *Dispatch) HalfWrittenSegment() {
+	d.h.t.Helper()
+	events := filepath.Join(d.h.state, "events")
+	require.NoError(d.h.t, os.MkdirAll(events, 0o700))
+	name := "events-" + d.h.clock.Now().Add(-30*time.Minute).UTC().Format("20060102T150405Z") + ".jsonl"
+	require.NoError(d.h.t, os.WriteFile(filepath.Join(events, name), []byte(`{"line":"header","why":"start","at":1}`+"\n"), 0o600))
+}
+
+// EmptyFirstSegment adds a history file with nothing in it, as a first run that crashed before
+// it wrote its header leaves it (unreachable from the CLI: a crash between two writes).
+func (d *Dispatch) EmptyFirstSegment() {
+	d.h.t.Helper()
+	events := filepath.Join(d.h.state, "events")
+	require.NoError(d.h.t, os.MkdirAll(events, 0o700))
+	require.NoError(d.h.t, os.WriteFile(filepath.Join(events, "events-20260101T000000Z.jsonl"), nil, 0o600))
+}
+
 // CorruptSessionLog appends text to the end of the only session log there is, as a writer that
 // died mid-line leaves it (unreachable from the CLI: a fault the product can't inject).
 func (d *Dispatch) CorruptSessionLog(text string) {
@@ -367,6 +429,9 @@ func (l *Linear) Tickets(tickets ...fakeTicket) { l.d.h.tickets(tickets...) }
 // Finished seeds tickets Linear knows that are not started, such as Done or Todo ones, which only
 // a lookup by identifier finds.
 func (l *Linear) Finished(tickets ...fakeTicket) { l.d.h.linear.setElsewhere(tickets...) }
+
+// Children seeds the children Linear returns for open parents.
+func (l *Linear) Children(tickets ...fakeTicket) { l.d.h.linear.setChildren(tickets...) }
 
 // Moves lists the status changes Linear accepted, as "ENG-1 -> In Review".
 func (l *Linear) Moves() []string {
