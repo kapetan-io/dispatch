@@ -1,3 +1,5 @@
+//go:build slow_tests
+
 package history_test
 
 import (

@@ -26,6 +26,8 @@ jobs:
         # The surface tests run against fake tools and a real git, which the
         # runner image provides. The drift check (go test -tags drift
         # ./internal/...) needs the installed tools and does not run here.
-        run: go test -race ./...
+        # No -race: it multiplies CPU time about 6 times and CI has no
+        # concurrency check the dev box does not already run.
+        run: go test -tags slow_tests ./...
       - name: shellcheck
         run: shellcheck -S warning bin/dispatch-launch scripts/shims/claude
