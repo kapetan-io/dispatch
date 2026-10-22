@@ -1,16 +1,13 @@
 package dispatch_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -19,114 +16,111 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
-	"github.com/kapetan-io/dispatch/internal/journal"
-	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/tooltest"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
-func TestLaunchStartsAWorkerTypedTheBuildKickoff(t *testing.T) {
-	l := newLaunchHarness(t)
+// launchEnv is the plugin root and the herdr preflight wait launch tests run under, unless a test
+// is about one of them.
+var launchEnv = map[string]string{"DISPATCH_PLUGIN_ROOT": "/plugin", "DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT": "1"}
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+func TestLaunchStartsAWorkerTypedTheBuildKickoff(t *testing.T) {
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.True(t, strings.HasPrefix(out.raw, `{"status":"ok"`))
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, "ENG-1", out.result["ticket"])
 	assert.Equal(t, "thrawn01/eng-1", out.result["branch"])
-	assert.Equal(t, l.tree, out.result["worktree"])
+	assert.Equal(t, tree, out.result["worktree"])
 	assert.Equal(t, "w2", out.result["workspace"])
 	assert.Equal(t, "w2:p2", out.result["pane"])
 	assert.Equal(t, "eng-1", out.result["agent"])
 	assert.Equal(t, "/dispatch:build ENG-1", out.result["kickoff"])
-	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, l.tools.Herdr.Kicked())
-	assert.Equal(t, l.branchIn(l.tree), "thrawn01/eng-1")
-	require.Len(t, l.tools.Herdr.Started(), 1)
-	started := l.tools.Herdr.Started()[0]
-	assert.Equal(t, herdr.Worker{Workspace: "w2", Dir: l.tree, Label: "ENG-1", Name: "eng-1", Model: "sonnet", PluginRoot: "/plugin"}, started)
+	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, d.fakes().Herdr.Kicked())
+	assert.Equal(t, "thrawn01/eng-1", branchIn(t, tree))
+	require.Len(t, d.fakes().Herdr.Started(), 1)
+	started := d.fakes().Herdr.Started()[0]
+	assert.Equal(t, herdr.Worker{Workspace: "w2", Dir: tree, Label: "ENG-1", Name: "eng-1", Model: "sonnet", PluginRoot: "/plugin"}, started)
 }
 
 func TestLaunchLabelsTheTabWithTheTicketAndTitle(t *testing.T) {
-	l := newLaunchHarness(t)
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
 
-	out := l.launch("ENG-1", "thrawn01/eng-1", "--title", "Fix the thing")
-
-	assert.Equal(t, "ok", out.result["status"])
-	require.Len(t, l.tools.Herdr.Started(), 1)
-	assert.Equal(t, "ENG-1 Fix the thing", l.tools.Herdr.Started()[0].Label)
-}
-
-func TestLaunchLabelsTheTabWithTheTicketWhenGivenNoTitle(t *testing.T) {
-	l := newLaunchHarness(t)
-
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1", "--title", "Fix the thing")
 
 	assert.Equal(t, "ok", out.result["status"])
-	require.Len(t, l.tools.Herdr.Started(), 1)
-	assert.Equal(t, "ENG-1", l.tools.Herdr.Started()[0].Label)
+	require.Len(t, d.fakes().Herdr.Started(), 1)
+	assert.Equal(t, "ENG-1 Fix the thing", d.fakes().Herdr.Started()[0].Label)
 }
 
 func TestLaunchTypesTheKickoffItIsGiven(t *testing.T) {
-	l := newLaunchHarness(t)
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
 
-	out := l.launch("ENG-1", "thrawn01/eng-1", "--model", "opus", "--kickoff", "/dispatch:design ENG-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1", "--model", "opus", "--kickoff", "/dispatch:design ENG-1")
 
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, "/dispatch:design ENG-1", out.result["kickoff"])
-	assert.Equal(t, []string{"w2:p2|/dispatch:design ENG-1"}, l.tools.Herdr.Kicked())
-	require.Len(t, l.tools.Herdr.Started(), 1)
-	assert.Equal(t, "opus", l.tools.Herdr.Started()[0].Model)
+	assert.Equal(t, []string{"w2:p2|/dispatch:design ENG-1"}, d.fakes().Herdr.Kicked())
+	require.Len(t, d.fakes().Herdr.Started(), 1)
+	assert.Equal(t, "opus", d.fakes().Herdr.Started()[0].Model)
 }
 
 func TestLaunchStartsNewBranchesFromTheBase(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "second")
-	l.git(l.repo, "branch", "release", "HEAD~1")
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	hintGit(t, d.Repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "second")
+	hintGit(t, d.Repo, "branch", "release", "HEAD~1")
 
-	out := l.launch("ENG-1", "thrawn01/eng-1", "--base", "release")
+	out := d.launch("ENG-1", "thrawn01/eng-1", "--base", "release")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, l.revParse(l.repo, "release"), l.revParse(l.tree, "HEAD"))
+	assert.Equal(t, revParse(t, d.Repo, "release"), revParse(t, tree, "HEAD"))
 }
 
 func TestLaunchReportsAWorkerThatIsAlreadyRunning(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.tools.Treehouse.MoveLease(l.tree, "ENG-1")
-	l.tools.Herdr.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: l.tree})
-	l.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: "working", PaneID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
+	d.fakes().Herdr.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: tree})
+	d.fakes().Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: "working", PaneID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "already_running", out.result["status"])
 	assert.Equal(t, "w3", out.result["workspace"])
 	assert.Equal(t, "w3:p2", out.result["pane"])
-	assert.Empty(t, l.tools.Herdr.Kicked())
-	assert.Empty(t, l.tools.Herdr.Started())
-	assert.Empty(t, l.tools.Calls("treehouse", "lease"))
+	assert.Empty(t, d.fakes().Herdr.Kicked())
+	assert.Empty(t, d.fakes().Herdr.Started())
+	assert.Empty(t, d.fakes().Calls("treehouse", "lease"))
 }
 
 func TestLaunchReusesTheLeaseOfAnEarlierRun(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.tools.Treehouse.MoveLease(l.tree, "ENG-1")
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, l.tree, out.result["worktree"])
-	assert.Empty(t, l.tools.Calls("treehouse", "lease"))
+	assert.Equal(t, tree, out.result["worktree"])
+	assert.Empty(t, d.fakes().Calls("treehouse", "lease"))
 }
 
 func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 	for _, test := range []struct {
-		name    string
-		setup   func(l *launchHarness)
-		args    []string
-		status  string
-		detail  string
-		wantErr string
+		name   string
+		dir    string
+		setup  func(d *Dispatch)
+		args   []string
+		status string
+		detail string
 	}{
 		{
 			name:   "NoArguments",
@@ -148,30 +142,30 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 		},
 		{
 			name:   "NotARepo",
-			setup:  func(l *launchHarness) { l.dirOverride = t.TempDir() },
+			dir:    t.TempDir(),
 			args:   []string{"ENG-1", "b"},
 			status: "not_a_repo",
 			detail: "run from inside the target repo",
 		},
 		{
 			name:   "NotPooled",
-			setup:  func(l *launchHarness) { require.NoError(t, os.Remove(filepath.Join(l.repo, "treehouse.toml"))) },
+			setup:  func(d *Dispatch) { require.NoError(t, os.Remove(filepath.Join(d.Repo, "treehouse.toml"))) },
 			args:   []string{"ENG-1", "b"},
 			status: "not_pooled",
 			detail: "has no treehouse.toml",
 		},
 		{
 			name:   "HerdrUnavailable",
-			setup:  func(l *launchHarness) { l.tools.Herdr.Fail(herdrtest.OpRead, errors.New("server not running")) },
+			setup:  func(d *Dispatch) { d.fakes().Herdr.Fail(herdrtest.OpRead, errors.New("server not running")) },
 			args:   []string{"ENG-1", "b"},
 			status: "herdr_unavailable",
 			detail: "herdr server not answering",
 		},
 		{
 			name: "PoolExhausted",
-			setup: func(l *launchHarness) {
-				l.tools.Treehouse.Clear(l.repo)
-				l.tools.Treehouse.Seed(l.repo,
+			setup: func(d *Dispatch) {
+				d.fakes().Treehouse.Clear(d.Repo)
+				d.fakes().Treehouse.Seed(d.Repo,
 					treehouse.Tree{Path: "/t/1", Status: "leased", LeaseHolder: "ENG-7"},
 					treehouse.Tree{Path: "/t/2", Status: "leased", LeaseHolder: "ENG-8"},
 					treehouse.Tree{Path: "/t/3", Status: "leased", LeaseHolder: "ENG-9"},
@@ -184,8 +178,8 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 		},
 		{
 			name: "PoolErrorWhenATreeIsFree",
-			setup: func(l *launchHarness) {
-				l.tools.Treehouse.FailLease(errors.New("no tree for you"))
+			setup: func(d *Dispatch) {
+				d.fakes().Treehouse.FailLease(errors.New("no tree for you"))
 			},
 			args:   []string{"ENG-1", "b"},
 			status: "pool_error",
@@ -195,14 +189,14 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 			// A pool that can still grow is not exhausted, so the ticket must
 			// escalate instead of waiting for a slot.
 			name: "PoolErrorWhenEveryTreeIsTakenBelowMaxTrees",
-			setup: func(l *launchHarness) {
-				l.tools.Treehouse.Clear(l.repo)
-				l.tools.Treehouse.Seed(l.repo,
+			setup: func(d *Dispatch) {
+				d.fakes().Treehouse.Clear(d.Repo)
+				d.fakes().Treehouse.Seed(d.Repo,
 					treehouse.Tree{Path: "/t/1", Status: "leased", LeaseHolder: "ENG-7"},
 					treehouse.Tree{Path: "/t/2", Status: "leased", LeaseHolder: "ENG-8"},
 					treehouse.Tree{Path: "/t/3", Status: "leased", LeaseHolder: "ENG-9"},
 				)
-				l.tools.Treehouse.FailLease(errors.New("cannot create a worktree"))
+				d.fakes().Treehouse.FailLease(errors.New("cannot create a worktree"))
 			},
 			args:   []string{"ENG-1", "b"},
 			status: "pool_error",
@@ -210,8 +204,8 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 		},
 		{
 			name: "LeaseWithoutAPath",
-			setup: func(l *launchHarness) {
-				l.tools.Treehouse.FailLease(fmt.Errorf("%w: {}", treehouse.ErrNoPath))
+			setup: func(d *Dispatch) {
+				d.fakes().Treehouse.FailLease(fmt.Errorf("%w: {}", treehouse.ErrNoPath))
 			},
 			args:   []string{"ENG-1", "b"},
 			status: "pool_error",
@@ -219,10 +213,10 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 		},
 		{
 			name: "PoolErrorWhenMaxTreesIsUnknown",
-			setup: func(l *launchHarness) {
-				require.NoError(t, os.WriteFile(filepath.Join(l.repo, "treehouse.toml"), nil, 0o644))
-				l.tools.Treehouse.Clear(l.repo)
-				l.tools.Treehouse.Seed(l.repo, treehouse.Tree{Path: "/t/1", Status: "leased", LeaseHolder: "ENG-7"})
+			setup: func(d *Dispatch) {
+				require.NoError(t, os.WriteFile(filepath.Join(d.Repo, "treehouse.toml"), nil, 0o644))
+				d.fakes().Treehouse.Clear(d.Repo)
+				d.fakes().Treehouse.Seed(d.Repo, treehouse.Tree{Path: "/t/1", Status: "leased", LeaseHolder: "ENG-7"})
 			},
 			args:   []string{"ENG-1", "b"},
 			status: "pool_error",
@@ -230,12 +224,17 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			l := newLaunchHarness(t)
+			d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+			d.Trees.Pooled()
 			if test.setup != nil {
-				test.setup(l)
+				test.setup(d)
+			}
+			dir := d.Repo
+			if test.dir != "" {
+				dir = test.dir
 			}
 
-			out := l.launchArgs(test.args...)
+			out := d.launchIn(dir, test.args...)
 
 			assert.Equal(t, test.status, out.result["status"])
 			assert.Contains(t, out.result["detail"], test.detail)
@@ -245,85 +244,92 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 }
 
 func TestLaunchNamesTheBaseWhenANewBranchWillNotCheckOut(t *testing.T) {
-	l := newLaunchHarness(t)
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
 
-	out := l.launch("ENG-1", "thrawn01/eng-1", "--base", "nosuch")
+	out := d.launch("ENG-1", "thrawn01/eng-1", "--base", "nosuch")
 
 	assert.Equal(t, "checkout_failed", out.result["status"])
 	assert.Contains(t, out.result["detail"], "from nosuch")
 }
 
 func TestLaunchReturnsALeaseWhenTheBranchWillNotCheckOut(t *testing.T) {
-	l := newLaunchHarness(t)
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
 	// A branch checked out in the main clone cannot be switched to in the pool tree.
-	l.git(l.repo, "checkout", "-q", "-b", "thrawn01/eng-1")
+	hintGit(t, d.Repo, "checkout", "-q", "-b", "thrawn01/eng-1")
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "checkout_failed", out.result["status"])
 	assert.Contains(t, out.result["detail"], "(lease returned)")
-	assert.Equal(t, []string{l.repo + "|" + l.tree + "|ENG-1"}, l.returns())
+	assert.Equal(t, []string{d.Repo + "|" + tree + "|ENG-1"}, d.Trees.Returned())
 }
 
 func TestLaunchReturnsALeaseItTookWhenTheWorkspaceFails(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.tools.Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.fakes().Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "workspace_failed", out.result["status"])
 	assert.Contains(t, out.result["detail"], "herdr worktree open failed")
-	assert.Equal(t, []string{l.repo + "|" + l.tree + "|ENG-1"}, l.returns())
+	assert.Equal(t, []string{d.Repo + "|" + tree + "|ENG-1"}, d.Trees.Returned())
 }
 
 func TestLaunchKeepsALeaseFromAnEarlierRunWhenTheWorkspaceFails(t *testing.T) {
-	l := newLaunchHarness(t)
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
 	// The tree is already leased to ENG-1, so it may hold a worker's
 	// uncommitted work that a forced return would discard.
-	l.tools.Treehouse.MoveLease(l.tree, "ENG-1")
-	l.tools.Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
+	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
+	d.fakes().Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "workspace_failed", out.result["status"])
-	assert.Empty(t, l.returns())
+	assert.Empty(t, d.Trees.Returned())
 }
 
 func TestLaunchClosesTheWorkspaceBeforeReturningALeaseItTook(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.tools.Herdr.Fail(herdrtest.OpStartTab, errors.New("herdr tab create failed in w2"))
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.fakes().Herdr.Fail(herdrtest.OpStartTab, errors.New("herdr tab create failed in w2"))
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "workspace_failed", out.result["status"])
-	assert.Equal(t, []string{"w2"}, l.tools.Herdr.ClosedWorkspaces())
-	assert.Equal(t, []string{l.repo + "|" + l.tree + "|ENG-1"}, l.returns())
-	assert.Less(t, l.callIndex("herdr", "close-workspace"), l.callIndex("treehouse", "return"))
+	assert.Equal(t, []string{"w2"}, d.fakes().Herdr.ClosedWorkspaces())
+	assert.Equal(t, []string{d.Repo + "|" + tree + "|ENG-1"}, d.Trees.Returned())
+	assert.Less(t, d.callIndex("herdr", "close-workspace"), d.callIndex("treehouse", "return"))
 }
 
 func TestLaunchKeepsALeaseWhoseWorkspaceWouldNotClose(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.tools.Herdr.Fail(herdrtest.OpStartTab, errors.New("herdr tab create failed in w2"))
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	d.fakes().Herdr.Fail(herdrtest.OpStartTab, errors.New("herdr tab create failed in w2"))
 	// A tree returned with its workspace still open would match that
 	// workspace by path, so the next ticket to lease it would never start.
-	l.tools.Herdr.Fail(herdrtest.OpCloseWorkspace, errors.New("exit status 1"))
+	d.fakes().Herdr.Fail(herdrtest.OpCloseWorkspace, errors.New("exit status 1"))
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "workspace_failed", out.result["status"])
-	assert.Empty(t, l.returns())
+	assert.Empty(t, d.Trees.Returned())
 }
 
 func TestLaunchClosesTheTabsTheWorkspaceOpenedWith(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.tools.Herdr.AddWorkspace(herdr.Workspace{ID: "w2", Label: "other"})
-	l.tools.Herdr.AddTab(herdr.Tab{ID: "w2:t1", Label: "other", WorkspaceID: "w2"})
-	l.tools.Herdr.AddPane(herdr.Pane{ID: "w2:p1", TabID: "w2:t1", WorkspaceID: "w2"})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	d.fakes().Herdr.AddWorkspace(herdr.Workspace{ID: "w2", Label: "other"})
+	d.fakes().Herdr.AddTab(herdr.Tab{ID: "w2:t1", Label: "other", WorkspaceID: "w2"})
+	d.fakes().Herdr.AddPane(herdr.Pane{ID: "w2:p1", TabID: "w2:t1", WorkspaceID: "w2"})
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	snap, err := l.tools.Herdr.Read(context.Background())
+	snap, err := d.fakes().Herdr.Read(context.Background())
 	require.NoError(t, err)
 	assert.Contains(t, snap.Tabs, herdr.Tab{ID: "w2:t1", Label: "other", WorkspaceID: "w2"})
 	assert.Contains(t, snap.Tabs, herdr.Tab{ID: out.result["workspace"] + ":t2", Label: "ENG-1", WorkspaceID: out.result["workspace"]})
@@ -331,61 +337,66 @@ func TestLaunchClosesTheTabsTheWorkspaceOpenedWith(t *testing.T) {
 }
 
 func TestLaunchGivesBackTheLeaseWhenTheAgentWillNotStart(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.tools.Herdr.Fail(herdrtest.OpStartAgent, errors.New("herdr agent start failed in pane w2:p2"))
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.fakes().Herdr.Fail(herdrtest.OpStartAgent, errors.New("herdr agent start failed in pane w2:p2"))
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "agent_start_failed", out.result["status"])
 	assert.Equal(t, "w2:p2", out.result["pane"])
-	assert.Equal(t, []string{"w2"}, l.tools.Herdr.ClosedWorkspaces())
-	assert.Equal(t, []string{l.repo + "|" + l.tree + "|ENG-1"}, l.returns())
-	assert.Empty(t, l.tools.Herdr.Kicked())
+	assert.Equal(t, []string{"w2"}, d.fakes().Herdr.ClosedWorkspaces())
+	assert.Equal(t, []string{d.Repo + "|" + tree + "|ENG-1"}, d.Trees.Returned())
+	assert.Empty(t, d.fakes().Herdr.Kicked())
 }
 
 func TestLaunchNamesARelaunchedWorkerApartFromItsPredecessor(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.tools.Herdr.AddWorkspace(herdr.Workspace{ID: "w1", CheckoutPath: "/elsewhere"})
-	l.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: "done", PaneID: "w1:p1", TabID: "w1:t1", WorkspaceID: "w1"})
-	l.tools.Herdr.NameAgent("w1:p1", "eng-1")
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	d.fakes().Herdr.AddWorkspace(herdr.Workspace{ID: "w1", CheckoutPath: "/elsewhere"})
+	d.fakes().Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: "done", PaneID: "w1:p1", TabID: "w1:t1", WorkspaceID: "w1"})
+	d.fakes().Herdr.NameAgent("w1:p1", "eng-1")
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Regexp(t, `^eng-1-r\d+$`, out.result["agent"])
 }
 
 func TestLaunchClosesTheWorkspaceWhenTheKickoffNeverRuns(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.tools.Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	d.fakes().Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	// Left open, the idle Claude would look like a live worker and no tick
 	// would retry the launch.
 	assert.Equal(t, "injection_unconfirmed", out.result["status"])
 	assert.Contains(t, out.result["detail"], "Claude started but herdr never showed the kickoff running")
-	assert.Equal(t, []string{"w2"}, l.tools.Herdr.ClosedWorkspaces())
-	assert.Empty(t, l.returns())
+	assert.Equal(t, []string{"w2"}, d.fakes().Herdr.ClosedWorkspaces())
+	assert.Empty(t, d.Trees.Returned())
 }
 
 func TestLaunchReportsClaudeNeverStartedWhenItsCommandStaysAtTheShellPrompt(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.tools.Herdr.Fail(herdrtest.OpKickoff, herdr.ErrClaudeNeverStarted)
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	d.fakes().Herdr.Fail(herdrtest.OpKickoff, herdr.ErrClaudeNeverStarted)
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "injection_unconfirmed", out.result["status"])
 	assert.Contains(t, out.result["detail"], "never started")
 	assert.NotContains(t, out.result["detail"], "Claude started")
-	assert.Equal(t, []string{"w2"}, l.tools.Herdr.ClosedWorkspaces())
+	assert.Equal(t, []string{"w2"}, d.fakes().Herdr.ClosedWorkspaces())
 }
 
 func TestLaunchReportsEnterNotSentWhenHerdrRefusesTheKey(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.tools.Herdr.Fail(herdrtest.OpKickoff, herdr.ErrEnterNotSent)
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	d.fakes().Herdr.Fail(herdrtest.OpKickoff, herdr.ErrEnterNotSent)
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "injection_unconfirmed", out.result["status"])
 	assert.Contains(t, out.result["detail"], "could not send Enter")
@@ -393,13 +404,12 @@ func TestLaunchReportsEnterNotSentWhenHerdrRefusesTheKey(t *testing.T) {
 }
 
 func TestLaunchExitsCleanlyOnlyWhenTheWorkerIsRunning(t *testing.T) {
-	l := newLaunchHarness(t)
-	ok := l.launch("ENG-1", "thrawn01/eng-1")
-	l.tools.Treehouse.MoveLease(l.tree, "ENG-1")
-	l.writeFile("workspaces.json", `{"result":{"workspaces":[{"workspace_id":"w3","worktree":{"checkout_path":"`+l.tree+`"}}]}}`)
-	l.writeFile("panes.json", `{"result":{"panes":[{"pane_id":"w3:p2","workspace_id":"w3","tab_id":"w3:t1","agent":"claude"}]}}`)
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	ok := d.launch("ENG-1", "thrawn01/eng-1")
+	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
 
-	running := l.launch("ENG-1", "thrawn01/eng-1")
+	running := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", ok.result["status"])
 	assert.NoError(t, ok.err)
@@ -408,179 +418,187 @@ func TestLaunchExitsCleanlyOnlyWhenTheWorkerIsRunning(t *testing.T) {
 }
 
 func TestLaunchPutsStatusFirstInEveryResult(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.tools.Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.fakes().Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "workspace_failed", out.result["status"])
 	assert.True(t, strings.HasPrefix(out.raw, `{"status":"workspace_failed"`))
-	assert.Equal(t, l.tree, out.result["worktree"])
+	assert.Equal(t, tree, out.result["worktree"])
 }
 
 func TestLaunchAcceptsTheNoFocusFlag(t *testing.T) {
-	l := newLaunchHarness(t)
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
 
-	out := l.launch("ENG-1", "thrawn01/eng-1", "--no-focus")
+	out := d.launch("ENG-1", "thrawn01/eng-1", "--no-focus")
 
 	assert.Equal(t, "ok", out.result["status"])
 }
 
 func TestLaunchChecksOutAnExistingLocalBranch(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "second")
-	l.git(l.repo, "branch", "thrawn01/eng-1", "HEAD~1")
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	hintGit(t, d.Repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "second")
+	hintGit(t, d.Repo, "branch", "thrawn01/eng-1", "HEAD~1")
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, "thrawn01/eng-1", l.branchIn(l.tree))
-	assert.Equal(t, l.revParse(l.repo, "thrawn01/eng-1"), l.revParse(l.tree, "HEAD"))
+	assert.Equal(t, "thrawn01/eng-1", branchIn(t, tree))
+	assert.Equal(t, revParse(t, d.Repo, "thrawn01/eng-1"), revParse(t, tree, "HEAD"))
 }
 
 func TestLaunchChecksOutABranchOnlyTheRemoteHas(t *testing.T) {
-	l := newLaunchHarness(t)
-	remote := filepath.Join(l.dir, "remote.git")
-	l.git(l.dir, "init", "-q", "--bare", remote)
-	l.git(l.repo, "remote", "add", "origin", remote)
-	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "remote work")
-	l.git(l.repo, "push", "-q", "origin", "HEAD:refs/heads/thrawn01/eng-1")
-	l.git(l.repo, "reset", "-q", "--hard", "HEAD~1")
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	remote := filepath.Join(filepath.Dir(d.Repo), "remote.git")
+	hintGit(t, filepath.Dir(d.Repo), "init", "-q", "--bare", remote)
+	hintGit(t, d.Repo, "remote", "add", "origin", remote)
+	hintGit(t, d.Repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "remote work")
+	hintGit(t, d.Repo, "push", "-q", "origin", "HEAD:refs/heads/thrawn01/eng-1")
+	hintGit(t, d.Repo, "reset", "-q", "--hard", "HEAD~1")
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, "thrawn01/eng-1", l.branchIn(l.tree))
-	assert.Equal(t, l.revParse(remote, "refs/heads/thrawn01/eng-1"), l.revParse(l.tree, "HEAD"))
+	assert.Equal(t, "thrawn01/eng-1", branchIn(t, tree))
+	assert.Equal(t, revParse(t, remote, "refs/heads/thrawn01/eng-1"), revParse(t, tree, "HEAD"))
 }
 
 func TestLaunchStartsNewBranchesFromTheRemoteBase(t *testing.T) {
-	l := newLaunchHarness(t)
-	remote := filepath.Join(l.dir, "remote.git")
-	l.git(l.dir, "init", "-q", "--bare", remote)
-	l.git(l.repo, "remote", "add", "origin", remote)
-	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "remote main")
-	l.git(l.repo, "push", "-q", "origin", "main")
-	l.git(l.repo, "reset", "-q", "--hard", "HEAD~1")
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	remote := filepath.Join(filepath.Dir(d.Repo), "remote.git")
+	hintGit(t, filepath.Dir(d.Repo), "init", "-q", "--bare", remote)
+	hintGit(t, d.Repo, "remote", "add", "origin", remote)
+	hintGit(t, d.Repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "remote main")
+	hintGit(t, d.Repo, "push", "-q", "origin", "main")
+	hintGit(t, d.Repo, "reset", "-q", "--hard", "HEAD~1")
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, l.revParse(remote, "refs/heads/main"), l.revParse(l.tree, "HEAD"))
+	assert.Equal(t, revParse(t, remote, "refs/heads/main"), revParse(t, tree, "HEAD"))
 }
 
 func TestLaunchStartsNewBranchesFromTheCheckedOutBranchWhenThereIsNoRemote(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.git(l.repo, "branch", "-m", "master")
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	hintGit(t, d.Repo, "branch", "-m", "master")
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, l.revParse(l.repo, "master"), l.revParse(l.tree, "HEAD"))
+	assert.Equal(t, revParse(t, d.Repo, "master"), revParse(t, tree, "HEAD"))
 }
 
 func TestLaunchStartsNewBranchesFromTheRemoteDefaultBranch(t *testing.T) {
-	l := newLaunchHarness(t)
-	remote := filepath.Join(l.dir, "remote.git")
-	l.git(l.dir, "init", "-q", "--bare", "-b", "master", remote)
-	l.git(l.repo, "branch", "-m", "master")
-	l.git(l.repo, "remote", "add", "origin", remote)
-	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "remote master")
-	l.git(l.repo, "push", "-q", "origin", "master")
-	l.git(l.repo, "remote", "set-head", "origin", "master")
-	l.git(l.repo, "reset", "-q", "--hard", "HEAD~1")
-	l.git(l.repo, "switch", "-q", "-c", "scratch")
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	remote := filepath.Join(filepath.Dir(d.Repo), "remote.git")
+	hintGit(t, filepath.Dir(d.Repo), "init", "-q", "--bare", "-b", "master", remote)
+	hintGit(t, d.Repo, "branch", "-m", "master")
+	hintGit(t, d.Repo, "remote", "add", "origin", remote)
+	hintGit(t, d.Repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "remote master")
+	hintGit(t, d.Repo, "push", "-q", "origin", "master")
+	hintGit(t, d.Repo, "remote", "set-head", "origin", "master")
+	hintGit(t, d.Repo, "reset", "-q", "--hard", "HEAD~1")
+	hintGit(t, d.Repo, "switch", "-q", "-c", "scratch")
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, l.revParse(remote, "refs/heads/master"), l.revParse(l.tree, "HEAD"))
+	assert.Equal(t, revParse(t, remote, "refs/heads/master"), revParse(t, tree, "HEAD"))
 }
 
 func TestLaunchFollowsARemoteThatRenamedItsDefaultBranch(t *testing.T) {
-	l := newLaunchHarness(t)
-	remote := filepath.Join(l.dir, "remote.git")
-	l.git(l.dir, "init", "-q", "--bare", "-b", "master", remote)
-	l.git(l.repo, "branch", "-m", "master")
-	l.git(l.repo, "remote", "add", "origin", remote)
-	l.git(l.repo, "push", "-q", "origin", "master")
-	l.git(l.repo, "remote", "set-head", "origin", "master")
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	remote := filepath.Join(filepath.Dir(d.Repo), "remote.git")
+	hintGit(t, filepath.Dir(d.Repo), "init", "-q", "--bare", "-b", "master", remote)
+	hintGit(t, d.Repo, "branch", "-m", "master")
+	hintGit(t, d.Repo, "remote", "add", "origin", remote)
+	hintGit(t, d.Repo, "push", "-q", "origin", "master")
+	hintGit(t, d.Repo, "remote", "set-head", "origin", "master")
 	// origin renames master to main and moves ahead, leaving origin/HEAD stale.
-	l.git(remote, "branch", "-m", "master", "main")
-	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "ahead")
-	l.git(l.repo, "push", "-q", "origin", "master:main")
-	l.git(l.repo, "reset", "-q", "--hard", "HEAD~1")
+	hintGit(t, remote, "branch", "-m", "master", "main")
+	hintGit(t, d.Repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "ahead")
+	hintGit(t, d.Repo, "push", "-q", "origin", "master:main")
+	hintGit(t, d.Repo, "reset", "-q", "--hard", "HEAD~1")
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, l.revParse(remote, "refs/heads/main"), l.revParse(l.tree, "HEAD"))
+	assert.Equal(t, revParse(t, remote, "refs/heads/main"), revParse(t, tree, "HEAD"))
 }
 
 func TestLaunchSkipsAnUnpushedCheckedOutBranchWhenChoosingTheBase(t *testing.T) {
-	l := newLaunchHarness(t)
-	remote := filepath.Join(l.dir, "remote.git")
-	l.git(l.dir, "init", "-q", "--bare", remote)
-	l.git(l.repo, "remote", "add", "origin", remote)
-	l.git(l.repo, "push", "-q", "origin", "main")
-	l.git(l.repo, "fetch", "-q", "origin")
-	l.git(l.repo, "config", "init.defaultBranch", "main")
-	l.git(l.repo, "switch", "-q", "-c", "thrawn01/eng-9")
-	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "unpushed work")
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	remote := filepath.Join(filepath.Dir(d.Repo), "remote.git")
+	hintGit(t, filepath.Dir(d.Repo), "init", "-q", "--bare", remote)
+	hintGit(t, d.Repo, "remote", "add", "origin", remote)
+	hintGit(t, d.Repo, "push", "-q", "origin", "main")
+	hintGit(t, d.Repo, "fetch", "-q", "origin")
+	hintGit(t, d.Repo, "config", "init.defaultBranch", "main")
+	hintGit(t, d.Repo, "switch", "-q", "-c", "thrawn01/eng-9")
+	hintGit(t, d.Repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "unpushed work")
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, l.revParse(remote, "refs/heads/main"), l.revParse(l.tree, "HEAD"))
+	assert.Equal(t, revParse(t, remote, "refs/heads/main"), revParse(t, tree, "HEAD"))
 }
 
 func TestLaunchOpensTheWorkspaceFromTheMainCheckout(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.writeFile(filepath.Join("tree", "treehouse.toml"), "max_trees = 4\n")
-	l.dirOverride = l.tree
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	require.NoError(t, os.WriteFile(filepath.Join(tree, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launchIn(tree, "ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	resolved, err := filepath.EvalSymlinks(l.repo)
+	resolved, err := filepath.EvalSymlinks(d.Repo)
 	require.NoError(t, err)
-	assert.Equal(t, []herdr.NewWorkspace{{Repo: resolved, Path: l.tree, Label: "ENG-1"}}, l.tools.Herdr.Opened())
+	assert.Equal(t, []herdr.NewWorkspace{{Repo: resolved, Path: tree, Label: "ENG-1"}}, d.fakes().Herdr.Opened())
 }
 
 func TestLaunchReusesAWorkspaceThatHasNoClaudePane(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.tools.Treehouse.MoveLease(l.tree, "ENG-1")
-	l.tools.Herdr.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: l.tree})
-	l.tools.Herdr.AddTab(herdr.Tab{ID: "w3:t1", WorkspaceID: "w3"})
-	l.tools.Herdr.AddPane(herdr.Pane{ID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
+	d.fakes().Herdr.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: tree})
+	d.fakes().Herdr.AddTab(herdr.Tab{ID: "w3:t1", WorkspaceID: "w3"})
+	d.fakes().Herdr.AddPane(herdr.Pane{ID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
 
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, "w3", out.result["workspace"])
-	assert.Empty(t, l.tools.Herdr.Opened())
-	require.Len(t, l.tools.Herdr.Started(), 1)
-	assert.Equal(t, "w3", l.tools.Herdr.Started()[0].Workspace)
+	assert.Empty(t, d.fakes().Herdr.Opened())
+	require.Len(t, d.fakes().Herdr.Started(), 1)
+	assert.Equal(t, "w3", d.fakes().Herdr.Started()[0].Workspace)
 }
 
 func TestTickLaunchesWithTheBuiltInLauncher(t *testing.T) {
-	h := newHarness(t)
-	h.builtinLauncher = true
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	tree := h.pool()
+	d := newDispatch(t, dispatchOptions{Launcher: builtinLauncher})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	tree := d.Trees.Pooled()
 
-	_, err := h.run("tick")
-	require.NoError(t, err)
+	d.Tick()
 
-	launched := h.receipts("launch", "ENG-1")
+	launched := d.receiptsOfKind("ENG-1", "launch")
 	require.Len(t, launched, 1)
-	assert.Equal(t, ledger.Done, launched[0].Outcome)
-	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, h.tools.Herdr.Kicked())
-	require.Len(t, h.tools.Herdr.Started(), 1)
-	started := h.tools.Herdr.Started()[0]
+	assert.Equal(t, "done", launched[0].State)
+	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, d.fakes().Herdr.Kicked())
+	require.Len(t, d.fakes().Herdr.Started(), 1)
+	started := d.fakes().Herdr.Started()[0]
 	assert.Equal(t, "sonnet", started.Model)
 	assert.Equal(t, "ENG-1 ticket ENG-1", started.Label)
-	assert.Equal(t, tree, h.tools.Herdr.Opened()[0].Path)
+	assert.Equal(t, tree, d.fakes().Herdr.Opened()[0].Path)
 }
 
 func TestLaunchTakesFlagsBeforeAndBetweenTheTicketAndBranch(t *testing.T) {
@@ -588,156 +606,77 @@ func TestLaunchTakesFlagsBeforeAndBetweenTheTicketAndBranch(t *testing.T) {
 		{"--model", "opus", "ENG-1", "thrawn01/eng-1"},
 		{"ENG-1", "--model", "opus", "thrawn01/eng-1"},
 	} {
-		l := newLaunchHarness(t)
+		d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+		d.Trees.Pooled()
 
-		out := l.launchArgs(args...)
+		out := d.launchIn(d.Repo, args...)
 
 		assert.Equal(t, "ok", out.result["status"])
 		assert.Equal(t, "thrawn01/eng-1", out.result["branch"])
-		require.Len(t, l.tools.Herdr.Started(), 1)
-		assert.Equal(t, "opus", l.tools.Herdr.Started()[0].Model)
+		require.Len(t, d.fakes().Herdr.Started(), 1)
+		assert.Equal(t, "opus", d.fakes().Herdr.Started()[0].Model)
 	}
 }
 
 func TestLaunchGivesUpAtOnceWhenThePreflightTimeoutIsZero(t *testing.T) {
-	l := newLaunchHarness(t)
-	l.tools.Herdr.Fail(herdrtest.OpRead, errors.New("server not running"))
-	t.Setenv("DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT", "0")
+	d := newDispatch(t, dispatchOptions{Launcher: builtinLauncher, Env: map[string]string{"DISPATCH_PLUGIN_ROOT": "/plugin", "DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT": "0"}})
+	d.Trees.Pooled()
+	d.fakes().Herdr.Fail(herdrtest.OpRead, errors.New("server not running"))
 
 	start := time.Now()
-	out := l.launch("ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "herdr_unavailable", out.result["status"])
 	assert.Less(t, time.Since(start), 4*time.Second)
-	assert.Empty(t, l.tools.Calls("treehouse", "lease"))
+	assert.Empty(t, d.fakes().Calls("treehouse", "lease"))
 }
 
 func TestLaunchRefusesAnEmptyPluginRoot(t *testing.T) {
-	l := newLaunchHarness(t)
-	t.Setenv("DISPATCH_PLUGIN_ROOT", "")
-	l.writeFile("config.toml", "[plugins.herdr]\nplugin_root = \"\"\n")
+	d := newDispatch(t, dispatchOptions{
+		Launcher: builtinLauncher,
+		Env:      map[string]string{"DISPATCH_PLUGIN_ROOT": "", "DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT": "1"},
+		Config:   "[plugins.herdr]\nplugin_root = \"\"\n",
+	})
+	d.Trees.Pooled()
 
-	out := l.launchWith(dispatch.Options{ConfigPath: filepath.Join(l.dir, "config.toml")}, "ENG-1", "thrawn01/eng-1")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "usage_error", out.result["status"])
 	assert.Contains(t, out.result["detail"], "no plugin root")
-	assert.Empty(t, l.tools.Herdr.Started())
+	assert.Empty(t, d.fakes().Herdr.Started())
 }
 
 func TestTickRefusesAnEmptyPluginRoot(t *testing.T) {
-	h := newHarness(t)
-	h.builtinLauncher = true
-	h.extra = "[plugins.herdr]\nplugin_root = \"\"\n"
-	h.tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	require.NoError(t, os.WriteFile(filepath.Join(h.repo, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
-	out, err := exec.Command("git", "-C", h.repo, "init", "-q", "-b", "main").CombinedOutput()
-	require.NoError(t, err, string(out))
+	d := newDispatch(t, dispatchOptions{Launcher: builtinLauncher, Config: "[plugins.herdr]\nplugin_root = \"\"\n"})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Trees.Pooled()
 
-	_, err = h.run("tick")
+	res := d.Run("tick")
+	require.ErrorContains(t, res.Err, "ENG-1 launch failed: usage_error")
+	require.ErrorContains(t, res.Err, "no plugin root")
 
-	require.ErrorContains(t, err, "ENG-1 launch failed: usage_error")
-	require.ErrorContains(t, err, "no plugin root")
-	launched := h.receipts("launch", "ENG-1")
+	launched := d.receiptsOfKind("ENG-1", "launch")
 	require.Len(t, launched, 1)
-	assert.Equal(t, ledger.Failed, launched[0].Outcome)
+	assert.Equal(t, "failed", launched[0].State)
 	assert.Contains(t, launched[0].Detail, "no plugin root")
 }
 
-// launchHarness runs `dispatch launch` in a throwaway git repo against the
-// in-process herdr and treehouse fakes in tools.
-type launchHarness struct {
-	t     *testing.T
-	dir   string
-	repo  string
-	tree  string
-	tools *tooltest.Tools
-	// dirOverride replaces the repo as the directory the launch runs in.
-	dirOverride string
-}
-
-type launchOutput struct {
-	raw    string
-	result map[string]string
-	err    error
-}
-
-func newLaunchHarness(t *testing.T) *launchHarness {
-	dir, err := filepath.EvalSymlinks(t.TempDir())
+func TestLaunchWrapperNamesThePluginRootForTheGoLauncher(t *testing.T) {
+	bin := buildDispatch(t)
+	wrapper, err := filepath.Abs("bin/dispatch-launch")
 	require.NoError(t, err)
-	l := &launchHarness{
-		t:     t,
-		dir:   dir,
-		repo:  filepath.Join(dir, "repo"),
-		tree:  filepath.Join(dir, "tree"),
-		tools: tooltest.New(t),
-	}
-	require.NoError(t, os.MkdirAll(l.repo, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(l.repo, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
-	l.git(l.repo, "init", "-q", "-b", "main")
-	l.git(l.repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "init")
-	l.git(l.repo, "worktree", "add", "-q", "--detach", l.tree)
-	l.tools.Treehouse.AddTree(l.repo, l.tree)
-	t.Setenv("DISPATCH_PLUGIN_ROOT", "/plugin")
-	t.Setenv("DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT", "1")
-	return l
-}
+	home := t.TempDir()
 
-func (l *launchHarness) launch(ticket, branch string, flags ...string) launchOutput {
-	return l.launchArgs(append([]string{ticket, branch}, flags...)...)
-}
+	// The root check runs before any git, herdr or treehouse call, so a plain
+	// directory shows whether the wrapper set the root without touching either tool.
+	cmd := exec.Command(wrapper, "ENG-1", "thrawn01/eng-1")
+	cmd.Dir = t.TempDir()
+	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "HOME="+home, "XDG_CONFIG_HOME="+home, "DISPATCH_PLUGIN_ROOT=")
+	stdout, _ := cmd.Output()
 
-func (l *launchHarness) launchArgs(args ...string) launchOutput {
-	return l.launchWith(dispatch.Options{}, args...)
-}
-
-func (l *launchHarness) launchWith(opts dispatch.Options, args ...string) launchOutput {
-	var stdout bytes.Buffer
-	dir := l.repo
-	if l.dirOverride != "" {
-		dir = l.dirOverride
-	}
-	opts.Dir = dir
-	opts.Herdr = l.tools.Herdr
-	opts.Treehouse = l.tools.Treehouse
-	opts.LaunchPace = time.Millisecond
-	opts.Stdout = &stdout
-	opts.Stderr = io.Discard
-	err := dispatch.Run(context.Background(), append([]string{"launch"}, args...), opts)
-	out := launchOutput{raw: stdout.String(), err: err}
-	require.NoError(l.t, json.Unmarshal(stdout.Bytes(), &out.result))
-	return out
-}
-
-// callIndex is the position of the first call to the tool's operation in the
-// order the fakes saw them, or -1 when there was none.
-func (l *launchHarness) callIndex(tool, name string) int {
-	return slices.IndexFunc(l.tools.Journal.Calls(), func(c journal.Call) bool { return c.Tool == tool && c.Name == name })
-}
-
-// returns lists the treehouse return calls, as "<repo>|<tree>|<holder>".
-func (l *launchHarness) returns() []string {
-	return l.tools.Calls("treehouse", "return")
-}
-
-func (l *launchHarness) git(dir string, args ...string) {
-	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
-	require.NoError(l.t, err, string(out))
-}
-
-func (l *launchHarness) revParse(dir, ref string) string {
-	out, err := exec.Command("git", "-C", dir, "rev-parse", ref).Output()
-	require.NoError(l.t, err)
-	return strings.TrimSpace(string(out))
-}
-
-func (l *launchHarness) branchIn(dir string) string {
-	out, err := exec.Command("git", "-C", dir, "branch", "--show-current").Output()
-	require.NoError(l.t, err)
-	return strings.TrimSpace(string(out))
-}
-
-func (l *launchHarness) writeFile(name, content string) {
-	require.NoError(l.t, os.WriteFile(filepath.Join(l.dir, name), []byte(content), 0o644))
+	var result map[string]string
+	require.NoError(t, json.Unmarshal(stdout, &result))
+	assert.Equal(t, "not_a_repo", result["status"])
 }
 
 func TestClaudeShimRestoresWorkerFlagsWithoutAName(t *testing.T) {
@@ -1058,13 +997,13 @@ func TestClaudeShimLoadsThePluginRootFromTheConfig(t *testing.T) {
 		})
 	}
 }
-
 func TestLaunchesIntoOneRepoTakeTurnsLeasing(t *testing.T) {
-	l := newLaunchHarness(t)
-	second := filepath.Join(l.dir, "tree2")
-	l.git(l.repo, "worktree", "add", "-q", "--detach", second)
-	l.tools.Treehouse.AddTree(l.repo, second)
-	l.tools.Treehouse.HoldLeases(100 * time.Millisecond)
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	second := filepath.Join(filepath.Dir(d.Repo), "tree2")
+	hintGit(t, d.Repo, "worktree", "add", "-q", "--detach", second)
+	d.fakes().Treehouse.AddTree(d.Repo, second)
+	d.fakes().Treehouse.HoldLeases(100 * time.Millisecond)
 
 	var wg sync.WaitGroup
 	results := make([]launchOutput, 2)
@@ -1072,40 +1011,103 @@ func TestLaunchesIntoOneRepoTakeTurnsLeasing(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results[i] = l.launch(ticket, "thrawn01/"+strings.ToLower(ticket))
+			results[i] = d.launch(ticket, "thrawn01/"+strings.ToLower(ticket))
 		}()
 	}
 	wg.Wait()
 
 	assert.Equal(t, "ok", results[0].result["status"])
 	assert.Equal(t, "ok", results[1].result["status"])
-	assert.Equal(t, 1, l.tools.Treehouse.PeakLeasing(l.repo))
+	assert.Equal(t, 1, d.fakes().Treehouse.PeakLeasing(d.Repo))
 }
 
 func TestLaunchesIntoDifferentReposLeaseTogether(t *testing.T) {
-	l := newLaunchHarness(t)
-	other := filepath.Join(l.dir, "other")
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	other := filepath.Join(filepath.Dir(d.Repo), "other")
 	require.NoError(t, os.MkdirAll(other, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(other, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
-	l.git(other, "init", "-q", "-b", "main")
-	l.git(other, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "init")
-	otherTree := filepath.Join(l.dir, "other-tree")
-	l.git(other, "worktree", "add", "-q", "--detach", otherTree)
-	l.tools.Treehouse.AddTree(other, otherTree)
-	l.tools.Treehouse.AwaitLeases(2)
+	hintGit(t, other, "init", "-q", "-b", "main")
+	hintGit(t, other, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "init")
+	otherTree := filepath.Join(filepath.Dir(d.Repo), "other-tree")
+	hintGit(t, other, "worktree", "add", "-q", "--detach", otherTree)
+	d.fakes().Treehouse.AddTree(other, otherTree)
+	d.fakes().Treehouse.AwaitLeases(2)
 
 	var wg sync.WaitGroup
-	for i, dir := range []string{l.repo, other} {
+	for i, dir := range []string{d.Repo, other} {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := dispatch.Run(context.Background(), []string{"launch", fmt.Sprintf("ENG-%d", i+1), fmt.Sprintf("thrawn01/eng-%d", i+1)}, dispatch.Options{
-				Dir: dir, Herdr: l.tools.Herdr, Treehouse: l.tools.Treehouse, LaunchPace: time.Millisecond, Stdout: io.Discard, Stderr: io.Discard,
-			})
-			assert.NoError(t, err)
+			out := d.launchIn(dir, fmt.Sprintf("ENG-%d", i+1), fmt.Sprintf("thrawn01/eng-%d", i+1))
+			assert.NoError(t, out.err)
 		}()
 	}
 	wg.Wait()
 
-	assert.Equal(t, 2, l.tools.Treehouse.PeakLeasingAnywhere())
+	assert.Equal(t, 2, d.fakes().Treehouse.PeakLeasingAnywhere())
+}
+
+type launchOutput struct {
+	raw    string
+	result map[string]string
+	err    error
+}
+
+// launch runs `dispatch launch` from the dispatch repo.
+func (d *Dispatch) launch(ticket, branch string, flags ...string) launchOutput {
+	d.h.t.Helper()
+	return d.launchIn(d.Repo, append([]string{ticket, branch}, flags...)...)
+}
+
+func (d *Dispatch) launchIn(dir string, args ...string) launchOutput {
+	d.h.t.Helper()
+	res := d.RunIn(dir, append([]string{"launch"}, args...)...)
+	out := launchOutput{raw: res.Stdout, err: res.Err}
+	require.NoError(d.h.t, json.Unmarshal([]byte(res.Stdout), &out.result))
+	return out
+}
+
+// fakes is the herdr and treehouse fakes a launch scenario seeds and reads back.
+func (d *Dispatch) fakes() *tooltest.Tools { return d.h.tools }
+
+// Pooled makes the dispatch repo a git checkout that treehouse pools, holding one free tree, and
+// returns the tree's path.
+func (t *Trees) Pooled() string { return t.d.h.pool() }
+
+// callIndex is the position of the first call to the tool's operation in the order the fakes saw
+// them, or -1 when there was none. Order across herdr and treehouse shows only in the fakes' shared
+// journal, which sits outside dispatch.
+func (d *Dispatch) callIndex(tool, name string) int {
+	for i, call := range d.fakes().Journal.Calls() {
+		if call.Tool == tool && call.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// receiptsOfKind is the ticket's receipts of one kind.
+func (d *Dispatch) receiptsOfKind(ticket, kind string) []Receipt {
+	var found []Receipt
+	for _, receipt := range d.Receipts(ticket) {
+		if receipt.Kind == kind {
+			found = append(found, receipt)
+		}
+	}
+	return found
+}
+
+func revParse(t *testing.T, dir, ref string) string {
+	t.Helper()
+	out, err := exec.Command("git", "-C", dir, "rev-parse", ref).Output()
+	require.NoError(t, err)
+	return strings.TrimSpace(string(out))
+}
+
+func branchIn(t *testing.T, dir string) string {
+	t.Helper()
+	out, err := exec.Command("git", "-C", dir, "branch", "--show-current").Output()
+	require.NoError(t, err)
+	return strings.TrimSpace(string(out))
 }
