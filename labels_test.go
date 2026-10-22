@@ -18,13 +18,6 @@ import (
 // Renames lists the workspace renames herdr accepted, as "<workspace>|<label>".
 func (w *Workers) Renames() []string { return w.d.renames() }
 
-// Unconfirmed marks the ticket's tree as one whose launch never confirmed its kickoff (unreachable
-// from the CLI: a test cannot kill a launch halfway).
-func (w *Workers) Unconfirmed(ticket string) {
-	w.d.t.Helper()
-	markLaunch(w.d.t, w.d.state, w.Tree(ticket), w.d.Clock.Now())
-}
-
 // Wake runs the Notification hook as a session working in dir.
 func (d *Dispatch) Wake(dir string) Result {
 	d.t.Helper()

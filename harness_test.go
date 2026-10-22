@@ -486,9 +486,14 @@ const (
 // CrashedEarlierRun writes history the command line can't produce, as a run that crashed between
 // an action and its receipt leaves it: a segment with the receipts and no stop line. The next loop
 // start resumes from it (unreachable from the CLI: a fault the product can't inject).
-func (d *Dispatch) CrashedEarlierRun(receipts ...ledger.Receipt) {
+func (d *Dispatch) CrashedEarlierRun(receipts ...earlierReceipt) {
 	d.t.Helper()
-	d.seedHistory(nil, receipts...)
+	written := make([]ledger.Receipt, 0, len(receipts))
+	for _, r := range receipts {
+		written = append(written, ledger.Receipt{Kind: r.Kind, Subject: r.Subject, Rule: r.Rule, Once: ledger.Once(r.Once),
+			Outcome: ledger.Outcome(r.Outcome), Started: r.Started, Ended: r.Ended})
+	}
+	d.seedHistory(nil, written...)
 }
 
 // HistoryDatedAhead writes a closed run dated after the clock, as a clock that stepped back
@@ -501,6 +506,67 @@ func (d *Dispatch) HistoryDatedAhead(by time.Duration) {
 		history.Header{Why: "start", At: at.UnixMilli()}, history.Snapshot{At: at.UnixMilli()})
 	require.NoError(d.t, err)
 	require.NoError(d.t, w.Close(true))
+}
+
+// UnconfirmedLaunch marks the ticket's tree as one whose launch started Claude at the time given
+// and has not returned (unreachable from the CLI: a test cannot kill a launch halfway).
+func (w *Workers) UnconfirmedLaunch(ticket string, at time.Time) {
+	w.d.t.Helper()
+	markLaunch(w.d.t, w.d.state, w.d.Trees.PathOf(ticket), at)
+}
+
+// CorruptStopRecords overwrites the records Stop hooks left, or only the newest one, with text
+// that is not a record (unreachable from the CLI: a disk fault the product can't inject).
+func (w *Workers) CorruptStopRecords(newestOnly bool) {
+	w.d.t.Helper()
+	records, err := filepath.Glob(filepath.Join(w.d.state, "stops", "*", "*.json"))
+	require.NoError(w.d.t, err)
+	require.NotEmpty(w.d.t, records)
+	if newestOnly {
+		require.Greater(w.d.t, len(records), 1)
+		newest, newestBody := "", ""
+		for _, record := range records {
+			body, err := os.ReadFile(record)
+			require.NoError(w.d.t, err)
+			if string(body) > newestBody {
+				newest, newestBody = record, string(body)
+			}
+		}
+		records = []string{newest}
+	}
+	for _, record := range records {
+		require.NoError(w.d.t, os.WriteFile(record, []byte("not json"), 0o644))
+	}
+}
+
+// Unconfirmed marks the ticket's tree as one whose launch never confirmed its kickoff (unreachable
+// from the CLI: a test cannot kill a launch halfway).
+func (w *Workers) Unconfirmed(ticket string) {
+	w.d.t.Helper()
+	markLaunch(w.d.t, w.d.state, w.Tree(ticket), w.d.Clock.Now())
+}
+
+// PathOf is where the tree of a ticket's worker is.
+func (t *Trees) PathOf(ticket string) string { return filepath.Join(t.d.dir, "trees", ticket) }
+
+// Tree is the path of the tree Running leases for a ticket.
+func (w *Workers) Tree(ticket string) string { return filepath.Join(w.d.dir, "trees", ticket) }
+
+// StateFiles reads every file dispatch keeps in its state directory, except sockets, to check what
+// a secret did not reach.
+func (d *Dispatch) StateFiles() []string {
+	d.t.Helper()
+	var bodies []string
+	require.NoError(d.t, filepath.Walk(d.state, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || strings.HasSuffix(path, ".sock") {
+			return err
+		}
+		body, rerr := os.ReadFile(path)
+		require.NoError(d.t, rerr)
+		bodies = append(bodies, string(body))
+		return nil
+	}))
+	return bodies
 }
 
 // HalfWrittenSegment adds a history segment that has its header and no snapshot, as a run that
@@ -522,12 +588,17 @@ func (d *Dispatch) EmptyFirstSegment() {
 	require.NoError(d.t, os.WriteFile(filepath.Join(events, "events-20260101T000000Z.jsonl"), nil, 0o600))
 }
 
-// earlierReceipt and earlierOnce build the receipts of CrashedEarlierRun without a test importing
-// the ledger.
-type (
-	earlierReceipt = ledger.Receipt
-	earlierOnce    = ledger.Once
-)
+// earlierReceipt is a receipt CrashedEarlierRun writes. Outcome is "done" or empty for an action
+// that was attempted and never finished.
+type earlierReceipt struct {
+	Kind, Subject, Rule, Outcome string
+	Once                         earlierOnce
+	Started, Ended               int64
+}
+
+// earlierOnce is the once key of an earlierReceipt: a topic, then the values that must change
+// before the action runs again.
+type earlierOnce []any
 
 // HookAndWait is Hook for a hook that reports to the loop, and returns once the loop has taken the
 // report. It starts a loop first when none runs, because the report has nowhere to go otherwise.
@@ -1446,7 +1517,7 @@ func (d *Dispatch) moving(move func() int) {
 	}, 20*time.Second, 2*time.Millisecond)
 }
 
-// Deadline waits up to 20 seconds for the work to start the deadline on what, such as "herdr.launch ENG-1"
+// Deadline waits up to 20 seconds for the work to start the deadline on what, such as "launch ENG-1"
 // or "rule spins if", and returns how far the clock is from passing it.
 func (d *Dispatch) Deadline(what string) time.Duration {
 	d.t.Helper()
@@ -2228,12 +2299,14 @@ func (d *Dispatch) rules(dir string, args ...string) (string, error) {
 	return stdout, err
 }
 
-// Root tests read what dispatch did through its commands. A test that imports one of these packages
-// reads or writes the state behind them, and a rewrite of that state breaks it with no change an
-// operator can see. harness_test.go is the one file that waits on the loop and writes history fixtures.
+// Root tests drive dispatch the way an operator does, so a refactor below the command line leaves them
+// untouched. A test case may import the adapters of the external tools and their fakes, the config
+// and the environment, which an operator also sees. Any other internal package is dispatch's own
+// state and logic. harness_test.go is the one file that waits on the loop and writes history fixtures.
 func TestRootTestsImportNoDispatchState(t *testing.T) {
 	t.Parallel()
-	forbidden := []string{"ledger", "history", "stops", "sessionlog", "loop", "world"}
+	const internal = "github.com/kapetan-io/dispatch/internal/"
+	allowed := []string{"config", "environment", "herdr", "herdrtest", "httpservicetest", "linear", "lineartest", "tooltest", "treehouse"}
 	files, err := filepath.Glob("*_test.go")
 	require.NoError(t, err)
 	require.NotEmpty(t, files)
@@ -2247,8 +2320,8 @@ func TestRootTestsImportNoDispatchState(t *testing.T) {
 		for _, spec := range parsed.Imports {
 			path, err := strconv.Unquote(spec.Path.Value)
 			require.NoError(t, err)
-			for _, name := range forbidden {
-				assert.NotEqual(t, "github.com/kapetan-io/dispatch/internal/"+name, path, file)
+			if name, ok := strings.CutPrefix(path, internal); ok {
+				assert.Contains(t, allowed, name, file)
 			}
 		}
 	}
