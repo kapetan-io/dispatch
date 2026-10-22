@@ -141,7 +141,7 @@ Using the report from the audit sub-agent, fix confirmed gaps, and ask the user 
 
 ## Review or break down
 
-After the user approves the design, ask whether it gets a review. Recommend one when the design looks larger than one PR or changes a public contract, because only the review checks the formal spec against the blueprint.
+Before you ask, load `dispatch:principle-confidence-from-many-perspectives` with the Skill tool and apply it to the design. After the user approves the design, ask whether it gets a review. Recommend one when the design looks larger than one PR or changes a public contract, because only the review checks the formal spec against the blueprint.
 
 - **No review.** Load `dispatch:breakdown` with the Skill tool and follow it on the feature ticket. It sizes the design, files the build tickets, and asks whether to start the work or hold it.
 - **Review.** File a child of the feature ticket labeled `ai`, `design-review` and the repo label, never `design`, assigned to the owner of dispatch's Linear API key, with `dispatch:ticket`. Its body links the blueprint. Move it to In Progress and run `dispatch tick`. The next tick launches the review worker, which reviews the blueprint with the user and then runs `dispatch:breakdown`.

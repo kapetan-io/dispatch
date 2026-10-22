@@ -9,7 +9,7 @@ Turn a design into build tickets and ask whether to start the work or hold it. T
 
 ## Size it
 
-Size the design before filing anything, unless the parent already has a `Pieces` section, which a rerun reuses. Tell the user the verdict and the pieces you counted.
+Size the design before filing anything, unless the parent already has a `Pieces` section, which a rerun reuses. Before you tell the user the verdict, load `dispatch:principle-confidence-from-many-perspectives` with the Skill tool and apply it to the sizing. Tell the user the verdict and the pieces you counted.
 
 > A **piece** is complete when, after it merges, a user or caller can do something they could not do before. Its acceptance criteria are observable at the surface and pass without any other unmerged piece. Group a piece by what a user does together, not by endpoint, flag or rule. Work with no surface of its own, such as a new seam, backend, package or refactor, is never a piece by itself. It ships inside the first piece a user can observe through it.
 >
