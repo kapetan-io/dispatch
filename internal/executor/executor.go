@@ -19,7 +19,6 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/config"
-	"github.com/kapetan-io/dispatch/internal/delivery"
 	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
@@ -27,6 +26,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/launcher"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
@@ -51,7 +51,7 @@ type Env struct {
 	Treehouse    treehouse.Pool
 	PullRequests pullrequest.Repository
 	Launcher     launcher.Launcher
-	Alerts       delivery.Alerts
+	Alerts       notify.Alerts
 	HTTP         httpservice.Services
 	// Environment is what the git commands that return a tree run with.
 	Environment environment.Environment
@@ -84,7 +84,7 @@ type Result struct {
 type Executor struct {
 	Env
 	// Followers is the sessions following each ticket, which a notify messages.
-	Followers *delivery.Followers
+	Followers *notify.Followers
 }
 
 // New returns an executor over env.
@@ -92,7 +92,7 @@ func New(env Env) *Executor {
 	if env.Clock == nil {
 		env.Clock = clock.Wall{}
 	}
-	return &Executor{Env: env, Followers: &delivery.Followers{}}
+	return &Executor{Env: env, Followers: &notify.Followers{}}
 }
 
 // WhyNotLaunch says why a launch must not start whatever the rule asked, or "" when it
@@ -245,12 +245,21 @@ func (e *Executor) nudge(ctx context.Context, w rules.Want, wd world.World) Resu
 		return failed("%s has no worker", w.Subject)
 	}
 	text, _ := w.Args["text"].(string)
-	err := delivery.Post{Herdr: e.Herdr, Typed: e.Typed}.Nudge(ctx, wk, text)
-	switch {
-	case errors.Is(err, delivery.ErrBlocked), errors.Is(err, herdr.ErrAgentBlocked):
+	// herdr refuses to type into a blocked pane too; checking first keeps the send record from noting text that was never typed.
+	if wk.State == world.Blocked {
 		return failed("blocked")
-	case err != nil:
-		return failed("%v", err)
+	}
+	e.Typed.Note(wk.TreePath, text)
+	if err := e.Herdr.Prompt(ctx, wk.PaneID, text); err != nil {
+		// Only a refusal proves the text was not typed. Any other failure, a timeout included, may have typed it.
+		var refusal *herdr.Refusal
+		if errors.Is(err, herdr.ErrAgentBlocked) || errors.As(err, &refusal) && refusal.Code == "agent_not_found" {
+			e.Typed.Withdraw(wk.TreePath, text)
+		}
+		if errors.Is(err, herdr.ErrAgentBlocked) {
+			return failed("blocked")
+		}
+		return failed("while prompting herdr pane %s: %v", wk.PaneID, err)
 	}
 	return Result{Outcome: ledger.Done, Nudged: w.Subject}
 }
@@ -503,17 +512,17 @@ func (e *Executor) notify(ctx context.Context, w rules.Want, wd world.World) Res
 	if t.Identifier == "" {
 		t.Identifier = w.Subject
 	}
-	post := delivery.Post{Herdr: e.Herdr, Alerts: e.Alerts, Followers: e.Followers, Stderr: e.Stderr}
-	ev := delivery.Event{Ticket: t, Reason: Reason(w), Text: text}
+	post := notify.Post{Alerts: e.Alerts, Followers: e.Followers, Stderr: e.Stderr}
+	n := notify.Notification{Ticket: t, Reason: Reason(w), Text: text}
 	if always, _ := w.Options["followersAlways"].(bool); always {
 		// Nothing retries a merge notice, so followers hear it whether or not the alert showed.
 		res := Result{Outcome: ledger.Done}
-		if err := post.NotifyOnce(ctx, ev); err != nil {
+		if err := post.NotifyOnce(ctx, n); err != nil {
 			res.Detail = "alert failed: " + err.Error()
 		}
 		return res
 	}
-	if err := post.Notify(ctx, ev); err != nil {
+	if err := post.Notify(ctx, n); err != nil {
 		return failed("%v", err)
 	}
 	return Result{Outcome: ledger.Done}

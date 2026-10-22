@@ -21,13 +21,13 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/config"
-	"github.com/kapetan-io/dispatch/internal/delivery"
 	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/launcher"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/loop"
+	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
@@ -69,7 +69,7 @@ type Options struct {
 	// calling them over HTTP with the token each token_command prints.
 	HTTP httpservice.Services
 	// Alerts shows notifications. Defaults to macOS notifications through osascript on macOS and herdr notifications elsewhere.
-	Alerts delivery.Alerts
+	Alerts notify.Alerts
 	// Launcher starts the workers. Defaults to leasing a tree from Treehouse and
 	// starting the worker in Herdr.
 	Launcher launcher.Launcher
@@ -255,7 +255,7 @@ func withDefaults(o Options) Options {
 		o.PullRequests = pullrequest.NewCLI("gh", pullrequest.WithEnv(o.Env))
 	}
 	if o.Alerts == nil {
-		o.Alerts = delivery.NewAlerts(runtime.GOOS, o.Env)
+		o.Alerts = notify.NewAlerts(runtime.GOOS, o.Env)
 	}
 	if o.Clock == nil {
 		o.Clock = clock.Wall{}

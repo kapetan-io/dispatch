@@ -1,4 +1,4 @@
-package delivery_test
+package notify_test
 
 import (
 	"context"
@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kapetan-io/dispatch/internal/delivery"
 	"github.com/kapetan-io/dispatch/internal/environment"
+	"github.com/kapetan-io/dispatch/internal/notify"
 )
 
 const (
@@ -45,7 +45,7 @@ func TestNotificationCenterPassesTheTextAsAScriptArgument(t *testing.T) {
 	argsFile := t.TempDir() + "/args"
 	t.Setenv(envArgs, argsFile)
 
-	err = delivery.NewNotificationCenter(exe).Show(context.Background(), `ENG-1 needs "you"`)
+	err = notify.NewNotificationCenter(exe).Show(context.Background(), `ENG-1 needs "you"`)
 
 	require.NoError(t, err)
 	got, err := os.ReadFile(argsFile)
@@ -64,7 +64,7 @@ func TestNotificationCenterReportsWhatOsascriptSaid(t *testing.T) {
 	t.Setenv(envExit, "1")
 	t.Setenv(envStderr, "not allowed\n")
 
-	err = delivery.NewNotificationCenter(exe).Show(context.Background(), "x")
+	err = notify.NewNotificationCenter(exe).Show(context.Background(), "x")
 
 	require.ErrorContains(t, err, "exit status 1: not allowed")
 }
@@ -76,7 +76,7 @@ func TestNotificationCenterShowsTextThatLooksLikeAnOption(t *testing.T) {
 	argsFile := t.TempDir() + "/args"
 	t.Setenv(envArgs, argsFile)
 
-	err = delivery.NewNotificationCenter(exe).Show(context.Background(), "-e")
+	err = notify.NewNotificationCenter(exe).Show(context.Background(), "-e")
 
 	require.NoError(t, err)
 	got, err := os.ReadFile(argsFile)
@@ -101,7 +101,7 @@ func TestAlertsOnLinuxShowAHerdrNotification(t *testing.T) {
 	argsFile := t.TempDir() + "/args"
 	t.Setenv(envArgs, argsFile)
 
-	err := delivery.NewAlerts("linux", environment.Process()).Show(context.Background(), "-ENG-1 needs you")
+	err := notify.NewAlerts("linux", environment.Process()).Show(context.Background(), "-ENG-1 needs you")
 
 	require.NoError(t, err)
 	got, err := os.ReadFile(argsFile)
@@ -117,7 +117,7 @@ func TestAlertsOnLinuxReportWhatHerdrSaid(t *testing.T) {
 	t.Setenv(envExit, "1")
 	t.Setenv(envStderr, "no herdr server\n")
 
-	err := delivery.NewAlerts("linux", environment.Process()).Show(context.Background(), "x")
+	err := notify.NewAlerts("linux", environment.Process()).Show(context.Background(), "x")
 
 	require.ErrorContains(t, err, "exit status 1: no herdr server")
 }
@@ -128,7 +128,7 @@ func TestAlertsOnMacOSShowAnOsascriptNotification(t *testing.T) {
 	argsFile := t.TempDir() + "/args"
 	t.Setenv(envArgs, argsFile)
 
-	err := delivery.NewAlerts("darwin", environment.Process()).Show(context.Background(), "ENG-1")
+	err := notify.NewAlerts("darwin", environment.Process()).Show(context.Background(), "ENG-1")
 
 	require.NoError(t, err)
 	got, err := os.ReadFile(argsFile)

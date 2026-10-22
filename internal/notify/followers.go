@@ -1,4 +1,4 @@
-package delivery
+package notify
 
 import (
 	"context"
@@ -26,7 +26,7 @@ type Followers struct {
 }
 
 // Follow records that a Claude Code session follows a ticket, so Notify sends
-// that ticket's events to the session's inbox socket. Only an absolute path is
+// that ticket's notifications to the session's inbox socket. Only an absolute path is
 // taken, because the sender may run from any directory.
 func (f *Followers) Follow(ticket, socket string) error {
 	if !filepath.IsAbs(socket) {
@@ -73,17 +73,17 @@ func (f *Followers) drop(gone []string) {
 	}
 }
 
-// tellWatchers sends ev to every session following its ticket. A socket that
+// tellFollowers sends n to every session following its ticket. A socket that
 // refuses the connection or whose file is gone belongs to a session that has
 // exited, so every ticket it followed is dropped. Any other failure keeps the
 // follower, because the session may be only briefly busy.
-func (p Post) tellWatchers(ctx context.Context, ev Event) {
+func (p Post) tellFollowers(ctx context.Context, n Notification) {
 	if p.Followers == nil {
 		return
 	}
 	var gone []string
-	for _, socket := range p.Followers.Of(ev.Ticket.Identifier) {
-		err := send(ctx, socket, message(ev))
+	for _, socket := range p.Followers.Of(n.Ticket.Identifier) {
+		err := send(ctx, socket, message(n))
 		switch {
 		case err == nil:
 		case errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, fs.ErrNotExist):
@@ -96,22 +96,22 @@ func (p Post) tellWatchers(ctx context.Context, ev Event) {
 	p.Followers.drop(gone)
 }
 
-// warn reports a watcher failure without failing the action.
+// warn reports a follower failure without failing the action.
 func (p Post) warn(format string, args ...any) {
 	if p.Stderr != nil {
 		_, _ = fmt.Fprintf(p.Stderr, "dispatch: "+format+"\n", args...)
 	}
 }
 
-// message is the text a watching session's model reads. The ticket URL is added
-// only when the text lacks it, so a PR event carries both links.
-func message(ev Event) string {
+// message is the text a following session's model reads. The ticket URL is added
+// only when the text lacks it, so a PR notification carries both links.
+func message(n Notification) string {
 	s := "dispatch event"
-	if ev.Reason != "" {
-		s += " (" + ev.Reason + ")"
+	if n.Reason != "" {
+		s += " (" + n.Reason + ")"
 	}
-	s += ": " + ev.Text
-	if u := ev.Ticket.URL; u != "" && !strings.Contains(ev.Text, u) {
+	s += ": " + n.Text
+	if u := n.Ticket.URL; u != "" && !strings.Contains(n.Text, u) {
 		s += " Ticket: " + u
 	}
 	return s
