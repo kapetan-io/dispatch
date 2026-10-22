@@ -8,17 +8,17 @@ import { nudgeable, heard, mergeOnce, mergeRetryPaused } from "./shared";
 // arrives. A worker nudged since the last resync shows as working, so the merge waits for it.
 whenever({
   name: "auto-merge",
-  each: "github.pr",
+  each: "pr",
   if:   (pr, ctx) => !pr.closed && !pr.draft && pr.ready && pr.approved && pr.autoMerge
            && pr.ticket.status === "in_review" && nudgeable(pr.ticket)
-           && ctx.herdr.worker(pr.ticket).state === "idle" && heard(pr.ticket, "activity", pr.lastActivity, ctx)
+           && ctx.worker.of(pr.ticket).state === "idle" && heard(pr.ticket, "activity", pr.lastActivity, ctx)
            && !mergeRetryPaused(pr, ctx),
   // An ordered list. The notice runs once the merge is done, though the merge closed
   // the PR. It reaches followers even if the macOS alert fails, and is done once they
   // are told.
   then: (pr, ctx) => [
-    ctx.github.queueMerge(pr, { once: mergeOnce(pr, ctx) }),   // only if the head hasn't moved, once per retry
+    ctx.pr.queueMerge(pr, { once: mergeOnce(pr, ctx) }),   // only if the head hasn't moved, once per retry
     ctx.notify.queueSend(pr.ticket, `${pr.ticket.id} was approved and merged: ${pr.url}`,
-      { once: ["merged", pr.head], followersAlways: true }),
+      { once: ["merged", pr.head], followersAlways: true, reason: "PR approved" }),
   ],
 });

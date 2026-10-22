@@ -299,9 +299,9 @@ func (s *scenario) applyComment(ticket string, fields map[string]any, seen bool)
 	body, _ := str(fields, "body")
 	author, _ := str(fields, "author")
 	byDispatch, _ := boolean(fields, "byDispatch")
-	s.events = append(s.events, Event{Type: "linear.comment.posted", Subject: ticket, Payload: &Comment{
+	s.events = append(s.events, Event{Type: "comment.posted", Subject: ticket, Payload: &Comment{
 		ID: fmt.Sprintf("comment-%d", len(s.events)+1), Body: body, Author: author, At: at, ByDispatch: byDispatch,
-		Ticket: Ref{Kind: "linear.ticket", ID: ticket},
+		Ticket: Ref{Kind: "ticket", ID: ticket},
 	}})
 }
 
@@ -488,7 +488,7 @@ func (s *scenario) stamped(state *State) {
 		if st.waiting != 0 {
 			state.waiting[id] = st.waiting
 		}
-		if r, ok := state.lookup("linear.ticket", id); ok {
+		if r, ok := state.lookup("ticket", id); ok {
 			t := r.v.Interface().(*Ticket)
 			if st.status != 0 {
 				t.StatusSince = Known(st.status, st.status)
@@ -523,7 +523,7 @@ func (s *scenario) stamped(state *State) {
 				wk.BlockedSince = Known(&at, at)
 			}
 		}
-		if r, ok := state.lookup("github.pr", id); ok {
+		if r, ok := state.lookup("pr", id); ok {
 			pr := r.v.Interface().(*PR)
 			if pr.LastActivity.Value != nil && st.activity != 0 {
 				seen := *pr.LastActivity.Value
@@ -538,7 +538,7 @@ func (s *scenario) stamped(state *State) {
 		}
 	}
 	for _, tm := range m.trees {
-		if r, ok := state.lookup("treehouse.tree", tm.path); ok {
+		if r, ok := state.lookup("tree", tm.path); ok {
 			tree := r.v.Interface().(*Tree)
 			tree.LeasedSince = Known(tm.since, tm.since)
 			if tree.CleanSince.Unknown == "" {

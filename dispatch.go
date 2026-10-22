@@ -135,7 +135,9 @@ const usage = `usage: dispatch run
                TIME is RFC 3339, "2006-01-02 15:04" or "15:04" today. With --rules, run the rules in
                DIR over the same history, print the first action that differs from the live run and
                exit 0. Exits 2 when no cycle could be replayed, because the history was written before it
-               recorded the world
+               recorded the world. A segment written before the rule vocabulary was renamed fails to
+               load its recorded rules, so replay stops there and exits 1; --from a time after the
+               rename starts past it, and --rules compares truly only over segments written after it
   state reset  start a new history segment with an empty ledger, keeping what the world remembers.
                With --quiet, record the messages the first cycle wants as sent, so none is repeated.
                Exits 1 while dispatch run holds the lock

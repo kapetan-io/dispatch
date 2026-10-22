@@ -27,15 +27,15 @@ export const nudgeable = (t: Ticket) => !t.hasChildren && !isDesign(t);
 // A Todo child of an In Progress parent that promote-child would start once its
 // blockers are Done. A child that still holds a tree was paused on purpose.
 export const startableChild = (c: Ticket, ctx: Ctx) => {
-  const parent = ctx.linear.parent(c);
+  const parent = ctx.ticket.parent(c);
   return parent?.status === "in_progress" && !isDesign(parent)
-      && c.status === "todo" && c.optedIn && !isDesign(c) && !ctx.treehouse.leased(c);
+      && c.status === "todo" && c.optedIn && !isDesign(c) && !ctx.tree.leased(c);
 };
 
-export const openBlockers = (t: Ticket, ctx: Ctx) => ctx.linear.blockers(t).filter(b => !b.done);
+export const openBlockers = (t: Ticket, ctx: Ctx) => ctx.ticket.blockers(t).filter(b => !b.done);
 
 // One abandoned blocker is enough, so this looks only at the blockers that were read.
-export const abandonedBlocker = (t: Ticket, ctx: Ctx) => ctx.linear.blockersRead(t).find(b => b.abandoned);
+export const abandonedBlocker = (t: Ticket, ctx: Ctx) => ctx.ticket.blockersRead(t).find(b => b.abandoned);
 
 // A message counts as told once it landed, or once dispatch tried to send it. After a
 // crash, an attempt with no outcome may have landed, so it is never sent again.
@@ -58,7 +58,7 @@ export const recentlySent = (t: Ticket, topic: string, window: number, ctx: Ctx)
 // counts, because that cycle shares the item's millisecond (so >=, not >).
 export const heard = (t: Ticket, topic: "activity", item: Seen | undefined, ctx: Ctx) => {
   if (item === undefined) return true;
-  const w = ctx.herdr.worker(t);
+  const w = ctx.worker.of(t);
   if (w.state !== "none" && w.seenAt >= item.seenAt) return true;
   return ctx.ledger.receipts(t, { kind: ["launch", "nudge"] }).some(r => told(r) && (
     r.kind === "launch" ? r.started >= item.seenAt
@@ -74,7 +74,7 @@ export const heard = (t: Ticket, topic: "activity", item: Seen | undefined, ctx:
 // unconfirmed the Claude is idle only because it was never told anything, and a nudge
 // would race the kickoff, so close-unconfirmed-worker handles it.
 export const stoppedSinceLastNudge = (t: Ticket, ctx: Ctx) => {
-  const w = ctx.herdr.worker(t);
+  const w = ctx.worker.of(t);
   if (w.unconfirmedSince !== undefined) return false;
   const last = ctx.ledger.receipts(t, { kind: "nudge" }).find(r => sent(r) && r.started >= w.seenAt);  // newest first
   return last === undefined || (w.lastStop !== undefined && w.lastStop.at > last.started);
@@ -121,9 +121,9 @@ export const relaunches = (t: Ticket, head: string, ctx: Ctx) =>
 // notify-needs-human leaves a design ticket alone (a review ticket it covers), so the notice for one dispatch moved itself
 // follows the move. The list is ordered, so a move that fails announces nothing.
 export const escalate = (t: Ticket, ctx: Ctx, why: string, once: Once) => {
-  const move = ctx.linear.queueEscalate(t, why, { once });
+  const move = ctx.ticket.queueEscalate(t, why, { once });
   return !known(() => t.labels) || skill(t) !== "design" ? move
-    : [move, ctx.notify.queueSend(t, `${t.id} is in Needs Human: ${t.title}`, { once: ["needs-human-escalated", ...once] })];
+    : [move, ctx.notify.queueSend(t, `${t.id} is in Needs Human: ${t.title}`, { once: ["needs-human-escalated", ...once], reason: "entered Needs Human" })];
 };
 
 // Retries of a base-moved refusal, and the pause before each.

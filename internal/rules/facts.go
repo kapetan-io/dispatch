@@ -98,7 +98,7 @@ type Ticket struct {
 // Worker is a ticket's place on a tree it holds, and the Claude session there, if any.
 type Worker struct {
 	State        Fact[string]  `js:"state" ts:"\"none\" | \"working\" | \"idle\" | \"blocked\""`
-	Ticket       Fact[Ref]     `js:"ticket" ref:"linear.ticket"`
+	Ticket       Fact[Ref]     `js:"ticket" ref:"ticket"`
 	Tree         Fact[*string] `js:"tree"`
 	Workspace    Fact[*string] `js:"workspace"`
 	SeenAt       Fact[int64]   `js:"seenAt"`
@@ -116,7 +116,7 @@ type Worker struct {
 
 // PR is the open pull request of an In Review ticket.
 type PR struct {
-	Ticket          Fact[Ref]    `js:"ticket" ref:"linear.ticket"`
+	Ticket          Fact[Ref]    `js:"ticket" ref:"ticket"`
 	Number          Fact[int64]  `js:"number"`
 	URL             Fact[string] `js:"url"`
 	Head            Fact[string] `js:"head"`
@@ -137,7 +137,7 @@ type PR struct {
 type Tree struct {
 	Path           Fact[string] `js:"path"`
 	Leased         Fact[bool]   `js:"leased"`
-	Holder         Fact[Ref]    `js:"holder" ref:"linear.ticket" ts:"Ticket | undefined"`
+	Holder         Fact[Ref]    `js:"holder" ref:"ticket" ts:"Ticket | undefined"`
 	LeasedSince    Fact[int64]  `js:"leasedSince"`
 	Pushed         Fact[bool]   `js:"pushed"`
 	TrackedChanges Fact[bool]   `js:"trackedChanges"`
@@ -152,7 +152,7 @@ type Tree struct {
 
 // Escalation is a ticket's move to Needs Human and the comment that explains it.
 type Escalation struct {
-	Ticket    Fact[Ref]    `js:"ticket" ref:"linear.ticket"`
+	Ticket    Fact[Ref]    `js:"ticket" ref:"ticket"`
 	Reason    Fact[string] `js:"reason"`
 	Moved     Fact[string] `js:"moved" ts:"\"done\" | \"failed\" | \"refused\" | \"attempted\""`
 	Commented Fact[string] `js:"commented" ts:"\"done\" | \"failed\" | \"refused\" | \"attempted\" | \"pending\""`
@@ -165,24 +165,24 @@ type Dispatch struct {
 	StartedAt Fact[int64]  `js:"startedAt"`
 }
 
-// Comment is a ticket comment, the payload of linear.comment.posted.
+// Comment is a ticket comment, the payload of comment.posted.
 type Comment struct {
 	ID         string `js:"id"`
 	Body       string `js:"body"`
 	Author     string `js:"author"`
 	At         string `js:"at"`
 	ByDispatch bool   `js:"byDispatch"`
-	Ticket     Ref    `js:"ticket" ref:"linear.ticket"`
+	Ticket     Ref    `js:"ticket" ref:"ticket"`
 }
 
-// CheckRun is a finished check on a pull request, the payload of github.check.completed.
+// CheckRun is a finished check on a pull request, the payload of check.completed.
 type CheckRun struct {
 	ID         string `js:"id"`
 	Name       string `js:"name"`
 	Conclusion string `js:"conclusion"`
 	URL        string `js:"url"`
 	Head       string `js:"head"`
-	PR         Ref    `js:"pr" ref:"github.pr"`
+	PR         Ref    `js:"pr" ref:"pr"`
 }
 
 // Kind describes one kind of record a whenever rule can run over.
@@ -196,11 +196,11 @@ type Kind struct {
 
 // Kinds lists the records rules run over, in the order a check prints them.
 var Kinds = []Kind{
-	{"linear.ticket", "Ticket", reflect.TypeFor[Ticket]()},
-	{"github.pr", "PR", reflect.TypeFor[PR]()},
-	{"herdr.worker", "Worker", reflect.TypeFor[Worker]()},
-	{"treehouse.tree", "Tree", reflect.TypeFor[Tree]()},
-	{"ledger.escalation", "Escalation", reflect.TypeFor[Escalation]()},
+	{"ticket", "Ticket", reflect.TypeFor[Ticket]()},
+	{"pr", "PR", reflect.TypeFor[PR]()},
+	{"worker", "Worker", reflect.TypeFor[Worker]()},
+	{"tree", "Tree", reflect.TypeFor[Tree]()},
+	{"escalation", "Escalation", reflect.TypeFor[Escalation]()},
 	{"dispatch", "Dispatch", reflect.TypeFor[Dispatch]()},
 }
 
@@ -215,8 +215,8 @@ type EventKind struct {
 
 // Events lists the event types rules can match.
 var Events = []EventKind{
-	{"linear.comment.posted", "Comment", reflect.TypeFor[Comment]()},
-	{"github.check.completed", "CheckRun", reflect.TypeFor[CheckRun]()},
+	{"comment.posted", "Comment", reflect.TypeFor[Comment]()},
+	{"check.completed", "CheckRun", reflect.TypeFor[CheckRun]()},
 }
 
 // kindOf returns the kind named name.

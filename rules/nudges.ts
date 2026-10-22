@@ -11,20 +11,20 @@ import { RESUME_NUDGE, ACTIVITY_NUDGE, PR_NUDGE } from "./texts";
 // Once per move back from Needs Human. It also tells the worker to read the comments.
 whenever({
   name: "nudge-resume",
-  each: "linear.ticket",
-  if:   (t, ctx) => nudgeable(t) && ctx.herdr.worker(t).state === "idle" && resumeOwed(t, ctx)
+  each: "ticket",
+  if:   (t, ctx) => nudgeable(t) && ctx.worker.of(t).state === "idle" && resumeOwed(t, ctx)
            && stoppedSinceLastNudge(t, ctx),
-  then: (t, ctx) => ctx.herdr.queueNudge(t, RESUME_NUDGE(t), { once: ["resume", t.statusSince] }),
+  then: (t, ctx) => ctx.worker.queueNudge(t, RESUME_NUDGE(t), { once: ["resume", t.statusSince] }),
 });
 
 // Once per activity time, a GitHub time compared with GitHub times.
 whenever({
   name: "nudge-pr-activity",
-  each: "github.pr",
+  each: "pr",
   if:   (pr, ctx) => !pr.closed && pr.ticket.status === "in_review" && nudgeable(pr.ticket) && !pr.needsWork
-           && ctx.herdr.worker(pr.ticket).state === "idle"
+           && ctx.worker.of(pr.ticket).state === "idle"
            && !heard(pr.ticket, "activity", pr.lastActivity, ctx) && stoppedSinceLastNudge(pr.ticket, ctx),
-  then: (pr, ctx) => ctx.herdr.queueNudge(pr.ticket, ACTIVITY_NUDGE(pr), { once: ["activity", pr.lastActivity!.at] }),
+  then: (pr, ctx) => ctx.worker.queueNudge(pr.ticket, ACTIVITY_NUDGE(pr), { once: ["activity", pr.lastActivity!.at] }),
 });
 
 // Every 5 minutes while the worker sits idle on a PR that needs work, then escalates.
@@ -34,15 +34,15 @@ whenever({
 // in In Review, so moving the ticket back gives fresh nudges.
 whenever({
   name: "nudge-pr-needs-work",
-  each: "github.pr",
+  each: "pr",
   if:   (pr, ctx) => !pr.closed && pr.needsWork && pr.ticket.status === "in_review" && nudgeable(pr.ticket)
-           && ctx.herdr.worker(pr.ticket).state === "idle"
+           && ctx.worker.of(pr.ticket).state === "idle"
            && stoppedSinceLastNudge(pr.ticket, ctx),
   then: (pr, ctx) => {
-    const w = ctx.herdr.worker(pr.ticket);
+    const w = ctx.worker.of(pr.ticket);
     const sent = prNudges(pr.ticket, pr.head, ctx);
     if (sent < nudgeLimit(ctx)) {
-      return ctx.herdr.queueNudge(pr.ticket, PR_NUDGE(pr),
+      return ctx.worker.queueNudge(pr.ticket, PR_NUDGE(pr),
         { once: ["pr", pr.head, w.idleSince!, ctx.every(minutes(5), w.idleSince!)] });
     } else {
       return escalate(pr.ticket, ctx, `its worker stayed idle through ${sent} nudges about ${pr.url} without pushing. Look at its herdr workspace.`,

@@ -14,11 +14,11 @@ import (
 
 // busyRule comments each time an idle worker's busy flag, which its last Stop sets, changes.
 const busyRule = `
-whenever({ name: "busy", each: "linear.ticket", if: (t) => t.status === "in_progress",
+whenever({ name: "busy", each: "ticket", if: (t) => t.status === "in_progress",
   then: (t, ctx) => {
-    const w = ctx.herdr.worker(t);
+    const w = ctx.worker.of(t);
     const body = known(() => w.busy) ? "busy " + w.busy : "busy unknown";
-    return ctx.linear.queueComment(t, body, { once: ["busy", t.id, body] });
+    return ctx.ticket.queueComment(t, body, { once: ["busy", t.id, body] });
   } });`
 
 func TestRulesReadEveryTurnTheSessionEndedOldestFirst(t *testing.T) {
@@ -160,8 +160,8 @@ func TestRulesReadTurnsOfOnlyTheCurrentSession(t *testing.T) {
 func TestRulesReadTurnsAsUnknownForATicketThatIsNeitherInProgressNorInReview(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`
-whenever({ name: "turns", each: "linear.ticket", if: (t) => t.status === "needs_human",
-  then: (t, ctx) => ctx.linear.queueComment(t, known(() => ctx.herdr.worker(t).turns) ? "known" : "unknown", { once: ["turns", t.id] }) });`)})
+whenever({ name: "turns", each: "ticket", if: (t) => t.status === "needs_human",
+  then: (t, ctx) => ctx.ticket.queueComment(t, known(() => ctx.worker.of(t).turns) ? "known" : "unknown", { once: ["turns", t.id] }) });`)})
 	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
 	d.Workers.Stop("ENG-1", stopTasks{})
@@ -250,10 +250,10 @@ func TestRulesReadTurnsAfterTheLoopRestarts(t *testing.T) {
 func TestRulesReadWhenEachTurnEnded(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`
-whenever({ name: "turns", each: "linear.ticket", if: (t) => t.status === "in_progress",
+whenever({ name: "turns", each: "ticket", if: (t) => t.status === "in_progress",
   then: (t, ctx) => {
-    const body = "at " + ctx.herdr.worker(t).turns.map((turn) => turn.at).join(",");
-    return ctx.linear.queueComment(t, body, { once: ["turns", t.id, body] });
+    const body = "at " + ctx.worker.of(t).turns.map((turn) => turn.at).join(",");
+    return ctx.ticket.queueComment(t, body, { once: ["turns", t.id, body] });
   } });`)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -531,19 +531,19 @@ func TestWorkerFixtureTakesTurnsAndASessionThatCannotBeRead(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	dir := rulesDir(t, map[string]string{
 		"dispatch.ts": `import { whenever, known } from "dispatch";
-whenever({ name: "second-turn-ran", each: "linear.ticket", if: (t, ctx) => {
-    const w = ctx.herdr.worker(t);
+whenever({ name: "second-turn-ran", each: "ticket", if: (t, ctx) => {
+    const w = ctx.worker.of(t);
     return t.status === "in_progress" && known(() => w.turns) && w.turns.length === 2 && w.turns[1].running && w.turns[1].at > w.turns[0].at;
-  }, then: (t, ctx) => ctx.herdr.queueNudge(t, "hi", { once: ["second", t.id] }) });
-whenever({ name: "turns-unread", each: "linear.ticket", if: (t, ctx) => t.status === "in_progress" && !known(() => ctx.herdr.worker(t).turns),
-  then: (t, ctx) => ctx.herdr.queueNudge(t, "hi", { once: ["unread", t.id] }) });`,
+  }, then: (t, ctx) => ctx.worker.queueNudge(t, "hi", { once: ["second", t.id] }) });
+whenever({ name: "turns-unread", each: "ticket", if: (t, ctx) => t.status === "in_progress" && !known(() => ctx.worker.of(t).turns),
+  then: (t, ctx) => ctx.worker.queueNudge(t, "hi", { once: ["unread", t.id] }) });`,
 		"turns.test.ts": `import { scenario, ticket, worker, rulesFrom } from "dispatch/testing";
 const rules = rulesFrom("./dispatch");
 const mine = { status: "in_progress", optedIn: true, repo: "dispatch" };
 
 scenario(rules, "a rule reads the turns the fixture gives", s => {
   s.given(ticket("ENG-1", mine), worker("ENG-1", "idle", { turns: [{ at: 1000, running: false }, { at: 2000, running: true }] }));
-  s.expect([["second-turn-ran", "herdr.nudge", "ENG-1"]]);
+  s.expect([["second-turn-ran", "nudge", "ENG-1"]]);
 });
 
 scenario(rules, "a worker given no turns has ended none", s => {
@@ -553,12 +553,12 @@ scenario(rules, "a worker given no turns has ended none", s => {
 
 scenario(rules, "sessionUnread makes the turns unknown", s => {
   s.given(ticket("ENG-1", mine), worker("ENG-1", "idle", { sessionUnread: "no session" }));
-  s.expect([["turns-unread", "herdr.nudge", "ENG-1"]]);
+  s.expect([["turns-unread", "nudge", "ENG-1"]]);
 });
 
 scenario(rules, "a worker with no session has no turns to read", s => {
   s.given(ticket("ENG-1", mine), worker("ENG-1", "none"));
-  s.expect([["turns-unread", "herdr.nudge", "ENG-1"]]);
+  s.expect([["turns-unread", "nudge", "ENG-1"]]);
 });
 `,
 	})

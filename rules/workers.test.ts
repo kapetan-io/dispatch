@@ -18,8 +18,8 @@ scenario(rules, "an unread pool holds the launch", s => {
 scenario(rules, "a crashed worker is relaunched", s => {
   s.given(ticket("ENG-1", { status: "in_progress", optedIn: true, repo: "dispatch" }), worker("ENG-1", "working"));
   s.see(worker("ENG-1", "none"));
-  s.expect([["launch-worker", "herdr.launch", "ENG-1"]]);
-  s.land("herdr.launch", "ENG-1");
+  s.expect([["launch-worker", "launch", "ENG-1"]]);
+  s.land("launch", "ENG-1");
   s.expect([]);                                  // one launch per stretch with no worker
 });
 
@@ -30,26 +30,26 @@ scenario(rules, "a free slot goes to the oldest waiting ticket", s => {
           ticket("ENG-3", { status: "in_progress", optedIn: true, repo: "dispatch", createdAt: "08:00" }));
   s.expect([]);
   s.see(worker("ENG-1", "none"), ticket("ENG-1", { status: "done" }));
-  s.expect([["launch-worker", "herdr.launch", "ENG-3"]]);
+  s.expect([["launch-worker", "launch", "ENG-3"]]);
 });
 
 scenario(rules, "a full pool is retried only after a tree comes back", s => {
   s.given(ticket("ENG-1", { status: "in_progress", optedIn: true, repo: "dispatch" }), pool("dispatch", { free: 0 }));
-  s.expect([["launch-worker", "herdr.launch", "ENG-1"]]);
-  s.land("herdr.launch", "ENG-1", { outcome: "refused", detail: "pool_exhausted" });
+  s.expect([["launch-worker", "launch", "ENG-1"]]);
+  s.land("launch", "ENG-1", { outcome: "refused", detail: "pool_exhausted" });
   s.resync();
   s.expect([]);                                  // same key, same full pool
   s.see(pool("dispatch", { free: 1, returns: 1 })); // a tree came back
-  s.expect([["launch-worker", "herdr.launch", "ENG-1"]]);
+  s.expect([["launch-worker", "launch", "ENG-1"]]);
 });
 
 scenario(rules, "an In Review relaunch into a full pool is retried only after a tree comes back", s => {
   s.given(ticket("ENG-1", { status: "in_review", optedIn: true, repo: "dispatch" }),
           pr("ENG-1", { head: "h1", problems: ["a failed check"] }), pool("dispatch", { free: 0 }));
-  s.expect([["relaunch-for-pr", "herdr.launch", "ENG-1"]]);
-  s.land("herdr.launch", "ENG-1", { outcome: "refused", detail: "pool_exhausted" });
+  s.expect([["relaunch-for-pr", "launch", "ENG-1"]]);
+  s.land("launch", "ENG-1", { outcome: "refused", detail: "pool_exhausted" });
   s.resync();
   s.expect([]);
   s.see(pool("dispatch", { free: 1, returns: 1 }));
-  s.expect([["relaunch-for-pr", "herdr.launch", "ENG-1"]]);
+  s.expect([["relaunch-for-pr", "launch", "ENG-1"]]);
 });

@@ -108,8 +108,8 @@ type Repos map[string]Repo
 type Linear struct {
 	// APIKeyCommand is a shell command that prints the Linear API key. It wins
 	// over APIKeyKeychain, so a machine that forbids the keychain never touches it.
-	APIKeyCommand  string   `toml:"api_key_command"`
-	APIKeyKeychain string   `toml:"api_key_keychain"`
+	APIKeyCommand  string   `toml:"api_key_command" ctx:"-"`
+	APIKeyKeychain string   `toml:"api_key_keychain" ctx:"-"`
 	Teams          []string `toml:"teams"`
 	AILabel        string   `toml:"ai_label"`
 	RepoLabelGroup string   `toml:"repo_label_group"`

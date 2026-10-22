@@ -25,8 +25,7 @@ type Event struct {
 // Want is an action a rule asked for.
 type Want struct {
 	Rule string
-	Kind string
-	// Receipt is the kind its receipts carry.
+	// Receipt names the action, as its receipts and rule scenarios do.
 	Receipt string
 	Subject string
 	Once    ledger.Once
@@ -236,7 +235,7 @@ func ordinal(n int) string {
 func (s *State) running() int {
 	n := 0
 	counted := map[string]bool{}
-	for _, t := range s.kinds["linear.ticket"] {
+	for _, t := range s.kinds["ticket"] {
 		if t.hidden || t.v.Interface().(*Ticket).Status.Value != "in_progress" {
 			continue
 		}
@@ -469,12 +468,12 @@ func (r *Rules) collect(state *State, def *ruleDef, c *call, ordered []int) []Wa
 	var wants []Want
 	for _, q := range c.queue {
 		w := Want{
-			Rule: def.name, Kind: q.spec.Kind, Receipt: q.spec.Receipt, Subject: q.subjectID(), Once: q.once, Args: q.args, Options: q.opts,
+			Rule: def.name, Receipt: q.spec.Receipt, Subject: q.subjectID(), Once: q.once, Args: q.args, Options: q.opts,
 			Record: q.recordName(), Shadow: def.shadow, After: after[q.id], Capped: q.takesSlot(),
 		}
 		if q.subject != nil {
 			w.Target = state.target(q.subject)
-			if t, ok := state.lookup("linear.ticket", q.subject.subject); ok {
+			if t, ok := state.lookup("ticket", q.subject.subject); ok {
 				w.Created, w.seq = t.created, t.seq
 			}
 		}

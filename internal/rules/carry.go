@@ -155,7 +155,7 @@ func (s *State) deriveTimes(r *record, mem, next *world.Memory, started int64) {
 // carryPreviousStatus remembers the status a ticket had before its current one,
 // and gives the ticket the answer as previousStatus.
 func (s *State) carryPreviousStatus(mem, next *world.Memory) {
-	for _, r := range s.kinds["linear.ticket"] {
+	for _, r := range s.kinds["ticket"] {
 		t := r.v.Interface().(*Ticket)
 		if t.Status.Unknown != "" {
 			if prev, ok := mem.PreviousStatus[r.id]; ok {
@@ -164,7 +164,7 @@ func (s *State) carryPreviousStatus(mem, next *world.Memory) {
 			continue
 		}
 		prev, had := mem.PreviousStatus[r.id]
-		old, ok := mem.Facts["linear.ticket/"+r.id+"/status"]
+		old, ok := mem.Facts["ticket/"+r.id+"/status"]
 		if ok {
 			var was string
 			_ = json.Unmarshal(old.Value, &was)
@@ -198,7 +198,7 @@ func (s *State) carryWaiting(mem, next *world.Memory) {
 		if _, ok := next.Waiting[id]; ok {
 			continue
 		}
-		if t, ok := s.lookup("linear.ticket", id); ok && t.v.Interface().(*Ticket).Status.Unknown != "" {
+		if t, ok := s.lookup("ticket", id); ok && t.v.Interface().(*Ticket).Status.Unknown != "" {
 			next.Waiting[id] = since
 		}
 	}
@@ -216,7 +216,7 @@ func (s *State) carryPools(mem, next *world.Memory) {
 			continue
 		}
 		leases := map[string]string{}
-		for _, tr := range s.kinds["treehouse.tree"] {
+		for _, tr := range s.kinds["tree"] {
 			tree := tr.v.Interface().(*Tree)
 			if tree.Holder.Unknown != "" {
 				continue
@@ -273,7 +273,7 @@ func (s *State) keepWhileUnread(mem, next *world.Memory) {
 	if poolUnread {
 		for key, old := range mem.Facts {
 			var holder Ref
-			if strings.HasPrefix(key, "treehouse.tree/") && strings.HasSuffix(key, "/holder") && json.Unmarshal(old.Value, &holder) == nil {
+			if strings.HasPrefix(key, "tree/") && strings.HasSuffix(key, "/holder") && json.Unmarshal(old.Value, &holder) == nil {
 				kept[holder.ID] = true
 			}
 		}
@@ -284,11 +284,11 @@ func (s *State) keepWhileUnread(mem, next *world.Memory) {
 		}
 	}
 	keep := func(key string) bool {
-		if s.linearUnread != "" || (poolUnread && strings.HasPrefix(key, "treehouse.tree/")) {
+		if s.linearUnread != "" || (poolUnread && strings.HasPrefix(key, "tree/")) {
 			return true
 		}
 		for id := range kept {
-			if strings.HasPrefix(key, "linear.ticket/"+id+"/") || strings.HasPrefix(key, "herdr.worker/"+id+"/") || strings.HasPrefix(key, "herdr.worker/"+id+"@") {
+			if strings.HasPrefix(key, "ticket/"+id+"/") || strings.HasPrefix(key, "worker/"+id+"/") || strings.HasPrefix(key, "worker/"+id+"@") {
 				return true
 			}
 		}

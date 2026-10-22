@@ -219,7 +219,7 @@ func TestTickKeepsTheTreeWhenGitCleanLeavesANestedRepoBehind(t *testing.T) {
 	returns := teardownReceipts(d, "ENG-1", "return")
 	require.Len(t, returns, 1)
 	assert.Equal(t, "refused", returns[0].State)
-	assert.Equal(t, "kept: untracked nested/ in "+path+" survived git clean", returns[0].Detail)
+	assert.Equal(t, "untracked nested/ in "+path+" survived git clean", returns[0].Detail)
 }
 
 func TestTickIgnoresGitLocationVariablesWhenRemovingUntrackedFiles(t *testing.T) {
@@ -804,7 +804,7 @@ func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
 	returns := teardownReceipts(d, "ENG-1", "return")
 	require.Len(t, returns, 1)
 	assert.Equal(t, "refused", returns[0].State)
-	assert.Equal(t, "kept: the worker left uncommitted changes in "+path, returns[0].Detail)
+	assert.Equal(t, "the worker left uncommitted changes in "+path, returns[0].Detail)
 
 	// The next tick sees the work and posts the one comment. A tick reports the receipts written
 	// since it asked, and the fake clock only moves when told.
@@ -1063,7 +1063,7 @@ func TestTickKeepsATreeThatGainedACommitAfterTheCycleDecidedToReturnIt(t *testin
 	returns := teardownReceipts(d, "ENG-1", "return")
 	require.Len(t, returns, 1)
 	assert.Equal(t, "refused", returns[0].State)
-	assert.Equal(t, "kept: the worker left 1 commit that no remote has in "+path, returns[0].Detail)
+	assert.Equal(t, "the worker left 1 commit that no remote has in "+path, returns[0].Detail)
 
 	// The next tick sees the commit and explains why the tree was kept.
 	d.Advance(time.Second)
@@ -1094,7 +1094,7 @@ func TestTickKeepsATreeThatGainedANestedRepoAfterTheCycleDecidedToReturnIt(t *te
 	returns := teardownReceipts(d, "ENG-1", "return")
 	require.Len(t, returns, 1)
 	assert.Equal(t, "refused", returns[0].State)
-	assert.Equal(t, "kept: untracked nested/ in "+path+" survived git clean", returns[0].Detail)
+	assert.Equal(t, "untracked nested/ in "+path+" survived git clean", returns[0].Detail)
 
 	// While the nested repository stays, the tree is not returned however many ticks follow,
 	// and a comment tells the user why it is still leased.

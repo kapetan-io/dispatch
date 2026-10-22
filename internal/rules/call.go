@@ -133,7 +133,7 @@ func (c *call) recordValue(r *record) sobek.Value {
 
 func (o *recordObject) Get(key string) sobek.Value {
 	c, r := o.c, o.r
-	if key == "hasLabel" && r.kind == "linear.ticket" {
+	if key == "hasLabel" && r.kind == "ticket" {
 		return c.rt.ToValue(func(call sobek.FunctionCall) sobek.Value { return c.hasLabel(r, call.Argument(0).String()) })
 	}
 	f, ok := r.fact(key)
@@ -179,7 +179,7 @@ func (o *recordObject) Set(key string, _ sobek.Value) bool {
 
 func (o *recordObject) Has(key string) bool {
 	_, ok := o.r.fact(key)
-	return ok || (key == "hasLabel" && o.r.kind == "linear.ticket")
+	return ok || (key == "hasLabel" && o.r.kind == "ticket")
 }
 
 func (o *recordObject) Delete(key string) bool {
@@ -333,10 +333,10 @@ func (c *call) ctx() sobek.Value {
 	})
 	_ = ctx.Set("ledger", led)
 
-	_ = ctx.Set("linear", c.linearAPI())
-	_ = ctx.Set("herdr", c.herdrAPI())
-	_ = ctx.Set("treehouse", c.treehouseAPI())
-	_ = ctx.Set("github", c.pluginAPI("github"))
+	_ = ctx.Set("ticket", c.ticketAPI())
+	_ = ctx.Set("worker", c.workerAPI())
+	_ = ctx.Set("tree", c.treeAPI())
+	_ = ctx.Set("pr", c.pluginAPI("pr"))
 	_ = ctx.Set("notify", c.pluginAPI("notify"))
 	_ = ctx.Set("http", c.httpAPI())
 	return ctx
@@ -440,7 +440,7 @@ func (c *call) queueFn(spec ActionSpec) func(sobek.FunctionCall) sobek.Value {
 			q.service = call.Argument(0).String()
 		} else {
 			subjectKinds := map[string][]string{
-				"Ticket": {"linear.ticket"}, "Worker": {"herdr.worker"}, "PR": {"github.pr"}, "Tree": {"treehouse.tree"},
+				"Ticket": {"ticket"}, "Worker": {"worker"}, "PR": {"pr"}, "Tree": {"tree"},
 			}[spec.Subject.TS]
 			q.subject = c.recordArg(call.Argument(0), subjectKinds...)
 		}
@@ -479,17 +479,17 @@ func (c *call) queueFn(spec ActionSpec) func(sobek.FunctionCall) sobek.Value {
 	}
 }
 
-func (c *call) linearAPI() *sobek.Object {
-	o := c.pluginAPI("linear")
+func (c *call) ticketAPI() *sobek.Object {
+	o := c.pluginAPI("ticket")
 	rt, s := c.rt, c.state
-	ticket := func(v sobek.Value) *record { return c.recordArg(v, "linear.ticket") }
+	ticket := func(v sobek.Value) *record { return c.recordArg(v, "ticket") }
 	_ = o.Set("parent", func(call sobek.FunctionCall) sobek.Value {
 		t := ticket(call.Argument(0))
 		parent, ok := s.parents[t.id]
 		if !ok {
 			return sobek.Undefined()
 		}
-		if p, ok := s.lookup("linear.ticket", parent); ok {
+		if p, ok := s.lookup("ticket", parent); ok {
 			return c.recordValue(p)
 		}
 		return sobek.Undefined()
@@ -506,7 +506,7 @@ func (c *call) linearAPI() *sobek.Object {
 		}
 		out := make([]any, 0, len(ids))
 		for _, id := range ids {
-			if child, ok := s.lookup("linear.ticket", id); ok {
+			if child, ok := s.lookup("ticket", id); ok {
 				out = append(out, c.recordValue(child))
 			}
 		}
@@ -551,19 +551,19 @@ func (c *call) unknownRead(reason string) {
 	c.throwUnknown(reason)
 }
 
-func (c *call) herdrAPI() *sobek.Object {
-	o := c.pluginAPI("herdr")
+func (c *call) workerAPI() *sobek.Object {
+	o := c.pluginAPI("worker")
 	s := c.state
-	_ = o.Set("worker", func(call sobek.FunctionCall) sobek.Value {
-		t := c.recordArg(call.Argument(0), "linear.ticket")
+	_ = o.Set("of", func(call sobek.FunctionCall) sobek.Value {
+		t := c.recordArg(call.Argument(0), "ticket")
 		w, ok := s.workers[t.id]
 		if !ok {
 			c.throwError("%s has no worker record", t.id)
 		}
 		return c.recordValue(w)
 	})
-	_ = o.Set("workerIn", func(call sobek.FunctionCall) sobek.Value {
-		tree := c.recordArg(call.Argument(0), "treehouse.tree")
+	_ = o.Set("in", func(call sobek.FunctionCall) sobek.Value {
+		tree := c.recordArg(call.Argument(0), "tree")
 		w, ok := s.workersByTree[tree.id]
 		if !ok {
 			c.throwError("%s has no worker record", tree.id)
@@ -573,8 +573,8 @@ func (c *call) herdrAPI() *sobek.Object {
 	return o
 }
 
-func (c *call) treehouseAPI() *sobek.Object {
-	o := c.pluginAPI("treehouse")
+func (c *call) treeAPI() *sobek.Object {
+	o := c.pluginAPI("tree")
 	s := c.state
 	_ = o.Set("pool", func(call sobek.FunctionCall) sobek.Value {
 		repo := call.Argument(0)
@@ -593,7 +593,7 @@ func (c *call) treehouseAPI() *sobek.Object {
 		return out
 	})
 	_ = o.Set("leased", func(call sobek.FunctionCall) sobek.Value {
-		t := c.recordArg(call.Argument(0), "linear.ticket")
+		t := c.recordArg(call.Argument(0), "ticket")
 		if reason, ok := s.leasedUnread[t.id]; ok {
 			c.unknownRead(reason)
 		}

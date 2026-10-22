@@ -135,7 +135,7 @@ func (t *tracing) segment(seg Segment) {
 		}
 	}
 	for fact := range seg.Snapshot.World.Facts {
-		if strings.HasPrefix(fact, "linear.ticket/"+t.ticket+"/") {
+		if strings.HasPrefix(fact, "ticket/"+t.ticket+"/") {
 			t.seen = true
 		}
 	}
@@ -159,7 +159,7 @@ func (t *tracing) segment(seg Segment) {
 			var w World
 			if json.Unmarshal(raw, &w) == nil {
 				for _, c := range w.Changes {
-					if c.Record == "linear.ticket/"+t.ticket {
+					if c.Record == "ticket/"+t.ticket {
 						t.seen = true
 					}
 				}

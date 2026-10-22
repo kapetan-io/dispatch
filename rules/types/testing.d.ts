@@ -23,12 +23,12 @@ declare module "dispatch/testing" {
     activityAt?: string; activitySummary?: string; threadAt?: string;
   }): Fixture;
   export function tree(path: string, fields?: { holder?: string; pushed?: boolean; trackedChanges?: boolean }): Fixture;
-  export type Expected = [rule: string, kind: string, subject: string, ...rest: string[]];
+  export type Expected = [rule: string, receipt: string, subject: string, ...rest: string[]];
   export interface Scenario {
     config(c: { maxInProgress?: number; rules?: Record<string, unknown>; http?: Record<string, { baseUrl: string }>; repos?: Record<string, { autoMerge?: boolean; openPrAs?: "open" | "draft" }> }): void;
     given(...fixtures: Fixture[]): void;
     see(...fixtures: Fixture[]): void;
-    land(kind: string, subject: string, o?: { outcome?: "done" | "refused" | "failed"; detail?: string }): void;
+    land(receipt: string, subject: string, o?: { outcome?: "done" | "refused" | "failed"; detail?: string }): void;
     http(service: string, path: string, body: unknown, o?: { status?: number; method?: "GET" | "POST" }): void;
     unread(source: "herdr" | "treehouse" | string): void;
     resync(): void;

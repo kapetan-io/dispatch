@@ -560,3 +560,31 @@ func TestTickKeepsAReadyNoticeFromFollowersWhenTheAlertFailsAndRunsItAgain(t *te
 	assert.Empty(t, lines)
 	assert.Len(t, d.attemptsOf("ENG-1", "notify"), 4)
 }
+
+func TestTickMessagesFollowersWithTheReasonARulePasses(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		opts string
+		want string
+	}{
+		{name: "ReasonGiven", opts: `{ once: ["deploy", t.id], reason: "deploy finished" }`, want: "dispatch event (deploy finished): ENG-1 deployed"},
+		{name: "NoReasonUsesTheOnceTopic", opts: `{ once: ["deploy", t.id] }`, want: "dispatch event (deploy): ENG-1 deployed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			socket, lines := sessionSocket(t)
+			d := newDispatch(t, dispatchOptions{
+				Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket},
+				Rules: rule(`whenever({ name: "tell", each: "ticket", if: () => true,
+  then: (t, ctx) => ctx.notify.queueSend(t, t.id + " deployed", ` + test.opts + `) });`),
+			})
+			d.StartBeforeTheEvents()
+			d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+			require.NoError(t, d.Run("watch", "ENG-1").Err)
+
+			d.Tick()
+
+			assert.Contains(t, next(t, lines), test.want)
+		})
+	}
+}

@@ -38,7 +38,7 @@ func Declarations(rules config.Rules) string {
 	}
 	for _, k := range Kinds {
 		fmt.Fprintf(&b, "  export interface %s {\n%s", k.TS, indentFields(structFields(k.Type, true), "    "))
-		if k.Name == "linear.ticket" {
+		if k.Name == "ticket" {
 			b.WriteString("  " + ticketMethods)
 		}
 		b.WriteString("  }\n")
@@ -103,26 +103,26 @@ const staticDeclarations = `  export type Once = [topic: string, ...values: (str
 // ctxPlugins declares each plugin's reads and the actions it lets a rule queue.
 func ctxPlugins() string {
 	reads := map[string]string{
-		"linear": `      parent(t: Ticket): Ticket | undefined;
+		"ticket": `      parent(t: Ticket): Ticket | undefined;
       children(t: Ticket): Ticket[];
       blockers(t: Ticket): Blocker[];
       blockersRead(t: Ticket): Blocker[];
       waitingSince(t: Ticket): number;
 `,
-		"herdr": `      worker(t: Ticket): Worker;
-      workerIn(tree: Tree): Worker;
+		"worker": `      of(t: Ticket): Worker;
+      in(tree: Tree): Worker;
 `,
-		"treehouse": `      pool(repo: string | undefined): { returns: number };
+		"tree": `      pool(repo: string | undefined): { returns: number };
       leased(t: Ticket): boolean;
 `,
-		"github": "",
+		"pr":     "",
 		"notify": "",
 		"http": `      get(service: string, path: string): HttpResponse;
       last(service: string, path: string): HttpResponse;
 `,
 	}
 	var b strings.Builder
-	for _, plugin := range []string{"linear", "herdr", "treehouse", "github", "notify", "http"} {
+	for _, plugin := range []string{"ticket", "worker", "tree", "pr", "notify", "http"} {
 		fmt.Fprintf(&b, "    %s: {\n%s", plugin, reads[plugin])
 		for _, a := range Actions {
 			if a.Plugin != plugin {

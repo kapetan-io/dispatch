@@ -1794,26 +1794,26 @@ func TestTickReadsPastUnlistedReviewsThatAskForNothing(t *testing.T) {
 
 // commandsRule comments each time what a worker's commands read as changes, one comment for each reading.
 const commandsRule = `
-whenever({ name: "commands", each: "linear.ticket",
+whenever({ name: "commands", each: "ticket",
   if: (t) => t.status === "in_progress" || t.status === "in_review",
   then: (t, ctx) => {
-    const w = ctx.herdr.worker(t);
+    const w = ctx.worker.of(t);
     const body = known(() => w.commands)
       ? "commands " + w.commands.map((c) => c.name + "|" + c.args + "|" + c.cut + "|" + c.by).join(";") + " of " + w.commands.length
       : "commands unknown";
-    return ctx.linear.queueComment(t, body, { once: ["commands", t.id, body, ctx.now] });
+    return ctx.ticket.queueComment(t, body, { once: ["commands", t.id, body, ctx.now] });
   } });`
 
 const nudgeRule = `
-whenever({ name: "nudge", each: "linear.ticket", if: (t) => t.status === "in_progress",
-  then: (t, ctx) => ctx.herdr.queueNudge(t, "/merge-it 42", { once: ["nudge", t.id] }) });`
+whenever({ name: "nudge", each: "ticket", if: (t) => t.status === "in_progress",
+  then: (t, ctx) => ctx.worker.queueNudge(t, "/merge-it 42", { once: ["nudge", t.id] }) });`
 
 const anyStatusRule = `
-whenever({ name: "anystatus", each: "linear.ticket", if: () => true,
+whenever({ name: "anystatus", each: "ticket", if: () => true,
   then: (t, ctx) => {
-    const w = ctx.herdr.worker(t);
+    const w = ctx.worker.of(t);
     const body = known(() => w.commands) ? "known " + w.commands.length : "unknown";
-    return ctx.linear.queueComment(t, body, { once: ["anystatus", t.id, body] });
+    return ctx.ticket.queueComment(t, body, { once: ["anystatus", t.id, body] });
   } });`
 
 // lastReadingOf is the newest comment a rule posted on the ticket, without the ticket prefix, or
@@ -1894,11 +1894,11 @@ func TestCommandArgumentsAreCutAtOneKilobyteWithoutSplittingACharacter(t *testin
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{Rules: rule(`
-whenever({ name: "cut", each: "linear.ticket", if: (t) => t.status === "in_progress",
+whenever({ name: "cut", each: "ticket", if: (t) => t.status === "in_progress",
   then: (t, ctx) => {
-    const c = ctx.herdr.worker(t).commands[0];
+    const c = ctx.worker.of(t).commands[0];
     const body = "cut " + c.cut + " characters " + c.args.length;
-    return ctx.linear.queueComment(t, body, { once: ["cut", t.id] });
+    return ctx.ticket.queueComment(t, body, { once: ["cut", t.id] });
   } });`)})
 			d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 			d.Workers.CheckedOut("ENG-1", "working")
@@ -2297,19 +2297,19 @@ func TestRulesTestFixtureGivesAWorkerCommands(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	dir := rulesDir(t, map[string]string{
 		"dispatch.ts": `import { whenever, known } from "dispatch";
-whenever({ name: "person-merged", each: "linear.ticket", if: (t, ctx) => {
-    const w = ctx.herdr.worker(t);
+whenever({ name: "person-merged", each: "ticket", if: (t, ctx) => {
+    const w = ctx.worker.of(t);
     return t.status === "in_progress" && known(() => w.commands) && w.commands.some((c) => c.name === "merge-it" && c.by === "person" && c.args === "42" && !c.cut && c.at === ctx.now + 1000);
-  }, then: (t, ctx) => ctx.herdr.queueNudge(t, "hi", { once: ["merged", t.id] }) });
-whenever({ name: "commands-unread", each: "linear.ticket", if: (t, ctx) => t.status === "in_progress" && !known(() => ctx.herdr.worker(t).commands),
-  then: (t, ctx) => ctx.herdr.queueNudge(t, "hi", { once: ["unread", t.id] }) });`,
+  }, then: (t, ctx) => ctx.worker.queueNudge(t, "hi", { once: ["merged", t.id] }) });
+whenever({ name: "commands-unread", each: "ticket", if: (t, ctx) => t.status === "in_progress" && !known(() => ctx.worker.of(t).commands),
+  then: (t, ctx) => ctx.worker.queueNudge(t, "hi", { once: ["unread", t.id] }) });`,
 		"commands.test.ts": `import { scenario, ticket, worker, rulesFrom } from "dispatch/testing";
 const rules = rulesFrom("./dispatch");
 const mine = { status: "in_progress", optedIn: true, repo: "dispatch" };
 
 scenario(rules, "a rule reads the commands the fixture gives", s => {
   s.given(ticket("ENG-1", mine), worker("ENG-1", "idle", { commands: [{ name: "merge-it", args: "42", at: 1000, by: "person" }] }));
-  s.expect([["person-merged", "herdr.nudge", "ENG-1"]]);
+  s.expect([["person-merged", "nudge", "ENG-1"]]);
 });
 
 scenario(rules, "a command sent by dispatch is not a person's", s => {
@@ -2324,7 +2324,7 @@ scenario(rules, "a worker given no commands has taken none", s => {
 
 scenario(rules, "sessionUnread makes the commands unknown", s => {
   s.given(ticket("ENG-1", mine), worker("ENG-1", "idle", { sessionUnread: "no session" }));
-  s.expect([["commands-unread", "herdr.nudge", "ENG-1"]]);
+  s.expect([["commands-unread", "nudge", "ENG-1"]]);
 });
 `,
 	})
@@ -2338,11 +2338,11 @@ scenario(rules, "sessionUnread makes the commands unknown", s => {
 func TestACommandIsStampedWithTheTimeClaudeTookIt(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`
-whenever({ name: "when", each: "linear.ticket", if: (t) => t.status === "in_progress",
+whenever({ name: "when", each: "ticket", if: (t) => t.status === "in_progress",
   then: (t, ctx) => {
-    const cmds = ctx.herdr.worker(t).commands;
+    const cmds = ctx.worker.of(t).commands;
     const body = "at " + cmds.map((c) => c.at).join(",");
-    return ctx.linear.queueComment(t, body, { once: ["when", t.id, body] });
+    return ctx.ticket.queueComment(t, body, { once: ["when", t.id, body] });
   } });`)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.CheckedOut("ENG-1", "working")

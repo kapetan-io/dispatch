@@ -557,6 +557,22 @@ func TestApiKeyCommandSuppliesTheLinearKey(t *testing.T) {
 	assert.Len(t, d.Workers.Launched(), 1)
 }
 
+func TestRulesCannotReadTheLinearKeySettings(t *testing.T) {
+	t.Parallel()
+	command, _ := keyScript(t, t.TempDir(), "echo test-key")
+	d := newDispatch(t, dispatchOptions{
+		Key:    configuredKey,
+		Config: "[plugins.linear]\napi_key_command = \"" + command + "\"\napi_key_keychain = \"some-service\"\n",
+		Rules: rule(`whenever({ name: "peek", each: "ticket", if: () => true,
+  then: (t, ctx) => ctx.notify.queueSend(t, typeof ctx.config.plugins.linear.api_key_command + " " + typeof ctx.config.plugins.linear.api_key_keychain, { once: ["peek", t.id] }) });`),
+	})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	d.Tick()
+
+	assert.Equal(t, []string{"undefined undefined"}, d.Alerts.Shown())
+}
+
 func TestApiKeyCommandWinsOverTheKeychain(t *testing.T) {
 	t.Parallel()
 	command, counter := keyScript(t, t.TempDir(), "echo test-key")
