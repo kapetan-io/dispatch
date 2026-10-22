@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"maps"
 	"net"
 	"os"
@@ -21,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch"
@@ -102,8 +105,36 @@ type Dispatch struct {
 	Services *Services
 	// Repo is the dispatch repo, a directory the config lists under [repos.dispatch].
 	Repo string
+	// Home is the HOME every command and hook runs under, a directory of the test's own.
+	Home string
 
-	h *harness
+	t             *testing.T
+	configuredKey bool
+	dir           string
+	state         string
+	extra         string
+	repos         []repoEntry
+	linear        *linearHarness
+	tools         *tooltest.Tools
+	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
+	// with the launcher built into dispatch, over tools.Herdr and tools.Treehouse.
+	builtinLauncher bool
+	// builtinAlerts leaves Options.Alerts empty, so alerts go through the
+	// notifier dispatch picks for the operating system.
+	builtinAlerts bool
+	// running is the loop started by the first command that needs one.
+	running *runningLoop
+	// earlier answers Stop reports until a loop starts, standing in for the dispatch that
+	// ran before this one and left its records in the state directory.
+	earlier net.Listener
+	// rulesDir is the directory of rules the loop runs.
+	rulesDir string
+	// exactRules keeps the [rules] table as the test wrote it, without filling in the shipped keys.
+	exactRules bool
+	// http is the services a rule's ctx.http reaches. Nil leaves Options.HTTP to its default.
+	http *httpservicetest.Fake
+	// timeouts carries the RuleTimeout and ActionTimeout a test set, over every command.
+	timeouts dispatch.Options
 	// brokenLoop is true while a fake loop holds the socket.
 	brokenLoop bool
 	// loopCalls counts the connections the fake loop accepted.
@@ -147,107 +178,139 @@ type Result struct {
 
 func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 	t.Helper()
-	h := newHarness(t)
-	d := &Dispatch{h: h, Clock: h.clock, Repo: h.repo}
+	// Resolved so a /var versus /private/var symlink cannot hide a match between a path a test gives
+	// a fake and the one dispatch finds through git.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	// A unix socket path is capped near 104 bytes on macOS, which t.TempDir() overruns.
+	state, err := os.MkdirTemp("/tmp", "dsp")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(state) })
+	shipped, err := filepath.Abs("rules")
+	require.NoError(t, err)
+	d := &Dispatch{
+		t:        t,
+		dir:      dir,
+		Repo:     filepath.Join(dir, "repo"),
+		state:    state,
+		rulesDir: shipped,
+		tools:    tooltest.New(t),
+		Clock:    &fakeClock{now: time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)},
+	}
+	t.Cleanup(func() { _ = d.stopLoop() })
+	t.Cleanup(func() {
+		if d.earlier != nil {
+			_ = d.earlier.Close()
+		}
+	})
+	d.linear = &linearHarness{Workspace: d.tools.Linear}
+	d.tools.Linear.Now = d.Clock.Now
+	require.NoError(t, os.MkdirAll(d.Repo, 0o755))
+	d.addRepo("dispatch", d.Repo)
 	d.Linear, d.Workers, d.Trees = &Linear{d: d}, &Workers{d: d}, &Trees{d: d}
 	d.GitHub, d.Alerts, d.Services = &GitHub{d: d}, &Alerts{d: d}, &Services{d: d}
 	if opts.Config != "" {
-		h.config(opts.Config)
+		d.config(opts.Config)
 	}
-	h.exactRules = opts.ExactRules
+	d.exactRules = opts.ExactRules
 	if opts.RepoSettings != "" {
-		h.repoSettings("dispatch", opts.RepoSettings)
+		d.repoSettings("dispatch", opts.RepoSettings)
 	}
 	if opts.OwnRepos {
-		h.repos = nil
+		d.repos = nil
 	}
-	h.builtinLauncher = opts.Launcher == builtinLauncher
+	d.builtinLauncher = opts.Launcher == builtinLauncher
 	if opts.Rules != nil {
-		h.rulesDir = rulesDir(t, opts.Rules)
+		d.rulesDir = rulesDir(t, opts.Rules)
 	}
 	if opts.Key != optionKey {
-		h.useConfiguredKey(t)
+		d.useConfiguredKey(t)
 	}
 	if opts.Key == noKey {
-		h.config(opts.Config + "\n[plugins.linear]\napi_key_keychain = \"dispatch-test-no-such-entry\"\n")
+		d.config(opts.Config + "\n[plugins.linear]\napi_key_keychain = \"dispatch-test-no-such-entry\"\n")
 	}
+	d.Home = t.TempDir()
+	t.Setenv("HOME", d.Home)
 	for name, value := range opts.Env {
+		if name == "HOME" {
+			d.Home = value
+		}
 		t.Setenv(name, value)
 	}
 	if opts.Dir != "" {
 		t.Chdir(opts.Dir)
 	}
-	h.timeouts = dispatch.Options{RuleTimeout: opts.RuleTimeout, ActionTimeout: opts.ActionTimeout}
+	d.timeouts = dispatch.Options{RuleTimeout: opts.RuleTimeout, ActionTimeout: opts.ActionTimeout}
 	return d
 }
 
 // Run runs one command the way main does. tick, tell, watch and unwatch start the loop first.
 func (d *Dispatch) Run(args ...string) Result {
-	d.h.t.Helper()
-	return d.result(d.h.runWith(context.Background(), dispatch.Options{}, args...))
+	d.t.Helper()
+	return d.result(d.runWith(context.Background(), dispatch.Options{}, args...))
 }
 
 // RunWith is Run with Options the test sets, such as a rule time budget.
 func (d *Dispatch) RunWith(extra dispatch.Options, args ...string) Result {
-	d.h.t.Helper()
-	return d.result(d.h.runWith(context.Background(), extra, args...))
+	d.t.Helper()
+	return d.result(d.runWith(context.Background(), extra, args...))
 }
 
 // Tools is the fakes behind dispatch, for a test to make one fail or to read what it recorded.
-func (d *Dispatch) Tools() *tooltest.Tools { return d.h.tools }
+func (d *Dispatch) Tools() *tooltest.Tools { return d.tools }
 
 // RunIn runs one command from dir, as an operator's shell would.
 func (d *Dispatch) RunIn(dir string, args ...string) Result {
-	d.h.t.Helper()
+	d.t.Helper()
 	return d.runIn(context.Background(), dir, dispatch.Options{}, args...)
 }
 
 func (d *Dispatch) runIn(ctx context.Context, dir string, extra dispatch.Options, args ...string) Result {
-	d.h.t.Helper()
+	d.t.Helper()
 	// launch takes its directory from Options, so launches from two directories can overlap. The
 	// other commands read the process's working directory.
 	if args[0] != "launch" {
-		d.h.t.Chdir(dir)
+		d.t.Chdir(dir)
 	}
 	extra.Dir = dir
-	return d.result(d.h.runWith(ctx, extra, args...))
+	return d.result(d.runWith(ctx, extra, args...))
 }
 
 // ConfigPath is the config.toml every command reads.
-func (d *Dispatch) ConfigPath() string { return filepath.Join(d.h.dir, "config.toml") }
+func (d *Dispatch) ConfigPath() string { return filepath.Join(d.dir, "config.toml") }
 
 // Hook runs a hook command the way Claude Code does, with stdin as the hook's input. A Stop
 // report that arrives before any loop runs is kept for the first read, as it is after a restart.
 func (d *Dispatch) Hook(command, stdin string) Result {
-	d.h.t.Helper()
+	d.t.Helper()
 	return d.hook(dispatch.Options{Stdin: strings.NewReader(stdin)}, command)
 }
 
 func (d *Dispatch) hook(extra dispatch.Options, command string) Result {
-	d.h.t.Helper()
+	d.t.Helper()
 	if d.brokenLoop {
 		return d.raw(extra, command)
 	}
-	return d.result(d.h.runWith(context.Background(), extra, command))
+	return d.result(d.runWith(context.Background(), extra, command))
 }
 
 // HookWhileDown is Hook with no dispatch running and none to run before it, as on a machine where
 // dispatch never started.
 func (d *Dispatch) HookWhileDown(command, stdin string) Result {
-	d.h.t.Helper()
+	d.t.Helper()
 	return d.raw(dispatch.Options{Stdin: strings.NewReader(stdin)}, command)
 }
 
 // HookWithoutConfig runs a hook on a machine that has no config.toml.
 func (d *Dispatch) HookWithoutConfig(command, stdin string) Result {
-	d.h.t.Helper()
-	opts := d.h.options(dispatch.Options{Stdin: strings.NewReader(stdin)})
-	opts.ConfigPath = filepath.Join(d.h.dir, "missing.toml")
+	d.t.Helper()
+	opts := d.options(dispatch.Options{Stdin: strings.NewReader(stdin)})
+	opts.ConfigPath = filepath.Join(d.dir, "missing.toml")
 	return d.run(opts, command)
 }
 
 func (d *Dispatch) raw(extra dispatch.Options, command string) Result {
-	return d.run(d.h.options(extra), command)
+	return d.run(d.options(extra), command)
 }
 
 func (d *Dispatch) run(opts dispatch.Options, args ...string) Result {
@@ -267,9 +330,9 @@ func (d *Dispatch) result(stdout, stderr string, err error) Result {
 
 // Tick runs `dispatch tick` and requires it to succeed.
 func (d *Dispatch) Tick() string {
-	d.h.t.Helper()
+	d.t.Helper()
 	res := d.Run("tick")
-	require.NoError(d.h.t, res.Err)
+	require.NoError(d.t, res.Err)
 	return res.Stdout
 }
 
@@ -288,12 +351,12 @@ type Receipt struct {
 // Receipts is what dispatch did for the ticket, one receipt per kind, subject and once key at its
 // final state, oldest first. A ticket that history has no record of has none.
 func (d *Dispatch) Receipts(ticket string) []Receipt {
-	d.h.t.Helper()
+	d.t.Helper()
 	res := d.Run("trace", ticket, "--json")
 	if res.Code == 1 && strings.Contains(res.Err.Error(), "history has no record of") {
 		return nil
 	}
-	require.NoError(d.h.t, res.Err)
+	require.NoError(d.t, res.Err)
 	var found []Receipt
 	index := map[string]int{}
 	for _, text := range strings.Split(res.Stdout, "\n") {
@@ -304,7 +367,7 @@ func (d *Dispatch) Receipts(ticket string) []Receipt {
 			Type, Kind, Subject, State, Once, Detail string
 			Reset                                    bool
 		}
-		require.NoError(d.h.t, json.Unmarshal([]byte(text), &line))
+		require.NoError(d.t, json.Unmarshal([]byte(text), &line))
 		if line.Type != "receipt" {
 			continue
 		}
@@ -321,33 +384,33 @@ func (d *Dispatch) Receipts(ticket string) []Receipt {
 }
 
 // Restart stops the loop if one runs and starts it again, as after a config edit.
-func (d *Dispatch) Restart() { d.h.t.Helper(); d.h.restart() }
+func (d *Dispatch) Restart() { d.t.Helper(); d.restart() }
 
 // Stop stops the loop. The next tick, tell, watch or Restart starts a new one.
-func (d *Dispatch) Stop() { d.h.t.Helper(); require.NoError(d.h.t, d.h.stopLoop()) }
+func (d *Dispatch) Stop() { d.t.Helper(); require.NoError(d.t, d.stopLoop()) }
 
 // StartBeforeTheEvents starts the loop ahead of the tickets, workers and pull requests a test
 // sets up, because a session follows a ticket only while a dispatch runs.
-func (d *Dispatch) StartBeforeTheEvents() { d.h.t.Helper(); d.h.startBeforeTheEvents() }
+func (d *Dispatch) StartBeforeTheEvents() { d.t.Helper(); d.startBeforeTheEvents() }
 
 // Advance moves the clock and waits for the loop to settle.
-func (d *Dispatch) Advance(by time.Duration) { d.h.t.Helper(); d.h.advance(by) }
+func (d *Dispatch) Advance(by time.Duration) { d.t.Helper(); d.advance(by) }
 
 // BrokenLoop puts a loop on the socket that fails the way a loop can't be made to fail: it
 // closes without answering, answers garbage, answers with an error, or never answers. A stale
 // socket file is a loop that died and left its socket behind.
 func (d *Dispatch) BrokenLoop(fault loopFault) {
-	d.h.t.Helper()
-	require.Nil(d.h.t, d.h.running)
-	ln, err := net.Listen("unix", loop.SocketPath(d.h.state))
-	require.NoError(d.h.t, err)
+	d.t.Helper()
+	require.Nil(d.t, d.running)
+	ln, err := net.Listen("unix", loop.SocketPath(d.state))
+	require.NoError(d.t, err)
 	d.brokenLoop = true
 	if fault == staleSocket {
 		ln.(*net.UnixListener).SetUnlinkOnClose(false)
-		require.NoError(d.h.t, ln.Close())
+		require.NoError(d.t, ln.Close())
 		return
 	}
-	d.h.t.Cleanup(func() { _ = ln.Close() })
+	d.t.Cleanup(func() { _ = ln.Close() })
 	go func() {
 		for {
 			conn, err := ln.Accept()
@@ -387,39 +450,39 @@ const (
 // an action and its receipt leaves it: a segment with the receipts and no stop line. The next loop
 // start resumes from it (unreachable from the CLI: a fault the product can't inject).
 func (d *Dispatch) CrashedEarlierRun(receipts ...ledger.Receipt) {
-	d.h.t.Helper()
-	d.h.seedHistory(nil, receipts...)
+	d.t.Helper()
+	d.seedHistory(nil, receipts...)
 }
 
 // HistoryDatedAhead writes a closed run dated after the clock, as a clock that stepped back
 // leaves behind (unreachable from the CLI: dispatch never writes history from the future).
 func (d *Dispatch) HistoryDatedAhead(by time.Duration) {
-	d.h.t.Helper()
-	require.Nil(d.h.t, d.h.running)
-	at := d.h.clock.Now().Add(by)
-	w, err := history.Start(filepath.Join(d.h.state, "events"), at,
+	d.t.Helper()
+	require.Nil(d.t, d.running)
+	at := d.Clock.Now().Add(by)
+	w, err := history.Start(filepath.Join(d.state, "events"), at,
 		history.Header{Why: "start", At: at.UnixMilli()}, history.Snapshot{At: at.UnixMilli()})
-	require.NoError(d.h.t, err)
-	require.NoError(d.h.t, w.Close(true))
+	require.NoError(d.t, err)
+	require.NoError(d.t, w.Close(true))
 }
 
 // HalfWrittenSegment adds a history segment that has its header and no snapshot, as a run that
 // crashed while rotating leaves it (unreachable from the CLI: a crash between two writes).
 func (d *Dispatch) HalfWrittenSegment() {
-	d.h.t.Helper()
-	events := filepath.Join(d.h.state, "events")
-	require.NoError(d.h.t, os.MkdirAll(events, 0o700))
-	name := "events-" + d.h.clock.Now().Add(-30*time.Minute).UTC().Format("20060102T150405Z") + ".jsonl"
-	require.NoError(d.h.t, os.WriteFile(filepath.Join(events, name), []byte(`{"line":"header","why":"start","at":1}`+"\n"), 0o600))
+	d.t.Helper()
+	events := filepath.Join(d.state, "events")
+	require.NoError(d.t, os.MkdirAll(events, 0o700))
+	name := "events-" + d.Clock.Now().Add(-30*time.Minute).UTC().Format("20060102T150405Z") + ".jsonl"
+	require.NoError(d.t, os.WriteFile(filepath.Join(events, name), []byte(`{"line":"header","why":"start","at":1}`+"\n"), 0o600))
 }
 
 // EmptyFirstSegment adds a history file with nothing in it, as a first run that crashed before
 // it wrote its header leaves it (unreachable from the CLI: a crash between two writes).
 func (d *Dispatch) EmptyFirstSegment() {
-	d.h.t.Helper()
-	events := filepath.Join(d.h.state, "events")
-	require.NoError(d.h.t, os.MkdirAll(events, 0o700))
-	require.NoError(d.h.t, os.WriteFile(filepath.Join(events, "events-20260101T000000Z.jsonl"), nil, 0o600))
+	d.t.Helper()
+	events := filepath.Join(d.state, "events")
+	require.NoError(d.t, os.MkdirAll(events, 0o700))
+	require.NoError(d.t, os.WriteFile(filepath.Join(events, "events-20260101T000000Z.jsonl"), nil, 0o600))
 }
 
 // earlierReceipt and earlierOnce build the receipts of CrashedEarlierRun without a test importing
@@ -432,7 +495,7 @@ type (
 // HookAndWait is Hook for a hook that reports to the loop, and returns once the loop has taken the
 // report. It starts a loop first when none runs, because the report has nowhere to go otherwise.
 func (d *Dispatch) HookAndWait(command, stdin string) Result {
-	h := d.h
+	h := d
 	h.t.Helper()
 	if h.running == nil {
 		require.NoError(h.t, h.startLoop(dispatch.Options{}))
@@ -448,12 +511,12 @@ func (d *Dispatch) HookAndWait(command, stdin string) Result {
 }
 
 // HookTogether runs the hook count times at once, as Claude sessions do. The options are made before
-// any hook runs, because the harness rewrites config.toml for every command.
+// any hook runs, because Dispatch rewrites config.toml for every command.
 func (d *Dispatch) HookTogether(count int, command, stdin string) []Result {
-	d.h.t.Helper()
+	d.t.Helper()
 	all := make([]dispatch.Options, count)
 	for i := range all {
-		all[i] = d.h.options(dispatch.Options{Stdin: strings.NewReader(stdin)})
+		all[i] = d.options(dispatch.Options{Stdin: strings.NewReader(stdin)})
 	}
 	results := make([]Result, count)
 	var wg sync.WaitGroup
@@ -474,35 +537,35 @@ func (d *Dispatch) HookTogether(count int, command, stdin string) []Result {
 // LoseHistory deletes the history directory, as an operator clearing dispatch's memory by hand does
 // (unreachable from the CLI: no command deletes the directory).
 func (d *Dispatch) LoseHistory() {
-	d.h.t.Helper()
-	require.NoError(d.h.t, os.RemoveAll(filepath.Join(d.h.state, "events")))
+	d.t.Helper()
+	require.NoError(d.t, os.RemoveAll(filepath.Join(d.state, "events")))
 }
 
 // CorruptSessionLog appends text to the end of the only session log there is, as a writer that
 // died mid-line leaves it (unreachable from the CLI: a fault the product can't inject).
 func (d *Dispatch) CorruptSessionLog(text string) {
-	d.h.t.Helper()
-	appendToSessionLog(d.h.t, d.h.state, text)
+	d.t.Helper()
+	appendToSessionLog(d.t, d.state, text)
 }
 
 // BlockSessionLogs makes the session log directory unwritable, so a Stop report can't be logged
 // (unreachable from the CLI: a fault the product can't inject).
 func (d *Dispatch) BlockSessionLogs() {
-	d.h.t.Helper()
-	require.NoError(d.h.t, os.WriteFile(sessionlog.Dir(d.h.state), nil, 0o644))
+	d.t.Helper()
+	require.NoError(d.t, os.WriteFile(sessionlog.Dir(d.state), nil, 0o644))
 }
 
 // LoseSessionLogs deletes every session log, to show a command that reads history alone doesn't need them.
 func (d *Dispatch) LoseSessionLogs() {
-	d.h.t.Helper()
-	require.NoError(d.h.t, os.RemoveAll(sessionlog.Dir(d.h.state)))
+	d.t.Helper()
+	require.NoError(d.t, os.RemoveAll(sessionlog.Dir(d.state)))
 }
 
 // StateEntries counts the entries in dispatch's state directory, to show a command left no file there.
 func (d *Dispatch) StateEntries() int {
-	d.h.t.Helper()
-	entries, err := os.ReadDir(d.h.state)
-	require.NoError(d.h.t, err)
+	d.t.Helper()
+	entries, err := os.ReadDir(d.state)
+	require.NoError(d.t, err)
 	return len(entries)
 }
 
@@ -556,9 +619,9 @@ type pastRun struct {
 // WroteHistory writes a segment the command line can't produce: cycles with no recorded read of the
 // world, or decisions a tick never makes (unreachable from the CLI: a fault the product can't inject).
 func (d *Dispatch) WroteHistory(run pastRun) {
-	d.h.t.Helper()
-	require.Nil(d.h.t, d.h.running)
-	at := d.h.clock.Now().Add(-run.Ago)
+	d.t.Helper()
+	require.Nil(d.t, d.running)
+	at := d.Clock.Now().Add(-run.Ago)
 	ledgerOf := func(past []pastReceipt) []ledger.Receipt {
 		var out []ledger.Receipt
 		for _, p := range past {
@@ -577,9 +640,9 @@ func (d *Dispatch) WroteHistory(run pastRun) {
 		}
 		return out
 	}
-	w, err := history.Start(filepath.Join(d.h.state, "events"), at, history.Header{Why: cmp.Or(run.Why, "start"), At: at.UnixMilli()},
+	w, err := history.Start(filepath.Join(d.state, "events"), at, history.Header{Why: cmp.Or(run.Why, "start"), At: at.UnixMilli()},
 		history.Snapshot{At: at.UnixMilli(), Ledger: history.LedgerState{Receipts: ledgerOf(run.Carried)}})
-	require.NoError(d.h.t, err)
+	require.NoError(d.t, err)
 	for i, c := range run.Cycles {
 		cycle := history.Cycle{Line: history.LineCycle, Now: at.Add(time.Duration(i) * time.Second).UnixMilli(), Why: c.Why,
 			Wants: entries(c.Wants), Waiting: entries(c.Waiting), Held: entries(c.Held), Covered: entries(c.Covered), Reads: c.Reads}
@@ -589,29 +652,29 @@ func (d *Dispatch) WroteHistory(run pastRun) {
 		for _, x := range c.HTTP {
 			cycle.HTTP = append(cycle.HTTP, httpservice.Exchange{Service: x.Service, Path: x.Path, Rule: x.Rule, Ticket: x.Ticket, Unknown: x.Unknown})
 		}
-		require.NoError(d.h.t, w.Append(cycle))
+		require.NoError(d.t, w.Append(cycle))
 	}
 	for _, r := range ledgerOf(run.Receipts) {
-		require.NoError(d.h.t, w.Append(history.Receipt{Line: history.LineReceipt, Receipt: r}))
+		require.NoError(d.t, w.Append(history.Receipt{Line: history.LineReceipt, Receipt: r}))
 	}
-	require.NoError(d.h.t, w.Close(!run.Crashed))
+	require.NoError(d.t, w.Close(!run.Crashed))
 }
 
 func (d *Dispatch) newestSegment() (string, []string) {
-	d.h.t.Helper()
-	paths, err := history.Segments(filepath.Join(d.h.state, "events"))
-	require.NoError(d.h.t, err)
-	require.NotEmpty(d.h.t, paths)
+	d.t.Helper()
+	paths, err := history.Segments(filepath.Join(d.state, "events"))
+	require.NoError(d.t, err)
+	require.NotEmpty(d.t, paths)
 	path := paths[len(paths)-1]
 	text, err := os.ReadFile(path)
-	require.NoError(d.h.t, err)
+	require.NoError(d.t, err)
 	return path, strings.Split(strings.TrimSpace(string(text)), "\n")
 }
 
 func (d *Dispatch) rewriteNewestSegment(lines []string) {
-	d.h.t.Helper()
+	d.t.Helper()
 	path, _ := d.newestSegment()
-	require.NoError(d.h.t, os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600))
+	require.NoError(d.t, os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600))
 }
 
 // lastRead is the index of the newest read line in lines.
@@ -630,19 +693,19 @@ func lastRead(t *testing.T, lines []string) int {
 // EditHistory replaces text in the newest history segment, as a different dispatch version or a
 // damaged disk leaves it (unreachable from the CLI: history is written only by the loop).
 func (d *Dispatch) EditHistory(old, replacement string) {
-	d.h.t.Helper()
+	d.t.Helper()
 	_, lines := d.newestSegment()
 	text := strings.Join(lines, "\n")
-	require.Contains(d.h.t, text, old)
+	require.Contains(d.t, text, old)
 	d.rewriteNewestSegment(strings.Split(strings.ReplaceAll(text, old, replacement), "\n"))
 }
 
 // CrashedBeforeStopLine drops the stop line of the newest segment, as a crash leaves it (unreachable
 // from the CLI: a fault the product can't inject).
 func (d *Dispatch) CrashedBeforeStopLine() {
-	d.h.t.Helper()
+	d.t.Helper()
 	_, lines := d.newestSegment()
-	require.Contains(d.h.t, lines[len(lines)-1], `"line":"stop"`)
+	require.Contains(d.t, lines[len(lines)-1], `"line":"stop"`)
 	d.rewriteNewestSegment(lines[:len(lines)-1])
 }
 
@@ -650,9 +713,9 @@ func (d *Dispatch) CrashedBeforeStopLine() {
 // and the memory changes written with it, and before the cycle line (unreachable from the CLI: a
 // crash between two writes).
 func (d *Dispatch) CrashedBeforeLastCycleLine() {
-	d.h.t.Helper()
+	d.t.Helper()
 	_, lines := d.newestSegment()
-	last := lastRead(d.h.t, lines)
+	last := lastRead(d.t, lines)
 	keep := lines[:last+1]
 	for _, line := range lines[last+1:] {
 		if !strings.HasPrefix(line, `{"line":"world"`) {
@@ -666,13 +729,13 @@ func (d *Dispatch) CrashedBeforeLastCycleLine() {
 // EditLastRead replaces text in the newest read of the world only, in a segment whose last cycle
 // wrote no cycle line (unreachable from the CLI: history is written only by the loop).
 func (d *Dispatch) EditLastRead(old, replacement string) {
-	d.h.t.Helper()
+	d.t.Helper()
 	_, lines := d.newestSegment()
-	last := lastRead(d.h.t, lines)
+	last := lastRead(d.t, lines)
 	for _, line := range lines[last+1:] {
-		require.NotContains(d.h.t, line, `{"line":"cycle"`)
+		require.NotContains(d.t, line, `{"line":"cycle"`)
 	}
-	require.Contains(d.h.t, lines[last], old)
+	require.Contains(d.t, lines[last], old)
 	lines[last] = strings.ReplaceAll(lines[last], old, replacement)
 	d.rewriteNewestSegment(lines)
 }
@@ -683,41 +746,41 @@ func (brokenPipe) Write([]byte) (int, error) { return 0, errors.New("broken pipe
 
 // RunWithBrokenOutput runs a command whose stdout and stderr reject every write, as a closed pipe does.
 func (d *Dispatch) RunWithBrokenOutput(args ...string) Result {
-	d.h.t.Helper()
-	opts := d.h.options(dispatch.Options{})
+	d.t.Helper()
+	opts := d.options(dispatch.Options{})
 	opts.Stdout, opts.Stderr = brokenPipe{}, brokenPipe{}
 	return d.result("", "", dispatch.Run(context.Background(), args, opts))
 }
 
 // EditRules rewrites a file of the rules directory the test gave, after a run used it.
 func (d *Dispatch) EditRules(name, text string) {
-	d.h.t.Helper()
-	require.NoError(d.h.t, os.WriteFile(filepath.Join(d.h.rulesDir, name), []byte(text), 0o644))
+	d.t.Helper()
+	require.NoError(d.t, os.WriteFile(filepath.Join(d.rulesDir, name), []byte(text), 0o644))
 }
 
 // Linear is the Linear workspace: tickets, statuses and comments.
 type Linear struct{ d *Dispatch }
 
 // Tickets seeds the tickets that are started and assigned to the key's owner.
-func (l *Linear) Tickets(tickets ...fakeTicket) { l.d.h.tickets(tickets...) }
+func (l *Linear) Tickets(tickets ...fakeTicket) { l.d.tickets(tickets...) }
 
 // Children sets the children Linear returns for open parents.
-func (l *Linear) Children(tickets ...fakeTicket) { l.d.h.linear.setChildren(tickets...) }
+func (l *Linear) Children(tickets ...fakeTicket) { l.d.linear.setChildren(tickets...) }
 
 // Finished seeds tickets Linear knows that are not started, such as Done or Todo ones, which only
 // a lookup by identifier finds.
-func (l *Linear) Finished(tickets ...fakeTicket) { l.d.h.linear.setElsewhere(tickets...) }
+func (l *Linear) Finished(tickets ...fakeTicket) { l.d.linear.setElsewhere(tickets...) }
 
 // FailChildren makes Linear fail the reads of a parent's children while on is true.
-func (l *Linear) FailChildren(on bool) { l.d.h.linear.FailOn(lineartest.OnChildren, on) }
+func (l *Linear) FailChildren(on bool) { l.d.linear.FailOn(lineartest.OnChildren, on) }
 
 // FailManaged makes Linear fail the read of the started tickets while on is true.
-func (l *Linear) FailManaged(on bool) { l.d.h.linear.FailOn(lineartest.OnManaged, on) }
+func (l *Linear) FailManaged(on bool) { l.d.linear.FailOn(lineartest.OnManaged, on) }
 
 // Moves lists the status changes Linear accepted, as "ENG-1 -> In Review".
 func (l *Linear) Moves() []string {
 	var out []string
-	for _, c := range l.d.h.linear.mutations() {
+	for _, c := range l.d.linear.mutations() {
 		if c.Kind == lineartest.Move {
 			out = append(out, strings.TrimPrefix(c.TicketID, "uuid-")+" -> "+stateName(c.StateID))
 		}
@@ -728,7 +791,7 @@ func (l *Linear) Moves() []string {
 // Comments lists the comments Linear accepted, as "ENG-1: <body>".
 func (l *Linear) Comments() []string {
 	var out []string
-	for _, c := range l.d.h.linear.mutations() {
+	for _, c := range l.d.linear.mutations() {
 		if c.Kind == lineartest.Comment {
 			out = append(out, strings.TrimPrefix(c.TicketID, "uuid-")+": "+c.Body)
 		}
@@ -750,29 +813,29 @@ type Workers struct{ d *Dispatch }
 
 // Running gives a ticket a leased tree and a herdr workspace on it. An empty status means the
 // workspace has no Claude agent.
-func (w *Workers) Running(ticket, status string) { w.d.h.worker(ticket, status) }
+func (w *Workers) Running(ticket, status string) { w.d.worker(ticket, status) }
 
 // RunningIn is Running for a tree at a chosen path.
 func (w *Workers) RunningIn(ticket, tree, status string) {
-	w.d.h.workerOn(ticket, tree, "w-"+ticket, status)
+	w.d.workerOn(ticket, tree, "w-"+ticket, status)
 }
 
 // SetStatus changes the herdr status of a worker made with Running.
-func (w *Workers) SetStatus(ticket, status string) { w.d.h.setWorkerStatus(ticket, status) }
+func (w *Workers) SetStatus(ticket, status string) { w.d.setWorkerStatus(ticket, status) }
 
 // SetSession changes the Claude session id herdr reports for a worker made with Running, as a
 // relaunch does. An empty id is a worker herdr reports no session for.
-func (w *Workers) SetSession(ticket, session string) { w.d.h.setWorkerSession(ticket, session) }
+func (w *Workers) SetSession(ticket, session string) { w.d.setWorkerSession(ticket, session) }
 
 // Prompts lists what was typed into workers, as "<pane>|<text>".
-func (w *Workers) Prompts() []string { return w.d.h.prompts() }
+func (w *Workers) Prompts() []string { return w.d.prompts() }
 
 // Launched lists the launch requests dispatch made, as "<repo> <ticket> <branch> --model <model>"
 // plus " --kickoff <text>" when one was set.
-func (w *Workers) Launched() []string { return w.d.h.launches() }
+func (w *Workers) Launched() []string { return w.d.launches() }
 
 // Closed lists the workspaces that were closed.
-func (w *Workers) Closed() []string { return w.d.h.closes() }
+func (w *Workers) Closed() []string { return w.d.closes() }
 
 // stopTasks is the background tasks a Stop hook reports.
 type stopTasks struct {
@@ -784,14 +847,14 @@ type stopTasks struct {
 
 // StopInput is what Claude Code hands the Stop hook for the worker session of ticket.
 func (w *Workers) StopInput(ticket string, tasks stopTasks) string {
-	w.d.h.t.Helper()
+	w.d.t.Helper()
 	return w.StopInputFrom("worker", ticket, tasks)
 }
 
 // StopInputFrom is StopInput for the Claude session with the given id.
 func (w *Workers) StopInputFrom(session, ticket string, tasks stopTasks) string {
-	w.d.h.t.Helper()
-	return w.d.h.stopInput(session, ticket, tasks.json())
+	w.d.t.Helper()
+	return w.d.stopInput(session, ticket, tasks.json())
 }
 
 func (s stopTasks) json() string {
@@ -805,7 +868,7 @@ func (s stopTasks) json() string {
 	return `"background_tasks":[` + strings.Join(running, ",") + `]`
 }
 
-// behindClock is a clock that reads an interval before the harness clock.
+// behindClock is a clock that reads an interval before Dispatch.Clock.
 type behindClock struct {
 	*fakeClock
 	by time.Duration
@@ -816,23 +879,23 @@ func (c behindClock) Now() time.Time { return c.fakeClock.Now().Add(-c.by) }
 // LateStop is Stop for a report that waited past its hook's timeout, so the loop gets it after
 // reports stamped later (unreachable from the CLI: a delay the product can't inject).
 func (w *Workers) LateStop(ticket string, tasks stopTasks, late time.Duration) {
-	w.d.h.t.Helper()
-	extra := dispatch.Options{Stdin: strings.NewReader(w.StopInput(ticket, tasks)), Clock: behindClock{w.d.h.clock, late}}
-	require.NoError(w.d.h.t, w.d.hook(extra, "record-stop").Err)
+	w.d.t.Helper()
+	extra := dispatch.Options{Stdin: strings.NewReader(w.StopInput(ticket, tasks)), Clock: behindClock{w.d.Clock, late}}
+	require.NoError(w.d.t, w.d.hook(extra, "record-stop").Err)
 }
 
 // Stop ends a turn of the worker session of ticket: it runs the Stop hook in the ticket's tree
 // and requires it to succeed.
 func (w *Workers) Stop(ticket string, tasks stopTasks) {
-	w.d.h.t.Helper()
+	w.d.t.Helper()
 	w.StopFrom("worker", ticket, tasks)
 }
 
 // StopFrom is Stop for the Claude session with the given id.
 func (w *Workers) StopFrom(session, ticket string, tasks stopTasks) {
-	w.d.h.t.Helper()
+	w.d.t.Helper()
 	res := w.d.Hook("record-stop", w.StopInputFrom(session, ticket, tasks))
-	require.NoError(w.d.h.t, res.Err)
+	require.NoError(w.d.t, res.Err)
 }
 
 // Trees is the treehouse pool over real git worktrees.
@@ -840,14 +903,14 @@ type Trees struct{ d *Dispatch }
 
 // CleanLeased leases the ticket a clean, pushed tree that has no herdr workspace.
 func (t *Trees) CleanLeased(ticket string) {
-	t.d.h.lease(ticket, t.d.h.gitTree(ticket))
+	t.d.lease(ticket, t.d.gitTree(ticket))
 }
 
 // Untracked makes the ticket's tree a clean, pushed clone with a file git has never seen, and
 // returns the tree's path.
 func (t *Trees) Untracked(ticket, name string) string {
-	path := t.d.h.gitTree(ticket)
-	t.d.h.untracked(path, name)
+	path := t.d.gitTree(ticket)
+	t.d.untracked(path, name)
 	return path
 }
 
@@ -855,7 +918,7 @@ func (t *Trees) Untracked(ticket, name string) string {
 // Run a Stop hook for the ticket first, because that is what makes the tree a worktree of the
 // dispatch repo.
 func (t *Trees) Pushed(ticket string) string {
-	h := t.d.h
+	h := t.d
 	remote := filepath.Join(h.dir, "remotes", ticket+".git")
 	require.NoError(h.t, os.MkdirAll(filepath.Dir(remote), 0o755))
 	hintGit(h.t, h.dir, "init", "-q", "--bare", remote)
@@ -866,19 +929,19 @@ func (t *Trees) Pushed(ticket string) string {
 }
 
 // Returned lists the trees given back to the pool, as "<repo>|<tree>|<holder>".
-func (t *Trees) Returned() []string { return t.d.h.returns() }
+func (t *Trees) Returned() []string { return t.d.returns() }
 
 // GitHub is the pull requests, reviews, checks and merges.
 type GitHub struct{ d *Dispatch }
 
 // PullRequest gives the ticket's branch an open pull request in this state.
-func (g *GitHub) PullRequest(ticket string, pr prState) { g.d.h.pr(ticket, pr) }
+func (g *GitHub) PullRequest(ticket string, pr prState) { g.d.pr(ticket, pr) }
 
 // Alerts is the notifications dispatch shows.
 type Alerts struct{ d *Dispatch }
 
 // Shown lists the notification texts shown.
-func (a *Alerts) Shown() []string { return a.d.h.notifications() }
+func (a *Alerts) Shown() []string { return a.d.notifications() }
 
 // Services is the HTTP services a rule's ctx.http reaches.
 type Services struct{ d *Dispatch }
@@ -886,16 +949,16 @@ type Services struct{ d *Dispatch }
 // Sentry is the fake sentry service, which a rule reaches as ctx.http "sentry".
 // It adds its [http.sentry] table to the config the test gave newDispatch.
 func (s *Services) Sentry() *httpservicetest.Fake {
-	h := s.d.h
+	h := s.d
 	given := h.extra
 	fake := h.sentry()
 	h.config(given + sentryConfig)
 	return fake
 }
 
-func (h *harness) turnsRule() {
-	h.t.Helper()
-	h.config("[dispatch]\nrules = " + `"` + oneRule(h.t, turnsRule) + `"` + "\n")
+func (d *Dispatch) turnsRule() {
+	d.t.Helper()
+	d.config("[dispatch]\nrules = " + `"` + oneRule(d.t, turnsRule) + `"` + "\n")
 }
 
 func sessionLogs(t *testing.T, stateDir string) []string {
@@ -959,9 +1022,9 @@ func blockedBy(t fakeTicket, more bool, blockers ...[2]string) fakeTicket {
 	return t
 }
 
-func comments(h *harness) []string {
+func comments(d *Dispatch) []string {
 	var bodies []string
-	for _, m := range h.linear.mutations() {
+	for _, m := range d.linear.mutations() {
 		if m.Kind == lineartest.Comment {
 			bodies = append(bodies, m.Body)
 		}
@@ -992,177 +1055,108 @@ const (
 	viewerID     = "viewer-1"
 )
 
-// harness is the original test harness, kept until every domain's tests run on Dispatch. New tests
-// use newDispatch. It runs the dispatcher against the in-process fakes in tools (Linear, herdr,
-// treehouse, pull requests, notifications, launcher), all rooted in one temp directory.
-type harness struct {
-	t             *testing.T
-	configuredKey bool
-	dir           string
-	repo          string
-	state         string
-	extra         string
-	repos         []repoEntry
-	linear        *linearHarness
-	tools         *tooltest.Tools
-	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
-	// with the launcher built into dispatch, over tools.Herdr and tools.Treehouse.
-	builtinLauncher bool
-	// builtinAlerts leaves Options.Alerts empty, so alerts go through the
-	// notifier dispatch picks for the operating system.
-	builtinAlerts bool
-	// clock is the time every command and the loop see, and moves only through advance.
-	clock *fakeClock
-	// running is the loop started by the first command that needs one.
-	running *runningLoop
-	// earlier answers Stop reports until a loop starts, standing in for the dispatch that
-	// ran before this one and left its records in the state directory.
-	earlier net.Listener
-	// rulesDir is the directory of rules the loop runs.
-	rulesDir string
-	// exactRules keeps the [rules] table as the test wrote it, without filling in the shipped keys.
-	exactRules bool
-	// http is the services a rule's ctx.http reaches. Nil leaves Options.HTTP to its default.
-	http *httpservicetest.Fake
-	// timeouts carries the RuleTimeout and ActionTimeout a test set, over every command.
-	timeouts dispatch.Options
-}
-
-func newHarness(t *testing.T) *harness {
-	// Resolved so a /var versus /private/var symlink cannot hide a match between a path a test gives
-	// a fake and the one dispatch finds through git.
-	dir, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
-	// A unix socket path is capped near 104 bytes on macOS, which t.TempDir() overruns.
-	state, err := os.MkdirTemp("/tmp", "dsp")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = os.RemoveAll(state) })
-	rulesDir, err := filepath.Abs("rules")
-	require.NoError(t, err)
-	h := &harness{
-		t:        t,
-		dir:      dir,
-		repo:     filepath.Join(dir, "repo"),
-		state:    state,
-		rulesDir: rulesDir,
-		tools:    tooltest.New(t),
-		clock:    &fakeClock{now: time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)},
-	}
-	t.Cleanup(func() { _ = h.stopLoop() })
-	t.Cleanup(func() {
-		if h.earlier != nil {
-			_ = h.earlier.Close()
-		}
-	})
-	h.linear = &linearHarness{Workspace: h.tools.Linear}
-	h.tools.Linear.Now = h.clock.Now
-	require.NoError(t, os.MkdirAll(h.repo, 0o755))
-	h.addRepo("dispatch", h.repo)
-	return h
-}
-
 // useConfiguredKey makes runs find the Linear key the way a user's machine
 // does, instead of through Options.LinearKey.
-func (h *harness) useConfiguredKey(t *testing.T) {
-	h.configuredKey = true
+func (d *Dispatch) useConfiguredKey(t *testing.T) {
+	d.configuredKey = true
 	t.Setenv("LINEAR_API_KEY", "")
 }
 
-func (h *harness) config(extra string) {
-	h.extra = extra
+func (d *Dispatch) config(extra string) {
+	d.extra = extra
 }
 
 type repoEntry struct{ label, dir, settings string }
 
 // addRepo adds a [repos.<label>] table to the config.
-func (h *harness) addRepo(label, dir string) {
-	h.repos = append(h.repos, repoEntry{label: label, dir: dir})
+func (d *Dispatch) addRepo(label, dir string) {
+	d.repos = append(d.repos, repoEntry{label: label, dir: dir})
 }
 
 // resetRepos drops every repo added after the dispatch repo.
-func (h *harness) resetRepos() {
-	h.repos = h.repos[:1]
+func (d *Dispatch) resetRepos() {
+	d.repos = d.repos[:1]
 }
 
 // repoSettings appends extra TOML lines to the table of a repo, such as
 // "auto_merge = true\n". The dispatch repo is always configured.
-func (h *harness) repoSettings(label, extra string) {
-	for i := range h.repos {
-		if h.repos[i].label == label {
-			h.repos[i].settings += extra
+func (d *Dispatch) repoSettings(label, extra string) {
+	for i := range d.repos {
+		if d.repos[i].label == label {
+			d.repos[i].settings += extra
 		}
 	}
 }
 
-func (h *harness) reposTOML() string {
+func (d *Dispatch) reposTOML() string {
 	var out strings.Builder
-	for _, repo := range h.repos {
+	for _, repo := range d.repos {
 		fmt.Fprintf(&out, "\n[repos.%s]\npath = %q\n%s", repo.label, repo.dir, repo.settings)
 	}
 	return out.String()
 }
 
-func (h *harness) run(args ...string) (string, error) {
-	stdout, _, err := h.runContext(context.Background(), args...)
+func (d *Dispatch) output(args ...string) (string, error) {
+	stdout, _, err := d.runContext(context.Background(), args...)
 	return stdout, err
 }
 
-func (h *harness) runContext(ctx context.Context, args ...string) (string, string, error) {
-	return h.runWith(ctx, dispatch.Options{}, args...)
+func (d *Dispatch) runContext(ctx context.Context, args ...string) (string, string, error) {
+	return d.runWith(ctx, dispatch.Options{}, args...)
 }
 
 // writeConfig replaces config.toml in one step, so a launch reading it while a concurrent launch
 // writes it sees one whole file.
-func (h *harness) writeConfig(body string) {
-	file, err := os.CreateTemp(h.dir, "config-*.toml")
-	require.NoError(h.t, err)
+func (d *Dispatch) writeConfig(body string) {
+	file, err := os.CreateTemp(d.dir, "config-*.toml")
+	require.NoError(d.t, err)
 	_, err = file.WriteString(body)
-	require.NoError(h.t, err)
-	require.NoError(h.t, file.Close())
-	require.NoError(h.t, os.Rename(file.Name(), filepath.Join(h.dir, "config.toml")))
+	require.NoError(d.t, err)
+	require.NoError(d.t, file.Close())
+	require.NoError(d.t, os.Rename(file.Name(), filepath.Join(d.dir, "config.toml")))
 }
 
-// options is the Options every command runs over: the harness's fakes.
-func (h *harness) options(extra dispatch.Options) dispatch.Options {
-	h.writeConfig(h.withRules(h.withHistory(h.extra)) + h.historyTOML() + h.reposTOML())
-	extra.ConfigPath = filepath.Join(h.dir, "config.toml")
-	extra.StateDir = h.state
+// options is the Options every command runs over: the fakes.
+func (d *Dispatch) options(extra dispatch.Options) dispatch.Options {
+	d.writeConfig(d.withRules(d.withHistory(d.extra)) + d.historyTOML() + d.reposTOML())
+	extra.ConfigPath = filepath.Join(d.dir, "config.toml")
+	extra.StateDir = d.state
 	if extra.Clock == nil {
-		extra.Clock = h.clock
+		extra.Clock = d.Clock
 	}
-	extra.Linear = h.linear.Connect
-	if !h.configuredKey {
+	extra.Linear = d.linear.Connect
+	if !d.configuredKey {
 		extra.LinearKey = lineartest.Key
 	}
-	extra.Herdr = h.tools.Herdr
-	extra.Treehouse = h.tools.Treehouse
-	extra.PullRequests = h.tools.PullRequests
-	if h.http != nil {
-		extra.HTTP = h.http
+	extra.Herdr = d.tools.Herdr
+	extra.Treehouse = d.tools.Treehouse
+	extra.PullRequests = d.tools.PullRequests
+	if d.http != nil {
+		extra.HTTP = d.http
 	}
-	if !h.builtinAlerts {
-		extra.Alerts = h.tools.Alerts
+	if !d.builtinAlerts {
+		extra.Alerts = d.tools.Alerts
 	}
-	if !h.builtinLauncher {
-		extra.Launcher = h.tools.Launcher
+	if !d.builtinLauncher {
+		extra.Launcher = d.tools.Launcher
 	}
-	if extra.RulesDir == "" && !strings.Contains(h.extra, "\nrules = ") {
-		extra.RulesDir = h.rulesDir
+	if extra.RulesDir == "" && !strings.Contains(d.extra, "\nrules = ") {
+		extra.RulesDir = d.rulesDir
 	}
 	extra.LaunchPace = time.Millisecond
 	if extra.RuleTimeout == (dispatch.RuleTimeout{}) {
-		extra.RuleTimeout = h.timeouts.RuleTimeout
+		extra.RuleTimeout = d.timeouts.RuleTimeout
 	}
 	if extra.ActionTimeout == 0 {
-		extra.ActionTimeout = h.timeouts.ActionTimeout
+		extra.ActionTimeout = d.timeouts.ActionTimeout
 	}
 	return extra
 }
 
 // withRules gives the config the [rules] keys the shipped rules read, at today's
 // values, unless the test set them. A test's own [rules] table keeps its keys.
-func (h *harness) withRules(extra string) string {
-	if h.exactRules {
+func (d *Dispatch) withRules(extra string) string {
+	if d.exactRules {
 		return extra
 	}
 	defaults := []string{
@@ -1184,39 +1178,39 @@ func (h *harness) withRules(extra string) string {
 // historyTOML points history at the state directory, unless the test set it. A
 // test that sets only other [history] keys still gets the directory, so no test
 // writes into the user's real history.
-func (h *harness) historyTOML() string {
-	if strings.Contains(h.extra, "[history]") {
+func (d *Dispatch) historyTOML() string {
+	if strings.Contains(d.extra, "[history]") {
 		return ""
 	}
-	return fmt.Sprintf("\n[history]\ndir = %q\n", filepath.Join(h.state, "events"))
+	return fmt.Sprintf("\n[history]\ndir = %q\n", filepath.Join(d.state, "events"))
 }
 
 // withHistory adds the history directory to a test's own [history] table.
-func (h *harness) withHistory(extra string) string {
+func (d *Dispatch) withHistory(extra string) string {
 	if !strings.Contains(extra, "[history]") || strings.Contains(extra, "\ndir ") || strings.Contains(extra, "\ndir=") {
 		return extra
 	}
-	return strings.Replace(extra, "[history]\n", fmt.Sprintf("[history]\ndir = %q\n", filepath.Join(h.state, "events")), 1)
+	return strings.Replace(extra, "[history]\n", fmt.Sprintf("[history]\ndir = %q\n", filepath.Join(d.state, "events")), 1)
 }
 
-// runWith runs a command with the harness's fakes, over the Options given. A
+// runWith runs a command with the fakes, over the Options given. A
 // command that needs the loop starts one first.
-func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...string) (string, string, error) {
-	if len(args) > 0 && args[0] == "record-stop" && h.running == nil {
-		h.answerStopsOfAnEarlierRun()
+func (d *Dispatch) runWith(ctx context.Context, extra dispatch.Options, args ...string) (string, string, error) {
+	if len(args) > 0 && args[0] == "record-stop" && d.running == nil {
+		d.answerStopsOfAnEarlierRun()
 	}
-	if len(args) > 0 && slices.Contains([]string{"tick", "tell", "watch", "unwatch"}, args[0]) && h.running == nil {
-		if err := h.startLoop(extra); err != nil {
+	if len(args) > 0 && slices.Contains([]string{"tick", "tell", "watch", "unwatch"}, args[0]) && d.running == nil {
+		if err := d.startLoop(extra); err != nil {
 			return "", "", err
 		}
 		// The loop acted on what it read at start, before this tick asked, so the first
 		// tick of a test asks for everything since the start.
 		if len(args) <= 2 && args[0] == "tick" {
-			return h.tickSinceStart(ctx, args[1:])
+			return d.tickSinceStart(ctx, args[1:])
 		}
 	}
 	var stdout, stderr bytes.Buffer
-	opts := h.options(extra)
+	opts := d.options(extra)
 	opts.Stdout, opts.Stderr = &stdout, &stderr
 	err := dispatch.Run(ctx, args, opts)
 	return stdout.String(), stderr.String(), err
@@ -1225,13 +1219,13 @@ func (h *harness) runWith(ctx context.Context, extra dispatch.Options, args ...s
 // answerStopsOfAnEarlierRun stores the Stop reports that arrive before any loop runs. A
 // worker's Stop is in the state directory when a restarted dispatch first reads, so the first
 // read sees it, as it does a Stop that came in while a loop ran.
-func (h *harness) answerStopsOfAnEarlierRun() {
-	if h.earlier != nil {
+func (d *Dispatch) answerStopsOfAnEarlierRun() {
+	if d.earlier != nil {
 		return
 	}
-	ln, err := net.Listen("unix", loop.SocketPath(h.state))
-	require.NoError(h.t, err)
-	h.earlier = ln
+	ln, err := net.Listen("unix", loop.SocketPath(d.state))
+	require.NoError(d.t, err)
+	d.earlier = ln
 	go func() {
 		for {
 			conn, err := ln.Accept()
@@ -1242,8 +1236,8 @@ func (h *harness) answerStopsOfAnEarlierRun() {
 			if json.NewDecoder(conn).Decode(&req) == nil && req.Op == loop.OpStop {
 				s := req.Stop
 				rec := stops.Record{At: time.UnixMilli(s.At).UTC(), Reported: s.Reported, Running: s.Running}
-				_ = stops.Write(h.state, s.Tree, s.Session, rec)
-				_ = sessionlog.AppendTurn(h.state, s.Tree, s.Session, sessionlog.Turn{At: s.At, Running: s.Running > 0})
+				_ = stops.Write(d.state, s.Tree, s.Session, rec)
+				_ = sessionlog.AppendTurn(d.state, s.Tree, s.Session, sessionlog.Turn{At: s.At, Running: s.Running > 0})
 			}
 			_ = json.NewEncoder(conn).Encode(loop.Response{})
 			_ = conn.Close()
@@ -1253,12 +1247,12 @@ func (h *harness) answerStopsOfAnEarlierRun() {
 
 // tickSinceStart is `dispatch tick [ticket]` for the tick that starts the loop: it reports
 // every action since the start and reads nothing again, so one tick is one attempt.
-func (h *harness) tickSinceStart(ctx context.Context, args []string) (string, string, error) {
+func (d *Dispatch) tickSinceStart(ctx context.Context, args []string) (string, string, error) {
 	req := loop.Request{Op: loop.OpSettle}
 	if len(args) == 1 {
 		req.Ticket = strings.ToUpper(args[0])
 	}
-	resp, err := loop.Ask(ctx, h.state, req)
+	resp, err := loop.Ask(ctx, d.state, req)
 	if err != nil {
 		return "", "", err
 	}
@@ -1297,17 +1291,17 @@ type runningLoop struct {
 	err    *syncBuffer
 }
 
-// startLoop runs `dispatch run` in the background over the harness's fakes and
+// startLoop runs `dispatch run` in the background over the fakes and
 // returns once it answers on its socket, or with the error that stopped it.
-func (h *harness) startLoop(extra dispatch.Options) error {
-	h.t.Helper()
-	if h.earlier != nil {
-		_ = h.earlier.Close()
-		h.earlier = nil
+func (d *Dispatch) startLoop(extra dispatch.Options) error {
+	d.t.Helper()
+	if d.earlier != nil {
+		_ = d.earlier.Close()
+		d.earlier = nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &runningLoop{cancel: cancel, done: make(chan error, 1), out: &syncBuffer{}, err: &syncBuffer{}}
-	opts := h.options(extra)
+	opts := d.options(extra)
 	opts.Stdout, opts.Stderr = r.out, r.err
 	go func() { r.done <- dispatch.Run(ctx, []string{"run"}, opts) }()
 	deadline := time.Now().Add(20 * time.Second)
@@ -1318,8 +1312,8 @@ func (h *harness) startLoop(extra dispatch.Options) error {
 			return err
 		default:
 		}
-		if resp, err := loop.Ask(ctx, h.state, loop.Request{Op: loop.OpIdle}); err == nil && !resp.Busy {
-			h.running = r
+		if resp, err := loop.Ask(ctx, d.state, loop.Request{Op: loop.OpIdle}); err == nil && !resp.Busy {
+			d.running = r
 			return nil
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -1331,18 +1325,18 @@ func (h *harness) startLoop(extra dispatch.Options) error {
 // startBeforeTheEvents starts the loop ahead of the tickets, workers and pull requests a
 // test sets up, because a session follows a ticket only while a dispatch runs and hears
 // events that come after it asks.
-func (h *harness) startBeforeTheEvents() {
-	h.t.Helper()
-	require.NoError(h.t, h.startLoop(dispatch.Options{}))
+func (d *Dispatch) startBeforeTheEvents() {
+	d.t.Helper()
+	require.NoError(d.t, d.startLoop(dispatch.Options{}))
 }
 
 // stopLoop stops the loop and returns what it stopped with.
-func (h *harness) stopLoop() error {
-	if h.running == nil {
+func (d *Dispatch) stopLoop() error {
+	if d.running == nil {
 		return nil
 	}
-	r := h.running
-	h.running = nil
+	r := d.running
+	d.running = nil
 	r.cancel()
 	select {
 	case err := <-r.done:
@@ -1353,60 +1347,60 @@ func (h *harness) stopLoop() error {
 }
 
 // restart stops the loop and starts it again, as a user does after editing config.toml or a rule.
-func (h *harness) restart() {
-	h.t.Helper()
-	require.NoError(h.t, h.stopLoop())
-	require.NoError(h.t, h.startLoop(dispatch.Options{}))
+func (d *Dispatch) restart() {
+	d.t.Helper()
+	require.NoError(d.t, d.stopLoop())
+	require.NoError(d.t, d.startLoop(dispatch.Options{}))
 }
 
 // loopOut is what the running loop has printed to stdout.
-func (h *harness) loopOut() string {
-	if h.running == nil {
+func (d *Dispatch) loopOut() string {
+	if d.running == nil {
 		return ""
 	}
-	return h.running.out.String()
+	return d.running.out.String()
 }
 
 // loopErr is what the running loop has printed to stderr.
-func (h *harness) loopErr() string {
-	if h.running == nil {
+func (d *Dispatch) loopErr() string {
+	if d.running == nil {
 		return ""
 	}
-	return h.running.err.String()
+	return d.running.err.String()
 }
 
-func (h *harness) tick() string {
-	h.t.Helper()
-	out, err := h.run("tick")
-	require.NoError(h.t, err)
+func (d *Dispatch) tick() string {
+	d.t.Helper()
+	out, err := d.output("tick")
+	require.NoError(d.t, err)
 	return out
 }
 
 // advance moves the clock forward, which fires the resync when it is due, and
 // waits until the loop has settled.
-func (h *harness) advance(d time.Duration) {
-	h.t.Helper()
+func (d *Dispatch) advance(by time.Duration) {
+	d.t.Helper()
 	var before loop.Response
-	if h.running != nil {
+	if d.running != nil {
 		var err error
-		before, err = loop.Ask(context.Background(), h.state, loop.Request{Op: loop.OpIdle})
-		require.NoError(h.t, err)
+		before, err = loop.Ask(context.Background(), d.state, loop.Request{Op: loop.OpIdle})
+		require.NoError(d.t, err)
 	}
-	fired := h.clock.Advance(d)
-	if h.running == nil || fired == 0 {
+	fired := d.Clock.Advance(by)
+	if d.running == nil || fired == 0 {
 		return
 	}
-	require.Eventually(h.t, func() bool {
-		resp, err := loop.Ask(context.Background(), h.state, loop.Request{Op: loop.OpIdle})
+	require.Eventually(d.t, func() bool {
+		resp, err := loop.Ask(context.Background(), d.state, loop.Request{Op: loop.OpIdle})
 		return err == nil && !resp.Busy && resp.Idle > before.Idle
 	}, 20*time.Second, 2*time.Millisecond)
 }
 
 // seedHistory writes a segment as an earlier run left it, with no stop line as after
 // a crash, for the next loop start to resume from. Call it before the loop starts.
-func (h *harness) seedHistory(mem *world.Memory, receipts ...ledger.Receipt) {
-	h.t.Helper()
-	require.Nil(h.t, h.running)
+func (d *Dispatch) seedHistory(mem *world.Memory, receipts ...ledger.Receipt) {
+	d.t.Helper()
+	require.Nil(d.t, d.running)
 	if mem == nil {
 		mem = world.NewMemory()
 	}
@@ -1414,11 +1408,11 @@ func (h *harness) seedHistory(mem *world.Memory, receipts ...ledger.Receipt) {
 	for _, rc := range receipts {
 		resync = max(resync, rc.Resync)
 	}
-	w, err := history.Start(filepath.Join(h.state, "events"), h.clock.Now().Add(-time.Hour),
-		history.Header{Why: "start", At: h.clock.Now().Add(-time.Hour).UnixMilli()},
-		history.Snapshot{At: h.clock.Now().Add(-time.Hour).UnixMilli(), World: mem, Ledger: history.LedgerState{Receipts: receipts}, Resync: resync})
-	require.NoError(h.t, err)
-	require.NoError(h.t, w.Close(false))
+	w, err := history.Start(filepath.Join(d.state, "events"), d.Clock.Now().Add(-time.Hour),
+		history.Header{Why: "start", At: d.Clock.Now().Add(-time.Hour).UnixMilli()},
+		history.Snapshot{At: d.Clock.Now().Add(-time.Hour).UnixMilli(), World: mem, Ledger: history.LedgerState{Receipts: receipts}, Resync: resync})
+	require.NoError(d.t, err)
+	require.NoError(d.t, w.Close(false))
 }
 
 // planRow matches the plan row that gives a ticket a state, such as held or waiting.
@@ -1428,10 +1422,10 @@ func planRow(state, ticket string) string {
 
 // receipts lists the receipts of one kind the loop has written, oldest first. An empty
 // subject matches every subject.
-func (h *harness) receipts(kind, subject string) []ledger.Receipt {
-	h.t.Helper()
+func (d *Dispatch) receipts(kind, subject string) []ledger.Receipt {
+	d.t.Helper()
 	var found []ledger.Receipt
-	for _, r := range h.ledgerNow() {
+	for _, r := range d.ledgerNow() {
 		if r.Kind == kind && (subject == "" || r.Subject == subject) {
 			found = append(found, r)
 		}
@@ -1440,13 +1434,13 @@ func (h *harness) receipts(kind, subject string) []ledger.Receipt {
 }
 
 // ledgerNow is the ledger the newest history segment holds, which is what the loop has done.
-func (h *harness) ledgerNow() []ledger.Receipt {
-	h.t.Helper()
-	seg, ok, err := history.Latest(filepath.Join(h.state, "events"))
-	require.NoError(h.t, err)
-	require.True(h.t, ok)
+func (d *Dispatch) ledgerNow() []ledger.Receipt {
+	d.t.Helper()
+	seg, ok, err := history.Latest(filepath.Join(d.state, "events"))
+	require.NoError(d.t, err)
+	require.True(d.t, ok)
 	st, err := seg.Load()
-	require.NoError(h.t, err)
+	require.NoError(d.t, err)
 	return st.Ledger.Entries
 }
 
@@ -1511,134 +1505,134 @@ func (t *fakeTimer) Stop() bool {
 	return was
 }
 
-func (h *harness) tickets(tickets ...fakeTicket) {
-	h.linear.setTickets(tickets)
+func (d *Dispatch) tickets(tickets ...fakeTicket) {
+	d.linear.setTickets(tickets)
 }
 
 // worker gives a ticket a leased tree and a herdr workspace on it. An empty
 // status means the workspace has no Claude agent.
-func (h *harness) worker(ticket, status string) {
-	h.workerOn(ticket, filepath.Join(h.dir, "trees", ticket), "w-"+ticket, status)
+func (d *Dispatch) worker(ticket, status string) {
+	d.workerOn(ticket, filepath.Join(d.dir, "trees", ticket), "w-"+ticket, status)
 }
 
 // workerOn is worker for a tree at a chosen path and workspace id.
-func (h *harness) workerOn(ticket, tree, id, status string) {
-	h.tools.Treehouse.Seed(h.repo, treehouse.Tree{Path: tree, Status: "leased", LeaseHolder: ticket})
+func (d *Dispatch) workerOn(ticket, tree, id, status string) {
+	d.tools.Treehouse.Seed(d.Repo, treehouse.Tree{Path: tree, Status: "leased", LeaseHolder: ticket})
 
-	h.tools.Herdr.AddWorkspace(herdr.Workspace{ID: id, Label: ticket, CheckoutPath: tree})
+	d.tools.Herdr.AddWorkspace(herdr.Workspace{ID: id, Label: ticket, CheckoutPath: tree})
 	if status == "" {
 		return
 	}
-	h.tools.Herdr.AddTab(herdr.Tab{ID: id + ":t1", Label: ticket, WorkspaceID: id})
-	h.tools.Herdr.AddPane(herdr.Pane{ID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
-	h.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: status, Session: "worker", PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
+	d.tools.Herdr.AddTab(herdr.Tab{ID: id + ":t1", Label: ticket, WorkspaceID: id})
+	d.tools.Herdr.AddPane(herdr.Pane{ID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
+	d.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: status, Session: "worker", PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
 }
 
 // setWorkerStatus changes the herdr status of a worker added with worker.
-func (h *harness) setWorkerStatus(ticket, status string) {
-	h.tools.Herdr.SetStatus("w-"+ticket+":p1", status)
+func (d *Dispatch) setWorkerStatus(ticket, status string) {
+	d.tools.Herdr.SetStatus("w-"+ticket+":p1", status)
 }
 
 // setWorkerSession changes the Claude session id herdr reports for a worker
 // added with worker, as a relaunch does.
-func (h *harness) setWorkerSession(ticket, session string) {
-	h.tools.Herdr.SetSession("w-"+ticket+":p1", session)
+func (d *Dispatch) setWorkerSession(ticket, session string) {
+	d.tools.Herdr.SetSession("w-"+ticket+":p1", session)
 }
 
 // blockAfterSnapshot has the worker stop to ask a question after dispatch's
 // snapshot, so herdr refuses a prompt the snapshot says is fine.
-func (h *harness) blockAfterSnapshot(ticket string) {
-	h.tools.Herdr.BlockAfterSnapshot("w-" + ticket + ":p1")
+func (d *Dispatch) blockAfterSnapshot(ticket string) {
+	d.tools.Herdr.BlockAfterSnapshot("w-" + ticket + ":p1")
 }
 
 // vanishAfterSnapshot closes the worker's pane after dispatch's snapshot, so herdr no longer
 // knows a pane the snapshot lists.
-func (h *harness) vanishAfterSnapshot(ticket string) {
-	h.tools.Herdr.VanishAfterSnapshot("w-" + ticket + ":p1")
+func (d *Dispatch) vanishAfterSnapshot(ticket string) {
+	d.tools.Herdr.VanishAfterSnapshot("w-" + ticket + ":p1")
 }
 
 // unblock undoes blockAfterSnapshot.
-func (h *harness) unblock(ticket string) {
-	h.tools.Herdr.Unblock("w-" + ticket + ":p1")
+func (d *Dispatch) unblock(ticket string) {
+	d.tools.Herdr.Unblock("w-" + ticket + ":p1")
 }
 
 // prompts lists what was typed into workers, as "<pane>|<text>".
-func (h *harness) prompts() []string {
-	return h.tools.Herdr.Prompted()
+func (d *Dispatch) prompts() []string {
+	return d.tools.Herdr.Prompted()
 }
 
 // notifications lists the macOS notification texts shown.
-func (h *harness) notifications() []string {
-	return h.tools.Alerts.Shown()
+func (d *Dispatch) notifications() []string {
+	return d.tools.Alerts.Shown()
 }
 
-func (h *harness) lines(name string) []string {
-	b, err := os.ReadFile(filepath.Join(h.dir, name))
+func (d *Dispatch) lines(name string) []string {
+	b, err := os.ReadFile(filepath.Join(d.dir, name))
 	if os.IsNotExist(err) {
 		return nil
 	}
-	require.NoError(h.t, err)
+	require.NoError(d.t, err)
 	return strings.Split(strings.TrimSpace(string(b)), "\n")
 }
 
 // labelWorkspace sets the label herdr reports for a workspace.
-func (h *harness) labelWorkspace(id, label string) {
-	h.tools.Herdr.SetWorkspaceLabel(id, label)
+func (d *Dispatch) labelWorkspace(id, label string) {
+	d.tools.Herdr.SetWorkspaceLabel(id, label)
 }
 
 // renames lists the workspace renames, as "<workspace>|<label>".
-func (h *harness) renames() []string {
-	return h.tools.Herdr.WorkspaceRenames()
+func (d *Dispatch) renames() []string {
+	return d.tools.Herdr.WorkspaceRenames()
 }
 
 // tabRenames lists the tab renames, as "<tab>|<label>".
-func (h *harness) tabRenames() []string {
-	return h.tools.Herdr.TabRenames()
+func (d *Dispatch) tabRenames() []string {
+	return d.tools.Herdr.TabRenames()
 }
 
 // labelTab sets the label herdr reports for a worker's tab.
-func (h *harness) labelTab(ticket, label string) {
-	h.tools.Herdr.SetTabLabel("w-"+ticket+":t1", label)
+func (d *Dispatch) labelTab(ticket, label string) {
+	d.tools.Herdr.SetTabLabel("w-"+ticket+":t1", label)
 }
 
 // closes lists the herdr workspaces that were closed.
-func (h *harness) closes() []string {
-	return h.tools.Herdr.ClosedWorkspaces()
+func (d *Dispatch) closes() []string {
+	return d.tools.Herdr.ClosedWorkspaces()
 }
 
 // returns lists the treehouse return calls, as "<repo>|<tree>|<holder>".
-func (h *harness) returns() []string {
-	return h.tools.Calls("treehouse", "return")
+func (d *Dispatch) returns() []string {
+	return d.tools.Calls("treehouse", "return")
 }
 
-// pool makes the harness's repo a git repo that treehouse pools, with one tree
+// pool makes the dispatch repo a git repo that treehouse pools, with one tree
 // in it, and returns the tree's path.
-func (h *harness) pool() string {
-	tree := filepath.Join(h.dir, "tree")
-	require.NoError(h.t, os.WriteFile(filepath.Join(h.repo, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
+func (d *Dispatch) pool() string {
+	tree := filepath.Join(d.dir, "tree")
+	require.NoError(d.t, os.WriteFile(filepath.Join(d.Repo, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
 	for _, args := range [][]string{
 		{"init", "-q", "-b", "main"},
 		{"-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "init"},
 		{"worktree", "add", "-q", "--detach", tree},
 	} {
-		out, err := exec.Command("git", append([]string{"-C", h.repo}, args...)...).CombinedOutput()
-		require.NoError(h.t, err, string(out))
+		out, err := exec.Command("git", append([]string{"-C", d.Repo}, args...)...).CombinedOutput()
+		require.NoError(d.t, err, string(out))
 	}
-	h.tools.Treehouse.AddTree(h.repo, tree)
+	d.tools.Treehouse.AddTree(d.Repo, tree)
 	return tree
 }
 
-func (h *harness) launchResult(result string) {
+func (d *Dispatch) launchResult(result string) {
 	var r launcher.Result
-	require.NoError(h.t, json.Unmarshal([]byte(result), &r))
-	h.tools.Launcher.Answer(r)
+	require.NoError(d.t, json.Unmarshal([]byte(result), &r))
+	d.tools.Launcher.Answer(r)
 }
 
 // launches lists the launch requests the dispatcher made, as
 // "<repo> <ticket> <branch> --model <model>" plus " --kickoff <text>" when one was set.
-func (h *harness) launches() []string {
+func (d *Dispatch) launches() []string {
 	var found []string
-	for _, r := range h.tools.Launcher.Launched() {
+	for _, r := range d.tools.Launcher.Launched() {
 		line := fmt.Sprintf("%s %s %s --model %s", r.RepoDir, r.Ticket, r.Branch, r.Model)
 		if r.Kickoff != "" {
 			line += " --kickoff " + r.Kickoff
@@ -1648,23 +1642,23 @@ func (h *harness) launches() []string {
 	return found
 }
 
-func (h *harness) removeFile(name string) {
-	require.NoError(h.t, os.Remove(filepath.Join(h.dir, name)))
+func (d *Dispatch) removeFile(name string) {
+	require.NoError(d.t, os.Remove(filepath.Join(d.dir, name)))
 }
 
-func (h *harness) writeFile(name, content string) {
-	require.NoError(h.t, os.WriteFile(filepath.Join(h.dir, name), []byte(content), 0o644))
+func (d *Dispatch) writeFile(name, content string) {
+	require.NoError(d.t, os.WriteFile(filepath.Join(d.dir, name), []byte(content), 0o644))
 }
 
-func (h *harness) writeJSON(name string, v any) {
+func (d *Dispatch) writeJSON(name string, v any) {
 	b, err := json.Marshal(v)
-	require.NoError(h.t, err)
-	h.writeFile(name, string(b))
+	require.NoError(d.t, err)
+	d.writeFile(name, string(b))
 }
 
-func (h *harness) readFile(name string) []byte {
-	b, err := os.ReadFile(filepath.Join(h.dir, name))
-	require.NoError(h.t, err)
+func (d *Dispatch) readFile(name string) []byte {
+	b, err := os.ReadFile(filepath.Join(d.dir, name))
+	require.NoError(d.t, err)
 	return b
 }
 
@@ -1796,12 +1790,12 @@ const (
 	unresolved   = "/issues/?query=is:unresolved"
 )
 
-// sentry gives the harness the sentry service its config names.
-func (h *harness) sentry() *httpservicetest.Fake {
-	h.config(sentryConfig)
-	h.http = httpservicetest.New(map[string]config.HTTPService{"sentry": {BaseURL: "https://sentry.test/api/0"}})
-	h.http.Token("sentry", sentryToken)
-	return h.http
+// sentry gives Dispatch the sentry service its config names.
+func (d *Dispatch) sentry() *httpservicetest.Fake {
+	d.config(sentryConfig)
+	d.http = httpservicetest.New(map[string]config.HTTPService{"sentry": {BaseURL: "https://sentry.test/api/0"}})
+	d.http.Token("sentry", sentryToken)
+	return d.http
 }
 
 var (
@@ -1817,7 +1811,10 @@ func buildDispatch(t *testing.T) string {
 		if dispatchBin, dispatchBinErr = os.MkdirTemp("", "dispatch-bin"); dispatchBinErr != nil {
 			return
 		}
-		out, err := exec.Command("go", "build", "-o", filepath.Join(dispatchBin, "dispatch"), "./cmd/dispatch").CombinedOutput()
+		build := exec.Command("go", "build", "-o", filepath.Join(dispatchBin, "dispatch"), "./cmd/dispatch")
+		// The Go toolchain records its own telemetry under HOME, which is not dispatch writing there.
+		build.Env = append(os.Environ(), "HOME="+dispatchBin)
+		out, err := build.CombinedOutput()
 		if err != nil {
 			dispatchBinErr = fmt.Errorf("while building dispatch: %w\n%s", err, out)
 		}
@@ -1856,9 +1853,9 @@ func parent(id, status string) fakeTicket {
 
 // parentsRealLauncher makes launches create a herdr workspace, so a launched worker
 // counts against the cap the way it does in production. The fake launcher leaves no trace.
-func parentsRealLauncher(h *harness) {
-	h.builtinLauncher = true
-	h.pool()
+func parentsRealLauncher(d *Dispatch) {
+	d.builtinLauncher = true
+	d.pool()
 }
 
 const readyText1 = "ENG-1 is ready for review: " + prURL1
@@ -1958,9 +1955,9 @@ func cleanPR(head string) prState {
 }
 
 // pr makes the ticket's branch have an open PR in this state.
-func (h *harness) pr(ticket string, p prState) {
+func (d *Dispatch) pr(ticket string, p prState) {
 	if p.contexts != nil {
-		h.respondChecks(p.head, p.contexts, false)
+		d.respondChecks(p.head, p.contexts, false)
 	}
 	threads := []map[string]any{}
 	for range p.unresolved {
@@ -2007,11 +2004,11 @@ func (h *harness) pr(ticket string, p prState) {
 		"comments":                 activityNodes(p.comments, p.commentsBefore),
 		"reviewThreads":            map[string]any{"nodes": threads, "pageInfo": map[string]bool{"hasNextPage": p.moreThreads}},
 	}
-	h.respondPages(ticket, p, own)
+	d.respondPages(ticket, p, own)
 }
 
 // respondPages sets the pages of the ticket's PR query: the worker's PR, behind the fork PRs p asks for.
-func (h *harness) respondPages(ticket string, p prState, own map[string]any) {
+func (d *Dispatch) respondPages(ticket string, p prState, own map[string]any) {
 	const pageSize = 20
 	forks := func(count int) []any {
 		nodes := []any{}
@@ -2030,25 +2027,25 @@ func (h *harness) respondPages(ticket string, p prState, own map[string]any) {
 		return map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": pullRequests}}}
 	}
 	if p.forkPages == 0 {
-		h.respond(ticket, "", page(append(forks(p.forksAhead), own), ""))
+		d.respond(ticket, "", page(append(forks(p.forksAhead), own), ""))
 		return
 	}
-	h.respond(ticket, "", page(forks(pageSize), "c1"))
+	d.respond(ticket, "", page(forks(pageSize), "c1"))
 	for n := 1; n <= p.forkPages; n++ {
 		cursor := fmt.Sprintf("c%d", n)
 		switch {
 		case p.endlessForks:
-			h.respond(ticket, cursor, page(forks(pageSize), cursor))
+			d.respond(ticket, cursor, page(forks(pageSize), cursor))
 		case n < p.forkPages:
-			h.respond(ticket, cursor, page(forks(pageSize), fmt.Sprintf("c%d", n+1)))
+			d.respond(ticket, cursor, page(forks(pageSize), fmt.Sprintf("c%d", n+1)))
 		default:
-			h.respond(ticket, cursor, page([]any{own}, ""))
+			d.respond(ticket, cursor, page([]any{own}, ""))
 		}
 	}
 }
 
 // respondChecks sets what GitHub answers when asked for the checks behind PR 7's rollup.
-func (h *harness) respondChecks(head string, contexts []checkContext, more bool) {
+func (d *Dispatch) respondChecks(head string, contexts []checkContext, more bool) {
 	nodes := []map[string]any{}
 	for _, c := range contexts {
 		node := map[string]any{"__typename": "CheckRun", "name": c.name, "isRequired": c.required, "status": "COMPLETED", "conclusion": c.state}
@@ -2060,13 +2057,13 @@ func (h *harness) respondChecks(head string, contexts []checkContext, more bool)
 		}
 		nodes = append(nodes, node)
 	}
-	h.tools.PullRequests.RespondChecks(7, map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequest": map[string]any{"commits": map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"oid": head, "statusCheckRollup": map[string]any{"contexts": map[string]any{"nodes": nodes, "pageInfo": map[string]bool{"hasNextPage": more}}}}}}}}}}})
+	d.tools.PullRequests.RespondChecks(7, map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequest": map[string]any{"commits": map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"oid": head, "statusCheckRollup": map[string]any{"contexts": map[string]any{"nodes": nodes, "pageInfo": map[string]bool{"hasNextPage": more}}}}}}}}}}})
 }
 
 // respondOlder sets what GitHub answers for the page of the PR's reviews or
 // comments that ends before the cursor. kind is "reviews" or "comments".
-func (h *harness) respondOlder(kind, before string, items []activity, earlier string) {
-	h.tools.PullRequests.RespondOlder(7, kind, before, map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequest": map[string]any{kind: activityNodes(items, earlier)}}}})
+func (d *Dispatch) respondOlder(kind, before string, items []activity, earlier string) {
+	d.tools.PullRequests.RespondOlder(7, kind, before, map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequest": map[string]any{kind: activityNodes(items, earlier)}}}})
 }
 
 // prBranch is the branch Linear names for a ticket.
@@ -2076,27 +2073,27 @@ func prBranch(ticket string) string {
 
 // respond sets what GitHub answers for the ticket's PR query, for the page
 // after cursor, or the first page when cursor is empty.
-func (h *harness) respond(ticket, cursor string, response any) {
+func (d *Dispatch) respond(ticket, cursor string, response any) {
 	b, err := json.Marshal(response)
-	require.NoError(h.t, err)
-	h.tools.PullRequests.Respond(prBranch(ticket), cursor, json.RawMessage(b))
+	require.NoError(d.t, err)
+	d.tools.PullRequests.Respond(prBranch(ticket), cursor, json.RawMessage(b))
 }
 
 // closePR closes the ticket's PR without merging it.
-func (h *harness) closePR(ticket string) {
-	h.tools.PullRequests.Close(prBranch(ticket))
+func (d *Dispatch) closePR(ticket string) {
+	d.tools.PullRequests.Close(prBranch(ticket))
 }
 
 // merges lists the PRs that merged, as url|head.
-func (h *harness) merges() []string {
-	return h.tools.PullRequests.Merged()
+func (d *Dispatch) merges() []string {
+	return d.tools.PullRequests.Merged()
 }
 
 // prReads lists the branches dispatch read a PR for, with ".cursor" after a
 // page past the first.
-func (h *harness) prReads() []string {
+func (d *Dispatch) prReads() []string {
 	var reads []string
-	for _, call := range h.tools.Calls("pullrequest", "read") {
+	for _, call := range d.tools.Calls("pullrequest", "read") {
 		branch, cursor, _ := strings.Cut(call, "|")
 		if cursor != "" {
 			branch += "." + cursor
@@ -2122,10 +2119,35 @@ func oneRule(t *testing.T, body string) string {
 	return rulesDir(t, rule(body))
 }
 
-func (h *harness) rules(dir string, args ...string) (string, error) {
-	h.t.Helper()
-	stdout, _, err := h.runWith(context.Background(), dispatch.Options{RulesDir: dir}, append([]string{"rules"}, args...)...)
+func (d *Dispatch) rules(dir string, args ...string) (string, error) {
+	d.t.Helper()
+	stdout, _, err := d.runWith(context.Background(), dispatch.Options{RulesDir: dir}, append([]string{"rules"}, args...)...)
 	return stdout, err
+}
+
+// Root tests read what dispatch did through its commands. A test that imports one of these packages
+// reads or writes the state behind them, and a rewrite of that state breaks it with no change an
+// operator can see. harness_test.go is the one file that waits on the loop and writes history fixtures.
+func TestRootTestsImportNoDispatchState(t *testing.T) {
+	forbidden := []string{"ledger", "history", "stops", "sessionlog", "loop", "world"}
+	files, err := filepath.Glob("*_test.go")
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
+
+	for _, file := range files {
+		if file == "harness_test.go" {
+			continue
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), file, nil, parser.ImportsOnly)
+		require.NoError(t, err)
+		for _, spec := range parsed.Imports {
+			path, err := strconv.Unquote(spec.Path.Value)
+			require.NoError(t, err)
+			for _, name := range forbidden {
+				assert.NotEqual(t, "github.com/kapetan-io/dispatch/internal/"+name, path, file)
+			}
+		}
+	}
 }
 
 // The test binary doubles as the tsc these tests put on PATH: a symlink named tsc
@@ -2134,10 +2156,32 @@ func TestMain(m *testing.M) {
 	if filepath.Base(os.Args[0]) == "tsc" {
 		os.Exit(fakeTSCMain(os.Args[1:]))
 	}
+	// A test that skips newDispatch inherits this HOME, so a write there fails the package
+	// instead of landing in the real dispatch history.
+	guard, err := os.MkdirTemp("", "dispatch-home")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	// go build keeps its caches under HOME, so pin them before HOME moves.
+	for _, name := range []string{"GOCACHE", "GOMODCACHE", "GOPATH"} {
+		out, err := exec.Command("go", "env", name).Output()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		_ = os.Setenv(name, strings.TrimSpace(string(out)))
+	}
+	_ = os.Setenv("HOME", guard)
 	code := m.Run()
 	if dispatchBin != "" {
 		_ = os.RemoveAll(dispatchBin)
 	}
+	if written, _ := os.ReadDir(guard); len(written) > 0 {
+		fmt.Fprintf(os.Stderr, "FAIL: a test wrote under the home directory: %v\n", written)
+		code = 1
+	}
+	_ = os.RemoveAll(guard)
 	os.Exit(code)
 }
 
@@ -2176,16 +2220,16 @@ func fakeTSC(t *testing.T, exit int, output string) (record string) {
 
 // recordStopFrom runs the Stop hook as the Claude session with the given id, in a real worktree of the
 // harness repo. tasks is the background_tasks member of the hook input, or "" to leave it out.
-func (h *harness) recordStopFrom(session, ticket, tasks string) {
-	h.t.Helper()
-	_, _, err := h.runWith(context.Background(), dispatch.Options{Stdin: strings.NewReader(h.stopInput(session, ticket, tasks))}, "record-stop")
-	require.NoError(h.t, err)
+func (d *Dispatch) recordStopFrom(session, ticket, tasks string) {
+	d.t.Helper()
+	_, _, err := d.runWith(context.Background(), dispatch.Options{Stdin: strings.NewReader(d.stopInput(session, ticket, tasks))}, "record-stop")
+	require.NoError(d.t, err)
 }
 
 // stopInput is what Claude Code hands the Stop hook for a session in the ticket's tree.
-func (h *harness) stopInput(session, ticket, tasks string) string {
-	h.t.Helper()
-	tree := h.worktreeOf(ticket)
+func (d *Dispatch) stopInput(session, ticket, tasks string) string {
+	d.t.Helper()
+	tree := d.worktreeOf(ticket)
 	input := fmt.Sprintf(`{"hook_event_name":"Stop","session_id":%q,"cwd":%q`, session, tree)
 	if tasks != "" {
 		input += "," + tasks
@@ -2193,16 +2237,16 @@ func (h *harness) stopInput(session, ticket, tasks string) string {
 	return input + "}"
 }
 
-// worktreeOf is the path of ticket's tree, made a real git worktree of the harness repo.
-func (h *harness) worktreeOf(ticket string) string {
-	h.t.Helper()
-	tree := filepath.Join(h.dir, "trees", ticket)
-	if _, err := os.Stat(filepath.Join(h.repo, ".git")); err != nil {
-		hintGit(h.t, h.repo, "init", "-q")
-		hintGit(h.t, h.repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+// worktreeOf is the path of ticket's tree, made a real git worktree of d.Repo.
+func (d *Dispatch) worktreeOf(ticket string) string {
+	d.t.Helper()
+	tree := filepath.Join(d.dir, "trees", ticket)
+	if _, err := os.Stat(filepath.Join(d.Repo, ".git")); err != nil {
+		hintGit(d.t, d.Repo, "init", "-q")
+		hintGit(d.t, d.Repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
 	}
 	if _, err := os.Stat(tree); err != nil {
-		hintGit(h.t, h.repo, "worktree", "add", "-q", "-b", "br-"+ticket, tree)
+		hintGit(d.t, d.Repo, "worktree", "add", "-q", "-b", "br-"+ticket, tree)
 	}
 	return tree
 }
@@ -2210,49 +2254,49 @@ func (h *harness) worktreeOf(ticket string) string {
 // gitTree makes a pool tree that is clean and pushed: a clone of a bare
 // remote on main, at <dir>/trees/<name>, the path h.worker uses for a ticket
 // named <name>.
-func (h *harness) gitTree(ticket string) string {
-	path := filepath.Join(h.dir, "trees", ticket)
-	remote := filepath.Join(h.dir, "remotes", ticket+".git")
-	require.NoError(h.t, os.MkdirAll(filepath.Dir(remote), 0o755))
-	h.git(h.dir, "init", "--bare", "--initial-branch=main", remote)
-	require.NoError(h.t, os.MkdirAll(path, 0o755))
-	h.git(path, "init", "--initial-branch=main")
-	h.git(path, "remote", "add", "origin", remote)
-	h.commit(path)
-	h.push(path)
+func (d *Dispatch) gitTree(ticket string) string {
+	path := filepath.Join(d.dir, "trees", ticket)
+	remote := filepath.Join(d.dir, "remotes", ticket+".git")
+	require.NoError(d.t, os.MkdirAll(filepath.Dir(remote), 0o755))
+	d.git(d.dir, "init", "--bare", "--initial-branch=main", remote)
+	require.NoError(d.t, os.MkdirAll(path, 0o755))
+	d.git(path, "init", "--initial-branch=main")
+	d.git(path, "remote", "add", "origin", remote)
+	d.commit(path)
+	d.push(path)
 	return path
 }
 
 // lease holds a tree for a ticket with no herdr workspace on it.
-func (h *harness) lease(ticket, path string) {
-	h.tools.Treehouse.Clear(h.repo)
-	h.tools.Treehouse.Seed(h.repo, treehouse.Tree{Path: path, Status: "leased", LeaseHolder: ticket})
+func (d *Dispatch) lease(ticket, path string) {
+	d.tools.Treehouse.Clear(d.Repo)
+	d.tools.Treehouse.Seed(d.Repo, treehouse.Tree{Path: path, Status: "leased", LeaseHolder: ticket})
 }
 
 // dirty stages a new file in the tree.
-func (h *harness) dirty(path string) {
-	h.untracked(path, "wip.txt")
-	h.git(path, "add", "wip.txt")
+func (d *Dispatch) dirty(path string) {
+	d.untracked(path, "wip.txt")
+	d.git(path, "add", "wip.txt")
 }
 
 // untracked leaves a file in the tree that git has never seen.
-func (h *harness) untracked(path, name string) {
-	require.NoError(h.t, os.WriteFile(filepath.Join(path, name), []byte("wip"), 0o644))
+func (d *Dispatch) untracked(path, name string) {
+	require.NoError(d.t, os.WriteFile(filepath.Join(path, name), []byte("wip"), 0o644))
 }
 
 // commit adds a commit that no remote has.
-func (h *harness) commit(path string) {
-	h.git(path, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "work")
+func (d *Dispatch) commit(path string) {
+	d.git(path, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "work")
 }
 
-func (h *harness) push(path string) {
-	h.git(path, "push", "origin", "HEAD:main")
-	h.git(path, "fetch", "origin")
+func (d *Dispatch) push(path string) {
+	d.git(path, "push", "origin", "HEAD:main")
+	d.git(path, "fetch", "origin")
 }
 
-func (h *harness) git(dir string, args ...string) {
+func (d *Dispatch) git(dir string, args ...string) {
 	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
-	require.NoError(h.t, err, string(out))
+	require.NoError(d.t, err, string(out))
 }
 
 func newHintRepo(t *testing.T) string {

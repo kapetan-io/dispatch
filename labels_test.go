@@ -16,35 +16,35 @@ import (
 )
 
 // Renames lists the workspace renames herdr accepted, as "<workspace>|<label>".
-func (w *Workers) Renames() []string { return w.d.h.renames() }
+func (w *Workers) Renames() []string { return w.d.renames() }
 
 // Unconfirmed marks the ticket's tree as one whose launch never confirmed its kickoff (unreachable
 // from the CLI: a test cannot kill a launch halfway).
 func (w *Workers) Unconfirmed(ticket string) {
-	w.d.h.t.Helper()
-	markLaunch(w.d.h.t, w.d.h.state, w.Tree(ticket), w.d.Clock.Now())
+	w.d.t.Helper()
+	markLaunch(w.d.t, w.d.state, w.Tree(ticket), w.d.Clock.Now())
 }
 
 // Wake runs the Notification hook as a session working in dir.
 func (d *Dispatch) Wake(dir string) Result {
-	d.h.t.Helper()
+	d.t.Helper()
 	return d.Hook("wake", fmt.Sprintf(`{"hook_event_name":"Notification","notification_type":"idle_prompt","session_id":"worker","cwd":%q}`, dir))
 }
 
 // TabRenames lists the tab renames herdr accepted, as "<tab>|<name>".
-func (w *Workers) TabRenames() []string { return w.d.h.tabRenames() }
+func (w *Workers) TabRenames() []string { return w.d.tabRenames() }
 
 // LabelWorkspace gives a workspace the label an earlier dispatch or the launcher left on it.
-func (w *Workers) LabelWorkspace(id, label string) { w.d.h.labelWorkspace(id, label) }
+func (w *Workers) LabelWorkspace(id, label string) { w.d.labelWorkspace(id, label) }
 
 // LabelTab gives the ticket's tab the name the launcher left on it.
-func (w *Workers) LabelTab(ticket, label string) { w.d.h.labelTab(ticket, label) }
+func (w *Workers) LabelTab(ticket, label string) { w.d.labelTab(ticket, label) }
 
 // FailRenames makes herdr refuse every workspace rename with err until it is called with nil.
-func (w *Workers) FailRenames(err error) { w.d.h.tools.Herdr.Fail(herdrtest.OpRenameWorkspace, err) }
+func (w *Workers) FailRenames(err error) { w.d.tools.Herdr.Fail(herdrtest.OpRenameWorkspace, err) }
 
 // FailTabList makes herdr fail every read of a workspace's tabs with err.
-func (w *Workers) FailTabList(err error) { w.d.h.tools.Herdr.Fail(herdrtest.OpTabList, err) }
+func (w *Workers) FailTabList(err error) { w.d.tools.Herdr.Fail(herdrtest.OpTabList, err) }
 
 func (w *Workers) lastRename(t *testing.T) string {
 	t.Helper()

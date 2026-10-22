@@ -469,18 +469,18 @@ func TestTicketHintGivesUpWhenGitHangsPastTheContext(t *testing.T) {
 
 // hintFrom runs `dispatch ticket-hint` from dir and returns what it printed.
 func (d *Dispatch) hintFrom(dir string) string {
-	d.h.t.Helper()
+	d.t.Helper()
 	res := d.RunIn(dir, "ticket-hint")
-	require.NoError(d.h.t, res.Err)
+	require.NoError(d.t, res.Err)
 	return res.Stdout
 }
 
 // runInWithoutConfig is RunIn on a machine that has no config.toml.
 func (d *Dispatch) runInWithoutConfig(dir string, args ...string) Result {
-	d.h.t.Helper()
-	d.h.t.Chdir(dir)
-	opts := d.h.options(dispatch.Options{Dir: dir})
-	opts.ConfigPath = filepath.Join(d.h.dir, "missing.toml")
+	d.t.Helper()
+	d.t.Chdir(dir)
+	opts := d.options(dispatch.Options{Dir: dir})
+	opts.ConfigPath = filepath.Join(d.dir, "missing.toml")
 	return d.run(opts, args...)
 }
 
@@ -505,13 +505,13 @@ func runCount(t *testing.T, counter string) int {
 }
 
 // Calls counts the requests Linear answered.
-func (l *Linear) Calls() int { return l.d.h.linear.calls() }
+func (l *Linear) Calls() int { return l.d.linear.calls() }
 
 // runOver runs a command over Options the harness doesn't set itself, under a context the test
 // can cancel.
 func (d *Dispatch) runOver(ctx context.Context, extra dispatch.Options, args ...string) Result {
-	d.h.t.Helper()
-	return d.result(d.h.runWith(ctx, extra, args...))
+	d.t.Helper()
+	return d.result(d.runWith(ctx, extra, args...))
 }
 
 func TestApiKeyCommandSuppliesTheLinearKey(t *testing.T) {
@@ -702,6 +702,11 @@ func TestDocConfigExamplesLoad(t *testing.T) {
 	for name, body := range examples {
 		t.Run(name, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{OwnRepos: strings.Contains(body, "[repos"), Config: body})
+			// The reference block names ~/Development/dispatch for rules, plugin root and repo.
+			checkout, err := filepath.Abs(".")
+			require.NoError(t, err)
+			require.NoError(t, os.MkdirAll(filepath.Join(d.Home, "Development"), 0o755))
+			require.NoError(t, os.Symlink(checkout, filepath.Join(d.Home, "Development", "dispatch")))
 
 			res := d.Run("tick")
 

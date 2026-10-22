@@ -16,17 +16,17 @@ import (
 
 // Session makes the commands that follow run in the Claude session whose inbox is socket.
 func (d *Dispatch) Session(socket string) {
-	d.h.t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
+	d.t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", socket)
 }
 
 // RunWhileDown runs a command with no dispatch running and none started for it.
 func (d *Dispatch) RunWhileDown(args ...string) Result {
-	d.h.t.Helper()
-	return d.run(d.h.options(dispatch.Options{}), args...)
+	d.t.Helper()
+	return d.run(d.options(dispatch.Options{}), args...)
 }
 
 // LoopStderr is what the running dispatch has printed to stderr.
-func (d *Dispatch) LoopStderr() string { return d.h.loopErr() }
+func (d *Dispatch) LoopStderr() string { return d.loopErr() }
 
 // deadSocket is the socket file of a session that crashed: it is there and nothing listens on it.
 func deadSocket(t *testing.T, near string) string {

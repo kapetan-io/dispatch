@@ -14,32 +14,32 @@ import (
 )
 
 // setChildren gives Linear the children a parent's child list returns.
-func (d *Dispatch) setChildren(children ...fakeTicket) { d.h.linear.setChildren(children...) }
+func (d *Dispatch) setChildren(children ...fakeTicket) { d.linear.setChildren(children...) }
 
 // failChildren makes Linear refuse every child list read.
-func (d *Dispatch) failChildren() { d.h.linear.failChildren() }
+func (d *Dispatch) failChildren() { d.linear.failChildren() }
 
 // failMoves makes Linear refuse every status change.
-func (d *Dispatch) failMoves() { d.h.linear.failMoves() }
+func (d *Dispatch) failMoves() { d.linear.failMoves() }
 
 // childReads lists the parents each child list read of Linear asked for.
-func (d *Dispatch) childReads() [][]string { return d.h.linear.childReadParents() }
+func (d *Dispatch) childReads() [][]string { return d.linear.childReadParents() }
 
 // plan is what `dispatch plan` prints.
 func (d *Dispatch) plan() string {
-	d.h.t.Helper()
+	d.t.Helper()
 	res := d.Run("plan")
-	require.NoError(d.h.t, res.Err)
+	require.NoError(d.t, res.Err)
 	return res.Stdout
 }
 
 // unreadRepo adds a repo whose clone moved, so treehouse cannot read its pool.
 func (d *Dispatch) unreadRepo(label string) {
-	d.h.addRepo(label, filepath.Join(d.h.dir, "moved"))
+	d.addRepo(label, filepath.Join(d.dir, "moved"))
 }
 
 // realLauncher makes a launch create a herdr workspace, so a launched worker counts against the cap.
-func (d *Dispatch) realLauncher() { parentsRealLauncher(d.h) }
+func (d *Dispatch) realLauncher() { parentsRealLauncher(d) }
 
 // herdrDown makes herdr refuse every read, or answer again when on is false.
 func (d *Dispatch) herdrDown(on bool) {
@@ -47,7 +47,7 @@ func (d *Dispatch) herdrDown(on bool) {
 	if on {
 		err = errors.New("server not running")
 	}
-	d.h.tools.Herdr.Fail(herdrtest.OpRead, err)
+	d.tools.Herdr.Fail(herdrtest.OpRead, err)
 }
 
 func TestTickPromotesAnUnblockedChildAndHoldsTheBlockedOne(t *testing.T) {
@@ -703,7 +703,7 @@ func TestTickReleasesAChildOnTheConfiguredBlockerStatus(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{Config: "[plugins.linear.statuses]\nblocker_done = \"Released\"\n"})
-			d.h.tools.Linear.AddState("Released", "completed")
+			d.tools.Linear.AddState("Released", "completed")
 			d.Linear.Tickets(parent("ENG-1", "In Progress"))
 			d.setChildren(
 				child("ENG-2", "ENG-1", test.blocker),
@@ -767,7 +767,7 @@ func TestTickGivesOneFreeSlotToEitherAPromotionOrALaunchNeverBoth(t *testing.T) 
 	// A promotion holds its slot until Linear shows the child In Progress and its worker is up,
 	// so the launch that wanted the same slot in the same cycle waits.
 	// Surface exception: herdr's started workspaces are the fake's state, not command output.
-	assert.Len(t, d.h.tools.Herdr.Started(), 1)
+	assert.Len(t, d.tools.Herdr.Started(), 1)
 	assert.Contains(t, d.plan(), "waiting")
 }
 

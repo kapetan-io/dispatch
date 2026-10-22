@@ -31,9 +31,9 @@ func replayTotals(t *testing.T, out string) (cycles, matched int) {
 
 // replayCounts runs replay on a harness and returns the cycles it ran again and how many matched.
 // commands_test.go still reads its history through it.
-func replayCounts(t *testing.T, h *harness, args ...string) (cycles, matched int) {
+func replayCounts(t *testing.T, d *Dispatch, args ...string) (cycles, matched int) {
 	t.Helper()
-	out, err := h.run(append([]string{"replay"}, args...)...)
+	out, err := d.output(append([]string{"replay"}, args...)...)
 	require.NoError(t, err)
 	return replayTotals(t, out)
 }

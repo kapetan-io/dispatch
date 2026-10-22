@@ -357,7 +357,7 @@ func TestTickKeepsTheTreeWhenTheWorkspaceWillNotClose(t *testing.T) {
 	d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "idle")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
-	d.h.tools.Herdr.Fail(herdrtest.OpCloseWorkspace, errors.New("exit status 1"))
+	d.tools.Herdr.Fail(herdrtest.OpCloseWorkspace, errors.New("exit status 1"))
 
 	res := d.Run("tick")
 
@@ -374,7 +374,7 @@ func TestTickKeepsTheTreeWhenTreehouseRefusesTheReturn(t *testing.T) {
 	d.Workers.Running("ENG-1", "idle")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 	// The lease moves to another ticket after dispatch looked at the pool.
-	d.h.tools.Treehouse.MoveLeaseAfterRead(path, "ENG-2")
+	d.tools.Treehouse.MoveLeaseAfterRead(path, "ENG-2")
 
 	res := d.Run("tick")
 
@@ -587,11 +587,11 @@ func TestTickDoesNotRepeatTheCommentAfterAPoolCannotBeRead(t *testing.T) {
 	require.Len(t, d.Linear.Comments(), 1)
 
 	// A second repo whose pool fails leaves the first one's trees readable.
-	d.h.addRepo("tiger", filepath.Join(d.h.dir, "moved"))
+	d.addRepo("tiger", filepath.Join(d.dir, "moved"))
 	d.Restart()
 	d.Tick()
 	// Dropping the extra repo makes the next start read every pool again.
-	d.h.resetRepos()
+	d.resetRepos()
 	d.Restart()
 	d.Tick()
 
@@ -625,7 +625,7 @@ func TestTickKeepsTickingWhenLinearCannotListTheTicketsHoldingTrees(t *testing.T
 	d.Tick()
 
 	assert.Len(t, d.Workers.Launched(), 1)
-	assert.Contains(t, d.h.loopErr(), "dispatch: while reading the tickets that hold trees: linear LeasedTickets")
+	assert.Contains(t, d.loopErr(), "dispatch: while reading the tickets that hold trees: linear LeasedTickets")
 	assert.Empty(t, d.Trees.Returned())
 }
 
@@ -666,7 +666,7 @@ func TestTickDoesNotTouchTreesOfTicketsInReviewOrNeedsHuman(t *testing.T) {
 func TestTickTeardownFreesATreeForALaunchInTheSameTick(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	// The real launcher leaves a workspace behind, as production does, so one launch is one worker.
-	parentsRealLauncher(d.h)
+	parentsRealLauncher(d)
 	d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "idle")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
@@ -682,8 +682,8 @@ func TestTickTeardownFreesATreeForALaunchInTheSameTick(t *testing.T) {
 
 func TestTickReadsDoneAndPausedStatusesFromConfig(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Config: "[plugins.linear.statuses]\nfinished = [\"Shipped\"]\npaused = [\"Parked\"]\n"})
-	d.h.tools.Linear.AddState("Shipped", "completed")
-	d.h.tools.Linear.AddState("Parked", "backlog")
+	d.tools.Linear.AddState("Shipped", "completed")
+	d.tools.Linear.AddState("Parked", "backlog")
 	first := d.Trees.Clean("ENG-1")
 	d.Trees.Clean("ENG-2")
 	d.Trees.Clean("ENG-3")
@@ -710,8 +710,8 @@ func TestTickClosesTheWorkspaceBeforeItReturnsTheTree(t *testing.T) {
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 	// A worker still running in the tree could write to it after the return.
 	var order []string
-	d.h.tools.Treehouse.BeforeReturn(func(string) {
-		if d.h.tools.Herdr.HasWorkspace("w-ENG-1") {
+	d.tools.Treehouse.BeforeReturn(func(string) {
+		if d.tools.Herdr.HasWorkspace("w-ENG-1") {
 			order = append(order, "open")
 		} else {
 			order = append(order, "closed")
@@ -733,7 +733,7 @@ func TestTickLeavesNoTabPaneOrAgentOfAClosedWorkspace(t *testing.T) {
 
 	d.Tick()
 
-	snap, err := d.h.tools.Herdr.Read(t.Context())
+	snap, err := d.tools.Herdr.Read(t.Context())
 	require.NoError(t, err)
 	require.Len(t, snap.Workspaces, 1)
 	assert.Equal(t, "w-ENG-2", snap.Workspaces[0].ID)
@@ -751,7 +751,7 @@ func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
 	d.Workers.Running("ENG-1", "working")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 	// The cycle saw a clean tree, and the worker writes a file as it is killed.
-	d.h.tools.Herdr.BeforeCloseWorkspace(func(string) {
+	d.tools.Herdr.BeforeCloseWorkspace(func(string) {
 		require.NoError(t, os.WriteFile(filepath.Join(path, "late.txt"), []byte("late\n"), 0o644))
 		require.NoError(t, exec.Command("git", "-C", path, "add", "late.txt").Run())
 	})
@@ -805,7 +805,7 @@ func TestTickCommentsOnADirtyTreeThatHasNoWorkspace(t *testing.T) {
 func TestTickKeepsATreeWhoseCommitsNoRemoteHas(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	// A tree with no remote at all has nowhere its commits could be pushed.
-	path := filepath.Join(d.h.dir, "trees", "ENG-1")
+	path := filepath.Join(d.dir, "trees", "ENG-1")
 	require.NoError(t, os.MkdirAll(path, 0o755))
 	d.Trees.Git(path, "init", "--initial-branch=main")
 	d.Trees.Commit(path)
@@ -1003,7 +1003,7 @@ func TestTickKeepsATreeThatGainedACommitAfterTheCycleDecidedToReturnIt(t *testin
 	d.Workers.Running("ENG-1", "working")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 	// The cycle read a clean, pushed tree, and the worker commits as its workspace closes.
-	d.h.tools.Herdr.BeforeCloseWorkspace(func(string) { d.Trees.Commit(path) })
+	d.tools.Herdr.BeforeCloseWorkspace(func(string) { d.Trees.Commit(path) })
 
 	res := d.Run("tick")
 
@@ -1029,7 +1029,7 @@ func TestTickKeepsATreeThatGainedANestedRepoAfterTheCycleDecidedToReturnIt(t *te
 	d.Workers.Running("ENG-1", "working")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 	// An untracked repository is work git clean will not remove and returning would discard.
-	d.h.tools.Herdr.BeforeCloseWorkspace(func(string) {
+	d.tools.Herdr.BeforeCloseWorkspace(func(string) {
 		require.NoError(t, os.MkdirAll(filepath.Join(path, "nested"), 0o755))
 		d.Trees.Git(filepath.Join(path, "nested"), "init", "--initial-branch=main")
 	})
@@ -1067,7 +1067,7 @@ func TestTickDoesNotReturnATreeWhoseGitFailsAfterTheCycleDecidedToReturnIt(t *te
 	d.Workers.Running("ENG-1", "working")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 	// The cycle read the tree fine, and git cannot read it when the executor looks again.
-	d.h.tools.Herdr.BeforeCloseWorkspace(func(string) {
+	d.tools.Herdr.BeforeCloseWorkspace(func(string) {
 		require.NoError(t, os.WriteFile(filepath.Join(path, ".git", "HEAD"), []byte("garbage\n"), 0o644))
 	})
 
@@ -1091,7 +1091,7 @@ func TestTickDoesNotRepeatTheKeptTreeCommentAfterOnePoolReadFails(t *testing.T) 
 	require.Len(t, d.Linear.Comments(), 1)
 
 	// FailTrees fails only the next read of the pool.
-	d.h.tools.Treehouse.FailTrees(errors.New("treehouse is busy"))
+	d.tools.Treehouse.FailTrees(errors.New("treehouse is busy"))
 	d.Advance(time.Minute)
 	d.Tick()
 	d.Advance(time.Minute)
@@ -1112,47 +1112,47 @@ func withoutLabels(t fakeTicket) fakeTicket {
 
 // teardownReceipts lists the receipts of one action kind dispatch wrote for the ticket.
 func teardownReceipts(d *Dispatch, ticket, kind string) []Receipt {
-	d.h.t.Helper()
+	d.t.Helper()
 	return slices.DeleteFunc(d.Receipts(ticket), func(r Receipt) bool { return r.Kind != kind })
 }
 
 // Clean makes the ticket's tree a clean, pushed clone and returns its path.
-func (t *Trees) Clean(ticket string) string { return t.d.h.gitTree(ticket) }
+func (t *Trees) Clean(ticket string) string { return t.d.gitTree(ticket) }
 
 // Leased holds the tree for the ticket with no herdr workspace on it.
-func (t *Trees) Leased(ticket, path string) { t.d.h.lease(ticket, path) }
+func (t *Trees) Leased(ticket, path string) { t.d.lease(ticket, path) }
 
 // Dirty stages a new file in the tree.
-func (t *Trees) Dirty(path string) { t.d.h.dirty(path) }
+func (t *Trees) Dirty(path string) { t.d.dirty(path) }
 
 // Leave puts a file git has never seen into the tree.
-func (t *Trees) Leave(path, name string) { t.d.h.untracked(path, name) }
+func (t *Trees) Leave(path, name string) { t.d.untracked(path, name) }
 
 // Commit adds a commit that no remote has.
-func (t *Trees) Commit(path string) { t.d.h.commit(path) }
+func (t *Trees) Commit(path string) { t.d.commit(path) }
 
 // Push gives the remote the tree's commits.
-func (t *Trees) Push(path string) { t.d.h.push(path) }
+func (t *Trees) Push(path string) { t.d.push(path) }
 
 // Git runs git in dir and requires it to succeed.
-func (t *Trees) Git(dir string, args ...string) { t.d.h.git(dir, args...) }
+func (t *Trees) Git(dir string, args ...string) { t.d.git(dir, args...) }
 
 // Holder is the ticket the pool says holds the tree.
-func (t *Trees) Holder(path string) string { return t.d.h.tools.Treehouse.Holder(path) }
+func (t *Trees) Holder(path string) string { return t.d.tools.Treehouse.Holder(path) }
 
 // RunningAs is Running for a tree at a chosen path and a workspace with a chosen id.
 func (w *Workers) RunningAs(ticket, tree, id, status string) {
-	w.d.h.workerOn(ticket, tree, id, status)
+	w.d.workerOn(ticket, tree, id, status)
 }
 
 // FailComments makes Linear refuse comments while on is true.
-func (l *Linear) FailComments(on bool) { l.d.h.linear.failComments(on) }
+func (l *Linear) FailComments(on bool) { l.d.linear.failComments(on) }
 
 // FailLookups makes Linear refuse to list the tickets that hold trees.
-func (l *Linear) FailLookups() { l.d.h.linear.failLookups() }
+func (l *Linear) FailLookups() { l.d.linear.failLookups() }
 
 // AllowLookups undoes FailLookups.
-func (l *Linear) AllowLookups() { l.d.h.linear.allowLookups() }
+func (l *Linear) AllowLookups() { l.d.linear.allowLookups() }
 
 // Lookups counts the times dispatch asked Linear which tickets hold trees.
-func (l *Linear) Lookups() int { return l.d.h.linear.lookups() }
+func (l *Linear) Lookups() int { return l.d.linear.lookups() }

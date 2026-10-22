@@ -23,35 +23,35 @@ import (
 
 // RunWithoutLoop runs a command on a machine where dispatch run was never started.
 func (d *Dispatch) RunWithoutLoop(args ...string) Result {
-	d.h.t.Helper()
-	return d.run(d.h.options(dispatch.Options{}), args...)
+	d.t.Helper()
+	return d.run(d.options(dispatch.Options{}), args...)
 }
 
 // RunInStateDir runs a command over a state directory of the test's choosing.
 func (d *Dispatch) RunInStateDir(stateDir string, args ...string) Result {
-	d.h.t.Helper()
-	opts := d.h.options(dispatch.Options{})
+	d.t.Helper()
+	opts := d.options(dispatch.Options{})
 	opts.StateDir = stateDir
 	return d.run(opts, args...)
 }
 
 // LoopOut is what dispatch run has printed to stdout so far.
-func (d *Dispatch) LoopOut() string { return d.h.loopOut() }
+func (d *Dispatch) LoopOut() string { return d.loopOut() }
 
 // LoopErr is what dispatch run has printed to stderr so far.
-func (d *Dispatch) LoopErr() string { return d.h.loopErr() }
+func (d *Dispatch) LoopErr() string { return d.loopErr() }
 
 // LoopStops waits for the loop to stop without being asked to, and returns what it printed to
 // stderr on the way out and what it stopped with.
 func (d *Dispatch) LoopStops() (string, error) {
-	d.h.t.Helper()
-	running := d.h.running
-	require.NotNil(d.h.t, running)
+	d.t.Helper()
+	running := d.running
+	require.NotNil(d.t, running)
 	var err error
-	require.Eventually(d.h.t, func() bool {
+	require.Eventually(d.t, func() bool {
 		select {
 		case err = <-running.done:
-			d.h.running = nil
+			d.running = nil
 			return true
 		default:
 			return false
@@ -63,32 +63,32 @@ func (d *Dispatch) LoopStops() (string, error) {
 // StartWithLaunchTimeout starts the loop with a launch deadline short enough that a stalled launch
 // doesn't keep the test waiting for the default one.
 func (d *Dispatch) StartWithLaunchTimeout(timeout time.Duration) {
-	d.h.t.Helper()
-	require.NoError(d.h.t, d.h.startLoop(dispatch.Options{LaunchTimeout: timeout}))
+	d.t.Helper()
+	require.NoError(d.t, d.startLoop(dispatch.Options{LaunchTimeout: timeout}))
 }
 
 // MovedRepo adds a repo whose clone has moved, so treehouse can't read its pool.
-func (d *Dispatch) MovedRepo(label string) { d.AddRepo(label, filepath.Join(d.h.dir, "moved")) }
+func (d *Dispatch) MovedRepo(label string) { d.AddRepo(label, filepath.Join(d.dir, "moved")) }
 
 // AddRepo adds a repo beside the dispatch repo.
-func (d *Dispatch) AddRepo(label, dir string) { d.h.addRepo(label, dir) }
+func (d *Dispatch) AddRepo(label, dir string) { d.addRepo(label, dir) }
 
 // ForgetRepos drops every repo added after the dispatch repo.
-func (d *Dispatch) ForgetRepos() { d.h.resetRepos() }
+func (d *Dispatch) ForgetRepos() { d.resetRepos() }
 
 // RealLauncher makes launches open a herdr workspace over a pooled tree, so a launched worker
 // counts against max_in_progress the way it does in production.
 func (d *Dispatch) RealLauncher() {
-	d.h.t.Helper()
-	parentsRealLauncher(d.h)
+	d.t.Helper()
+	parentsRealLauncher(d)
 }
 
 // TraceReceipts lists every receipt line trace prints for the ticket, one for each state an action
 // went through, where Receipts keeps only the last.
 func (d *Dispatch) TraceReceipts(ticket string) []Receipt {
-	d.h.t.Helper()
+	d.t.Helper()
 	res := d.Run("trace", ticket, "--json")
-	require.NoError(d.h.t, res.Err)
+	require.NoError(d.t, res.Err)
 	var found []Receipt
 	for _, text := range strings.Split(res.Stdout, "\n") {
 		var line struct {
@@ -104,7 +104,7 @@ func (d *Dispatch) TraceReceipts(ticket string) []Receipt {
 
 // ReceiptsOf is Receipts narrowed to one kind of action.
 func (d *Dispatch) ReceiptsOf(kind, ticket string) []Receipt {
-	d.h.t.Helper()
+	d.t.Helper()
 	var found []Receipt
 	for _, receipt := range d.Receipts(ticket) {
 		if receipt.Kind == kind {
@@ -115,13 +115,13 @@ func (d *Dispatch) ReceiptsOf(kind, ticket string) []Receipt {
 }
 
 // StallLaunches makes every launch from now on wait until its deadline.
-func (w *Workers) StallLaunches() { w.d.h.tools.Launcher.Stall() }
+func (w *Workers) StallLaunches() { w.d.tools.Launcher.Stall() }
 
 // Changes lists the status changes and comments Linear accepted, oldest first, as Moves and
 // Comments print them.
 func (l *Linear) Changes() []string {
 	var out []string
-	for _, c := range l.d.h.linear.mutations() {
+	for _, c := range l.d.linear.mutations() {
 		id := strings.TrimPrefix(c.TicketID, "uuid-")
 		switch c.Kind {
 		case lineartest.Move:
@@ -134,26 +134,26 @@ func (l *Linear) Changes() []string {
 }
 
 // RefuseMoves makes Linear answer every status change with success=false.
-func (l *Linear) RefuseMoves() { l.d.h.linear.unsuccessfulMoves() }
+func (l *Linear) RefuseMoves() { l.d.linear.unsuccessfulMoves() }
 
 // RefuseComments makes Linear answer every comment with success=false.
-func (l *Linear) RefuseComments() { l.d.h.linear.unsuccessfulComments() }
+func (l *Linear) RefuseComments() { l.d.linear.unsuccessfulComments() }
 
 // Overflow gives the user more started tickets than one page of Linear holds.
-func (l *Linear) Overflow() { l.d.h.linear.overflowManaged() }
+func (l *Linear) Overflow() { l.d.linear.overflowManaged() }
 
 // LeasedTo leases a tree to a holder that has no workspace, and returns its path.
 func (t *Trees) LeasedTo(holder string) string {
-	t.d.h.t.Helper()
+	t.d.t.Helper()
 	path := t.PathOf(holder)
-	t.d.h.tools.Treehouse.Seed(t.d.Repo, treehouse.Tree{Path: path, Status: "leased", LeaseHolder: holder})
+	t.d.tools.Treehouse.Seed(t.d.Repo, treehouse.Tree{Path: path, Status: "leased", LeaseHolder: holder})
 	return path
 }
 
 // GiveBack returns a leased tree to the pool, as its holder does.
 func (t *Trees) GiveBack(path, holder string) {
-	t.d.h.t.Helper()
-	require.NoError(t.d.h.t, t.d.h.tools.Treehouse.Return(t.d.h.t.Context(), t.d.Repo, path, holder))
+	t.d.t.Helper()
+	require.NoError(t.d.t, t.d.tools.Treehouse.Return(t.d.t.Context(), t.d.Repo, path, holder))
 }
 
 func TestTellAndTickExitThreeWhenNoLoopRuns(t *testing.T) {
@@ -276,7 +276,7 @@ func TestPlanHoldsATicketWhoseRepoPoolCouldNotBeRead(t *testing.T) {
 	d.MovedRepo("tiger")
 	d.Linear.Tickets(ticket("ENG-2", "In Progress", "tiger"))
 	// A worker may already run in the repo whose pool nobody could read.
-	d.h.tools.Herdr.AddWorkspace(herdr.Workspace{ID: "w-ENG-2", Label: "ENG-2", CheckoutPath: filepath.Join(d.h.dir, "trees", "ENG-2")})
+	d.tools.Herdr.AddWorkspace(herdr.Workspace{ID: "w-ENG-2", Label: "ENG-2", CheckoutPath: filepath.Join(d.dir, "trees", "ENG-2")})
 	d.Tick()
 	d.Advance(time.Second)
 	d.Tick()
@@ -444,11 +444,11 @@ func TestStoppingTheLoopAnswersATellThatIsWaitingOnARead(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
 	d.Tick()
-	d.h.tools.Treehouse.DelayTrees(2 * time.Second)
-	reads := len(d.h.tools.Calls("treehouse", "trees"))
+	d.tools.Treehouse.DelayTrees(2 * time.Second)
+	reads := len(d.tools.Calls("treehouse", "trees"))
 	told := make(chan Result, 1)
 	go func() { told <- d.Run("tell", "ENG-1", "hello") }()
-	require.Eventually(t, func() bool { return len(d.h.tools.Calls("treehouse", "trees")) > reads }, 20*time.Second, 5*time.Millisecond)
+	require.Eventually(t, func() bool { return len(d.tools.Calls("treehouse", "trees")) > reads }, 20*time.Second, 5*time.Millisecond)
 
 	d.Stop()
 
@@ -495,22 +495,22 @@ func TestAWorkerThatGoesIdleHasItsPRReadWithoutWaitingForTheResync(t *testing.T)
 	d.Workers.Running("ENG-1", "working")
 	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
 	d.Tick()
-	require.Empty(t, d.h.prReads())
+	require.Empty(t, d.prReads())
 
 	// A tell reads herdr without a resync, and finds the worker idle.
 	d.Advance(time.Second)
 	d.Workers.SetStatus("ENG-1", "idle")
 	require.NoError(t, d.Run("tell", "ENG-1", "hello").Err)
 
-	assert.NotEmpty(t, d.h.prReads())
+	assert.NotEmpty(t, d.prReads())
 }
 
 func TestAnAlertThatHangsDoesNotStopTheLoopAnswering(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Linear.Overflow()
-	d.h.tools.Alerts.Stall(true)
-	opts := d.h.options(dispatch.Options{})
+	d.tools.Alerts.Stall(true)
+	opts := d.options(dispatch.Options{})
 	opts.Stdout, opts.Stderr = &syncBuffer{}, &syncBuffer{}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -528,12 +528,12 @@ func TestTheOverflowAlertIsShownAgainAfterItFailed(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Linear.Overflow()
-	d.h.tools.Alerts.Fail(errors.New("notifications are denied"))
+	d.tools.Alerts.Fail(errors.New("notifications are denied"))
 	d.StartBeforeTheEvents()
-	require.Eventually(t, func() bool { return len(d.h.tools.Calls("alerts", "show")) == 1 }, 5*time.Second, 5*time.Millisecond)
+	require.Eventually(t, func() bool { return len(d.tools.Calls("alerts", "show")) == 1 }, 5*time.Second, 5*time.Millisecond)
 	require.Empty(t, d.Alerts.Shown())
 
-	d.h.tools.Alerts.Fail(nil)
+	d.tools.Alerts.Fail(nil)
 	d.Advance(time.Hour)
 
 	require.Len(t, d.Alerts.Shown(), 1)
@@ -745,7 +745,7 @@ func TestAnUnreadHerdrHoldsALaunchAndPlanSaysWhy(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
-	d.h.tools.Herdr.Fail(herdrtest.OpRead, errors.New("server not running"))
+	d.tools.Herdr.Fail(herdrtest.OpRead, errors.New("server not running"))
 	d.Restart()
 	d.Advance(time.Hour)
 	d.Tick()
@@ -880,10 +880,10 @@ func TestAFailedHerdrReadDoesNotMakeAFullPoolRetry(t *testing.T) {
 	d.Tick()
 	require.Len(t, d.Workers.Launched(), 1)
 
-	d.h.tools.Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
+	d.tools.Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
 	d.Advance(time.Second)
 	d.Tick()
-	d.h.tools.Herdr.Fail(herdrtest.OpRead, nil)
+	d.tools.Herdr.Fail(herdrtest.OpRead, nil)
 	d.Advance(time.Second)
 	d.Tick()
 
