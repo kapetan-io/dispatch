@@ -1,0 +1,1 @@
+I think I follow what you are saying, are you saying we introduce a new sub command for each problem domain so we can test each individually. then "tiger check" runs them all as it does today? I think we could introduce a subcommand like "tiger run <name of check>"  thoughts?
