@@ -9,11 +9,12 @@ Before you call a design, plan, ticket, root cause or change done, ask what a le
 
 **Why:** Your own certainty is one perspective, and it is the one that wrote the mistake. Confidence comes from independent perspectives that tried to break the work and failed.
 
-- **Different personas, no shared context.** Give each reviewer a different seat, such as the user or caller, the next maintainer, an operator, or a skeptic of the premise. Start each without your context, in parallel, so none sees another's answer. Hand it the artifact and the question, not your conclusion. A "perspective" below means one persona run by one method.
+- **Different personas, none holding your conclusion.** Give each reviewer a different seat, such as the user or caller, the next maintainer, an operator, or a skeptic of the premise. Hand each the artifact and the question, not your conclusion or your session's history, and keep their answers apart so none sees another's.
+- **The same ground rules for every reviewer.** Point each at the nearest `docs/CONTEXT.md` so they share one vocabulary, and tell them to coin no labels of their own. Name the principles (`dispatch:principles`) that bear on this work, so each judges against the same standards.
 - **Perspectives differ by method as well as persona.** Reading the same code twice is one perspective. Measuring, running or reproducing it is another.
-- **You choose how many and which.** Scale them to the risk and scope of the change. A one-line fix needs fewer than a public contract.
-- **Say which perspectives checked the work, and which didn't,** wherever you publish the result (blueprint, ticket body, PR body, or the comment that states a root cause). A claim that rests on one perspective and no cited source is a guess. Label it that way, as `dispatch:converse` says of anything unchecked.
+- **You choose how many and which,** scaled to the risk and scope of the change.
+- **Say which perspectives checked the work, and which didn't,** wherever you publish the result. A claim that rests on one perspective and no cited source is a guess. Label it that way, as `dispatch:converse` says of anything unchecked.
 
-**Example:** A root cause for slow tests ("each stand-in claude start costs about 1 second under the race detector") came from reading code. A second reviewer read the same code and agreed. It went into two tickets and a merged skill before ENG-495 timed one call and found the race detector's 1-second exit sleep instead. Two readers were one perspective, and the measurement was the second.
+**Example:** A root cause read from the code was confirmed by a second reviewer who read the same code, and both were wrong. Timing one call found the real cause. Two readers were one perspective, and the measurement was the second.
 
-Steps that already run several reviewers (`dispatch:ticket`'s "Review before you save", `dispatch:arena`, `dispatch:design-review`, `dispatch:build`'s code review) count toward this. Check which personas and methods they cover, and add only what is missing.
+A step that already runs several reviewers counts toward this. Check which personas and methods it covers, and add only what is missing.
