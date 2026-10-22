@@ -51,14 +51,24 @@ path = "~/Development/dispatch"
 
 The [config reference](config.md) lists every other setting and has examples for several repos and renamed statuses. dispatch fails on a setting it doesn't know. The [rules guide](rules.md) covers `dispatch rules init`, `check` and `test`.
 
-**6. Load the plugin in your own Claude sessions.** Workers get the plugin from `[plugins.herdr].plugin_root` on their own. Your session, the one that files tickets and supervises workers, needs it too, for `/dispatch:dispatch` and `dispatch:ticket`. The repo is its own marketplace, so install it once from your clone. Use your clone's path where the commands show `~/Development/dispatch`:
+**6. Load the plugin in your own Claude sessions.** Workers get the plugin from `[plugins.herdr].plugin_root` on their own. Your session, the one that files tickets and supervises workers, needs it too, for `/dispatch:dispatch` and `dispatch:ticket`. Put the checkout's shim directory first on your PATH, in fish with the checkout at `~/Development/dispatch`:
+
+```fish
+fish_add_path --prepend ~/Development/dispatch/scripts/shims
+```
+
+A plain `claude` then starts a session that loads the skills from the checkout named by `[plugins.herdr].plugin_root` (or by `DISPATCH_PLUGIN_ROOT` when you set it) and accepts messages from other sessions (unless you pass your own `--settings`, which then has to carry `crossSessionInbound` itself), so a `git pull` reaches your next session and the `crossSessionInbound` setting below is not needed. Claude's own subcommands, such as `claude plugin update` and `claude mcp list`, and `claude -p` runs pass through the shim untouched.
+
+Every `claude` run in your own sessions goes through `dispatch claude-shim`, so the shim needs a `dispatch` on PATH that is as new as the checkout. It fails with a message naming the problem when `dispatch` is missing or older, and `go install ./cmd/dispatch` in the checkout fixes it, as it does after any `git pull` that changes the shim.
+
+Alternatively, install the plugin from your clone. This is a snapshot of the clone's commit, so after a `git pull`, run `claude plugin update dispatch@dispatch` and restart your session. Use your clone's path where the commands show `~/Development/dispatch`:
 
 ```sh
 claude plugin marketplace add ~/Development/dispatch
 claude plugin install dispatch@dispatch
 ```
 
-Every Claude session you start after that has the dispatch skills, and `claude plugin list` shows `dispatch@dispatch` enabled. The install is a snapshot of the clone's commit. After a `git pull`, run `claude plugin update dispatch@dispatch` and restart your session. For a single session without installing, run `claude --plugin-dir ~/Development/dispatch`.
+`claude plugin list` shows `dispatch@dispatch` enabled, and every Claude session you start has the dispatch skills. This install also needs the `crossSessionInbound` setting below. Having both the install and the shim is fine. We started a session with the checkout as `--plugin-dir` while `dispatch@dispatch` was installed from the same checkout, and it listed `dispatch:build` once and ran the same hooks as the install alone.
 
 **7. Check the setup.** Run these in order. Each must pass before you start the dispatcher, and a failure points at the step to redo.
 
@@ -66,13 +76,13 @@ Every Claude session you start after that has the dispatch skills, and `claude p
 herdr --version && treehouse --version && gh auth status
 dispatch linear-viewer
 dispatch rules check
-claude plugin list
+command -v claude
 ```
 
 - The first line passes when `herdr` is 0.9.0 or later, `treehouse` is v3.1.2 or later and `gh` reports you logged in. A "command not found" or a logged-out `gh` means the tools table above is incomplete.
 - `dispatch linear-viewer` prints `{"id":"...","name":"..."}` for the owner of your Linear key. `no Linear API key` means step 2 is incomplete. An error naming a command is `api_key_command` failing. `Linear rejected the API key` means the key was revoked or mistyped. The `name` should be you, because dispatch manages only tickets assigned to the key's owner.
 - `dispatch rules check` lints the rules, reads every source once and prints what each rule wants now. It takes no action. Move a test ticket that has the `ai` label and a `repo` label to In Progress first, and expect a `launch-worker` line that says `wants launch now for ENG-n`. `unknown setting` means a typo in the config (step 5). A ticket listed as `held for ENG-n` has a source that could not be read. No ticket in the output means none matches: check its assignee, label and status.
-- `claude plugin list` shows `dispatch@dispatch` enabled (step 6). Without it, `/dispatch:dispatch` is not found in your session.
+- `command -v claude` prints the checkout's `scripts/shims/claude` (step 6). If you installed the plugin instead, `claude plugin list` shows `dispatch@dispatch` enabled. Without one of them, `/dispatch:dispatch` is not found in your session.
 
 If every check passes, the setup is complete. Troubleshooting at the end of this guide covers the rest.
 
@@ -117,13 +127,11 @@ Every notification above, including merge and Needs Human ones, can also reach t
 
 Each notification a cycle raises is sent to the sessions following its ticket, after the alert, and the alert fires whether or not anyone follows the ticket. The message names the ticket and the event, and carries the PR URL when the event has one and always the ticket URL. A socket that no longer accepts connections, because its session exited, is dropped from every ticket it followed the first time dispatch tries it, and dispatch prints one line on stderr for each dropped socket. A failed alert holds the messages back until its retry shows, so a broken alert never wakes your session repeatedly. The merge notices are the exception, because nothing retries them, so they reach your session even when the alert fails. Worker nudges are unchanged and still type into the worker's pane.
 
-Add this to your Claude Code user settings (`~/.claude/settings.json`):
+A session started through the shim from step 6 already accepts these messages. If you installed the plugin instead, add this to your Claude Code user settings (`~/.claude/settings.json`):
 
 ```json
 { "crossSessionInbound": "accept" }
 ```
-
-If you use fish, the `claude-dispatch` function in the [README](../README.md#development) starts a session with this setting and the plugin loaded, so you don't need to edit your user settings.
 
 Without it, a session that skips permission prompts holds each message behind an approval dialog ("the sender did not attest its permission mode"), and the event waits until you open that session and answer. dispatch cannot see a held message, because the socket sends no reply.
 

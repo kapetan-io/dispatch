@@ -19,7 +19,7 @@ Every score the log cites needs its `claude plugin eval` result JSON in `results
 4. **Fix the budget** in the `README.md`: runs per case, number of attempts and a cost ceiling. Five runs per case can't show a failure rate under about 20%, so say so in the log. Run the confirmation rerun once per wording.
 5. **Log a baseline** for today's wording. If the baseline and a confirmation rerun already meet the bar, change nothing, say so on the ticket and stop.
 
-Run evals with the real `claude` ahead of dispatch's `scripts/shims/claude` on PATH. The shim adds plugin and permission flags to every interactive run, and a shim that shadows the real binary makes a run measure the wrong thing.
+Run evals with the real `claude` ahead of dispatch's `scripts/shims/claude` on PATH. The shim adds the plugin and the cross-session setting to every interactive run, and the worker flags to a worker's, and a shim that shadows the real binary makes a run measure the wrong thing.
 
 ## Each attempt
 
