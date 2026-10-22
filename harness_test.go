@@ -25,6 +25,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/history"
+	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/httpservicetest"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/launcher"
@@ -78,6 +79,13 @@ type dispatchOptions struct {
 	// Dir is the working directory commands run in. Empty leaves it alone. Tests set it here and never
 	// call t.Chdir themselves.
 	Dir string
+	// RepoSettings is TOML lines added to the dispatch repo's [repos.dispatch] table.
+	RepoSettings string
+	// ExactRules keeps the [rules] table as Config wrote it, without the shipped keys filled in.
+	ExactRules bool
+	// RuleTimeout and ActionTimeout shorten how long a rule call and an action may take.
+	RuleTimeout   dispatch.RuleTimeout
+	ActionTimeout time.Duration
 }
 
 // Dispatch is dispatch running on a machine of fakes: Linear, herdr, treehouse, GitHub and the
@@ -142,6 +150,10 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 	if opts.Config != "" {
 		h.config(opts.Config)
 	}
+	h.exactRules = opts.ExactRules
+	if opts.RepoSettings != "" {
+		h.repoSettings("dispatch", opts.RepoSettings)
+	}
 	if opts.OwnRepos {
 		h.repos = nil
 	}
@@ -161,12 +173,7 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 	if opts.Dir != "" {
 		t.Chdir(opts.Dir)
 	}
-	for name, value := range opts.Env {
-		t.Setenv(name, value)
-	}
-	if opts.Dir != "" {
-		t.Chdir(opts.Dir)
-	}
+	h.timeouts = dispatch.Options{RuleTimeout: opts.RuleTimeout, ActionTimeout: opts.ActionTimeout}
 	return d
 }
 
@@ -175,6 +182,15 @@ func (d *Dispatch) Run(args ...string) Result {
 	d.h.t.Helper()
 	return d.result(d.h.runWith(context.Background(), dispatch.Options{}, args...))
 }
+
+// RunWith is Run with Options the test sets, such as a rule time budget.
+func (d *Dispatch) RunWith(extra dispatch.Options, args ...string) Result {
+	d.h.t.Helper()
+	return d.result(d.h.runWith(context.Background(), extra, args...))
+}
+
+// Tools is the fakes behind dispatch, for a test to make one fail or to read what it recorded.
+func (d *Dispatch) Tools() *tooltest.Tools { return d.h.tools }
 
 // RunIn runs one command from dir, as an operator's shell would.
 func (d *Dispatch) RunIn(dir string, args ...string) Result {
@@ -395,15 +411,213 @@ func (d *Dispatch) StateEntries() int {
 	return len(entries)
 }
 
+// pastEntry is a decision a rule made in a cycle that WroteHistory writes.
+type pastEntry struct {
+	Rule, Subject, Kind, Reason string
+	Once                        []any
+	Dropped                     bool
+}
+
+// pastThrow is a rule call that threw, or ran out of time, in a written cycle.
+type pastThrow struct {
+	Rule, Subject, Error string
+	Timeout              bool
+}
+
+// pastExchange is an HTTP exchange in a written cycle. Unknown is why it has no answer.
+type pastExchange struct{ Service, Path, Rule, Ticket, Unknown string }
+
+// pastCycle is one cycle of a written run, without the read of the world a loop records.
+type pastCycle struct {
+	Why                           string
+	Wants, Waiting, Held, Covered []pastEntry
+	Throws                        []pastThrow
+	Reads                         map[string][]string
+	HTTP                          []pastExchange
+}
+
+// pastReceipt is a receipt in a written run. Done false leaves it attempted, with no outcome.
+type pastReceipt struct {
+	Kind, Subject, Rule, Detail string
+	Once                        []any
+	Done, Reset                 bool
+}
+
+// pastRun is a history segment WroteHistory writes.
+type pastRun struct {
+	// Why is "start" unless set.
+	Why string
+	// Ago is how long before now the segment began.
+	Ago    time.Duration
+	Cycles []pastCycle
+	// Carried are the receipts the segment's snapshot holds from segments already deleted.
+	Carried []pastReceipt
+	// Receipts follow the cycles as receipt lines.
+	Receipts []pastReceipt
+	// Crashed leaves the segment with no stop line.
+	Crashed bool
+}
+
+// WroteHistory writes a segment the command line can't produce: cycles with no recorded read of the
+// world, or decisions a tick never makes (unreachable from the CLI: a fault the product can't inject).
+func (d *Dispatch) WroteHistory(run pastRun) {
+	d.h.t.Helper()
+	require.Nil(d.h.t, d.h.running)
+	at := d.h.clock.Now().Add(-run.Ago)
+	ledgerOf := func(past []pastReceipt) []ledger.Receipt {
+		var out []ledger.Receipt
+		for _, p := range past {
+			receipt := ledger.Receipt{Kind: p.Kind, Subject: p.Subject, Rule: p.Rule, Once: p.Once, Detail: p.Detail, Started: at.UnixMilli(), Reset: p.Reset}
+			if p.Done {
+				receipt.Outcome, receipt.Ended = ledger.Done, at.UnixMilli()
+			}
+			out = append(out, receipt)
+		}
+		return out
+	}
+	entries := func(past []pastEntry) []history.Entry {
+		var out []history.Entry
+		for _, p := range past {
+			out = append(out, history.Entry{Rule: p.Rule, Subject: p.Subject, Kind: p.Kind, Reason: p.Reason, Once: p.Once, Dropped: p.Dropped})
+		}
+		return out
+	}
+	w, err := history.Start(filepath.Join(d.h.state, "events"), at, history.Header{Why: cmp.Or(run.Why, "start"), At: at.UnixMilli()},
+		history.Snapshot{At: at.UnixMilli(), Ledger: history.LedgerState{Receipts: ledgerOf(run.Carried)}})
+	require.NoError(d.h.t, err)
+	for i, c := range run.Cycles {
+		cycle := history.Cycle{Line: history.LineCycle, Now: at.Add(time.Duration(i) * time.Second).UnixMilli(), Why: c.Why,
+			Wants: entries(c.Wants), Waiting: entries(c.Waiting), Held: entries(c.Held), Covered: entries(c.Covered), Reads: c.Reads}
+		for _, t := range c.Throws {
+			cycle.Throws = append(cycle.Throws, history.Throw{Rule: t.Rule, Subject: t.Subject, Error: t.Error, Timeout: t.Timeout})
+		}
+		for _, x := range c.HTTP {
+			cycle.HTTP = append(cycle.HTTP, httpservice.Exchange{Service: x.Service, Path: x.Path, Rule: x.Rule, Ticket: x.Ticket, Unknown: x.Unknown})
+		}
+		require.NoError(d.h.t, w.Append(cycle))
+	}
+	for _, r := range ledgerOf(run.Receipts) {
+		require.NoError(d.h.t, w.Append(history.Receipt{Line: history.LineReceipt, Receipt: r}))
+	}
+	require.NoError(d.h.t, w.Close(!run.Crashed))
+}
+
+func (d *Dispatch) newestSegment() (string, []string) {
+	d.h.t.Helper()
+	paths, err := history.Segments(filepath.Join(d.h.state, "events"))
+	require.NoError(d.h.t, err)
+	require.NotEmpty(d.h.t, paths)
+	path := paths[len(paths)-1]
+	text, err := os.ReadFile(path)
+	require.NoError(d.h.t, err)
+	return path, strings.Split(strings.TrimSpace(string(text)), "\n")
+}
+
+func (d *Dispatch) rewriteNewestSegment(lines []string) {
+	d.h.t.Helper()
+	path, _ := d.newestSegment()
+	require.NoError(d.h.t, os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600))
+}
+
+// lastRead is the index of the newest read line in lines.
+func lastRead(t *testing.T, lines []string) int {
+	t.Helper()
+	last := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, `{"line":"read"`) {
+			last = i
+		}
+	}
+	require.Positive(t, last)
+	return last
+}
+
+// EditHistory replaces text in the newest history segment, as a different dispatch version or a
+// damaged disk leaves it (unreachable from the CLI: history is written only by the loop).
+func (d *Dispatch) EditHistory(old, replacement string) {
+	d.h.t.Helper()
+	_, lines := d.newestSegment()
+	text := strings.Join(lines, "\n")
+	require.Contains(d.h.t, text, old)
+	d.rewriteNewestSegment(strings.Split(strings.ReplaceAll(text, old, replacement), "\n"))
+}
+
+// CrashedBeforeStopLine drops the stop line of the newest segment, as a crash leaves it (unreachable
+// from the CLI: a fault the product can't inject).
+func (d *Dispatch) CrashedBeforeStopLine() {
+	d.h.t.Helper()
+	_, lines := d.newestSegment()
+	require.Contains(d.h.t, lines[len(lines)-1], `"line":"stop"`)
+	d.rewriteNewestSegment(lines[:len(lines)-1])
+}
+
+// CrashedBeforeLastCycleLine ends the newest segment where a crash left it: after the last read
+// and the memory changes written with it, and before the cycle line (unreachable from the CLI: a
+// crash between two writes).
+func (d *Dispatch) CrashedBeforeLastCycleLine() {
+	d.h.t.Helper()
+	_, lines := d.newestSegment()
+	last := lastRead(d.h.t, lines)
+	keep := lines[:last+1]
+	for _, line := range lines[last+1:] {
+		if !strings.HasPrefix(line, `{"line":"world"`) {
+			break
+		}
+		keep = append(keep, line)
+	}
+	d.rewriteNewestSegment(keep)
+}
+
+// EditLastRead replaces text in the newest read of the world only, in a segment whose last cycle
+// wrote no cycle line (unreachable from the CLI: history is written only by the loop).
+func (d *Dispatch) EditLastRead(old, replacement string) {
+	d.h.t.Helper()
+	_, lines := d.newestSegment()
+	last := lastRead(d.h.t, lines)
+	for _, line := range lines[last+1:] {
+		require.NotContains(d.h.t, line, `{"line":"cycle"`)
+	}
+	require.Contains(d.h.t, lines[last], old)
+	lines[last] = strings.ReplaceAll(lines[last], old, replacement)
+	d.rewriteNewestSegment(lines)
+}
+
+type brokenPipe struct{}
+
+func (brokenPipe) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
+
+// RunWithBrokenOutput runs a command whose stdout and stderr reject every write, as a closed pipe does.
+func (d *Dispatch) RunWithBrokenOutput(args ...string) Result {
+	d.h.t.Helper()
+	opts := d.h.options(dispatch.Options{})
+	opts.Stdout, opts.Stderr = brokenPipe{}, brokenPipe{}
+	return d.result("", "", dispatch.Run(context.Background(), args, opts))
+}
+
+// EditRules rewrites a file of the rules directory the test gave, after a run used it.
+func (d *Dispatch) EditRules(name, text string) {
+	d.h.t.Helper()
+	require.NoError(d.h.t, os.WriteFile(filepath.Join(d.h.rulesDir, name), []byte(text), 0o644))
+}
+
 // Linear is the Linear workspace: tickets, statuses and comments.
 type Linear struct{ d *Dispatch }
 
 // Tickets seeds the tickets that are started and assigned to the key's owner.
 func (l *Linear) Tickets(tickets ...fakeTicket) { l.d.h.tickets(tickets...) }
 
+// Children sets the children Linear returns for open parents.
+func (l *Linear) Children(tickets ...fakeTicket) { l.d.h.linear.setChildren(tickets...) }
+
 // Finished seeds tickets Linear knows that are not started, such as Done or Todo ones, which only
 // a lookup by identifier finds.
 func (l *Linear) Finished(tickets ...fakeTicket) { l.d.h.linear.setElsewhere(tickets...) }
+
+// FailChildren makes Linear fail the reads of a parent's children while on is true.
+func (l *Linear) FailChildren(on bool) { l.d.h.linear.FailOn(lineartest.OnChildren, on) }
+
+// FailManaged makes Linear fail the read of the started tickets while on is true.
+func (l *Linear) FailManaged(on bool) { l.d.h.linear.FailOn(lineartest.OnManaged, on) }
 
 // Moves lists the status changes Linear accepted, as "ENG-1 -> In Review".
 func (l *Linear) Moves() []string {
@@ -529,6 +743,11 @@ func (w *Workers) StopFrom(session, ticket string, tasks stopTasks) {
 // Trees is the treehouse pool over real git worktrees.
 type Trees struct{ d *Dispatch }
 
+// CleanLeased leases the ticket a clean, pushed tree that has no herdr workspace.
+func (t *Trees) CleanLeased(ticket string) {
+	t.d.h.lease(ticket, t.d.h.gitTree(ticket))
+}
+
 // Untracked makes the ticket's tree a clean, pushed clone with a file git has never seen, and
 // returns the tree's path.
 func (t *Trees) Untracked(ticket, name string) string {
@@ -570,7 +789,14 @@ func (a *Alerts) Shown() []string { return a.d.h.notifications() }
 type Services struct{ d *Dispatch }
 
 // Sentry is the fake sentry service, which a rule reaches as ctx.http "sentry".
-func (s *Services) Sentry() *httpservicetest.Fake { return s.d.h.sentry() }
+// It adds its [http.sentry] table to the config the test gave newDispatch.
+func (s *Services) Sentry() *httpservicetest.Fake {
+	h := s.d.h
+	given := h.extra
+	fake := h.sentry()
+	h.config(given + sentryConfig)
+	return fake
+}
 
 func (h *harness) turnsRule() {
 	h.t.Helper()
@@ -717,6 +943,8 @@ type harness struct {
 	pages map[string][]byte
 	// http is the services a rule's ctx.http reaches. Nil leaves Options.HTTP to its default.
 	http *httpservicetest.Fake
+	// timeouts carries the RuleTimeout and ActionTimeout a test set, over every command.
+	timeouts dispatch.Options
 }
 
 func newHarness(t *testing.T) *harness {
@@ -842,6 +1070,12 @@ func (h *harness) options(extra dispatch.Options) dispatch.Options {
 		extra.RulesDir = h.rulesDir
 	}
 	extra.LaunchPace = time.Millisecond
+	if extra.RuleTimeout == (dispatch.RuleTimeout{}) {
+		extra.RuleTimeout = h.timeouts.RuleTimeout
+	}
+	if extra.ActionTimeout == 0 {
+		extra.ActionTimeout = h.timeouts.ActionTimeout
+	}
 	return extra
 }
 
