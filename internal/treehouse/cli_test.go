@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -24,6 +25,8 @@ const (
 // The test binary stands in for the treehouse command when envExit is set, so
 // the adapter's reading of treehouse output is tested without a shell script.
 func TestMain(m *testing.M) {
+	// The race detector sleeps 1s at exit by default. The stand-in processes this binary re-execs inherit this setting.
+	_ = os.Setenv("GORACE", strings.TrimSpace(os.Getenv("GORACE")+" atexit_sleep_ms=0"))
 	if code, ok := os.LookupEnv(envExit); ok {
 		_, _ = fmt.Fprint(os.Stdout, os.Getenv(envStdout))
 		_, _ = fmt.Fprint(os.Stderr, os.Getenv(envStderr))

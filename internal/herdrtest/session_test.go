@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,6 +21,8 @@ const envSessions = "HERDR_TEST_SESSIONS"
 // session listing is tested without a shell script. It prints envSessions as
 // the listing, or fails when that is unset.
 func TestMain(m *testing.M) {
+	// The race detector sleeps 1s at exit by default. The stand-in processes this binary re-execs inherit this setting.
+	_ = os.Setenv("GORACE", strings.TrimSpace(os.Getenv("GORACE")+" atexit_sleep_ms=0"))
 	if filepath.Base(os.Args[0]) == "herdr" {
 		listing, ok := os.LookupEnv(envSessions)
 		if !ok {
