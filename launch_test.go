@@ -741,6 +741,7 @@ func (l *launchHarness) writeFile(name, content string) {
 }
 
 func TestClaudeShimRestoresWorkerFlagsWithoutAName(t *testing.T) {
+	isolateShimEnv(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
 		[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
@@ -767,6 +768,7 @@ func TestClaudeShimRestoresWorkerFlagsWithoutAName(t *testing.T) {
 }
 
 func TestClaudeShimSkipsEveryShimDirectoryOnPath(t *testing.T) {
+	isolateShimEnv(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
 		[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
@@ -798,7 +800,24 @@ func TestClaudeShimSkipsEveryShimDirectoryOnPath(t *testing.T) {
 	assert.Equal(t, "--resume --plugin-dir /plugin --disallowedTools EnterPlanMode,ExitPlanMode --settings {\"crossSessionInbound\":\"accept\"} --dangerously-skip-permissions\n", string(argv))
 }
 
+// isolateShimEnv keeps the maintainer's own session, which may itself be a
+// worker, from reaching the shim through its dispatch, config and plugin root.
+func isolateShimEnv(t *testing.T) {
+	t.Helper()
+	// go build keeps its caches under HOME.
+	for _, name := range []string{"GOCACHE", "GOMODCACHE", "GOPATH"} {
+		out, err := exec.Command("go", "env", name).Output()
+		require.NoError(t, err)
+		t.Setenv(name, strings.TrimSpace(string(out)))
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("DISPATCH_BIN", "")
+	t.Setenv("DISPATCH_PLUGIN_ROOT", "")
+	t.Setenv("AUTONOMOUS_WORKER", "")
+}
+
 func TestClaudeShimFlags(t *testing.T) {
+	isolateShimEnv(t)
 	shims, err := filepath.Abs("scripts/shims")
 	require.NoError(t, err)
 	bin := buildDispatch(t)
@@ -810,21 +829,55 @@ func TestClaudeShimFlags(t *testing.T) {
 		want string
 	}{
 		{
-			name: "PlainSessionGetsOnlyThePlugin",
+			name: "PlainSessionGetsThePluginAndCrossSessionSetting",
 			args: []string{"--resume"},
 			env:  []string{"DISPATCH_PLUGIN_ROOT=/plugin", "DISPATCH_WORKER_NAME=eng-1"},
-			want: "--resume --plugin-dir /plugin\n",
+			want: "--resume --plugin-dir /plugin --settings {\"crossSessionInbound\":\"accept\"}\n",
 		},
 		{
-			name: "NoEnvAddsNothing",
+			name: "NoEnvAddsOnlyTheCrossSessionSetting",
 			args: []string{"--resume"},
-			want: "--resume\n",
+			want: "--resume --settings {\"crossSessionInbound\":\"accept\"}\n",
 		},
 		{
-			name: "WorkerFlagsOnlyWhenAutonomous",
+			name: "CallersSettingsAreKept",
+			args: []string{"--settings", "/mine.json"},
+			want: "--settings /mine.json\n",
+		},
+		{
+			name: "SubcommandPassesThroughUntouched",
+			args: []string{"plugin", "update", "dispatch@dispatch"},
+			env:  []string{"DISPATCH_PLUGIN_ROOT=/plugin"},
+			want: "plugin update dispatch@dispatch\n",
+		},
+		{
+			name: "WorkerSubcommandPassesThroughUntouched",
+			args: []string{"mcp", "list"},
+			env:  []string{"AUTONOMOUS_WORKER=1", "DISPATCH_PLUGIN_ROOT=/plugin"},
+			want: "mcp list\n",
+		},
+		{
+			name: "OptionBeforeASubcommandPassesThroughUntouched",
+			args: []string{"--debug", "mcp", "list"},
+			env:  []string{"DISPATCH_PLUGIN_ROOT=/plugin"},
+			want: "--debug mcp list\n",
+		},
+		{
+			name: "EqualsFormFlagsAreNotRepeated",
+			args: []string{"--settings={\"model\":\"haiku\"}", "--plugin-dir=/mine", "--disallowedTools=Bash"},
+			env:  []string{"AUTONOMOUS_WORKER=1", "DISPATCH_PLUGIN_ROOT=/plugin"},
+			want: "--settings={\"model\":\"haiku\"} --plugin-dir=/mine --disallowedTools=Bash --dangerously-skip-permissions\n",
+		},
+		{
+			name: "PromptThatIsNotASubcommandIsASession",
+			args: []string{"fix the plugin"},
+			want: "fix the plugin --settings {\"crossSessionInbound\":\"accept\"}\n",
+		},
+		{
+			name: "WorkerFlagsNeedAutonomousWorkerSetTo1",
 			args: []string{"--resume"},
 			env:  []string{"AUTONOMOUS_WORKER=0", "DISPATCH_PLUGIN_ROOT=/plugin"},
-			want: "--resume --plugin-dir /plugin\n",
+			want: "--resume --plugin-dir /plugin --settings {\"crossSessionInbound\":\"accept\"}\n",
 		},
 		{
 			name: "ShortPrintPassesThroughUntouched",
@@ -903,6 +956,7 @@ func TestClaudeShimNamesTheMissingDispatchWhenItIsNotOnPath(t *testing.T) {
 }
 
 func TestClaudeShimSkipsAShimDirectoryReachedThroughASymlink(t *testing.T) {
+	isolateShimEnv(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
 		[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
@@ -921,7 +975,7 @@ func TestClaudeShimSkipsAShimDirectoryReachedThroughASymlink(t *testing.T) {
 
 	argv, err := os.ReadFile(filepath.Join(dir, "argv"))
 	require.NoError(t, err)
-	assert.Equal(t, "--resume\n", string(argv))
+	assert.Equal(t, "--resume --settings {\"crossSessionInbound\":\"accept\"}\n", string(argv))
 }
 
 func TestClaudeShimNamesAStaleDispatchBinary(t *testing.T) {
@@ -945,6 +999,7 @@ func TestClaudeShimNamesAStaleDispatchBinary(t *testing.T) {
 }
 
 func TestClaudeShimRunsTheDispatchThatLaunchedIt(t *testing.T) {
+	isolateShimEnv(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
 		[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
@@ -966,7 +1021,42 @@ func TestClaudeShimRunsTheDispatchThatLaunchedIt(t *testing.T) {
 
 	argv, err := os.ReadFile(filepath.Join(dir, "argv"))
 	require.NoError(t, err)
-	assert.Equal(t, "--resume\n", string(argv))
+	assert.Equal(t, "--resume --settings {\"crossSessionInbound\":\"accept\"}\n", string(argv))
+}
+
+func TestClaudeShimLoadsThePluginRootFromTheConfig(t *testing.T) {
+	isolateShimEnv(t)
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "claude"),
+		[]byte("#!/usr/bin/env bash\necho \"$*\" > \""+filepath.Join(dir, "argv")+"\"\n"), 0o755))
+	shims, err := filepath.Abs("scripts/shims")
+	require.NoError(t, err)
+	bin := buildDispatch(t)
+	home := os.Getenv("HOME")
+	require.NoError(t, os.MkdirAll(filepath.Join(home, ".config", "dispatch"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(home, ".config", "dispatch", "config.toml"),
+		[]byte("[plugins.herdr]\nplugin_root = \"/from-config\"\n"), 0o644))
+
+	for _, test := range []struct {
+		name string
+		env  string
+		want string
+	}{
+		{name: "ConfigFillsAnUnsetEnv", env: "DISPATCH_PLUGIN_ROOT=", want: "--resume --plugin-dir /from-config --settings {\"crossSessionInbound\":\"accept\"}\n"},
+		{name: "EnvBeatsTheConfig", env: "DISPATCH_PLUGIN_ROOT=/from-env", want: "--resume --plugin-dir /from-env --settings {\"crossSessionInbound\":\"accept\"}\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cmd := exec.Command(filepath.Join(shims, "claude"), "--resume")
+			cmd.Env = append(os.Environ(), "HOME="+home, "AUTONOMOUS_WORKER=", test.env,
+				"PATH="+shims+":"+bin+":"+dir+":"+os.Getenv("PATH"))
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+
+			argv, err := os.ReadFile(filepath.Join(dir, "argv"))
+			require.NoError(t, err)
+			assert.Equal(t, test.want, string(argv))
+		})
+	}
 }
 
 func TestLaunchesIntoOneRepoTakeTurnsLeasing(t *testing.T) {

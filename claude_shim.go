@@ -19,9 +19,12 @@ const checkFlag = "--dispatch-check"
 // claudeShim runs the real claude with the plugin and worker flags added. herdr
 // restarts a worker with a bare `claude --resume` and does not replay argv, so
 // the shim in scripts/shims re-adds them. Print-mode runs pass through
-// untouched. It never adds --name, because Claude draws the name below an open
-// question and herdr then misses the question.
-func claudeShim(args []string) error {
+// untouched, and so do claude's own subcommands (`claude plugin update`), which
+// reject the session flags. Every interactive session accepts cross-session
+// messages and loads the plugin from DISPATCH_PLUGIN_ROOT, or from the config's
+// plugin_root when that is unset. It never adds --name, because Claude draws the
+// name below an open question and herdr then misses the question.
+func claudeShim(opts Options, args []string) error {
 	if len(args) == 1 && args[0] == checkFlag {
 		return nil
 	}
@@ -29,27 +32,64 @@ func claudeShim(args []string) error {
 	if err != nil {
 		return err
 	}
-	return syscall.Exec(target, append([]string{target}, shimArgs(args, os.Getenv)...), os.Environ())
+	worker := os.Getenv("AUTONOMOUS_WORKER") == "1"
+	return syscall.Exec(target, append([]string{target}, shimArgs(args, shimPluginRoot(opts), worker)...), os.Environ())
 }
 
-func shimArgs(args []string, getenv func(string) string) []string {
-	if slices.Contains(args, "-p") || slices.Contains(args, "--print") {
+// claudeSubcommands are the names `claude --help` lists under Commands.
+var claudeSubcommands = []string{
+	"agents", "attach", "auth", "auto-mode", "doctor", "gateway", "import", "install", "kill",
+	"logs", "mcp", "plugin", "plugins", "purge", "respawn", "rm", "setup-token", "stop",
+	"ultrareview", "update", "upgrade",
+}
+
+// shimPluginRoot is empty when no checkout is named or the config does not load,
+// so a plain claude still starts.
+func shimPluginRoot(opts Options) string {
+	root, _ := pluginRoot(opts)
+	return root
+}
+
+// hasSubcommand reports whether claude will run one of its subcommands, which it
+// does when the first word that is not an option names one, so
+// `claude --model sonnet plugin list` is a subcommand run.
+func hasSubcommand(args []string) bool {
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "-") {
+			return slices.Contains(claudeSubcommands, arg)
+		}
+	}
+	return false
+}
+
+// hasFlag matches both `--name value` and `--name=value`.
+func hasFlag(args []string, names ...string) bool {
+	for _, arg := range args {
+		for _, name := range names {
+			if arg == name || strings.HasPrefix(arg, name+"=") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func shimArgs(args []string, root string, worker bool) []string {
+	if slices.Contains(args, "-p") || slices.Contains(args, "--print") || hasSubcommand(args) {
 		return args
 	}
 	out := slices.Clone(args)
-	if !slices.Contains(args, "--plugin-dir") && getenv("DISPATCH_PLUGIN_ROOT") != "" {
-		out = append(out, "--plugin-dir", getenv("DISPATCH_PLUGIN_ROOT"))
+	if !hasFlag(args, "--plugin-dir") && root != "" {
+		out = append(out, "--plugin-dir", root)
 	}
-	if getenv("AUTONOMOUS_WORKER") == "1" {
-		if !slices.Contains(args, "--disallowedTools") && !slices.Contains(args, "--disallowed-tools") {
-			out = append(out, "--disallowedTools", "EnterPlanMode,ExitPlanMode")
-		}
-		if !slices.Contains(args, "--settings") {
-			out = append(out, "--settings", herdr.WorkerSettings)
-		}
-		if !slices.Contains(args, "--dangerously-skip-permissions") {
-			out = append(out, "--dangerously-skip-permissions")
-		}
+	if worker && !hasFlag(args, "--disallowedTools", "--disallowed-tools") {
+		out = append(out, "--disallowedTools", "EnterPlanMode,ExitPlanMode")
+	}
+	if !hasFlag(args, "--settings") {
+		out = append(out, "--settings", herdr.SessionSettings)
+	}
+	if worker && !slices.Contains(args, "--dangerously-skip-permissions") {
+		out = append(out, "--dangerously-skip-permissions")
 	}
 	return out
 }
