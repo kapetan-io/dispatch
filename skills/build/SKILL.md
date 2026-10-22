@@ -49,3 +49,4 @@ The design is what the next agent trusts, so a divergence it doesn't mention get
 A deviation from the design is a question to answer on the spot: was the design wrong, was a requirement missed, or is the code overreaching? A pattern means the design is wrong. Watch for the same workaround in unrelated places, many unrelated edge cases each needing a special branch, types that only compile with casts, reaching for a lock where the design said nothing is shared, callers needing to know an abstraction's internal rules, and the same deviation turning up twice.
 
 When you see the pattern, stop patching. Post what you found on the ticket, with the evidence, and move it to Needs Human. Shipped work is never reverted.
+
