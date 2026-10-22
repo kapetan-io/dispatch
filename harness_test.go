@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -104,6 +105,8 @@ type Dispatch struct {
 	h *harness
 	// brokenLoop is true while a fake loop holds the socket.
 	brokenLoop bool
+	// loopCalls counts the connections the fake loop accepted.
+	loopCalls atomic.Int32
 }
 
 const ruleHeader = "import { whenever, on, known, minutes, hours } from \"dispatch\";\n"
@@ -350,6 +353,7 @@ func (d *Dispatch) BrokenLoop(fault loopFault) {
 			if err != nil {
 				return
 			}
+			d.loopCalls.Add(1)
 			go func() {
 				defer func() { _ = conn.Close() }()
 				switch fault {
@@ -364,6 +368,9 @@ func (d *Dispatch) BrokenLoop(fault loopFault) {
 		}
 	}()
 }
+
+// LoopCalls counts the connections the loop made by BrokenLoop accepted.
+func (d *Dispatch) LoopCalls() int { return int(d.loopCalls.Load()) }
 
 type loopFault int
 
@@ -381,6 +388,62 @@ const (
 func (d *Dispatch) CrashedEarlierRun(receipts ...ledger.Receipt) {
 	d.h.t.Helper()
 	d.h.seedHistory(nil, receipts...)
+}
+
+// earlierReceipt and earlierOnce build the receipts of CrashedEarlierRun without a test importing
+// the ledger.
+type (
+	earlierReceipt = ledger.Receipt
+	earlierOnce    = ledger.Once
+)
+
+// HookAndWait is Hook for a hook that reports to the loop, and returns once the loop has taken the
+// report. It starts a loop first when none runs, because the report has nowhere to go otherwise.
+func (d *Dispatch) HookAndWait(command, stdin string) Result {
+	h := d.h
+	h.t.Helper()
+	if h.running == nil {
+		require.NoError(h.t, h.startLoop(dispatch.Options{}))
+	}
+	before, err := loop.Ask(context.Background(), h.state, loop.Request{Op: loop.OpIdle})
+	require.NoError(h.t, err)
+	res := d.Hook(command, stdin)
+	require.Eventually(h.t, func() bool {
+		resp, err := loop.Ask(context.Background(), h.state, loop.Request{Op: loop.OpIdle})
+		return err == nil && !resp.Busy && resp.Idle > before.Idle
+	}, 20*time.Second, 2*time.Millisecond)
+	return res
+}
+
+// HookTogether runs the hook count times at once, as Claude sessions do. The options are made before
+// any hook runs, because the harness rewrites config.toml for every command.
+func (d *Dispatch) HookTogether(count int, command, stdin string) []Result {
+	d.h.t.Helper()
+	all := make([]dispatch.Options, count)
+	for i := range all {
+		all[i] = d.h.options(dispatch.Options{Stdin: strings.NewReader(stdin)})
+	}
+	results := make([]Result, count)
+	var wg sync.WaitGroup
+	for i := range all {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var stdout, stderr bytes.Buffer
+			all[i].Stdout, all[i].Stderr = &stdout, &stderr
+			err := dispatch.Run(context.Background(), []string{command}, all[i])
+			results[i] = d.result(stdout.String(), stderr.String(), err)
+		}()
+	}
+	wg.Wait()
+	return results
+}
+
+// LoseHistory deletes the history directory, as an operator clearing dispatch's memory by hand does
+// (unreachable from the CLI: no command deletes the directory).
+func (d *Dispatch) LoseHistory() {
+	d.h.t.Helper()
+	require.NoError(d.h.t, os.RemoveAll(filepath.Join(d.h.state, "events")))
 }
 
 // CorruptSessionLog appends text to the end of the only session log there is, as a writer that
@@ -801,18 +864,6 @@ func (s *Services) Sentry() *httpservicetest.Fake {
 func (h *harness) turnsRule() {
 	h.t.Helper()
 	h.config("[dispatch]\nrules = " + `"` + oneRule(h.t, turnsRule) + `"` + "\n")
-}
-
-// turnComments lists the bodies of the comments dispatch posted, which the turns rule makes one for
-// each distinct reading of a worker's turns.
-func (h *harness) turnComments() []string {
-	var out []string
-	for _, c := range h.linear.mutations() {
-		if c.Kind == lineartest.Comment {
-			out = append(out, c.Body)
-		}
-	}
-	return out
 }
 
 func sessionLogs(t *testing.T, stateDir string) []string {
@@ -2095,6 +2146,17 @@ func (h *harness) recordStopFrom(session, ticket, tasks string) {
 // stopInput is what Claude Code hands the Stop hook for a session in the ticket's tree.
 func (h *harness) stopInput(session, ticket, tasks string) string {
 	h.t.Helper()
+	tree := h.worktreeOf(ticket)
+	input := fmt.Sprintf(`{"hook_event_name":"Stop","session_id":%q,"cwd":%q`, session, tree)
+	if tasks != "" {
+		input += "," + tasks
+	}
+	return input + "}"
+}
+
+// worktreeOf is the path of ticket's tree, made a real git worktree of the harness repo.
+func (h *harness) worktreeOf(ticket string) string {
+	h.t.Helper()
 	tree := filepath.Join(h.dir, "trees", ticket)
 	if _, err := os.Stat(filepath.Join(h.repo, ".git")); err != nil {
 		hintGit(h.t, h.repo, "init", "-q")
@@ -2103,11 +2165,7 @@ func (h *harness) stopInput(session, ticket, tasks string) string {
 	if _, err := os.Stat(tree); err != nil {
 		hintGit(h.t, h.repo, "worktree", "add", "-q", "-b", "br-"+ticket, tree)
 	}
-	input := fmt.Sprintf(`{"hook_event_name":"Stop","session_id":%q,"cwd":%q`, session, tree)
-	if tasks != "" {
-		input += "," + tasks
-	}
-	return input + "}"
+	return tree
 }
 
 // failingPR puts ENG-1 In Review with an idle worker and a PR whose check failed.
