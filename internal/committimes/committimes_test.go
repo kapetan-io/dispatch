@@ -35,6 +35,8 @@ func TestCommitTimes(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "old.txt"), []byte("1"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "new file.txt"), []byte("1"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "@at.txt"), []byte("1"), 0o644))
+	require.NoError(t, os.Symlink(filepath.Join(dir, "missing"), filepath.Join(dir, "dangling")))
 	commit(t, dir, "2024-01-02T03:04:05Z", "first")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "new file.txt"), []byte("2"), 0o644))
 	commit(t, dir, "2025-06-07T08:09:10Z", "second")
@@ -42,7 +44,7 @@ func TestCommitTimes(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := committimes.Run(t.Context(), []string{"-dir", dir}, committimes.Options{Stdout: &stdout, Stderr: &stderr})
 	require.Equal(t, 0, code, stderr.String())
-	assert.Contains(t, stdout.String(), "set the time of 2 files")
+	assert.Contains(t, stdout.String(), "set the time of 3 files")
 
 	old, err := os.Stat(filepath.Join(dir, "old.txt"))
 	require.NoError(t, err)
@@ -50,6 +52,17 @@ func TestCommitTimes(t *testing.T) {
 	changed, err := os.Stat(filepath.Join(dir, "sub", "new file.txt"))
 	require.NoError(t, err)
 	assert.True(t, changed.ModTime().Equal(time.Date(2025, 6, 7, 8, 9, 10, 0, time.UTC)))
+
+	// A directory takes the newest time of what it holds, and the root of everything.
+	subdir, err := os.Stat(filepath.Join(dir, "sub"))
+	require.NoError(t, err)
+	assert.True(t, subdir.ModTime().Equal(time.Date(2025, 6, 7, 8, 9, 10, 0, time.UTC)))
+	root, err := os.Stat(dir)
+	require.NoError(t, err)
+	assert.True(t, root.ModTime().Equal(time.Date(2025, 6, 7, 8, 9, 10, 0, time.UTC)))
+	atFile, err := os.Stat(filepath.Join(dir, "@at.txt"))
+	require.NoError(t, err)
+	assert.True(t, atFile.ModTime().Equal(time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)))
 }
 
 func TestCommitTimesOutsideRepository(t *testing.T) {

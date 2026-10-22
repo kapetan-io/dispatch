@@ -39,28 +39,33 @@ jobs:
               - 'hooks/hooks.json'
               - 'bin/dispatch-launch'
               - 'scripts/shims/claude'
-              - '.github/workflows/test.yml'
+              - '.github/workflows/**'
 
+  # Every step carries the same condition and the job never skips, so the
+  # `test` check reports a pass on a PR with nothing to test. When `changes`
+  # fails its output is empty, which is not 'false', so the tests run.
   test:
     needs: changes
+    if: always()
     runs-on: ubuntu-latest
     steps:
-      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+      - if: needs.changes.outputs.code != 'false' || github.event_name != 'pull_request'
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+          # committimes reads the full history.
           fetch-depth: 0
-      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+      - if: needs.changes.outputs.code != 'false' || github.event_name != 'pull_request'
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           # actions/cache below owns the build and test cache, because
           # setup-go saves only when go.sum changes.
           cache: false
-      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+      - if: needs.changes.outputs.code != 'false' || github.event_name != 'pull_request'
         id: gocache
         run: echo "dir=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+      - if: needs.changes.outputs.code != 'false' || github.event_name != 'pull_request'
         uses: actions/cache@v4
         with:
           path: |
@@ -70,17 +75,17 @@ jobs:
           restore-keys: |
             go-${{ runner.os }}-${{ hashFiles('go.sum') }}-
             go-${{ runner.os }}-
-      # go test's result cache compares file times, which a fresh checkout resets.
-      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+      # go test's result cache compares file and directory times, which a fresh checkout resets.
+      - if: needs.changes.outputs.code != 'false' || github.event_name != 'pull_request'
         run: go run ./cmd/committimes
-      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+      - if: needs.changes.outputs.code != 'false' || github.event_name != 'pull_request'
         run: go vet ./...
       # The surface tests run against fake tools and a real git, which the
       # runner image provides. The drift check (go test -tags drift
       # ./internal/...) needs the installed tools and does not run here.
       # No -race: it multiplies CPU time about 6 times and CI has no
       # concurrency check the dev box does not already run.
-      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+      - if: needs.changes.outputs.code != 'false' || github.event_name != 'pull_request'
         run: go test -tags slow_tests ./...
-      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+      - if: needs.changes.outputs.code != 'false' || github.event_name != 'pull_request'
         run: shellcheck -S warning bin/dispatch-launch scripts/shims/claude

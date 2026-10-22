@@ -1,7 +1,7 @@
-// Package committimes gives a fresh checkout stable file modification times.
-// go test's result cache compares the time and size of every file a test
-// opens, so files stamped with checkout time never hit a cache saved by an
-// earlier run.
+// Package committimes gives a fresh checkout stable modification times.
+// go test's result cache compares the time of every file and directory a test
+// opens, so paths stamped with checkout time never hit a cache saved by an
+// earlier run. A directory gets the newest time of anything under it.
 package committimes
 
 import (
@@ -56,7 +56,7 @@ func run(ctx context.Context, args []string, opts Options) error {
 	}
 
 	// Newest commit first, so the first time a path appears is its last change.
-	cmd := exec.CommandContext(ctx, "git", "-C", *dir, "log", "--format=@%ct", "--name-only", "--no-renames", "-z")
+	cmd := exec.CommandContext(ctx, "git", "-C", *dir, "log", "--format=%x01%ct", "--name-only", "--no-renames", "-z")
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -66,6 +66,7 @@ func run(ctx context.Context, args []string, opts Options) error {
 	}
 	var stamp time.Time
 	set := 0
+	newest := make(map[string]time.Time)
 	scan := bufio.NewScanner(out)
 	scan.Buffer(make([]byte, 0, 1<<20), 1<<26)
 	scan.Split(splitNUL)
@@ -74,8 +75,9 @@ func run(ctx context.Context, args []string, opts Options) error {
 		if token == "" {
 			continue
 		}
-		// With -z, the commit header and its first path share one token.
-		if strings.HasPrefix(token, "@") {
+		// With -z, the commit header and its first path share one token. \x01
+		// cannot start a file name that matters, unlike a visible marker.
+		if strings.HasPrefix(token, "\x01") {
 			header, rest, _ := strings.Cut(token, "\n")
 			seconds, err := strconv.ParseInt(header[1:], 10, 64)
 			if err != nil {
@@ -91,16 +93,34 @@ func run(ctx context.Context, args []string, opts Options) error {
 			continue
 		}
 		delete(want, token)
-		if err := os.Chtimes(filepath.Join(*dir, token), stamp, stamp); err != nil {
+		path := filepath.Join(*dir, token)
+		// Chtimes follows a symlink to a target that may sit outside the repository.
+		if info, err := os.Lstat(path); err != nil || info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		if err := os.Chtimes(path, stamp, stamp); err != nil {
 			return err
 		}
 		set++
+		for parent := filepath.Dir(token); ; parent = filepath.Dir(parent) {
+			if stamp.After(newest[parent]) {
+				newest[parent] = stamp
+			}
+			if parent == "." {
+				break
+			}
+		}
 	}
 	if err := scan.Err(); err != nil {
 		return err
 	}
 	if err := cmd.Wait(); err != nil {
 		return fmt.Errorf("git log: %w", err)
+	}
+	for parent, when := range newest {
+		if err := os.Chtimes(filepath.Join(*dir, parent), when, when); err != nil {
+			return err
+		}
 	}
 	_, _ = fmt.Fprintf(opts.Stdout, "set the time of %d files; %d have no history\n", set, len(want))
 	return nil
