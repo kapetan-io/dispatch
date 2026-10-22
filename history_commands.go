@@ -16,6 +16,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/lock"
 	"github.com/kapetan-io/dispatch/internal/loop"
+	"github.com/kapetan-io/dispatch/internal/replay"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
@@ -78,7 +79,7 @@ func replayCommand(opts Options, args []string) error {
 		return err
 	}
 	now := opts.Clock.Now()
-	options := loop.ReplayOptions{Dir: cfg.History.Dir, Env: opts.Env}
+	options := replay.Options{Dir: cfg.History.Dir, Env: opts.Env}
 	if options.From, err = parseWhen("--from", *from, now); err != nil {
 		return err
 	}
@@ -90,11 +91,11 @@ func replayCommand(opts Options, args []string) error {
 			return err
 		}
 	}
-	res, err := loop.Replay(options)
+	res, err := replay.Replay(options)
 	for _, why := range res.Skipped {
 		_, _ = fmt.Fprintln(opts.Stderr, "dispatch: skipped", why)
 	}
-	if errors.Is(err, loop.ErrNotReplayable) {
+	if errors.Is(err, replay.ErrNotReplayable) {
 		return exitError{code: codeNotReplayable, err: err}
 	}
 	if err != nil {

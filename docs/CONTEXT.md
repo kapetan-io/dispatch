@@ -175,6 +175,10 @@ _Avoid_: log, journal (the tool fakes' record of calls)
 One thing a rule reads: a ticket, PR, worker, tree, escalation or the dispatch record, built from the world and the ledger each cycle. Elsewhere "record" keeps its plain sense, as in a Stop record, a send record, a kickoff record, and a receipt (the ledger's record of one action).
 _Avoid_: object, entity, fact (a fact is one value in the world, such as a ticket's status)
 
+**Replay**:
+Running the cycles in a stretch of history again, over the world and the ledger each one ran over, and comparing each with what the live run decided (`dispatch replay`).
+_Avoid_: rerun, simulation
+
 **Escalation**:
 A ticket dispatch moved to Needs Human, with the reason and how the move and its comment came out, read from the ledger's escalate receipts.
 _Avoid_: Needs Human (that is the status an escalation moves the ticket to), alert

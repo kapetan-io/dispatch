@@ -664,7 +664,7 @@ func (l *Loop) cycle(why string) error {
 	l.mem = next
 	res := l.o.Rules.Cycle(state, nil)
 	l.state, l.result = state, res
-	entry := cycleLine(now, why, res)
+	entry := history.CycleLine(now, why, res)
 	// The first cycle to get after a clear writes its line even when it repeats the last, because replay
 	// can only refill what the clear emptied from a line that records the gets.
 	refills := l.keptCleared && len(entry.HTTP) > 0
