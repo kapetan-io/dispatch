@@ -1,0 +1,28 @@
+name: slow-tests
+
+# Weekly report of tests over the speed budget, shown on the run summary page.
+# It stays green when tests are slow or fail, because it reports and does not
+# gate. Only a report that could not be produced (tests that did not build)
+# turns it red. test.yml does not run it.
+# Race mode is off because the budget measures the tests, not the race detector.
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: report
+        shell: bash
+        run: go run ./cmd/slowtests | tee -a "$GITHUB_STEP_SUMMARY"
