@@ -32,7 +32,8 @@ func claudeShim(opts Options, args []string) error {
 	if err != nil {
 		return err
 	}
-	return syscall.Exec(target, append([]string{target}, shimArgs(args, shimPluginRoot(opts), os.Getenv("AUTONOMOUS_WORKER") == "1")...), os.Environ())
+	worker := os.Getenv("AUTONOMOUS_WORKER") == "1"
+	return syscall.Exec(target, append([]string{target}, shimArgs(args, shimPluginRoot(opts), worker)...), os.Environ())
 }
 
 // claudeSubcommands are the names `claude --help` lists under Commands.
@@ -42,8 +43,8 @@ var claudeSubcommands = []string{
 	"ultrareview", "update", "upgrade",
 }
 
-// shimPluginRoot stays empty when neither the environment nor the config names a
-// checkout or the config does not load, so a plain claude still starts.
+// shimPluginRoot is empty when no checkout is named or the config does not load,
+// so a plain claude still starts.
 func shimPluginRoot(opts Options) string {
 	root, _ := pluginRoot(opts)
 	return root
@@ -74,10 +75,7 @@ func hasFlag(args []string, names ...string) bool {
 }
 
 func shimArgs(args []string, root string, worker bool) []string {
-	if slices.Contains(args, "-p") || slices.Contains(args, "--print") {
-		return args
-	}
-	if hasSubcommand(args) {
+	if slices.Contains(args, "-p") || slices.Contains(args, "--print") || hasSubcommand(args) {
 		return args
 	}
 	out := slices.Clone(args)
