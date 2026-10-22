@@ -52,6 +52,7 @@ func full() world.World {
 	}
 }
 
+// Package exception: codec round trip over every field of World, which a CLI scenario would cover only by accident.
 func TestWorldSurvivesBeingWrittenToHistory(t *testing.T) {
 	before := full()
 	for i, f := range reflect.VisibleFields(reflect.TypeFor[world.World]()) {

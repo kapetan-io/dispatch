@@ -624,7 +624,12 @@ func (s cliSource) Older(ctx context.Context, number int, kind, before string) (
 }
 
 func (s cliSource) Checks(ctx context.Context, number int) ([]byte, error) {
-	return s.cli.graphql(ctx, s.dir, []string{"api", "graphql",
+	return s.cli.Checks(ctx, s.dir, number)
+}
+
+// Checks returns gh's raw answer to the checks query for PR number.
+func (c *CLI) Checks(ctx context.Context, repoDir string, number int) ([]byte, error) {
+	return c.graphql(ctx, repoDir, []string{"api", "graphql",
 		"-F", "owner={owner}", "-F", "repo={repo}", "-F", fmt.Sprintf("number=%d", number),
 		"-f", "query=" + checksQuery})
 }

@@ -2,6 +2,8 @@
 
 package linear_test
 
+// Package exception: this package wraps the Linear API, so every test here is an adapter or contract test of it.
+
 import (
 	"context"
 	"os"

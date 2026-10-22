@@ -2,6 +2,8 @@
 
 package launcher_test
 
+// Package exception: drift test that runs dispatch against a real Claude, which no fake stands in for.
+
 import (
 	"context"
 	"encoding/json"

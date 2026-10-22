@@ -24,7 +24,7 @@ Every test pins the surface it enters through, so a package test pins the packag
 - The scenario is unreachable from above, such as concurrent callers, a crash between two steps, or a fault the product can't inject.
 - The package is combinatorial, like a parser or codec, and driving every input through the product is slow or hides the case.
 - The package ships to other consumers.
-- The package wraps an external tool, or is a fake of one, so its adapter and contract tests (see Ports and adapters) run against the real thing.
+- The package wraps an external tool, or is a fake of one, so its adapter and contract tests (see Ports and adapters) run against the real thing. When the whole package is such a wrapper or fake, one comment at the top of each of its test files replaces the per-test comments.
 
 A package test that meets none of these gets the deletion check. Imagine deleting the package and rewriting its callers. If the test would die while the product tests stay green, it was pinning structure, so delete it. You may delete tests you wrote yourself on this ticket. Leave any other existing test in place unless the ticket's intent is to delete it, and name the ones that repeat a product test in the PR instead.
 

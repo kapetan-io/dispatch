@@ -1,5 +1,7 @@
 package treehousetest_test
 
+// Package exception: this package is a fake of treehouse, so every test here is a contract test of the fake.
+
 import (
 	"context"
 	"errors"

@@ -35,6 +35,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// Package exception: adapter test of the notification tool dispatch shells out to.
 func TestNotificationCenterPassesTheTextAsAScriptArgument(t *testing.T) {
 	exe, err := os.Executable()
 	require.NoError(t, err)
@@ -52,6 +53,7 @@ func TestNotificationCenterPassesTheTextAsAScriptArgument(t *testing.T) {
 	assert.NotContains(t, strings.Join(args[:len(args)-2], " "), "needs")
 }
 
+// Package exception: adapter test of the notification tool dispatch shells out to.
 func TestNotificationCenterReportsWhatOsascriptSaid(t *testing.T) {
 	exe, err := os.Executable()
 	require.NoError(t, err)
@@ -64,6 +66,7 @@ func TestNotificationCenterReportsWhatOsascriptSaid(t *testing.T) {
 	require.ErrorContains(t, err, "exit status 1: not allowed")
 }
 
+// Package exception: adapter test of the notification tool dispatch shells out to.
 func TestNotificationCenterShowsTextThatLooksLikeAnOption(t *testing.T) {
 	exe, err := os.Executable()
 	require.NoError(t, err)
@@ -89,6 +92,7 @@ func stubOnPath(t *testing.T, name string) {
 	t.Setenv("PATH", dir)
 }
 
+// Package exception: adapter test of the notification tool dispatch shells out to.
 func TestAlertsOnLinuxShowAHerdrNotification(t *testing.T) {
 	stubOnPath(t, "herdr")
 	argsFile := t.TempDir() + "/args"
@@ -103,6 +107,7 @@ func TestAlertsOnLinuxShowAHerdrNotification(t *testing.T) {
 		strings.Split(string(got), "\x00"))
 }
 
+// Package exception: adapter test of the notification tool dispatch shells out to.
 func TestAlertsOnLinuxReportWhatHerdrSaid(t *testing.T) {
 	stubOnPath(t, "herdr")
 	t.Setenv(envArgs, t.TempDir()+"/args")
@@ -114,6 +119,7 @@ func TestAlertsOnLinuxReportWhatHerdrSaid(t *testing.T) {
 	require.ErrorContains(t, err, "exit status 1: no herdr server")
 }
 
+// Package exception: adapter test of the notification tool dispatch shells out to.
 func TestAlertsOnMacOSShowAnOsascriptNotification(t *testing.T) {
 	stubOnPath(t, "osascript")
 	argsFile := t.TempDir() + "/args"

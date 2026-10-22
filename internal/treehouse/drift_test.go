@@ -2,6 +2,8 @@
 
 package treehouse_test
 
+// Package exception: this package wraps the treehouse tool, so every test here is an adapter or contract test of it.
+
 import (
 	"fmt"
 	"os"

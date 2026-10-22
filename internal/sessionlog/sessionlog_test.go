@@ -10,6 +10,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 )
 
+// Package exception: parser input, where arbitrary byte sequences are the case and the CLI would hide them.
 func TestParseCommandCutsLongArgumentsOfAnyBytesWithoutPanicking(t *testing.T) {
 	for _, test := range []struct {
 		name, args string
