@@ -49,6 +49,66 @@ scenario(rules, "auto-merge merges once per head", s => {
   s.expect([["auto-merge", "github.merge", "ENG-1"]]);
 });
 
+const baseMoved = "GraphQL: Base branch was modified. Review and try the merge again. (mergePullRequest)";
+
+scenario(rules, "auto-merge tries a merge again a minute after GitHub refused it because the base branch moved", s => {
+  s.config({ repos: { dispatch: { autoMerge: true } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", approved));
+  s.land("github.merge", "ENG-1", { outcome: "refused", detail: baseMoved });
+  s.expect([]);
+  s.advance(30_000);
+  s.expect([]);
+  s.advance(31_000);
+  s.expect([["auto-merge", "github.merge", "ENG-1"]]);
+  s.land("github.merge", "ENG-1");
+  s.expect([["auto-merge", "notify.send", "ENG-1"]]);
+});
+
+scenario(rules, "auto-merge stops retrying a base-moved refusal after five retries", s => {
+  s.config({ repos: { dispatch: { autoMerge: true } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", approved));
+  for (let i = 0; i < 5; i++) {
+    s.land("github.merge", "ENG-1", { outcome: "refused", detail: baseMoved });
+    s.advance(61_000);
+    s.expect([["auto-merge", "github.merge", "ENG-1"]]);
+  }
+  s.land("github.merge", "ENG-1", { outcome: "refused", detail: baseMoved });
+  s.advance(61_000);
+  s.expect([["notify-merge-failed", "notify.send", "ENG-1"]]);
+  s.land("notify.send", "ENG-1");
+  s.advance(61_000);
+  s.expect([]);
+});
+
+scenario(rules, "auto-merge does not retry another refusal after a base-moved one", s => {
+  s.config({ repos: { dispatch: { autoMerge: true } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", approved));
+  s.land("github.merge", "ENG-1", { outcome: "refused", detail: baseMoved });
+  s.advance(61_000);
+  s.land("github.merge", "ENG-1", { outcome: "refused", detail: "head moved" });
+  s.advance(61_000);
+  s.expect([["notify-merge-failed", "notify.send", "ENG-1"]]);
+  s.land("notify.send", "ENG-1");
+  s.expect([]);
+});
+
+scenario(rules, "auto-merge starts its retries over for a new head", s => {
+  s.config({ repos: { dispatch: { autoMerge: true } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", approved));
+  s.land("github.merge", "ENG-1", { outcome: "refused", detail: baseMoved });
+  s.see(pr("ENG-1", { head: "h2" }));
+  s.expect([["auto-merge", "github.merge", "ENG-1"]]);
+});
+
+scenario(rules, "auto-merge does not retry once approval is withdrawn", s => {
+  s.config({ repos: { dispatch: { autoMerge: true } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", approved));
+  s.land("github.merge", "ENG-1", { outcome: "refused", detail: baseMoved });
+  s.see(pr("ENG-1", { approved: false }));
+  s.advance(61_000);
+  s.expect([["notify-ready-for-review", "notify.send", "ENG-1"]]);
+});
+
 scenario(rules, "auto-merge needs the repo to turn it on", s => {
   s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", approved));
   s.expect([["notify-ready-for-review", "notify.send", "ENG-1"]]);

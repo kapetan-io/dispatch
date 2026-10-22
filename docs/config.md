@@ -191,6 +191,7 @@ In a repo with `auto_merge = true`, a cycle that finds an In Review ticket's PR 
 - An approval of an earlier commit doesn't count, so a push after approval waits for a new one.
 - A ready PR with no approval on its head gets the ready-for-review notification as before. If the approval arrives later, the next cycle merges it.
 - A merge GitHub refuses, such as branch protection refusing it, prints the error to stderr and sends one notification. Later cycles skip that head, and a push makes the PR eligible again. A merge that fails before it reaches GitHub, such as a Linear read that failed or a ticket that changed since the cycle, is tried again at the next resync.
+- A merge GitHub refuses with "Base branch was modified" happens when another PR merged into the base a moment before. dispatch tries it again at the first resync a minute or more later, up to 5 more times, and sends the notification only if the last try is refused too. A retry needs the merge conditions to still hold, so a PR whose approval is withdrawn between tries gets no notification and no further try. Two PRs that become ready together both land without a push.
 - `dispatch rules check` shows whether the `merge` action is wanted now and takes no action.
 - dispatch reads the config once, when `dispatch run` starts, so a change to a repo's `auto_merge` takes effect when you stop `dispatch run` and start it again.
 

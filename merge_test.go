@@ -559,6 +559,57 @@ func TestTickReportsAFailedMergeOnceAndRetriesOnlyAfterAPush(t *testing.T) {
 	assert.Equal(t, "[merge a2]", attempts[1].Once)
 }
 
+func TestTickMergesAgainAtALaterResyncWhenGitHubSaidTheBaseBranchMoved(t *testing.T) {
+	t.Parallel()
+	const baseMoved = "GraphQL: Base branch was modified. Review and try the merge again. (mergePullRequest)"
+	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
+	d.GitHub.FailMerge(errors.New("while running gh pr merge " + prURL1 + ": exit status 1: " + baseMoved))
+
+	require.ErrorContains(t, d.Run("tick").Err, "Base branch was modified")
+	assert.Empty(t, d.Alerts.Shown())
+
+	d.GitHub.FailMerge(nil)
+	d.Advance(5*time.Minute + time.Second)
+	d.Tick()
+
+	assert.Len(t, d.GitHub.Merged(), 1)
+	attempts := d.receiptsOfKind("ENG-1", "merge")
+	require.Len(t, attempts, 2)
+	assert.Equal(t, "refused", attempts[0].State)
+	assert.Equal(t, "[merge a1]", attempts[0].Once)
+	assert.Equal(t, "done", attempts[1].State)
+	assert.Equal(t, "[merge a1 1]", attempts[1].Once)
+}
+
+func TestTickReportsABaseMovedRefusalOnceItsRetriesRunOut(t *testing.T) {
+	t.Parallel()
+	const baseMoved = "GraphQL: Base branch was modified. Review and try the merge again. (mergePullRequest)"
+	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
+	d.GitHub.FailMerge(errors.New("while running gh pr merge " + prURL1 + ": exit status 1: " + baseMoved))
+
+	d.Run("tick")
+	for range 5 {
+		assert.Empty(t, d.Alerts.Shown())
+		d.Advance(5*time.Minute + time.Second)
+		d.Tick()
+	}
+
+	require.Len(t, d.Alerts.Shown(), 1)
+	assert.Contains(t, d.Alerts.Shown()[0], "Base branch was modified")
+	assert.Len(t, d.receiptsOfKind("ENG-1", "merge"), 6)
+
+	d.Advance(5*time.Minute + time.Second)
+	d.Tick()
+	assert.Len(t, d.receiptsOfKind("ENG-1", "merge"), 6)
+	assert.Len(t, d.Alerts.Shown(), 1)
+}
+
 func TestTickMergesNothingWhenThePRHeadMovesAfterTheApprovalWasRead(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
