@@ -390,6 +390,37 @@ func (d *Dispatch) CrashedEarlierRun(receipts ...ledger.Receipt) {
 	d.h.seedHistory(nil, receipts...)
 }
 
+// HistoryDatedAhead writes a closed run dated after the clock, as a clock that stepped back
+// leaves behind (unreachable from the CLI: dispatch never writes history from the future).
+func (d *Dispatch) HistoryDatedAhead(by time.Duration) {
+	d.h.t.Helper()
+	require.Nil(d.h.t, d.h.running)
+	at := d.h.clock.Now().Add(by)
+	w, err := history.Start(filepath.Join(d.h.state, "events"), at,
+		history.Header{Why: "start", At: at.UnixMilli()}, history.Snapshot{At: at.UnixMilli()})
+	require.NoError(d.h.t, err)
+	require.NoError(d.h.t, w.Close(true))
+}
+
+// HalfWrittenSegment adds a history segment that has its header and no snapshot, as a run that
+// crashed while rotating leaves it (unreachable from the CLI: a crash between two writes).
+func (d *Dispatch) HalfWrittenSegment() {
+	d.h.t.Helper()
+	events := filepath.Join(d.h.state, "events")
+	require.NoError(d.h.t, os.MkdirAll(events, 0o700))
+	name := "events-" + d.h.clock.Now().Add(-30*time.Minute).UTC().Format("20060102T150405Z") + ".jsonl"
+	require.NoError(d.h.t, os.WriteFile(filepath.Join(events, name), []byte(`{"line":"header","why":"start","at":1}`+"\n"), 0o600))
+}
+
+// EmptyFirstSegment adds a history file with nothing in it, as a first run that crashed before
+// it wrote its header leaves it (unreachable from the CLI: a crash between two writes).
+func (d *Dispatch) EmptyFirstSegment() {
+	d.h.t.Helper()
+	events := filepath.Join(d.h.state, "events")
+	require.NoError(d.h.t, os.MkdirAll(events, 0o700))
+	require.NoError(d.h.t, os.WriteFile(filepath.Join(events, "events-20260101T000000Z.jsonl"), nil, 0o600))
+}
+
 // earlierReceipt and earlierOnce build the receipts of CrashedEarlierRun without a test importing
 // the ledger.
 type (
