@@ -1,33 +1,85 @@
 name: test
 
-# Paused while the test refactor (ENG-473) runs, to save Actions minutes.
-# Restore `pull_request:` and `push: branches: [main]` to turn CI back on.
+# CI is paused. Restore `pull_request:` and `push: branches: [main]` only when
+# a code PR and a push to main both finish in 5 minutes (ENG-497).
 on:
   workflow_dispatch:
 
-# The job runs PR code and pushes nothing, so its token stays read-only and
-# out of the checkout's git config.
+# The jobs run PR code and push nothing, so the token stays read-only and out
+# of the checkout's git config.
 permissions:
   contents: read
 
 jobs:
-  test:
+  # A workflow-level paths-ignore would leave a required `test` check waiting
+  # forever on a PR it skips. Deciding here keeps `test` reporting on every PR.
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v5
+      - uses: dorny/paths-filter@v3.0.2
+        id: filter
+        with:
+          # What the Go tests and shellcheck read. No test reads skills/**,
+          # evals/** or CLAUDE.md.
+          filters: |
+            code:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'README.md'
+              - 'docs/**'
+              - 'rules/**'
+              - '.claude-plugin/**'
+              - 'hooks/hooks.json'
+              - 'bin/dispatch-launch'
+              - 'scripts/shims/claude'
+              - '.github/workflows/test.yml'
+
+  test:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: vet
+          # actions/cache below owns the build and test cache, because
+          # setup-go saves only when go.sum changes.
+          cache: false
+      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+        id: gocache
+        run: echo "dir=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ steps.gocache.outputs.dir }}
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.run_id }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go-${{ runner.os }}-
+      # go test's result cache compares file times, which a fresh checkout resets.
+      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+        run: go run ./cmd/committimes
+      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
         run: go vet ./...
-      - name: test
-        # The surface tests run against fake tools and a real git, which the
-        # runner image provides. The drift check (go test -tags drift
-        # ./internal/...) needs the installed tools and does not run here.
-        # No -race: it multiplies CPU time about 6 times and CI has no
-        # concurrency check the dev box does not already run.
+      # The surface tests run against fake tools and a real git, which the
+      # runner image provides. The drift check (go test -tags drift
+      # ./internal/...) needs the installed tools and does not run here.
+      # No -race: it multiplies CPU time about 6 times and CI has no
+      # concurrency check the dev box does not already run.
+      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
         run: go test -tags slow_tests ./...
-      - name: shellcheck
+      - if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
         run: shellcheck -S warning bin/dispatch-launch scripts/shims/claude
