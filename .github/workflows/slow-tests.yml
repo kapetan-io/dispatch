@@ -25,4 +25,4 @@ jobs:
           go-version-file: go.mod
       - name: report
         shell: bash
-        run: go run ./cmd/slowtests | tee -a "$GITHUB_STEP_SUMMARY"
+        run: make test-report | tee -a "$GITHUB_STEP_SUMMARY"
