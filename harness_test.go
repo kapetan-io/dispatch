@@ -635,6 +635,17 @@ func (d *Dispatch) HookAndWaitForCommand(command, stdin, tree, session, prompt s
 	return res
 }
 
+// WaitForCommands waits until the session's log holds count commands. A hook ignores a failed hand-off
+// to the loop, so a command it dropped never gets there, and a test that waits here fails on the drop
+// instead of on a later step that the drop starves.
+func (d *Dispatch) WaitForCommands(tree, session string, count int) {
+	d.t.Helper()
+	require.Eventually(d.t, func() bool {
+		log, err := sessionlog.Read(d.state, tree, session)
+		return err == nil && len(log.Commands) == count
+	}, 20*time.Second, 5*time.Millisecond)
+}
+
 // HookTogether runs the hook count times at once, as Claude sessions do. The options are made before
 // any hook runs, because Dispatch rewrites config.toml for every command.
 func (d *Dispatch) HookTogether(count int, command, stdin string) []Result {
