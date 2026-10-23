@@ -443,7 +443,7 @@ func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World)
 	if err := e.Treehouse.Return(ctx, repoDir, path, holder); err != nil {
 		return failed("while returning %s to the pool: %v", path, err)
 	}
-	stops.Remove(e.StateDir, path)
+	stops.MarkReturned(e.StateDir, path, e.Clock.Now())
 	sessionlog.Remove(e.StateDir, path)
 	kickoffs.Clear(e.StateDir, path)
 	res.Outcome, res.Detail = ledger.Done, detail

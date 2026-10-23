@@ -140,7 +140,7 @@ Closing a worker's herdr workspace, which ends its Claude session and keeps its 
 _Avoid_: kill, stop (a Stop is a turn ending)
 
 **Return**:
-Giving a tree back to its treehouse pool. dispatch closes the herdr workspace on the tree, deletes its untracked files, and returns it only when it has no uncommitted changes, no commits that no remote has, and nothing untracked left after the deletion (git clean skips a nested repository, which a return would discard). Otherwise it keeps the tree, and the refusal's detail says why. After the return it deletes the tree's Stop records, session logs and kickoff record.
+Giving a tree back to its treehouse pool. dispatch closes the herdr workspace on the tree, deletes its untracked files, and returns it only when it has no uncommitted changes, no commits that no remote has, and nothing untracked left after the deletion (git clean skips a nested repository, which a return would discard). Otherwise it keeps the tree, and the refusal's detail says why. After the return it deletes the tree's Stop records (keeping the time of the return, so a Stop that ended by then is ignored even when it is reported later), session logs and kickoff record.
 _Avoid_: free, delete (the untracked files are deleted, the tree is not)
 
 **Action**:
@@ -192,5 +192,5 @@ A case in a `*.test.ts` file that `dispatch rules test` runs. It sets up a world
 _Avoid_: contract scenario (a tool fake against its adapter), unit test
 
 **Stop record**:
-The latest Stop of each worker session, from the Stop hook through `dispatch record-stop`, saying whether background tasks were still running.
+The latest Stop of each worker session, from the Stop hook through `dispatch record-stop`, saying whether background tasks were still running. A Stop that ended at or before its tree's last return is ignored.
 _Avoid_: stop file, turn (the session log keeps every turn)
