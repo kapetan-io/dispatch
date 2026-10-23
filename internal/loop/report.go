@@ -85,6 +85,11 @@ func (l *Loop) onStop(s *Stop) Response {
 		return Response{Code: CodeFailed, Error: "a stop report needs a tree and a session"}
 	}
 	rec := stops.Record{At: time.UnixMilli(s.At).UTC(), Reported: s.Reported, Running: s.Running}
+	// The ended session of a returned tree can report after the return. Stored, the turn would
+	// still reach the session log, which the return cleared.
+	if at, ok := stops.ReturnedAt(l.o.StateDir, s.Tree); ok && !rec.At.After(at) {
+		return Response{}
+	}
 	// A report that waited in the inbox past its hook's timeout can arrive after a newer one, and
 	// is dropped so the session's turns stay in order. A stored time ahead of the loop's clock came
 	// from a clock that has since stepped back, and must not shut out every report after it.

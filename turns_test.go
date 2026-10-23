@@ -358,6 +358,48 @@ func TestTickForgetsTheStopRecordOfATreeItReturns(t *testing.T) {
 	assert.Equal(t, []string{"ENG-2: busy false"}, d.Linear.Comments())
 }
 
+func TestAStopReportedAfterTheReturnDoesNotMakeTheNextSessionBusy(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, busyRule)})
+	d.Workers.Running("ENG-1", "idle")
+	d.Workers.Stop("ENG-1", stopTasks{})
+	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
+	tree := d.Trees.Pushed("ENG-1")
+	d.Tick()
+	require.Len(t, d.Trees.Returned(), 1)
+
+	// The old session's last Stop arrives after the return.
+	d.Workers.Stop("ENG-1", stopTasks{Running: 1})
+	d.Linear.Tickets(ticket("ENG-2", "In Progress", "dispatch"))
+	d.Workers.RunningIn("ENG-2", tree, "idle")
+	// An unknown session reads the latest Stop of any session in the tree.
+	d.Workers.SetSession("ENG-2", "")
+	d.Tick()
+
+	assert.Equal(t, []string{"ENG-2: busy false"}, d.Linear.Comments())
+}
+
+func TestAStopFromASessionStartedAfterTheReturnStillMakesItBusy(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, busyRule)})
+	d.Workers.Running("ENG-1", "idle")
+	d.Workers.Stop("ENG-1", stopTasks{})
+	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
+	tree := d.Trees.Pushed("ENG-1")
+	d.Tick()
+	require.Len(t, d.Trees.Returned(), 1)
+
+	// The next session's Stop is later than the return.
+	d.Advance(time.Minute)
+	d.Workers.StopFrom("next", "ENG-1", stopTasks{Running: 1})
+	d.Linear.Tickets(ticket("ENG-2", "In Progress", "dispatch"))
+	d.Workers.RunningIn("ENG-2", tree, "idle")
+	d.Workers.SetSession("ENG-2", "next")
+	d.Tick()
+
+	assert.Equal(t, []string{"ENG-2: busy true"}, d.Linear.Comments())
+}
+
 func TestAnIdleWorkerIsBusyWhileItsLastStopReportedBackgroundTasks(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, busyRule)})

@@ -1,7 +1,9 @@
 // Package stops keeps the record of each worker's latest Stop, the moment
 // Claude Code ended a turn. The running dispatch writes it from the Stop hook's
 // report and the rules read it, because the hook is the only place Claude Code
-// says whether an idle session is waiting on background work.
+// says whether an idle session is waiting on background work. It also keeps when each
+// tree was last returned, so a Stop from the session that ended there is not taken for
+// the next one's.
 package stops
 
 import (
@@ -9,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/treekey"
@@ -42,8 +45,9 @@ func Dir(stateDir string) string {
 }
 
 // treeDir holds the records of the worker in tree, one file for each Claude
-// session that stopped there. Any session whose working directory is the tree
-// fires the hook, so the reader must pick the worker's own session out.
+// session that stopped there, and after a return the time of that return. Any session whose
+// working directory is the tree fires the hook, so the reader must pick the worker's own
+// session out.
 func treeDir(stateDir, tree string) string {
 	return filepath.Join(Dir(stateDir), treekey.Of(tree))
 }
@@ -74,18 +78,20 @@ func Write(stateDir, tree, session string, r Record) error {
 	return os.Rename(tmp.Name(), filepath.Join(dir, treekey.Hash(session)+".json"))
 }
 
-// Read returns the latest Stop of session in the tree. With no session known,
-// it returns the latest Stop of any session there. A missing or unreadable
+// Read returns the latest Stop of session in the tree that ended after the last return.
+// With no session known, it returns the latest Stop of any session there. A missing or unreadable
 // record is reported as absent, because the rules treat both as unknown.
 func Read(stateDir, tree, session string) (Record, bool) {
 	dir := treeDir(stateDir, tree)
+	returned, _ := ReturnedAt(stateDir, tree)
 	if session != "" {
-		return readFile(filepath.Join(dir, treekey.Hash(session)+".json"))
+		r, ok := readFile(filepath.Join(dir, treekey.Hash(session)+".json"))
+		return r, ok && r.At.After(returned)
 	}
 	files, _ := filepath.Glob(filepath.Join(dir, "*.json"))
 	var latest Record
 	for _, f := range files {
-		if r, ok := readFile(f); ok && r.At.After(latest.At) {
+		if r, ok := readFile(f); ok && r.At.After(latest.At) && r.At.After(returned) {
 			latest = r
 		}
 	}
@@ -126,8 +132,44 @@ func readFile(name string) (Record, bool) {
 	return r, true
 }
 
-// Remove deletes the records of the tree, so the next ticket leased that tree
-// does not inherit this one's last Stop.
-func Remove(stateDir, tree string) {
-	_ = os.RemoveAll(treeDir(stateDir, tree))
+// returnedFile holds the time the tree was last given back, in Unix milliseconds. It is not a
+// .json file, so Read and Unreadable never take it for a Stop.
+const returnedFile = "returned"
+
+// MarkReturned records that the tree was given back at at, so no Stop that ended by then is
+// read again, and deletes the files written by then. The hook reports after a turn ends, so
+// the ended session's Stop can reach the loop after this runs. That Stop is stored but
+// ignored, which is why the records are not simply deleted. A new session's Stop ends after at.
+func MarkReturned(stateDir, tree string, at time.Time) {
+	dir := treeDir(stateDir, tree)
+	if os.MkdirAll(dir, 0o755) == nil {
+		writeReturned(dir, at)
+	}
+	files, _ := filepath.Glob(filepath.Join(dir, "*.json"))
+	for _, f := range files {
+		if info, err := os.Stat(f); err == nil && !info.ModTime().After(at) {
+			_ = os.Remove(f)
+		}
+	}
+}
+
+func writeReturned(dir string, at time.Time) {
+	tmp, err := os.CreateTemp(dir, ".returned-*.tmp")
+	if err != nil {
+		return
+	}
+	_, werr := tmp.WriteString(strconv.FormatInt(at.UnixMilli(), 10))
+	if cerr := tmp.Close(); werr != nil || cerr != nil || os.Rename(tmp.Name(), filepath.Join(dir, returnedFile)) != nil {
+		_ = os.Remove(tmp.Name())
+	}
+}
+
+// ReturnedAt is when the tree was last given back.
+func ReturnedAt(stateDir, tree string) (time.Time, bool) {
+	b, err := os.ReadFile(filepath.Join(treeDir(stateDir, tree), returnedFile))
+	if err != nil {
+		return time.Time{}, false
+	}
+	ms, err := strconv.ParseInt(string(b), 10, 64)
+	return time.UnixMilli(ms), err == nil
 }
