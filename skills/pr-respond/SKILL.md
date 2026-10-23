@@ -5,13 +5,29 @@ description: Respond to what a build worker's open PR raised (review comments, q
 
 # Respond to the PR
 
-You are the build worker for a ticket whose PR is open. Dispatch typed this command because something on the PR wants a response, or your build skill sent you here. Any text after the command names the PR and what happened. Without it, find the PR for your branch and read its reviews, comments, threads and checks. The build skill's Rules still bind you, even if your session has summarized them away, and the ones this step leans on are restated here.
-
 ## Before you act
 
 Run `"${DISPATCH_BIN:-dispatch}" repo-settings` and read `ignore_comment_authors`, `ignore_optional_checks` and `approval_checks`. Act on nothing by a listed login, matched ignoring case: no fix, reply or resolve.
 
 Name the repo on every `gh` command that takes `--repo owner/name`, and give `gh api` a `repos/owner/name/...` path, taking `owner/name` from the PR's URL. In a clone with two remotes `gh` picks the wrong one (ENG-273).
+
+## Read all of it
+
+A PR holds feedback in three places: conversation comments, review bodies, and comments on lines of code, which sit in review threads. `gh pr view --comments` misses the code comments, and the REST comments endpoints each return only one kind. Read all three, with the thread ids you need to resolve, in one query:
+
+```sh
+gh api graphql -F owner=OWNER -F name=NAME -F number=N -f query='
+query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){
+  comments(last:100){nodes{author{login} body createdAt}}
+  reviews(last:100){nodes{author{login} state body createdAt}}
+  reviewThreads(first:100){nodes{id isResolved path line comments(first:50){nodes{author{login} body createdAt}}}}}}}'
+```
+
+Resolve a thread once you have fixed or answered it, because dispatch never reports the PR ready while one is open, and whoever reviewed it never hears the fix landed:
+
+```sh
+gh api graphql -F id=THREAD_ID -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}'
+```
 
 ## A review comment
 
@@ -20,8 +36,6 @@ Treat it as a claim to check with evidence: a failing test or a trace through th
 - **Confirmed.** Fix it, push, reply, and resolve the thread. Record the fix as a divergence when it changes something the design describes, as the build skill's "When the build diverges from the design" says.
 - **Unconfirmed, from a bot.** Reply with your evidence and resolve the thread.
 - **Unconfirmed, from a person.** Reply with your evidence, leave the thread open, and move the ticket to Needs Human.
-
-Resolve a thread once you have fixed or answered it, because dispatch never reports the PR ready while one is open, and whoever reviewed it never hears the fix landed. Resolve with GitHub's `resolveReviewThread` GraphQL mutation through `gh api graphql`, reading thread ids from the PR's `reviewThreads`.
 
 ## A question
 
