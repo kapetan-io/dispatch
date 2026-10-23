@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Autobots
 
-`dispatch watch` the feature ticket's children, Todo ones included so a piece promoted later is already followed, and review each PR when its worker reports it ready for review. The user's command is the yes the `dispatch` skill waits for, for these pieces only. Everything outside this feature keeps its rules.
+Run `dispatch watch` on every child of the feature ticket, including those still in Todo, so you hear about each one as soon as it starts. When a worker says its PR is ready for review, review it. Starting this skill is the user's approval to review and merge these children, so don't ask first. Every other ticket still waits for the user, as the `dispatch` skill says.
 
 - **Review at once,** with the `dispatch` skill's review flow, on the head from `gh pr view <url> --json headRefOid`. You decide whether a piece meets its ticket, including a finding the reviewer calls a decision for the user.
 - **Merge a clean review of a ready, non-draft PR** with `gh pr merge <url> --merge --match-head-commit <head>`, so a later push stops it. Then `dispatch tick`, `dispatch unwatch` the child and tell the user in a line.
