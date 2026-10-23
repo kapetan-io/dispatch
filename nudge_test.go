@@ -125,7 +125,7 @@ func (w *Workers) Prompt(tree, session, prompt string) {
 	w.d.t.Helper()
 	input, err := json.Marshal(map[string]string{"hook_event_name": "UserPromptSubmit", "session_id": session, "cwd": tree, "prompt": prompt})
 	require.NoError(w.d.t, err)
-	require.NoError(w.d.t, w.d.HookAndWait("wake", string(input)).Err)
+	require.NoError(w.d.t, w.d.HookAndWaitForCommand("wake", string(input), tree, session, prompt).Err)
 }
 
 // Type has the person of the ticket's worker type a prompt into the "worker" session.
@@ -2175,9 +2175,18 @@ func TestEachSendMatchesOneCommandWhenManyHooksRace(t *testing.T) {
 		assert.NoError(t, res.Err)
 	}
 
-	// The hooks do not wait for the loop, so wait until it has read all eight.
-	require.Eventually(t, func() bool { return strings.HasSuffix(lastReadingOf(d, "ENG-1"), " of 8") }, 10*time.Second, 5*time.Millisecond)
-	read := lastReading(t, d)
+	// The hooks do not wait for the loop, and each reading posts its comment from its own goroutine,
+	// so the reading of all eight can land before an earlier one. Wait for it, not for the newest.
+	var read string
+	require.Eventually(t, func() bool {
+		for _, comment := range d.Linear.Comments() {
+			if body, ok := strings.CutPrefix(comment, "ENG-1: "); ok && strings.HasSuffix(body, " of 8") {
+				read = body
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 5*time.Millisecond)
 	assert.Equal(t, 1, strings.Count(read, "|dispatch"))
 	assert.Equal(t, 7, strings.Count(read, "|person"))
 }

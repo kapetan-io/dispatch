@@ -618,6 +618,23 @@ func (d *Dispatch) HookAndWait(command, stdin string) Result {
 	return res
 }
 
+// HookAndWaitForCommand is HookAndWait that also waits for the report of a slash command to reach the
+// session's log, because an idle pass that began before the report arrived can end HookAndWait's wait first.
+// A prompt that is no command, or a log that can't be read, only gets HookAndWait.
+func (d *Dispatch) HookAndWaitForCommand(command, stdin, tree, session, prompt string) Result {
+	d.t.Helper()
+	before, readErr := sessionlog.Read(d.state, tree, session)
+	res := d.HookAndWait(command, stdin)
+	if _, isCommand := sessionlog.ParseCommand(prompt); !isCommand || readErr != nil {
+		return res
+	}
+	require.Eventually(d.t, func() bool {
+		after, err := sessionlog.Read(d.state, tree, session)
+		return err != nil || len(after.Commands) > len(before.Commands)
+	}, 20*time.Second, 2*time.Millisecond)
+	return res
+}
+
 // HookTogether runs the hook count times at once, as Claude sessions do. The options are made before
 // any hook runs, because Dispatch rewrites config.toml for every command.
 func (d *Dispatch) HookTogether(count int, command, stdin string) []Result {
@@ -2507,7 +2524,9 @@ var plainRepo = sync.OnceValues(func() (string, error) {
 	}
 	for _, args := range [][]string{
 		{"init", "-q", "-b", "main"},
-		{"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init"},
+		// Git detaches a background maintenance run after a commit, and its lock file can vanish
+		// while copyPlainRepo copies the directory.
+		{"-c", "user.name=t", "-c", "user.email=t@t", "-c", "maintenance.auto=false", "-c", "gc.auto=0", "commit", "-q", "--allow-empty", "-m", "init"},
 	} {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
