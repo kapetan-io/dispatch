@@ -6,7 +6,9 @@ disable-model-invocation: true
 
 # Autobots
 
-Your job is to see every child of the feature ticket worked through to a merge. Run `dispatch watch` on every child of the feature ticket, including those still in Todo, so you hear about each one as soon as it starts. When a worker says its PR is ready for review, review it. Starting this skill is the user's approval to review and merge these children, so don't ask first. Every other ticket still waits for the user, as the `dispatch` skill says.
+Work autonomously. Your goal is to review and merge every child of the feature ticket without asking the user for help. Starting this skill is the user's approval for that, and the cases listed below are the only times you stop and ask. Every other ticket still waits for the user, as the `dispatch` skill says.
+
+Run `dispatch watch` on every child, including those still in Todo, so you hear about each one as soon as it starts. When a worker says its PR is ready for review, review it.
 
 - **Review it right away.** You decide whether the work does what its ticket asks, even when the reviewer says a finding is the user's call.
 - **When the review finds nothing, merge it.** Merge only the commit you reviewed, so a later push never ships unread, and never merge a draft. Then stop watching that child and tell the user in one line.
