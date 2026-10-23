@@ -207,8 +207,8 @@ func runBuild(ctx context.Context, args []string, opts Options) error {
 	return nil
 }
 
-// withStep1 returns the build skill with its "1. **Orient.**" line replaced by
-// the arm's wording.
+// withStep1 returns the build skill with everything from its "1. **Orient.**"
+// line up to its "2. **Implement.**" line replaced by the arm's wording.
 func withStep1(skillPath, armPath string) (string, error) {
 	skill, err := os.ReadFile(skillPath)
 	if err != nil {
@@ -220,10 +220,24 @@ func withStep1(skillPath, armPath string) (string, error) {
 	}
 	lines := strings.Split(string(skill), "\n")
 	for i, l := range lines {
-		if strings.HasPrefix(l, "1. **Orient.**") {
-			lines[i] = strings.TrimRight(string(arm), "\n")
-			return strings.Join(lines, "\n"), nil
+		if !strings.HasPrefix(l, "1. **Orient.**") {
+			continue
 		}
+		for j := i + 1; j < len(lines); j++ {
+			if !strings.HasPrefix(lines[j], "2. **Implement.**") {
+				continue
+			}
+			// Keep the blank lines that separated step 1 from step 2.
+			gap := j
+			for gap > i+1 && lines[gap-1] == "" {
+				gap--
+			}
+			out := append([]string{}, lines[:i]...)
+			out = append(out, strings.TrimRight(string(arm), "\n"))
+			out = append(out, lines[gap:]...)
+			return strings.Join(out, "\n"), nil
+		}
+		return "", fmt.Errorf("%s has no step 2 line", skillPath)
 	}
 	return "", fmt.Errorf("%s has no step 1 line", skillPath)
 }

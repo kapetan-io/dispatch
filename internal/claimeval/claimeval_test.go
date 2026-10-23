@@ -128,6 +128,31 @@ func TestBuildWritesBlindedCases(t *testing.T) {
 	}
 }
 
+func TestBuildReplacesEveryLineOfStep1(t *testing.T) {
+	repo, work := gitRepo(t), t.TempDir()
+	write(t, filepath.Join(work, "skill.md"),
+		"# Build\n\n## Steps\n\n1. **Orient.** Old wording.\n\n   **Stale ticket.** Old second paragraph.\n   - Old bullet.\n\n2. **Implement.** Code it.\n")
+	write(t, filepath.Join(work, "arm.md"), "1. **Orient.** New wording.\n")
+	write(t, filepath.Join(work, "tickets", "a.md"), "# ENG-1: a ticket\n")
+	cases, err := json.Marshal([]claimeval.Case{
+		{Name: "all-true", Ticket: "ENG-1", File: "a.md", Fixture: "HEAD", Kind: "control", Expect: "CONTINUE"},
+	})
+	require.NoError(t, err)
+	write(t, filepath.Join(work, "cases.json"), string(cases))
+	out := filepath.Join(work, "plugin")
+
+	_, stderr, code := run(t, "build", "-arm", filepath.Join(work, "arm.md"), "-out", out,
+		"-cases", filepath.Join(work, "cases.json"), "-tickets", filepath.Join(work, "tickets"),
+		"-repo", repo, "-goroot", "/opt/go", "-skill", filepath.Join(work, "skill.md"))
+
+	require.Equal(t, 0, code, stderr)
+	skill, err := os.ReadFile(filepath.Join(out, "skills", "build", "SKILL.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(skill), "1. **Orient.** New wording.")
+	assert.NotContains(t, string(skill), "Old")
+	assert.Contains(t, string(skill), "2. **Implement.** Code it.")
+}
+
 func TestBuildNeedsStep1InTheSkill(t *testing.T) {
 	work := t.TempDir()
 	write(t, filepath.Join(work, "skill.md"), "# Build\n")
