@@ -522,3 +522,13 @@ func TestClientSendsTheMutationVariables(t *testing.T) {
 	assert.Equal(t, map[string]any{"id": "t1", "state": "s1"}, w.variables["MoveTicket"])
 	assert.Equal(t, map[string]any{"id": "t1", "body": "hi"}, w.variables["CommentTicket"])
 }
+
+func TestClientAsksForManagedTicketsIgnoringTheCaseOfTheLabel(t *testing.T) {
+	w := newWire(t)
+	w.answers["ManagedTickets"] = map[string]any{"viewer": map[string]any{"assignedIssues": page()}}
+
+	_, err := w.client().ManagedTickets(context.Background(), "ai", []string{"ENG"})
+
+	require.NoError(t, err)
+	assert.Contains(t, w.queries["ManagedTickets"], "name: {eqIgnoreCase: $label}")
+}

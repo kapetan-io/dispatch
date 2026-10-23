@@ -71,10 +71,11 @@ type Label struct {
 	Group string
 }
 
-// HasLabel reports whether the ticket carries a label with this name.
+// HasLabel reports whether the ticket carries a label with this name. Linear
+// keeps label names unique ignoring case, so AI and ai are the same label.
 func (t Ticket) HasLabel(name string) bool {
 	for _, l := range t.Labels {
-		if l.Name == name {
+		if strings.EqualFold(l.Name, name) {
 			return true
 		}
 	}
@@ -84,7 +85,7 @@ func (t Ticket) HasLabel(name string) bool {
 // LabelIn returns the ticket's label in the given group, such as its repo.
 func (t Ticket) LabelIn(group string) (string, bool) {
 	for _, l := range t.Labels {
-		if l.Group == group {
+		if strings.EqualFold(l.Group, group) {
 			return l.Name, true
 		}
 	}
@@ -204,7 +205,7 @@ func ChildrenOverflow() error {
 // newest first, so comments(first: 1) is the newest and last: 1 the oldest.
 const managedTickets = `query ManagedTickets($label: String!, $teams: [String!], $first: Int!) {
   viewer {
-    assignedIssues(first: $first, filter: {labels: {name: {eq: $label}}, state: {type: {eq: "started"}}, team: {key: {in: $teams}}}) {
+    assignedIssues(first: $first, filter: {labels: {name: {eqIgnoreCase: $label}}, state: {type: {eq: "started"}}, team: {key: {in: $teams}}}) {
       nodes {
         id identifier title url branchName createdAt
         state { name }

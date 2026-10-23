@@ -111,7 +111,7 @@ func (s *scenario) apply(f map[string]any, seen bool) {
 		if v, ok := fields["returns"]; ok {
 			s.pools[repo] = int(toInt(v))
 		}
-		if _, ok := s.cfg.Repos[repo]; !ok {
+		if _, _, ok := s.cfg.Repos.Find(repo); !ok {
 			s.cfg.Repos[repo] = config.Repo{Path: "/work/" + repo, OpenPRAs: config.OpenPRAsOpen}
 		}
 	case "comment":
@@ -181,13 +181,13 @@ func (s *scenario) applyTicket(id string, fields map[string]any) {
 	// Labels are rebuilt from the fields that name them.
 	labels := t.Labels
 	if optedIn, ok := boolean(fields, "optedIn"); ok {
-		labels = slices.DeleteFunc(labels, func(l linear.Label) bool { return l.Name == s.cfg.Plugins.Linear.AILabel })
+		labels = slices.DeleteFunc(labels, func(l linear.Label) bool { return strings.EqualFold(l.Name, s.cfg.Plugins.Linear.AILabel) })
 		if optedIn {
 			labels = append(labels, linear.Label{Name: s.cfg.Plugins.Linear.AILabel})
 		}
 	}
 	if repo, ok := str(fields, "repo"); ok {
-		labels = slices.DeleteFunc(labels, func(l linear.Label) bool { return l.Group == s.cfg.Plugins.Linear.RepoLabelGroup })
+		labels = slices.DeleteFunc(labels, func(l linear.Label) bool { return strings.EqualFold(l.Group, s.cfg.Plugins.Linear.RepoLabelGroup) })
 		labels = append(labels, linear.Label{Name: repo, Group: s.cfg.Plugins.Linear.RepoLabelGroup})
 	}
 	if names, ok := fields["labels"].([]any); ok {

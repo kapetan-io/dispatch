@@ -129,7 +129,7 @@ A rule names the service and a path, and dispatch sends `Authorization: Bearer <
 | `api_key_keychain` | `dispatch-linear-api-key` | The macOS keychain service holding your Linear API key. Linux has no keychain lookup, so use `LINEAR_API_KEY` or `api_key_command` there. The `LINEAR_API_KEY` environment variable wins when set. Rules never see this setting in `ctx.config`. |
 | `teams` | `["ENG"]` | Team keys dispatch manages. A ticket in another team is ignored, and a promoted child must be in one of these. |
 | `ai_label` | `ai` | The label that opts a ticket in. dispatch touches only tickets assigned to the owner of the API key that carry it. |
-| `repo_label_group` | `repo` | The Linear label group whose labels name a ticket's repo. A ticket's repo label must match a `[repos.<label>]` table. |
+| `repo_label_group` | `repo` | The Linear label group whose labels name a ticket's repo. A ticket's repo label must match a `[repos.<label>]` table, ignoring case. |
 
 ## `[plugins.linear.statuses]`
 
