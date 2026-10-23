@@ -56,7 +56,7 @@ func TestRealClaudeTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(state) })
 	config := filepath.Join(root, "config.toml")
-	require.NoError(t, os.WriteFile(config, []byte(fmt.Sprintf("[repos.drift]\npath = %q\n", repo)), 0o644))
+	require.NoError(t, os.WriteFile(config, []byte(fmt.Sprintf("[repos.drift]\npath = %q\n\n[history]\ndir = %q\n", repo, filepath.Join(state, "events"))), 0o644))
 
 	// The plugin's hooks run `dispatch` from the PATH the worker's shell has, which the herdr
 	// server hands down from this process, so the build that reads the temp state goes first.
@@ -167,4 +167,9 @@ func TestRealClaudeTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t
 		assert.Equal(t, sessionlog.ByDispatch, c.By)
 	}
 	assert.Equal(t, "and then reply with the word done", log.Commands[2].Args)
+
+	// The run's history belongs in the temp state, not the folder a real restart resumes from.
+	segments, err := os.ReadDir(filepath.Join(state, "events"))
+	require.NoError(t, err)
+	assert.NotEmpty(t, segments)
 }
