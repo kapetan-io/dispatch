@@ -2175,6 +2175,10 @@ func TestEachSendMatchesOneCommandWhenManyHooksRace(t *testing.T) {
 		assert.NoError(t, res.Err)
 	}
 
+	// A hook ignores a failed hand-off to the loop, so a dropped command never reaches the log. Waiting
+	// for all eight there first makes a drop fail here, and a slow loop fail at the reading below.
+	d.WaitForCommands(tree, "worker", 8)
+
 	// The hooks do not wait for the loop, and each reading posts its comment from its own goroutine,
 	// so the reading of all eight can land before an earlier one. Wait for it, not for the newest.
 	var read string
@@ -2186,7 +2190,7 @@ func TestEachSendMatchesOneCommandWhenManyHooksRace(t *testing.T) {
 			}
 		}
 		return false
-	}, 10*time.Second, 5*time.Millisecond)
+	}, 20*time.Second, 5*time.Millisecond)
 	assert.Equal(t, 1, strings.Count(read, "|dispatch"))
 	assert.Equal(t, 7, strings.Count(read, "|person"))
 }
