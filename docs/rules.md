@@ -153,6 +153,6 @@ Add a rule by creating a file and importing it from `dispatch.ts`, which is the 
 |---|---|
 | `dispatch.ts` | Imports every file that runs. |
 | `workers.ts`, `trees.ts`, `parents.ts`, `escalations.ts`, `nudges.ts`, `notices.ts`, `merge.ts` | The 25 rules, grouped by job. [Worker states](worker-states.md) lists when they nudge, notify or escalate a worker in each state, so read it before changing one. |
-| `shared.ts`, `texts.ts` | Helpers and the nudge texts the `dispatch:build` skill relies on word for word. |
+| `shared.ts`, `texts.ts` | Helpers and the nudge texts. The PR nudges start with `/dispatch:pr-respond`, the skill a worker follows on its PR. |
 | `types/dispatch.d.ts`, `types/testing.d.ts` | Generated from dispatch's Go types, and rewritten by `rules check`. They sit in `types/` because `tsc` ignores a `dispatch.d.ts` that has a `dispatch.ts` beside it. |
 | `config.schema.json` | A JSON schema for `config.toml`, generated from the same structs the loader reads. |
