@@ -8,10 +8,14 @@ disable-model-invocation: true
 
 Run `dispatch watch` on every child of the feature ticket, including those still in Todo, so you hear about each one as soon as it starts. When a worker says its PR is ready for review, review it. Starting this skill is the user's approval to review and merge these children, so don't ask first. Every other ticket still waits for the user, as the `dispatch` skill says.
 
-- **Review at once,** with the `dispatch` skill's review flow, on the head from `gh pr view <url> --json headRefOid`. You decide whether a piece meets its ticket, including a finding the reviewer calls a decision for the user.
-- **Merge a clean review of a ready, non-draft PR** with `gh pr merge <url> --merge --match-head-commit <head>`, so a later push stops it. Then `dispatch tick`, `dispatch unwatch` the child and tell the user in a line.
-- **Post confirmed findings, then resolve your own threads** (`resolveReviewThread` through `gh api graphql`) and `dispatch tick`. An unresolved thread keeps the PR from being reported ready, so the worker's fix would never produce a ready event.
-- **Every 15 minutes, check each followed PR,** for a worker that replied without pushing or a ready event that never came.
-- **Stop and ask the user,** as its own message and never at the end of a status update, when a confirmed finding is about product behavior, a public contract, a security default or an ADR (still post it on the PR), when a child moves to Needs Human, when GitHub refuses a merge, or when one PR has had confirmed findings in 3 reviews. Hand back sooner when another round isn't worth it.
+- **Review it right away** the way the `dispatch` skill does. Note the PR's latest commit first with `gh pr view <url> --json headRefOid`. You decide whether the work does what its ticket asks, even when the reviewer says a finding is the user's call.
+- **When the review finds nothing, merge it** with `gh pr merge <url> --merge --match-head-commit <commit>`. If the worker pushed after you reviewed, the merge fails instead of shipping code you didn't read. Never merge a draft. Then run `dispatch tick`, stop watching that child, and tell the user in one line.
+- **When the review finds problems, post them on the PR,** then mark your own comment threads resolved and run `dispatch tick`. Resolving a thread takes `gh api graphql` and the `resolveReviewThread` mutation. Dispatch only reports a PR ready once every thread is resolved, so if you leave yours open, you never hear about the worker's fix.
+- **Check each watched PR every 15 minutes.** The worker may answer without pushing, or the ready message may never arrive.
+- **Stop and ask the user** in a message of its own, not tacked onto the end of an update, when:
+  - a finding is about how the product behaves, a public contract, a security default or an ADR. Post it on the PR anyway.
+  - a child moves to Needs Human.
+  - GitHub refuses a merge.
+  - a PR still has problems after 3 reviews. Ask sooner if another round isn't worth it.
 
-When every piece is finished, stop following and tell the user.
+When every child is done, stop watching and tell the user.
