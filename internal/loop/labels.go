@@ -34,6 +34,16 @@ func label(emoji string, t linear.Ticket) string { return emoji + " " + t.Identi
 
 func tabLabel(t linear.Ticket) string { return herdr.TabLabel(t.Identifier, t.Title) }
 
+// differs is true when the workspace or tab needs renaming to want. A rename already
+// on its way to want needs none, and one on its way to another label needs it even when
+// the last read of herdr shows want, because that read predates the rename.
+func (l *Loop) differs(id, have, want string) bool {
+	if sent, ok := l.renaming[id]; ok {
+		return sent != want
+	}
+	return have != want
+}
+
 // workspaceRenames lists the workspaces whose label differs from the one their
 // ticket's status calls for, and the tabs whose label differs from their ticket's.
 // A workspace or tab herdr didn't list is left alone, so a label changes only when
@@ -54,7 +64,7 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 	add := func(t linear.Ticket, w world.Worker, emoji string) {
 		have, ok := current[w.WorkspaceID]
 		want := label(emoji, t)
-		if w.WorkspaceID != "" && ok && have != want && l.renaming[w.WorkspaceID] != want {
+		if w.WorkspaceID != "" && ok && l.differs(w.WorkspaceID, have, want) {
 			workspaces = append(workspaces, rename{w.WorkspaceID, want})
 		}
 	}
@@ -82,7 +92,7 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 			add(t, w, emojiNeedsHuman)
 		}
 		if slices.Contains([]string{cfg.InProgress, cfg.InReview, cfg.NeedsHuman}, t.Status) {
-			if have, ok := currentTabs[w.TabID]; ok && w.TabID != "" && have != tabLabel(t) && l.renaming[w.TabID] != tabLabel(t) {
+			if have, ok := currentTabs[w.TabID]; ok && w.TabID != "" && l.differs(w.TabID, have, tabLabel(t)) {
 				tabs = append(tabs, rename{w.TabID, tabLabel(t)})
 			}
 		}
@@ -138,7 +148,12 @@ func (l *Loop) workspaceEmoji(w world.Worker, pr pullrequest.PullRequest) string
 
 // renameWorkspaces fixes the labels that differ, off the loop goroutine. A failed
 // rename is tried again after the next read of herdr, because the label still differs.
+// One batch runs at a time, and renameDone checks again against the latest read, so a
+// slow rename of an older label can't land after a newer one.
 func (l *Loop) renameWorkspaces() {
+	if l.renames > 0 {
+		return
+	}
 	workspaces, tabs := l.workspaceRenames()
 	if len(workspaces)+len(tabs) == 0 {
 		return

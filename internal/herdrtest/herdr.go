@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/journal"
@@ -57,6 +58,7 @@ type Herdr struct {
 	kicked      []string
 	names       map[string]string // pane to the name of its agent
 	beforeClose func(workspace string)
+	slowRename  time.Duration // how long the next RenameWorkspace waits before it lands
 }
 
 // New returns an empty Herdr that records its calls in j.
@@ -276,10 +278,30 @@ func (h *Herdr) Prompt(ctx context.Context, pane, text string) error {
 	return nil
 }
 
+// SlowNextRename delays the next RenameWorkspace so a test can finish a cycle while a
+// rename is still in flight. The call is journaled when it starts and listed by
+// WorkspaceRenames only once it lands.
+func (h *Herdr) SlowNextRename(delay time.Duration) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.slowRename = delay
+}
+
 func (h *Herdr) RenameWorkspace(ctx context.Context, id, label string) error {
 	h.journal.Record("herdr", "rename-workspace", id, label)
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	h.mu.Lock()
+	delay := h.slowRename
+	h.slowRename = 0
+	h.mu.Unlock()
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()

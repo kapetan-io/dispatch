@@ -403,6 +403,7 @@ func (l *Loop) handle(m any) error {
 		return l.onAction(m)
 	case renameDone:
 		l.renames--
+		l.renameWorkspaces()
 		return nil
 	case alertDone:
 		l.alerts--
