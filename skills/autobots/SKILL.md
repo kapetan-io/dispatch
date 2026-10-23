@@ -18,7 +18,6 @@ Run `dispatch watch` on every child, including those still in Todo, so you hear 
   - a finding is about how the product behaves, a public contract, a security default or an ADR. Post it on the PR anyway.
   - the feature is held (its parent isn't In Progress, or still has a `design` label). Starting it is the user's call.
   - a child moves to Needs Human.
-  - GitHub refuses a merge.
   - a PR still has problems after 3 reviews. Ask sooner if another round isn't worth it.
 
 When every child is done, stop watching and tell the user.
