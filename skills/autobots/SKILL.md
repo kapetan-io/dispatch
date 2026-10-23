@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # Autobots
 
+First, load `dispatch:dispatch` with the Skill tool. Where it differs from this skill for the feature's children, this skill wins.
+
 Work autonomously. Your goal is to review and merge every child of the feature ticket without asking the user for help. Starting this skill is the user's approval for that, and the cases listed below are the only times you stop and ask. Every other ticket still waits for the user, as the `dispatch` skill says.
 
 Run `dispatch watch` on every child, including those still in Todo, so you hear about each one as soon as it starts. When a worker says its PR is ready for review, review it.
