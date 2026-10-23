@@ -1124,7 +1124,7 @@ const (
 )
 
 func activityPrompt(by string) string {
-	return fmt.Sprintf("w-ENG-1:p1|PR %s for ENG-1 has new activity, %s. Read it and handle it as your build skill's step 7 says. If it asks for nothing, say nothing.", prURL1, by)
+	return fmt.Sprintf("w-ENG-1:p1|/dispatch:pr-respond PR %s for ENG-1 has new activity, %s. Read it and handle it. If it asks for nothing, say nothing.", prURL1, by)
 }
 
 const (
@@ -2063,7 +2063,7 @@ const requiredOnly = "ignore_optional_checks = true\n"
 const prURL1 = "https://github.com/kapetan-io/dispatch/pull/7"
 
 func prPrompt(problem string) string {
-	return fmt.Sprintf("w-ENG-1:p1|PR %s for ENG-1 has %s. Handle it as your build skill's step 7 says, and push.", prURL1, problem)
+	return fmt.Sprintf("w-ENG-1:p1|/dispatch:pr-respond PR %s for ENG-1 has %s. Handle it, and push.", prURL1, problem)
 }
 
 // prState is the part of a PR the dispatcher reads.
