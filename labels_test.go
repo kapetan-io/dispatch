@@ -36,6 +36,9 @@ func (w *Workers) LabelTab(ticket, label string) { w.d.labelTab(ticket, label) }
 // FailRenames makes herdr refuse every workspace rename with err until it is called with nil.
 func (w *Workers) FailRenames(err error) { w.d.tools.Herdr.Fail(herdrtest.OpRenameWorkspace, err) }
 
+// SlowNextRename makes herdr apply the next workspace rename only after delay.
+func (w *Workers) SlowNextRename(delay time.Duration) { w.d.tools.Herdr.SlowNextRename(delay) }
+
 // FailTabList makes herdr fail every read of a workspace's tabs with err.
 func (w *Workers) FailTabList(err error) { w.d.tools.Herdr.Fail(herdrtest.OpTabList, err) }
 
@@ -773,6 +776,39 @@ func TestTickRelabelsAReviewTicketWhenItsPRBecomesReady(t *testing.T) {
 	d.Tick()
 
 	assert.Equal(t, []string{"w-ENG-1|🟡 ENG-1", "w-ENG-1|👀 ENG-1"}, d.Workers.Renames())
+}
+
+func TestTickEndsOnTheLatestLabelWhenAnEarlierRenameLandsLate(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.Workers.Stop("ENG-1", stopTasks{})
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
+	d.Workers.SlowNextRename(100 * time.Millisecond)
+
+	// The first cycle labels the idle worker 💤, then nudges it, and the next cycle labels it 🟢.
+	d.Tick()
+
+	assert.Len(t, d.Workers.Prompts(), 1)
+	assert.Equal(t, []string{"w-ENG-1|💤 ENG-1", "w-ENG-1|🟢 ENG-1"}, d.Workers.Renames())
+}
+
+func TestTickEndsOnTheLatestLabelWhenTheWorkspaceAlreadyShowedIt(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.Workers.LabelWorkspace("w-ENG-1", "🟢 ENG-1")
+	d.Workers.Stop("ENG-1", stopTasks{})
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
+	d.Workers.SlowNextRename(100 * time.Millisecond)
+
+	// 💤 goes out first, the nudge sends the worker back to 🟢 before herdr is read again.
+	d.Tick()
+
+	assert.Len(t, d.Workers.Prompts(), 1)
+	assert.Equal(t, []string{"w-ENG-1|💤 ENG-1", "w-ENG-1|🟢 ENG-1"}, d.Workers.Renames())
 }
 
 func TestTickLabelsAnEscalatedTicketNeedsHumanOnTheSameTick(t *testing.T) {
