@@ -215,7 +215,8 @@ author sees it first when its source was not the author.
    changes only what they name and leaves every other sentence word for word. It removes each
    unsourced claim rather than sourcing it, and cuts each clause the critic named as
    costing the reader nothing or raising a question the section doesn't answer. It cuts
-   those clauses and does not gloss them.
+   those clauses and does not gloss them. A `[VERIFY]` marker is cut along with its
+   sentence, since the user sees only text that came out of the loop.
 
 Two rounds at most. What survives the second round is fixed by hand.
 
