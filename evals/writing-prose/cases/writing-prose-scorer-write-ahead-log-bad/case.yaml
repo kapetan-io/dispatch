@@ -1,0 +1,25 @@
+schema_version: "1.1"
+name: writing-prose-scorer-write-ahead-log-bad
+tags: [scorer]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  model: claude-sonnet-5-5
+  max_turns: 10
+  timeout_seconds: 1200
+  allowed_tools: [Read, Glob, Grep, Write, Edit, Skill, Agent]
+graders:
+  - name: key-absent
+    type: "regex"
+    target: { source: "file", path: "section.md" }
+    pattern: "^(?![\\s\\S]*(?:replicas?\\b|16\\s?MB|16-megabyte|byte (position|offset)))[\\s\\S]*$"
+    flags: "i"
+  - name: no-verify
+    type: "regex"
+    target: { source: "file", path: "section.md" }
+    pattern: "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$"
+    flags: "i"
+  - name: under-cap
+    type: "regex"
+    target: { source: "file", path: "section.md" }
+    pattern: "^\\s*(?:\\S+(?:\\s+|$)){1,270}$"

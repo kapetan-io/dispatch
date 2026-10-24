@@ -1,0 +1,27 @@
+schema_version: "1.1"
+name: writing-prose-write-ahead-log
+tags: [suite, heldout]
+execution:
+  model: claude-sonnet-5-5
+  max_turns: 60
+  timeout_seconds: 1200
+  allowed_tools: [Read, Glob, Grep, Write, Edit, Skill, Agent]
+graders:
+  - name: skill-fired
+    type: "tool_used"
+    tool: "Skill"
+    input_match: "\"skill\":\\s*\"(dispatch:)?writing-prose\""
+  - name: key-absent
+    type: "regex"
+    target: { source: "file", path: "section.md" }
+    pattern: "^(?![\\s\\S]*(?:replicas?\\b|16\\s?MB|16-megabyte|byte (position|offset)))[\\s\\S]*$"
+    flags: "i"
+  - name: no-verify
+    type: "regex"
+    target: { source: "file", path: "section.md" }
+    pattern: "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$"
+    flags: "i"
+  - name: under-cap
+    type: "regex"
+    target: { source: "file", path: "section.md" }
+    pattern: "^\\s*(?:\\S+(?:\\s+|$)){1,270}$"
