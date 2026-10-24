@@ -43,7 +43,7 @@ A check that passes only after a human approves the PR, such as "Mergify Merge P
 _Avoid_: gate, blocking check
 
 **PR phase**:
-Draft or open, read from GitHub's `isDraft` on every resync. Each phase has its own ready notification.
+Draft or open, read from GitHub's `isDraft` on every resync.
 _Avoid_: PR state (GitHub's `state` is OPEN for a draft too)
 
 **Review question**:
@@ -112,7 +112,7 @@ The text of a slash command dispatch is about to type into a worker's pane, kept
 _Avoid_: ledger entry, receipt (both are in history)
 
 **Workspace emoji**:
-The first word of a worker's herdr workspace label. It says who the ticket is waiting on: the worker (🟢), CI (🟡), you (👀, 💤 or 🔴), or nobody (⏸️). `worker-states.md` lists every state, its emoji, and what dispatch does in it.
+The first word of a worker's herdr workspace label. It says who the ticket is waiting on: the worker (🟢), CI (🟡), you (👀, 💤 or 🔴), a PR's approvers (⏳), whoever merges the PR (🔀, you when `auto_merge` is off), or nobody (⏸️). In a repo with `open_pr_as = "draft"`, a ready draft is 👀, and once you open it the PR is ⏳ until its head is approved and 🔀 after. `worker-states.md` lists every state, its emoji, and what dispatch does in it.
 _Avoid_: status icon, status
 
 **Worker**:

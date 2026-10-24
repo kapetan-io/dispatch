@@ -1982,7 +1982,7 @@ func loadExample(t *testing.T, body string) (config.Config, error) {
 const (
 	draftSetting    = "open_pr_as = \"draft\"\n"
 	draftReadyText1 = "ENG-1's draft is ready for your review: " + prURL1
-	reviewsHandled1 = "ENG-1's reviews are handled: " + prURL1
+	approvedReady1  = "ENG-1 is approved and ready to merge: " + prURL1
 )
 
 const childCommentRule = `

@@ -958,3 +958,89 @@ func TestTickStillWorksWhenTabListFails(t *testing.T) {
 	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, d.Workers.Renames())
 	assert.Empty(t, d.Workers.TabRenames())
 }
+
+func TestTickLabelsWhoAReadyPRWaitsOn(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name     string
+		settings string
+		agent    string
+		pr       prState
+		label    string
+	}{
+		{name: "ReadyDraftInDraftRepo", settings: draftSetting, agent: "idle", pr: draftPR("a1"), label: "👀 ENG-1"},
+		{name: "OpenedUnapprovedPRInDraftRepo", settings: draftSetting, agent: "idle", pr: cleanPR("a1"), label: "⏳ ENG-1"},
+		{name: "OpenedApprovedPRInDraftRepo", settings: draftSetting, agent: "idle", pr: approvedPR("a1"), label: "🔀 ENG-1"},
+		{name: "OpenedUnapprovedPRWithGoneWorker", settings: draftSetting, agent: "", pr: cleanPR("a1"), label: "⏳ ENG-1"},
+		{name: "OpenedApprovedPRWithGoneWorker", settings: draftSetting, agent: "", pr: approvedPR("a1"), label: "🔀 ENG-1"},
+		{name: "UnapprovedPRInOpenRepo", agent: "idle", pr: cleanPR("a1"), label: "👀 ENG-1"},
+		{name: "ApprovedPRInOpenRepo", agent: "idle", pr: approvedPR("a1"), label: "👀 ENG-1"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			d := newDispatch(t, dispatchOptions{RepoSettings: test.settings})
+			d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+			d.Workers.Running("ENG-1", test.agent)
+			d.GitHub.PullRequest("ENG-1", test.pr)
+
+			d.Tick()
+
+			assert.Equal(t, []string{"w-ENG-1|" + test.label}, d.Workers.Renames())
+		})
+	}
+}
+
+func TestTickKeepsTheWaitingLabelWhenThePRCannotBeRead(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name  string
+		pr    prState
+		label string
+	}{
+		{name: "WaitingOnApprovers", pr: cleanPR("a1"), label: "⏳ ENG-1"},
+		{name: "WaitingOnMerge", pr: approvedPR("a1"), label: "🔀 ENG-1"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			d := newDispatch(t, dispatchOptions{RepoSettings: draftSetting})
+			d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+			d.Workers.Running("ENG-1", "idle")
+			d.GitHub.PullRequest("ENG-1", test.pr)
+			d.Tick()
+
+			d.GitHub.FailRead(errors.New("exit status 1"))
+			d.Tick()
+
+			assert.Equal(t, []string{"w-ENG-1|" + test.label}, d.Workers.Renames())
+		})
+	}
+}
+
+func TestTickRelabelsAnOpenedPRFromApproversToMergeWhenItIsApproved(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{RepoSettings: draftSetting})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", draftPR("a1"))
+	d.Tick()
+
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	d.Tick()
+	d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1", "w-ENG-1|⏳ ENG-1", "w-ENG-1|🔀 ENG-1"}, d.Workers.Renames())
+}
+
+func TestTickLabelsAnApprovedPRInADraftRepoWithAutoMergeAsWaitingOnMerge(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{RepoSettings: draftSetting + autoMergeSetting})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
+
+	d.Tick()
+
+	// The merge that follows in the same cycle is what turns the label green.
+	assert.Equal(t, []string{mergeCall1}, d.GitHub.Merged())
+	require.NotEmpty(t, d.Workers.Renames())
+	assert.Equal(t, "w-ENG-1|🔀 ENG-1", d.Workers.Renames()[0])
+}

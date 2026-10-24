@@ -9,6 +9,8 @@ Each worker's herdr workspace is labeled `<emoji> <ticket>`, and the emoji says 
 | 🟢 | The worker, or dispatch | The worker is busy, dispatch just nudged it, or dispatch is about to relaunch it or close its workspace |
 | 🟡 | CI | In Review, the worker is idle, gone or unconfirmed, the PR isn't ready and its checks are still running |
 | 👀 | You | In Review, the PR is ready for your review (the notification also needs an idle worker) |
+| ⏳ | The PR's approvers | In Review in a repo with `open_pr_as = "draft"`, the PR is ready, you have opened it and its head isn't approved. No notification |
+| 🔀 | Whoever merges | In Review in a repo with `open_pr_as = "draft"`, the PR is ready, opened and its head is approved. Dispatch merges it when `auto_merge` is on. When it is off the label waits on you, and an idle worker sends one "approved and ready to merge" notification per head |
 | 💤 | You | The worker is idle with no background task running and nothing else pending. Open its window |
 | 🔴 | You | Needs Human, or the worker is blocked on a question popup |
 | ⏸️ | Nobody | Paused (Backlog or Todo) with the tree kept and a workspace still open |
@@ -23,14 +25,14 @@ The first line that fits wins.
 2. The ticket is paused and its worker's Claude session is gone: ⏸️.
 3. The worker is blocked on a question popup: 🔴.
 4. The worker is working, or dispatch typed into it since the last resync: 🟢.
-5. The PR is ready and the worker is idle or gone: 👀.
+5. The PR is ready and the worker is idle or gone: ⏳ if the repo opens drafts, the PR has left draft and its head isn't approved, 🔀 if the same PR is approved, otherwise 👀. "Approved" is what `auto_merge` counts, so a repo's `approval_checks` that haven't passed keep the PR at ⏳.
 6. The worker's Claude session is gone, or its launch isn't confirmed: 🟡 if the PR's checks are running, otherwise 🟢.
 7. The worker is idle and its last Stop (the Claude Code hook that records when a turn ended) lists a background task still running, and that Stop is under 60 minutes old: 🟢.
 8. The PR's checks are running: 🟡.
 9. The worker has no Stop record, or its Stop didn't say what was running: 🟢. Nothing proves it is waiting.
 10. Otherwise: 💤.
 
-A PR that dispatch could not read leaves a 🟢, 👀, 🟡 or 💤 label as it is until the next read.
+A PR that dispatch could not read leaves a 🟢, 👀, ⏳, 🔀, 🟡 or 💤 label as it is until the next read.
 
 The Stop record comes from the plugin's Stop hook (`dispatch record-stop`). The plugin's Notification and UserPromptSubmit hooks run `dispatch wake`, which asks the running loop to read herdr and the pools again and run a cycle. That is not a resync, so nothing that failed is retried and no PR is read again unless a worker just went idle. Claude Code raises an `idle_prompt` Notification about 60 seconds after a turn ends with nobody typing, so 💤 shows within about a minute of the worker going idle. Without a running loop the label moves at the next resync. A worker dispatch just typed into shows 🟢 until the next resync, even if it has already gone idle again.
 
@@ -59,23 +61,25 @@ dispatch reads the PR only when the worker is idle or gone.
 |---|---|---|---|---|
 | Working | any | not read | 🟢 | Nothing |
 | Blocked on a popup | any | not read | 🔴 | Notifies as in In Progress |
-| Idle | none | ready | 👀 | Notifies once per head commit |
+| Idle | none | ready | 👀, ⏳ or 🔀 | 👀 notifies once per head commit. ⏳ says nothing. 🔀 notifies once per head commit that the PR is approved, unless `auto_merge` will merge it |
 | Idle | none | checks running | 🟡 | Nothing about the label. Nudges for a failed check, changes requested or a merge conflict |
 | Idle | none | none, or not ready with no check running | 🟢 | Nothing about the label. Nudges for a failed check, changes requested or a merge conflict |
-| Idle | stopped | ready | 👀 | Notifies once per head commit |
+| Idle | stopped | ready | 👀, ⏳ or 🔀 | As above |
 | Idle | stopped | checks running | 🟡 | Nothing |
 | Idle | stopped | none, unresolved thread or mergeability not computed | 💤 | Nothing |
 | Idle | stopped | failed check, changes requested or merge conflict | 💤, then 🟢 once nudged | PR nudge every 5 minutes. After `nudge_limit` nudges with no push, moves the ticket to Needs Human |
-| Idle | a task running | ready | 👀 | Notifies once per head commit |
+| Idle | a task running | ready | 👀, ⏳ or 🔀 | As above |
 | Idle | a task running | anything else | 🟢 | Nudges for a PR that needs work, as above. The label stays 🟢 |
 | Idle | without the task list | checks running | 🟡 | Nothing |
 | Idle | without the task list | anything else | 🟢 | Nudges for a PR that needs work, as above. The label stays 🟢 |
-| Idle, unconfirmed | any | ready | 👀 | Closes the workspace after 5 minutes |
+| Idle, unconfirmed | any | ready | 👀, ⏳ or 🔀 | Closes the workspace after 5 minutes |
 | Idle, unconfirmed | any | checks running | 🟡 | Closes the workspace after 5 minutes |
 | Idle, unconfirmed | any | anything else | 🟢 | Closes the workspace after 5 minutes |
-| Gone | n/a | ready | 👀 | Nothing |
+| Gone | n/a | ready | 👀, ⏳ or 🔀 | Nothing. The notification waits until the worker is idle |
 | Gone | n/a | checks running | 🟡 | Nothing |
 | Gone | n/a | anything else | 🟢 | Relaunches the worker for a PR that needs work or an unseen review thread |
+
+A PR that waits on its approvers still nudges its worker for a failed check, a merge conflict, changes requested or new activity.
 
 An idle In Review worker whose PR gains a review or comment gets the activity nudge once per new item.
 

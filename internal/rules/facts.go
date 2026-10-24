@@ -131,6 +131,7 @@ type PR struct {
 	LastThread      Fact[*Seen]  `js:"lastThread"`
 	OpenAs          Fact[string] `js:"openAs" ts:"\"open\" | \"draft\""`
 	AutoMerge       Fact[bool]   `js:"autoMerge"`
+	WaitingOn       Fact[string] `js:"waitingOn" ts:"\"nobody\" | \"you\" | \"approvers\" | \"merge\"" doc:"Who the PR waits on once it is ready. A PR that is not ready waits on nobody. In a repo that opens PRs as drafts, a PR you have opened waits on its approvers until its head is approved, then on whoever merges it. Every other ready PR waits on you."`
 }
 
 // Tree is a worktree in a repo's treehouse pool.

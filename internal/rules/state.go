@@ -11,6 +11,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
@@ -589,6 +590,7 @@ func (s *State) prRecords(w world.World) {
 			ActivitySummary: Known(pr.ActivitySummary, at),
 			OpenAs:          Known(settings.OpenPRAs, at),
 			AutoMerge:       Known(settings.AutoMerge, at),
+			WaitingOn:       Known(waitingOn(pr, settings.OpenPRAs), at),
 		}
 		if pr.ActivityAt != "" {
 			rec.LastActivity = Known(&Seen{At: pr.ActivityAt, SeenAt: at}, at)
@@ -660,4 +662,13 @@ func (s *State) target(r *record) map[string]string {
 		out["head"] = rec.Head.Value
 	}
 	return out
+}
+
+// waitingOn is the PR's pullrequest.Waiting, with "nobody" for the empty one so a rule
+// can compare it to a word.
+func waitingOn(pr pullrequest.PullRequest, openAs string) string {
+	if w := pr.WaitingOn(openAs); w != pullrequest.WaitingOnNobody {
+		return string(w)
+	}
+	return "nobody"
 }

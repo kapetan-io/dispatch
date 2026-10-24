@@ -117,7 +117,7 @@ A nudge is text dispatch types into an idle worker's pane when something it is w
 
 An idle In Progress worker is never nudged to keep going; its 💤 label tells you to look. A worker that is gone is relaunched on its tree when its PR needs work.
 
-Dispatch notifies you when a worker is blocked on a question popup (then every `blocked_renotify_minutes`), when a ticket enters Needs Human, and when a PR is ready for review: checks passed, no unresolved review thread, no changes requested, and mergeable.
+Dispatch notifies you when a worker is blocked on a question popup (then every `blocked_renotify_minutes`), when a ticket enters Needs Human, and when a PR is ready for review: checks passed, no unresolved review thread, no changes requested, and mergeable. In a repo that opens PRs as drafts, you are told when the draft is ready, nothing while the PR you opened waits on its approvers, and once more when it is approved and ready to merge, unless `auto_merge` merges it.
 
 ## Notifications in your session
 
@@ -142,6 +142,8 @@ After every cycle, each worker's herdr workspace is labeled `<emoji> <ticket>`, 
 | 🟢 | The worker is busy, or dispatch just nudged it |
 | 🟡 | In Review, the worker is idle, gone or unconfirmed, the PR isn't ready and its checks are still running |
 | 👀 | In Review, ready for review (the notification also needs an idle worker) |
+| ⏳ | In Review in a repo that opens PRs as drafts, the PR is ready and you have opened it, so it waits on its approvers |
+| 🔀 | The same PR once its head is approved, so it waits only to be merged |
 | 💤 | The worker is idle with nothing running and nothing else pending. It needs you. Goes back to 🟢 within seconds of you typing into it |
 | 🔴 | Needs Human, or the worker is blocked on a question popup |
 | ⏸️ | Paused (Backlog or Todo) with the tree kept and a workspace still open |

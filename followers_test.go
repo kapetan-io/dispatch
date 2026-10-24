@@ -127,7 +127,7 @@ func TestTickMessagesFollowersAboutAReadyPR(t *testing.T) {
 	assert.Empty(t, lines)
 }
 
-func TestTickMessagesFollowersThatReviewsAreHandledNotThatAPRIsReady(t *testing.T) {
+func TestTickMessagesFollowersThatAPRIsApprovedAndReadyToMergeNotThatItIsReady(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
 	d := newDispatch(t, dispatchOptions{RepoSettings: draftSetting, Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
@@ -137,9 +137,14 @@ func TestTickMessagesFollowersThatReviewsAreHandledNotThatAPRIsReady(t *testing.
 	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
 	require.NoError(t, d.Run("watch", "ENG-1").Err)
 
+	// The PR waits on its approvers, so followers hear nothing.
+	d.Tick()
+	assert.Empty(t, lines)
+
+	d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
 	d.Tick()
 
-	assert.Contains(t, next(t, lines), "dispatch event (reviews handled): ENG-1's reviews are handled")
+	assert.Contains(t, next(t, lines), "dispatch event (approved, ready to merge): ENG-1 is approved and ready to merge")
 }
 
 func TestTickMessagesFollowersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
@@ -602,4 +607,20 @@ func TestTickMessagesFollowersThatAMergedPRIsApproved(t *testing.T) {
 	d.Tick()
 
 	assert.Contains(t, next(t, lines), "dispatch event (PR approved): ENG-1 was approved and merged")
+}
+
+func TestTickDoesNotMessageFollowersThatAnApprovedPRIsReadyToMergeWhenAutoMergeMergesIt(t *testing.T) {
+	t.Parallel()
+	socket, lines := sessionSocket(t)
+	d := newDispatch(t, dispatchOptions{RepoSettings: draftSetting + autoMergeSetting, Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.StartBeforeTheEvents()
+	d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+
+	d.Tick()
+
+	assert.Contains(t, next(t, lines), "dispatch event (PR approved): ENG-1 was approved and merged")
+	assert.Empty(t, lines)
 }
