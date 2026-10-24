@@ -60,6 +60,13 @@ the burner cycles less often, instead of running continuously" has three joints.
 the thermostat is set, the furnace runs until the room reaches it. The burner cycles
 less often as a result" keeps the strongest one.
 
+A sentence keeps one subject. When the main clause moves to a new subject, the
+sentence is two thoughts, and a pronoun ends up bridging them: "When a peer joins or
+leaves, only the keys on its part of the ring change owner." Keep the peer as the
+subject ("A peer that joins takes over some keys from its neighbours") or cut the
+sentence. Say what happens, not what doesn't. "Only" and "instead" describe by
+exclusion and imply an alternative the reader never raised.
+
 A paragraph covers one stage or one idea, and every sentence after the first needs
 the one before it. The second sentence uses a noun the first introduced, or begins
 from its consequence, or contradicts it. The test is to shuffle the sentences: if
