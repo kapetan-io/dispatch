@@ -63,8 +63,8 @@ less often as a result" keeps the strongest one.
 A sentence keeps one subject. When the main clause moves to a new subject, the
 sentence is two thoughts, and a pronoun ends up bridging them: "When a peer joins or
 leaves, only the keys on its part of the ring change owner." Keep the peer as the
-subject ("A peer that joins takes over some keys from its neighbours") or cut the
-sentence. Say what happens, not what doesn't. "Only" and "instead" describe by
+subject only if a fact on the list says what the peer does, and otherwise cut the
+sentence. Deleting "only" and keeping the shift is not a fix. Say what happens, not what doesn't. "Only" and "instead" describe by
 exclusion and imply an alternative the reader never raised.
 
 A paragraph covers one stage or one idea, and every sentence after the first needs
@@ -208,11 +208,14 @@ author sees it first when its source was not the author.
    7. Which sentences put the reader where the system belongs, or address the reader
       as a closing turn?
    8. Does any wording, example, or subject from the samples appear in the draft?
-   9. Is anything the reader needs to answer the section's question missing?
-3. **The writer, again,** receives the draft and the critic's list. It changes only
-   what the list names and leaves every other sentence word for word. It removes each
+   9. Is a fact on the list that the reader needs missing from the draft? Quote it. A
+      term the reader doesn't need is cut under question 3, not glossed here, and a gap
+      the list can't fill is a question for the author.
+3. **The writer, again,** receives the draft and the critic's answers, word for word. It
+   changes only what they name and leaves every other sentence word for word. It removes each
    unsourced claim rather than sourcing it, and cuts each clause the critic named as
-   costing the reader nothing or raising a question the section doesn't answer.
+   costing the reader nothing or raising a question the section doesn't answer. It cuts
+   those clauses and does not gloss them.
 
 Two rounds at most. What survives the second round is fixed by hand.
 
