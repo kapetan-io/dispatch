@@ -1044,3 +1044,19 @@ func TestTickLabelsAnApprovedPRInADraftRepoWithAutoMergeAsWaitingOnMerge(t *test
 	require.NotEmpty(t, d.Workers.Renames())
 	assert.Equal(t, "w-ENG-1|🔀 ENG-1", d.Workers.Renames()[0])
 }
+
+func TestTickReadsOpenPRAsPerRepo(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{RepoSettings: draftSetting})
+	d.AddRepo("tiger", t.TempDir())
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Review", "tiger"))
+	d.Workers.Running("ENG-1", "idle")
+	d.Workers.Running("ENG-2", "idle")
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	d.GitHub.PullRequest("ENG-2", cleanPR("b1"))
+
+	d.Tick()
+
+	assert.ElementsMatch(t, []string{"w-ENG-1|⏳ ENG-1", "w-ENG-2|👀 ENG-2"}, d.Workers.Renames())
+	assert.Equal(t, []string{"ENG-2 is ready for review: " + prURL1}, d.Alerts.Shown())
+}
