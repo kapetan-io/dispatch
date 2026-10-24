@@ -1,5 +1,7 @@
 # writing-prose eval
 
+Status 2026-10-24: the scorer check and control came out as required. The baseline does not meet the bar (`key-absent` and `under-cap` 0 of 12), so a wording change is needed. See `log.md`.
+
 Measures whether `skills/writing-prose/SKILL.md` makes a writer leave out true facts the reader doesn't need and keep the section short (ENG-572). Follows `skills/hillclimb/SKILL.md`. This ticket adds the suite and a baseline. It does not change the skill's wording, so there is no attempt and no confirmation rerun.
 
 Each case hands the skill a question and a fact list that holds a few clauses the skill says to cut, and asks for the final section in `section.md`. The prompt never names the skill or the clauses to cut.
