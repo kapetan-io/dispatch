@@ -109,8 +109,8 @@ func (e *Executor) WhyNotLaunch(w rules.Want, wd world.World) string {
 		return "a worker is running"
 	}
 	if t, ok := ticketOf(wd, w.Subject); ok {
-		repo, _ := t.LabelIn(e.Config.Plugins.Linear.RepoLabelGroup)
-		if wd.UnreadRepos[repo] {
+		label, _ := t.LabelIn(e.Config.Plugins.Linear.RepoLabelGroup)
+		if repo, _, _ := e.Config.Repos.Find(label); wd.UnreadRepos[repo] {
 			return "the pool of " + repo + " was not read"
 		}
 	}
@@ -209,9 +209,10 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World) Res
 		return failed("%s was not read", w.Subject)
 	}
 	cfg := e.Config
-	repo, labeled := t.LabelIn(cfg.Plugins.Linear.RepoLabelGroup)
+	label, labeled := t.LabelIn(cfg.Plugins.Linear.RepoLabelGroup)
+	_, repo, _ := cfg.Repos.Find(label)
 	// A rule that skips hasRepo would otherwise launch in dispatch's own directory.
-	if !labeled || cfg.Repos[repo].Path == "" {
+	if !labeled || repo.Path == "" {
 		return Result{Outcome: ledger.Refused, Detail: t.Identifier + " has no configured repo"}
 	}
 	model, _ := w.Options["model"].(string)
@@ -220,7 +221,7 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World) Res
 	}
 	kickoff, _ := w.Options["kickoff"].(string)
 	r := e.Launcher.Launch(ctx, launcher.Request{
-		RepoDir: cfg.Repos[repo].Path, Ticket: t.Identifier, Title: t.Title, Branch: t.Branch, Model: model, Kickoff: kickoff,
+		RepoDir: repo.Path, Ticket: t.Identifier, Title: t.Title, Branch: t.Branch, Model: model, Kickoff: kickoff,
 	})
 	res := Result{Reread: world.FromLocal}
 	switch {

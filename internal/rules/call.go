@@ -168,7 +168,7 @@ func (c *call) hasLabel(r *record, name string) sobek.Value {
 		c.throwUnknown(reason)
 	}
 	labels := f.FieldByName("Value").Interface().([]Label)
-	has := slices.ContainsFunc(labels, func(l Label) bool { return l.Name == name })
+	has := slices.ContainsFunc(labels, func(l Label) bool { return strings.EqualFold(l.Name, name) })
 	c.read("hasLabel("+name+")", has)
 	return c.rt.ToValue(has)
 }
@@ -623,7 +623,7 @@ func (o *configObject) Get(key string) sobek.Value {
 			if sobek.IsUndefined(label) || sobek.IsNull(label) {
 				return c.rt.ToValue(false)
 			}
-			_, ok := c.state.Config.Repos[label.String()]
+			_, _, ok := c.state.Config.Repos.Find(label.String())
 			return c.rt.ToValue(ok)
 		})
 	}

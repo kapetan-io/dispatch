@@ -49,7 +49,7 @@ type Scope struct {
 	AILabel        string
 	Teams          []string
 	RepoLabelGroup string
-	Repos          map[string]config.Repo
+	Repos          config.Repos
 }
 
 // ScopeOf is the scope a config sets.
@@ -354,12 +354,12 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 		if !scope.ReadsPR(t, w.Workers[t.Identifier].State) {
 			continue
 		}
-		repo, ok := t.LabelIn(scope.RepoLabelGroup)
-		dir := scope.Repos[repo].Path
+		label, ok := t.LabelIn(scope.RepoLabelGroup)
+		_, settings, _ := scope.Repos.Find(label)
+		dir := settings.Path
 		if !ok || dir == "" {
 			continue
 		}
-		settings := scope.Repos[repo]
 		readCtx, done := bound(ctx)
 		pr, found, err := src.PullRequests.Read(readCtx, dir, t.Branch, pullrequest.Rules{IgnoreAuthors: settings.IgnoreCommentAuthors, RequiredChecksOnly: settings.IgnoreOptionalChecks, ApprovalChecks: settings.ApprovalChecks})
 		done()

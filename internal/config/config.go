@@ -259,6 +259,21 @@ func repoProblem(err error) (string, bool) {
 	return parse.Message, true
 }
 
+// Find returns the table a ticket's repo label names and the table's own
+// spelling of it. A table spelled exactly like the label wins over one that
+// differs only in case.
+func (r Repos) Find(label string) (string, Repo, bool) {
+	if repo, ok := r[label]; ok {
+		return label, repo, true
+	}
+	for _, name := range r.Labels() {
+		if strings.EqualFold(name, label) {
+			return name, r[name], true
+		}
+	}
+	return "", Repo{}, false
+}
+
 // Labels returns the repo labels in sorted order.
 func (r Repos) Labels() []string {
 	labels := make([]string, 0, len(r))

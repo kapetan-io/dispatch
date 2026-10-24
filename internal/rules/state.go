@@ -225,6 +225,9 @@ func (s *State) ticketRecord(t linear.Ticket) *record {
 	}
 	rec.Labels = Known(labels, at)
 	repo, hasRepo := t.LabelIn(cfg.RepoLabelGroup)
+	if name, _, ok := s.Config.Repos.Find(repo); ok {
+		repo = name
+	}
 	switch {
 	case t.LabelsTruncated:
 		rec.Labels = Unread[[]Label](labelsCutShort)
@@ -571,7 +574,7 @@ func (s *State) prRecords(w world.World) {
 			continue
 		}
 		repo, _ := t.LabelIn(s.Config.Plugins.Linear.RepoLabelGroup)
-		settings := s.Config.Repos[repo]
+		_, settings, _ := s.Config.Repos.Find(repo)
 		rec := &PR{
 			Ticket:          Known(Ref{Kind: "ticket", ID: t.Identifier}, at),
 			Number:          Known(int64(pr.Number), at),
