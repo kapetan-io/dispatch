@@ -1,0 +1,25 @@
+schema_version: "1.1"
+name: writing-prose-scorer-groupcache-good
+tags: [scorer]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  model: claude-sonnet-5-5
+  max_turns: 10
+  timeout_seconds: 1200
+  allowed_tools: [Read, Glob, Grep, Write, Edit, Skill, Agent]
+graders:
+  - name: key-absent
+    type: "regex"
+    target: { source: "file", path: "section.md" }
+    pattern: "^(?![\\s\\S]*(?:no network call|\\bSink\\b|hot cache[^.]*(bound|limit|eighth|fraction|capped|crowd|take over)|(joins?|leaves?)( or | and )(joins?|leaves?)))[\\s\\S]*$"
+    flags: "i"
+  - name: no-verify
+    type: "regex"
+    target: { source: "file", path: "section.md" }
+    pattern: "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$"
+    flags: "i"
+  - name: under-cap
+    type: "regex"
+    target: { source: "file", path: "section.md" }
+    pattern: "^\\s*(?:\\S+(?:\\s+|$)){1,330}$"
