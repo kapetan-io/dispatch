@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/environment"
 )
 
@@ -91,6 +92,37 @@ type PullRequest struct {
 	Ready bool
 	// ChecksRunning means a check on the head has not finished.
 	ChecksRunning bool
+}
+
+// Waiting is who a ready PR waits on.
+type Waiting string
+
+const (
+	// WaitingOnNobody is a PR that is not ready.
+	WaitingOnNobody Waiting = ""
+	// WaitingOnYou is a ready PR the user reviews: a draft, or any PR in a repo
+	// that opens PRs as open.
+	WaitingOnYou Waiting = "you"
+	// WaitingOnApprovers is a ready PR in a repo that opens drafts, after the user
+	// opened it and before its head is approved.
+	WaitingOnApprovers Waiting = "approvers"
+	// WaitingOnMerge is a ready PR in a repo that opens drafts whose head is approved.
+	WaitingOnMerge Waiting = "merge"
+)
+
+// WaitingOn says who the ready PR waits on in a repo that opens PRs as openAs,
+// "open" or "draft". The user opens a ready draft for others to approve, so from
+// then on the PR waits on them, not on the user.
+func (p PullRequest) WaitingOn(openAs string) Waiting {
+	switch {
+	case !p.Ready:
+		return WaitingOnNobody
+	case openAs != config.OpenPRAsDraft || p.Draft:
+		return WaitingOnYou
+	case !p.Approved:
+		return WaitingOnApprovers
+	}
+	return WaitingOnMerge
 }
 
 // NeedsWork reports whether the PR has a failed check, changes requested on its

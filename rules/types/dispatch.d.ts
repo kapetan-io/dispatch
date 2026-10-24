@@ -70,6 +70,8 @@ declare module "dispatch" {
     readonly lastThread: Seen | undefined;
     readonly openAs: "open" | "draft";
     readonly autoMerge: boolean;
+    /** Who the PR waits on once it is ready. A PR that is not ready waits on nobody. In a repo that opens PRs as drafts, a PR you have opened waits on its approvers until its head is approved, then on whoever merges it. Every other ready PR waits on you. */
+    readonly waitingOn: "nobody" | "you" | "approvers" | "merge";
   }
   export interface Worker {
     readonly state: "none" | "working" | "idle" | "blocked";

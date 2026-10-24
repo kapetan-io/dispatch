@@ -33,20 +33,20 @@ whenever({
   },
 });
 
-// In a repo whose workers open PRs as drafts, a ready draft gets one notice, and
-// opening it gets another once its reviews are handled. Opening a draft doesn't move
-// the head, so the two notices carry different topics, and followers read the reviews-handled
-// one as a different event from a fresh PR.
+// A ready PR notifies the user only while it needs them. In a repo whose workers open PRs
+// as drafts, that is the ready draft, and then the approved PR when dispatch won't merge it.
+// Between the two, an opened PR waits on its approvers and says nothing.
 const readyNotice = (pr: PR) =>
-  pr.openAs === "draft" && pr.draft ? { topic: "draft-ready", reason: "draft ready for review", text: `${pr.ticket.id}'s draft is ready for your review: ${pr.url}` }
-  : pr.openAs === "draft"           ? { topic: "reviews-handled", reason: "reviews handled", text: `${pr.ticket.id}'s reviews are handled: ${pr.url}` }
-  :                                   { topic: "ready", reason: "PR ready for review", text: `${pr.ticket.id} is ready for review: ${pr.url}` };
+  pr.waitingOn === "merge" ? { topic: "approved-ready", reason: "approved, ready to merge", text: `${pr.ticket.id} is approved and ready to merge: ${pr.url}` }
+  : pr.openAs === "draft"  ? { topic: "draft-ready", reason: "draft ready for review", text: `${pr.ticket.id}'s draft is ready for your review: ${pr.url}` }
+  :                          { topic: "ready", reason: "PR ready for review", text: `${pr.ticket.id} is ready for review: ${pr.url}` };
 
 // Once per head and notice, and not for a PR auto-merge is about to merge.
 whenever({
   name: "notify-ready-for-review",
   each: "pr",
-  if:   (pr, ctx) => !pr.closed && pr.ready && pr.ticket.status === "in_review" && nudgeable(pr.ticket)
+  if:   (pr, ctx) => !pr.closed && (pr.waitingOn === "you" || pr.waitingOn === "merge")
+           && pr.ticket.status === "in_review" && nudgeable(pr.ticket)
            && ctx.worker.of(pr.ticket).state === "idle" && heard(pr.ticket, "activity", pr.lastActivity, ctx)
            && !(pr.approved && pr.autoMerge && !pr.draft),
   then: (pr, ctx) => ctx.notify.queueSend(pr.ticket, readyNotice(pr).text, { once: [readyNotice(pr).topic, pr.head], reason: readyNotice(pr).reason }),

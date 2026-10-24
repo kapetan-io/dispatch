@@ -902,25 +902,23 @@ func TestTickNotifiesOncePerHeadWhenADraftIsReady(t *testing.T) {
 	assert.Equal(t, []string{draftReadyText1, draftReadyText1}, d.Alerts.Shown())
 }
 
-func TestTickNotifiesAgainWhenTheUserOpensAReadyDraft(t *testing.T) {
+func TestTickStaysSilentWhenTheUserOpensAReadyDraft(t *testing.T) {
 	t.Parallel()
 	d := draftDispatch(t)
 	d.GitHub.PullRequest("ENG-1", draftPR("a1"))
 	d.Tick()
 
-	// Opening the draft leaves the head where it was.
+	// Opening the draft leaves the head where it was, and the PR now waits on its approvers.
 	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
 	d.Tick()
-
-	assert.Equal(t, []string{draftReadyText1, reviewsHandled1}, d.Alerts.Shown())
-
 	d.Tick()
-	assert.Len(t, d.Alerts.Shown(), 2)
+
+	assert.Equal(t, []string{draftReadyText1}, d.Alerts.Shown())
 
 	// Moving the PR back to draft at the same head says nothing more.
 	d.GitHub.PullRequest("ENG-1", draftPR("a1"))
 	d.Tick()
-	assert.Len(t, d.Alerts.Shown(), 2)
+	assert.Len(t, d.Alerts.Shown(), 1)
 }
 
 func TestTickStaysSilentForADraftThatIsNotReady(t *testing.T) {
@@ -1008,21 +1006,45 @@ func TestTickMergesAnApprovedOpenPRInADraftRepoWithAutoMerge(t *testing.T) {
 	assert.Equal(t, []string{mergeCall1}, d.GitHub.Merged())
 }
 
-func TestTickNotifiesReviewsHandledOncePerHeadForAnOpenPRInADraftRepo(t *testing.T) {
+func TestTickStaysSilentForAnOpenedPRInADraftRepoUntilItIsApproved(t *testing.T) {
 	t.Parallel()
 	d := draftDispatch(t)
 	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
 
 	d.Tick()
+	d.Tick()
 
-	assert.Equal(t, []string{reviewsHandled1}, d.Alerts.Shown())
+	assert.Empty(t, d.Alerts.Shown())
+}
+
+func TestTickNotifiesOncePerHeadThatAnApprovedPRInADraftRepoIsReadyToMerge(t *testing.T) {
+	t.Parallel()
+	d := draftDispatch(t)
+	d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
+
+	d.Tick()
+
+	assert.Equal(t, []string{approvedReady1}, d.Alerts.Shown())
 
 	d.Tick()
 	assert.Len(t, d.Alerts.Shown(), 1)
 
-	d.GitHub.PullRequest("ENG-1", cleanPR("a2"))
+	d.GitHub.PullRequest("ENG-1", approvedPR("a2"))
 	d.Tick()
-	assert.Equal(t, []string{reviewsHandled1, reviewsHandled1}, d.Alerts.Shown())
+	assert.Equal(t, []string{approvedReady1, approvedReady1}, d.Alerts.Shown())
+}
+
+func TestTickDoesNotNotifyThatAnApprovedPRIsReadyToMergeWhenAutoMergeWillMergeIt(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting + draftSetting})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
+
+	d.Tick()
+
+	assert.Equal(t, []string{mergeCall1}, d.GitHub.Merged())
+	assert.NotContains(t, d.Alerts.Shown(), approvedReady1)
 }
 
 func TestTickMergesADraftOnceTheUserOpensItAtTheSameHead(t *testing.T) {
@@ -1067,4 +1089,50 @@ func TestTickAppliesOpenPRAsOnlyToItsOwnRepo(t *testing.T) {
 	d.Tick()
 
 	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+}
+
+func TestTickNotifiesThatAnApprovedPRIsReadyToMergeOnlyOnceTheWorkerIsIdle(t *testing.T) {
+	t.Parallel()
+	d := draftDispatch(t)
+	d.Workers.SetStatus("ENG-1", "working")
+	d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
+
+	d.Tick()
+	assert.Empty(t, d.Alerts.Shown())
+
+	d.Workers.SetStatus("ENG-1", "idle")
+	d.Tick()
+	assert.Equal(t, []string{approvedReady1}, d.Alerts.Shown())
+}
+
+func TestTickNotifiesReadyForReviewNotApprovedReadyForAnApprovedPRInAnOpenRepo(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
+
+	d.Tick()
+
+	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+}
+
+func TestTickStillNudgesAnOpenedPRInADraftRepoForWhatNeedsWork(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		pr   prState
+	}{
+		{name: "FailedCheck", pr: prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"}},
+		{name: "Conflict", pr: prState{head: "a1", checks: "SUCCESS", mergeable: "CONFLICTING"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			d := draftDispatch(t)
+			d.PullRequestFailsAfterEntry(test.pr)
+
+			require.NoError(t, d.TickAfterASecond())
+
+			assert.Len(t, d.Workers.Prompts(), 1)
+		})
+	}
 }

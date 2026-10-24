@@ -126,14 +126,58 @@ scenario(rules, "notify-ready-for-review is sent for an approved PR when auto-me
   s.expect([["notify-ready-for-review", "notify", "ENG-1"]]);
 });
 
-scenario(rules, "notify-ready-for-review sends two notices for a draft, one when ready and one when opened", s => {
+scenario(rules, "notify-ready-for-review notifies a ready draft and stays silent once the user opens it", s => {
   s.config({ repos: { dispatch: { openPrAs: "draft" } } });
   s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", { ready: true, draft: true, head: "h1" }));
   s.expect([["notify-ready-for-review", "notify", "ENG-1"]]);
   s.land("notify", "ENG-1");
   s.expect([]);
   s.see(pr("ENG-1", { draft: false }));
+  s.expect([]);
+});
+
+scenario(rules, "notify-ready-for-review is silent for an opened PR waiting on approvers", s => {
+  s.config({ repos: { dispatch: { openPrAs: "draft" } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", { ready: true, draft: false, approved: false }));
+  s.expect([]);
+});
+
+scenario(rules, "notify-ready-for-review still notifies a ready PR in a repo that opens PRs as open", s => {
+  s.config({ repos: { dispatch: { openPrAs: "open" } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", { ready: true, approved: false }));
   s.expect([["notify-ready-for-review", "notify", "ENG-1"]]);
+});
+
+scenario(rules, "notify-ready-for-review notifies once per head for an approved PR dispatch won't merge", s => {
+  s.config({ repos: { dispatch: { openPrAs: "draft" } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", { ready: true, draft: false, approved: true, head: "h1" }));
+  s.expect([["notify-ready-for-review", "notify", "ENG-1"]]);
+  s.land("notify", "ENG-1");
+  s.expect([]);
+  s.see(pr("ENG-1", { head: "h2" }));
+  s.expect([["notify-ready-for-review", "notify", "ENG-1"]]);
+});
+
+scenario(rules, "notify-ready-for-review is silent when auto-merge will merge the PR", s => {
+  s.config({ repos: { dispatch: { openPrAs: "draft", autoMerge: true } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", { ready: true, draft: false, approved: true }));
+  s.expect([["auto-merge", "merge", "ENG-1"]]);
+});
+
+scenario(rules, "notify-ready-for-review is silent for a gone worker and for a PR that waits on approvers", s => {
+  s.config({ repos: { dispatch: { openPrAs: "draft" } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "none"), pr("ENG-1", { ready: true, draft: false, approved: true }));
+  s.expect([]);
+  s.see(worker("ENG-1", "idle"), pr("ENG-1", { approved: false }));
+  s.expect([]);
+});
+
+scenario(rules, "notify-ready-for-review is held when the PR could not be read", s => {
+  s.config({ repos: { dispatch: { openPrAs: "draft" } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", { ready: true, approved: true }));
+  s.unread("github:ENG-1");
+  s.expect([]);
+  s.expectHeld("notify-ready-for-review", "ENG-1");
 });
 
 scenario(rules, "notify-ready-for-review is held when the PR could not be read", s => {

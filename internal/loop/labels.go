@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/executor"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/linear"
@@ -16,12 +17,14 @@ import (
 
 // Emoji at the front of a worker's workspace label, by who the ticket is waiting on.
 const (
-	emojiBusy           = "🟢"
-	emojiChecksRunning  = "🟡"
-	emojiReadyForReview = "👀"
-	emojiNeedsHuman     = "🔴"
-	emojiPaused         = "⏸️"
-	emojiWaiting        = "💤"
+	emojiBusy             = "🟢"
+	emojiChecksRunning    = "🟡"
+	emojiReadyForReview   = "👀"
+	emojiAwaitingApproval = "⏳"
+	emojiAwaitingMerge    = "🔀"
+	emojiNeedsHuman       = "🔴"
+	emojiPaused           = "⏸️"
+	emojiWaiting          = "💤"
 )
 
 type rename struct{ id, label string }
@@ -78,7 +81,7 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 		}
 		switch t.Status {
 		case cfg.InProgress:
-			add(t, w, l.workspaceEmoji(w, pullrequest.PullRequest{}))
+			add(t, w, l.workspaceEmoji(w, pullrequest.PullRequest{}, ""))
 		case cfg.InReview:
 			pr, ok := wd.PRs[t.Identifier]
 			// An unreadable PR must not change a label that came from reading it.
@@ -87,7 +90,7 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 			}) {
 				continue
 			}
-			add(t, w, l.workspaceEmoji(w, pr))
+			add(t, w, l.workspaceEmoji(w, pr, l.repoOf(t).OpenPRAs))
 		case cfg.NeedsHuman:
 			add(t, w, emojiNeedsHuman)
 		}
@@ -112,20 +115,34 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 	return workspaces, tabs
 }
 
+// repoOf is the settings table of the ticket's repo label, empty when it has none.
+func (l *Loop) repoOf(t linear.Ticket) config.Repo {
+	label, _ := t.LabelIn(l.o.Config.Plugins.Linear.RepoLabelGroup)
+	_, repo, _ := l.o.Config.Repos.Find(label)
+	return repo
+}
+
 // prLabels are the labels a read PR can give an In Review worker.
-var prLabels = []string{emojiReadyForReview, emojiChecksRunning, emojiWaiting, emojiBusy}
+var prLabels = []string{emojiReadyForReview, emojiAwaitingApproval, emojiAwaitingMerge, emojiChecksRunning, emojiWaiting, emojiBusy}
 
 // workspaceEmoji is the label for a ticket in progress or in review. A worker with no
 // Stop record, or one whose Stop did not list its tasks, may still be busy, so it stays
 // green. A Stop that lists a running task keeps it green even while the PR's checks run.
-// A ready PR shows 👀 once the worker is idle or gone.
-func (l *Loop) workspaceEmoji(w world.Worker, pr pullrequest.PullRequest) string {
+// A ready PR shows who it waits on once the worker is idle or gone: 👀 for you, ⏳ for
+// its approvers and 🔀 for whoever merges it. openAs is the PR's repo setting.
+func (l *Loop) workspaceEmoji(w world.Worker, pr pullrequest.PullRequest, openAs string) string {
 	if w.State == world.Blocked {
 		return emojiNeedsHuman
 	}
 	gone := w.State == world.NoWorker || w.State == world.Idle && w.UnconfirmedSince != 0
 	idle := w.State == world.Idle && !gone
 	if pr.Ready && (idle || gone) {
+		switch pr.WaitingOn(openAs) {
+		case pullrequest.WaitingOnApprovers:
+			return emojiAwaitingApproval
+		case pullrequest.WaitingOnMerge:
+			return emojiAwaitingMerge
+		}
 		return emojiReadyForReview
 	}
 	if !idle {
