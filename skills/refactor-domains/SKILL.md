@@ -23,7 +23,7 @@ The user repeated each of these in past refactors, so a plan that skips one gets
 
 ## The blueprint
 
-Its first line of body text is `Purpose: refactor`, which tells `dispatch:breakdown` to cut pieces that need no user-visible outcome. It also holds:
+Its first line of body text is `Purpose: refactor`, so whoever breaks the design down or builds a piece knows the refactor is the project and not a side effect. It also holds:
 
 - **What is wrong today**, as numbered problems with `file:line` cites.
 - **Target packages.** A package earns its place by cutting the files a reader opens to answer a question. Say how many before and after, and drop a package that only adds files to open.
@@ -38,4 +38,4 @@ Cut pieces by package or domain concept, so a reviewer reads one in a sitting. E
 - **Adds test cases only.** Changes no production code and edits no existing test line. Two checks. Every row of `git diff --no-renames --numstat <SHA> -- ':(top)*_test.go'` shows 0 in the deleted column, and `git diff --name-only <SHA> -- ':(top)*.go' ':(top,exclude)*_test.go'` prints nothing. Add an exclude for any test fakes the repo keeps beside its tests.
 - **Changes a public surface.** No diff check. It lists the surface and every test edit, with counts from main.
 
-A code-only piece has two acceptance criteria. The existing suite passes, and its diff check prints nothing. An adds-test-cases piece is complete when its new cases pass and both diff checks hold. `dispatch:breakdown`, `dispatch:ticket`, `dispatch:design` and `dispatch:build` accept these in place of a user-visible outcome. A piece that changes a public surface keeps the usual rule that each criterion is observable at the surface. `dispatch:build` treats an existing test as a contract, so a piece ticket that allows a test edit quotes that line of the blueprint.
+A code-only piece has two acceptance criteria. The existing suite passes, and its diff check prints nothing. An adds-test-cases piece is complete when its new cases pass and both diff checks hold. A piece that changes a public surface keeps the usual rule that each criterion is observable at the surface. `dispatch:build` treats an existing test as a contract, so a piece ticket that allows a test edit quotes that line of the blueprint.
