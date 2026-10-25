@@ -1,6 +1,20 @@
 # writing-prose eval
 
-Status 2026-10-24: the scorer check and control came out as required with `closing-organized` added. The baseline does not meet the bar (`key-absent` 0 of 12, `under-cap` 3 of 12, `closing-organized` 6 of 12), so a wording change is needed. See `log.md`.
+## Where this stands (2026-10-25)
+
+For the next agent. No wording change has been adopted, and `skills/writing-prose/SKILL.md` is as it was. The suite runs and the scorer check and control behave, but its graders do not yet track what the user rates well, so do not hillclimb against them as they are. Full numbers are in `log.md`.
+
+What was learned.
+- Today's wording scores `key-absent` 0 of 12, `under-cap` 3 of 12 and `closing-organized` 6 of 12 on the baseline (bar 11 of 12). Three wording attempts (a rule 2 extension, scoring and ranking facts, a `plan.md` with questions and a word budget) did not move it. The writer satisfied each rule by relabelling the leftovers.
+- In one-shot runs the skill loads and the model writes once. With the whole loop forced (case `writing-prose-groupcache-loop`, tag `loop`) the critic names the paragraph of leftover facts, but the second writer is only told to cut named clauses, so the paragraph stays. A rewrite step that also cuts a paragraph the critic names under question 1 is untested.
+- The user rated ten groupcache sections blind (`results/human-check.json`). One-shot runs from every wording rated 1. The forced-loop run rated 3, the best any skill output got. The user's own draft rated 4 and was the best. It ends in the list of defaults, transport, stats and global state that `closing-organized` fails, so that grader does not match the user's taste. The user's stated reason is a section that starts from one call and tells what happens in order.
+- A pass or fail judge for that property (`walkthrough`, fixtures `writing-prose-calib-*`, tag `calib`) voted FAIL 30 of 30 on the ten rated sections, including the best, so it separates nothing.
+
+Where to pick up.
+1. Fix the measurement before the wording. Ask a judge for a 1 to 5 score on a walk-through rubric, called directly and not through `claude plugin eval` (its judge is pass or fail), and check that its ranking of the ten sections in `results/human-check.json` matches the user's before trusting it. A looser rubric (pass when the first half follows one call in order) is the first thing to try.
+2. Then make the skill's loop run reliably and test the rewrite-step change above, on the forced-loop case first.
+3. The `key-absent` answer keys other than groupcache's are the author's judgement, not a rule in the skill. The forced-loop critic kept "no network call" as needed. Settle with the user whether those clauses should stay banned.
+4. The user's ticket ceiling of $10 is spent (about $9.08). More runs need a new ceiling.
 
 Measures whether `skills/writing-prose/SKILL.md` makes a writer leave out true facts the reader doesn't need and keep the section short (ENG-572). Follows `skills/hillclimb/SKILL.md`. This ticket adds the suite and a baseline. It does not change the skill's wording, so there is no attempt and no confirmation rerun.
 
