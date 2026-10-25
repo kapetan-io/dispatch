@@ -30,11 +30,13 @@ The blueprint, the `docs/CONTEXT.md` files and the code it touches are at {BLUEP
 
 Review the design through every lens in the rubric above that you find relevant. Do not force lenses that don't apply. A small design does not need paragraphs about architectural integrity.
 
+This review is about fit with the existing system. If you notice a bug or a gap in the design that has nothing to do with what already exists, give it one line at the end under "Outside fit" and don't rate it.
+
 For each finding, provide:
 
 1. **Severity**: `critical` | `warning` | `nit`
-   - `critical`: Duplicates or contradicts something the repo already has, or would cause bugs, data loss, security issues, or fundamentally broken behavior
-   - `warning`: Design concern, maintainability risk, or correctness issue that isn't immediately broken but will cause pain
+   - `critical`: Duplicates or contradicts something the repo already has
+   - `warning`: Bolts onto the existing design, or adds complexity it hasn't earned
    - `nit`: Style, naming, minor improvement.
 2. **Finding**: What the problem is, in concrete terms. Reference the blueprint section and the existing file and line.
 3. **Evidence**: Why you believe this is a problem. Show your reasoning. Don't just assert.

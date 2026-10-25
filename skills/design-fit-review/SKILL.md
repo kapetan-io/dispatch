@@ -91,6 +91,9 @@ Present the verdict in this structure:
 ### Noted
 [Valid but low-priority. Brief list.]
 
+### Outside Fit
+[One-line items the reviewers noticed that are not about fit, and any you promoted to Act On or Consider.]
+
 ### Dismissed
 [Rejected findings with brief rationale.]
 
