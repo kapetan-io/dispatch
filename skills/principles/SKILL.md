@@ -13,10 +13,10 @@ Each principle is a skill of its own. Load one with the Skill tool and apply it,
 | `dispatch:principle-boundary-discipline` | Wiring validation, error handling or adapters. |
 | `dispatch:principle-encode-lessons-in-structure` | A mistake just happened and you are choosing the fix, or you write the same instruction twice. |
 | `dispatch:principle-laziness-protocol` | Refactoring, sizing a diff, tempted to add a layer. |
-| `dispatch:principle-subtract-before-you-add` | Shaping a design or adding a CLI command, flag, setting, history field or skill. |
 | `dispatch:principle-make-operations-idempotent` | Commands or loops that must survive crashes and retries. |
 | `dispatch:principle-minimize-reader-load` | Code is hard to trace. |
 | `dispatch:principle-separate-before-serializing-shared-state` | Several actors might write the same file, branch or key. |
+| `dispatch:principle-subtract-before-you-add` | Shaping a design or adding a CLI command, flag, setting, history field or skill. |
 | `dispatch:principle-guard-the-context-window` | Before reading or pasting bulky content into context. |
 | `dispatch:principle-zero-value-settings` | Naming a setting, config key or option a user can leave unset. |
 | `dispatch:principle-fast-tests` | Writing, reviewing or speeding up tests. |

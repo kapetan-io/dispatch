@@ -6,11 +6,8 @@ Review the design through whichever lenses are relevant. Not every lens applies 
 
 Is the code fixing the actual problem or papering over a symptom?
 
-Answering this often requires looking beyond the changed files. Read the surrounding code (callers, callees, type definitions, sibling modules) and understand the architecture the change lives in. Use the tools available to you (Read, Grep, Glob) to explore. Follow the call chain. Read the types. Understand why the code exists before judging whether the change addresses the right layer.
+Answering this often requires looking beyond the files the design touches. Read the surrounding code (callers, callees, type definitions, sibling modules) and understand the architecture the change lives in. Use the tools available to you (Read, Grep, Glob) to explore. Follow the call chain. Read the types. Understand why the code exists before judging whether the change addresses the right layer.
 
-- Guard clauses that mask a deeper invariant violation
-- Retry logic that hides a broken contract
-- Type casts that silence a modeling error
 - If you see a workaround, ask: why is the workaround needed? What would a proper fix look like?
 - A fix in module A that should really be a fix in module B's contract
 - Instructions where structure would be better: if the fix is a comment saying "don't do X" or a convention someone has to remember, ask whether it could instead be a type constraint, a lint rule, or a runtime check that makes the wrong thing impossible

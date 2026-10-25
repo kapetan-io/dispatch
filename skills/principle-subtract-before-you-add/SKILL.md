@@ -7,6 +7,6 @@ description: "Apply when about to add a CLI command, flag, setting, history fiel
 
 Each new thing is one more thing the next reader must learn and keep in sync with its twin. Before adding one, name the closest existing thing and say why it can't take the need. If removing something would make room, do that first, even when the diff is large.
 
-`dispatch:principle-laziness-protocol` keeps a diff small. This one sets the order, removal and reuse before construction. `dispatch:design-fit-review` checks a blueprint against it.
+`dispatch:principle-laziness-protocol` keeps a diff small. This one sets the order, removal and reuse before construction. `dispatch:design-fit-review` reviews a blueprint for the same thing.
 
 Adapted from pstack by Lauren Tan (MIT). Notice in `../principles/LICENSE-pstack`.

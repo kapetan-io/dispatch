@@ -1,10 +1,10 @@
 ---
 name: design-fit-review
-description: "Review a blueprint for fit with the existing system: independent reviewers check each new CLI command, flag, rule scenario API member, setting, history or ledger field, or skill against the closest thing the repo already has, and the lead judges which findings change the design. Use when `design` or `design-review` calls for it, or when asked whether a design duplicates something. Read-only: it reports a verdict and edits nothing."
+description: "Review a blueprint for fit with the existing system: independent reviewers check each new CLI command, flag, rule API member, setting, history or ledger field, or skill against the closest thing the repo already has, and the lead judges which findings change the design. Use when `design` or `design-review` calls for it, or when asked whether a design duplicates something. Read-only: it reports a verdict and edits nothing."
 ---
 # Review a blueprint for fit
 
-Nothing else in `design` or `design-review` asks whether a new thing should exist. This is pstack's `interrogate`, run on a blueprint instead of a diff.
+Nothing else in `design` or `design-review` asks whether a new thing should exist.
 
 Spawn one reviewer per model to adversarially review the design. Each model gets the same prompt and rubric. The adversarial signal comes from model diversity, not assigned personas.
 
@@ -36,7 +36,7 @@ For each reviewer, use `subagent_type` `general-purpose`, run it in the foregrou
 
 Read `references/reviewer-prompt.md` and fill in the template with:
 1. The stated intent
-2. The blueprint path and the fixed decisions
+2. The blueprint path with the `docs/CONTEXT.md` and code paths, and the fixed decisions (the Constraints section and the "you decided" entries in the Decision Log)
 3. The review rubric from `references/rubric.md`
 
 The same filled template goes to all reviewers, so every model applies the same rubric.
@@ -80,7 +80,7 @@ Present the verdict in this structure:
 - Reviewer [label]: [model name], [N findings] (one bullet per reviewer)
 
 ### New Things
-[Each new thing the design adds, its closest existing thing with file:line, and keep / use existing / extend.]
+[Each new thing the design adds, its closest existing thing with file:line, and keep / use existing / extend. The reviewers list the closest existing thing; you add the verdict.]
 
 ### Act On
 [Findings that should be addressed. For each: description, which models raised it, why it matters.]

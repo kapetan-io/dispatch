@@ -14,11 +14,11 @@ The author's stated intent for this design:
 
 You are reviewing whether the design achieves this intent well. Do NOT question the intent itself. Assume the goal is correct and challenge the execution.
 
-Before you judge, list every new public or persisted thing the design adds (CLI command, flag, rule scenario API member, setting, history or ledger field, skill). For each, search the repo (`git grep`, the command list, the schema) and name the closest existing thing with file and line, or "none found" and what you searched. Use the `docs/CONTEXT.md` terms and the words the code already uses, coin no labels such as step codes, and define any term in neither. Edit nothing.
+Before you judge, list every new public or persisted thing the design adds (CLI command, flag, rule API member, setting, history or ledger field, skill). For each, search the repo (`git grep`, the command list, the schema) and name the closest existing thing with file and line, or "none found" and what you searched. Use the `docs/CONTEXT.md` terms and the words the code already uses, coin no labels such as step codes, and define any term in neither. Edit nothing.
 
 ## Design Under Review
 
-The blueprint is at {BLUEPRINT_PATH}. The user's fixed decisions, which you must not re-argue, are:
+The blueprint, the `docs/CONTEXT.md` files and the code it touches are at {BLUEPRINT_PATH}. The user's fixed decisions, which you must not re-argue, are:
 
 {CONSTRAINTS}
 
@@ -33,7 +33,7 @@ Review the design through every lens in the rubric above that you find relevant.
 For each finding, provide:
 
 1. **Severity**: `critical` | `warning` | `nit`
-   - `critical`: Would cause bugs, data loss, security issues, or fundamentally broken behavior
+   - `critical`: Duplicates or contradicts something the repo already has, or would cause bugs, data loss, security issues, or fundamentally broken behavior
    - `warning`: Design concern, maintainability risk, or correctness issue that isn't immediately broken but will cause pain
    - `nit`: Style, naming, minor improvement.
 2. **Finding**: What the problem is, in concrete terms. Reference the blueprint section and the existing file and line.
@@ -49,7 +49,7 @@ For each finding, provide:
 
 ## What to Avoid
 
-- Restating what the code does without identifying a problem
+- Restating what the design does without identifying a problem
 - Praising the design. You're an adversary, not a cheerleader. If you find nothing wrong, say "no findings" and stop.
 
 ## Output
@@ -57,10 +57,14 @@ For each finding, provide:
 Return your findings as a structured list. If you have zero findings, say so. An empty review is a valid outcome.
 
 ```
+## New things
+
+Each new thing, with its closest existing thing at file:line, or "none found" and what you searched.
+
 ## Findings
 
 ### 1. [Severity] Short title
-**Location**: file:line or function name
+**Location**: blueprint section, or file:line
 **Finding**: What's wrong
 **Evidence**: Why this matters
 **Suggestion**: (optional) What to do instead
