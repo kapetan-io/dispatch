@@ -8,7 +8,7 @@ Nothing else in `design` or `design-review` asks whether a new thing should exis
 
 Spawn one reviewer per model to adversarially review the design. Each model gets the same prompt and rubric. The adversarial signal comes from model diversity, not assigned personas.
 
-The deliverable is a synthesized verdict. Do NOT auto-apply changes. The caller puts each Act On and Consider item to the user, and logs a new thing the user keeps over a finding as "you decided".
+The deliverable is a synthesized verdict. This skill edits nothing. The caller works on its own: it applies each Act On fix to the design and logs it as "agent assumed", so the user reads a design that already has them and sees the rest of the verdict beside it. Consider items are shown, not asked. Only a fix that changes product behavior, a public contract or scope goes to the user as a question, since those calls are theirs.
 
 ## Step 1, Determine Scope
 
