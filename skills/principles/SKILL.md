@@ -16,6 +16,7 @@ Each principle is a skill of its own. Load one with the Skill tool and apply it,
 | `dispatch:principle-make-operations-idempotent` | Commands or loops that must survive crashes and retries. |
 | `dispatch:principle-minimize-reader-load` | Code is hard to trace. |
 | `dispatch:principle-separate-before-serializing-shared-state` | Several actors might write the same file, branch or key. |
+| `dispatch:principle-subtract-before-you-add` | About to add code, a command, a setting or a part of a design. |
 | `dispatch:principle-guard-the-context-window` | Before reading or pasting bulky content into context. |
 | `dispatch:principle-zero-value-settings` | Naming a setting, config key or option a user can leave unset. |
 | `dispatch:principle-fast-tests` | Writing, reviewing or speeding up tests. |

@@ -20,7 +20,7 @@ Load `dispatch:converse` with the Skill tool. Open a todolist with one entry per
 3. Ground (Phase A): load `dispatch:how` with the Skill tool over the subsystems the design touches, and `dispatch:why` over any existing shape it extends or replaces
 4. Sketch (Phase B): load `dispatch:arena` with the Skill tool. It always runs without asking you first, and you skip its last step ("Ask the user"), because the user approves the contract sketch in step 5
 5. Agree on the contract sketch
-6. Discuss the rest of the technical half, then run the correctness and testability passes
+6. Discuss the rest of the technical half, run the fit review, then run the correctness and testability passes
 7. Write the blueprint
 8. Audit the transcript
 9. Review or break down
@@ -93,7 +93,7 @@ Run the **dispatch:arena** skill with the design-sketch task, the approved Objec
 
 Design it twice. Require at least two structurally distinct candidates before synthesis, even when the first looks sufficient. Whole-shape alternatives, not point fixes inside one shape. When only one shape fits, the arena's rationale says so ("this was the only viable shape because...").
 
-The design principles are skills of their own, indexed by `dispatch:principles`. Load one with the Skill tool when a design question touches it.
+The design principles are skills of their own, indexed by `dispatch:principles`. Load one with the Skill tool when a design question touches it. Add to the arena's premise list, for each new thing the design adds, what existing thing could do the job, and point candidates at `dispatch:principle-subtract-before-you-add`.
 
 Screen every candidate against [`references/design-red-flags.md`](references/design-red-flags.md) before synthesis. Assume the next contributor is an agent that sees only the files it opened, copies the nearest example, and takes the shortest path that compiles. Prefer the design where a change that looks right from one file is right for the whole repo.
 
@@ -120,6 +120,8 @@ Settle what an engineer needs before writing code, not a checklist: data, depend
 - **Level of detail.** Pin a signature only where a consumer or test binds to it. Describe an internal surface's responsibility, inputs and outputs, invariants and error categories, and leave its signature to the implementor, who sees the real types. A schema is pinned in full, and the interface that wraps it is not.
 
 When a question can't be settled now, insert `[NEEDS CLARIFICATION: <question>]` and continue with the best assumption. Three or more flags mean the blueprint isn't ready to build from, so stop and ask the user to settle them.
+
+Once the contract sketch is agreed, run `dispatch:design-fit-review` with the Skill tool on the sketch and the technical decisions so far, so a finding changes the shape before the blueprint is written. Apply its Act On fixes and log each as "agent assumed". Show the user the verdict with the design, and ask only about a fix that changes the approved contract sketch.
 
 Before writing, run two passes. **Correctness:** every invariant has a preservation argument for each operation touching it, and no enforcement relies on a property of one implementation. **Testability:** every surface is reachable from a test, every external dependency has a substitute, and every async behavior can be observed. Gaps here are design findings. Resolve them before writing.
 

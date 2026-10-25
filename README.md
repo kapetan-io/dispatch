@@ -8,17 +8,17 @@ You design a feature with Claude in an interactive session. An autonomous review
 
 The dispatcher works end to end today. `dispatch run` is a reconcile loop: it keeps what it knows of Linear, GitHub, herdr and treehouse in memory, runs the TypeScript [rules](docs/rules.md) after each event, and records what it did in a ledger kept in history files. It launches a worker for each ticket you move to In Progress, labels each worker's window by who its ticket is waiting on, nudges workers about PRs that need work, escalates to Needs Human with a notification, starts a parent ticket's children in order and closes the parent, and tears down finished trees. The `dispatch:build` skill carries a ticket to an open PR, and `dispatch:ticket` writes tickets the dispatcher picks up.
 
-Start with "Set it up" in the [user guide](docs/guide.md), which takes a fresh Mac to a working dispatcher and supervisor session and ends with a check you run to confirm it. The [config reference](docs/config.md) lists every setting, and [rules](docs/rules.md) covers `dispatch rules`, which lints and tests the TypeScript rules that make its decisions.
+The [config reference](docs/config.md) lists every setting, and [rules](docs/rules.md) covers `dispatch rules`, which lints and tests the TypeScript rules that make its decisions.
 
 ## Layout
 
 - `.claude-plugin/plugin.json` is the plugin manifest. Skills live in `skills/`, one folder each, and the `description` in each `SKILL.md` says what it does. `bin/` holds scripts on the session PATH, and `hooks/` holds the plugin's hooks.
 - `cmd/` and `internal/` hold the `dispatch` Go CLI.
-- `docs/` holds the [user guide](docs/guide.md), the [config reference](docs/config.md) and the [rules guide](docs/rules.md). `rules/` holds the shipped TypeScript rules. `evals/` holds the skill eval suites, one folder per skill.
+- `docs/` holds the [config reference](docs/config.md) and the [rules guide](docs/rules.md). `rules/` holds the shipped TypeScript rules. `evals/` holds the skill eval suites, one folder per skill.
 
 ## Development
 
-Put `scripts/shims` first on your PATH, and a plain `claude` loads the plugin from this checkout and accepts messages from other sessions, so a `git pull` reaches your next session with no reinstall. The [user guide](docs/guide.md) has the setup. For one session without the shim, run:
+Put `scripts/shims` first on your PATH, and a plain `claude` loads the plugin from this checkout and accepts messages from other sessions, so a `git pull` reaches your next session with no reinstall. For one session without the shim, run:
 
 ```sh
 claude --plugin-dir ~/Development/dispatch --settings '{"crossSessionInbound":"accept"}'
@@ -42,4 +42,3 @@ cd ~/Development/dispatch && make install
 dispatch run
 ```
 
-The [user guide](docs/guide.md) covers the setup this needs (herdr, treehouse, `gh`, the Linear API key and statuses), how a ticket flows, pausing, `dispatch tick`, `dispatch cycle`, `dispatch explain`, `dispatch replay`, `dispatch state reset`, `dispatch tell`, and what to do when something breaks.

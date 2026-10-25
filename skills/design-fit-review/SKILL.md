@@ -1,0 +1,104 @@
+---
+name: design-fit-review
+description: "Review a blueprint for fit with the existing system: independent reviewers check each new CLI command, flag, rule API member, setting, history or ledger field, or skill against the closest thing the repo already has, and the lead judges which findings change the design. Use when `design` or `design-review` calls for it, or when asked whether a design duplicates something or a proposed command, setting or field already exists. Read-only: it reports a verdict and edits nothing."
+---
+# Review a blueprint for fit
+
+Nothing else in `design` or `design-review` asks whether a new thing should exist.
+
+Spawn one reviewer per model to adversarially review the design. Each model gets the same prompt and rubric. The adversarial signal comes from model diversity, not assigned personas.
+
+The deliverable is a synthesized verdict. This skill edits nothing. The caller works on its own: it applies each Act On fix to the design and logs it as "agent assumed", so the user reads a design that already has them and sees the rest of the verdict beside it. Consider items are shown, not asked. Only a fix that changes product behavior, a public contract or scope goes to the user as a question, since those calls are theirs.
+
+## Step 1, Determine Scope
+
+The blueprint or contract sketch under review, written to a scratchpad file (`get_document` for a Linear blueprint) so reviewers read the file and never Linear. Add the paths of the `docs/CONTEXT.md` files and the code the design touches. The fixed decisions are the blueprint's Dependencies and Constraints section and the "you decided" entries in its Decision Log, including "you decided (review)", or "none".
+
+## Step 2, State the Intent
+
+Before spawning reviewers, state the intent explicitly. Derive this from:
+
+- The feature ticket
+- The approved Objective (the blueprint's, once it exists)
+
+Write one clear paragraph. If you're unsure about the intent, ask the user before proceeding.
+
+## Step 3, Spawn Reviewers
+
+Launch both reviewers in a single message using the Agent tool.
+
+| Subagent | Model |
+|----------|-------|
+| Reviewer A | `opus` |
+| Reviewer B | `sonnet` |
+
+For each reviewer, use `subagent_type` `general-purpose`, run it in the foreground, and tell it to edit nothing. If the Agent tool rejects a model, run that reviewer on the default model and say so.
+
+Read `references/reviewer-prompt.md` and fill in the template with:
+1. The stated intent
+2. The blueprint path, the glossary and code paths, and the fixed decisions
+3. The review rubric from `references/rubric.md`
+
+The same filled template goes to all reviewers, so every model applies the same rubric.
+
+## Step 4, Synthesize
+
+As results come back, build a unified picture:
+
+1. **Parse all findings** from the reviewers
+2. **Identify consensus**. Findings raised by 2+ models independently are highest signal.
+3. **Identify lone-model findings**. Still worth reading, but weight accordingly.
+4. **Deduplicate**. Different models may describe the same issue differently. Merge these and note which models raised it.
+5. **Merge the New Things lists**. Where reviewers name different closest existing things, keep both.
+6. **Note disagreements**. If one model flags something and another explicitly says the opposite, that's useful context for the verdict.
+
+## Step 5, Lead Judgment
+
+You are the lead reviewer, a pragmatic senior engineer, not a neutral aggregator.
+
+Read `references/lead-judgment.md` for the full framework.
+
+Categorize every finding using these buckets. A "use existing" or "extend" verdict for a new thing is an Act On or Consider item:
+
+- **Act on**. Real issues affecting fit or maintainability given the actual goals. These would block a real design.
+- **Consider**. Legitimate points, but you're not sure they outweigh the cost of addressing them right now. Worth the user's attention.
+- **Noted**. Technically valid but not actionable. Context-dependent, premature optimization, or low-impact given the current stage.
+- **Dismissed**. Wrong, nitpicky, or missing context. Brief explanation why.
+
+For each finding, include:
+- Which model(s) raised it
+- The category (act on / consider / noted / dismissed)
+- A one-line rationale for the categorization
+
+## Output Format
+
+Present the verdict in this structure:
+
+### Intent
+> [The stated intent paragraph from Step 2]
+
+### Reviewers
+- Reviewer [label]: [model name], [N findings] (one bullet per reviewer)
+
+### New Things
+[Each new thing the design adds, its closest existing thing with file:line, and keep / use existing / extend. The reviewers list the closest existing thing; you add the verdict.]
+
+### Act On
+[Findings that should be addressed. For each: description, which models raised it, why it matters.]
+
+### Consider
+[Findings worth thinking about. For each: description, which models raised it, tradeoff involved.]
+
+### Noted
+[Valid but low-priority. Brief list.]
+
+### Outside Fit
+[One-line items the reviewers noticed that are not about fit, and any you promoted to Act On or Consider.]
+
+### Dismissed
+[Rejected findings with brief rationale.]
+
+### Agreement Map
+[Where did models agree, where did they diverge, and what does the pattern of agreement/disagreement tell us?]
+
+Adapted from pstack by Lauren Tan (MIT). Notice in `../principles/LICENSE-pstack`.

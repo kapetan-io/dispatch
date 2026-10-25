@@ -887,9 +887,8 @@ func TestContextDefinesTheRuleTerms(t *testing.T) {
 	}
 }
 
-// The install command lives in the guide and the plugin manifests, files no command compares, so
-// this guards the guide against a renamed plugin or marketplace.
-func TestGuideInstallCommandsMatchTheMarketplace(t *testing.T) {
+// The plugin manifest and the marketplace file name the same plugin, and no command compares them.
+func TestPluginManifestMatchesTheMarketplace(t *testing.T) {
 	t.Parallel()
 	var manifest, catalog struct {
 		Name    string `json:"name"`
@@ -910,10 +909,6 @@ func TestGuideInstallCommandsMatchTheMarketplace(t *testing.T) {
 	require.Len(t, catalog.Plugins, 1)
 	assert.Equal(t, manifest.Name, catalog.Plugins[0].Name)
 	assert.Equal(t, "./", catalog.Plugins[0].Source)
-
-	guide, err := os.ReadFile("docs/guide.md")
-	require.NoError(t, err)
-	assert.Contains(t, string(guide), "claude plugin install "+catalog.Plugins[0].Name+"@"+catalog.Name)
 }
 
 func TestApiKeyCommandRunsInTheWorkingDirectoryWithTheEnvironmentItWasGiven(t *testing.T) {
