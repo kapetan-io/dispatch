@@ -82,4 +82,4 @@ PATH=$HOME/.local/bin:$PATH claude plugin eval . --eval-dir cases --tag suite --
   --trust-plugin --threshold 0 -j 4 --max-cost-usd 5 --json $WORK/result.json
 ```
 
-Use `--tag scorer --runs 1` for the scorer check. Copy the result JSON into `results/` under the run's name.
+Use `--tag scorer --runs 1` for the scorer check. Result JSONs are not kept in this suite; record the scores in `log.md`.

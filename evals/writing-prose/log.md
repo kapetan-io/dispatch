@@ -1,14 +1,16 @@
 # writing-prose eval log
 
-## 2026-10-24, scorer check (results/scorer-check.json, $0.35)
+The per-run result JSONs from `claude plugin eval` were not kept, at the user's call, which departs from `skills/hillclimb/SKILL.md`. The tables below are the record of every score. Only the user's blind ratings are kept as data (`results/human-check.json` and `results/human-check-sections.md`).
+
+## 2026-10-24, scorer check (the run's result file, $0.35)
 
 Eight fixture cases copy a hand-written section to `section.md`. Every `-good` section passed `key-absent`, `no-verify` and `under-cap`. Every `-bad` section failed all three. The first version of the `under-cap` pattern, `^(?:\s*\S+){1,N}\s*$`, hung on an over-cap file because `\S+` can split a word across iterations and backtrack exponentially. It was fixed before any run to `^\s*(?:\S+(?:\s+|$)){1,N}$`.
 
-## Control (results/control.json, $0.32)
+## Control (the run's result file, $0.32)
 
 `arms/careless.md`, 1 run per case. The skill loaded and `section.md` was written in all 4 runs. `key-absent` passed 0 of 4, under the bar's 1 of 4. `under-cap` failed in 3 of 4. `no-verify` passed 4 of 4. The control fails on the banned clauses and not on format.
 
-## Baseline (results/baseline.json, $0.90)
+## Baseline (the run's result file, $0.90)
 
 Today's `skills/writing-prose/SKILL.md`, 3 runs per case, 12 runs.
 
@@ -33,11 +35,11 @@ The user read a groupcache draft whose last paragraph listed the default cache, 
 
 Changes. A fifth grader, `closing-organized`, judged by `claude-sonnet-5-5` with 3 votes. A ninth scorer case, `groupcache-userdraft`, holds the user's draft. The `-bad` sections now end with a run of separate facts. The groupcache `-good` section was rewritten so each leftover fact sits in the mechanism, and then its last paragraph was split so it covers writes only.
 
-Scorer check (results/scorer-check-closing.json, $0.55). All `-bad` sections and `groupcache-userdraft` failed `closing-organized` 3 votes to 0. `bloom-filter-good`, `go-defer-good` and `write-ahead-log-good` passed 3 to 0. The first groupcache `-good` failed 0 to 3, because its last paragraph joined the unreachable-owner fallback to write propagation. It was changed to one idea per paragraph, for a reason that does not depend on the score, and rerun alone (results/scorer-check-closing-groupcache-good.json, $0.05). It passed 2 votes to 1, so the judge is noisy on that section.
+Scorer check (the run's result file, $0.55). All `-bad` sections and `groupcache-userdraft` failed `closing-organized` 3 votes to 0. `bloom-filter-good`, `go-defer-good` and `write-ahead-log-good` passed 3 to 0. The first groupcache `-good` failed 0 to 3, because its last paragraph joined the unreachable-owner fallback to write propagation. It was changed to one idea per paragraph, for a reason that does not depend on the score, and rerun alone (the run's result file, $0.05). It passed 2 votes to 1, so the judge is noisy on that section.
 
-Control (results/control-closing.json, $0.39, 1 run per case). `key-absent` 0 of 4, `under-cap` 0 of 4, `closing-organized` 1 of 4.
+Control (the run's result file, $0.39, 1 run per case). `key-absent` 0 of 4, `under-cap` 0 of 4, `closing-organized` 1 of 4.
 
-Baseline (results/baseline-closing.json, $1.12, 3 runs per case).
+Baseline (the run's result file, $1.12, 3 runs per case).
 
 | Case | skill-fired | key-absent | no-verify | under-cap | closing-organized |
 |---|---|---|---|---|---|
@@ -51,7 +53,7 @@ The baseline does not meet the bar on `key-absent`, `under-cap` or `closing-orga
 
 Spend so far about $3.68 of the $10 ceiling.
 
-## Attempt 1, results/attempt1.json ($1.31) — reverted
+## Attempt 1 ($1.31) — reverted
 
 Idea. Rule 2 of "Working from source material" says what to do with a fact no step of the mechanism needs: join the sentence it extends, or cut it, and the last paragraph is not a home for it (`arms/attempt-1.md`, 41 words added). Three proposers (the visible failing closings, Anthropic's prompting guidance, skill-creator guidance) each proposed a rule 2 extension, and a fourth merged them.
 
@@ -67,7 +69,7 @@ Idea. Rule 2 of "Working from source material" says what to do with a fact no st
 
 Spend so far about $4.99 of the $10 ceiling.
 
-## Attempt 2, results/attempt2.json ($1.18) — reverted
+## Attempt 2 ($1.18) — reverted
 
 Idea, from the user. The writer scores each fact from 1 to 5 by how much the answer depends on it, with how the thing works and how it is used highest, orders the list by score, builds the section from the top and drops the bottom unless a sentence needs it (`arms/attempt-2.md`, replacing the sentences in "The reader and the purpose" that say the writer picks from the list). No proposer round, since the idea was the user's.
 
@@ -83,7 +85,7 @@ Idea, from the user. The writer scores each fact from 1 to 5 by how much the ans
 
 Reading across attempts 1 and 2. Both added an instruction that asks for a step the writer does not take on the page (rank, then cut). In one-shot runs the writer does not do it. Spend about $6.17 of the $10 ceiling.
 
-## Loop test, results/loop-groupcache.json ($1.01)
+## Loop test ($1.01)
 
 Question. Can a real run pass the graders when the skill's whole loop runs? The baseline writes in one shot, so the first four tries never showed. Case `writing-prose-groupcache-loop` (tag `loop`, not part of the bar) is the groupcache prompt plus "run the skill's whole loop: the writer, the critic and the second writer each as a separate sub-agent". Today's wording, 3 runs.
 
@@ -95,7 +97,7 @@ Why, read from the critic's answers in the three visible runs.
 
 Spend about $7.18 of the $10 ceiling.
 
-## Attempt 3, results/attempt3.json ($1.29) — reverted
+## Attempt 3 ($1.29) — reverted
 
 Idea, from the research. The writer first writes a scratch file `plan.md` with the three or four questions the reader's question breaks into and a word budget. Every fact on the list must answer one of those questions, and a fact that answers none is cut. The section is drafted from the plan in the order of its questions (`arms/attempt-3.md`, 56 words added). Sources: question-answer blueprints (Narayan et al., TACL 2023) and a fixed length budget (Chain of Density, 2023), both read only as summaries.
 
@@ -111,7 +113,7 @@ Idea, from the research. The writer first writes a scratch file `plan.md` with t
 
 Reading across three attempts. Each added a rule the writer satisfied by relabelling the leftovers, and none changed the list the writer starts from. The suite hands the writer the full list of true facts, where in use the skill builds that list itself from sources (see "Working from source material"). Spend about $8.47 of the $10 ceiling.
 
-## Human check, results/human-check.json ($0)
+## Human check ($0)
 
 The user rated ten groupcache sections blind (1 to 5) and picked a best. They were two baseline runs, two from attempt 1, one from attempt 2, two from attempt 3, one forced-loop run, the user's own draft and the hand-written good section from the scorer check. Source labels are in the file.
 
@@ -127,9 +129,9 @@ Every one-shot run rated 1, whatever wording produced it. The best section is th
 
 So the graders and the user disagree. `key-absent` and `closing-organized` do not track what the user values most, which is a section organized as the story of one call. Spend is unchanged at about $8.47 of the $10 ceiling.
 
-## Judge calibration against the human ratings, results/calibration-walkthrough.json ($0.61)
+## Judge calibration against the human ratings ($0.61)
 
-A new judge, `walkthrough`, passes a section organized as a walk through what happens in order (one call or action as the spine, each paragraph continuing the previous one) and fails one organized as a tour of the parts. The ten sections the user rated were run as one-case fixtures (now removed from the repo to keep it small; the section text is in `results/human-check-sections.md` and the mapping in `results/human-check.json`). The rubric and fixtures were committed before the run. Rubric, verbatim: "The section answers the question of how a thing works. PASS if it is organized as a walk through what happens, in order: it takes one call or one action as its spine (what the caller does, then what happens next, then what happens when something goes wrong), and each paragraph after the opening continues that sequence from where the previous one stopped, so a reader could retell it as a story. FAIL if it is organized as a tour of the parts, with one paragraph or sentence per component, option or default, so that the paragraphs could be reordered without changing what the reader understands. Judge the whole section, and do not judge the sentences or the choice of facts." Target: pass E (rated 4) and F (3), fail the sections rated 1.
+A new judge, `walkthrough`, passes a section organized as a walk through what happens in order (one call or action as the spine, each paragraph continuing the previous one) and fails one organized as a tour of the parts. The ten sections the user rated were run as one-case fixtures (now removed from the repo to keep it small; the section text is in `results/human-check-sections.md` and the mapping in `the run's result file`). The rubric and fixtures were committed before the run. Rubric, verbatim: "The section answers the question of how a thing works. PASS if it is organized as a walk through what happens, in order: it takes one call or one action as its spine (what the caller does, then what happens next, then what happens when something goes wrong), and each paragraph after the opening continues that sequence from where the previous one stopped, so a reader could retell it as a story. FAIL if it is organized as a tour of the parts, with one paragraph or sentence per component, option or default, so that the paragraphs could be reordered without changing what the reader understands. Judge the whole section, and do not judge the sentences or the choice of facts." Target: pass E (rated 4) and F (3), fail the sections rated 1.
 
 Result. 30 of 30 votes FAIL, on every section including E and F. The judge does not separate the user's best section from the worst, so it cannot stand in for the user's reading as written. Two causes are likely and neither is tested. The rubric is stricter than the user's bar, since the best section still describes its parts after the opening walk-through. And the harness judge returns pass or fail, so it cannot reproduce a 1 to 4 scale.
 
