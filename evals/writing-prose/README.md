@@ -1,6 +1,6 @@
 # writing-prose eval
 
-Status 2026-10-24: after the user added `closing-organized`, the scorer check, control and baseline were rerun (see `log.md`). Before that, the scorer check and control came out as required. The baseline does not meet the bar (`key-absent` and `under-cap` 0 of 12), so a wording change is needed. See `log.md`.
+Status 2026-10-24: the scorer check and control came out as required with `closing-organized` added. The baseline does not meet the bar (`key-absent` 0 of 12, `under-cap` 3 of 12, `closing-organized` 6 of 12), so a wording change is needed. See `log.md`.
 
 Measures whether `skills/writing-prose/SKILL.md` makes a writer leave out true facts the reader doesn't need and keep the section short (ENG-572). Follows `skills/hillclimb/SKILL.md`. This ticket adds the suite and a baseline. It does not change the skill's wording, so there is no attempt and no confirmation rerun.
 

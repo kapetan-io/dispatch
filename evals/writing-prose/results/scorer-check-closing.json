@@ -1,0 +1,1175 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.310",
+  "startedAt": "2026-10-25T01:16:35.500Z",
+  "durationSeconds": 36,
+  "costUsd": 0.5534055000000001,
+  "partial": false,
+  "suite": {
+    "root": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.yF4zqEn1Mq/plugin",
+    "ablation": "none",
+    "judgeModel": "claude-sonnet-5-5",
+    "tagFilters": [
+      "scorer"
+    ],
+    "threshold": 0,
+    "concurrency": 4,
+    "plugins": [
+      {
+        "name": "dispatch",
+        "path": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.yF4zqEn1Mq/plugin"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "writing-prose-scorer-bloom-filter-bad",
+      "dir": "cases/writing-prose-scorer-bloom-filter-bad",
+      "source": "mixed",
+      "promptMarkdown": "Copy canned.md to section.md without changing it.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 10,
+      "graders": [
+        {
+          "name": "key-absent",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*(?:double[- ]hash|two hash values|\\bln\\s*2\\b|natural log|counting (bloom|variant|filter)|counters? (instead|in place)))[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "no-verify",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "under-cap",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^\\s*(?:\\S+(?:\\s+|$)){1,290}$",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "closing-organized",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+          "config": {
+            "criteria": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+            "focus": {
+              "source": "file",
+              "path": "section.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.0641971,
+            "judgeCostUsd": 0.015269999999999999,
+            "durationSeconds": 13,
+            "startedAt": "2026-10-25T01:16:35.529Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-LRmhRs/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "A Bloom filter is a fixed-size array of bits with k hash functions, and it answers whether a key is in a set. Adding a key sets the k bits its hashes point to. Checking a key reads those same bits. If any of them is 0 the key was never added, and if all are 1 it probably was. Double hashing derives all k bit positions from two hash values, so the filter needs only two real hash functions.\n\nThe filter never gives a false negative, since an added key always leaves its bits set. It can give a false positive, because other keys may have set the same bits, and the chance rises as the array fills. About 10 bits per key with 7 hashes gives a false positive rate near 1%. [VERIFY: confirm the 1% figure against the paper] The best k for a given array size and key count is bits per key times ln 2.\n\nA filter cannot remove a key, because clearing a bit could erase another key that shares it. A counting variant replaces each bit with a small counter so that keys can be removed, at the price of several times the space. It cannot list its keys or return a value either. It answers probably-yes or no, and it never says why.\n\nThat makes it useful in front of a slow lookup that usually finds nothing. LevelDB keeps one filter per file on disk, so a read skips every file whose filter says no and opens only the files that might hold the key. A read that would have touched ten files on disk then touches the one or two whose filters say probably-yes, and the filters themselves stay in memory so that checking them costs no disk read.\n\nA filter never gives a false negative. About 10 bits per key gives a rate near 1%. LevelDB keeps one filter per file. A filter cannot list its keys.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "writing-prose-scorer-bloom-filter-good",
+      "dir": "cases/writing-prose-scorer-bloom-filter-good",
+      "source": "mixed",
+      "promptMarkdown": "Copy canned.md to section.md without changing it.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 10,
+      "graders": [
+        {
+          "name": "key-absent",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*(?:double[- ]hash|two hash values|\\bln\\s*2\\b|natural log|counting (bloom|variant|filter)|counters? (instead|in place)))[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "no-verify",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "under-cap",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^\\s*(?:\\S+(?:\\s+|$)){1,290}$",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "closing-organized",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+          "config": {
+            "criteria": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+            "focus": {
+              "source": "file",
+              "path": "section.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 5,
+            "costUsd": 0.0616111,
+            "judgeCostUsd": 0.016422,
+            "durationSeconds": 14,
+            "startedAt": "2026-10-25T01:16:35.530Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-QDltTU/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "key-absent",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*(?:double[- ]hash|two hash values|\\bln\\s*2\\b|natural log|counting (bloom|variant|filter)|counters? (instead|in place)))[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^\\s*(?:\\S+(?:\\s+|$)){1,290}$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "A Bloom filter is a fixed-size array of bits with k hash functions, and it answers whether a key is in a set. Adding a key sets the k bits its hashes point to. Checking a key reads those same bits. If any of them is 0 the key was never added, and if all are 1 it probably was.\n\nThe filter never gives a false negative, since an added key always leaves its bits set. It can give a false positive, because other keys may have set the same bits, and the chance rises as the array fills. About 10 bits per key with 7 hashes gives a false positive rate near 1%.\n\nA filter cannot remove a key, because clearing a bit could erase another key that shares it. It cannot list its keys or return a value either. It answers probably-yes or no.\n\nThat makes it useful in front of a slow lookup that usually finds nothing. LevelDB keeps one filter per file on disk, so a read skips every file whose filter says no and opens only the files that might hold the key.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 1,
+        "passRate": 1
+      }
+    },
+    {
+      "name": "writing-prose-scorer-go-defer-bad",
+      "dir": "cases/writing-prose-scorer-go-defer-bad",
+      "source": "mixed",
+      "promptMarkdown": "Copy canned.md to section.md without changing it.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 10,
+      "graders": [
+        {
+          "name": "key-absent",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*(?:receiver|nil function|nil func|1\\.14|open-coded|nanoseconds?))[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "no-verify",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "under-cap",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^\\s*(?:\\S+(?:\\s+|$)){1,240}$",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "closing-organized",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+          "config": {
+            "criteria": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+            "focus": {
+              "source": "file",
+              "path": "section.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.06793450000000001,
+            "judgeCostUsd": 0.018172,
+            "durationSeconds": 14,
+            "startedAt": "2026-10-25T01:16:35.530Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-2H6cjS/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "In Go, `defer` schedules a call to run when the surrounding function returns, which makes it the way to release a resource on every path out of the function. It does not run at the end of the enclosing block.\n\nThe arguments of the deferred call are evaluated when the `defer` statement runs, not when the call does, so `defer fmt.Println(i)` prints the value `i` had at that point. For a method call, the receiver is evaluated when the `defer` statement runs too. Deferred calls run last in, first out, so a file opened first is closed last. They also run if the function panics. A deferred function literal can read and set the function's named results, which lets it replace a nil error return with the error from `Close`. [VERIFY: confirm that named results are visible after a recovered panic]\n\nBecause nothing runs until the function returns, a `defer f.Close()` inside a loop keeps every file open until the loop's function ends. A loop body that opens one file per iteration belongs in its own function, which releases each file when it returns. A deferred call of a nil function value panics when the call runs, not at the `defer` statement. Since Go 1.14 the compiler inlines most defers at function exit, so a defer costs a few nanoseconds. Before that release a defer cost far more, which is why older advice says to avoid it in hot paths, and that advice no longer applies to code built with a current compiler. A function with several defers and several return paths runs the same deferred calls on each path, in the same order.\n\nDeferred calls run last in, first out. They run when the function panics. A deferred function literal can set named results. A defer in a loop waits for the function to return.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "writing-prose-scorer-go-defer-good",
+      "dir": "cases/writing-prose-scorer-go-defer-good",
+      "source": "mixed",
+      "promptMarkdown": "Copy canned.md to section.md without changing it.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 10,
+      "graders": [
+        {
+          "name": "key-absent",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*(?:receiver|nil function|nil func|1\\.14|open-coded|nanoseconds?))[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "no-verify",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "under-cap",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^\\s*(?:\\S+(?:\\s+|$)){1,240}$",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "closing-organized",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+          "config": {
+            "criteria": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+            "focus": {
+              "source": "file",
+              "path": "section.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 4,
+            "costUsd": 0.057656099999999995,
+            "judgeCostUsd": 0.013741999999999999,
+            "durationSeconds": 12,
+            "startedAt": "2026-10-25T01:16:35.530Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-kbc2kz/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "key-absent",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*(?:receiver|nil function|nil func|1\\.14|open-coded|nanoseconds?))[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^\\s*(?:\\S+(?:\\s+|$)){1,240}$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "In Go, `defer` schedules a call to run when the surrounding function returns, which makes it the way to release a resource on every path out of the function. It does not run at the end of the enclosing block.\n\nThe arguments of the deferred call are evaluated when the `defer` statement runs, not when the call does, so `defer fmt.Println(i)` prints the value `i` had at that point. Deferred calls run last in, first out, so a file opened first is closed last. They also run if the function panics. A deferred function literal can read and set the function's named results, which lets it replace a nil error return with the error from `Close`.\n\nBecause nothing runs until the function returns, a `defer f.Close()` inside a loop keeps every file open until the loop's function ends. A loop body that opens one file per iteration belongs in its own function, which releases each file when it returns.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 1,
+        "passRate": 1
+      }
+    },
+    {
+      "name": "writing-prose-scorer-groupcache-bad",
+      "dir": "cases/writing-prose-scorer-groupcache-bad",
+      "source": "mixed",
+      "promptMarkdown": "Copy canned.md to section.md without changing it.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 10,
+      "graders": [
+        {
+          "name": "key-absent",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*(?:no network call|\\bSink\\b|hot cache[^.]*(bound|limit|eighth|fraction|capped|crowd|take over)|(joins?|leaves?)( or | and )(joins?|leaves?)))[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "no-verify",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "under-cap",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^\\s*(?:\\S+(?:\\s+|$)){1,330}$",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "closing-organized",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+          "config": {
+            "criteria": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+            "focus": {
+              "source": "file",
+              "path": "section.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.067355,
+            "judgeCostUsd": 0.02218,
+            "durationSeconds": 15,
+            "startedAt": "2026-10-25T01:16:47.934Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-Zbbwka/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "groupcache is a Go library that caches data across a cluster of processes. Every process holds part of the cache and serves it to the others, so there are no cache servers to run. Each process is given its peers through `SetPeers()`.\n\nEach key has exactly one owner. The keys sit on a consistent hash ring, and a process finds a key's owner by hashing against its own copy of the ring, with no network call. When a peer joins or leaves, only the keys on its part of the ring change owner. `Get()` looks in the process's main cache, which holds the keys it owns, and in its hot cache, which holds copies of keys that peers own. The hot cache is bounded relative to the main cache, so copies of peer-owned keys cannot take over the keys the process owns. On a miss it asks the owner, and the owner runs your `Getter` to load the value and passes it back through a `Sink`. Loads are collapsed per key through singleflight, so a million `Get(\"FOO\")` calls run the `Getter` once.\n\nIf the owner is unreachable, the asking process runs the `Getter` itself, so the same load can run on more than one process. `Set()`, `Remove()` and `RemoveKeys()` go to the owner and then to every other peer on a best-effort basis, so values should carry an expiry rather than depend on a removal reaching everyone. [VERIFY: confirm that a removal is never retried] A process that wants more than one cache creates more than one group, and each group has its own Getter, its own main cache, and its own hot cache. Peers need nothing beyond a port to reach each other, since HTTP is the default transport, and any OpenTelemetry exporter can collect the stats that groupcache reports, so a cluster needs no special monitoring.\n\nThe default cache is an LRU, and the Otter cache evicts with lock-free S3-FIFO. HTTP is the default transport, stats are OpenTelemetry metrics, and there is no global state.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "writing-prose-scorer-groupcache-good",
+      "dir": "cases/writing-prose-scorer-groupcache-good",
+      "source": "mixed",
+      "promptMarkdown": "Copy canned.md to section.md without changing it.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 10,
+      "graders": [
+        {
+          "name": "key-absent",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*(?:no network call|\\bSink\\b|hot cache[^.]*(bound|limit|eighth|fraction|capped|crowd|take over)|(joins?|leaves?)( or | and )(joins?|leaves?)))[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "no-verify",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "under-cap",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^\\s*(?:\\S+(?:\\s+|$)){1,330}$",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "closing-organized",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+          "config": {
+            "criteria": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+            "focus": {
+              "source": "file",
+              "path": "section.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.75,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.07009019999999999,
+            "judgeCostUsd": 0.027561999999999996,
+            "durationSeconds": 16,
+            "startedAt": "2026-10-25T01:16:48.994Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-ypgzGq/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "key-absent",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*(?:no network call|\\bSink\\b|hot cache[^.]*(bound|limit|eighth|fraction|capped|crowd|take over)|(joins?|leaves?)( or | and )(joins?|leaves?)))[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^\\s*(?:\\S+(?:\\s+|$)){1,330}$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "groupcache is a Go library that caches data across a cluster of processes. Every process holds part of the cache and serves it to the others, so there are no cache servers to run and no global state to keep in sync. Each process is given its peers through `SetPeers()` and reports its stats as OpenTelemetry metrics.\n\nEach key has exactly one owner. The keys sit on a consistent hash ring, and a process finds a key's owner by hashing against its own copy of the ring. `Get()` looks in the process's main cache, which holds the keys it owns, and in its hot cache, which holds copies of keys that peers own. The default cache is an LRU, and the Otter cache evicts with lock-free S3-FIFO. On a miss it asks the owner over HTTP, the default transport, and the owner runs your `Getter` to load the value. Loads are collapsed per key through singleflight, so a million `Get(\"FOO\")` calls run the `Getter` once.\n\nIf the owner is unreachable, the asking process runs the `Getter` itself, so the same load can run on more than one process. `Set()`, `Remove()` and `RemoveKeys()` go to the owner and then to every other peer on a best-effort basis, so values should carry an expiry rather than depend on a removal reaching everyone.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.75,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "writing-prose-scorer-groupcache-userdraft",
+      "dir": "cases/writing-prose-scorer-groupcache-userdraft",
+      "source": "mixed",
+      "promptMarkdown": "Copy canned.md to section.md without changing it.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 10,
+      "graders": [
+        {
+          "name": "key-absent",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*(?:no network call|\\bSink\\b|hot cache[^.]*(bound|limit|eighth|fraction|capped|crowd|take over)|(joins?|leaves?)( or | and )(joins?|leaves?)))[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "no-verify",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "under-cap",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^\\s*(?:\\S+(?:\\s+|$)){1,330}$",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "closing-organized",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+          "config": {
+            "criteria": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+            "focus": {
+              "source": "file",
+              "path": "section.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.75,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.056819100000000004,
+            "judgeCostUsd": 0.015758,
+            "durationSeconds": 11,
+            "startedAt": "2026-10-25T01:16:49.032Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-IOJJUH/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "key-absent",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*(?:no network call|\\bSink\\b|hot cache[^.]*(bound|limit|eighth|fraction|capped|crowd|take over)|(joins?|leaves?)( or | and )(joins?|leaves?)))[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^\\s*(?:\\S+(?:\\s+|$)){1,330}$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "Groupcache is a Go library that caches data across a cluster of processes. Every process holds part of the cache and serves it to the others, so there are no cache servers to run. Each process is given its peers through calls to `SetPeers()`.\n\nWhen the user calls `Get(key)` it looks in the process's main cache, which holds the keys it owns, and in its hot cache, which holds copies of keys that peers own. If no key is found, the key is looked up in a consistent hash ring to find the key's owner, and a request to that owner for the key is sent. The owner runs a defined `Getter` to load the value. Loads are collapsed per key through singleflight, so a million `Get(\"FOO\")` calls run the `Getter` once.\n\nIf the owner is unreachable, the asking process runs the `Getter` itself, so the same load can run on more than one process. `Set()`, `Remove()` and `RemoveKeys()` go to the owner and then to every other peer on a best-effort basis, so values should carry an expiry rather than depend on a removal reaching everyone.\n\nThe default cache is an LRU, and the Otter cache evicts with lock-free S3-FIFO. HTTP is the default transport, stats are OpenTelemetry metrics, and there is no global state.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.75,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "writing-prose-scorer-write-ahead-log-bad",
+      "dir": "cases/writing-prose-scorer-write-ahead-log-bad",
+      "source": "mixed",
+      "promptMarkdown": "Copy canned.md to section.md without changing it.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 10,
+      "graders": [
+        {
+          "name": "key-absent",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*(?:replicas?\\b|16\\s?MB|16-megabyte|byte (position|offset)))[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "no-verify",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "under-cap",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^\\s*(?:\\S+(?:\\s+|$)){1,270}$",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "closing-organized",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+          "config": {
+            "criteria": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+            "focus": {
+              "source": "file",
+              "path": "section.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.0679042,
+            "judgeCostUsd": 0.023759999999999996,
+            "durationSeconds": 14,
+            "startedAt": "2026-10-25T01:16:49.697Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-Yhydhu/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "A write-ahead log is a file where a database records each change before it makes the change, so that a crash cannot lose a transaction the database has already reported as committed. Postgres calls this the WAL, and replicas stay current by replaying the same records.\n\nThe database changes data pages in memory and writes them to disk later. Before it changes a page, it appends a record describing the change to the log. A transaction commits when its records and a commit record have been flushed to disk with fsync. The data pages do not have to be. Appending to the end of a file is sequential, so flushing the log costs much less than flushing pages scattered across the data files. [VERIFY: confirm that fsync is the default sync method]\n\nAfter a crash, the database replays the log from the last checkpoint and reapplies each record to its page. Every record has a log sequence number, which in Postgres is a byte position in the log, and every page stores the number of the last record applied to it, so replay skips records a page already has. A checkpoint writes all modified pages to disk and notes the log position, which lets the log before it be deleted or reused. Postgres stores the log in 16 MB segment files by default, and a segment is recycled once a checkpoint has passed it. A checkpoint also takes time, because the modified pages are written gradually so that the disk is not saturated, and a crash during a checkpoint replays from the previous one, so the log kept on disk must reach back that far, and a database that checkpoints rarely keeps more of it.\n\nPostgres calls this the WAL. Appending to a file is sequential. Every record has a log sequence number. A transaction commits when its commit record is flushed.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "writing-prose-scorer-write-ahead-log-good",
+      "dir": "cases/writing-prose-scorer-write-ahead-log-good",
+      "source": "mixed",
+      "promptMarkdown": "Copy canned.md to section.md without changing it.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 10,
+      "graders": [
+        {
+          "name": "key-absent",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*(?:replicas?\\b|16\\s?MB|16-megabyte|byte (position|offset)))[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "no-verify",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "under-cap",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^\\s*(?:\\S+(?:\\s+|$)){1,270}$",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "closing-organized",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+          "config": {
+            "criteria": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+            "focus": {
+              "source": "file",
+              "path": "section.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 3,
+            "costUsd": 0.039838200000000004,
+            "judgeCostUsd": 0.003270000000000002,
+            "durationSeconds": 10,
+            "startedAt": "2026-10-25T01:17:00.513Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-ROwq0n/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "key-absent",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*(?:replicas?\\b|16\\s?MB|16-megabyte|byte (position|offset)))[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^\\s*(?:\\S+(?:\\s+|$)){1,270}$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "A write-ahead log is a file where a database records each change before it makes the change, so that a crash cannot lose a transaction the database has already reported as committed.\n\nThe database changes data pages in memory and writes them to disk later. Before it changes a page, it appends a record describing the change to the log. A transaction commits when its records and a commit record have been flushed to disk with fsync. The data pages do not have to be. Appending to the end of a file is sequential, so flushing the log costs much less than flushing pages scattered across the data files.\n\nAfter a crash, the database replays the log from the last checkpoint and reapplies each record to its page. Every record has a log sequence number, and every page stores the number of the last record applied to it, so replay skips records a page already has. A checkpoint writes all modified pages to disk and notes the log position, which lets the log before it be deleted or reused.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 1,
+        "passRate": 1
+      }
+    }
+  ],
+  "aggregates": {
+    "casesTotal": 9,
+    "casesPassed": 9,
+    "overallScore": 0.5,
+    "overallPassRate": 0.3333333333333333
+  }
+}

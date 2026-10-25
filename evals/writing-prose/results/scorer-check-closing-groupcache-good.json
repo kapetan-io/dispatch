@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.310",
+  "startedAt": "2026-10-25T01:17:27.283Z",
+  "durationSeconds": 18,
+  "costUsd": 0.052665,
+  "partial": false,
+  "suite": {
+    "root": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.yF4zqEn1Mq/plugin",
+    "ablation": "none",
+    "judgeModel": "claude-sonnet-5-5",
+    "caseFilter": "writing-prose-scorer-groupcache-good",
+    "threshold": 0,
+    "concurrency": 1,
+    "plugins": [
+      {
+        "name": "dispatch",
+        "path": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.yF4zqEn1Mq/plugin"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "writing-prose-scorer-groupcache-good",
+      "dir": "cases/writing-prose-scorer-groupcache-good",
+      "source": "mixed",
+      "promptMarkdown": "Copy canned.md to section.md without changing it.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 10,
+      "graders": [
+        {
+          "name": "key-absent",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*(?:no network call|\\bSink\\b|hot cache[^.]*(bound|limit|eighth|fraction|capped|crowd|take over)|(joins?|leaves?)( or | and )(joins?|leaves?)))[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "no-verify",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "under-cap",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^\\s*(?:\\S+(?:\\s+|$)){1,330}$",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "closing-organized",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+          "config": {
+            "criteria": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+            "focus": {
+              "source": "file",
+              "path": "section.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 4,
+            "costUsd": 0.052665,
+            "judgeCostUsd": 0.010655999999999999,
+            "durationSeconds": 18,
+            "startedAt": "2026-10-25T01:17:27.308Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-A877MY/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "key-absent",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*(?:no network call|\\bSink\\b|hot cache[^.]*(bound|limit|eighth|fraction|capped|crowd|take over)|(joins?|leaves?)( or | and )(joins?|leaves?)))[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^\\s*(?:\\S+(?:\\s+|$)){1,330}$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: FAIL PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  true,
+                  true
+                ],
+                "evidence": "groupcache is a Go library that caches data across a cluster of processes. Every process holds part of the cache and serves it to the others, so there are no cache servers to run and no global state to keep in sync. Each process is given its peers through `SetPeers()` and reports its stats as OpenTelemetry metrics.\n\nEach key has exactly one owner. The keys sit on a consistent hash ring, and a process finds a key's owner by hashing against its own copy of the ring. `Get()` looks in the process's main cache, which holds the keys it owns, and in its hot cache, which holds copies of keys that peers own. The default cache is an LRU, and the Otter cache evicts with lock-free S3-FIFO. On a miss it asks the owner over HTTP, the default transport, and the owner runs your `Getter` to load the value. Loads are collapsed per key through singleflight, so a million `Get(\"FOO\")` calls run the `Getter` once. If the owner is unreachable, the asking process runs the `Getter` itself, so the same load can run on more than one process.\n\n`Set()`, `Remove()` and `RemoveKeys()` go to the owner and then to every other peer on a best-effort basis, so values should carry an expiry rather than depend on a removal reaching everyone.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 1,
+        "passRate": 1
+      }
+    }
+  ],
+  "aggregates": {
+    "casesTotal": 1,
+    "casesPassed": 1,
+    "overallScore": 1,
+    "overallPassRate": 1
+  }
+}
