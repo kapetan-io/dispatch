@@ -50,3 +50,19 @@ Baseline (results/baseline-closing.json, $1.12, 3 runs per case).
 The baseline does not meet the bar on `key-absent`, `under-cap` or `closing-organized`. The three visible groupcache runs each end in a paragraph like "The default cache is an LRU. The Otter cache uses lock-free S3-FIFO eviction. HTTP is the default transport between peers, stats are reported as OpenTelemetry metrics, and the library keeps no global state." That is the paragraph the user described. The groupcache `under-cap` went from 0 of 3 to 3 of 3 between the two baselines, at 302, 303 and 288 words against 341, 447 and 332 before, so one baseline's word count is noise at three runs. The held-out case's transcripts were not read.
 
 Spend so far about $3.68 of the $10 ceiling.
+
+## Attempt 1, results/attempt1.json ($1.31) — reverted
+
+Idea. Rule 2 of "Working from source material" says what to do with a fact no step of the mechanism needs: join the sentence it extends, or cut it, and the last paragraph is not a home for it (`arms/attempt-1.md`, 41 words added). Three proposers (the visible failing closings, Anthropic's prompting guidance, skill-creator guidance) each proposed a rule 2 extension, and a fourth merged them.
+
+| Case | key-absent | no-verify | under-cap | closing-organized |
+|---|---|---|---|---|
+| groupcache | 0/3 | 3/3 | 2/3 | 0/3 |
+| bloom-filter | 0/3 | 3/3 | 0/3 | 3/3 |
+| write-ahead-log (held out) | 0/3 | 3/3 | 0/3 | 0/3 |
+| go-defer | 0/3 | 3/3 | 0/3 | 1/3 |
+| pooled | 0/12 | 12/12 | 2/12 | 4/12 |
+
+`closing-organized` went from 6/12 to 4/12 and nothing else moved, so the bar's numbers did not move the right way. Reverted. The skill is unchanged and the arm file stays as a record. All three visible groupcache runs still end in "The default cache is an LRU... HTTP is the default transport between peers, stats are reported as OpenTelemetry metrics, and the library keeps no global state." Two of them called `Agent` or `Edit` after writing, so the critic or a rewrite ran, and the paragraph survived. The go-defer closings are one trailing sentence about the Go 1.14 cost. That is a banned clause on the answer key, which suggests the leftovers and the answer key share a cause. The held-out case's transcripts were not read.
+
+Spend so far about $4.99 of the $10 ceiling.
