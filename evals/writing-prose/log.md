@@ -1,6 +1,6 @@
 # writing-prose eval log
 
-The per-run result JSONs from `claude plugin eval` were not kept, at the user's call, which departs from `skills/hillclimb/SKILL.md`. The tables below are the record of every score. Only the user's blind ratings are kept as data (`results/human-check.json` and `results/human-check-sections.md`).
+The per-run result JSONs from `claude plugin eval` were not kept, at the user's call, which departs from `skills/hillclimb/SKILL.md`. The tables below are the record of every score. The user's blind ratings are in the Human check entry. The fixtures, control arm and the ten rated sections were removed later and are in commit 5137317 under `evals/writing-prose/`.
 
 ## 2026-10-24, scorer check ($0.35)
 
@@ -8,7 +8,7 @@ Eight fixture cases copy a hand-written section to `section.md`. Every `-good` s
 
 ## Control ($0.32)
 
-`arms/careless.md`, 1 run per case. The skill loaded and `section.md` was written in all 4 runs. `key-absent` passed 0 of 4, under the bar's 1 of 4. `under-cap` failed in 3 of 4. `no-verify` passed 4 of 4. The control fails on the banned clauses and not on format.
+The control (the skill with rule 3 replaced by "Include every fact on the list"), 1 run per case. The skill loaded and `section.md` was written in all 4 runs. `key-absent` passed 0 of 4, under the bar's 1 of 4. `under-cap` failed in 3 of 4. `no-verify` passed 4 of 4. The control fails on the banned clauses and not on format.
 
 ## Baseline ($0.90)
 
@@ -87,7 +87,7 @@ Reading across attempts 1 and 2. Both added an instruction that asks for a step 
 
 ## Loop test ($1.01)
 
-Question. Can a real run pass the graders when the skill's whole loop runs? The baseline writes in one shot, so the first four tries never showed. Case `writing-prose-groupcache-loop` (tag `loop`, not part of the bar) is the groupcache prompt plus "run the skill's whole loop: the writer, the critic and the second writer each as a separate sub-agent". Today's wording, 3 runs.
+Question. Can a real run pass the graders when the skill's whole loop runs? The baseline writes in one shot, so the first four tries never showed. The forced-loop case (removed later; in commit 5137317) was the groupcache prompt plus "run the skill's whole loop: the writer, the critic and the second writer each as a separate sub-agent". Today's wording, 3 runs.
 
 Each run called `Agent` three times, as asked. `skill-fired`, `no-verify` and `under-cap` passed 3/3 (256, 273 and 269 words against a cap of 330). `key-absent` and `closing-organized` failed 3/3. So length is reachable, and the other two failed even with the loop.
 
