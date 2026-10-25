@@ -26,13 +26,9 @@ The blueprint is at {BLUEPRINT_PATH}. The user's fixed decisions, which you must
 
 {RUBRIC_CONTENTS}
 
-## Code Quality Lens (applies to the code the design would add or change)
-
-{CODE_QUALITY_CONTENTS}
-
 ## Instructions
 
-Review the design through every lens in the rubric and the code-quality lens above that you find relevant. Do not force lenses that don't apply. A small design does not need paragraphs about architectural integrity.
+Review the design through every lens in the rubric above that you find relevant. Do not force lenses that don't apply. A small design does not need paragraphs about architectural integrity.
 
 For each finding, provide:
 
