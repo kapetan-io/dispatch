@@ -82,3 +82,15 @@ Idea, from the user. The writer scores each fact from 1 to 5 by how much the ans
 `closing-organized` went from 6/12 (baseline) to 3/12, and `under-cap` from 3/12 to 2/12. Reverted. In the nine visible runs, six called only `Skill` and `Write`, so no ranking step is visible, and the sections are not shorter. The bloom-filter sections ran 451 to 502 words and the go-defer ones 395 to 421, against caps of 290 and 240. The groupcache closing is unchanged ("The default cache is an LRU... HTTP is the default transport, stats are OpenTelemetry metrics, and there is no global state"). The held-out case's transcripts were not read.
 
 Reading across attempts 1 and 2. Both added an instruction that asks for a step the writer does not take on the page (rank, then cut). In one-shot runs the writer does not do it. Spend about $6.17 of the $10 ceiling.
+
+## Loop test, results/loop-groupcache.json ($1.01)
+
+Question. Can a real run pass the graders when the skill's whole loop runs? The baseline writes in one shot, so the first four tries never showed. Case `writing-prose-groupcache-loop` (tag `loop`, not part of the bar) is the groupcache prompt plus "run the skill's whole loop: the writer, the critic and the second writer each as a separate sub-agent". Today's wording, 3 runs.
+
+Each run called `Agent` three times, as asked. `skill-fired`, `no-verify` and `under-cap` passed 3/3 (256, 273 and 269 words against a cap of 330). `key-absent` and `closing-organized` failed 3/3. So length is reachable, and the other two failed even with the loop.
+
+Why, read from the critic's answers in the three visible runs.
+- The critic's answer to question 1 names the leftovers paragraph in every run. Run 1: "a catalogue of four unrelated facts (a list in prose) and does not advance the mechanism". Run 3: "a list of unrelated facts". The second writer still kept the paragraph, only trimming it, because step 3 of the loop says to cut the clauses the critic named as costing nothing, and says nothing about a paragraph named under question 1.
+- The critic judged the answer-key clauses worth keeping. Run 1 on "which takes no network call": "needed. Keep it". So `key-absent` fails on the critic's judgement, not on a missing step. Whether those clauses should count as banned is the author's judgement, as the README says.
+
+Spend about $7.18 of the $10 ceiling.

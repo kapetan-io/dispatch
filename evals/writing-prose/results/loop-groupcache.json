@@ -1,0 +1,296 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.310",
+  "startedAt": "2026-10-25T01:38:42.554Z",
+  "durationSeconds": 117,
+  "costUsd": 1.0063035,
+  "partial": false,
+  "suite": {
+    "root": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.yF4zqEn1Mq/plugin",
+    "ablation": "none",
+    "judgeModel": "claude-sonnet-5-5",
+    "tagFilters": [
+      "loop"
+    ],
+    "threshold": 0,
+    "concurrency": 3,
+    "plugins": [
+      {
+        "name": "dispatch",
+        "path": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.yF4zqEn1Mq/plugin"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "writing-prose-groupcache-loop",
+      "dir": "cases/writing-prose-groupcache-loop",
+      "source": "mixed",
+      "promptMarkdown": "Write the explainer section for the groupcache README, for a developer deciding whether to use groupcache. The question it answers: How does groupcache work, for someone deciding whether to use it?\n\nFacts, each checked against the code:\n\n- groupcache is a Go library for caching across a cluster of processes.\n- Every process holds part of the cache and serves it to the others, so there are no cache servers.\n- Peers are given to a process through `SetPeers()`.\n- Keys sit on a consistent hash ring. A process finds a key's owner by hashing against its own copy of the ring, with no network call.\n- Each key has one owner.\n- `Get()` checks the main cache (keys the process owns) and the hot cache (copies of keys peers own) first, then asks the owner.\n- The owner runs the `Getter` and passes the value back through a `Sink`.\n- The hot cache is bounded relative to the main cache, so copies of peer-owned keys cannot take over the keys the process owns.\n- When a peer joins or leaves, only the keys on its part of the ring change owner.\n- Singleflight allows one in-flight load per key. A million `Get(\"FOO\")` calls run the `Getter` once.\n- If the owner is unreachable, the asking process runs the `Getter` itself, so the `Getter` can run on more than one process.\n- `Set()`, `Remove()` and `RemoveKeys()` go to the owner and then to every other peer, best effort, so values should carry an expiry.\n- The default cache is an LRU. The Otter cache uses lock-free S3-FIFO eviction.\n- HTTP is the default transport.\n- Stats are OpenTelemetry metrics.\n- There is no global state.\n\nRun the skill's whole loop: the writer, the critic and the second writer each as a separate sub-agent, and write the final section to section.md.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 100,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"(dispatch:)?writing-prose\""
+          }
+        },
+        {
+          "name": "key-absent",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*(?:no network call|\\bSink\\b|hot cache[^.]*(bound|limit|eighth|fraction|capped|crowd|take over)|(joins?|leaves?)( or | and )(joins?|leaves?)))[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "no-verify",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "under-cap",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^\\s*(?:\\S+(?:\\s+|$)){1,330}$",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "closing-organized",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+          "config": {
+            "criteria": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+            "focus": {
+              "source": "file",
+              "path": "section.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.6,
+            "passed": false,
+            "turns": 7,
+            "costUsd": 0.335048,
+            "judgeCostUsd": 0.004619999999999999,
+            "durationSeconds": 98,
+            "startedAt": "2026-10-25T01:38:42.583Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-O7X5Aj/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^\\s*(?:\\S+(?:\\s+|$)){1,330}$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "groupcache is a Go library for caching across a cluster of processes. Every process holds part of the cache and serves it to the others, so there are no cache servers.\n\nPeers are given to a process through `SetPeers()`. Keys sit on a consistent hash ring. A process finds a key's owner by hashing against its own copy of the ring, which takes no network call. Each key has one owner. When a peer joins or leaves, the keys on its part of the ring change owner and the others keep their owner.\n\nA `Get()` checks the main cache, which holds the keys this process owns, and the hot cache, which holds copies of keys that peers own. If neither has the key, the process asks the owner. The owner runs the `Getter` and passes the value back through a `Sink`. The hot cache is bounded relative to the main cache. This keeps copies of peer-owned keys from taking over the keys the process owns.\n\nSingleflight allows one in-flight load per key, so a million `Get(\"FOO\")` calls run the `Getter` once.\n\nIf the owner is unreachable, the asking process runs the `Getter` itself. The `Getter` can therefore run on more than one process.\n\n`Set()`, `Remove()` and `RemoveKeys()` go to the owner and then to every other peer, on a best-effort basis. Values should therefore carry an expiry.\n\nThe default cache is an LRU, and the Otter cache uses lock-free S3-FIFO eviction. HTTP is the default transport, and stats are OpenTelemetry metrics. There is no global state.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.6,
+            "passed": false,
+            "turns": 7,
+            "costUsd": 0.3536612,
+            "judgeCostUsd": 0.004739999999999999,
+            "durationSeconds": 117,
+            "startedAt": "2026-10-25T01:38:42.583Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-oTiVXY/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^\\s*(?:\\S+(?:\\s+|$)){1,330}$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "groupcache is a Go library for caching across a cluster of processes. Every process holds part of the cache and serves it to the others, so there are no cache servers. A process is given its peers through `SetPeers()`, and talks to them over HTTP by default.\n\nEach key has one owner. The keys sit on a consistent hash ring, and each process keeps its own copy of the ring, so it finds a key's owner by hashing the key locally. When a peer joins or leaves, the keys on its part of the ring change owner and the other keys keep theirs.\n\nA call to `Get()` starts with two local caches. The main cache holds the keys this process owns, and the hot cache holds copies of keys that peers own. If the key is in either, the value returns from there. If it is in neither, the process asks the owner, which runs the `Getter` and passes the value back through a `Sink`. The hot cache is bounded relative to the main cache, so copies of peer-owned keys cannot take over the keys the process owns.\n\nSingleflight allows one in-flight load per key, so a million `Get(\"FOO\")` calls run the `Getter` once. If the owner is unreachable, the asking process runs the `Getter` itself. The `Getter` can therefore run on more than one process.\n\n`Set()`, `Remove()` and `RemoveKeys()` go to the owner and then to every other peer. Delivery is best effort, so values should carry an expiry.\n\nThe default cache is an LRU, and the Otter cache uses lock-free S3-FIFO eviction. Stats are OpenTelemetry metrics. groupcache has no global state.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.6,
+            "passed": false,
+            "turns": 7,
+            "costUsd": 0.31759430000000005,
+            "judgeCostUsd": 0.005814,
+            "durationSeconds": 93,
+            "startedAt": "2026-10-25T01:38:42.583Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-Bzi6xe/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^\\s*(?:\\S+(?:\\s+|$)){1,330}$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "groupcache is a Go library for caching across a cluster of processes. Each process holds part of the cache and serves it to the others, so the cluster needs no separate cache servers.\n\nSetPeers() gives a process its peers. The process places every key on a consistent hash ring and finds a key's owner by hashing against its own copy of the ring, with no network call. Each key has one owner. When a peer joins or leaves, only the keys on its part of the ring change owner.\n\nGet() first checks two local caches. The main cache holds the keys this process owns, and the hot cache holds copies of keys that peers own. If neither has the key, the process asks the owner. The owner runs the Getter and passes the result back through a Sink. The hot cache is bounded relative to the main cache, so copies of peer-owned keys cannot take over the keys the process owns.\n\nSingleflight allows one in-flight load per key. A million Get(\"FOO\") calls run the Getter once.\n\nIf the owner is unreachable, the asking process runs the Getter itself, so the Getter can run on more than one process.\n\nSet(), Remove() and RemoveKeys() go to the owner and then to every other peer, on a best-effort basis. A peer that misses an update keeps its old value, so values should carry an expiry.\n\nThe default cache evicts with an LRU (least recently used) policy. The Otter cache uses lock-free S3-FIFO eviction.\n\nHTTP is the default transport between peers. Stats are reported as OpenTelemetry metrics. The library keeps no global state.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.6,
+        "passRate": 0
+      }
+    }
+  ],
+  "aggregates": {
+    "casesTotal": 1,
+    "casesPassed": 1,
+    "overallScore": 0.6,
+    "overallPassRate": 0
+  }
+}
