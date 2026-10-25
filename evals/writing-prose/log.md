@@ -126,3 +126,11 @@ The user rated ten groupcache sections blind (1 to 5) and picked a best. They we
 Every one-shot run rated 1, whatever wording produced it. The best section is the user's draft, whose closing paragraph is the list of defaults, transport, stats and global state that `closing-organized` fails 3 votes to 0. The user's note on it: it starts the story from `Get()` and tells what happens in order, "the sort of narrative a human enjoys reading", and still shoehorns `Set()`, `Remove()` and `RemoveKeys()` in as data points. The hand-written good section, which passes all four content graders, rated 2.
 
 So the graders and the user disagree. `key-absent` and `closing-organized` do not track what the user values most, which is a section organized as the story of one call. Spend is unchanged at about $8.47 of the $10 ceiling.
+
+## Judge calibration against the human ratings, results/calibration-walkthrough.json ($0.61)
+
+A new judge, `walkthrough`, passes a section organized as a walk through what happens in order (one call or action as the spine, each paragraph continuing the previous one) and fails one organized as a tour of the parts. The ten sections the user rated are fixtures `writing-prose-calib-A` to `-J` (tag `calib`, mapping in `results/human-check.json`). The rubric and fixtures were committed before the run. Target: pass E (rated 4) and F (3), fail the sections rated 1.
+
+Result. 30 of 30 votes FAIL, on every section including E and F. The judge does not separate the user's best section from the worst, so it cannot stand in for the user's reading as written. Two causes are likely and neither is tested. The rubric is stricter than the user's bar, since the best section still describes its parts after the opening walk-through. And the harness judge returns pass or fail, so it cannot reproduce a 1 to 4 scale.
+
+The `walkthrough` judge is not added to the suite cases. Spend about $9.08 of the $10 ceiling.
