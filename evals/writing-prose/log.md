@@ -94,3 +94,19 @@ Why, read from the critic's answers in the three visible runs.
 - The critic judged the answer-key clauses worth keeping. Run 1 on "which takes no network call": "needed. Keep it". So `key-absent` fails on the critic's judgement, not on a missing step. Whether those clauses should count as banned is the author's judgement, as the README says.
 
 Spend about $7.18 of the $10 ceiling.
+
+## Attempt 3, results/attempt3.json ($1.29) — reverted
+
+Idea, from the research. The writer first writes a scratch file `plan.md` with the three or four questions the reader's question breaks into and a word budget. Every fact on the list must answer one of those questions, and a fact that answers none is cut. The section is drafted from the plan in the order of its questions (`arms/attempt-3.md`, 56 words added). Sources: question-answer blueprints (Narayan et al., TACL 2023) and a fixed length budget (Chain of Density, 2023), both read only as summaries.
+
+| Case | key-absent | no-verify | under-cap | closing-organized | plan.md written |
+|---|---|---|---|---|---|
+| groupcache | 0/3 | 3/3 | 2/3 | 0/3 | 3/3 |
+| bloom-filter | 0/3 | 3/3 | 0/3 | 3/3 | 2/3 |
+| write-ahead-log (held out) | 0/3 | 3/3 | 0/3 | 0/3 | 2/3 |
+| go-defer | 0/3 | 3/3 | 0/3 | 1/3 | 3/3 |
+| pooled | 0/12 | 12/12 | 2/12 | 4/12 | 10/12 |
+
+`closing-organized` 4/12 against 6/12 for the baseline, `under-cap` 2/12 against 3/12. Reverted. The step happened (`plan.md` in 10 of 12 runs), so earlier attempts' problem of an invisible step is not the cause here. The plans show why it did not help. In the two groupcache plans read, the writer made up a catch-all question for the leftover facts ("What are the defaults?" and "What must the adopter accept?") so that every fact answered one, and both final sections still end with the transport, stats and global-state sentences. Both plans set their own word budget at about 350, above the 330 cap. One plan noted it left out "no network call" because it invites a question, which is the skill's own rule 3 example applied. The held-out case's transcripts were not read.
+
+Reading across three attempts. Each added a rule the writer satisfied by relabelling the leftovers, and none changed the list the writer starts from. The suite hands the writer the full list of true facts, where in use the skill builds that list itself from sources (see "Working from source material"). Spend about $8.47 of the $10 ceiling.
