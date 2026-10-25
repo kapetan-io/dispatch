@@ -8,4 +8,6 @@ The filter never gives a false negative, since an added key always leaves its bi
 A filter cannot remove a key, because clearing a bit could erase another key that shares it. A counting variant replaces each bit with a small counter so that keys can be removed, at the price of several times the space. It cannot list its keys or return a value either. It answers probably-yes or no, and it never says why.
 
 That makes it useful in front of a slow lookup that usually finds nothing. LevelDB keeps one filter per file on disk, so a read skips every file whose filter says no and opens only the files that might hold the key. A read that would have touched ten files on disk then touches the one or two whose filters say probably-yes, and the filters themselves stay in memory so that checking them costs no disk read.
+
+A filter never gives a false negative. About 10 bits per key gives a rate near 1%. LevelDB keeps one filter per file. A filter cannot list its keys.
 CANNED

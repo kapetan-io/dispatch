@@ -25,3 +25,7 @@ graders:
     type: "regex"
     target: { source: "file", path: "section.md" }
     pattern: "^\\s*(?:\\S+(?:\\s+|$)){1,290}$"
+  - name: closing-organized
+    type: "llm"
+    criteria: "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier."
+    focus: { source: "file", path: "section.md" }

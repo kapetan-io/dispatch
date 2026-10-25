@@ -1,6 +1,6 @@
 # writing-prose eval
 
-Status 2026-10-24: the scorer check and control came out as required. The baseline does not meet the bar (`key-absent` and `under-cap` 0 of 12), so a wording change is needed. See `log.md`.
+Status 2026-10-24: after the user added `closing-organized`, the scorer check, control and baseline were rerun (see `log.md`). Before that, the scorer check and control came out as required. The baseline does not meet the bar (`key-absent` and `under-cap` 0 of 12), so a wording change is needed. See `log.md`.
 
 Measures whether `skills/writing-prose/SKILL.md` makes a writer leave out true facts the reader doesn't need and keep the section short (ENG-572). Follows `skills/hillclimb/SKILL.md`. This ticket adds the suite and a baseline. It does not change the skill's wording, so there is no attempt and no confirmation rerun.
 
@@ -23,13 +23,14 @@ The answer keys are the author's judgement, not a list the skill names. A reader
 - `key-absent`. `section.md` holds none of the case's answer-key clauses, matched as patterns.
 - `no-verify`. No `[VERIFY` marker is left. The skill lets a draft carry one and says the user sees text only after the loop.
 - `under-cap`. `section.md` has at most the case's word cap.
+- `closing-organized`. A model judge (the one grader that is not a pattern) reads only the last paragraph and passes it when its sentences build on one another toward one point, and fails a run of separate facts that could be shuffled without loss. Added 2026-10-24 at the user's direction. A draft whose closing paragraph listed the defaults, transport, stats and global state read as facts the writer had no place for. A good section puts each such fact where the reader first needs it.
 
-Word caps are 1.5 times the length of the hand-written good section for the case (the scorer check's `-good` file), rounded up to 10. The good section is the target: groupcache 215 words, cap 330. bloom-filter 188, cap 290. write-ahead-log 179, cap 270. go-defer 159, cap 240. The ticket reports earlier groupcache runs of 331, 405 and 360 words (no result file holds them). The cap is a hard edge, so a run a few words over fails on noise. The first baseline groupcache runs were 341, 447 and 332.
+Word caps are 1.5 times the length of the hand-written good section for the case (the scorer check's `-good` file), rounded up to 10. The good section is the target: groupcache 220 words, cap 330. bloom-filter 188, cap 290. write-ahead-log 179, cap 270. go-defer 159, cap 240. The ticket reports earlier groupcache runs of 331, 405 and 360 words (no result file holds them). The cap is a hard edge, so a run a few words over fails on noise. The first baseline groupcache runs were 341, 447 and 332.
 
 ## What the graders cannot judge
 
 - Whether the skill's writer, critic and rewrite loop ran. In the baseline's visible runs it did not (see `log.md`), so the suite scores a one-shot writer under the skill's text.
-- Whether the prose reads as a person wrote it. That part stays a human read.
+- Whether the prose reads as a person wrote it. That part stays a human read. `closing-organized` judges one paragraph, a model judge is noisier than a pattern, and its verdicts were checked only on the nine scorer sections.
 - Whether a kept fact is stated correctly, or a sentence is clear.
 - A paraphrase of a banned clause. The key is patterns, so a clause worded differently from the ones already seen passes.
 - A section shortened by dropping what the reader needs. The cap rewards brevity and nothing checks coverage.
@@ -41,9 +42,9 @@ Word caps are 1.5 times the length of the hand-written good section for the case
 
 ## Pass bar (fixed 2026-10-24, before any run)
 
-1. Baseline or attempt, 3 runs per case, 12 runs. `skill-fired` 3 of 3 on every case. `key-absent`, `no-verify` and `under-cap` each at least 2 of 3 on every case and at least 11 of 12 pooled.
+1. Baseline or attempt, 3 runs per case, 12 runs. `skill-fired` 3 of 3 on every case. `key-absent`, `no-verify`, `under-cap` and `closing-organized` each at least 2 of 3 on every case and at least 11 of 12 pooled.
 2. Control, 1 run per case, 4 runs. `key-absent` passes at most 1 of 4. Otherwise the graders are broken and no result is read.
-3. Scorer check, once each before any scored run. On the eight `scorer` cases (a hand-written good and bad section per case), every `-good` passes `key-absent`, `no-verify` and `under-cap` and every `-bad` fails each of them. The `-bad` sections hold a banned clause, a `[VERIFY` marker and more words than the cap.
+3. Scorer check, once each before any scored run. On the nine `scorer` cases, every `-good` passes all four content graders and every `-bad` fails each of them. The `-bad` sections hold a banned clause, a `[VERIFY` marker, more words than the cap and a closing paragraph of separate facts. `groupcache-userdraft` is a draft the user supplied, with no banned clause and a closing paragraph of defaults. It must pass the first three and fail `closing-organized`.
 
 The bar does not change after this commit. Changing it goes to the user.
 
@@ -63,7 +64,7 @@ cp -R ../../skills $WORK/plugin/skills
 cp -R cases $WORK/plugin/cases
 cd $WORK/plugin
 PATH=$HOME/.local/bin:$PATH claude plugin eval . --eval-dir cases --tag suite --runs 3 --ablation none \
-  --allow-tools Write Edit --scaffold --keep-temp --no-publish \
+  --allow-tools Write Edit --scaffold --judge-model claude-sonnet-5-5 --keep-temp --no-publish \
   --trust-plugin --threshold 0 -j 4 --max-cost-usd 5 --json $WORK/result.json
 ```
 
