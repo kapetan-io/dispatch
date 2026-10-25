@@ -1,0 +1,1088 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.310",
+  "startedAt": "2026-10-25T01:34:32.571Z",
+  "durationSeconds": 83,
+  "costUsd": 1.1815479,
+  "partial": false,
+  "suite": {
+    "root": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.yF4zqEn1Mq/plugin",
+    "ablation": "none",
+    "judgeModel": "claude-sonnet-5-5",
+    "tagFilters": [
+      "suite"
+    ],
+    "threshold": 0,
+    "concurrency": 4,
+    "plugins": [
+      {
+        "name": "dispatch",
+        "path": "/private/var/folders/yj/mc5s1dgs4_59bc_q5j5wjp500000gn/T/tmp.yF4zqEn1Mq/plugin"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "writing-prose-bloom-filter",
+      "dir": "cases/writing-prose-bloom-filter",
+      "source": "mixed",
+      "promptMarkdown": "Write the explainer section for a database internals guide, for a developer deciding whether to put a Bloom filter in front of a slow lookup. The question it answers: What is a Bloom filter, and when is it worth putting in front of a slow lookup?\n\nFacts, each checked against the original paper and the LevelDB source:\n\n- A Bloom filter is a fixed-size array of bits plus k hash functions. It answers whether a key is in a set.\n- Adding a key sets the k bits its hashes point to.\n- Checking a key reads those k bits. If any is 0 the key was never added. If all are 1 it probably was.\n- It never gives a false negative. It can give a false positive, because other keys may have set the same bits.\n- The false positive rate rises as the array fills. About 10 bits per key with 7 hashes gives a rate near 1%.\n- Double hashing derives all k bit positions from two hash values, so the filter needs only two real hash functions.\n- The best k for a given array size and key count is bits per key times ln 2.\n- A filter cannot remove a key, because clearing a bit could erase another key that shares it.\n- A counting variant replaces each bit with a small counter so that keys can be removed.\n- A filter cannot list its keys or return a value.\n- LevelDB keeps one filter per file on disk, so a read skips every file whose filter says no.\n\nWrite the final section to section.md.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 60,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"(dispatch:)?writing-prose\""
+          }
+        },
+        {
+          "name": "key-absent",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*(?:double[- ]hash|two hash values|\\bln\\s*2\\b|natural log|counting (bloom|variant|filter)|counters? (instead|in place)))[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "no-verify",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "under-cap",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^\\s*(?:\\S+(?:\\s+|$)){1,290}$",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "closing-organized",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+          "config": {
+            "criteria": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+            "focus": {
+              "source": "file",
+              "path": "section.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.6,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.0974232,
+            "judgeCostUsd": 0.015962,
+            "durationSeconds": 25,
+            "startedAt": "2026-10-25T01:34:32.598Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-yYZ1lM/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "## What is a Bloom filter, and when is it worth putting in front of a slow lookup?\n\nA Bloom filter is a small structure that answers one question about a set of keys: has this key been added? It sits in front of a slow lookup, such as a read from disk, so that a key that is absent can be rejected without doing the lookup at all.\n\nThe filter is a fixed-size array of bits, all zero at the start, plus k hash functions. Adding a key runs it through each hash function and sets the k bits the results point to. Checking a key computes the same k positions and reads them. If any of those bits is 0, the key was never added, because adding it would have set that bit. If all of them are 1, the key probably was added.\n\nThe answer is only \"probably\" because bits are shared between keys. Other keys may have set all k bits that a missing key points to, and the check then reports a key that was never added. This is a false positive. A false negative cannot occur, because a bit that has been set is never cleared. As keys are added, more of the array becomes 1 and false positives get more frequent, so the array has to be sized for the number of keys it will hold. About 10 bits per key with 7 hash functions gives a false positive rate near 1%. For a given array size and key count, the best k is bits per key times ln 2, which is where the 7 comes from (10 × 0.69). The filter does not need k independent hash functions to get there: double hashing derives all k positions from two hash values, so it needs only two real hash functions.\n\nBecause a set bit may belong to several keys, a filter cannot remove a key. Clearing one of its bits could erase another key that shares it, and that key would then become a false negative. A counting variant replaces each bit with a small counter, which an add increments and a removal decrements, so a position stays set while any key still uses it. The filter also cannot list the keys it holds or return a value for one. It only gates access to a store that has the data.\n\nThat shape decides when a filter is worth adding. A \"no\" is certain and costs a few bit reads, so every lookup for an absent key avoids the slow path. A \"yes\" still requires the lookup, and about 1% of absent keys will take it anyway. The filter pays off when many lookups are for keys that are not there and the set mostly grows. LevelDB shows the pattern: it keeps one filter per file on disk, and a read skips every file whose filter says no, so the number of files actually read stays small even when many files could hold the key.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.6,
+            "passed": false,
+            "turns": 5,
+            "costUsd": 0.1047951,
+            "judgeCostUsd": 0.017820000000000003,
+            "durationSeconds": 26,
+            "startedAt": "2026-10-25T01:34:32.598Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-cPCK73/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "## What a Bloom filter is, and when it pays off\n\nA Bloom filter is a compact structure that answers whether a key is in a set, cheaply enough to put in front of a slow lookup such as a read from disk. It is a fixed-size array of bits plus k hash functions.\n\nAdding a key runs it through the k hashes, each of which points at one position in the array, and sets those k bits to 1. Checking a key runs the same hashes and reads the same k bits. If any of them is 0, the key was never added, because adding it would have set every one. If all are 1, the key probably was added.\n\nThe answer is only \"probably\" because other keys may have set the same bits. A filter therefore never gives a false negative, but it can give a false positive, and the rate rises as the array fills and more of its bits are 1. About 10 bits per key with 7 hashes gives a rate near 1%. For a given array size and key count, the best k is bits per key times ln 2, which for 10 bits per key is about 6.9. A filter does not need 7 separate hash functions to get there: double hashing derives all k bit positions from two hash values, so only two real hash functions are needed.\n\nA filter cannot remove a key, because clearing one of its bits could erase another key that shares it. A counting variant replaces each bit with a small counter, so that adding increments and removing decrements, and a position counts as set while its counter is above zero. A filter also cannot list its keys or return a value. It holds only enough to say whether a key is probably present, so it always sits in front of a store that holds the data.\n\nThis shapes when a filter is worth adding. A \"no\" is certain, so the lookup behind it is skipped. A \"yes\" still has to be confirmed by the real lookup, which also catches the false positives. The filter therefore saves work only on lookups for keys that are absent, and at a 1% rate it removes about 99% of those. If most lookups are for absent keys, the filter takes out most of the slow work. If nearly every lookup finds its key, the filter adds a check and saves nothing.\n\nLevelDB keeps one filter per file on disk, and a read skips every file whose filter says no. For any one file, a lookup for a key that lives elsewhere is a lookup for an absent key, which is the case the filter handles.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.6,
+            "passed": false,
+            "turns": 7,
+            "costUsd": 0.11220450000000001,
+            "judgeCostUsd": 0.020766,
+            "durationSeconds": 31,
+            "startedAt": "2026-10-25T01:34:32.598Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-NCVfIl/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": true,
+                "weight": 1,
+                "explanation": "judge votes: PASS PASS PASS",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  true,
+                  true,
+                  true
+                ],
+                "evidence": "## What a Bloom filter is, and when it belongs in front of a slow lookup\n\nA Bloom filter is a small, fixed-size structure that answers one question about a set: is this key in it? Placed in front of a slow lookup, such as a read from disk, it lets most lookups for absent keys finish without making the slow one.\n\nThe filter is an array of bits, all starting at 0, plus k hash functions. Adding a key hashes it k ways and sets the k bits the hashes point to. Checking a key hashes it the same way and reads those k bits. If any of them is 0, the key was never added, because adding it would have set that bit. If all of them are 1, the key probably was added.\n\nThe \"probably\" exists because other keys may have set the same bits. The filter can therefore give a false positive, but never a false negative, since every bit of an added key stays set. A \"no\" can be trusted and the lookup skipped. A \"yes\" sends the caller on to the slow lookup, which settles the answer, so a false positive costs one lookup that turned out to be unnecessary.\n\nHow often that happens depends on how full the array is, because the more bits are set, the more likely an absent key finds all k of its bits already set. For a given array size and key count, the best k is the number of bits per key times ln 2. At about 10 bits per key that gives 7 hashes and a false positive rate near 1%. Double hashing derives all k bit positions from two hash values, so the filter needs only two real hash functions.\n\nThe structure has limits that follow from sharing bits. A filter cannot remove a key, because clearing one of its bits could erase another key that shares it. A counting variant replaces each bit with a small counter, so that removing a key decrements its counters. A filter also cannot list the keys it holds or return a value for one. It only gates access to the real lookup.\n\nThat gives the test for whether to use one. The filter pays off when the lookup is slow and a large share of the lookups are for keys that are not there, because each of those is answered from memory with a 1% chance of a wasted trip. If nearly every lookup finds its key, the filter says yes almost every time and saves little.\n\nLevelDB uses the filter this way. It keeps one filter per file on disk, and a read skips every file whose filter says no.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.6,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "writing-prose-go-defer",
+      "dir": "cases/writing-prose-go-defer",
+      "source": "mixed",
+      "promptMarkdown": "Write the explainer section for a Go language guide, for a developer about to use defer to release resources. The question it answers: When does a deferred call run in Go, for someone using defer to release a resource?\n\nFacts, each checked against the Go specification:\n\n- `defer` schedules a call to run when the surrounding function returns, not at the end of the enclosing block.\n- The arguments of the deferred call are evaluated when the `defer` statement runs, not when the call runs.\n- For a method call, the receiver is evaluated when the `defer` statement runs too.\n- Deferred calls run last in, first out.\n- Deferred calls also run when the function panics.\n- A deferred function literal can read and set the function's named results.\n- In a loop each iteration adds a deferred call, and none run until the function returns, so `defer f.Close()` in a loop keeps every file open until then.\n- A deferred call of a nil function value panics when the call runs, not at the `defer` statement.\n- Since Go 1.14 the compiler inlines most defers at function exit, so a defer costs a few nanoseconds.\n\nWrite the final section to section.md.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 60,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"(dispatch:)?writing-prose\""
+          }
+        },
+        {
+          "name": "key-absent",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*(?:receiver|nil function|nil func|1\\.14|open-coded|nanoseconds?))[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "no-verify",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "under-cap",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^\\s*(?:\\S+(?:\\s+|$)){1,240}$",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "closing-organized",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+          "config": {
+            "criteria": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+            "focus": {
+              "source": "file",
+              "path": "section.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.4,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.0992565,
+            "judgeCostUsd": 0.019532,
+            "durationSeconds": 26,
+            "startedAt": "2026-10-25T01:34:32.598Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-tFYBFy/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "## When a deferred call runs\n\n`defer` schedules a call to run when the surrounding function returns. That makes it the usual way to release a resource: the release is written directly after the code that acquires the resource, and it runs on every way out of the function, including a panic.\n\n```go\nfunc process(name string) error {\n\tf, err := os.Open(name)\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer f.Close()\n\n\t// read from f\n\treturn nil\n}\n```\n\nThe call waits for the function to return, not for the block it was written in. A `defer` inside an `if` or `for` body still runs at the end of the whole function. In a loop, each iteration adds another deferred call and none of them run until the function returns, so `defer f.Close()` in a loop keeps every file open until then. When each iteration needs its own release, the body of the loop belongs in a function of its own, which returns, and runs its deferred calls, once per iteration.\n\nDeferring a call splits it into two moments. The function value, the arguments, and for a method call the receiver are all evaluated when the `defer` statement runs. The call itself happens later. So `defer f.Close()` closes the file that `f` held at that statement, even if `f` is assigned a different file afterwards, and `defer fmt.Println(n)` prints the value `n` had when it was deferred. A nil function value follows the same split: the deferred call panics when it runs at return, not at the `defer` statement.\n\nWhen a function has several deferred calls they run last in, first out. The resource acquired last is released first, which is the order that keeps a resource from being released while something acquired after it still depends on it.\n\nA deferred function literal runs after the return value has been set and before the function hands it back, and it can read and assign the function's named results. This is how a deferred `Close` reports its error without hiding an earlier one:\n\n```go\nfunc write(name string, data []byte) (err error) {\n\tf, err := os.Create(name)\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer func() {\n\t\tif cerr := f.Close(); err == nil {\n\t\t\terr = cerr\n\t\t}\n\t}()\n\n\t_, err = f.Write(data)\n\treturn err\n}\n```\n\nSince Go 1.14 the compiler inlines most defers at the points where the function exits, so a `defer` costs a few nanoseconds and is not a reason to release a resource by hand.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.4,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.0902258,
+            "judgeCostUsd": 0.012347999999999998,
+            "durationSeconds": 23,
+            "startedAt": "2026-10-25T01:34:57.287Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-JMqERO/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "## When a deferred call runs\n\nA `defer` statement schedules a function call to run when the surrounding function returns. It lets the code that releases a resource sit next to the code that acquires it, and still run on every path out of the function.\n\n```go\nfunc readConfig(path string) ([]byte, error) {\n\tf, err := os.Open(path)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tdefer f.Close()\n\treturn io.ReadAll(f)\n}\n```\n\nTwo moments matter here: when the `defer` statement runs, and when the deferred call runs. At the `defer` statement, Go evaluates the function value and its arguments and saves them. For a method call like `f.Close()`, the receiver is evaluated then too. The call itself happens later, when the function returns, using the saved values. A variable that changes in between does not affect the call:\n\n```go\nx := 1\ndefer fmt.Println(x) // prints 1, the value x had at the defer statement\nx = 2\n```\n\nThe call runs when the function returns, and the end of the enclosing block does not trigger it. A `defer` inside an `if` or `for` body waits for the whole function. In a loop, each iteration adds another deferred call and none of them run until the function returns, so `defer f.Close()` in a loop keeps every file open until then. A function that opens many files can run out of file descriptors this way. Moving the loop body into its own function makes each file close when that function returns.\n\nWhen a function has several deferred calls, they run last in, first out. Resources are therefore released in the reverse of the order they were acquired, so a resource that depends on an earlier one is released first.\n\nDeferred calls also run when the function panics, which is why `defer` is the usual way to release a lock or close a file: the release happens on the error path and the panic path as well as the normal one.\n\nA deferred function literal can read and set the function's named results, and it runs after the return statement has set them. A function can use this to change the error it returns, for example to add context to a failure from `Close`.\n\nIf the deferred function value is nil, the panic happens when the call runs, at function return, and the `defer` statement itself succeeds.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.4,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.090552,
+            "judgeCostUsd": 0.00798999999999999,
+            "durationSeconds": 25,
+            "startedAt": "2026-10-25T01:34:58.217Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-7kVVAL/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "## When a deferred call runs\n\nA `defer` statement schedules a function call to run when the surrounding function returns. It lets the code that releases a resource sit next to the code that acquires it, and still run on every path out of the function.\n\n```go\nf, err := os.Open(name)\nif err != nil {\n\treturn err\n}\ndefer f.Close()\n```\n\nThe call runs when the function returns, which can be much later than the end of the block that contains the `defer`. A `defer` inside an `if` or `for` body waits for the whole function. In a loop, each iteration adds another deferred call and none of them run until the function returns, so `defer f.Close()` in a loop over many files keeps every file open until then. A loop that opens files belongs in a helper function that opens one file, defers its `Close`, and returns, so that each file is closed when the helper returns.\n\nThe call is scheduled at the `defer` statement, and its arguments are evaluated there, before the call has run.\n\n```go\nx := 1\ndefer fmt.Println(x) // prints 1\nx = 2\n```\n\nFor a method call the receiver is evaluated at the `defer` statement too. In `defer f.Close()`, the file that gets closed is the one `f` held when the statement ran, even if `f` is assigned a different file afterwards.\n\nWhen a function has several deferred calls, they run last in, first out. A resource acquired later is released earlier, which is the order that dependent resources need: a transaction opened on a connection is rolled back or committed before the connection closes. Deferred calls also run when the function panics, as the panic unwinds the stack, so the resource is released on that path as well.\n\nA deferred function literal can read and set the function's named results, which lets it report a failure from the release itself. `Close` on a file that was written to can return an error that means data was lost, and the literal below passes it to the caller when nothing else has failed.\n\n```go\nfunc write(name string, data []byte) (err error) {\n\tf, err := os.Create(name)\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer func() {\n\t\tif cerr := f.Close(); err == nil {\n\t\t\terr = cerr\n\t\t}\n\t}()\n\t_, err = f.Write(data)\n\treturn err\n}\n```\n\nSince Go 1.14 the compiler inlines most defers at function exit, so a `defer` costs a few nanoseconds.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.4000000000000001,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "writing-prose-groupcache",
+      "dir": "cases/writing-prose-groupcache",
+      "source": "mixed",
+      "promptMarkdown": "Write the explainer section for the groupcache README, for a developer deciding whether to use groupcache. The question it answers: How does groupcache work, for someone deciding whether to use it?\n\nFacts, each checked against the code:\n\n- groupcache is a Go library for caching across a cluster of processes.\n- Every process holds part of the cache and serves it to the others, so there are no cache servers.\n- Peers are given to a process through `SetPeers()`.\n- Keys sit on a consistent hash ring. A process finds a key's owner by hashing against its own copy of the ring, with no network call.\n- Each key has one owner.\n- `Get()` checks the main cache (keys the process owns) and the hot cache (copies of keys peers own) first, then asks the owner.\n- The owner runs the `Getter` and passes the value back through a `Sink`.\n- The hot cache is bounded relative to the main cache, so copies of peer-owned keys cannot take over the keys the process owns.\n- When a peer joins or leaves, only the keys on its part of the ring change owner.\n- Singleflight allows one in-flight load per key. A million `Get(\"FOO\")` calls run the `Getter` once.\n- If the owner is unreachable, the asking process runs the `Getter` itself, so the `Getter` can run on more than one process.\n- `Set()`, `Remove()` and `RemoveKeys()` go to the owner and then to every other peer, best effort, so values should carry an expiry.\n- The default cache is an LRU. The Otter cache uses lock-free S3-FIFO eviction.\n- HTTP is the default transport.\n- Stats are OpenTelemetry metrics.\n- There is no global state.\n\nWrite the final section to section.md.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 60,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"(dispatch:)?writing-prose\""
+          }
+        },
+        {
+          "name": "key-absent",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*(?:no network call|\\bSink\\b|hot cache[^.]*(bound|limit|eighth|fraction|capped|crowd|take over)|(joins?|leaves?)( or | and )(joins?|leaves?)))[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "no-verify",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "under-cap",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^\\s*(?:\\S+(?:\\s+|$)){1,330}$",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "closing-organized",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+          "config": {
+            "criteria": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+            "focus": {
+              "source": "file",
+              "path": "section.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.4,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.0831905,
+            "judgeCostUsd": 0.007227999999999998,
+            "durationSeconds": 20,
+            "startedAt": "2026-10-25T01:34:58.335Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-5lds42/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "## How groupcache works\n\ngroupcache is a Go library that caches data across a cluster of processes. Each process holds a part of the cache and serves it to the others, so there are no cache servers to run. The application tells each process about the others by calling `SetPeers()`.\n\nEvery key has one owner. Peers sit on a consistent hash ring, and a process finds a key's owner by hashing the key against its own copy of the ring. When a peer joins or leaves, the keys on its part of the ring change owner and every other key stays where it is.\n\nA `Get()` looks in two places on the local process first. The main cache holds the keys this process owns, and the hot cache holds copies of keys that peers own. The hot cache is bounded relative to the main cache, so copies of peer-owned keys cannot take over the space needed for the keys the process owns. If both miss, the process asks the owner. The owner runs your `Getter`, the function that loads the value from wherever the data lives, and passes the result back through a `Sink`.\n\nLoads for a key are deduplicated with singleflight, which allows one in-flight load per key. A million `Get(\"FOO\")` calls run the `Getter` once, so a popular key that is missing does not send a burst of requests to your database.\n\nTwo behaviors matter when you decide whether groupcache fits. If the owner is unreachable, the asking process runs the `Getter` itself, so the `Getter` can run on more than one process. And `Set()`, `Remove()` and `RemoveKeys()` go to the owner and then to every other peer on a best-effort basis. A peer that misses an update can keep serving the old value, so values should carry an expiry.\n\nThe default cache is an LRU. The Otter cache is available as an alternative and evicts with a lock-free S3-FIFO. HTTP is the default transport between peers, stats are reported as OpenTelemetry metrics, and the library keeps no global state.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.6,
+            "passed": false,
+            "turns": 2,
+            "costUsd": 0.1819099,
+            "judgeCostUsd": 0.007939999999999989,
+            "durationSeconds": 51,
+            "startedAt": "2026-10-25T01:35:03.214Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-ifGVcJ/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^\\s*(?:\\S+(?:\\s+|$)){1,330}$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "groupcache is a Go library that lets a cluster of processes share one cache. Every process holds part of the cache and serves it to the others, so there are no cache servers. Each process is given its peers through `SetPeers()`.\n\nKeys are spread over the processes on a consistent hash ring, and each key has one owner. A process finds a key's owner by hashing against its own copy of the ring. Adding or removing a peer changes the owner of the keys on its part of the ring.\n\n`Get()` looks in two local caches first: the main cache, which holds the keys the process owns, and the hot cache, which holds copies of keys that peers own. On a miss it asks the owner. The owner runs the `Getter`, the function that loads a value from the real source, and passes the value back through a `Sink`. The hot cache is bounded relative to the main cache, so copies of peer-owned keys cannot take over the space for keys the process owns.\n\nSingleflight allows one in-flight load per key, so a million `Get(\"FOO\")` calls run the `Getter` once. If the owner is unreachable, the asking process runs the `Getter` itself, so the `Getter` can run on more than one process.\n\n`Set()`, `Remove()` and `RemoveKeys()` go to the owner and then to every other peer. Delivery is best effort, so values should carry an expiry.\n\nThe default cache is an LRU, and the Otter cache is an alternative that evicts with lock-free S3-FIFO. Peers talk over HTTP by default. Stats are OpenTelemetry metrics, and there is no global state.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.6,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.08883069999999996,
+            "judgeCostUsd": 0.006949999999999977,
+            "durationSeconds": 24,
+            "startedAt": "2026-10-25T01:35:18.335Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-CERK8w/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^\\s*(?:\\S+(?:\\s+|$)){1,330}$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "## How groupcache works\n\ngroupcache is a Go library for caching across a cluster of processes. Every process holds part of the cache and serves it to the others, so there are no cache servers to run.\n\nA process is given its peers through `SetPeers()`. Keys sit on a consistent hash ring, each process holds its own copy of the ring, and hashing a key against it tells the process which peer owns the key. Each key has exactly one owner. Adding or removing a peer changes the owner of the keys on that peer's part of the ring, and every other key keeps its owner.\n\n`Get()` looks first in two local caches: the main cache, which holds the keys the process owns, and the hot cache, which holds copies of keys that peers own. If neither has the key, the process asks the owner. The owner runs the `Getter`, the function that loads a value from the underlying source, and passes the value back through a `Sink`. The hot cache is bounded relative to the main cache, so copies of peer-owned keys cannot take over the space needed for the keys the process owns.\n\nLoads for a key are deduplicated by singleflight, which allows one in-flight load per key, so a million `Get(\"FOO\")` calls run the `Getter` once. When the owner is unreachable, the asking process runs the `Getter` itself. The `Getter` can therefore run on more than one process, and it has to be safe to run that way.\n\n`Set()`, `Remove()` and `RemoveKeys()` go to the owner and then to every other peer. Delivery is best effort, so a peer can miss an update, and values should carry an expiry to bound how long a stale copy lasts.\n\nThe default cache is an LRU, and the Otter cache uses lock-free S3-FIFO eviction. HTTP is the default transport, stats are OpenTelemetry metrics, and the library keeps no global state.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.5333333333333333,
+        "passRate": 0
+      }
+    },
+    {
+      "name": "writing-prose-write-ahead-log",
+      "dir": "cases/writing-prose-write-ahead-log",
+      "source": "mixed",
+      "promptMarkdown": "Write the explainer section for a database internals guide, for a developer who has not seen how databases survive a crash. The question it answers: How does a write-ahead log keep a database from losing committed data in a crash?\n\nFacts, each checked against the Postgres documentation:\n\n- A write-ahead log is a file where a database records each change before it makes the change.\n- The database changes data pages in memory and writes them to disk later.\n- Before it changes a page, it appends a record describing the change to the log.\n- A transaction commits when its records and a commit record have been flushed to disk with fsync. The data pages do not have to be.\n- Appending to the end of a file is sequential, so flushing the log costs much less than flushing pages scattered across the data files.\n- After a crash the database replays the log from the last checkpoint and reapplies each record to its page.\n- Every record has a log sequence number (LSN), and every page stores the LSN of the last record applied to it, so replay skips records a page already has.\n- A checkpoint writes all modified pages to disk and notes the log position. The log before it can be deleted or reused.\n- Postgres calls this the WAL, and replicas stay current by replaying the same records.\n- Postgres stores the log in 16 MB segment files by default.\n- In Postgres an LSN is a byte position in the log.\n\nWrite the final section to section.md.",
+      "model": "claude-sonnet-5-5",
+      "runsPerCase": 3,
+      "timeoutSeconds": 1200,
+      "maxTurns": 60,
+      "graders": [
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\":\\s*\"(dispatch:)?writing-prose\""
+          }
+        },
+        {
+          "name": "key-absent",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*(?:replicas?\\b|16\\s?MB|16-megabyte|byte (position|offset)))[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "no-verify",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+            "flags": "i",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "under-cap",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": {
+              "source": "file",
+              "path": "section.md"
+            },
+            "pattern": "^\\s*(?:\\S+(?:\\s+|$)){1,270}$",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "closing-organized",
+          "type": "llm",
+          "weight": 1,
+          "graderMarkdown": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+          "config": {
+            "criteria": "Read only the last paragraph of the section. PASS if its sentences build on one another toward one point, so that each sentence after the first uses a noun the one before it introduced or follows from it, and shuffling the sentences would lose something. FAIL if it is a run of separate facts, one or two per sentence, that could be reordered without loss, such as a closing line of defaults, settings or leftovers that the writer had no place for earlier.",
+            "focus": {
+              "source": "file",
+              "path": "section.md"
+            }
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0.4,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.07249710000000001,
+            "judgeCostUsd": 0.006762000000000004,
+            "durationSeconds": 16,
+            "startedAt": "2026-10-25T01:35:19.943Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-F0erJK/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "## How a write-ahead log survives a crash\n\nA write-ahead log is a file where the database records each change before it makes the change. It lets the database tell a client that a transaction is committed without first writing the modified data pages to disk, and still rebuild those pages if the machine crashes.\n\nThe database does its work on data pages held in memory and writes them to disk later. A crash erases memory, so any page that was changed but not yet written is lost. The log covers that gap. Before the database changes a page, it appends a record describing the change to the end of the log. A transaction commits when its records and a final commit record have been flushed to disk with fsync, the call that returns once the operating system has put the data on disk. The data pages do not have to be flushed. Appending to the end of a file is sequential, so flushing the log costs much less than flushing pages scattered across the data files, and the commit does not wait for those writes.\n\nAfter a crash, the database starts from the last checkpoint, reads the log forward, and reapplies each record to its page. Every record carries a log sequence number (LSN), and every page stores the LSN of the last record applied to it. If a page already holds a record's LSN, the page reached disk before the crash and replay skips that record. Otherwise replay applies it. Either way the page ends up with every committed change, because every committed change is in the log on disk.\n\nA checkpoint keeps the log from growing without limit and keeps replay short. It writes all modified pages to disk and notes the log position at that moment. Every record before that position is already reflected in the data files, so the log before it can be deleted or reused.\n\nPostgres calls this log the WAL. It stores the WAL in segment files of 16 MB by default, and an LSN is a byte position in that log. Replicas stay current by replaying the same records the primary would replay after a crash.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.4,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.08207729999999998,
+            "judgeCostUsd": 0.010481999999999977,
+            "durationSeconds": 20,
+            "startedAt": "2026-10-25T01:35:23.072Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-RpyG8t/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "## How a write-ahead log survives a crash\n\nA write-ahead log is a file where a database records each change before it makes the change. Its purpose is to make a committed transaction survive a crash, even though the data files on disk may not yet contain the transaction's changes. Postgres calls it the WAL.\n\nThe database does not edit data on disk directly. It changes pages in memory and writes them to disk later, so at any moment the pages on disk can be older than the work the database has already acknowledged. Before it changes a page, it appends a record describing the change to the log. The log therefore holds a description of every change that the data files might be missing.\n\nA transaction commits when its records and a commit record have been flushed to disk with fsync, the call that returns once the file's contents are on disk. The data pages do not have to be flushed. This is what makes the scheme cheap, because the log is appended at its end and written sequentially, while the pages a transaction touched are scattered across the data files. Flushing a few sequential bytes costs much less than flushing many scattered pages.\n\nAfter a crash, the contents of memory are gone and the pages on disk are stale, but the log has everything that was committed. The database starts from the last checkpoint and replays the log, reapplying each record to its page. Every record has a log sequence number (LSN), and every page stores the LSN of the last record applied to it. When replay reaches a record whose LSN the page already has, it skips the record, so the database can replay safely over pages that were written back before the crash. In Postgres an LSN is a byte position in the log.\n\nA checkpoint writes all modified pages to disk and notes the current log position. Everything in the log before that position is already reflected in the data files, so it can be deleted or reused. Checkpoints keep replay short and stop the log from growing without bound. Postgres stores the log as 16 MB segment files by default, and replicas stay current by replaying the same records the primary wrote.\n"
+              }
+            ]
+          },
+          {
+            "score": 0.4,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.0785853,
+            "judgeCostUsd": 0.007999999999999993,
+            "durationSeconds": 19,
+            "startedAt": "2026-10-25T01:35:35.998Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-Ly7zms/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "key-absent",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "no-verify",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched ^(?![\\s\\S]*\\[VERIFY)[\\s\\S]*$",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "under-cap",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in file section.md",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "closing-organized",
+                "passed": false,
+                "weight": 1,
+                "explanation": "judge votes: FAIL FAIL FAIL",
+                "withOnly": false,
+                "scored": true,
+                "judgeVotes": [
+                  false,
+                  false,
+                  false
+                ],
+                "evidence": "## How a write-ahead log survives a crash\n\nA write-ahead log is a file where a database records each change before it makes the change. It exists because a database changes its data pages in memory and writes them to disk later, so at any moment the disk holds older pages than the ones the database has acknowledged. The log is what lets the database recover the difference after a crash.\n\nBefore the database changes a page, it appends a record describing the change to the end of the log. A transaction commits when its records and a commit record have been flushed to disk with fsync, the call that returns only after the operating system has written the data to the device. The data pages do not have to be flushed. This makes commits cheap, because appending to the end of a file is sequential, and flushing the log costs much less than flushing pages scattered across the data files.\n\nAfter a crash, the contents of memory are gone and some committed changes exist only in the log. The database reads the log from the last checkpoint and reapplies each record to its page. Every record has a log sequence number (LSN), and every page stores the LSN of the last record applied to it. During replay, a record whose LSN is not newer than its page's LSN is skipped, because the page already has that change, so replay can safely start earlier than strictly necessary and never applies a change twice.\n\nA checkpoint is what keeps the log from growing forever. It writes all modified pages to disk and notes the current position in the log. Replay after a crash starts from that position, so the log before it is no longer needed and can be deleted or reused.\n\nPostgres calls this log the WAL and stores it in 16 MB segment files by default. An LSN in Postgres is a byte position in the log. Replicas stay current by replaying the same records the primary would replay after a crash.\n"
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.4000000000000001,
+        "passRate": 0
+      }
+    }
+  ],
+  "aggregates": {
+    "casesTotal": 4,
+    "casesPassed": 4,
+    "overallScore": 0.48333333333333334,
+    "overallPassRate": 0
+  }
+}

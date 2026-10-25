@@ -66,3 +66,19 @@ Idea. Rule 2 of "Working from source material" says what to do with a fact no st
 `closing-organized` went from 6/12 to 4/12 and nothing else moved, so the bar's numbers did not move the right way. Reverted. The skill is unchanged and the arm file stays as a record. All three visible groupcache runs still end in "The default cache is an LRU... HTTP is the default transport between peers, stats are reported as OpenTelemetry metrics, and the library keeps no global state." Two of them called `Agent` or `Edit` after writing, so the critic or a rewrite ran, and the paragraph survived. The go-defer closings are one trailing sentence about the Go 1.14 cost. That is a banned clause on the answer key, which suggests the leftovers and the answer key share a cause. The held-out case's transcripts were not read.
 
 Spend so far about $4.99 of the $10 ceiling.
+
+## Attempt 2, results/attempt2.json ($1.18) — reverted
+
+Idea, from the user. The writer scores each fact from 1 to 5 by how much the answer depends on it, with how the thing works and how it is used highest, orders the list by score, builds the section from the top and drops the bottom unless a sentence needs it (`arms/attempt-2.md`, replacing the sentences in "The reader and the purpose" that say the writer picks from the list). No proposer round, since the idea was the user's.
+
+| Case | key-absent | no-verify | under-cap | closing-organized |
+|---|---|---|---|---|
+| groupcache | 0/3 | 3/3 | 2/3 | 0/3 |
+| bloom-filter | 0/3 | 3/3 | 0/3 | 3/3 |
+| write-ahead-log (held out) | 0/3 | 3/3 | 0/3 | 0/3 |
+| go-defer | 0/3 | 3/3 | 0/3 | 0/3 |
+| pooled | 0/12 | 12/12 | 2/12 | 3/12 |
+
+`closing-organized` went from 6/12 (baseline) to 3/12, and `under-cap` from 3/12 to 2/12. Reverted. In the nine visible runs, six called only `Skill` and `Write`, so no ranking step is visible, and the sections are not shorter. The bloom-filter sections ran 451 to 502 words and the go-defer ones 395 to 421, against caps of 290 and 240. The groupcache closing is unchanged ("The default cache is an LRU... HTTP is the default transport, stats are OpenTelemetry metrics, and there is no global state"). The held-out case's transcripts were not read.
+
+Reading across attempts 1 and 2. Both added an instruction that asks for a step the writer does not take on the page (rank, then cut). In one-shot runs the writer does not do it. Spend about $6.17 of the $10 ceiling.
