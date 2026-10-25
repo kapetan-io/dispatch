@@ -25,11 +25,11 @@ Reviewers, especially adversarial ones, tend to fill their review. If they don't
 
 ### Premature Abstraction Warnings
 
-Reviewers often suggest extracting functions, adding interfaces, or creating abstractions. Does this code need to change in a second way? If not, the abstraction is premature. Simple inline code that works beats a clean abstraction that's overkill for the current scope.
+Reviewers often suggest extracting functions, adding interfaces, or creating abstractions. Does this design need to change in a second way? If not, the abstraction is premature. Simple inline code that works beats a clean abstraction that's overkill for the current scope.
 
 ### "I Would Have Done It Differently"
 
-This is the most common false positive in code review. A finding that amounts to "I prefer a different approach" is not a bug, not a design flaw, and not actionable unless the reviewer shows a concrete problem with the current approach. Dismiss these, and say why.
+This is the most common false positive in design review. A finding that amounts to "I prefer a different approach" is not a bug, not a design flaw, and not actionable unless the reviewer shows a concrete problem with the current approach. Dismiss these, and say why.
 
 ### Missing Context Signals
 
