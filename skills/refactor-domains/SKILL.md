@@ -5,7 +5,7 @@ description: "Plan a refactor that restructures or re-packages a codebase around
 
 # Refactor along problem domains
 
-The output is a blueprint, written the way `dispatch:design` writes one. Run this inside that skill, or in a session that files a `design` ticket for it. A refactor has no new behavior to define, so skip the user stories and the user-facing contract sketch; the sections below replace them, and the arena sketches target packages. The user still approves the Objective, as `dispatch:design` asks. Load `dispatch:principle-problem-domains` for naming and splitting packages, `dispatch:surface-testing` and `dispatch:principle-fast-tests` for the tests, `dispatch:repo-targets` for the CI targets that run them, `dispatch:arena` for independent sketches of the target packages, and `dispatch:principle-laziness-protocol` to bias toward deletion.
+The output is a blueprint, written the way `dispatch:design` writes one. Run this inside that skill, or in a session that files a `design` ticket for it. Load `dispatch:principle-problem-domains` for naming and splitting packages, `dispatch:surface-testing` and `dispatch:principle-fast-tests` for the tests, `dispatch:repo-targets` for the CI targets that run them, `dispatch:arena` for independent sketches of the target packages, and `dispatch:principle-laziness-protocol` to bias toward deletion.
 
 ## Rules
 
