@@ -2,15 +2,15 @@
 
 The per-run result JSONs from `claude plugin eval` were not kept, at the user's call, which departs from `skills/hillclimb/SKILL.md`. The tables below are the record of every score. Only the user's blind ratings are kept as data (`results/human-check.json` and `results/human-check-sections.md`).
 
-## 2026-10-24, scorer check (the run's result file, $0.35)
+## 2026-10-24, scorer check ($0.35)
 
 Eight fixture cases copy a hand-written section to `section.md`. Every `-good` section passed `key-absent`, `no-verify` and `under-cap`. Every `-bad` section failed all three. The first version of the `under-cap` pattern, `^(?:\s*\S+){1,N}\s*$`, hung on an over-cap file because `\S+` can split a word across iterations and backtrack exponentially. It was fixed before any run to `^\s*(?:\S+(?:\s+|$)){1,N}$`.
 
-## Control (the run's result file, $0.32)
+## Control ($0.32)
 
 `arms/careless.md`, 1 run per case. The skill loaded and `section.md` was written in all 4 runs. `key-absent` passed 0 of 4, under the bar's 1 of 4. `under-cap` failed in 3 of 4. `no-verify` passed 4 of 4. The control fails on the banned clauses and not on format.
 
-## Baseline (the run's result file, $0.90)
+## Baseline ($0.90)
 
 Today's `skills/writing-prose/SKILL.md`, 3 runs per case, 12 runs.
 
@@ -35,11 +35,11 @@ The user read a groupcache draft whose last paragraph listed the default cache, 
 
 Changes. A fifth grader, `closing-organized`, judged by `claude-sonnet-5-5` with 3 votes. A ninth scorer case, `groupcache-userdraft`, holds the user's draft. The `-bad` sections now end with a run of separate facts. The groupcache `-good` section was rewritten so each leftover fact sits in the mechanism, and then its last paragraph was split so it covers writes only.
 
-Scorer check (the run's result file, $0.55). All `-bad` sections and `groupcache-userdraft` failed `closing-organized` 3 votes to 0. `bloom-filter-good`, `go-defer-good` and `write-ahead-log-good` passed 3 to 0. The first groupcache `-good` failed 0 to 3, because its last paragraph joined the unreachable-owner fallback to write propagation. It was changed to one idea per paragraph, for a reason that does not depend on the score, and rerun alone (the run's result file, $0.05). It passed 2 votes to 1, so the judge is noisy on that section.
+Scorer check ($0.55). All `-bad` sections and `groupcache-userdraft` failed `closing-organized` 3 votes to 0. `bloom-filter-good`, `go-defer-good` and `write-ahead-log-good` passed 3 to 0. The first groupcache `-good` failed 0 to 3, because its last paragraph joined the unreachable-owner fallback to write propagation. It was changed to one idea per paragraph, for a reason that does not depend on the score, and rerun alone ($0.05). It passed 2 votes to 1, so the judge is noisy on that section.
 
-Control (the run's result file, $0.39, 1 run per case). `key-absent` 0 of 4, `under-cap` 0 of 4, `closing-organized` 1 of 4.
+Control ($0.39, 1 run per case). `key-absent` 0 of 4, `under-cap` 0 of 4, `closing-organized` 1 of 4.
 
-Baseline (the run's result file, $1.12, 3 runs per case).
+Baseline ($1.12, 3 runs per case).
 
 | Case | skill-fired | key-absent | no-verify | under-cap | closing-organized |
 |---|---|---|---|---|---|
