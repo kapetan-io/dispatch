@@ -1,6 +1,6 @@
 ---
 name: principle-subtract-before-you-add
-description: "Apply when about to add a CLI command, flag, setting, history field or skill, or when shaping a design. Look for something to remove or reuse first."
+description: "Apply when about to add something, whether code, a function, a command, a setting or a part of a design. Look for something to remove or reuse first."
 ---
 
 # Subtract Before You Add
