@@ -19,17 +19,7 @@ One paragraph, from the feature ticket and the blueprint's Objective: the proble
 
 Launch two foreground `general-purpose` sub-agents in one message, one on `opus` and one on `sonnet`, and tell them to edit nothing. They get the same prompt and see the blueprint and the repo but not this conversation, so their read is not anchored on the design's own justification. The adversarial signal comes from model diversity, not assigned angles. Tell them to load `dispatch:principle-subtract-before-you-add`.
 
-Prompt: you are an adversarial reviewer of a design. The intent is `{INTENT}`; the design is at `{BLUEPRINT_PATH}`. List every new public or persisted thing it adds (CLI command, flag, rule scenario API member, setting, history or ledger field, skill). For each, search before you name anything (`git grep`, the command list, the schema) and report:
-
-- **Closest existing thing**, with file and line, or "none found" and what you searched.
-- **Finding**, only if one of these holds. Could an existing thing absorb it? Is it a second way to do one task, or a second copy of one fact, including an option that restates an existing one? Is it bolted on, so it would look different if the need had been known from the start? Could it go without losing an acceptance criterion? Say what the existing thing already covers and what the design drops. If the existing thing can't take the need, say why in terms of what it holds or does.
-- **Remove first**: anything that already exists and should go before the design builds on it.
-- **Severity**: `critical` (duplicates a fact or behavior, so the two will drift), `warning` (overlaps, and the design should widen the existing thing), `nit`.
-- **Evidence**: the file and line you read for every claim about the code. Label a guess as a guess. Don't praise the design. Zero findings is a valid review.
-
-Report only what fails, most important first, then one line listing what passed. Keep it under 700 words.
-
-Ask: if the intent had been known from the start, would the code look like this? Use the `docs/CONTEXT.md` terms and the words the code already uses, coin no labels such as step codes, and define any term in neither.
+Read [`references/reviewer-prompt.md`](references/reviewer-prompt.md), fill in the intent and the blueprint path, and send it with Step 1's constraints and context paths.
 
 ## Step 4, Synthesize
 
@@ -37,7 +27,7 @@ Parse both reports, merge findings that describe the same overlap, and mark whic
 
 ## Step 5, Lead judgment
 
-You are the lead, a pragmatic senior engineer, not an aggregator. Reviewers see a slice of the repo, so check each finding against the cited line before you rank it. A similar name is not a similar job, so read the code a finding cites before acting on it. Dismiss "I would have done it differently" and findings that miss a constraint the conversation or an ADR already settles. Don't dismiss a consensus finding because it is inconvenient. Check a "speculative, no acceptance criterion" finding against the ticket's notes and the Objective as well as the criteria, since a note may give the reason. Hold a finding that merges two things to the same bar as one that adds a thing, because the merge can hide a mode inside the existing one.
+Read [`references/lead-judgment.md`](references/lead-judgment.md) before you rank anything. Check each finding against the cited line, since a reviewer sees only a slice of the repo.
 
 Put every finding in one bucket, with the models that raised it and a one-line reason:
 
