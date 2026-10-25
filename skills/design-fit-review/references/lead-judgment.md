@@ -62,3 +62,7 @@ The "Dismissed" section is not busywork. It's a trust mechanism. Showing the use
 - Read the code a finding cites before you act on it. A similar name is not a similar job.
 - Check a "speculative, no acceptance criterion" finding against the ticket's notes and the Objective as well as the criteria. A note may give the reason.
 - Hold a finding that merges two things to the same bar as one that adds a thing. The merge can hide a mode inside the existing one.
+
+## Approval Bar
+
+A design that works is not approved for that alone. Treat these as presumptive Act On items unless the design justifies them: a second way to do one task, a second copy of one fact, a dual path with no outside users, logic in a shared path that has a canonical home.
