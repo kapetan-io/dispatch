@@ -30,7 +30,7 @@ Describe the problem and what is true afterwards. Leave out how to build it (fla
 Use these sections in this order.
 
 1. **In plain English.** Two to four sentences. Someone who has never seen the code should be able to repeat the problem back, so name no file, function or filter. Say what is wrong or missing for whoever uses the thing, and what happens because of it.
-2. **What it delivers.** A bullet list. Each item must be observable at the surface (a command's output, an API response, a file that appears). For a bug, put `## What happened` and `## Cause` sections, with your evidence, between In plain English and this section.
+2. **What it delivers.** A bullet list. Each item must be observable at the surface (a command's output, an API response, a file that appears). A piece that only moves code, from a design opening `Purpose: refactor`, lists the existing suite passing and its diff check printing nothing (`dispatch:refactor-domains`). For a bug, put `## What happened` and `## Cause` sections, with your evidence, between In plain English and this section.
 3. **Governing design.** The documents the worker must read, by path or link, and the part of each that applies. Say what the change touches and whether it ships additively or behind a flag, or "none" if there is no design.
 4. **Not decided here (ask, don't assume).** Product behavior, public contract, security default and ADR questions are the user's. Sort each one, including any the review below turns up. If this conversation has the facts the user needs to answer it, ask the user before you save and write the answer into the ticket as theirs ("the user wants X"). Otherwise list it here, which means one of three things: answering needs research you can't do now, no user is present (a worker breaking down its own ticket), or the user chose not to decide it. With none listed, write "Nothing open". Don't write a guess as if it were settled. A `design` or `design-review` ticket keeps its questions for the design session.
 5. **Notes for the worker.** Anything that saves time, such as an example ticket in the same format, a trap you hit, a binary it must not touch, or a suggested approach labelled as one.
@@ -50,7 +50,7 @@ Ask it to:
 1. State the ticket's intent in a sentence.
 2. Check every claim about the code against the repo: cause, repro, what exists today, what the change touches. Quote the claim and give file:line for what it found. Look for the other places the same thing lives (copies, callers, stored data, other surfaces) that the ticket doesn't mention.
 3. For each "Not decided" question, check whether the code or design already answers it or makes it moot.
-4. Name any deliverable that isn't observable at the surface, or that doesn't serve the intent.
+4. Name any deliverable that isn't observable at the surface (a piece that only moves code is checked by the suite and its diff check instead), or that doesn't serve the intent.
 
 It returns the intent sentence, then only findings, each as the claim or question quoted, what the repo shows, and file:line where the finding is about code. No fixes, no praise. A claim about code it can't back with a file is not a finding, and "nothing found" is an answer. Check its intent sentence against what you meant.
 

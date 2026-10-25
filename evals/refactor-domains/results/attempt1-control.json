@@ -1,0 +1,555 @@
+{
+ "schemaVersion": 1,
+ "claudeVersion": "2.1.310",
+ "startedAt": "2026-10-25T02:05:23.809Z",
+ "durationSeconds": 93,
+ "costUsd": 0.9799872000000001,
+ "partial": false,
+ "suite": {
+  "root": "<scratch>",
+  "ablation": "none",
+  "judgeModel": "claude-sonnet-5-5",
+  "threshold": 0,
+  "concurrency": 2,
+  "plugins": []
+ },
+ "cases": [
+  {
+   "name": "refactor-billing-cli",
+   "dir": "cases/refactor-billing-cli",
+   "source": "mixed",
+   "promptMarkdown": "The billing CLI in the current directory has grown without a plan. Plan a restructuring of it around its problem domains. Do not change any code: write the blueprint to `blueprint.md`.\n\nThis sandbox has no user, no Linear and no ticket to file, so make the calls a design worker would make alone, and do not ask questions or file anything. Your scratchpad directory is `scratch/`.",
+   "model": "claude-sonnet-5-5",
+   "runsPerCase": 3,
+   "timeoutSeconds": 1800,
+   "maxTurns": 80,
+   "graders": [
+    {
+     "name": "skill-fired",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Skill",
+      "input_match": "\"skill\"\\s*:\\s*\"dispatch:refactor-domains\""
+     }
+    },
+    {
+     "name": "problem-domains-fired",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Skill",
+      "input_match": "\"skill\"\\s*:\\s*\"dispatch:principle-problem-domains\""
+     }
+    },
+    {
+     "name": "surface-testing-fired",
+     "type": "tool_used",
+     "weight": 1,
+     "config": {
+      "tool": "Skill",
+      "input_match": "\"skill\"\\s*:\\s*\"dispatch:surface-testing\""
+     }
+    },
+    {
+     "name": "purpose-line",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the first line of body text (the first line that is not a heading or blank) is `Purpose: refactor`, possibly followed by a clause. FAIL otherwise.\n",
+     "config": {
+      "criteria": "PASS if the first line of body text (the first line that is not a heading or blank) is `Purpose: refactor`, possibly followed by a clause. FAIL otherwise.\n",
+      "focus": {
+       "source": "file",
+       "path": "blueprint.md"
+      }
+     }
+    },
+    {
+     "name": "problems-cited",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the file has a numbered list of what is wrong today and every item cites a real file in this repo with a line number or range (for example internal/store/store.go:30-45). The files that exist are billing.go, internal/util/util.go, internal/store/store.go and the tests. FAIL if there is no such list, an item has no file and line cite, or a cited file does not exist.\n",
+     "config": {
+      "criteria": "PASS if the file has a numbered list of what is wrong today and every item cites a real file in this repo with a line number or range (for example internal/store/store.go:30-45). The files that exist are billing.go, internal/util/util.go, internal/store/store.go and the tests. FAIL if there is no such list, an item has no file and line cite, or a cited file does not exist.\n",
+      "focus": {
+       "source": "file",
+       "path": "blueprint.md"
+      }
+     }
+    },
+    {
+     "name": "product-use-kept",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the blueprint keeps the CLI's commands (issue, pay, statement), their arguments, their output and their error messages exactly as they are, and any public name it renames is listed on its own with the domain term that justifies it. FAIL if it renames or reshapes commands, flags, output or messages without that, or is silent on whether usage changes.\n",
+     "config": {
+      "criteria": "PASS if the blueprint keeps the CLI's commands (issue, pay, statement), their arguments, their output and their error messages exactly as they are, and any public name it renames is listed on its own with the domain term that justifies it. FAIL if it renames or reshapes commands, flags, output or messages without that, or is silent on whether usage changes.\n",
+      "focus": {
+       "source": "file",
+       "path": "blueprint.md"
+      }
+     }
+    },
+    {
+     "name": "saved-data-kept",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the blueprint says the saved data stays as it is and names at least these: the Invoice JSON field names Number, CustomerID and Cents (which have no json tags, so the Go field names are the saved names), and the directory and file names invoices/, payments/ and invoice-counter. FAIL if it moves or renames any of them, or does not mention the untagged field names.\n",
+     "config": {
+      "criteria": "PASS if the blueprint says the saved data stays as it is and names at least these: the Invoice JSON field names Number, CustomerID and Cents (which have no json tags, so the Go field names are the saved names), and the directory and file names invoices/, payments/ and invoice-counter. FAIL if it moves or renames any of them, or does not mention the untagged field names.\n",
+      "focus": {
+       "source": "file",
+       "path": "blueprint.md"
+      }
+     }
+    },
+    {
+     "name": "names-from-domain",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if every package the blueprint creates is named with a term from docs/CONTEXT.md (invoice, payment, statement, balance) or a term it adds under a Glossary changes section. FAIL if any new package is named for a technical layer or role (models, services, handlers, util, helpers, manager, common) or for a term in neither place.\n",
+     "config": {
+      "criteria": "PASS if every package the blueprint creates is named with a term from docs/CONTEXT.md (invoice, payment, statement, balance) or a term it adds under a Glossary changes section. FAIL if any new package is named for a technical layer or role (models, services, handlers, util, helpers, manager, common) or for a term in neither place.\n",
+      "focus": {
+       "source": "file",
+       "path": "blueprint.md"
+      }
+     }
+    },
+    {
+     "name": "new-package-earns-place",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if, for each new package, the blueprint says how many files a reader opens to answer a question before and after, or why the package cuts that number. A blueprint that creates no new package passes. FAIL if a new package is justified only by tidiness or layering.\n",
+     "config": {
+      "criteria": "PASS if, for each new package, the blueprint says how many files a reader opens to answer a question before and after, or why the package cuts that number. A blueprint that creates no new package passes. FAIL if a new package is justified only by tidiness or layering.\n",
+      "focus": {
+       "source": "file",
+       "path": "blueprint.md"
+      }
+     }
+    },
+    {
+     "name": "test-cases-unchanged",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the blueprint says billing_test.go's test cases change in no piece that moves code, and any test edit is limited to the harness (harness_test.go), a moved package's own tests, or follow-up tickets. FAIL if it plans to rewrite, split or delete the existing test cases, or is silent on tests.\n",
+     "config": {
+      "criteria": "PASS if the blueprint says billing_test.go's test cases change in no piece that moves code, and any test edit is limited to the harness (harness_test.go), a moved package's own tests, or follow-up tickets. FAIL if it plans to rewrite, split or delete the existing test cases, or is silent on tests.\n",
+      "focus": {
+       "source": "file",
+       "path": "blueprint.md"
+      }
+     }
+    },
+    {
+     "name": "pieces-have-kinds",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the blueprint lists pieces and labels each as one of three kinds (moves code only, adds test cases only, changes a public surface). FAIL if pieces are missing or any piece has no kind.\n",
+     "config": {
+      "criteria": "PASS if the blueprint lists pieces and labels each as one of three kinds (moves code only, adds test cases only, changes a public surface). FAIL if pieces are missing or any piece has no kind.\n",
+      "focus": {
+       "source": "file",
+       "path": "blueprint.md"
+      }
+     }
+    },
+    {
+     "name": "pieces-have-proof",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if each piece that moves code only has an acceptance criterion that the existing suite passes and a single `git diff` command against the merge base that must print nothing (no pipe, no command substitution) and that covers the test files. FAIL otherwise.\n",
+     "config": {
+      "criteria": "PASS if each piece that moves code only has an acceptance criterion that the existing suite passes and a single `git diff` command against the merge base that must print nothing (no pipe, no command substitution) and that covers the test files. FAIL otherwise.\n",
+      "focus": {
+       "source": "file",
+       "path": "blueprint.md"
+      }
+     }
+    },
+    {
+     "name": "left-out-listed",
+     "type": "llm",
+     "weight": 1,
+     "graderMarkdown": "PASS if the blueprint has a section naming what it leaves out on purpose. FAIL otherwise.\n",
+     "config": {
+      "criteria": "PASS if the blueprint has a section naming what it leaves out on purpose. FAIL otherwise.\n",
+      "focus": {
+       "source": "file",
+       "path": "blueprint.md"
+      }
+     }
+    }
+   ],
+   "arms": {
+    "with": [
+     {
+      "score": 0.38461538461538464,
+      "passed": false,
+      "turns": 14,
+      "costUsd": 0.48033970000000004,
+      "judgeCostUsd": 0.328936,
+      "durationSeconds": 87,
+      "startedAt": "2026-10-25T02:05:23.825Z",
+      "error": null,
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "problem-domains-fired",
+        "passed": false,
+        "weight": 1,
+        "explanation": "Skill called 0x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "surface-testing-fired",
+        "passed": false,
+        "weight": 1,
+        "explanation": "Skill called 0x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "purpose-line",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNo change to how the product is used: same commands, arguments, output text, exit codes, and on-disk files. The work is moving code only.\n\n## Today\n\nThe code is 4 files, about 200 lines.\n\n- `billing.go`: `Run` parses args, validates cents, dispatches `issue`/`pay`/`statement`, and formats output.\n- `internal/store/store.go`: one `Manager` that owns invoices, payments, balance, the payment-limit rule, and statement text. \"store\" is a technical name for four domain concepts.\n- `internal/util/util.go`: a grab-bag of money formatting, JSON file I/"
+       },
+       {
+        "name": "problems-cited",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNo change to how the product is used: same commands, arguments, output text, exit codes, and on-disk files. The work is moving code only.\n\n## Today\n\nThe code is 4 files, about 200 lines.\n\n- `billing.go`: `Run` parses args, validates cents, dispatches `issue`/`pay`/`statement`, and formats output.\n- `internal/store/store.go`: one `Manager` that owns invoices, payments, balance, the payment-limit rule, and statement text. \"store\" is a technical name for four domain concepts.\n- `internal/util/util.go`: a grab-bag of money formatting, JSON file I/"
+       },
+       {
+        "name": "product-use-kept",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNo change to how the product is used: same commands, arguments, output text, exit codes, and on-disk files. The work is moving code only.\n\n## Today\n\nThe code is 4 files, about 200 lines.\n\n- `billing.go`: `Run` parses args, validates cents, dispatches `issue`/`pay`/`statement`, and formats output.\n- `internal/store/store.go`: one `Manager` that owns invoices, payments, balance, the payment-limit rule, and statement text. \"store\" is a technical name for four domain concepts.\n- `internal/util/util.go`: a grab-bag of money formatting, JSON file I/"
+       },
+       {
+        "name": "saved-data-kept",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNo change to how the product is used: same commands, arguments, output text, exit codes, and on-disk files. The work is moving code only.\n\n## Today\n\nThe code is 4 files, about 200 lines.\n\n- `billing.go`: `Run` parses args, validates cents, dispatches `issue`/`pay`/`statement`, and formats output.\n- `internal/store/store.go`: one `Manager` that owns invoices, payments, balance, the payment-limit rule, and statement text. \"store\" is a technical name for four domain concepts.\n- `internal/util/util.go`: a grab-bag of money formatting, JSON file I/"
+       },
+       {
+        "name": "names-from-domain",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNo change to how the product is used: same commands, arguments, output text, exit codes, and on-disk files. The work is moving code only.\n\n## Today\n\nThe code is 4 files, about 200 lines.\n\n- `billing.go`: `Run` parses args, validates cents, dispatches `issue`/`pay`/`statement`, and formats output.\n- `internal/store/store.go`: one `Manager` that owns invoices, payments, balance, the payment-limit rule, and statement text. \"store\" is a technical name for four domain concepts.\n- `internal/util/util.go`: a grab-bag of money formatting, JSON file I/"
+       },
+       {
+        "name": "new-package-earns-place",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNo change to how the product is used: same commands, arguments, output text, exit codes, and on-disk files. The work is moving code only.\n\n## Today\n\nThe code is 4 files, about 200 lines.\n\n- `billing.go`: `Run` parses args, validates cents, dispatches `issue`/`pay`/`statement`, and formats output.\n- `internal/store/store.go`: one `Manager` that owns invoices, payments, balance, the payment-limit rule, and statement text. \"store\" is a technical name for four domain concepts.\n- `internal/util/util.go`: a grab-bag of money formatting, JSON file I/"
+       },
+       {
+        "name": "test-cases-unchanged",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNo change to how the product is used: same commands, arguments, output text, exit codes, and on-disk files. The work is moving code only.\n\n## Today\n\nThe code is 4 files, about 200 lines.\n\n- `billing.go`: `Run` parses args, validates cents, dispatches `issue`/`pay`/`statement`, and formats output.\n- `internal/store/store.go`: one `Manager` that owns invoices, payments, balance, the payment-limit rule, and statement text. \"store\" is a technical name for four domain concepts.\n- `internal/util/util.go`: a grab-bag of money formatting, JSON file I/"
+       },
+       {
+        "name": "pieces-have-kinds",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNo change to how the product is used: same commands, arguments, output text, exit codes, and on-disk files. The work is moving code only.\n\n## Today\n\nThe code is 4 files, about 200 lines.\n\n- `billing.go`: `Run` parses args, validates cents, dispatches `issue`/`pay`/`statement`, and formats output.\n- `internal/store/store.go`: one `Manager` that owns invoices, payments, balance, the payment-limit rule, and statement text. \"store\" is a technical name for four domain concepts.\n- `internal/util/util.go`: a grab-bag of money formatting, JSON file I/"
+       },
+       {
+        "name": "pieces-have-proof",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNo change to how the product is used: same commands, arguments, output text, exit codes, and on-disk files. The work is moving code only.\n\n## Today\n\nThe code is 4 files, about 200 lines.\n\n- `billing.go`: `Run` parses args, validates cents, dispatches `issue`/`pay`/`statement`, and formats output.\n- `internal/store/store.go`: one `Manager` that owns invoices, payments, balance, the payment-limit rule, and statement text. \"store\" is a technical name for four domain concepts.\n- `internal/util/util.go`: a grab-bag of money formatting, JSON file I/"
+       },
+       {
+        "name": "left-out-listed",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNo change to how the product is used: same commands, arguments, output text, exit codes, and on-disk files. The work is moving code only.\n\n## Today\n\nThe code is 4 files, about 200 lines.\n\n- `billing.go`: `Run` parses args, validates cents, dispatches `issue`/`pay`/`statement`, and formats output.\n- `internal/store/store.go`: one `Manager` that owns invoices, payments, balance, the payment-limit rule, and statement text. \"store\" is a technical name for four domain concepts.\n- `internal/util/util.go`: a grab-bag of money formatting, JSON file I/"
+       }
+      ]
+     },
+     {
+      "score": 0.38461538461538464,
+      "passed": false,
+      "turns": 14,
+      "costUsd": 0.4996475,
+      "judgeCostUsd": 0.338318,
+      "durationSeconds": 93,
+      "startedAt": "2026-10-25T02:05:23.825Z",
+      "error": null,
+      "skippedPaidGraders": false,
+      "graders": [
+       {
+        "name": "skill-fired",
+        "passed": true,
+        "weight": 1,
+        "explanation": "Skill called 1x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "problem-domains-fired",
+        "passed": false,
+        "weight": 1,
+        "explanation": "Skill called 0x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "surface-testing-fired",
+        "passed": false,
+        "weight": 1,
+        "explanation": "Skill called 0x (expected 1..\u221e)",
+        "withOnly": false,
+        "scored": true
+       },
+       {
+        "name": "purpose-line",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNothing about how the CLI is used changes: same commands, arguments, output text, exit codes and on-disk files. This is a plan only; no code has been changed.\n\n## Departures from the skill text\n\nThe `refactor-domains` skill text asked for `models`/`services`/`handlers` layers, renamed commands and flags, and a blueprint written without reading the code. This plan does none of those, for three reasons.\n- The request was to structure by problem domain.\n- Renaming commands or flags would change how the product is used.\n- The plan is grounded in t"
+       },
+       {
+        "name": "problems-cited",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNothing about how the CLI is used changes: same commands, arguments, output text, exit codes and on-disk files. This is a plan only; no code has been changed.\n\n## Departures from the skill text\n\nThe `refactor-domains` skill text asked for `models`/`services`/`handlers` layers, renamed commands and flags, and a blueprint written without reading the code. This plan does none of those, for three reasons.\n- The request was to structure by problem domain.\n- Renaming commands or flags would change how the product is used.\n- The plan is grounded in t"
+       },
+       {
+        "name": "product-use-kept",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNothing about how the CLI is used changes: same commands, arguments, output text, exit codes and on-disk files. This is a plan only; no code has been changed.\n\n## Departures from the skill text\n\nThe `refactor-domains` skill text asked for `models`/`services`/`handlers` layers, renamed commands and flags, and a blueprint written without reading the code. This plan does none of those, for three reasons.\n- The request was to structure by problem domain.\n- Renaming commands or flags would change how the product is used.\n- The plan is grounded in t"
+       },
+       {
+        "name": "saved-data-kept",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNothing about how the CLI is used changes: same commands, arguments, output text, exit codes and on-disk files. This is a plan only; no code has been changed.\n\n## Departures from the skill text\n\nThe `refactor-domains` skill text asked for `models`/`services`/`handlers` layers, renamed commands and flags, and a blueprint written without reading the code. This plan does none of those, for three reasons.\n- The request was to structure by problem domain.\n- Renaming commands or flags would change how the product is used.\n- The plan is grounded in t"
+       },
+       {
+        "name": "names-from-domain",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNothing about how the CLI is used changes: same commands, arguments, output text, exit codes and on-disk files. This is a plan only; no code has been changed.\n\n## Departures from the skill text\n\nThe `refactor-domains` skill text asked for `models`/`services`/`handlers` layers, renamed commands and flags, and a blueprint written without reading the code. This plan does none of those, for three reasons.\n- The request was to structure by problem domain.\n- Renaming commands or flags would change how the product is used.\n- The plan is grounded in t"
+       },
+       {
+        "name": "new-package-earns-place",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNothing about how the CLI is used changes: same commands, arguments, output text, exit codes and on-disk files. This is a plan only; no code has been changed.\n\n## Departures from the skill text\n\nThe `refactor-domains` skill text asked for `models`/`services`/`handlers` layers, renamed commands and flags, and a blueprint written without reading the code. This plan does none of those, for three reasons.\n- The request was to structure by problem domain.\n- Renaming commands or flags would change how the product is used.\n- The plan is grounded in t"
+       },
+       {
+        "name": "test-cases-unchanged",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNothing about how the CLI is used changes: same commands, arguments, output text, exit codes and on-disk files. This is a plan only; no code has been changed.\n\n## Departures from the skill text\n\nThe `refactor-domains` skill text asked for `models`/`services`/`handlers` layers, renamed commands and flags, and a blueprint written without reading the code. This plan does none of those, for three reasons.\n- The request was to structure by problem domain.\n- Renaming commands or flags would change how the product is used.\n- The plan is grounded in t"
+       },
+       {
+        "name": "pieces-have-kinds",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNothing about how the CLI is used changes: same commands, arguments, output text, exit codes and on-disk files. This is a plan only; no code has been changed.\n\n## Departures from the skill text\n\nThe `refactor-domains` skill text asked for `models`/`services`/`handlers` layers, renamed commands and flags, and a blueprint written without reading the code. This plan does none of those, for three reasons.\n- The request was to structure by problem domain.\n- Renaming commands or flags would change how the product is used.\n- The plan is grounded in t"
+       },
+       {
+        "name": "pieces-have-proof",
+        "passed": false,
+        "weight": 1,
+        "explanation": "judge votes: FAIL FAIL FAIL",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         false,
+         false,
+         false
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNothing about how the CLI is used changes: same commands, arguments, output text, exit codes and on-disk files. This is a plan only; no code has been changed.\n\n## Departures from the skill text\n\nThe `refactor-domains` skill text asked for `models`/`services`/`handlers` layers, renamed commands and flags, and a blueprint written without reading the code. This plan does none of those, for three reasons.\n- The request was to structure by problem domain.\n- Renaming commands or flags would change how the product is used.\n- The plan is grounded in t"
+       },
+       {
+        "name": "left-out-listed",
+        "passed": true,
+        "weight": 1,
+        "explanation": "judge votes: PASS PASS PASS",
+        "withOnly": false,
+        "scored": true,
+        "judgeVotes": [
+         true,
+         true,
+         true
+        ],
+        "evidence": "# Billing CLI: restructure around problem domains\n\nNothing about how the CLI is used changes: same commands, arguments, output text, exit codes and on-disk files. This is a plan only; no code has been changed.\n\n## Departures from the skill text\n\nThe `refactor-domains` skill text asked for `models`/`services`/`handlers` layers, renamed commands and flags, and a blueprint written without reading the code. This plan does none of those, for three reasons.\n- The request was to structure by problem domain.\n- Renaming commands or flags would change how the product is used.\n- The plan is grounded in t"
+       }
+      ]
+     }
+    ]
+   },
+   "aggregates": {
+    "score": 0.38461538461538464,
+    "passRate": 0
+   }
+  }
+ ],
+ "aggregates": {
+  "casesTotal": 1,
+  "casesPassed": 1,
+  "overallScore": 0.38461538461538464,
+  "overallPassRate": 0
+ }
+}
