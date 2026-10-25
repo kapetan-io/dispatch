@@ -1,6 +1,6 @@
 ---
 name: design-review
-description: "Review a feature ticket's blueprint with the user, audit it against the repo's ADRs, then break the design down into build tickets. Use when started as `/dispatch:design-review <review ticket>`, or when asked to review a design held in a Linear blueprint document."
+description: "Review a feature ticket's blueprint with the user, audit it against the repo's ADRs, review its fit with the existing system, then break the design down into build tickets. Use when started as `/dispatch:design-review <review ticket>`, or when asked to review a design held in a Linear blueprint document."
 ---
 
 # Review a Blueprint
@@ -15,15 +15,16 @@ Make the blueprint **buildable**: an engineer can build the right feature from i
 
 1. **Orient and resume.** Read the review ticket, its comments, its parent, and the parent's documents and children. No parent or no blueprint document: comment under `## In plain English` and move the ticket to Needs Human. You may be relaunched with no memory, so take the first row that is true.
    - The feature ticket lacks `design` and has children with a `Piece:` line: approval already happened, so move the review ticket to Done and stop.
-   - The blueprint has a `Pieces` section: go to step 7.
+   - The blueprint has a `Pieces` section: go to step 8.
    - Otherwise: step 2.
 2. **Pre-work**, below.
 3. **The loop**, Phases 1 to 6, at most 5 rounds.
 4. **Five rounds without PASS.** Comment the remaining blockers on the review ticket, opening with `## In plain English`, move it to Needs Human, file nothing and stop. The user reads the ticket, not your scrollback.
-5. **ADR audit.** When the repo has `docs/adr/`, run `design-adr-audit` on the blueprint. A fix it causes always gets one more Phase 6 run, even when round 5 already passed, since an unvalidated fix could break the blueprint. That run counts as a round, and if it fails with all 5 used, follow step 4 without a further round. Ask its closing question in chat.
-6. **End steps**, below.
-7. **Break down.** Invoke `dispatch:breakdown` on the feature ticket.
-8. **Finish.** After the user answers start or hold, comment a summary on the review ticket that says how to start held work, then move it to Done. You never move the review to Done before `design` is off on "start now". A crash between the two leaves the review In Progress, and step 1 finishes it. Open the comment with the final summary:
+5. **ADR audit.** When the repo has `docs/adr/`, run `dispatch:design-adr-audit` on the blueprint. A fix it causes always gets one more Phase 6 run, even when round 5 already passed, since an unvalidated fix could break the blueprint. That run counts as a round, and if it fails with all 5 used, follow step 4 without a further round. Ask its closing question in chat.
+6. **Fit review.** Run `dispatch:design-fit-review` on the blueprint. Put each finding it reports to the user as Phase 5 does, and apply and log the answer. If step 5 or this step changed the blueprint, run Phase 6 once more after both. That run counts as a round, as in step 5.
+7. **End steps**, below.
+8. **Break down.** Invoke `dispatch:breakdown` on the feature ticket.
+9. **Finish.** After the user answers start or hold, comment a summary on the review ticket that says how to start held work, then move it to Done. You never move the review to Done before `design` is off on "start now". A crash between the two leaves the review In Progress, and step 1 finishes it. Open the comment with the final summary:
 
 ```
 ## Blueprint Review Complete
@@ -93,7 +94,7 @@ Drop false positives and implementation details. With no survivors, skip to Phas
 
 ## Phase 5: Apply and ask
 
-Apply each auto-apply fix as a patch, and note it for the step 8 comment.
+Apply each auto-apply fix as a patch, and note it for the step 9 comment.
 
 For each surface-to-user finding, ask one chat message per finding, headed "Finding N: <title>", with the category in plain words. Say what leaving it open would cost, then give your recommendation with the trade-off of each alternative, and wait for the answer before the next finding. A clarification finding frames the ambiguity as the question. Apply the answer at once, and log it. If the user says it's already in the blueprint, re-read that section before going on.
 
