@@ -5,7 +5,7 @@ description: "Apply when about to add something, whether code, a function, a com
 
 # Subtract Before You Add
 
-Each new thing is one more thing the next reader must learn and keep in sync with its twin. Before adding one, name the closest existing thing and say why it can't take the need. If removing something would make room, do that first, even when the diff is large.
+Each new thing is one more thing the next reader must learn and keep in sync with its twin. Before adding one, name the closest existing thing and say why it can't take the need. What the new thing replaces goes first, even when the diff is large, so no twin is left behind.
 
 `dispatch:principle-laziness-protocol` keeps a diff small. This one sets the order, removal and reuse before construction. `dispatch:design-fit-review` reviews a blueprint for the same thing.
 

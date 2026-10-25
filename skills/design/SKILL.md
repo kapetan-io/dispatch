@@ -93,7 +93,7 @@ Run the **dispatch:arena** skill with the design-sketch task, the approved Objec
 
 Design it twice. Require at least two structurally distinct candidates before synthesis, even when the first looks sufficient. Whole-shape alternatives, not point fixes inside one shape. When only one shape fits, the arena's rationale says so ("this was the only viable shape because...").
 
-The design principles are skills of their own, indexed by `dispatch:principles`. Load one with the Skill tool when a design question touches it. Add to the arena's premise list, for each new CLI command, setting or stored fact, what existing thing could do the job, and point candidates at `dispatch:principle-subtract-before-you-add`.
+The design principles are skills of their own, indexed by `dispatch:principles`. Load one with the Skill tool when a design question touches it. Add to the arena's premise list, for each new thing the design adds, what existing thing could do the job, and point candidates at `dispatch:principle-subtract-before-you-add`.
 
 Screen every candidate against [`references/design-red-flags.md`](references/design-red-flags.md) before synthesis. Assume the next contributor is an agent that sees only the files it opened, copies the nearest example, and takes the shortest path that compiles. Prefer the design where a change that looks right from one file is right for the whole repo.
 
@@ -121,7 +121,7 @@ Settle what an engineer needs before writing code, not a checklist: data, depend
 
 When a question can't be settled now, insert `[NEEDS CLARIFICATION: <question>]` and continue with the best assumption. Three or more flags mean the blueprint isn't ready to build from, so stop and ask the user to settle them.
 
-Once the contract sketch is agreed, run `dispatch:design-fit-review` with the Skill tool on the sketch and the technical decisions so far, passing the Constraints and the "you decided" entries as the fixed decisions, so a finding changes the shape before the blueprint is written. Ask about each Act on and Consider item in its verdict in chat, and log a new thing the user keeps over a finding as "you decided".
+Once the contract sketch is agreed, run `dispatch:design-fit-review` with the Skill tool on the sketch and the technical decisions so far, so a finding changes the shape before the blueprint is written. Ask about each Act on and Consider item in its verdict in chat, and log a new thing the user keeps over a finding as "you decided".
 
 Before writing, run two passes. **Correctness:** every invariant has a preservation argument for each operation touching it, and no enforcement relies on a property of one implementation. **Testability:** every surface is reachable from a test, every external dependency has a substitute, and every async behavior can be observed. Gaps here are design findings. Resolve them before writing.
 

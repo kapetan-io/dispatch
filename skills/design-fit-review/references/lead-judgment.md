@@ -9,7 +9,7 @@ Adversarial reviewers are useful because they're aggressive. But aggression with
 - What was already tried and rejected
 - What constraints exist outside the code (timeline, dependencies, migration plans)
 - Which parts of the code are temporary scaffolding vs. permanent architecture
-- What the next PR in the stack will address
+- What a later piece of the build will address
 
 You have the full conversation context. Use it.
 
@@ -21,7 +21,7 @@ Reviewers, especially adversarial ones, tend to fill their review. If they don't
 
 ### Hypothetical vs. Actual
 
-"What if someone passes null here?" is only a finding if the caller can actually pass null. Trace the call site. If the input is validated upstream or the type system prevents it, dismiss the finding. Reviewers working from a diff can't always see the full call chain. You can.
+"What if someone passes null here?" is only a finding if the caller can actually pass null. Trace the call site. If the input is validated upstream or the type system prevents it, dismiss the finding. Reviewers working from a blueprint can't always see the full call chain. You can.
 
 ### Premature Abstraction Warnings
 
@@ -49,11 +49,11 @@ Don't dismiss findings just because they're uncomfortable. The whole point of ad
 - The finding reveals a gap in your mental model of the code
 - You read the finding and think "...yeah, actually"
 
-Be especially careful about dismissing security findings and correctness bugs. These deserve more scrutiny even when they come from a single model.
+Be especially careful about dismissing a finding that the design duplicates or contradicts something shipped. These deserve more scrutiny even when they come from a single model.
 
 ## Verdict Calibration
 
-A good verdict is useful, not comprehensive. The user should be able to read the "Act On" section, fix those issues, and ship with confidence. If your "Act On" list has more than 5 items, you're probably not filtering hard enough.
+A good verdict is useful, not comprehensive. The user should be able to read the "Act On" section, fix those issues, and build from the design with confidence. If your "Act On" list has more than 5 items, you're probably not filtering hard enough.
 
 The "Dismissed" section is not busywork. It's a trust mechanism. Showing the user what you rejected and why lets them override your judgment where they disagree. This is more valuable than hiding the rejected findings.
 
@@ -65,4 +65,4 @@ The "Dismissed" section is not busywork. It's a trust mechanism. Showing the use
 
 ## Approval Bar
 
-A design that works is not approved for that alone. Treat these as presumptive Act On items unless the design justifies them: a second way to do one task, a second copy of one fact, a dual path with no outside users, logic in a shared path that has a canonical home.
+A design that works is not approved for that alone. Treat these as presumptive Act On items unless the design justifies them: a second way to do one task, a second copy of one fact, a dual path with no outside users, logic in a shared path that has a canonical home. Each leaves two things to keep in sync.

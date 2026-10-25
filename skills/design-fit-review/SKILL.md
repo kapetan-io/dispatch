@@ -1,6 +1,6 @@
 ---
 name: design-fit-review
-description: "Review a blueprint for fit with the existing system: independent reviewers check each new CLI command, flag, rule API member, setting, history or ledger field, or skill against the closest thing the repo already has, and the lead judges which findings change the design. Use when `design` or `design-review` calls for it, or when asked whether a design duplicates something. Read-only: it reports a verdict and edits nothing."
+description: "Review a blueprint for fit with the existing system: independent reviewers check each new CLI command, flag, rule API member, setting, history or ledger field, or skill against the closest thing the repo already has, and the lead judges which findings change the design. Use when `design` or `design-review` calls for it, or when asked whether a design duplicates something or a proposed command, setting or field already exists. Read-only: it reports a verdict and edits nothing."
 ---
 # Review a blueprint for fit
 
@@ -8,18 +8,18 @@ Nothing else in `design` or `design-review` asks whether a new thing should exis
 
 Spawn one reviewer per model to adversarially review the design. Each model gets the same prompt and rubric. The adversarial signal comes from model diversity, not assigned personas.
 
-The deliverable is a synthesized verdict. Do NOT auto-apply changes. The user decides each Act On and Consider item, and the caller logs a new thing the user keeps over a finding as "you decided".
+The deliverable is a synthesized verdict. Do NOT auto-apply changes. The caller puts each Act On and Consider item to the user, and logs a new thing the user keeps over a finding as "you decided".
 
 ## Step 1, Determine Scope
 
-The blueprint or contract sketch under review, written to a scratchpad file (`get_document` for a Linear blueprint) so reviewers read the file and never Linear. Add the paths of the `docs/CONTEXT.md` files and the code the design touches, and the user's fixed decisions as constraints.
+The blueprint or contract sketch under review, written to a scratchpad file (`get_document` for a Linear blueprint) so reviewers read the file and never Linear. Add the paths of the `docs/CONTEXT.md` files and the code the design touches. The fixed decisions are the blueprint's Dependencies and Constraints section and the "you decided" entries in its Decision Log, including "you decided (review)", or "none".
 
 ## Step 2, State the Intent
 
 Before spawning reviewers, state the intent explicitly. Derive this from:
 
 - The feature ticket
-- The blueprint's Objective
+- The approved Objective (the blueprint's, once it exists)
 
 Write one clear paragraph. If you're unsure about the intent, ask the user before proceeding.
 
@@ -36,7 +36,7 @@ For each reviewer, use `subagent_type` `general-purpose`, run it in the foregrou
 
 Read `references/reviewer-prompt.md` and fill in the template with:
 1. The stated intent
-2. The blueprint path with the `docs/CONTEXT.md` and code paths, and the fixed decisions (the Constraints section and the "you decided" entries in the Decision Log)
+2. The blueprint path, the glossary and code paths, and the fixed decisions
 3. The review rubric from `references/rubric.md`
 
 The same filled template goes to all reviewers, so every model applies the same rubric.
@@ -49,7 +49,8 @@ As results come back, build a unified picture:
 2. **Identify consensus**. Findings raised by 2+ models independently are highest signal.
 3. **Identify lone-model findings**. Still worth reading, but weight accordingly.
 4. **Deduplicate**. Different models may describe the same issue differently. Merge these and note which models raised it.
-5. **Note disagreements**. If one model flags something and another explicitly says the opposite, that's useful context for the verdict.
+5. **Merge the New Things lists**. Where reviewers name different closest existing things, keep both.
+6. **Note disagreements**. If one model flags something and another explicitly says the opposite, that's useful context for the verdict.
 
 ## Step 5, Lead Judgment
 
@@ -57,7 +58,7 @@ You are the lead reviewer, a pragmatic senior engineer, not a neutral aggregator
 
 Read `references/lead-judgment.md` for the full framework.
 
-Categorize every finding using these buckets:
+Categorize every finding using these buckets. A "use existing" or "extend" verdict for a new thing is an Act On or Consider item:
 
 - **Act on**. Real issues affecting fit or maintainability given the actual goals. These would block a real design.
 - **Consider**. Legitimate points, but you're not sure they outweigh the cost of addressing them right now. Worth the user's attention.

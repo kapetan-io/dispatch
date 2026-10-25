@@ -21,7 +21,7 @@ Does the design fit well into the system it's part of?
 - Coupling: does this change introduce dependencies that will make future changes harder?
 - Data model fit: do the data structures match the actual access patterns? The right structure makes downstream code obvious. The wrong one fights you at every turn.
 - Bolted-on vs. integrated: was the change patched onto the existing design, or does it read as if the design always accounted for it? If the new requirement had been known from the start, would the code look like this?
-- Legacy dual-paths: does the change introduce a new API while keeping the old one alive? If there are no external consumers, migrate callers and delete the old path in the same wave. Don't leave compatibility layers that will become permanent.
+- Legacy dual-paths: does the change introduce a new API while keeping the old one alive? If there are no external consumers, migrate callers and delete the old path in the same change. Don't leave compatibility layers that will become permanent.
 
 Don't penalize a simple design for lacking abstraction. Premature abstraction is worse than duplication.
 

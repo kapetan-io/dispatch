@@ -18,7 +18,7 @@ Before you judge, list every new public or persisted thing the design adds (CLI 
 
 ## Design Under Review
 
-The blueprint, the `docs/CONTEXT.md` files and the code it touches are at {BLUEPRINT_PATH}. The user's fixed decisions, which you must not re-argue, are:
+The blueprint is at {BLUEPRINT_PATH}. The glossary and the code it touches are at {CONTEXT_PATHS}. The user's fixed decisions, which you must not re-argue, are:
 
 {CONSTRAINTS}
 
