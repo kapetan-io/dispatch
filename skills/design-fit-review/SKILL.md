@@ -70,4 +70,4 @@ More than 5 under Act on means you are not filtering hard enough.
 <where the models agreed or diverged, and what that says>
 ```
 
-A finding changes the design, so the user decides each Act on and Consider item. The caller logs a new thing the user keeps over a finding as "you decided", and an Act on item you apply without asking as "agent assumed", with the reason.
+A finding changes the design, so the user decides each Act on and Consider item. The caller logs a new thing the user keeps over a finding as "you decided".
