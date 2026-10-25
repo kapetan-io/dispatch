@@ -55,7 +55,7 @@ Spend so far about $3.68 of the $10 ceiling.
 
 ## Attempt 1 ($1.31) — reverted
 
-Idea. Rule 2 of "Working from source material" says what to do with a fact no step of the mechanism needs: join the sentence it extends, or cut it, and the last paragraph is not a home for it (`arms/attempt-1.md`, 41 words added). Three proposers (the visible failing closings, Anthropic's prompting guidance, skill-creator guidance) each proposed a rule 2 extension, and a fourth merged them.
+Idea. Rule 2 of "Working from source material" says what to do with a fact no step of the mechanism needs: join the sentence it extends, or cut it, and the last paragraph is not a home for it (41 words added to rule 2, which reads "Order by dependency, not by source. A fact goes where the reader first needs it, which is often mid-sentence in a clause, not in its own sentence."; added text: "A fact that no step of the mechanism needs joins the sentence it extends, or is cut as rule 3 allows. The last paragraph tells the last stage of the mechanism; facts collected there shuffle freely, so it is a list."). Three proposers (the visible failing closings, Anthropic's prompting guidance, skill-creator guidance) each proposed a rule 2 extension, and a fourth merged them.
 
 | Case | key-absent | no-verify | under-cap | closing-organized |
 |---|---|---|---|---|
@@ -71,7 +71,7 @@ Spend so far about $4.99 of the $10 ceiling.
 
 ## Attempt 2 ($1.18) — reverted
 
-Idea, from the user. The writer scores each fact from 1 to 5 by how much the answer depends on it, with how the thing works and how it is used highest, orders the list by score, builds the section from the top and drops the bottom unless a sentence needs it (`arms/attempt-2.md`, replacing the sentences in "The reader and the purpose" that say the writer picks from the list). No proposer round, since the idea was the user's.
+Idea, from the user. The writer scores each fact from 1 to 5 by how much the answer depends on it, with how the thing works and how it is used highest, orders the list by score, builds the section from the top and drops the bottom unless a sentence needs it (in "The reader and the purpose", after "then list the true, sourced facts that bear on it." it replaced "The writer picks from that list what the reader needs, and the critic checks claims against it, so both check the same thing." with: "Score each fact from 1 to 5 by how much the answer depends on it, with how the thing works and how it is used scoring highest, and order the list by score. The writer builds the section from the top of the list and drops the bottom unless a sentence needs it. The critic checks claims against the list, so both check the same thing."). No proposer round, since the idea was the user's.
 
 | Case | key-absent | no-verify | under-cap | closing-organized |
 |---|---|---|---|---|
@@ -99,7 +99,7 @@ Spend about $7.18 of the $10 ceiling.
 
 ## Attempt 3 ($1.29) — reverted
 
-Idea, from the research. The writer first writes a scratch file `plan.md` with the three or four questions the reader's question breaks into and a word budget. Every fact on the list must answer one of those questions, and a fact that answers none is cut. The section is drafted from the plan in the order of its questions (`arms/attempt-3.md`, 56 words added). Sources: question-answer blueprints (Narayan et al., TACL 2023) and a fixed length budget (Chain of Density, 2023), both read only as summaries.
+Idea, from the research. The writer first writes a scratch file `plan.md` with the three or four questions the reader's question breaks into and a word budget. Every fact on the list must answer one of those questions, and a fact that answers none is cut. The section is drafted from the plan in the order of its questions (56 words added after "...a section usually leaves some of it out." in "The reader and the purpose": "Before drafting, write a scratch file `plan.md` with the three or four questions the reader's question breaks into and a word budget for the section. Every fact on the list must answer one of those questions, and a fact that answers none is cut. The section is drafted from the plan, in the order of its questions."). Sources: question-answer blueprints (Narayan et al., TACL 2023) and a fixed length budget (Chain of Density, 2023), both read only as summaries.
 
 | Case | key-absent | no-verify | under-cap | closing-organized | plan.md written |
 |---|---|---|---|---|---|
