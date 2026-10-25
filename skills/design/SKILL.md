@@ -121,7 +121,7 @@ Settle what an engineer needs before writing code, not a checklist: data, depend
 
 When a question can't be settled now, insert `[NEEDS CLARIFICATION: <question>]` and continue with the best assumption. Three or more flags mean the blueprint isn't ready to build from, so stop and ask the user to settle them.
 
-Once the contract sketch is agreed, run `dispatch:design-fit-review` with the Skill tool on the sketch and the technical decisions so far, so a finding changes the shape before the blueprint is written. Ask about each finding in chat, and log a new thing the user keeps over a finding as "you decided".
+Once the contract sketch is agreed, run `dispatch:design-fit-review` with the Skill tool on the sketch and the technical decisions so far, so a finding changes the shape before the blueprint is written. Ask about each Act on and Consider item in its verdict in chat, and log a new thing the user keeps over a finding as "you decided".
 
 Before writing, run two passes. **Correctness:** every invariant has a preservation argument for each operation touching it, and no enforcement relies on a property of one implementation. **Testability:** every surface is reachable from a test, every external dependency has a substitute, and every async behavior can be observed. Gaps here are design findings. Resolve them before writing.
 
