@@ -11,7 +11,7 @@ What was learned.
 - A pass or fail judge for that property (`walkthrough`, rubric in `log.md`; the ten sections are in `results/human-check-sections.md`) voted FAIL 30 of 30 on the ten rated sections, including the best, so it separates nothing.
 
 Where to pick up.
-1. Fix the measurement before the wording. Ask a judge for a 1 to 5 score on a walk-through rubric, called directly and not through `claude plugin eval` (its judge is pass or fail), and check that its ranking of the ten sections in `results/human-check.json` matches the user's before trusting it. A looser rubric (pass when the first half follows one call in order) is the first thing to try.
+1. Fix the measurement before the wording. Ask a judge for a 1 to 5 score on a walk-through rubric, called directly and not through `claude plugin eval` (its judge is pass or fail), and check that its ranking of the ten sections in `results/human-check-sections.md` (ratings in `results/human-check.json`) matches the user's before trusting it. A looser rubric (pass when the first half follows one call in order) is the first thing to try.
 2. Then make the skill's loop run reliably and test the rewrite-step change above, on the forced-loop case first.
 3. The `key-absent` answer keys other than groupcache's are the author's judgement, not a rule in the skill. The forced-loop critic kept "no network call" as needed. Settle with the user whether those clauses should stay banned.
 4. The user's ticket ceiling of $10 is spent (about $9.08). More runs need a new ceiling.
