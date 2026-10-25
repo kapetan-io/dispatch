@@ -110,3 +110,19 @@ Idea, from the research. The writer first writes a scratch file `plan.md` with t
 `closing-organized` 4/12 against 6/12 for the baseline, `under-cap` 2/12 against 3/12. Reverted. The step happened (`plan.md` in 10 of 12 runs), so earlier attempts' problem of an invisible step is not the cause here. The plans show why it did not help. In the two groupcache plans read, the writer made up a catch-all question for the leftover facts ("What are the defaults?" and "What must the adopter accept?") so that every fact answered one, and both final sections still end with the transport, stats and global-state sentences. Both plans set their own word budget at about 350, above the 330 cap. One plan noted it left out "no network call" because it invites a question, which is the skill's own rule 3 example applied. The held-out case's transcripts were not read.
 
 Reading across three attempts. Each added a rule the writer satisfied by relabelling the leftovers, and none changed the list the writer starts from. The suite hands the writer the full list of true facts, where in use the skill builds that list itself from sources (see "Working from source material"). Spend about $8.47 of the $10 ceiling.
+
+## Human check, results/human-check.json ($0)
+
+The user rated ten groupcache sections blind (1 to 5) and picked a best. They were two baseline runs, two from attempt 1, one from attempt 2, two from attempt 3, one forced-loop run, the user's own draft and the hand-written good section from the scorer check. Source labels are in the file.
+
+| Section | Source | Rating |
+|---|---|---|
+| E | user's draft | 4 (best) |
+| F | forced-loop run | 3 |
+| D | hand-written good | 2 |
+| B, C, G, H, I, J | baseline run 1, attempt 3 run 1, attempt 1 runs 1 and 2, attempt 2, attempt 3 run 2 | 1 each |
+| A | baseline run 2 | not rated |
+
+Every one-shot run rated 1, whatever wording produced it. The best section is the user's draft, whose closing paragraph is the list of defaults, transport, stats and global state that `closing-organized` fails 3 votes to 0. The user's note on it: it starts the story from `Get()` and tells what happens in order, "the sort of narrative a human enjoys reading", and still shoehorns `Set()`, `Remove()` and `RemoveKeys()` in as data points. The hand-written good section, which passes all four content graders, rated 2.
+
+So the graders and the user disagree. `key-absent` and `closing-organized` do not track what the user values most, which is a section organized as the story of one call. Spend is unchanged at about $8.47 of the $10 ceiling.
