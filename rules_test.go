@@ -126,6 +126,32 @@ func TestRulesCheckFailsOnARuleReadingAMissingRulesKey(t *testing.T) {
 	assert.Contains(t, res.Stdout, `finding: launch-worker threw in its if for ENG-1: Error: config.toml has no [rules] key "launch_failure_limit". Add launch_failure_limit = ... under [rules]`)
 }
 
+func TestRulesCheckFailsOnARuleReadingAFactTheBuildLacks(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{
+		Rules: rule(`whenever({ name: "newer-than-build", each: "pr", if: (pr: any) => pr.reviewerCount > 0, then: () => {} });`),
+	})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
+
+	res := d.Run("rules", "check")
+
+	require.ErrorContains(t, res.Err, "1 problems found")
+	assert.Contains(t, res.Stdout, `finding: newer-than-build threw in its if for ENG-1: Error: this build has no "reviewerCount" fact on a pr. The rules may be newer than the dispatch build`)
+}
+
+func TestRulesCheckAllowsARuleToStringifyARecord(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{
+		Rules: rule(`whenever({ name: "stringifies", each: "ticket", if: (t: any) => { JSON.stringify(t); String(t); return false; }, then: () => {} });`),
+	})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	res := d.Run("rules", "check")
+
+	require.NoError(t, res.Err)
+}
+
 func TestRulesCheckFailsOnACustomRulesKeyTheFileLacks(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{

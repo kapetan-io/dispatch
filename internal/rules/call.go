@@ -131,6 +131,10 @@ func (c *call) recordValue(r *record) sobek.Value {
 	return o
 }
 
+// runtimeProbes are the keys JSON.stringify, String() and await read from any
+// object, so a missing one is not a fact the rules wanted.
+var runtimeProbes = map[string]bool{"toJSON": true, "toString": true, "valueOf": true, "then": true, "constructor": true, "toLocaleString": true}
+
 func (o *recordObject) Get(key string) sobek.Value {
 	c, r := o.c, o.r
 	if key == "hasLabel" && r.kind == "ticket" {
@@ -138,7 +142,12 @@ func (o *recordObject) Get(key string) sobek.Value {
 	}
 	f, ok := r.fact(key)
 	if !ok {
-		return nil
+		if runtimeProbes[key] {
+			return nil
+		}
+		// A rules directory newer than the build reads facts the build lacks. Throwing
+		// puts the rule in `rules check` and the cycle's findings, where undefined hid it.
+		c.throwError("this build has no %q fact on a %s. The rules may be newer than the dispatch build", key, r.kind)
 	}
 	if reason := f.FieldByName("Unknown").String(); reason != "" {
 		if c.knownDepth == 0 {

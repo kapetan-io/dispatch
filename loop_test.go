@@ -337,6 +337,26 @@ whenever({ name: "always-throws", each: "ticket", if: () => { throw new Error("b
 	assert.Len(t, alerts, 1)
 }
 
+func TestARuleReadingAFactTheBuildLacksRaisesAnAlertAndLetsOtherRulesRun(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, `
+whenever({ name: "newer-than-build", each: "ticket", if: (t: any) => t.somethingNew === "x", then: () => {} });
+`)})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	d.Tick()
+
+	assert.Len(t, d.Workers.Launched(), 1)
+	assert.Contains(t, d.LoopErr(), `newer-than-build threw in its if for ENG-1: Error: this build has no "somethingNew" fact on a ticket. The rules may be newer than the dispatch build`)
+	var alerts []string
+	for _, shown := range d.Alerts.Shown() {
+		if strings.Contains(shown, "newer-than-build") {
+			alerts = append(alerts, shown)
+		}
+	}
+	assert.Len(t, alerts, 1)
+}
+
 // Unreachable from the CLI: a history directory that stops taking files is a disk fault the product can't inject.
 func TestAHistoryWriteFailureStopsTheLoopAndAlerts(t *testing.T) {
 	t.Parallel()

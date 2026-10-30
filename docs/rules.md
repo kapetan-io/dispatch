@@ -33,7 +33,7 @@ launch-worker      whenever  ticket  wants launch now for ENG-12, ENG-15
 nudge-pr-activity  whenever  pr      wants nothing now
 ```
 
-A record whose rule read something that couldn't be read is listed as `held for ENG-9`. It exits 1 on any finding: a rule that fails to load, a rule that throws or runs out of time, a queued action with no once key, a rule that reads a `[rules]` key the file lacks, and, when `tsc` is installed, a type error from `tsc --noEmit --strict`.
+A record whose rule read something that couldn't be read is listed as `held for ENG-9`. It exits 1 on any finding: a rule that fails to load, a rule that throws or runs out of time, a queued action with no once key, a rule that reads a `[rules]` key the file lacks, a rule that reads a fact the build doesn't produce (the rules may be newer than the build), and, when `tsc` is installed, a type error from `tsc --noEmit --strict`.
 
 A check takes no action: it reads the world and rewrites `types/`. Every fact's `since` is the time of the read and the ledger is empty, so it shows what a fresh start would want.
 
