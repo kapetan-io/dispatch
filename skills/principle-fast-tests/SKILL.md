@@ -1,6 +1,6 @@
 ---
 name: principle-fast-tests
-description: "Apply when writing, reviewing, speeding up or tagging slow tests. A test runs under 1 second and a service's suite under 5 minutes, and speed comes from the test's shape, never from lower fidelity."
+description: "Apply when writing, reviewing or speeding up slow tests. A test runs under 1 second and a service's suite under 5 minutes, and speed comes from the test's shape, never from lower fidelity."
 ---
 
 # Fast Tests
@@ -15,8 +15,8 @@ Budget: one test under 1 second, a service's whole run under 5 minutes of wall t
 - Build expensive setup once per package, such as a booted server, a container or a compiled helper binary, and give each test its own data in it.
 - Start a process once, not per call. A fake of a command-line tool that spawns per call adds startup to every test. Under `-race` that startup is 1 second, because every binary built with `-race` sleeps that long before it exits, and one built without it does not. `GORACE=atexit_sleep_ms=0` in the fake's environment took one call from 1.04s to 0.01s. It matters only when tests run with `-race`.
 
-Skipping with `testing.Short` is not a speedup, because the behavior stops being tested everywhere. A build tag only moves a test into `test-slow` and `ci`.
+Skipping with `testing.Short` is not a speedup, because the behavior stops being tested everywhere.
 
-**A test still over 1 second** after these fixes, that can't run in parallel, and isn't slow because of your own change, carries the `tests_slow` build tag (in Go, `//go:build tests_slow` in a file of its own), so `test-slow` and `ci` run it. Tag it last. The PR's Implementation section names the test, its time and why it can't be faster. A test run against both a fake and the real tool (see `dispatch:surface-testing`) is never tagged `tests_slow`. Load `dispatch:repo-targets` for the targets, which must exist before a test is tagged.
+**A test still over 1 second** after these fixes follows the codebase's own way of handling slow tests. Don't invent one: a new build tag, directory or runner setting can change what the build system rebuilds and reruns. When the codebase has none, leave the test as it is and name it, its time and what you tried to speed it up in the PR's Implementation section.
 
-**Check speed in a separate report, never inside the suite.** A time limit in the suite fails on a slow CI runner and would block a production fix. In dispatch, `make test-report` (`go run ./cmd/slowtests -tags tests_slow`, so tagged tests are measured) lists tests over 1 second and packages over 5 minutes, slowest first. It exits 0 when it finds slow tests, so file what it finds as tickets by hand.
+**Check speed in a separate report, never inside the suite.** A time limit in the suite fails on a slow CI runner and would block a production fix. In dispatch, `make test-report` lists tests over 1 second and packages over 5 minutes, slowest first. It exits 0 when it finds slow tests, so file what it finds as tickets by hand.
