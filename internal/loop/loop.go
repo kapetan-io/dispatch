@@ -244,11 +244,9 @@ func (l *Loop) Run(ctx context.Context) (err error) {
 				err = l.handle(m)
 			}
 		case <-timer.C():
-			// A wake already ran this resync when an event got there first.
-			l.rearm = true
-			if !l.clock.Now().Before(l.nextResync) {
-				err = l.onResync(history.EventResync)
-			}
+			// The timer is rearmed whenever a resync runs, so a fire always means one is due. Checking
+			// the wall clock against nextResync here skipped the resync when it lagged the timer.
+			err = l.onResync(history.EventResync)
 		}
 		for err == nil && len(l.inbox) > 0 {
 			if err = l.wakeIfLate(); err == nil {

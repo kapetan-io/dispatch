@@ -433,6 +433,12 @@ func (d *Dispatch) StartBeforeTheEvents() { d.t.Helper(); d.startBeforeTheEvents
 // Advance moves the clock and waits for the loop to settle.
 func (d *Dispatch) Advance(by time.Duration) { d.t.Helper(); d.advance(by) }
 
+// AdvanceLagging is Advance for a machine whose wall clock runs lag behind the timers.
+func (d *Dispatch) AdvanceLagging(by, lag time.Duration) {
+	d.t.Helper()
+	d.moving(func() int { return d.Clock.AdvanceLagging(by, lag) })
+}
+
 // BrokenLoop puts a loop on the socket that fails the way a loop can't be made to fail: it
 // closes without answering, answers garbage, answers with an error, or never answers. A stale
 // socket file is a loop that died and left its socket behind.
@@ -1690,6 +1696,22 @@ func (c *fakeClock) Advance(d time.Duration) int {
 	fired := 0
 	for _, t := range c.timers {
 		if !t.done && !c.now.Before(t.at) {
+			t.done = true
+			t.c <- c.now
+			fired++
+		}
+	}
+	return fired
+}
+
+// AdvanceLagging fires the timers that are due after d while the wall time moves only d less lag.
+func (c *fakeClock) AdvanceLagging(d, lag time.Duration) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d - lag)
+	fired := 0
+	for _, t := range c.timers {
+		if !t.done && !c.now.Add(lag).Before(t.at) {
 			t.done = true
 			t.c <- c.now
 			fired++
