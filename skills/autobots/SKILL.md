@@ -19,7 +19,7 @@ Run `dispatch watch` on every child, including those still in Todo, so you hear 
 - **Stop and ask the user** in a message of its own, so it isn't lost at the end of an update, and keep working the other children, when:
   - a finding is about how the product behaves, a public contract, a security default or an ADR. Post it on the PR anyway.
   - the feature is held (the feature ticket isn't In Progress, or still has a `design` label). Starting it is the user's call.
-  - a child moves to Needs Human, unless its worker is disputing your own finding. Your findings post as the user, so the worker sends a dispute to Needs Human. Weigh its evidence, drop or re-explain the finding, and move the ticket back to In Progress.
+  - a child moves to Needs Human, unless its worker is disputing your own finding. Your findings post as the user, so the worker answers the finding on the PR with its evidence and sends the ticket to Needs Human. Weigh its reply, drop or re-explain the finding, and move the ticket back to In Progress.
   - a PR still has problems after 3 reviews. Ask sooner if another round isn't worth it.
 
 When every child is finished, stop watching and tell the user.

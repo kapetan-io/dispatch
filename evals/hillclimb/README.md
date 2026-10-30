@@ -2,7 +2,7 @@
 
 Status 2026-10-10: the pass bar below is not met, so the skill is not adopted by it. The first full run (`results/skill-all-cases-run1.json`) passed 68 of 100 checks, and several graders on the older cases fail in every run. `log.md` has the numbers and the reading.
 
-Tests whether a worker given only "hillclimb this wording against that suite" follows `skills/hillclimb/SKILL.md`. The worker can't run `claude`, so the eval covers what the skill asks for before and between runs: the pass bar, the known-bad control, held-out cases, the budget, one idea per attempt, and stopping when the wording already passes. It does not test whether a full climb reaches its bar. That was shown by the size-check and ticket-claims climbs the skill comes from (`../size-check/log.md`, `../ticket-claims/log.md`).
+Tests whether a worker given only "hillclimb this wording against that suite" follows `skills/hillclimb/SKILL.md`. The worker can't run `claude`, so the eval covers what the skill asks for before and between runs: the pass bar, the known-bad control, held-out cases, the budget, one idea per attempt, and stopping when the wording already passes. It does not test whether a full climb reaches its bar. That was shown by the size-check and ticket-claims climbs the skill comes from (their logs are in git history, from before the ticket-claims eval was removed in ENG-588).
 
 ## Arms
 
