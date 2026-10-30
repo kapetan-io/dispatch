@@ -633,6 +633,7 @@ func (s *State) prRecords(w world.World) {
 			Approved:        Known(pr.Approved, at),
 			Ready:           Known(pr.Ready, at),
 			NeedsWork:       Known(pr.NeedsWork(), at),
+			Conflict:        Known(pr.Conflict, at),
 			Problem:         Known(pr.Problem(), at),
 			ActivitySummary: Known(pr.ActivitySummary, at),
 			OpenAs:          Known(settings.OpenPRAs, at),

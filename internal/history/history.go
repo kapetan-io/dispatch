@@ -153,8 +153,10 @@ type Cycle struct {
 	Waiting []Entry `json:"waiting,omitempty"`
 	Held    []Entry `json:"held,omitempty"`
 	Covered []Entry `json:"covered,omitempty"`
-	Throws  []Throw `json:"throws,omitempty"`
-	// Reads maps "rule/subject" to what the rule read.
+	// Exempt lists the rules an exemption stopped, with the exemption's name as the reason.
+	Exempt []Entry `json:"exempt,omitempty"`
+	Throws []Throw `json:"throws,omitempty"`
+	// Reads maps "rule/subject" or "exemption/subject" to what it read.
 	Reads map[string][]string    `json:"reads,omitempty"`
 	HTTP  []httpservice.Exchange `json:"http,omitempty"`
 }
@@ -535,6 +537,10 @@ func CycleLine(now int64, why string, res rules.Result) Cycle {
 	}
 	for _, cv := range res.Covered {
 		c.Covered = append(c.Covered, Entry{Rule: cv.Rule, Subject: cv.Subject, Kind: cv.Receipt.Kind, Once: cv.Once, Reason: CoveredBy(cv.Receipt)})
+	}
+	for _, e := range res.Exempted {
+		c.Exempt = append(c.Exempt, Entry{Rule: e.Rule, Subject: e.Subject, Reason: e.Exemption})
+		c.Reads[e.Exemption+"/"+e.Subject] = res.Reads[e.Exemption+"/"+e.Subject]
 	}
 	for _, t := range res.Throws {
 		c.Throws = append(c.Throws, Throw{Rule: t.Rule, Subject: t.Subject, Error: t.Error, Timeout: t.Timeout})

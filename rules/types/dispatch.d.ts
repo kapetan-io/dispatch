@@ -76,6 +76,8 @@ declare module "dispatch" {
     readonly approved: boolean;
     readonly ready: boolean;
     readonly needsWork: boolean;
+    /** GitHub reports the PR's merge state as conflicting. needsWork counts a conflict too. */
+    readonly conflict: boolean;
     readonly problem: string;
     readonly activitySummary: string;
     readonly lastActivity: Seen | undefined;
@@ -191,6 +193,14 @@ declare module "dispatch" {
     if: (event: EventOf<E>, ctx: Ctx) => boolean;
     then: (event: EventOf<E>, ctx: Ctx) => Action | Action[] | void;
     shadow?: boolean;
+  }): void;
+  /** Named whenever rules, all of kind each, want nothing for a record its if is true of. A read that is unknown holds them.
+   * Use it last. It changes a rule without editing it, so a reader of the rule won't see it. Fix the rule, write a new rule, or put the condition in your own rule's if before you reach for this. It is for a shipped rule that is right for most records and wrong for a class you can name, such as the PR of a stacked ticket. */
+  export function exempt<K extends RecordKind>(exemption: {
+    name: string;
+    each: K;
+    rules: string[];
+    if: (record: RecordOf<K>, ctx: Ctx) => boolean;
   }): void;
   export function known(read: () => unknown): boolean;
   export function minutes(n: number): number;

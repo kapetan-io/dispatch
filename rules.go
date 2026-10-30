@@ -311,8 +311,34 @@ func printCheck(opts Options, cfg config.Config, state *rules.State, loaded *rul
 		if held := heldSummary(result, def.Name); held != "" {
 			desc += "; " + held
 		}
+		if exempt := exemptSummary(result, def.Name); exempt != "" {
+			desc += "; " + exempt
+		}
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", def.Name, def.Kind(), def.Target(), desc)
 	}
+	for _, ex := range loaded.Exemptions() {
+		_, _ = fmt.Fprintf(tw, "%s\texempt\t%s\texempts %s\n", ex.Name, ex.Each, strings.Join(ex.Rules, ", "))
+	}
+}
+
+// exemptSummary names the records an exemption stopped the rule for, such as "exempt for ENG-4 by stacked-pr-not-merged".
+func exemptSummary(result rules.Result, rule string) string {
+	by := map[string][]string{}
+	var order []string
+	for _, e := range result.Exempted {
+		if e.Rule != rule {
+			continue
+		}
+		if _, ok := by[e.Exemption]; !ok {
+			order = append(order, e.Exemption)
+		}
+		by[e.Exemption] = append(by[e.Exemption], e.Subject)
+	}
+	parts := make([]string, len(order))
+	for i, name := range order {
+		parts[i] = fmt.Sprintf("exempt for %s by %s", strings.Join(by[name], ", "), name)
+	}
+	return strings.Join(parts, "; ")
 }
 
 // wantSummary names what a rule wants now, such as "launch now for ENG-12, ENG-15".

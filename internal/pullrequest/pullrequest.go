@@ -83,6 +83,8 @@ type PullRequest struct {
 	// and nudging every cycle tells the worker about work it already did. The
 	// thread's newest comment reaches the worker through ActivityAt instead.
 	UnresolvedThreads bool
+	// Conflict means GitHub's mergeable is CONFLICTING. It is also one of the Problems.
+	Conflict bool
 	// Problems are the reasons the PR needs work, phrased to follow "has".
 	Problems []string
 	// Ready means the PR needs no work, has no open review thread and nothing is still running: every check
@@ -581,6 +583,7 @@ func Find(ctx context.Context, branch string, src Source, rules Rules) (PullRequ
 		}
 	}
 	if n.Mergeable == "CONFLICTING" {
+		pr.Conflict = true
 		pr.Problems = append(pr.Problems, "a merge conflict")
 	}
 	pr.ChecksRunning = checksRunning

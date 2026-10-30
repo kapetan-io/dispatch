@@ -336,6 +336,9 @@ func (s *scenario) applyPR(ticket string, fields map[string]any) {
 	if v, ok := boolean(fields, "ready"); ok {
 		pr.Ready = v
 	}
+	if v, ok := boolean(fields, "conflict"); ok {
+		pr.Conflict = v
+	}
 	if problems, ok := fields["problems"].([]any); ok {
 		pr.Problems = nil
 		for _, p := range problems {

@@ -63,17 +63,20 @@ type ruleDef struct {
 	shadow      bool
 	// file is where the rule was defined, for messages.
 	order int
+	// exempts names the rules an exemption switches off.
+	exempts []string
 }
 
 func (d *ruleDef) isEvent() bool { return d.event != "" }
 
 // Rules is a loaded set of rules: the program they compile to and what each registered.
 type Rules struct {
-	Dir      string
-	source   string
-	program  *sobek.Program
-	defs     []*ruleDef
-	timeouts Timeouts
+	Dir        string
+	source     string
+	program    *sobek.Program
+	defs       []*ruleDef
+	exemptions []*ruleDef
+	timeouts   Timeouts
 }
 
 // Defs lists the rules in the order they were registered.
@@ -107,6 +110,22 @@ func (r RuleInfo) Target() string {
 		return r.Event
 	}
 	return r.Each
+}
+
+// Exemptions lists the exempt declarations in the order they were registered.
+func (r *Rules) Exemptions() []ExemptionInfo {
+	out := make([]ExemptionInfo, len(r.exemptions))
+	for i, d := range r.exemptions {
+		out[i] = ExemptionInfo{Name: d.name, Each: d.each, Rules: d.exempts}
+	}
+	return out
+}
+
+// ExemptionInfo describes one loaded exemption.
+type ExemptionInfo struct {
+	Name  string
+	Each  string
+	Rules []string
 }
 
 // LoadError is a rule file that can't be loaded. It stops the start.
@@ -156,11 +175,15 @@ func compile(dir, code string, timeouts Timeouts) (*Rules, error) {
 	if err != nil {
 		problems = append(problems, "while loading: "+firstLine(err.Error()))
 	}
+	if err == nil {
+		reg.checkExemptions()
+	}
 	problems = append(problems, reg.problems...)
 	if len(problems) > 0 {
 		return nil, &LoadError{Problems: unique(problems)}
 	}
 	r.defs = reg.defs
+	r.exemptions = reg.exemptions
 	return r, nil
 }
 
@@ -219,6 +242,7 @@ const dispatchModule = `
 const d = globalThis.__dispatch;
 export const whenever = d.whenever;
 export const on = d.on;
+export const exempt = d.exempt;
 export const known = d.known;
 export const minutes = d.minutes;
 export const hours = d.hours;
@@ -279,8 +303,9 @@ func newRuntime(nowMillis int64) *sobek.Runtime {
 
 // registry collects the rules a program registers.
 type registry struct {
-	defs     []*ruleDef
-	problems []string
+	defs       []*ruleDef
+	exemptions []*ruleDef
+	problems   []string
 	// fns holds each rule's callbacks by name, for a call runtime.
 	fns map[string]ruleFns
 }
@@ -302,6 +327,7 @@ func (reg *registry) install(rt *sobek.Runtime, known func(sobek.FunctionCall) s
 	}
 	_ = api.Set("whenever", register("whenever"))
 	_ = api.Set("on", register("on"))
+	_ = api.Set("exempt", register("exempt"))
 	if known == nil {
 		known = func(call sobek.FunctionCall) sobek.Value { return sobek.Undefined() }
 	}
@@ -319,6 +345,84 @@ func (reg *registry) problem(format string, args ...any) {
 	reg.problems = append(reg.problems, fmt.Sprintf(format, args...))
 }
 
+// taken reports whether a rule or an exemption already has name.
+func (reg *registry) taken(name string) bool {
+	byName := func(d *ruleDef) bool { return d.name == name }
+	return slices.ContainsFunc(reg.defs, byName) || slices.ContainsFunc(reg.exemptions, byName)
+}
+
+// registerExemption records an exempt declaration, which has an if and the names of the rules it covers.
+func (reg *registry) registerExemption(obj *sobek.Object, str func(string) string) {
+	name := str("name")
+	def := &ruleDef{name: name, each: str("each"), event: str("event"), order: len(reg.exemptions)}
+	label := fmt.Sprintf("exemption %q", name)
+	if name == "" {
+		label = "an exemption with no name"
+		reg.problem("%s", label)
+	}
+	switch {
+	case def.event != "":
+		reg.problem("%s: exempt takes each, not event, because it covers whenever rules only. Use each", label)
+	case def.each == "":
+		reg.problem("%s: exempt needs each, one of %s", label, strings.Join(kindNames(), ", "))
+	default:
+		if _, ok := kindOf(def.each); !ok {
+			reg.problem("%s: there is no record kind %q. The kinds are %s", label, def.each, strings.Join(kindNames(), ", "))
+		}
+	}
+	if v := obj.Get("then"); v != nil && !sobek.IsUndefined(v) {
+		reg.problem("%s: exempt takes no then, because it only takes away what rules want", label)
+	}
+	var listed any
+	if v := obj.Get("rules"); v != nil {
+		listed = v.Export()
+	}
+	switch names := listed.(type) {
+	case []any:
+		for _, n := range names {
+			if s, ok := n.(string); ok {
+				def.exempts = append(def.exempts, s)
+				continue
+			}
+			reg.problem("%s: rules must be strings, the names of whenever rules", label)
+		}
+	default:
+		reg.problem("%s: rules must be a list of rule names", label)
+	}
+	if len(def.exempts) == 0 {
+		reg.problem("%s: rules is empty. List the whenever rules it covers", label)
+	}
+	fn, ok := sobek.AssertFunction(obj.Get(phaseIf))
+	if !ok {
+		reg.problem("%s: %s must be a function", label, phaseIf)
+	}
+	if name != "" {
+		if reg.taken(name) {
+			reg.problem("%s reuses a name already taken. Rule and exemption names must be unique", label)
+			return
+		}
+		reg.fns[name] = ruleFns{ifFn: fn}
+	}
+	reg.exemptions = append(reg.exemptions, def)
+}
+
+// checkExemptions reports each exemption that names a rule it can't cover, once every file has registered.
+func (reg *registry) checkExemptions() {
+	for _, ex := range reg.exemptions {
+		for _, name := range ex.exempts {
+			i := slices.IndexFunc(reg.defs, func(d *ruleDef) bool { return d.name == name })
+			switch {
+			case i < 0:
+				reg.problem("exemption %q names rule %q, which no file defines", ex.name, name)
+			case reg.defs[i].isEvent():
+				reg.problem("exemption %q names rule %q, an on rule. exempt covers whenever rules only", ex.name, name)
+			case reg.defs[i].each != ex.each:
+				reg.problem("exemption %q is each: %q but names rule %q, which is each: %q", ex.name, ex.each, name, reg.defs[i].each)
+			}
+		}
+	}
+}
+
 func (reg *registry) register(rt *sobek.Runtime, kind string, call sobek.FunctionCall) {
 	obj, ok := call.Argument(0).(*sobek.Object)
 	if !ok {
@@ -331,6 +435,10 @@ func (reg *registry) register(rt *sobek.Runtime, kind string, call sobek.Functio
 			return ""
 		}
 		return v.String()
+	}
+	if kind == "exempt" {
+		reg.registerExemption(obj, str)
+		return
 	}
 	name := str("name")
 	def := &ruleDef{name: name, each: str("each"), event: str("event"), order: len(reg.defs)}
@@ -376,6 +484,10 @@ func (reg *registry) register(rt *sobek.Runtime, kind string, call sobek.Functio
 	if name != "" {
 		if slices.ContainsFunc(reg.defs, func(d *ruleDef) bool { return d.name == name }) {
 			reg.problem("rule %q is defined twice. Rule names must be unique", name)
+			return
+		}
+		if reg.taken(name) {
+			reg.problem("%s reuses the name of an exemption. Rule and exemption names must be unique", label)
 			return
 		}
 		reg.fns[name] = fns

@@ -134,6 +134,7 @@ type PR struct {
 	Approved        Fact[bool]   `js:"approved"`
 	Ready           Fact[bool]   `js:"ready"`
 	NeedsWork       Fact[bool]   `js:"needsWork"`
+	Conflict        Fact[bool]   `js:"conflict" doc:"GitHub reports the PR's merge state as conflicting. needsWork counts a conflict too."`
 	Problem         Fact[string] `js:"problem"`
 	ActivitySummary Fact[string] `js:"activitySummary"`
 	LastActivity    Fact[*Seen]  `js:"lastActivity"`

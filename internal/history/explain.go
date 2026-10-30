@@ -59,7 +59,7 @@ type ExplainLine struct {
 	// Why is what started the cycle.
 	Why  string `json:"why,omitempty"`
 	Rule string `json:"rule,omitempty"`
-	// Decision is wants, waits, held, dropped, covered, threw, timeout or nothing.
+	// Decision is wants, waits, held, dropped, covered, exempt, threw, timeout or nothing.
 	Decision string `json:"decision,omitempty"`
 	Kind     string `json:"kind,omitempty"`
 	Subject  string `json:"subject,omitempty"`
@@ -113,6 +113,8 @@ const unprinted = "\x00"
 type decision struct {
 	rule, text string
 	line       ExplainLine
+	// readKey finds what the decision read in the cycle's Reads: the rule's, or the exemption's.
+	readKey string
 }
 
 // emit writes one line, as text or as the JSON object for it.
@@ -208,7 +210,7 @@ func (t *tracing) cycle(c Cycle) {
 		for i, d := range decided {
 			read := ""
 			line := head.with(d.line)
-			if r := c.Reads[d.rule+"/"+t.ticket]; len(r) > 0 {
+			if r := c.Reads[d.readKey]; len(r) > 0 {
 				read = "  read " + strings.Join(r, " ")
 				line.Read = r
 			}
@@ -253,7 +255,7 @@ func (t *tracing) decisions(c Cycle) []decision {
 	var out []decision
 	add := func(rule, text string, line ExplainLine) {
 		line.Rule = rule
-		out = append(out, decision{rule: rule, text: text, line: line})
+		out = append(out, decision{rule: rule, text: text, line: line, readKey: rule + "/" + t.ticket})
 	}
 	for _, e := range c.Wants {
 		if e.Subject == t.ticket {
@@ -280,6 +282,12 @@ func (t *tracing) decisions(c Cycle) []decision {
 		if e.Subject == t.ticket {
 			once := e.Once.String()
 			add(e.Rule, fmt.Sprintf("wants %s once %s, covered: %s", e.Kind, once, e.Reason), ExplainLine{Decision: "covered", Kind: e.Kind, Once: once, Detail: e.Reason})
+		}
+	}
+	for _, e := range c.Exempt {
+		if e.Subject == t.ticket {
+			add(e.Rule, "exempt: stopped by "+e.Reason, ExplainLine{Decision: "exempt", Detail: e.Reason})
+			out[len(out)-1].readKey = e.Reason + "/" + t.ticket
 		}
 	}
 	for _, e := range c.Throws {

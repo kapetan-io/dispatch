@@ -70,7 +70,7 @@ whenever({
 });
 ```
 
-- `whenever` wants `then` while `if` is true, for every record of the kind in every cycle. `on` runs once per new event of a type.
+- `whenever` wants `then` while `if` is true, for every record of the kind in every cycle. `on` runs once per new event of a type. `exempt` switches named `whenever` rules off for the records its `if` is true of (see below).
 - Every queued action carries `once: [topic, ...values]`. The action runs once per key, so the key says what must change before it runs again.
 - `ctx.notify.queueSend` takes a `reason` option, the words the notification's followers read after `dispatch event (`. With none, the reason is the once key's topic. Following sessions key on the words the shipped rules pass, such as `PR ready for review` (see `skills/dispatch/SKILL.md`), so rewording one changes what a following session does.
 - `queueLaunch` takes `stackOn: pr` to start the ticket's branch at that PR's head and write a stack record, so the ticket builds before the PR's ticket merges. The launch receipt says `stacked on <ticket> at <short head> (<branch>)`. A relaunch, or a launch on a branch that exists, writes and changes no record. A worker launched with `/dispatch:build <id> --base <branch>` opens its PR against that branch.
@@ -78,6 +78,34 @@ whenever({
 - A rule keeps no state. Reading a fact whose read failed throws `Unknown`, and the rule is held for that record even if it catches the error. Wrap a read in `known(() => ...)` to ask whether it could be read.
 - `Date` is pinned to `ctx.now`, `Math.random` throws, and `eval`, `Function`, `Promise`, async functions and generators aren't available.
 - Each `if` has one second and each `then` thirty. A rule that throws or times out wants nothing for that record, and every other rule goes ahead.
+
+## Switching off a rule for some records
+
+A rule file can't edit another file's rule, and a second rule with the same name is a load error. `exempt` takes the named rules' wants away for the records its `if` is true of, from any file, so you don't edit a shipped rule or turn it off for every record.
+
+`exempt` is the last tool to reach for when a rule acts when you don't want it to, not the first. It exists for one case, a shipped rule that is right for most records and wrong for a class of them you can name, such as the PR of a stacked ticket, which conflicts until its parent merges and has nothing for a nudge to fix. An exemption changes what a rule does without touching the rule, so a reader of the rule won't see it. Before you write one, ask in this order.
+
+- Is the rule wrong for everyone? Fix it in the file that defines it.
+- Do you want different behavior and not less? Write a new rule.
+- Is the rule your own? Put the condition in its `if`.
+
+```ts
+import { exempt } from "dispatch";
+
+exempt({
+  name: "conflict-is-not-work",
+  each: "pr",
+  rules: ["nudge-pr-needs-work", "relaunch-for-pr"],
+  if:   (pr) => pr.conflict && pr.ticket.hasLabel("stacked"),
+});
+```
+
+- `each` is the record kind, as in `whenever`. Every rule in `rules` must be a `whenever` rule of that kind. A rule no file defines, an `on` rule, a rule of another kind and a name a rule or exemption already has are load errors, so `rules check` fails and a run won't start.
+- For a record `if` is true of, the named rules want nothing, and they act as before for every other record. The exemption has no `then`. It takes away what a rule wants and changes no setting, so behavior a rule doesn't already have is a new rule.
+- An exemption whose `if` reads an unknown fact holds the rules it names for that record, so a guard that can't read its fact never lets a rule through. One that throws or runs out of time stops them too, and `rules check` reports the throw.
+- Each exemption runs once per record of its kind in a cycle, before the named rules' own `if`. A shadow rule an exemption stops reports no would-be action for that record, and `rules check` lists it as exempt.
+- `dispatch rules check` lists the exemption (`name  exempt  pr  exempts a, b`) and ends the rule's line with `exempt for ENG-4 by conflict-is-not-work`. `dispatch cycle` lists the stopped rule as `exempt`, and `dispatch explain` prints `exempt: stopped by conflict-is-not-work` for the ticket. A saved cycle with exemptions replays with no differences.
+- `pr.conflict` is true when GitHub reports the PR's merge state as conflicting. `pr.needsWork` and `pr.problem` still count a conflict, so a rule that should leave a conflict out exempts the rules that read them, as above. A saved cycle from before `pr.conflict` reads it as false.
 
 ## Reading a worker's turns
 
