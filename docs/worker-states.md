@@ -50,7 +50,7 @@ The Stop record comes from the plugin's Stop hook (`dispatch record-stop`). The 
 | Idle | stopped, nothing running | 💤 | Nothing. No nudge and no notification |
 | Idle, unconfirmed | any | 🟢 | After 5 minutes, closes the workspace and relaunches the worker. The closes count toward `launch_failure_limit` |
 | Blocked on a popup | any | 🔴 | Notifies on the first cycle and every `blocked_renotify_minutes`. Never nudges, never moves the ticket |
-| Gone | n/a | 🟢 | Relaunches the worker |
+| Gone | n/a | 🟢 | Relaunches the worker. A launch a rule asked to stack on another ticket's PR starts a new branch at that PR's head and records it, and its receipt says `stacked on <ticket> at <short head> (<branch>)`. A relaunch never changes the record |
 
 ### In Review
 

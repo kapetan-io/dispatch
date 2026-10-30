@@ -24,11 +24,21 @@ type Request struct {
 	// Base is the ref a new branch starts from. Defaults to the repo's default
 	// branch.
 	Base string
+	// Stack starts a new branch at Stack.Head and records the stack parent and fork point. It
+	// overrides Base. An existing branch gets neither the start point nor the record.
+	Stack *Stack
 	// Model is the Claude model the worker runs. Defaults to sonnet.
 	Model string
 	// Kickoff is the first command typed into the worker. Defaults to
 	// "/dispatch:build <Ticket>".
 	Kickoff string
+}
+
+// Stack is the PR a stacked ticket's branch starts at.
+type Stack struct {
+	// Ticket is the stack parent's id and Branch its PR's branch. Head is the PR's head sha as
+	// the rule read it. It is the fork point and is never updated, even if the PR moves.
+	Ticket, Branch, Head string
 }
 
 // Launcher statuses that the dispatcher treats specially.
@@ -49,6 +59,9 @@ type Result struct {
 	Pane      string `json:"pane,omitempty"`
 	Agent     string `json:"agent,omitempty"`
 	Kickoff   string `json:"kickoff,omitempty"`
+	// Stacked is true only when this launch wrote the stack record. A relaunch, or a launch on a
+	// branch that already exists, leaves it false.
+	Stacked bool `json:"stacked,omitempty"`
 }
 
 // Succeeded reports whether the launch leaves a worker running, which is when

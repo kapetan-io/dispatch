@@ -12,6 +12,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
+	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
@@ -125,6 +126,13 @@ type State struct {
 	herdrUnread string
 	// linearUnread holds the reason the tickets weren't read, which makes every ticket fact unknown.
 	linearUnread string
+	// stacks holds each repo label's stack records, and stacksUnread the reason a repo's
+	// could not be read.
+	stacks       map[string]stackrecord.Records
+	stacksUnread map[string]string
+	// prRead holds the tickets whose PR dispatch looked for this cycle, so a ticket in it
+	// with no PR record has none, and one outside it is unknown.
+	prRead map[string]bool
 	// maxInProgress is the cap admission enforces.
 	maxInProgress int
 	seq           int
@@ -139,7 +147,7 @@ func NewState(cfg config.Config, now time.Time) *State {
 		kinds: map[string][]*record{}, index: map[string]*record{},
 		parents: map[string]string{}, children: map[string][]string{}, childrenUnread: map[string]string{},
 		blockers: map[string]blockers{}, waiting: map[string]int64{}, workers: map[string]*record{}, workersByTree: map[string]*record{},
-		pools: map[string]pool{}, leased: map[string]bool{}, leasedUnread: map[string]string{}, treeRepo: map[string]string{}, reserved: map[string]bool{},
+		pools: map[string]pool{}, leased: map[string]bool{}, leasedUnread: map[string]string{}, treeRepo: map[string]string{}, reserved: map[string]bool{}, prRead: map[string]bool{},
 		maxInProgress: cfg.Dispatch.MaxInProgress, started: now, Kept: map[string]Exchange{},
 	}
 }
@@ -208,6 +216,8 @@ func (s *State) ticketRecord(t linear.Ticket) *record {
 		ID:          Known(t.Identifier, at),
 		Title:       Known(t.Title, at),
 		URL:         Known(t.URL, at),
+		Branch:      Known(t.Branch, at),
+		Stack:       Known[*Stack](nil, at),
 		Status:      Known(statusKey(t.Status, cfg.Statuses), at),
 		StatusSince: Known(at, at),
 		HasChildren: Known(t.HasChildren, at),
@@ -246,14 +256,43 @@ func (s *State) ticketRecord(t linear.Ticket) *record {
 			rec.Repo = Known(&repo, at)
 		}
 	}
+	rec.Stack = s.stackOf(t, repo, at)
 	r := newRecord("ticket", t.Identifier, t.Identifier, rec)
 	r.created = t.CreatedAt
 	list := make([]Blocker, len(t.Blockers))
 	for i, b := range t.Blockers {
-		list[i] = Blocker{ID: b.Identifier, Status: b.Status, Done: b.Status == cfg.Statuses.BlockerDone, Abandoned: b.Abandoned}
+		list[i] = Blocker{ID: b.Identifier, Status: b.Status, Done: b.Status == cfg.Statuses.BlockerDone, Abandoned: b.Abandoned, Ticket: Ref{Kind: "ticket", ID: b.Identifier}}
 	}
 	s.blockers[t.Identifier] = blockers{read: list, truncated: t.BlockersTruncated}
 	return s.add(r)
+}
+
+// stackOf reads the stack record of t's branch from its repo's clone. Without a repo there is no
+// clone to read, so the ticket has no record. A cut-short label list may hide the repo label, so
+// the record is unknown.
+func (s *State) stackOf(t linear.Ticket, repo string, at int64) Fact[*Stack] {
+	if t.LabelsTruncated {
+		return Unread[*Stack](labelsCutShort)
+	}
+	if repo == "" {
+		return Known[*Stack](nil, at)
+	}
+	if reason, ok := s.stacksUnread[repo]; ok {
+		return Unread[*Stack](reason)
+	}
+	// History written before stack records were saved holds none for any repo.
+	recs, ok := s.stacks[repo]
+	if !ok {
+		return Unread[*Stack]("the stack records of " + repo + " were not read")
+	}
+	rec, found, partial := recs.Of(t.Branch)
+	switch {
+	case partial:
+		return Unread[*Stack]("the stack record of " + t.Branch + " in " + repo + " is partial")
+	case found:
+		return Known(&Stack{Parent: rec.Parent, ForkPoint: rec.ForkPoint}, at)
+	}
+	return Known[*Stack](nil, at)
 }
 
 // FromWorld builds the state a cycle reads from one reading of the world.
@@ -271,6 +310,10 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 	}
 	for label, err := range w.PoolErrs {
 		s.pools[label] = pool{unknown: fmt.Sprintf("treehouse pool %s unread: %v", label, err)}
+	}
+	s.stacks, s.stacksUnread = w.StackRecords, map[string]string{}
+	for label, err := range w.StackErrs {
+		s.stacksUnread[label] = fmt.Sprintf("the stack records of %s unread: %v", label, err)
 	}
 	for label := range cfg.Repos {
 		if _, ok := s.pools[label]; !ok {
@@ -568,7 +611,11 @@ func (r *record) unknownExcept(reason string, keep ...string) {
 
 func (s *State) prRecords(w world.World) {
 	at := s.ms()
+	scope := world.ScopeOf(s.Config)
 	for _, t := range w.Tickets {
+		if _, read := scope.PRRepo(t, w.Workers[t.Identifier].State); read {
+			s.prRead[t.Identifier] = true
+		}
 		pr, ok := w.PRs[t.Identifier]
 		failed := w.PRReadFailed[t.Identifier]
 		if !ok && !failed {
