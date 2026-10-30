@@ -44,7 +44,7 @@ var Actions = []ActionSpec{
 	{Plugin: "ticket", Method: "queueEscalate", Receipt: "escalate", Subject: Param{"t", "Ticket"},
 		Params: []Param{{"why", "string"}}},
 	{Plugin: "worker", Method: "queueLaunch", Receipt: "launch", Subject: Param{"t", "Ticket"},
-		Options: "model?: string; kickoff?: string; uncapped?: boolean", Capped: true},
+		Options: "model?: string; kickoff?: string; uncapped?: boolean; stackOn?: PR", Capped: true},
 	{Plugin: "worker", Method: "queueNudge", Receipt: "nudge", Subject: Param{"t", "Ticket"},
 		Params: []Param{{"text", "string"}}},
 	{Plugin: "worker", Method: "queueClose", Receipt: "close", Subject: Param{"w", "Worker"}},

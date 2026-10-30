@@ -9,6 +9,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
+	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
@@ -41,6 +42,8 @@ type worldRecord struct {
 	PRs          map[string]pullrequest.PullRequest `json:"prs,omitempty"`
 	PRReadFailed map[string]bool                    `json:"prReadFailed,omitempty"`
 	UnreadRepos  map[string]bool                    `json:"unreadRepos,omitempty"`
+	StackRecords map[string]stackrecord.Records     `json:"stackRecords,omitempty"`
+	StackErrs    map[string]string                  `json:"stackErrs,omitempty"`
 	Nudged       map[string]bool                    `json:"nudged,omitempty"`
 }
 
@@ -58,6 +61,7 @@ func (w World) MarshalJSON() ([]byte, error) {
 		HoldersErr: errText(w.HoldersErr), Leases: w.Leases, Leased: w.Leased, Children: w.Children,
 		ChildrenErr: errText(w.ChildrenErr), Unfinished: w.Unfinished, Work: w.Work, CheckErrors: errTexts(w.CheckErrors),
 		Untracked: w.Untracked, PRs: w.PRs, PRReadFailed: w.PRReadFailed, UnreadRepos: w.UnreadRepos, Nudged: w.Nudged,
+		StackRecords: w.StackRecords, StackErrs: errTexts(w.StackErrs),
 	}
 	for _, t := range w.Trees {
 		r.Trees = append(r.Trees, treeRecord{Tree: t, RepoDir: t.RepoDir})
@@ -77,6 +81,7 @@ func (w *World) UnmarshalJSON(b []byte) error {
 		HoldersErr: asError(r.HoldersErr), Leases: r.Leases, Leased: r.Leased, Children: r.Children,
 		ChildrenErr: asError(r.ChildrenErr), Unfinished: r.Unfinished, Work: r.Work, CheckErrors: asErrors(r.CheckErrors),
 		Untracked: r.Untracked, PRs: r.PRs, PRReadFailed: r.PRReadFailed, UnreadRepos: r.UnreadRepos, Nudged: r.Nudged,
+		StackRecords: r.StackRecords, StackErrs: asErrors(r.StackErrs),
 	}
 	for _, t := range r.Trees {
 		t.Tree.RepoDir = t.RepoDir

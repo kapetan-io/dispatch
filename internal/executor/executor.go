@@ -220,15 +220,28 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World) Res
 		model = cfg.WorkerModel()
 	}
 	kickoff, _ := w.Options["kickoff"].(string)
-	r := e.Launcher.Launch(ctx, launcher.Request{
+	req := launcher.Request{
 		RepoDir: repo.Path, Ticket: t.Identifier, Title: t.Title, Branch: t.Branch, Model: model, Kickoff: kickoff,
-	})
+	}
+	if on, ok := w.Options["stackOn"].(map[string]any); ok {
+		ticket, _ := on["ticket"].(string)
+		branch, _ := on["branch"].(string)
+		head, _ := on["head"].(string)
+		if ticket == "" || branch == "" || head == "" {
+			return Result{Outcome: ledger.Refused, Detail: "stackOn names no PR head to start " + t.Identifier + " at"}
+		}
+		req.Stack = &launcher.Stack{Ticket: ticket, Branch: branch, Head: head}
+	}
+	r := e.Launcher.Launch(ctx, req)
 	res := Result{Reread: world.FromLocal}
 	switch {
 	case r.Status == launcher.StatusOK:
 		res.Outcome, res.Detail = ledger.Done, "ok"
 		if r.Workspace != "" {
 			res.Detail = "ok: workspace " + r.Workspace
+		}
+		if r.Stacked {
+			res.Detail += fmt.Sprintf(", stacked on %s at %s (%s)", req.Stack.Ticket, shortSHA(req.Stack.Head), req.Stack.Branch)
 		}
 	case r.Status == launcher.StatusAlreadyRunning:
 		res.Outcome, res.Detail = ledger.Done, launcher.StatusAlreadyRunning
@@ -242,6 +255,13 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World) Res
 		}
 	}
 	return res
+}
+
+func shortSHA(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
 
 func (e *Executor) nudge(ctx context.Context, w rules.Want, wd world.World) Result {

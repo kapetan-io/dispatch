@@ -15,7 +15,7 @@ const ticketMethods = "  hasLabel(name: string): boolean;\n"
 
 // helperTypes are the plain value types records hold, named in the order they are declared.
 var helperTypes = []reflect.Type{
-	reflect.TypeFor[Seen](), reflect.TypeFor[Label](), reflect.TypeFor[Stop](), reflect.TypeFor[Command](), reflect.TypeFor[Turn](), reflect.TypeFor[Blocker](),
+	reflect.TypeFor[Seen](), reflect.TypeFor[Label](), reflect.TypeFor[Stop](), reflect.TypeFor[Command](), reflect.TypeFor[Turn](), reflect.TypeFor[Blocker](), reflect.TypeFor[Stack](),
 }
 
 // typeDocs are the descriptions of the helper types that have one.
@@ -115,7 +115,8 @@ func ctxPlugins() string {
 		"tree": `      pool(repo: string | undefined): { returns: number };
       leased(t: Ticket): boolean;
 `,
-		"pr":     "",
+		"pr": `      of(t: Ticket): PR | undefined;
+`,
 		"notify": "",
 		"http": `      get(service: string, path: string): HttpResponse;
       last(service: string, path: string): HttpResponse;

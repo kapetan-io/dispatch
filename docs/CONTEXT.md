@@ -54,6 +54,7 @@ _Avoid_: review claim (a claim asserts something to check)
 
 - Each port has one **real adapter** and one **tool fake**, and every **contract scenario** runs against both.
 - The **drift check** runs the scenarios against the **real adapter** only.
+- A **Stacked ticket** has exactly one **Stack parent** and one **Stack record** until a **Restack** removes the record.
 
 **World**:
 What the sources say right now, held in memory and updated by each read. Every value in it is a fact.
@@ -124,12 +125,32 @@ A git worktree in a repo's treehouse pool, leased or not; a rule reads which fro
 _Avoid_: worktree and checkout (the tools' words, used inside the tool adapters and for a plain git worktree of a repo), lease (the lease is the holding, not the tree), slot (room in the pool)
 
 **Launch**:
-A launch leases a tree for the ticket, creates the ticket's branch, opens a herdr workspace, starts Claude and types the kickoff. A relaunch is a launch on a tree the ticket already holds. The launcher is the code that does it, run by the executor or by `dispatch launch`.
+A launch leases a tree for the ticket, creates the ticket's branch (at another ticket's PR head for a stacked launch), opens a herdr workspace, starts Claude and types the kickoff. A relaunch is a launch on a tree the ticket already holds. The launcher is the code that does it, run by the executor or by `dispatch launch`.
 _Avoid_: spawn, start (starting Claude is one step of a launch)
 
 **Kickoff**:
 The first command a launch types into the worker's new Claude session, `/dispatch:build <ticket>` unless the rule names another. A launch keeps a kickoff record in the state directory's `kickoffs` until the launch finishes. A kickoff record with no Stop from the worker since means the kickoff has not run, and the worker is unconfirmed.
 _Avoid_: initial prompt, first message
+
+**Stacked ticket**:
+A ticket whose branch the launcher started at another ticket's PR head instead of the default branch, so it is built and reviewed before that ticket merges.
+_Avoid_: dependent ticket, child (a child is a piece of a Linear parent)
+
+**Stack parent**:
+The ticket whose PR head a stacked ticket's branch started from.
+_Avoid_: parent (a Linear parent ticket), base ticket
+
+**Stack record**:
+Two keys in the repo clone's git config under the stacked ticket's branch naming the stack parent and the fork point. The launcher writes it once on a brand-new branch, and dispatch never changes it once the branch exists. Rules read it as `t.stack`.
+_Avoid_: stack state, stack metadata
+
+**Fork point**:
+The commit a stacked ticket's branch started at, the stack parent's PR head at launch.
+_Avoid_: merge base (git computes that, and it moves)
+
+**Restack**:
+Moving a stacked ticket's own commits onto the default branch after its stack parent merged, and pointing its PR there. A worker does it when a rule tells it to.
+_Avoid_: rebase (the git step), retarget (one step of it)
 
 **Nudge**:
 Text dispatch types into a worker's pane, such as the PR nudge or a `dispatch tell`. dispatch never types into a blocked Claude session, since the text would answer its question; the shipped rules nudge only an idle one. A nudge that starts with /name is also a command, and dispatch keeps a send record of it before typing.

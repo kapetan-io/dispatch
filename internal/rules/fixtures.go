@@ -12,6 +12,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
+	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -51,14 +52,17 @@ type scenarioModel struct {
 	sessions      map[string]sessionlog.Log
 	sessionUnread map[string]string
 	prs           map[string]*pullrequest.PullRequest
-	trees         []*treeModel
-	stamps        map[string]*stamp
+	// stacks holds the stack record fixture of each ticket's branch. A record with only one key
+	// is partial.
+	stacks map[string]stackrecord.Record
+	trees  []*treeModel
+	stamps map[string]*stamp
 }
 
 func newModel() *scenarioModel {
 	return &scenarioModel{
 		tickets: map[string]*linear.Ticket{}, parent: map[string]string{}, workers: map[string]*world.Worker{},
-		stops: map[string]stops.Record{}, sessions: map[string]sessionlog.Log{}, sessionUnread: map[string]string{}, prs: map[string]*pullrequest.PullRequest{}, stamps: map[string]*stamp{},
+		stops: map[string]stops.Record{}, sessions: map[string]sessionlog.Log{}, sessionUnread: map[string]string{}, prs: map[string]*pullrequest.PullRequest{}, stacks: map[string]stackrecord.Record{}, stamps: map[string]*stamp{},
 	}
 }
 
@@ -146,6 +150,14 @@ func (s *scenario) applyTicket(id string, fields map[string]any) {
 	}
 	if v, ok := str(fields, "title"); ok {
 		t.Title = v
+	}
+	if v, ok := str(fields, "branch"); ok {
+		t.Branch = v
+	}
+	if v, ok := fields["stack"].(map[string]any); ok {
+		parent, _ := str(v, "parent")
+		fork, _ := str(v, "forkPoint")
+		m.stacks[id] = stackrecord.Record{Parent: parent, ForkPoint: fork}
 	}
 	if v, ok := str(fields, "createdAt"); ok {
 		t.CreatedAt = v
@@ -452,6 +464,23 @@ func (s *scenario) world() world.World {
 			}
 		}
 		w.Children[parent.Identifier] = kids
+	}
+	w.StackRecords, w.StackErrs = map[string]stackrecord.Records{}, map[string]error{}
+	for label := range cfg.Repos {
+		w.StackRecords[label] = stackrecord.Records{Whole: map[string]stackrecord.Record{}, Partial: map[string]bool{}}
+	}
+	for id, rec := range m.stacks {
+		t := m.tickets[id]
+		label, _ := t.LabelIn(scope.RepoLabelGroup)
+		name, _, ok := cfg.Repos.Find(label)
+		if !ok {
+			continue
+		}
+		if rec.Parent == "" || rec.ForkPoint == "" {
+			w.StackRecords[name].Partial[t.Branch] = true
+			continue
+		}
+		w.StackRecords[name].Whole[t.Branch] = rec
 	}
 	for id, pr := range m.prs {
 		t, ok := m.tickets[id]

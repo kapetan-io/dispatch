@@ -16,6 +16,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
+	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/typed"
 )
@@ -140,6 +141,8 @@ type launch struct {
 	// fresh is set when this run took the lease, as opposed to finding one from
 	// an earlier run.
 	fresh bool
+	// stacked is what Result.Stacked reports.
+	stacked bool
 }
 
 func (l *launch) log(format string, args ...any) {
@@ -173,6 +176,9 @@ func (l *launch) run(ctx context.Context) Result {
 		return Result{Status: StatusNotARepo, Detail: "run from inside the target repo"}
 	}
 	l.repo = strings.TrimSpace(top)
+	if req.Stack != nil {
+		req.Base = req.Stack.Head
+	}
 	if req.Base == "" {
 		req.Base = l.defaultBranch(ctx)
 	}
@@ -220,7 +226,7 @@ func (l *launch) run(ctx context.Context) Result {
 	}
 	return Result{
 		Status: StatusOK, Ticket: req.Ticket, Branch: req.Branch, Worktree: l.tree,
-		Workspace: l.workspace, Pane: started.Pane, Agent: started.Agent, Kickoff: req.Kickoff,
+		Workspace: l.workspace, Pane: started.Pane, Agent: started.Agent, Kickoff: req.Kickoff, Stacked: l.stacked,
 	}
 }
 
@@ -379,6 +385,18 @@ func (l *launch) checkout(ctx context.Context, existed bool) (Result, bool) {
 	if !existed {
 		from = " from " + req.Base
 	}
+	// A branch with no record reads as existing to the next launch, which never writes one, so the
+	// record goes first.
+	if !existed && req.Stack != nil {
+		if res, ok := l.writeStackRecord(ctx); !ok {
+			return res, false
+		}
+	}
+	// A switch that fails after creating the branch leaves it behind, and creating it again fails.
+	created := func() bool {
+		_, err := l.git(ctx, l.repo, "show-ref", "--verify", "--quiet", "refs/heads/"+req.Branch)
+		return err == nil
+	}
 	var said string
 	for attempt := 1; attempt <= launchAttempts; attempt++ {
 		if attempt > 1 {
@@ -389,7 +407,7 @@ func (l *launch) checkout(ctx context.Context, existed bool) (Result, bool) {
 		}
 		var out strings.Builder
 		var err error
-		if existed {
+		if existed || (attempt > 1 && created()) {
 			err = l.gitToStderr(ctx, &out, l.tree, "switch", req.Branch)
 		} else {
 			_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", req.Base)
@@ -407,8 +425,29 @@ func (l *launch) checkout(ctx context.Context, existed bool) (Result, bool) {
 		}
 	}
 	l.log("checkout of %s failed in leased tree, returning the lease", req.Branch)
+	if !existed && req.Stack != nil && !created() {
+		// A leftover record would attach to whatever branch of this name is created later.
+		_ = stackrecord.Clear(context.WithoutCancel(ctx), l.opts.Env, l.repo, req.Branch)
+	}
 	l.returnLease(ctx)
 	return Result{Status: StatusCheckoutFailed, Detail: fmt.Sprintf("git switch to %s%s failed in leased tree %s (lease returned): %s", req.Branch, from, l.tree, said)}, false
+}
+
+// writeStackRecord fetches the stack parent's branch so the fork point is present locally, then
+// records the stack parent and the fork point. It is not retried, since git waits out a lock on the
+// clone's config itself. A failed write returns the lease like a failed switch.
+func (l *launch) writeStackRecord(ctx context.Context) (Result, bool) {
+	req := l.req
+	// The head may already be local, and the switch that follows fails loudly when it is not.
+	_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", req.Stack.Branch)
+	rec := stackrecord.Record{Parent: req.Stack.Ticket, ForkPoint: req.Stack.Head}
+	if err := stackrecord.Write(ctx, l.opts.Env, l.repo, req.Branch, rec); err != nil {
+		l.log("%v", err)
+		l.returnLease(ctx)
+		return Result{Status: StatusCheckoutFailed, Detail: fmt.Sprintf("stack record for %s failed in %s (lease returned): %v", req.Branch, l.repo, err)}, false
+	}
+	l.stacked = true
+	return Result{}, true
 }
 
 var maxTrees = regexp.MustCompile(`(?m)^max_trees *= *([0-9]+)`)

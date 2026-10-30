@@ -64,7 +64,7 @@ func (l *Launcher) Launch(ctx context.Context, r launcher.Request) launcher.Resu
 	if l.answer != nil {
 		return *l.answer
 	}
-	return launcher.Result{Status: launcher.StatusOK, Ticket: r.Ticket, Branch: r.Branch}
+	return launcher.Result{Status: launcher.StatusOK, Ticket: r.Ticket, Branch: r.Branch, Stacked: r.Stack != nil}
 }
 
 var _ launcher.Launcher = (*Launcher)(nil)

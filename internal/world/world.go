@@ -19,6 +19,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
+	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
@@ -120,6 +121,11 @@ type World struct {
 	PRReadFailed map[string]bool
 	// UnreadRepos are the repo labels whose pool could not be read.
 	UnreadRepos map[string]bool
+	// StackRecords maps a repo label to the stack records of its clone. StackErrs holds the
+	// labels whose records could not be read, which is unknown, not empty. A refresh that skips
+	// the local read keeps the earlier ones.
+	StackRecords map[string]stackrecord.Records
+	StackErrs    map[string]error
 	// Nudged holds the tickets whose worker was typed into since the last full
 	// read. They show as working until the next one, so nothing that waits for an
 	// idle worker acts on a worker that is already busy with the nudge.
@@ -167,6 +173,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 	if parts&FromLocal != 0 || prev.At.IsZero() {
 		parts |= FromLocal
 		w.HerdrErr, w.PoolErrs, w.UnreadRepos, w.Trees = nil, map[string]error{}, map[string]bool{}, nil
+		w.StackRecords, w.StackErrs = map[string]stackrecord.Records{}, map[string]error{}
 		readCtx, done := bound(ctx)
 		snap, err := src.Herdr.Read(readCtx)
 		done()
@@ -187,6 +194,16 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 				continue
 			}
 			w.Trees = append(w.Trees, trees...)
+		}
+		for label, repo := range scope.Repos {
+			readCtx, done := bound(ctx)
+			recs, err := stackrecord.Read(readCtx, src.Env, repo.Path)
+			done()
+			if err != nil {
+				w.StackErrs[label] = err
+				continue
+			}
+			w.StackRecords[label] = recs
 		}
 		// A repo whose pool can't be read holds back only its own tickets, so one
 		// moved clone doesn't stop launches in every other repo.
@@ -351,17 +368,12 @@ func (w *World) inspectTrees(ctx context.Context, env environment.Environment, s
 func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 	w.PRs, w.PRReadFailed = map[string]pullrequest.PullRequest{}, map[string]bool{}
 	for _, t := range w.Tickets {
-		if !scope.ReadsPR(t, w.Workers[t.Identifier].State) {
-			continue
-		}
-		label, ok := t.LabelIn(scope.RepoLabelGroup)
-		_, settings, _ := scope.Repos.Find(label)
-		dir := settings.Path
-		if !ok || dir == "" {
+		settings, ok := scope.PRRepo(t, w.Workers[t.Identifier].State)
+		if !ok {
 			continue
 		}
 		readCtx, done := bound(ctx)
-		pr, found, err := src.PullRequests.Read(readCtx, dir, t.Branch, pullrequest.Rules{IgnoreAuthors: settings.IgnoreCommentAuthors, RequiredChecksOnly: settings.IgnoreOptionalChecks, ApprovalChecks: settings.ApprovalChecks})
+		pr, found, err := src.PullRequests.Read(readCtx, settings.Path, t.Branch, pullrequest.Rules{IgnoreAuthors: settings.IgnoreCommentAuthors, RequiredChecksOnly: settings.IgnoreOptionalChecks, ApprovalChecks: settings.ApprovalChecks})
 		done()
 		if err != nil {
 			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, err)
@@ -400,6 +412,18 @@ func (s Scope) Parents(tickets []linear.Ticket) []linear.Ticket {
 		}
 	}
 	return parents
+}
+
+// PRRepo is the settings of the repo whose PR a read of the ticket would look in. It is false
+// when no read would happen, so a ticket without a PR record was either read and has none, or
+// was not read.
+func (s Scope) PRRepo(t linear.Ticket, state WorkerState) (config.Repo, bool) {
+	if !s.ReadsPR(t, state) {
+		return config.Repo{}, false
+	}
+	label, ok := t.LabelIn(s.RepoLabelGroup)
+	_, settings, _ := s.Repos.Find(label)
+	return settings, ok && settings.Path != ""
 }
 
 // ReadsPR reports whether the dispatcher uses this In Review ticket's PR.

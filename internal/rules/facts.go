@@ -75,6 +75,13 @@ type Blocker struct {
 	Status    string `js:"status"`
 	Done      bool   `js:"done"`
 	Abandoned bool   `js:"abandoned"`
+	Ticket    Ref    `js:"ticket" ref:"ticket" ts:"Ticket | undefined" doc:"The tracked ticket with the blocker's id, undefined when dispatch doesn't track it."`
+}
+
+// Stack is where a stacked ticket's branch started.
+type Stack struct {
+	Parent    string `js:"parent" doc:"The stack parent's ticket id."`
+	ForkPoint string `js:"forkPoint" doc:"The full sha of the commit the branch started at."`
 }
 
 // Ticket is a Linear ticket dispatch tracks.
@@ -82,6 +89,8 @@ type Ticket struct {
 	ID               Fact[string]  `js:"id"`
 	Title            Fact[string]  `js:"title"`
 	URL              Fact[string]  `js:"url"`
+	Branch           Fact[string]  `js:"branch" doc:"The branch dispatch launches the ticket's worker on and reads its PR by."`
+	Stack            Fact[*Stack]  `js:"stack" doc:"The stack record of the ticket's branch, undefined when the branch has none. Unknown when the clone's records could not be read or the record is partial."`
 	Status           Fact[string]  `js:"status" ts:"string"`
 	StatusSince      Fact[int64]   `js:"statusSince"`
 	PreviousStatus   Fact[*string] `js:"previousStatus" ts:"string | undefined"`

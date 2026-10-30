@@ -172,6 +172,7 @@ type scenario struct {
 	herdrUnread bool
 	poolUnread  map[string]bool
 	prUnread    map[string]bool
+	stackUnread map[string]bool
 	events      []Event
 	// services answers the requests a then makes, and kept holds what its gets got since the last resync.
 	services *httpservicetest.Fake
@@ -201,7 +202,7 @@ func newScenario(h *scenarioHost, rules *Rules) *scenario {
 		host: h, rules: rules, cfg: cfg, led: &ledger.Ledger{}, now: scenarioStart, dirty: true,
 		services: httpservicetest.New(cfg.HTTP), kept: map[string]Exchange{},
 		m:      newModel(),
-		thrown: map[string]bool{}, pools: map[string]int{}, poolUnread: map[string]bool{}, prUnread: map[string]bool{},
+		thrown: map[string]bool{}, pools: map[string]int{}, poolUnread: map[string]bool{}, prUnread: map[string]bool{}, stackUnread: map[string]bool{},
 	}
 }
 
@@ -395,6 +396,9 @@ func (s *scenario) state() *State {
 	for id := range s.prUnread {
 		w.PRReadFailed[id] = true
 	}
+	for repo := range s.stackUnread {
+		w.StackErrs[repo] = errors.New("scenario marked it unread")
+	}
 	state := FromWorld(w, s.cfg, s.led, "you")
 	state.HTTP, state.Kept = s.services, s.kept
 	for repo, returns := range s.pools {
@@ -539,10 +543,16 @@ func (s *scenario) unread(source string) {
 		}
 	case strings.HasPrefix(source, "treehouse:"):
 		s.poolUnread[strings.TrimPrefix(source, "treehouse:")] = true
+	case source == "stack":
+		for repo := range s.cfg.Repos {
+			s.stackUnread[repo] = true
+		}
+	case strings.HasPrefix(source, "stack:"):
+		s.stackUnread[strings.TrimPrefix(source, "stack:")] = true
 	case strings.HasPrefix(source, "github:"):
 		s.prUnread[strings.TrimPrefix(source, "github:")] = true
 	default:
-		s.fail("unread(%q): the sources are herdr, treehouse, treehouse:<repo> and github:<ticket>", source)
+		s.fail("unread(%q): the sources are herdr, treehouse, treehouse:<repo>, stack, stack:<repo> and github:<ticket>", source)
 	}
 	s.dirty = true
 }

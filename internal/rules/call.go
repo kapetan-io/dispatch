@@ -336,7 +336,7 @@ func (c *call) ctx() sobek.Value {
 	_ = ctx.Set("ticket", c.ticketAPI())
 	_ = ctx.Set("worker", c.workerAPI())
 	_ = ctx.Set("tree", c.treeAPI())
-	_ = ctx.Set("pr", c.pluginAPI("pr"))
+	_ = ctx.Set("pr", c.prAPI())
 	_ = ctx.Set("notify", c.pluginAPI("notify"))
 	_ = ctx.Set("http", c.httpAPI())
 	return ctx
@@ -461,7 +461,13 @@ func (c *call) queueFn(spec ActionSpec) func(sobek.FunctionCall) sobek.Value {
 		}
 		q.once = once
 		for _, key := range opts.Keys() {
-			if key != "once" {
+			switch {
+			case key == "once":
+			case key == "stackOn" && spec.Receipt == "launch":
+				if v := opts.Get(key); !sobek.IsUndefined(v) && !sobek.IsNull(v) {
+					q.opts[key] = c.stackOn(v)
+				}
+			default:
 				q.opts[key] = opts.Get(key).Export()
 			}
 		}
@@ -549,6 +555,38 @@ func (c *call) unknownRead(reason string) {
 		c.unknown = append(c.unknown, reason)
 	}
 	c.throwUnknown(reason)
+}
+
+// stackOn turns the PR a launch stacks on into what the executor needs, read now so the launch
+// starts at the head the rule saw. An unknown head or branch holds the rule, as any unknown read does.
+func (c *call) stackOn(v sobek.Value) map[string]any {
+	c.recordArg(v, "pr")
+	pr := v.ToObject(c.rt)
+	ticket := pr.Get("ticket").ToObject(c.rt)
+	return map[string]any{
+		"ticket": ticket.Get("id").String(),
+		"head":   pr.Get("head").String(),
+		"branch": ticket.Get("branch").String(),
+	}
+}
+
+func (c *call) prAPI() *sobek.Object {
+	o := c.pluginAPI("pr")
+	s := c.state
+	_ = o.Set("of", func(call sobek.FunctionCall) sobek.Value {
+		t := c.recordArg(call.Argument(0), "ticket")
+		if pr, ok := s.lookup("pr", t.id); ok {
+			if reason := pr.v.Elem().FieldByName("Number").FieldByName("Unknown").String(); reason != "" {
+				c.unknownRead(reason)
+			}
+			return c.recordValue(pr)
+		}
+		if !s.prRead[t.id] {
+			c.unknownRead("dispatch did not read the PR of " + t.id + " this cycle")
+		}
+		return sobek.Undefined()
+	})
+	return o
 }
 
 func (c *call) workerAPI() *sobek.Object {

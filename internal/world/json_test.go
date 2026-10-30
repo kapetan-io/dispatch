@@ -14,6 +14,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
+	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -49,6 +50,8 @@ func full() world.World {
 		PRReadFailed: map[string]bool{"ENG-5": true},
 		UnreadRepos:  map[string]bool{"tiger": true},
 		Nudged:       map[string]bool{"ENG-1": true},
+		StackRecords: map[string]stackrecord.Records{"tiger": {Whole: map[string]stackrecord.Record{"eng-1": {Parent: "ENG-2", ForkPoint: "abc"}}, Partial: map[string]bool{"eng-7": true}}},
+		StackErrs:    map[string]error{"lion": errors.New("stack records unread")},
 	}
 }
 

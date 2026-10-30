@@ -36,11 +36,23 @@ declare module "dispatch" {
     status: string;
     done: boolean;
     abandoned: boolean;
+    /** The tracked ticket with the blocker's id, undefined when dispatch doesn't track it. */
+    ticket: Ticket | undefined;
+  }
+  export interface Stack {
+    /** The stack parent's ticket id. */
+    parent: string;
+    /** The full sha of the commit the branch started at. */
+    forkPoint: string;
   }
   export interface Ticket {
     readonly id: string;
     readonly title: string;
     readonly url: string;
+    /** The branch dispatch launches the ticket's worker on and reads its PR by. */
+    readonly branch: string;
+    /** The stack record of the ticket's branch, undefined when the branch has none. Unknown when the clone's records could not be read or the record is partial. */
+    readonly stack: Stack | undefined;
     readonly status: string;
     readonly statusSince: number;
     readonly previousStatus: string | undefined;
@@ -204,7 +216,7 @@ declare module "dispatch" {
     worker: {
       of(t: Ticket): Worker;
       in(tree: Tree): Worker;
-      queueLaunch(t: Ticket, o: { once: Once; model?: string; kickoff?: string; uncapped?: boolean }): Action;
+      queueLaunch(t: Ticket, o: { once: Once; model?: string; kickoff?: string; uncapped?: boolean; stackOn?: PR }): Action;
       queueNudge(t: Ticket, text: string, o: { once: Once }): Action;
       queueClose(w: Worker, o: { once: Once }): Action;
     };
@@ -214,6 +226,7 @@ declare module "dispatch" {
       queueReturn(tree: Tree, o: { once: Once }): Action;
     };
     pr: {
+      of(t: Ticket): PR | undefined;
       queueMerge(pr: PR, o: { once: Once }): Action;
     };
     notify: {

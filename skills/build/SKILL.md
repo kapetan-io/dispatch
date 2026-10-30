@@ -51,8 +51,9 @@ You report through the ticket's status and comments, using the Linear tools in y
    - **Naming the repo.** Name the repo on every `gh` command that takes `--repo owner/name`, and give `gh api` a `repos/owner/name/...` path, which has no such flag, because in a clone with two remotes `gh` picks the wrong one (ENG-273).
      - Take `owner/name` from the PR's own URL once the PR exists.
      - Before that, get it from `gh repo view "$(git remote get-url origin)" --json nameWithOwner`, since `git remote get-url` prints a URL and `gh repo view` with no argument is the guess that went wrong.
+   - **Base.** A kickoff `/dispatch:build <ticket> --base <branch>` starts a stacked ticket. The ticket is the first word, and `<branch>` is its stack parent's PR branch. Add `--base <branch>` to every `gh pr create`, the draft one included.
    - **Draft or open.** Run `"${DISPATCH_BIN:-dispatch}" repo-settings`.
-     - When it prints `open_pr_as = "draft"`, create it with `gh pr create --repo owner/name --draft`, never move it out of the draft phase, and skip GitHub auto-merge.
+     - When it prints `open_pr_as = "draft"`, create it with `gh pr create --repo owner/name --draft` (plus the base, above), never move it out of the draft phase, and skip GitHub auto-merge.
      - When it does not print that, enable auto-merge only when the PR's base branch requires an approving review (`gh api repos/owner/name/branches/{base}/protection`, with the base from `gh pr view --repo owner/name --json baseRefName`), because a branch with no such rule merges the moment checks pass, before CodeRabbit or a person has read it.
    - **In Review.** Wait until the PR shows on the ticket as a link, then move the ticket to In Review.
      - Linear's GitHub integration moves a ticket to In Progress when it links a new PR, and has moved one back 2.5 seconds after its worker set In Review. A visible link doesn't prove that move has landed, so check the status once, about 30 seconds later, and move it back if Linear reverted it. One check is not polling.

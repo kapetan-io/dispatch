@@ -1842,6 +1842,9 @@ func (d *Dispatch) launches() []string {
 		if r.Kickoff != "" {
 			line += " --kickoff " + r.Kickoff
 		}
+		if r.Stack != nil {
+			line += fmt.Sprintf(" --stack-on %s %s %s", r.Stack.Ticket, r.Stack.Head, r.Stack.Branch)
+		}
 		found = append(found, line+"")
 	}
 	return found
