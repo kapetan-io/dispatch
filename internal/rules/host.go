@@ -140,7 +140,12 @@ func (e *LoadError) Error() string {
 // Load bundles the rules under dir, starting at entry (such as "dispatch.ts"),
 // and checks them. A rule that fails to load stops the start.
 func Load(dir, entry string, timeouts Timeouts) (*Rules, error) {
-	code, err := bundle(filepath.Join(dir, entry), dir, nil)
+	return LoadEntries(dir, []string{filepath.Join(dir, entry)}, timeouts)
+}
+
+// LoadEntries is Load for several entry files, bundled as if one file imported each in order.
+func LoadEntries(dir string, entries []string, timeouts Timeouts) (*Rules, error) {
+	code, err := bundle(entries, dir, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -195,15 +200,13 @@ func firstLine(s string) string {
 // bundle compiles a TypeScript entry file and everything it imports into one
 // script. The "dispatch" module is the host's API, and virtual holds any other
 // virtual modules by name.
-func bundle(entry, resolveDir string, virtual map[string]string) (string, error) {
+func bundle(entries []string, resolveDir string, virtual map[string]string) (string, error) {
 	modules := map[string]string{"dispatch": dispatchModule}
 	for name, src := range virtual {
 		modules[name] = src
 	}
-	entry, _ = filepath.Abs(entry)
 	resolveDir, _ = filepath.Abs(resolveDir)
-	res := api.Build(api.BuildOptions{
-		EntryPoints:   []string{entry},
+	opts := api.BuildOptions{
 		AbsWorkingDir: resolveDir,
 		Bundle:        true,
 		Format:        api.FormatIIFE,
@@ -222,7 +225,19 @@ func bundle(entry, resolveDir string, virtual map[string]string) (string, error)
 				return api.OnLoadResult{Contents: &src, Loader: api.LoaderJS}, nil
 			})
 		}}},
-	})
+	}
+	if len(entries) == 1 {
+		abs, _ := filepath.Abs(entries[0])
+		opts.EntryPoints = []string{abs}
+	} else {
+		var imports strings.Builder
+		for _, entry := range entries {
+			abs, _ := filepath.Abs(entry)
+			fmt.Fprintf(&imports, "import %q;\n", abs)
+		}
+		opts.Stdin = &api.StdinOptions{Contents: imports.String(), ResolveDir: resolveDir, Sourcefile: "entries.ts", Loader: api.LoaderTS}
+	}
+	res := api.Build(opts)
 	if len(res.Errors) > 0 {
 		var problems []string
 		for _, e := range res.Errors {

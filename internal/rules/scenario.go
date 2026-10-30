@@ -62,7 +62,7 @@ func RunScenarios(dir string, timeouts Timeouts) (Summary, error) {
 }
 
 func runScenarioFile(dir, file string, timeouts Timeouts, sum *Summary) error {
-	code, err := bundle(file, dir, map[string]string{"dispatch/testing": testingModule})
+	code, err := bundle([]string{file}, dir, map[string]string{"dispatch/testing": testingModule})
 	if err != nil {
 		return fmt.Errorf("%s: %w", filepath.Base(file), err)
 	}
@@ -97,20 +97,27 @@ type scenarioHost struct {
 func (h *scenarioHost) install() error {
 	api := h.rt.NewObject()
 	_ = api.Set("rulesFrom", func(call sobek.FunctionCall) sobek.Value {
-		path := call.Argument(0).String()
-		abs := filepath.Join(filepath.Dir(h.file), path)
-		if filepath.Ext(abs) == "" {
-			abs += ".ts"
+		if len(call.Arguments) == 0 {
+			panic(h.rt.NewTypeError("rulesFrom takes at least one entry file"))
 		}
-		if _, ok := h.loaded[abs]; !ok {
-			loaded, err := Load(filepath.Dir(abs), filepath.Base(abs), h.timeouts)
+		var entries []string
+		for _, arg := range call.Arguments {
+			abs := filepath.Join(filepath.Dir(h.file), arg.String())
+			if filepath.Ext(abs) == "" {
+				abs += ".ts"
+			}
+			entries = append(entries, abs)
+		}
+		key := strings.Join(entries, "\n")
+		if _, ok := h.loaded[key]; !ok {
+			loaded, err := LoadEntries(filepath.Dir(entries[0]), entries, h.timeouts)
 			if err != nil {
 				panic(h.rt.NewGoError(err))
 			}
-			h.loaded[abs] = loaded
+			h.loaded[key] = loaded
 		}
 		handle := h.rt.NewObject()
-		_ = handle.Set("path", abs)
+		_ = handle.Set("path", key)
 		return handle
 	})
 	_ = api.Set("scenario", func(call sobek.FunctionCall) sobek.Value {

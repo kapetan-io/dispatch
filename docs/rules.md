@@ -57,6 +57,8 @@ scenario(rules, "a crashed worker is relaunched once", s => {
 
 `s.see` is a read that differs, `s.land` is an action's receipt, `s.unread` marks a source as failed, and `s.expectHeld` names a rule held for a record. `types/testing.d.ts` lists all of them.
 
+`rulesFrom` takes several entry files and loads them as if one file imported each in order, so a scenario can test your rules with an example beside them: `rulesFrom("./dispatch", "./stacking")`.
+
 ## Writing a rule
 
 ```ts
@@ -175,7 +177,19 @@ whenever({
 - `rules test` has no network. A scenario names the service with `s.config({ http: { sentry: { baseUrl: "https://sentry.test/api/0" } } })` and sets its answers with `s.http("sentry", "/issues/?query=is:unresolved", [])`.
 - Each response a `then` waited on is recorded in the cycle line of the history, with the rule and ticket that asked. `dispatch replay` reads those answers instead of calling the service, and keeps them until the same resync, tick or start that cleared them live. It reports a difference when a cycle asks for a service or path the live cycle didn't, or skips one it made, and under `--rules` a get with no recorded answer is a difference too. A path that contains `..;` throws at the call, like any other path that leaves the service. `rules check` calls no service and runs no `token_command`, so a `get` reads as an unknown there and the rule is listed as held. Test HTTP rules with `rules test`.
 
-Add a rule by creating a file and importing it from `dispatch.ts`, which is the list of what runs. `extras.ts` and `commands.ts` are examples that `dispatch.ts` doesn't import.
+Add a rule by creating a file and importing it from `dispatch.ts`, which is the list of what runs. `extras.ts`, `commands.ts` and `stacking.ts` are examples that `dispatch.ts` doesn't import.
+
+## Stacking tickets
+
+People split a feature into tickets that build on each other, and by default each waits for the one before it to merge. Add `import "./stacking";` to `dispatch.ts` and a ticket launches on its blocker's unmerged PR instead:
+
+- A ticket whose only open blocker, in the same repo, is In Review with a ready PR gets a worker on that PR's branch, and its PR opens against that branch. Two open blockers, a blocker without a ready PR, or a blocker in another repo do not stack. A feature piece is promoted on the same condition. The bar is `stackablePR` in `stacking.ts`, so edit it there.
+- When the stack parent reaches Done (Linear sets that when its PR merges), the stacked ticket's worker is told once per stretch in its status to restack, meaning to move its own commits onto the default branch, point its PR there, force-push, remove the stack record and follow the repo's own after-restack steps. A stacked ticket with no worker is relaunched with the same instructions. No other rule launches or nudges it until the record is gone.
+- `auto-merge` never merges a stacked PR while its record exists, and an approved one in an `auto_merge` repo gets a ready notice. A stacked PR's conflict with its base starts no needs-work nudge, relaunch or escalation, and review activity on it still reaches an idle worker.
+- A stacked ticket whose stack parent is Canceled or Duplicate moves to Needs Human.
+- If the clone's stack records can't be read, `auto-merge` is held for that repo's PRs.
+
+The shipped rules stay untouched. `stacking.ts` keeps them off stacked tickets with [exemptions](#switching-off-a-rule-for-some-records). The guards cover only what the rules do. The `dispatch:autobots` skill merges feature children itself, and `dispatch:build` arms GitHub auto-merge when a base branch requires approval, so either can still merge a stacked PR into its stack parent's branch. `notify-stacked-ready` and `nudge-stacked-activity` copy their shipped rules' conditions, so an edit to `notify-ready-for-review` or `nudge-pr-activity` has to be carried over, and the pinning scenarios in `stacking.test.ts` fail until it is.
 
 ## Files
 
