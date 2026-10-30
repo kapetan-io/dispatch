@@ -66,6 +66,11 @@ type Held struct {
 	Dropped bool
 }
 
+// Exempted is a rule an exemption stopped for a record.
+type Exempted struct {
+	Exemption, Rule, Subject string
+}
+
 // Throw is a rule call that threw or ran out of time. It wants nothing.
 type Throw struct {
 	Rule, Record, Subject, Error string
@@ -86,6 +91,8 @@ type Result struct {
 	Held    []Held
 	Throws  []Throw
 	Covered []Covered
+	// Exempted lists the rules an exemption stopped, so a record they want nothing for says why.
+	Exempted []Exempted
 	// Shadow lists what rules marked shadow would have wanted.
 	Shadow []Want
 	// Reads maps "rule/subject" to what the rule read, for the records that
@@ -113,6 +120,7 @@ func (r Result) WantsFor(rule string) []Want {
 func (r *Rules) Cycle(state *State, events []Event) Result {
 	res := Result{Reads: map[string][]string{}}
 	var fresh []Want
+	exemptions := map[string]exemption{}
 	for _, def := range r.defs {
 		if def.isEvent() {
 			for i := range events {
@@ -123,7 +131,7 @@ func (r *Rules) Cycle(state *State, events []Event) Result {
 			continue
 		}
 		for _, rec := range state.kinds[def.each] {
-			if rec.hidden {
+			if rec.hidden || r.exempts(&res, state, exemptions, def, rec) {
 				continue
 			}
 			fresh = append(fresh, r.evaluate(&res, state, def, rec, nil)...)
@@ -131,6 +139,76 @@ func (r *Rules) Cycle(state *State, events []Event) Result {
 	}
 	res.admit(state, r.settle(&res, state, fresh))
 	return res
+}
+
+// exemption is what one exemption decided for one record.
+type exemption struct {
+	// state is exemptTrue, exemptFalse, exemptHeld (its if read an unknown) or exemptThrew.
+	state  string
+	reason string
+	reads  []string
+}
+
+const (
+	exemptTrue  = "true"
+	exemptFalse = "false"
+	exemptHeld  = "held"
+	exemptThrew = "threw"
+)
+
+// exempts reports whether an exemption stops def for rec, and records why. An exemption that reads an
+// unknown holds the rule and one that throws stops it, so a guard that fails never lets the rule through.
+// Each exemption runs once per record however many rules it names, and decisions are keyed by record
+// id because two records of a kind can share a subject, as two trees leased to one ticket do.
+func (r *Rules) exempts(res *Result, state *State, decided map[string]exemption, def *ruleDef, rec *record) bool {
+	var held *exemption
+	var heldBy string
+	for _, ex := range r.exemptions {
+		if ex.each != def.each || !slices.Contains(ex.exempts, def.name) {
+			continue
+		}
+		key := ex.name + "/" + rec.kind + "/" + rec.id
+		d, ok := decided[key]
+		if !ok {
+			d = r.decide(res, state, ex, rec)
+			decided[key] = d
+		}
+		switch d.state {
+		case exemptTrue:
+			res.Exempted = append(res.Exempted, Exempted{Exemption: ex.name, Rule: def.name, Subject: rec.subject})
+			return true
+		case exemptThrew:
+			return true
+		case exemptHeld:
+			if held == nil {
+				held, heldBy = &d, ex.name
+			}
+		}
+	}
+	if held != nil {
+		res.Held = append(res.Held, Held{Rule: def.name, Record: rec.String(), Subject: rec.subject, Reason: "exemption " + heldBy + " read an unknown: " + held.reason, Reads: held.reads})
+		return true
+	}
+	return false
+}
+
+// decide runs an exemption's if over rec.
+func (r *Rules) decide(res *Result, state *State, ex *ruleDef, rec *record) exemption {
+	verdict, c := r.run(state, ex, phaseIf, rec, nil)
+	key := ex.name + "/" + rec.subject
+	switch {
+	case len(c.unknown) > 0:
+		res.Reads[key] = c.reads
+		return exemption{state: exemptHeld, reason: strings.Join(unique(c.unknown), "; "), reads: c.reads}
+	case verdict.err != nil:
+		res.Throws = append(res.Throws, Throw{Rule: ex.name, Record: rec.String(), Subject: rec.subject, Error: verdict.err.Error(), Timeout: verdict.timeout, Phase: phaseIf})
+		res.Reads[key] = c.reads
+		return exemption{state: exemptThrew}
+	case verdict.ok:
+		res.Reads[key] = c.reads
+		return exemption{state: exemptTrue}
+	}
+	return exemption{state: exemptFalse}
 }
 
 // settle drops the wants the ledger covers and a second rule's duplicates, and

@@ -95,6 +95,13 @@ const staticDeclarations = `  export type Once = [topic: string, ...values: (str
     then: (event: EventOf<E>, ctx: Ctx) => Action | Action[] | void;
     shadow?: boolean;
   }): void;
+  /** Named whenever rules, all of kind each, want nothing for a record its if is true of. A read that is unknown holds them. */
+  export function exempt<K extends RecordKind>(exemption: {
+    name: string;
+    each: K;
+    rules: string[];
+    if: (record: RecordOf<K>, ctx: Ctx) => boolean;
+  }): void;
   export function known(read: () => unknown): boolean;
   export function minutes(n: number): number;
   export function hours(n: number): number;
