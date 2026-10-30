@@ -1,21 +1,12 @@
 import { whenever, minutes } from "dispatch";
-import { nudgeable, resumeOwed, heard, prNudges, escalate, stoppedSinceLastNudge, nudgeLimit } from "./shared";
-import { RESUME_NUDGE, ACTIVITY_NUDGE, PR_NUDGE } from "./texts";
+import { nudgeable, heard, prNudges, escalate, stoppedSinceLastNudge, nudgeLimit } from "./shared";
+import { ACTIVITY_NUDGE, PR_NUDGE } from "./texts";
 
 // Each nudge's once key names what it told the worker, in the source's own time, such
 // as the PR activity time or the head commit. A nudge is owed while there's something
 // newer, so activity that arrives while the worker is stuck in a question dialog is still
 // owed when the dialog closes. No nudge of any kind goes out until the worker has stopped
 // since the last one (stoppedSinceLastNudge).
-
-// Once per move back from Needs Human. It also tells the worker to read the comments.
-whenever({
-  name: "nudge-resume",
-  each: "ticket",
-  if:   (t, ctx) => nudgeable(t) && ctx.worker.of(t).state === "idle" && resumeOwed(t, ctx)
-           && stoppedSinceLastNudge(t, ctx),
-  then: (t, ctx) => ctx.worker.queueNudge(t, RESUME_NUDGE(t), { once: ["resume", t.statusSince] }),
-});
 
 // Once per activity time, a GitHub time compared with GitHub times.
 whenever({

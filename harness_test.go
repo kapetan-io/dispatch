@@ -2032,10 +2032,6 @@ func compileDispatch() {
 	}
 }
 
-const (
-	resumeText1 = "I answered on ENG-1. Read the latest comments and continue."
-)
-
 // child builds a child of parent. blockedBy pairs a blocker's identifier with
 // its status.
 func child(id, parent, status string, blockedBy ...[2]string) fakeTicket {

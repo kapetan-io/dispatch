@@ -132,7 +132,7 @@ The first command a launch types into the worker's new Claude session, `/dispatc
 _Avoid_: initial prompt, first message
 
 **Nudge**:
-Text dispatch types into a worker's pane, such as the PR nudge, a resume or a `dispatch tell`. dispatch never types into a blocked Claude session, since the text would answer its question; the shipped rules nudge only an idle one. A nudge that starts with /name is also a command, and dispatch keeps a send record of it before typing.
+Text dispatch types into a worker's pane, such as the PR nudge or a `dispatch tell`. dispatch never types into a blocked Claude session, since the text would answer its question; the shipped rules nudge only an idle one. A nudge that starts with /name is also a command, and dispatch keeps a send record of it before typing.
 _Avoid_: notification (that goes to you), prompt
 
 **Close**:

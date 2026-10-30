@@ -72,41 +72,6 @@ scenario(rules, "a ticket comment on a blocked worker only notifies the user", s
   s.expect([["notify-blocked", "notify", "ENG-1"]]);
 });
 
-scenario(rules, "nudge-resume tells an idle worker the human answered, ", s => {
-  s.given(ticket("ENG-1", { status: "needs_human", optedIn: true, repo: "dispatch" }), worker("ENG-1", "idle"));
-  s.see(comment("ENG-1", { at: "10:00" }));
-  s.see(ticket("ENG-1", { status: "in_progress" }));
-  s.expect([["nudge-resume", "nudge", "ENG-1"]]);
-  s.land("nudge", "ENG-1");
-  s.expect([]);
-  stopsAgain(s, "ENG-1");
-  s.expect([]);
-});
-
-scenario(rules, "nudge-resume waits for a working worker to idle", s => {
-  s.given(ticket("ENG-1", { status: "needs_human", optedIn: true, repo: "dispatch" }), worker("ENG-1", "working"));
-  s.see(ticket("ENG-1", { status: "in_progress" }));
-  s.expect([]);
-  s.see(worker("ENG-1", "idle"));
-  s.expect([["nudge-resume", "nudge", "ENG-1"]]);
-});
-
-scenario(rules, "nudge-resume is once per move back from Needs Human", s => {
-  s.given(ticket("ENG-1", { status: "needs_human", optedIn: true, repo: "dispatch" }), worker("ENG-1", "idle"));
-  s.see(ticket("ENG-1", { status: "in_progress" }));
-  s.land("nudge", "ENG-1");
-  stopsAgain(s, "ENG-1");
-  s.see(ticket("ENG-1", { status: "needs_human" }));
-  s.see(ticket("ENG-1", { status: "in_progress" }));
-  s.expect([["nudge-resume", "nudge", "ENG-1"]]);
-});
-
-scenario(rules, "nudge-resume does not follow a move from another status", s => {
-  s.given(ticket("ENG-1", { status: "in_review", optedIn: true, repo: "dispatch" }), worker("ENG-1", "idle"));
-  s.see(ticket("ENG-1", { status: "in_progress" }));
-  s.expect([]);
-});
-
 scenario(rules, "nudge-pr-activity tells an idle worker of new PR activity", s => {
   s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1"));
   s.expect([]);
@@ -195,16 +160,4 @@ scenario(rules, "nudge-pr-needs-work is held when the PR could not be read", s =
   s.unread("github:ENG-1");
   s.expect([]);
   s.expectHeld("nudge-pr-needs-work", "ENG-1");
-});
-
-scenario(rules, "a refused resume nudge is not owed again, so a later nudge is not held behind it", s => {
-  s.given(ticket("ENG-1", { status: "in_progress", previousStatus: "needs_human" }), worker("ENG-1", "idle"));
-  s.expect([["nudge-resume", "nudge", "ENG-1"]]);
-  s.land("nudge", "ENG-1", { outcome: "refused", detail: "blocked" });
-  s.see(worker("ENG-1", "working"));
-  s.see(worker("ENG-1", "idle"));
-  s.expect([]);
-  s.see(ticket("ENG-1", review));
-  s.see(pr("ENG-1", failing));
-  s.expect([["nudge-pr-needs-work", "nudge", "ENG-1"]]);
 });
