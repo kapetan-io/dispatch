@@ -386,6 +386,20 @@ func TestAnIdleHourCostsThreeLinearQueriesPerResync(t *testing.T) {
 	assert.Empty(t, d.Linear.Changes())
 }
 
+func TestAResyncRunsEveryIntervalWhenTheWallClockLagsTheTimer(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Tick()
+	before := d.Linear.Calls()
+
+	for range 4 {
+		d.AdvanceLagging(5*time.Minute, 3*time.Millisecond)
+	}
+
+	assert.Equal(t, 4, d.Linear.Calls()-before)
+}
+
 func TestALaunchThatLandsAfterItsDeadlineGetsNoSecondWorker(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
