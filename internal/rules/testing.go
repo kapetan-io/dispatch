@@ -27,7 +27,7 @@ func TestingDeclarations() string {
 	b.WriteString(`declare module "dispatch/testing" {
   export interface Fixture { readonly __kind: string }
   export interface RulesHandle { readonly path: string }
-  export function rulesFrom(path: string): RulesHandle;
+  export function rulesFrom(...paths: string[]): RulesHandle;
   export function scenario(rules: RulesHandle, name: string, body: (s: Scenario) => void): void;
   export function ticket(id: string, fields?: {
     status?: string; optedIn?: boolean; repo?: string; createdAt?: string; title?: string;
