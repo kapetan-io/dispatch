@@ -13,7 +13,7 @@ The ticket you were started on is the feature ticket. The session that created i
 
 ## Start
 
-Load `dispatch:converse` with the Skill tool. Open a todolist with one entry per step before starting.
+Load `dispatch:converse` and `dispatch:blueprint` with the Skill tool. Open a todolist with one entry per step before starting.
 
 1. Orient
 2. Discuss the product half and get the Objective approved
@@ -49,12 +49,12 @@ Work the product half first, then the technical half, because the technical desi
 For each question:
 
 - **Offer a suggested answer.** The user reacts and refines rather than generating from scratch. In the technical half, lean on established codebase patterns and ADRs, and name the reason for a departure.
-- **Run it when a run can answer it.** Before asking something a script could answer, such as a timing, a library's behavior or whether an approach works at all, write the smallest throwaway script in the tree and decide from what it prints. No decision means no prototype. Record the question, the observation and the script in the blueprint. Product and preference calls stay with the user.
+- **Run it when a run can answer it.** Before asking something a script could answer, such as a timing, a library's behavior or whether an approach works at all, write the smallest throwaway script in the tree and decide from what it prints. No decision means no prototype. Product and preference calls stay with the user.
 - **Resolve it before moving on.** Stay on it until it is answered or the user defers it.
 - **Interrupt on vague or overloaded terms.** "You said 'user'. Do you mean the account owner or anyone with access?" Resolve the term from the glossary before continuing, and track resolved terms for the glossary writeback.
 - **Test every scope boundary with one concrete scenario**, framed as confirmation: "So if a customer cancels mid-billing-cycle, that's out of scope?"
 
-Keep a running decision log, marking each entry "you decided" or "agent assumed". Save it in the blueprint draft, and show it on request and after each domain (problem, users, scope; then data, API, failure handling), with the settled technical answers and their reasons. The user overrides any of them in real time.
+Keep a running decision log in the blueprint draft, and show it on request and after each domain (problem, users, scope; then data, API, failure handling), with the settled technical answers and their reasons. The user overrides any of them in real time.
 
 ### What the product half covers
 
@@ -113,13 +113,13 @@ If the user pushes back on the shape, treat that as Phase A evidence. Re-ground 
 
 Settle what an engineer needs before writing code, not a checklist: data, dependencies, failure modes, security, PII, operations. Lean on the codebase patterns Phase A found.
 
-- **Domain-boundary opacity.** A domain must not contain logic that belongs to a domain it calls. For each interface, ask whether the caller ever needs to know which implementation is behind it. If so, either the contract is missing a guarantee or the caller is absorbing the callee's job. State the principle in the blueprint when an interface has several implementations.
+- **Domain-boundary opacity.** A domain must not contain logic that belongs to a domain it calls. For each interface, ask whether the caller ever needs to know which implementation is behind it. If so, either the contract is missing a guarantee or the caller is absorbing the callee's job.
 - **Correctness translation.** For each state invariant, name every operation that touches its data and show why none can violate it. Prefer designs where the data model makes the illegal state unrepresentable, and say which invariants rest on application logic and so need more tests. For each behavioral constraint, show how the architecture satisfies it. Make assumptions between components explicit as preconditions and postconditions.
 - **Testing.** Name the surface a test enters through, the substitute for each external dependency, standing in at a domain type, an observability API for any async effect the surface doesn't show, an injectable clock for time-dependent behavior, and a parity plan for any in-memory store beside a real one. Load `dispatch:surface-testing` with the Skill tool before you settle this section.
 - **Settings.** For every setting a user can leave unset, load `dispatch:principle-zero-value-settings` with the Skill tool and apply its rules to the name and the unset value.
 - **Level of detail.** Pin a signature only where a consumer or test binds to it. Describe an internal surface's responsibility, inputs and outputs, invariants and error categories, and leave its signature to the implementor, who sees the real types. A schema is pinned in full, and the interface that wraps it is not.
 
-When a question can't be settled now, insert `[NEEDS CLARIFICATION: <question>]` and continue with the best assumption. Three or more flags mean the blueprint isn't ready to build from, so stop and ask the user to settle them.
+Three or more `[NEEDS CLARIFICATION: ...]` flags mean the blueprint isn't ready to build from, so stop and ask the user to settle them.
 
 Once the contract sketch is agreed, run `dispatch:design-fit-review` with the Skill tool on the sketch and the technical decisions so far, so a finding changes the shape before the blueprint is written. Apply its Act On fixes and log each as "agent assumed". Show the user the verdict with the design, and ask only about a fix that changes the approved contract sketch.
 
@@ -127,13 +127,7 @@ Before writing, run two passes. **Correctness:** every invariant has a preservat
 
 ## Write the blueprint
 
-Save the blueprint as a Linear document on the feature ticket, not under `docs/features/`. Save a draft after the Objective is approved and again after each phase, so a crash loses little. Write one document, product half first and then the technical half, with only the sections the discussion covered:
-
-Objective, Mental Model, User Stories, Correctness Constraints (State Invariants, Behavioral Constraints), Acceptance Criteria, Success Metrics, Scope (In Scope, Out of Scope), Dependencies and Constraints, then Functional, Architecture, Data Design (Invariant Preservation, Illegal State Analysis), Security, PII, Scale, Testing, Limitations and Future Work, Open Questions, Decision Log (every entry marked "you decided" or "agent assumed").
-
-Keep PII as its own section. Mark anything unresolved with `TODO:` and a line on what is missing. Keep it short, since a section that drives no decision is noise. Write for a reader who was not in the discussion, with no "the option we discussed". "We considered X but chose Y because Z" is useful. If the feature has an OpenAPI spec, the contract sketch becomes a second document on the ticket, as a fenced YAML block.
-
-If the discussion resolved domain terms, add a `Glossary changes` section to the blueprint in the format of [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md), naming the `CONTEXT.md` each term belongs in. Your tree is discarded at hand-off, so the first build piece commits the terms, as `dispatch:breakdown` arranges.
+Write it with `dispatch:blueprint`. Save a draft after the Objective is approved and again after each phase, so a crash loses little.
 
 ## Audit the transcript
 

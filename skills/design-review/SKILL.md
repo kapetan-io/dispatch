@@ -5,7 +5,7 @@ description: "Review a feature ticket's blueprint with the user, audit it agains
 
 # Review a Blueprint
 
-You run in the review worker for one `design-review` ticket, a child of the feature ticket that holds the blueprint as a Linear document. The dispatcher started you in a tree it leased, and you own the review ticket until it is Done or in Needs Human. Load `dispatch:converse` with the Skill tool first, and open a todolist for the steps below. You run unattended until a question needs the user, so ask in chat, as `dispatch:converse` says. Never run `/loop`, cron, `treehouse return`, or `dispatch tick` after your own move to Done, which would tear down the workspace you run in. The tick in `dispatch:breakdown`'s Start step runs while you are still In Progress, so it is safe. You never commit. Your tree is discarded.
+You run in the review worker for one `design-review` ticket, a child of the feature ticket that holds the blueprint as a Linear document. The dispatcher started you in a tree it leased, and you own the review ticket until it is Done or in Needs Human. Load `dispatch:converse` and `dispatch:blueprint` with the Skill tool first, and open a todolist for the steps below. You run unattended until a question needs the user, so ask in chat, as `dispatch:converse` says. Never run `/loop`, cron, `treehouse return`, or `dispatch tick` after your own move to Done, which would tear down the workspace you run in. The tick in `dispatch:breakdown`'s Start step runs while you are still In Progress, so it is safe. You never commit. Your tree is discarded.
 
 ## Goal
 
@@ -37,11 +37,7 @@ Blueprint: <document link>
 
 ## Reading and writing the blueprint
 
-Read the blueprint with `get_document` on the feature ticket and write it to `blueprint.md` in your scratchpad. Sub-agents read that file, never Linear, so a missing Linear connection can't leave one reviewing nothing. Rewrite the file from a fresh `get_document` after every patch, so each round sees the blueprint as the last patch left it. Point them at `docs/CONTEXT.md` (the domain glossary) if it exists, and give only the list of files in `docs/adr/`, so they read specific ADRs on demand.
-
-Linear rewrites markdown on save: bullets come back as `*`, a leading H1 is dropped and lines can gain blanks. Apply each fix as a `save_document` patch whose old text you copied from a fresh `get_document`, and read again before the next patch. Never push the whole document back.
-
-Log each user answer or dismissal in the blueprint's Decision Log as "you decided (review)" as you get it, so a rerun doesn't ask again.
+Read and patch the blueprint as `dispatch:blueprint` says. Write what `get_document` returns to `blueprint.md` in your scratchpad. Sub-agents read that file, never Linear, so a missing Linear connection can't leave one reviewing nothing. Rewrite the file from a fresh `get_document` after every patch, so each round sees the blueprint as the last patch left it. Point them at `docs/CONTEXT.md` (the domain glossary) if it exists, and give only the list of files in `docs/adr/`, so they read specific ADRs on demand.
 
 ## Pre-work
 
@@ -106,8 +102,8 @@ It answers **VERDICT: PASS or FAIL**, one line per criterion, and on FAIL at mos
 
 ## End steps
 
-After the loop, read the document once more to confirm every resolved finding landed, and apply any that did not. Keep unchanged sections in their order, replace resolved soft flags with the decision, and add nothing for dismissed findings.
+After the loop, read the document once more to confirm every resolved finding landed, and apply any that did not. Add nothing for dismissed findings.
 
-1. **Glossary.** Keep the blueprint's `Glossary changes` section current with the terms the review corrected or added (format in [CONTEXT-FORMAT.md](../design/CONTEXT-FORMAT.md)). Your tree is discarded, so `dispatch:breakdown` hands the section to the first piece to commit.
-2. **ADRs.** Offer an ADR for a logged decision only if it is hard to reverse, surprising without context, and a real trade-off. Don't re-offer ones already offered. For each the user approves, add an `ADR: <title>` section in the format of the ADRs already in `docs/adr/`, unnumbered. The first piece that implements it commits it under the next free `NNNN-` number.
-3. **Contract.** If the blueprint defines or changes a consumer-facing contract, its spec document on the feature ticket must list every endpoint, schema and error code the blueprint names, and nothing it doesn't. If `duh` is on PATH, run `duh lint` on the spec until it passes, patching the result back and reading it back before the next lint. A design with no such surface skips this.
+1. **Glossary.** Update the blueprint's `Glossary changes` section as `dispatch:blueprint` says. Your tree is discarded, so `dispatch:breakdown` hands the section to the first piece to commit.
+2. **ADRs.** Offer an ADR for a logged decision only if it is hard to reverse, surprising without context, and a real trade-off. Don't re-offer ones already offered. For each the user approves, add it to the blueprint as `dispatch:blueprint` says.
+3. **Contract.** If the blueprint defines or changes a consumer-facing contract, check its spec document on the feature ticket against `dispatch:blueprint`. If `duh` is on PATH, run `duh lint` on the spec until it passes, patching the result back and reading it back before the next lint. A design with no such surface skips this.
