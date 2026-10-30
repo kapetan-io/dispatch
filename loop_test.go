@@ -412,12 +412,15 @@ func TestALaunchThatLandsAfterItsDeadlineGetsNoSecondWorker(t *testing.T) {
 func TestANudgeThatTimesOutCountsAsToldAndIsNeverRepeated(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
-	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
 	d.Workers.Running("ENG-1", "idle")
 	require.NoError(t, d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tick").Err)
 	d.Workers.StallPrompts()
 	d.Advance(time.Minute)
-	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	pr := cleanPR("a1")
+	pr.reviews = []activity{{"COMMENTED", time2, "alice", "", ""}}
+	d.GitHub.PullRequest("ENG-1", pr)
 	advanced := later(func() bool { d.Advance(time.Hour); return true })
 	require.Eventually(t, func() bool { return len(d.tools.Calls("herdr", "prompt")) == 1 }, 20*time.Second, time.Millisecond)
 	d.Expire("nudge ENG-1")
@@ -731,7 +734,7 @@ func TestRunStartsActsAndStopsCleanlyOnCancel(t *testing.T) {
 
 	d.Stop()
 
-	assert.Contains(t, out, "start: 1 tracked ticket, 25 rules")
+	assert.Contains(t, out, "start: 1 tracked ticket, 24 rules")
 }
 
 func TestRunRejectsANonPositiveResync(t *testing.T) {

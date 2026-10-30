@@ -27,11 +27,11 @@ gh api graphql -F id=THREAD_ID -f query='mutation($id:ID!){resolveReviewThread(i
 
 ## A review comment
 
-Treat every review comment as a claim to check with evidence: a failing test or a trace through the code. Fix and reply to a confirmed claim, resolve it, and record the fix as a divergence when it changes something the design describes. Reply to an unconfirmed claim from a bot with your evidence and resolve it. Reply to an unconfirmed claim from a person with your evidence and move the ticket to Needs Human.
+Treat every review comment as a claim to check with evidence: a failing test or a trace through the code. Fix and reply to a confirmed claim, resolve it, and record the fix as a divergence when it changes something the design describes. Reply to an unconfirmed claim from a bot with your evidence and resolve it. Reply to an unconfirmed claim from a person with your evidence, ask the user in chat whether to hold your ground, and move the ticket to Needs Human.
 
 ## A question
 
-A question is not a claim. Answer a question about what the code does on the PR, with evidence. If the answer is a call the Rules reserve for the user, move the ticket to Needs Human, quote the question in the comment, and post nothing on the PR. When the user answers and moves the ticket back to In Progress, reply to the question on the PR quoting their answer. Any other question is yours to answer on the PR. Resolve a question's thread once you have answered it.
+A question is not a claim. Answer a question about what the code does on the PR, with evidence. If the answer is a call the Rules reserve for the user, move the ticket to Needs Human, ask in chat, and post nothing on the PR. When the user answers in chat, write the answer on the ticket, move the ticket back to In Progress, and reply to the question on the PR quoting their answer. Any other question is yours to answer on the PR. Resolve a question's thread once you have answered it.
 
 ## A failing check
 

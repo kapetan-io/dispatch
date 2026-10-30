@@ -80,13 +80,6 @@ export const stoppedSinceLastNudge = (t: Ticket, ctx: Ctx) => {
   return last === undefined || (w.lastStop !== undefined && w.lastStop.at > last.started);
 };
 
-// You answered in Needs Human and moved the ticket back. The resume nudge says so,
-// once per move.
-export const resumeOwed = (t: Ticket, ctx: Ctx) =>
-  t.status === "in_progress" && t.previousStatus === "needs_human"
-  && !ctx.ledger.receipts(t, { kind: "nudge", topic: "resume" })
-       .some(r => r.once[1] === t.statusSince && r.outcome !== "failed");
-
 // The once topic of closing a worker whose kickoff never ran. The executor matches the
 // same string to word the log line.
 export const UNCONFIRMED_CLOSE = "close-unconfirmed";

@@ -13,13 +13,13 @@ Make the blueprint **buildable**: an engineer can build the right feature from i
 
 ## Steps
 
-1. **Orient and resume.** Read the review ticket, its comments, its parent, and the parent's documents and children. No parent or no blueprint document: comment under `## In plain English` and move the ticket to Needs Human. You may be relaunched with no memory, so take the first row that is true.
+1. **Orient and resume.** Read the review ticket, its comments, its parent, and the parent's documents and children. No parent or no blueprint document: say so in chat and move the ticket to Needs Human. You may be relaunched with no memory, so take the first row that is true.
    - The feature ticket lacks `design` and has children with a `Piece:` line: approval already happened, so move the review ticket to Done and stop.
    - The blueprint has a `Pieces` section: go to step 8.
    - Otherwise: step 2.
 2. **Pre-work**, below.
 3. **The loop**, Phases 1 to 6, at most 5 rounds.
-4. **Five rounds without PASS.** Comment the remaining blockers on the review ticket, opening with `## In plain English`, move it to Needs Human, file nothing and stop. The user reads the ticket, not your scrollback.
+4. **Five rounds without PASS.** List the remaining blockers in chat, comment one line on the review ticket that you stopped after five rounds, move it to Needs Human, file nothing and stop.
 5. **ADR audit.** When the repo has `docs/adr/`, run `dispatch:design-adr-audit` on the blueprint. A fix it causes always gets one more Phase 6 run, even when round 5 already passed, since an unvalidated fix could break the blueprint. Run it after step 6, which shares it. That run counts as a round, and if it fails with all 5 used, follow step 4 without a further round. Ask its closing question in chat.
 6. **Fit review.** Run `dispatch:design-fit-review` on the blueprint. Apply its Act On fixes and log each as "agent assumed". Show the verdict in the closing comment, and ask only about a fix that changes product behavior, a public contract or scope. If step 5 or this step changed the blueprint, run Phase 6 once more after both. That run counts as a round, as in step 5.
 7. **End steps**, below.

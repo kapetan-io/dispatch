@@ -672,22 +672,6 @@ func TestTickNudgesAnIdleWorkerAfterAnotherSessionStopsBusyInItsTree(t *testing.
 	assert.Len(t, d.Workers.Prompts(), 2)
 }
 
-func TestTickSendsTheResumeNudgeWhateverTheStopRecordSays(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Workers.Running("ENG-1", "idle")
-	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
-	d.Tick()
-	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Workers.Stop("ENG-1", stopTasks{Running: 1})
-
-	d.Tick()
-	d.Tick()
-
-	assert.Equal(t, []string{"w-ENG-1:p1|" + resumeText1}, d.Workers.Prompts())
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Alerts.Shown())
-}
-
 func TestStopHookRunsRecordStop(t *testing.T) {
 	t.Parallel()
 	body, err := os.ReadFile("hooks/hooks.json")

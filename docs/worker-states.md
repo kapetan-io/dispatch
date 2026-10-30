@@ -51,7 +51,6 @@ The Stop record comes from the plugin's Stop hook (`dispatch record-stop`). The 
 | Idle, unconfirmed | any | 🟢 | After 5 minutes, closes the workspace and relaunches the worker. The closes count toward `launch_failure_limit` |
 | Blocked on a popup | any | 🔴 | Notifies on the first cycle and every `blocked_renotify_minutes`. Never nudges, never moves the ticket |
 | Gone | n/a | 🟢 | Relaunches the worker |
-| Idle, ticket just moved back from Needs Human | any | 🟢 once nudged | Sends the resume nudge once per move, after the worker has stopped since its last nudge |
 
 ### In Review
 

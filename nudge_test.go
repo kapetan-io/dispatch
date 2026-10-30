@@ -264,36 +264,6 @@ func TestTickDoesNotCountANudgeHerdrRefused(t *testing.T) {
 	assert.Equal(t, 4, failed)
 }
 
-func TestTickSendsTheResumeNudgeWhenAnswerMovesTicketBack(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Workers.Running("ENG-1", "working")
-	d.Workers.Stop("ENG-1", stopTasks{})
-	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
-	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
-	d.Tick()
-	// The nudge has to come after dispatch first saw the worker, as it does outside a test.
-	d.Advance(time.Second)
-	d.Workers.SetStatus("ENG-1", "idle")
-	d.Tick()
-	d.Advance(time.Minute)
-	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
-	d.Tick()
-	d.Advance(time.Minute)
-	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-
-	// A worker gets no nudge of any kind until it stops after the last one.
-	d.Tick()
-	assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Prompts())
-
-	d.Advance(time.Minute)
-	d.Workers.Stop("ENG-1", stopTasks{})
-	d.Tick()
-
-	assert.Equal(t, []string{prPrompt("a failed check"), "w-ENG-1:p1|" + resumeText1}, d.Workers.Prompts())
-	noLinearChanges(t, d)
-}
-
 func TestTickNotifiesOnceWhenATicketEntersNeedsHuman(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
@@ -464,23 +434,6 @@ func TestTellNamesAPoolItCouldNotRead(t *testing.T) {
 	})
 
 	require.ErrorContains(t, d.Run("tell", "ENG-1", "hi").Err, "ENG-1 has no worker; could not read the pool of tiger")
-}
-
-func TestTickSendsOnlyOneResumeNudge(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Workers.Running("ENG-1", "working")
-	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
-	d.Tick()
-	d.Advance(time.Second)
-	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Workers.SetStatus("ENG-1", "idle")
-
-	d.Tick()
-	assert.Equal(t, []string{"w-ENG-1:p1|" + resumeText1}, d.Workers.Prompts())
-	d.Tick()
-
-	assert.Equal(t, []string{"w-ENG-1:p1|" + resumeText1}, d.Workers.Prompts())
 }
 
 func TestTickNotifiesForNeedsHumanWhateverTheWorkerIs(t *testing.T) {
@@ -691,60 +644,6 @@ func TestTellRejectsExtraArguments(t *testing.T) {
 	assert.Empty(t, d.Workers.Prompts())
 }
 
-func TestTickRetriesAResumeNudgeHerdrRefused(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Workers.Running("ENG-1", "idle")
-	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
-	d.Tick()
-	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Workers.BlockAfterSnapshot("ENG-1")
-	require.ErrorContains(t, d.Run("tick").Err, "ENG-1 nudge failed: blocked")
-	d.Workers.Unblock("ENG-1")
-
-	d.Tick()
-
-	assert.Equal(t, []string{"w-ENG-1:p1|" + resumeText1}, d.Workers.Prompts())
-}
-
-func TestTickSendsTheResumeNudgeToAWorkerThatWasBlockedWhenTheTicketMovedBack(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Workers.Running("ENG-1", "working")
-	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
-	d.Tick()
-	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Workers.SetStatus("ENG-1", "blocked")
-	d.Tick()
-	assert.Empty(t, d.Workers.Prompts())
-	d.Workers.SetStatus("ENG-1", "idle")
-
-	d.Tick()
-
-	assert.Equal(t, []string{"w-ENG-1:p1|" + resumeText1}, d.Workers.Prompts())
-}
-
-func TestTickSendsTheResumeNudgeAfterANeedsHumanNotificationFailed(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Workers.Running("ENG-1", "idle")
-	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
-	d.PullRequestFailsAfterEntry(prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
-	require.NoError(t, d.TickAfterASecond())
-	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
-	d.Alerts.Fail(errors.New("exit status 1"))
-	require.ErrorContains(t, d.Run("tick").Err, "ENG-1 notify failed")
-	d.Alerts.Fail(nil)
-	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-
-	// The PR nudge went first, so the worker has to stop before it hears the resume.
-	d.Advance(time.Minute)
-	d.Workers.Stop("ENG-1", stopTasks{})
-	d.Tick()
-
-	assert.Equal(t, []string{prPrompt("a failed check"), "w-ENG-1:p1|" + resumeText1}, d.Workers.Prompts())
-}
-
 func TestTickNotifiesWhenAReviewWorkerIsBlockedOnAQuestion(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
@@ -808,7 +707,7 @@ func TestTickStartsFreshWhenAPausedTicketReturns(t *testing.T) {
 	noLinearChanges(t, d)
 }
 
-func TestTickDropsAPendingResumeWhenTheTicketIsPaused(t *testing.T) {
+func TestTickLaunchesAFreshWorkerWithoutANudgeWhenAPausedTicketMovesBack(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Workers.Running("ENG-1", "blocked")
@@ -827,7 +726,7 @@ func TestTickDropsAPendingResumeWhenTheTicketIsPaused(t *testing.T) {
 
 	d.Tick()
 
-	// The paused ticket's worker was closed, so a fresh one starts and the resume nudge is gone.
+	// The paused ticket's worker was closed, so a fresh one starts and nothing is typed into it.
 	assert.Empty(t, d.Workers.Prompts())
 	assert.Len(t, d.Workers.Launched(), 1)
 }
@@ -1040,20 +939,6 @@ func TestTickActivityNudgeFiresOnTheTickATicketCommentLands(t *testing.T) {
 	d.Tick()
 
 	assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Prompts())
-}
-
-func TestTickResumeNudgeIgnoresANewTicketComment(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Config: "[rules]\nnudge_limit = 9\n"})
-	d.Workers.Running("ENG-1", "idle")
-	d.Linear.Tickets(withComment(ticket("ENG-1", "Needs Human", "dispatch"), comment1))
-	d.Tick()
-	d.Advance(time.Second)
-	d.Linear.Tickets(withComment(ticket("ENG-1", "In Progress", "dispatch"), comment2))
-
-	d.Tick()
-
-	assert.Equal(t, []string{"w-ENG-1:p1|" + resumeText1}, d.Workers.Prompts())
 }
 
 // watched starts an idle In Review worker whose PR has the reviews and comments of before, in a repo

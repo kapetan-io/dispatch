@@ -42,7 +42,7 @@ A message starting `dispatch event` comes from the dispatcher. Act on it once, t
 
 - **PR ready for review**: this event is not a review request. If the user asked for a review of this ticket, run the PR review flow (a critical-review sub-agent, then a validator per finding) on its PR. Otherwise say the PR is ready and ask once if they want a review, and start nothing until they say yes. Never merge it, except the pieces of a feature `dispatch:autobots` covers, which that skill reviews at once and merges when the review is clean.
 - **approved, ready to merge**: the user opened this PR, it is approved, and dispatch won't merge it. It is not a review request. Tell the user it waits on their merge. Never merge it, except the pieces of a feature `dispatch:autobots` covers, on that skill's terms.
-- **Needs Human**: read the ticket's comments and tell the user what it is waiting for.
+- **Needs Human**: tell the user which ticket is waiting on them in its herdr workspace, where the worker asked its question.
 - **Worker blocked on a question popup**: tell the user which ticket is waiting in its herdr workspace. Never answer for them.
 - **Workspace shows 💤**: the worker is waiting on the user or stopped early. Tell the user which window to open.
 - **Anything else**: tell the user the event and its link.
