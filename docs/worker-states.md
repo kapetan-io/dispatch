@@ -96,6 +96,4 @@ A `design` or `design-review` worker is never nudged, and a `design` ticket send
 
 Dispatch used to type a stall nudge into an idle In Progress worker, and to notify you on every 6th stall nudge and once when a nudge went unanswered for an hour. Both are gone. The stall nudge could land on top of a question the worker had just asked and read as the answer. Without it, nothing prompts a worker that stopped In Progress without moving its ticket, and 💤 is how you see it.
 
-It also no longer types "I answered on <ticket>. Read the latest comments and continue." when a ticket moves from Needs Human back to In Progress. The worker asked in chat, so you answer there, and the worker moves the ticket itself.
-
 A build worker asks you its questions in chat, not through the question popup. A popup it still opens is handled as before: herdr reports the worker blocked, you get the notification, and the label is 🔴.
