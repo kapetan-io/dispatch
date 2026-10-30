@@ -81,7 +81,13 @@ whenever({
 
 ## Switching off a rule for some records
 
-A rule file can't edit another file's rule, and a second rule with the same name is a load error. `exempt` takes the named rules' wants away for the records its `if` is true of, from any file, so you don't edit a shipped rule or turn it off for every record:
+A rule file can't edit another file's rule, and a second rule with the same name is a load error. `exempt` takes the named rules' wants away for the records its `if` is true of, from any file, so you don't edit a shipped rule or turn it off for every record.
+
+`exempt` is the last tool to reach for when a rule acts when you don't want it to, not the first. It exists for one case, a shipped rule that is right for most records and wrong for a class of them you can name, such as the PR of a stacked ticket, which conflicts until its parent merges and has nothing for a nudge to fix. An exemption changes what a rule does without touching the rule, so a reader of the rule won't see it. Before you write one, ask in this order.
+
+- Is the rule wrong for everyone? Fix it in the file that defines it.
+- Do you want different behavior and not less? Write a new rule.
+- Is the rule your own? Put the condition in its `if`.
 
 ```ts
 import { exempt } from "dispatch";
