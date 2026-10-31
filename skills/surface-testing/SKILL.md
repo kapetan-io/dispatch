@@ -95,7 +95,7 @@ Retries, circuit breakers and crash recovery only show up under failure. Inject 
 
 Surface testing says how to test. A design's correctness section says what to test.
 
-- **Invariant**: attempt to violate it through the surface and assert the operation is rejected and the state unchanged. A transfer that would take a balance negative returns 422 and the balance stays 100. One test per invariant per operation that touches it.
+- **Invariant**: attempt to violate it through the surface and assert the operation is rejected and the state unchanged. A transfer that would take a balance negative returns 422 and the balance stays 100. When only the system writes the data and no caller can attempt a violation, run each operation that writes it, including a retry, a restart, a crash between steps or two at once, and read the state back through the surface. One test per invariant per operation that touches it.
 - **Behavioral constraint** ("never silently dropped"): inject a fault at the boundary and assert the system reports it.
 - **Boundary precondition**: break it and assert a clean rejection, such as 401 without credentials.
 

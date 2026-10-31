@@ -384,6 +384,8 @@ func TestTransferRejectsNegativeBalance(t *testing.T) {
 
 The spec says "Transfer preserves the non-negative-balance invariant because it checks balance atomically." This test proves that argument holds in the actual implementation. One test per invariant per operation that touches it.
 
+The rejection shape needs a caller who can attempt the violation. When only the system writes the data, run the operation instead (retry it, restart the server, kill it between steps, or run two at once) and read the state back through the surface, such as a status endpoint or list call.
+
 ### Behavioral Constraint Tests
 
 For each behavioral constraint, write a test that verifies enforcement — often by injecting a fault at a dependency boundary and observing how the system responds.

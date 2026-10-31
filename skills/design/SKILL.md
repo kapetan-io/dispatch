@@ -63,7 +63,7 @@ Tailor to the feature. These are the parts a model skips or does badly.
 - **Problem and users.** What problem this solves, why now, and who it is for. Name the primary user when there is more than one.
 - **Core design principles.** What the product will always do and deliberately never do. Surface them early, because they resolve later questions and are ADR candidates.
 - **Correctness constraints.** *State invariants* are always-true statements about data, each with what violates it and what the system does then. An invariant with no enforcement is a comment in dead code. *Behavioral constraints* are things the system must never do, even in failure. Elicit both with three prompts. Concurrency: what happens when two users touch the same resource at once? Reversibility: which operations can be undone? Partial failure: what happens if this succeeds halfway?
-- **Acceptance criteria.** Each one an outcome a user or caller sees, mechanically verifiable, never which test or layer must catch it. Rewrite any that needs human judgment. Cover failure cases explicitly.
+- **Acceptance criteria.** Each one an outcome a user or caller sees, mechanically verifiable, never which test or layer must catch it. Rewrite any that needs human judgment. Cover failure cases explicitly. Each state invariant gets one criterion per operation that writes its data, with no exemption, in one of two shapes. When a caller can attempt the violation, the operation is rejected and the state is unchanged. When only the system's own code writes the data, the criterion runs the operation, including its retry, a restart, a crash between its steps or two at once, and says the state read back through the surface still holds. Each behavioral constraint with a visible effect gets a criterion saying what the user or caller sees, and one with no visible effect gets none. A criterion may sit inside a story.
 - **User stories.** Only when several personas have divergent workflows, the interactions branch, many discrete behaviors need verifying, or engineers build in parallel. Each story's criteria are mechanically verifiable and trace to the section they come from.
 - **Success metrics.** Post-ship outcomes only, never a restatement of scope. Omit the section when none exists.
 
@@ -105,7 +105,7 @@ Starting a design means the work deserves one, so the arena always runs. Take it
 
 ## Agree on the contract sketch
 
-The arena's Usage section is the first draft of the contract sketch: the surface a consumer or a test binds to. Show the user the sketch and a short note of what was considered and why it lost, not the candidate documents. Ask the user to approve it. Consumer-facing signatures (a library's exports, an HTTP or RPC API) are pinned, and internal surfaces get a contract, not a signature.
+The arena's Usage section is the first draft of the contract sketch: the surface a consumer or a test binds to. Show the user the sketch and a short note of what was considered and why it lost, not the candidate documents. Ask the user to approve it.
 
 If the user pushes back on the shape, treat that as Phase A evidence. Re-ground and re-run Phase B before going on.
 
@@ -114,16 +114,15 @@ If the user pushes back on the shape, treat that as Phase A evidence. Re-ground 
 Settle what an engineer needs before writing code, not a checklist: data, dependencies, failure modes, security, PII, operations. Lean on the codebase patterns Phase A found.
 
 - **Domain-boundary opacity.** A domain must not contain logic that belongs to a domain it calls. For each interface, ask whether the caller ever needs to know which implementation is behind it. If so, either the contract is missing a guarantee or the caller is absorbing the callee's job.
-- **Correctness translation.** For each state invariant, name every operation that touches its data and show why none can violate it. Prefer designs where the data model makes the illegal state unrepresentable, and say which invariants rest on application logic and so need more tests. For each behavioral constraint, show how the architecture satisfies it. Make assumptions between components explicit as preconditions and postconditions.
+- **Correctness translation.** For each state invariant, name every operation that touches its data and show why none can violate it. Prefer designs where the data model makes the illegal state unrepresentable, and say which invariants rest on application logic and so need more tests. For each behavioral constraint, show how the architecture satisfies it. One it cannot yet be shown to meet, and the user cannot settle before writing, is marked `[NEEDS CLARIFICATION]`. Make assumptions between components explicit as preconditions and postconditions.
 - **Testing.** Name the surface a test enters through, the substitute for each external dependency, standing in at a domain type, an observability API for any async effect the surface doesn't show, an injectable clock for time-dependent behavior, and a parity plan for any in-memory store beside a real one. Load `dispatch:surface-testing` with the Skill tool before you settle this section.
 - **Settings.** For every setting a user can leave unset, load `dispatch:principle-zero-value-settings` with the Skill tool and apply its rules to the name and the unset value.
-- **Level of detail.** Pin a signature only where a consumer or test binds to it. Describe an internal surface's responsibility, inputs and outputs, invariants and error categories, and leave its signature to the implementor, who sees the real types. A schema is pinned in full, and the interface that wraps it is not.
 
 Three or more `[NEEDS CLARIFICATION: ...]` flags mean the blueprint isn't ready to build from, so stop and ask the user to settle them.
 
 Once the contract sketch is agreed, run `dispatch:design-fit-review` with the Skill tool on the sketch and the technical decisions so far, so a finding changes the shape before the blueprint is written. Apply its Act On fixes and log each as "agent assumed". Show the user the verdict with the design, and ask only about a fix that changes the approved contract sketch.
 
-Before writing, run two passes. **Correctness:** every invariant has a preservation argument for each operation touching it, and no enforcement relies on a property of one implementation. **Testability:** every surface is reachable from a test, every external dependency has a substitute, and every async behavior can be observed. Gaps here are design findings. Resolve them before writing.
+Before writing, run two passes. **Correctness:** every invariant has a preservation argument for each operation touching it, every invariant and visible behavioral constraint has its acceptance criterion, and no enforcement relies on a property of one implementation. Show the user a criterion this pass adds along with the design, since the Objective was approved before its operations were known. **Testability:** every surface is reachable from a test, every external dependency has a substitute, and every async behavior can be observed. Gaps here are design findings. Resolve them before writing.
 
 ## Write the blueprint
 
@@ -133,7 +132,7 @@ Write it with `dispatch:blueprint`. Save a draft after the Objective is approved
 
 Have a sub-agent compare the blueprint with this session's transcript, and tell it to use the glossary's terms and the code's words, coin no labels such as step codes, and define any term in neither. The sub-agents job is to list each user decision as PRESENT, SUPERSEDED, CHANGED or MISSING against the blueprint and its decision log, with the user's words and time.
 
-Using the report from the audit sub-agent, fix confirmed gaps, and ask the user where the answer isn't clear. A decision fix goes in its section and the decision log. Then load `dispatch:principle-confidence-from-many-perspectives` with the Skill tool and apply it to the design before you ask the user to approve it, so a low answer can still change the design.
+Using the report from the audit sub-agent, fix confirmed gaps, and ask the user where the answer isn't clear. A decision fix goes in its section and the decision log. Then offer an ADR for each logged decision that passes the ADR test in `dispatch:blueprint`, logging each offer and answer. Then load `dispatch:principle-confidence-from-many-perspectives` with the Skill tool and apply it to the design before you ask the user to approve it, so a low answer can still change the design.
 
 ## Review or break down
 
