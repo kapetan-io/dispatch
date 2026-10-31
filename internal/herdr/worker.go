@@ -106,10 +106,10 @@ func (c *CLI) StartWorker(ctx context.Context, w Worker) (Started, error) {
 		"--env", "PATH=" + shims + ":" + c.env.Get("PATH"),
 		"--env", "AUTONOMOUS_WORKER=1",
 		"--env", "DISPATCH_PLUGIN_ROOT=" + w.PluginRoot}
-	// The shim runs this binary, so a dispatch on PATH that is older than the
+	// The shim runs DISPATCH_BIN, so a dispatch on PATH that is older than the
 	// plugin, or absent, cannot break the worker's start or restart.
-	if exe, err := os.Executable(); err == nil {
-		args = append(args, "--env", "DISPATCH_BIN="+exe)
+	if c.dispatchBin != "" {
+		args = append(args, "--env", "DISPATCH_BIN="+c.dispatchBin)
 	}
 	out, _ := c.combined(ctx, append(args, "--no-focus")...)
 	var created struct {

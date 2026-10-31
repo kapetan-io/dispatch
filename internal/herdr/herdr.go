@@ -170,12 +170,13 @@ func (r *Refusal) Is(target error) bool {
 
 // CLI is the Herdr that runs the installed herdr command.
 type CLI struct {
-	bin      string
-	global   []string
-	pace     time.Duration
-	trace    string
-	progress io.Writer
-	env      environment.Environment
+	bin         string
+	global      []string
+	pace        time.Duration
+	trace       string
+	progress    io.Writer
+	env         environment.Environment
+	dispatchBin string
 }
 
 // NewCLI returns a Herdr that runs bin. Arguments in global come before every
@@ -188,6 +189,15 @@ func NewCLI(bin string, global ...string) *CLI {
 // starts get the PATH of env, ahead of their shims.
 func (c *CLI) WithEnv(env environment.Environment) *CLI {
 	c.env = env
+	return c
+}
+
+// WithDispatchBin names the dispatch binary stamped as a started worker's
+// DISPATCH_BIN, which its claude shim and skills run. Unset, they run the
+// dispatch on the worker's PATH. A test that calls the adapter in-process must
+// build one, because its own binary is not a dispatch.
+func (c *CLI) WithDispatchBin(bin string) *CLI {
+	c.dispatchBin = bin
 	return c
 }
 

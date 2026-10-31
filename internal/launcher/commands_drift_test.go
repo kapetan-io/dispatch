@@ -19,8 +19,11 @@ import (
 
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
+	"github.com/kapetan-io/dispatch/internal/journal"
 	"github.com/kapetan-io/dispatch/internal/lineartest"
 	"github.com/kapetan-io/dispatch/internal/loop"
+	"github.com/kapetan-io/dispatch/internal/notifytest"
+	"github.com/kapetan-io/dispatch/internal/pullrequesttest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
@@ -67,16 +70,19 @@ func TestRealClaudeTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("DISPATCH_DRIFT_CONFIG", config)
 	t.Setenv("DISPATCH_DRIFT_STATE", state)
+	// The loop and the launch share this pool.
+	t.Setenv("TREEHOUSE_ROOT", filepath.Join(root, "pool"))
 	session := herdrtest.StartSession(t)
 	cli := session.CLI()
 
+	calls := &journal.Journal{}
 	// The hooks and the launch report to a running dispatch, so one runs over the same state.
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
 		done <- dispatch.Run(ctx, []string{"run"}, dispatch.Options{
 			ConfigPath: config, StateDir: state, Herdr: cli, LinearKey: lineartest.Key,
-			Linear: lineartest.New(nil).Connect, Stdout: os.Stderr, Stderr: os.Stderr,
+			Linear: lineartest.New(nil).Connect, PullRequests: pullrequesttest.New(calls), Alerts: notifytest.New(calls), Stdout: os.Stderr, Stderr: os.Stderr,
 		})
 	}()
 	t.Cleanup(func() {

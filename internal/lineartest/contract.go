@@ -22,26 +22,21 @@ type Subject struct {
 	Key string
 	// Team is the key of a team the key's owner belongs to.
 	Team string
-	// Seed replaces the workspace's tickets with these. It is nil for the real
-	// Linear, whose workspace the drift check must not change. An unseeded
-	// scenario may still seed when it can, and then asserts more.
+	// Seed replaces the workspace's tickets with these.
 	Seed func(issues ...Issue)
 	// Viewer is the account the key belongs to.
 	Viewer linear.Viewer
 }
 
-// Scenario is one situation with the outcome both the fake and the real Linear
-// must give. A Seeded scenario needs tickets the drift check can't create, so
-// it runs against the fake only.
+// Scenario is one situation with the outcome the Linear workspace must give.
 type Scenario struct {
-	Name   string
-	Seeded bool
-	Run    func(t *testing.T, s Subject)
+	Name string
+	Run  func(t *testing.T, s Subject)
 }
 
 // Scenarios is the contract for linear.Workspace. The fake runs it in every
-// test run, and the real adapter runs the unseeded ones under the drift build
-// tag, reading the key owner's real workspace and changing nothing in it.
+// test run. internal/linear/client_test.go checks the real client's wire format
+// against an HTTP test server.
 var Scenarios = []Scenario{
 	{Name: "ViewerIsTheKeyOwner", Run: func(t *testing.T, s Subject) {
 		viewer, err := s.Connect(s.Key).Viewer(context.Background())
@@ -97,15 +92,12 @@ var Scenarios = []Scenario{
 		assert.Empty(t, found)
 	}},
 	{Name: "LeasedTicketsReturnsExactlyTheTicketsNamed", Run: func(t *testing.T, s Subject) {
-		if s.Seed != nil {
-			s.Seed(
-				owned(s, 1, "In Progress"), owned(s, 2, "In Progress"), owned(s, 3, "In Progress"), owned(s, 4, "Done"),
-			)
-		}
+		s.Seed(
+			owned(s, 1, "In Progress"), owned(s, 2, "In Progress"), owned(s, 3, "In Progress"), owned(s, 4, "Done"),
+		)
 		work := s.Connect(s.Key)
-		// The real workspace can't be seeded, so the tickets to name are the key
-		// owner's own tracked ones. Naming fewer than exist is what shows a filter
-		// that matches nothing or everything.
+		// Naming fewer tickets than exist is what shows a filter that matches
+		// nothing or everything.
 		tracked, err := work.ManagedTickets(context.Background(), "ai", []string{s.Team})
 		require.NoError(t, err)
 		require.NotEmpty(t, tracked)
@@ -143,7 +135,7 @@ var Scenarios = []Scenario{
 
 		require.ErrorContains(t, err, "Entity not found")
 	}},
-	{Name: "ManagedTicketsAreTheStartedLabeledOnesAssignedToTheKeyOwner", Seeded: true, Run: func(t *testing.T, s Subject) {
+	{Name: "ManagedTicketsAreTheStartedLabeledOnesAssignedToTheKeyOwner", Run: func(t *testing.T, s Subject) {
 		elsewhere := owned(s, 4, "In Progress")
 		elsewhere.Team = "OTHER"
 		stranger := owned(s, 5, "In Progress")
@@ -158,7 +150,7 @@ var Scenarios = []Scenario{
 		require.Len(t, found, 1)
 		assert.Equal(t, s.Team+"-1", found[0].Identifier)
 	}},
-	{Name: "ManagedTicketsFailWhenTheyOverflowAPage", Seeded: true, Run: func(t *testing.T, s Subject) {
+	{Name: "ManagedTicketsFailWhenTheyOverflowAPage", Run: func(t *testing.T, s Subject) {
 		var issues []Issue
 		for n := range linear.PageSize + 1 {
 			issues = append(issues, owned(s, n+1, "In Progress"))
@@ -169,7 +161,7 @@ var Scenarios = []Scenario{
 
 		require.EqualError(t, err, linear.ManagedOverflow("ai").Error())
 	}},
-	{Name: "MoveChangesTheStatus", Seeded: true, Run: func(t *testing.T, s Subject) {
+	{Name: "MoveChangesTheStatus", Run: func(t *testing.T, s Subject) {
 		work := s.Connect(s.Key)
 		ticket := owned(s, 1, "In Progress")
 		s.Seed(ticket)
@@ -183,7 +175,7 @@ var Scenarios = []Scenario{
 		require.Len(t, found, 1)
 		assert.Equal(t, "Done", found[0].Status)
 	}},
-	{Name: "MoveRefusesAStateTheTeamLacks", Seeded: true, Run: func(t *testing.T, s Subject) {
+	{Name: "MoveRefusesAStateTheTeamLacks", Run: func(t *testing.T, s Subject) {
 		ticket := owned(s, 1, "In Progress")
 		s.Seed(ticket)
 
@@ -191,7 +183,7 @@ var Scenarios = []Scenario{
 
 		require.Error(t, err)
 	}},
-	{Name: "CommentShowsAsTheNewestComment", Seeded: true, Run: func(t *testing.T, s Subject) {
+	{Name: "CommentShowsAsTheNewestComment", Run: func(t *testing.T, s Subject) {
 		work := s.Connect(s.Key)
 		ticket := owned(s, 1, "In Progress")
 		s.Seed(ticket)
@@ -203,7 +195,7 @@ var Scenarios = []Scenario{
 		require.Len(t, found, 1)
 		assert.NotEmpty(t, found[0].LastComment)
 	}},
-	{Name: "ParentChildrenComeOldestFirst", Seeded: true, Run: func(t *testing.T, s Subject) {
+	{Name: "ParentChildrenComeOldestFirst", Run: func(t *testing.T, s Subject) {
 		parent := owned(s, 1, "In Progress")
 		newer, older := owned(s, 2, "Todo"), owned(s, 3, "Todo")
 		newer.Parent, older.Parent = parent.Identifier, parent.Identifier
@@ -217,7 +209,7 @@ var Scenarios = []Scenario{
 		assert.Equal(t, s.Team+"-3", children[parent.Identifier][0].Identifier)
 		assert.Equal(t, s.Team+"-2", children[parent.Identifier][1].Identifier)
 	}},
-	{Name: "ParentChildrenReturnsEveryChildInEveryStatus", Seeded: true, Run: func(t *testing.T, s Subject) {
+	{Name: "ParentChildrenReturnsEveryChildInEveryStatus", Run: func(t *testing.T, s Subject) {
 		parent := owned(s, 1, "In Progress")
 		done, todo := owned(s, 2, "Done"), owned(s, 3, "Todo")
 		done.Parent, todo.Parent = parent.Identifier, parent.Identifier

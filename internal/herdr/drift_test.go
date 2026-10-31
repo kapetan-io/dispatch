@@ -31,6 +31,12 @@ func TestRealHerdrKeepsTheHerdrContract(t *testing.T) {
 		assert.Empty(t, left)
 	})
 
+	// A worker's claude shim runs DISPATCH_BIN, and the test binary that calls the
+	// adapter in-process is not a dispatch, so the workers get a built one.
+	built := filepath.Join(t.TempDir(), "dispatch")
+	out, err := exec.Command("go", "build", "-o", built, "github.com/kapetan-io/dispatch/cmd/dispatch").CombinedOutput()
+	require.NoError(t, err, string(out))
+
 	for _, scenario := range herdrtest.Scenarios {
 		t.Run(scenario.Name, func(t *testing.T) {
 			session := herdrtest.StartSession(t)
@@ -51,7 +57,7 @@ func TestRealHerdrKeepsTheHerdrContract(t *testing.T) {
 			require.NoError(t, err)
 
 			scenario.Run(t, herdrtest.Subject{
-				Herdr:      session.CLI(),
+				Herdr:      session.CLI().WithDispatchBin(built),
 				PluginRoot: plugin,
 				Checkout:   func() (string, string) { return herdrtest.NewCheckout(t) },
 				Workspace: func(label string) herdrtest.Layout {

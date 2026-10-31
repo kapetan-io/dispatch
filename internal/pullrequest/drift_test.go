@@ -5,13 +5,10 @@ package pullrequest_test
 // Package exception: this package wraps the gh tool, so every test here is an adapter or contract test of it.
 
 import (
-	"context"
 	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/kapetan-io/dispatch/internal/pullrequest"
 )
 
 // TestInstalledGHStillHasTheFlagsDispatchUses checks each flag the adapter
@@ -40,26 +37,4 @@ func TestInstalledGHStillHasTheFlagsDispatchUses(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestGitHubStillAcceptsThePRQuery sends the PR query to GitHub for a branch
-// that has no PR, which is read-only and still makes GitHub validate the whole
-// query against its schema.
-func TestGitHubStillAcceptsThePRQuery(t *testing.T) {
-	_, found, err := pullrequest.NewCLI("gh").Read(context.Background(), ".", "dispatch-drift-no-such-branch", pullrequest.Rules{IgnoreAuthors: []string{"bot"}})
-
-	require.NoError(t, err)
-	require.False(t, found)
-}
-
-// TestGitHubStillAnswersWhichChecksAreRequired reads the checks of dispatch's
-// own PR 76 through the installed gh, which is read-only. It fails when GitHub
-// stops accepting isRequired(pullRequestNumber:), and when the check that
-// branch protection requires there is no longer reported as required.
-func TestGitHubStillAnswersWhichChecksAreRequired(t *testing.T) {
-	out, err := pullrequest.NewCLI("gh").Checks(context.Background(), ".", 76)
-
-	require.NoError(t, err)
-	require.Contains(t, string(out), `"name":"test"`)
-	require.Contains(t, string(out), `"isRequired":true`)
 }

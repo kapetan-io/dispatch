@@ -273,7 +273,11 @@ func withDefaults(o Options) Options {
 	}
 	if o.Herdr == nil {
 		// DISPATCH_LAUNCH_TRACE=<file> records every screen the kickoff step reads.
-		o.Herdr = herdr.NewCLI("herdr").WithEnv(o.Env).WithPace(o.LaunchPace).WithTrace(o.Env.Get("DISPATCH_LAUNCH_TRACE"))
+		cli := herdr.NewCLI("herdr").WithEnv(o.Env).WithPace(o.LaunchPace).WithTrace(o.Env.Get("DISPATCH_LAUNCH_TRACE"))
+		if exe, err := os.Executable(); err == nil {
+			cli = cli.WithDispatchBin(exe)
+		}
+		o.Herdr = cli
 	}
 	return o
 }

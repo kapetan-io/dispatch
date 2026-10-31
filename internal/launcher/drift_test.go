@@ -42,7 +42,9 @@ func TestShippedWrapperLaunchesAWorkerAgainstRealHerdrAndTreehouse(t *testing.T)
 	runGit(t, repo, "init", "-q", "-b", "main")
 	runGit(t, repo, "-c", "user.name=drift", "-c", "user.email=drift@example.com", "commit", "-q", "--allow-empty", "-m", "init")
 
-	bin := t.TempDir()
+	// Symlinks resolved, because the worker's DISPATCH_BIN comes from os.Executable and the test compares it to this path.
+	bin, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	build := exec.Command("go", "build", "-o", filepath.Join(bin, "dispatch"), "github.com/kapetan-io/dispatch/cmd/dispatch")
 	out, err := build.CombinedOutput()
 	require.NoError(t, err, string(out))
@@ -53,6 +55,8 @@ func TestShippedWrapperLaunchesAWorkerAgainstRealHerdrAndTreehouse(t *testing.T)
 	cmd := exec.Command(filepath.Join(plugin, "bin", "dispatch-launch"), "ENG-1", "drift/eng-1", "--kickoff", "/dispatch:design ENG-1")
 	cmd.Dir = repo
 	cmd.Env = append(session.Env(t),
+		// The config and state defaults land under HOME, so the launch never writes the maintainer's.
+		"HOME="+filepath.Join(root, "home"),
 		"PATH="+bin+string(os.PathListSeparator)+herdrtest.StandInClaude(t)+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"TREEHOUSE_ROOT="+filepath.Join(root, "pool"),
 		"DISPATCH_PLUGIN_ROOT=",
@@ -93,13 +97,15 @@ func TestShippedWrapperLaunchesAWorkerAgainstRealHerdrAndTreehouse(t *testing.T)
 	raw, err := os.ReadFile(filepath.Join(result.Worktree, "standin-claude.json"))
 	require.NoError(t, err)
 	var started struct {
-		Args       []string `json:"args"`
-		PluginRoot string   `json:"plugin_root"`
-		Autonomous string   `json:"autonomous_worker"`
+		Args        []string `json:"args"`
+		PluginRoot  string   `json:"plugin_root"`
+		Autonomous  string   `json:"autonomous_worker"`
+		DispatchBin string   `json:"dispatch_bin"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &started))
 	assert.Equal(t, plugin, started.PluginRoot)
 	assert.Equal(t, "1", started.Autonomous)
+	assert.Equal(t, filepath.Join(bin, "dispatch"), started.DispatchBin)
 	assert.Contains(t, started.Args, "--plugin-dir")
 	assert.Contains(t, started.Args, plugin)
 
