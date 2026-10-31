@@ -82,6 +82,7 @@ func record() {
 		"args":              os.Args[1:],
 		"plugin_root":       os.Getenv("DISPATCH_PLUGIN_ROOT"),
 		"autonomous_worker": os.Getenv("AUTONOMOUS_WORKER"),
+		"dispatch_bin":      os.Getenv("DISPATCH_BIN"),
 	})
 	_ = os.WriteFile("standin-claude.json", b, 0o644)
 }

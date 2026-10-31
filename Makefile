@@ -22,7 +22,8 @@ test-race: ## Run the fast suite under the race detector
 
 .PHONY: test-drift
 test-drift: ## Check the fakes against the installed tools (CI skips this)
-	go test -tags drift ./internal/...
+	@# Strip credentials so a drift test cannot reach a GitHub or Linear account.
+	GH_CONFIG_DIR=$$(mktemp -d) env -u GH_TOKEN -u GITHUB_TOKEN -u LINEAR_API_KEY go test -tags drift ./internal/...
 
 .PHONY: test-report
 test-report: ## Report tests over the speed budget, tagged ones included

@@ -32,9 +32,13 @@ Some programs dispatch runs do not follow the Decision in full.
 - `dispatch claude-shim` replaces itself with the real claude found on PATH. It has no port and no fake.
 - The Linear API key lookup runs `security find-generic-password` for the macOS keychain and `sh -c <api_key_command>`. Neither has a port or a fake. Test cases set the key through Options.LinearKey or LINEAR_API_KEY, and the config tests run a real api_key_command.
 - `dispatch rules check` runs `tsc`, with no port or fake.
-- gh has a port (`pullrequest.Repository`) and a fake (`pullrequesttest`), but no contract scenarios run against both. Its drift tests check the flags dispatch passes against the installed gh's --help and send two read-only queries to GitHub through gh.
+- gh has a port (`pullrequest.Repository`) and a fake (`pullrequesttest`), but no contract scenarios run against both. Its drift tests check the flags dispatch passes against the installed gh's --help.
 - Alerts have a port (`notify.Alerts`), two real adapters, osascript on macOS and `herdr notification show` elsewhere, and a fake (`notifytest.Alerts`). No contract scenarios run against them, and there is no drift test.
 
 `sh -c <token_command>` is not listed: it runs inside the httpservice port's real adapter.
 
 Test tooling is outside the Decision. It runs git and other programs directly.
+
+## Note, 2026-10-30: the drift check touches installed tools only
+
+The drift check runs against the herdr, treehouse, gh and Claude installed on the maintainer's machine and never against a GitHub or Linear account, so a failure means a fake or an adapter drifted from an installed tool, not that an account's settings changed. Linear has a port (`linear.Workspace`), a fake (`lineartest`) and contract scenarios, but the scenarios run against the fake only; `internal/linear/client_test.go` checks the real client's GraphQL against an HTTP test server. The herdr drift test names the dispatch its workers run through `herdr.CLI.WithDispatchBin`, because the test binary that calls the adapter in-process is not a dispatch.

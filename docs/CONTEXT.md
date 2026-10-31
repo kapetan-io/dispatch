@@ -15,11 +15,11 @@ The production implementation of a tool's port, which invokes the installed tool
 _Avoid_: CLI wrapper, client
 
 **Contract scenario**:
-One situation run against both a tool fake and the real adapter, which must give the same outcome.
+One situation run against both a tool fake and the real adapter, which must give the same outcome. Linear's scenarios run against the tool fake only, because the drift check never touches a Linear account.
 _Avoid_: shared test, conformance test
 
 **Drift check**:
-The contract scenarios run under `-tags drift` against the installed herdr and treehouse, in a throwaway `dispatch-drift-*` session and pool. Linear is the exception. It has no throwaway workspace, so its drift check runs only the unseeded scenarios, reading the workspace `LINEAR_API_KEY` belongs to and aiming moves and comments at a ticket that does not exist. It also runs the drift tests that have no fake to compare: the flags dispatch passes to gh against the installed gh's `--help`, two read-only queries to GitHub through gh, and the launcher's commands against the installed tools. One launcher drift test (internal/launcher/commands_drift_test.go) launches a worker on a real, logged-in Claude in a throwaway herdr session and checks that the kickoff and slash nudges record as sent by dispatch; it spends a few short Claude turns.
+The contract scenarios run under `-tags drift` against the installed herdr and treehouse, in a throwaway `dispatch-drift-*` session and pool. It never touches a GitHub or Linear account. It also runs the drift tests that have no fake to compare: the flags dispatch passes to gh against the installed gh's `--help`, and the launcher's commands against the installed tools. One launcher drift test (internal/launcher/commands_drift_test.go) launches a worker on a real, logged-in Claude in a throwaway herdr session and checks that the kickoff and slash nudges record as sent by dispatch; it spends a few short Claude turns.
 _Avoid_: integration test, live test
 
 **Stand-in claude**:
@@ -52,8 +52,8 @@ _Avoid_: review claim (a claim asserts something to check)
 
 ## Relationships
 
-- Each port has one **real adapter** and one **tool fake**, and every **contract scenario** runs against both.
-- The **drift check** runs the scenarios against the **real adapter** only.
+- Each port has one **real adapter** and one **tool fake**, and every **contract scenario** runs against both, except Linear's, which run against the fake only.
+- The **drift check** runs the scenarios against the **real adapter** only, and does not run Linear's.
 - A **Stacked ticket** has exactly one **Stack parent** and one **Stack record** until a **Restack** removes the record.
 
 **World**:
