@@ -163,14 +163,17 @@ const usage = `usage: dispatch run
   claude-shim  run the real claude with the plugin, the cross-session setting and, for a worker's Claude session,
                the worker flags added. Claude subcommands and print runs pass through. The claude
                shim in scripts/shims runs it
-  record-stop  read a Stop hook's JSON on stdin and report to the running dispatch when the Claude session in
+  record-stop  read a Stop hook's JSON on stdin and report to the running dispatch when the session in
                this tree last ended a turn and whether it still has background tasks running.
-               Drops the report when no dispatch runs, and does nothing outside a worktree of a
-               repo listed under [repos]. The plugin's Stop hook runs it
+               Finds the session's harness from the herdr pane in HERDR_PANE_ID. Drops the report
+               when no dispatch runs, when the pane is unset, unlisted or runs no harness dispatch
+               has an adapter for, and outside a worktree of a repo listed under [repos]. The
+               plugin's Stop hook runs it
   wake         read a Notification or UserPromptSubmit hook's JSON on stdin and ask the running loop
                to read herdr again and run a cycle without waiting for it, so the worker's workspace
-               label follows within seconds. Does nothing outside a worktree of a repo listed under [repos] or when no
-               loop runs. The plugin's Notification and UserPromptSubmit hooks run it
+               label follows within seconds. Finds the session's harness from the herdr pane in HERDR_PANE_ID.
+               Does nothing when the pane is unset, unlisted or runs no harness dispatch has an adapter
+               for, outside a worktree of a repo listed under [repos], or when no loop runs. The plugin's Notification and UserPromptSubmit hooks run it
   watch        make this Claude Code session follow the ticket, so each notification dispatch sends about
                it is also sent to this session as a message. A session can follow several
                tickets, and a ticket can have several followers. Fails outside a Claude Code
@@ -280,7 +283,7 @@ func withDefaults(o Options) Options {
 	}
 	if o.Herdr == nil {
 		// DISPATCH_LAUNCH_TRACE=<file> records every screen the kickoff step reads.
-		cli := herdr.NewCLI("herdr").WithEnv(o.Env).WithPace(o.LaunchPace).WithTrace(o.Env.Get("DISPATCH_LAUNCH_TRACE"))
+		cli := herdr.NewCLI("herdr").WithKinds(o.Harnesses.AgentKinds()...).WithEnv(o.Env).WithPace(o.LaunchPace).WithTrace(o.Env.Get("DISPATCH_LAUNCH_TRACE"))
 		if exe, err := os.Executable(); err == nil {
 			cli = cli.WithDispatchBin(exe)
 		}

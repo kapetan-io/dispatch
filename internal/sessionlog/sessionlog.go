@@ -40,7 +40,7 @@ const ArgsLimit = 1024
 
 // Command is a slash command the session took.
 type Command struct {
-	// At is when Claude took the message, in milliseconds since the epoch.
+	// At is when the session took the message, in milliseconds since the epoch.
 	At   int64  `json:"at"`
 	Name string `json:"name"`
 	// Args is the rest of the message, trimmed and cut at ArgsLimit.

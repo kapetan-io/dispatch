@@ -23,7 +23,9 @@ const (
 	// list them.
 	OpTabList = "tab-list"
 	// OpRead makes Read fail, as it does when the herdr server is down.
-	OpRead          = "read"
+	OpRead = "read"
+	// OpAgentAt makes AgentAt fail, as it does when the herdr server is down.
+	OpAgentAt       = "agent-at"
 	OpOpenWorkspace = "open-workspace"
 	// OpStartTab fails StartWorker before any tab exists. OpStartAgent fails it
 	// after the tab came up, with the program not running in it.
@@ -60,11 +62,20 @@ type Herdr struct {
 	names       map[string]string // pane to the name of its agent
 	beforeClose func(workspace string)
 	slowRename  time.Duration // how long the next RenameWorkspace waits before it lands
+	kinds       []string      // the agent kinds Read keeps, or every kind when unset
 }
 
 // New returns an empty Herdr that records its calls in j.
 func New(j *journal.Journal) *Herdr {
 	return &Herdr{journal: j, shown: map[string]string{}, vanished: map[string]bool{}, failures: map[string]error{}, names: map[string]string{}}
+}
+
+// AcceptKinds makes Read leave out agents of every other kind, as the real adapter does
+// when the root builds it with the kinds of the registered harnesses.
+func (h *Herdr) AcceptKinds(kinds ...string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.kinds = kinds
 }
 
 // AddWorkspace puts a workspace in herdr exactly as given.
@@ -245,7 +256,31 @@ func (h *Herdr) Read(ctx context.Context) (herdr.Snapshot, error) {
 			s.Agents[i].Status = shown
 		}
 	}
+	if h.kinds != nil {
+		s.Agents = slices.DeleteFunc(s.Agents, func(a herdr.Agent) bool { return !slices.Contains(h.kinds, a.Kind) })
+	}
 	return s, nil
+}
+
+func (h *Herdr) AgentAt(ctx context.Context, pane string) (herdr.Agent, bool, error) {
+	h.journal.Record("herdr", "agent-at", pane)
+	if err := ctx.Err(); err != nil {
+		return herdr.Agent{}, false, err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if err := h.failures[OpAgentAt]; err != nil {
+		return herdr.Agent{}, false, err
+	}
+	i := slices.IndexFunc(h.agents, func(a herdr.Agent) bool { return a.PaneID == pane })
+	if i < 0 || h.vanished[pane] {
+		return herdr.Agent{}, false, nil
+	}
+	a := h.agents[i]
+	if shown, ok := h.shown[pane]; ok {
+		a.Status = shown
+	}
+	return a, true, nil
 }
 
 // StallPrompts makes every Prompt from now on wait until its context ends, which is a

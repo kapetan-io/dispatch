@@ -7,11 +7,11 @@ import (
 
 // A worker is found by the join from a ticket to each tree it holds (the lease
 // holder is the ticket id), to the herdr workspace showing that tree, to the
-// Claude session herdr reports there. herdr's own agent names are not used,
-// because they clear when Claude exits.
+// session of a registered harness that herdr reports there. herdr's own agent names are not used,
+// because they clear when the program exits.
 
-// WorkerState is what the worker's Claude session is doing. NoWorker is the saved
-// value "none": no Claude session runs in the worker, or the ticket holds no tree.
+// WorkerState is what the worker's session is doing. NoWorker is the saved
+// value "none": no session runs in the worker, or the ticket holds no tree.
 type WorkerState string
 
 const (
@@ -22,7 +22,7 @@ const (
 )
 
 // Worker is the ticket's place on one tree it holds: the tree, the herdr workspace
-// showing it, and the Claude session there now, if any.
+// showing it, and the session there now, if any.
 type Worker struct {
 	State       WorkerState
 	TreePath    string
@@ -30,7 +30,7 @@ type Worker struct {
 	WorkspaceID string
 	PaneID      string
 	TabID       string
-	// Session is the id herdr reports for the Claude session running there, or empty.
+	// Session is the id herdr reports for the session running there, or empty.
 	Session string
 	// UnconfirmedSince is when the latest launch on this tree began, in
 	// milliseconds, while its kickoff is unconfirmed, read from the kickoffs record. Zero means the launch returned.
@@ -69,14 +69,11 @@ func onTree(t treehouse.Tree, snap herdr.Snapshot) Worker {
 	if w.WorkspaceID == "" {
 		return w
 	}
-	for _, a := range snap.Agents {
-		if a.WorkspaceID == w.WorkspaceID && a.Kind == "claude" {
-			w.PaneID = a.PaneID
-			w.TabID = a.TabID
-			w.Session = a.Session
-			w.State = stateOf(a.Status)
-			return w
-		}
+	if a, ok := snap.SessionIn(w.WorkspaceID); ok {
+		w.PaneID = a.PaneID
+		w.TabID = a.TabID
+		w.Session = a.Session
+		w.State = stateOf(a.Status)
 	}
 	return w
 }
