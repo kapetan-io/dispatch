@@ -51,23 +51,21 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 	case *harness != "" && *model != "":
 		res = launcher.Result{Status: launcher.StatusUsageError, Detail: "--harness and --model together: pass one"}
 	default:
-		req := launcher.Request{RepoDir: opts.Dir, Base: *base, Title: *title, Model: *model, Kickoff: *kickoff}
-		if *harness != "" {
-			var err error
-			if req.Model, err = harnessModel(opts, *harness); err != nil {
-				res = launcher.Result{Status: launcher.StatusUsageError, Detail: err.Error()}
-				break
-			}
+		root, rootErr := pluginRoot(opts)
+		program, err := launchProgram(opts, root, *harness, *model)
+		if err != nil {
+			res = launcher.Result{Status: launcher.StatusUsageError, Detail: err.Error()}
+			break
 		}
+		req := launcher.Request{RepoDir: opts.Dir, Base: *base, Title: *title, Program: program, Kickoff: *kickoff}
 		if len(positional) > 0 {
 			req.Ticket = positional[0]
 		}
 		if len(positional) > 1 {
 			req.Branch = positional[1]
 		}
-		root, err := pluginRoot(opts)
-		if err != nil && opts.Launcher == nil {
-			res = launcher.Result{Status: launcher.StatusUsageError, Detail: err.Error()}
+		if rootErr != nil && opts.Launcher == nil {
+			res = launcher.Result{Status: launcher.StatusUsageError, Detail: rootErr.Error()}
 		} else {
 			// A launch run by hand shows its progress. Launches the loop starts stay quiet.
 			if cli, ok := opts.Herdr.(*herdr.CLI); ok {
@@ -87,17 +85,26 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 	return nil
 }
 
-// harnessModel is the model of the table that ref, spelled "harness.<name>", names in the config.
-func harnessModel(opts Options, ref string) (string, error) {
-	cfg, err := config.Load(opts.ConfigPath, opts.Env)
-	if err != nil {
-		return "", fmt.Errorf("--harness needs the config: %w", err)
+// launchProgram is what herdr runs for a launch by hand: the harness table ref, spelled
+// "harness.<name>", names, or Claude Code with model, which is sonnet when empty.
+func launchProgram(opts Options, root, ref, model string) (herdr.Program, error) {
+	// Without a harness table, a launch runs Claude Code.
+	kind := config.KindClaudeCode
+	if ref != "" {
+		cfg, err := loadConfig(opts)
+		if err != nil {
+			return herdr.Program{}, fmt.Errorf("--harness needs the config: %w", err)
+		}
+		table, err := cfg.Table(ref)
+		if err != nil {
+			return herdr.Program{}, fmt.Errorf("--harness: %w", err)
+		}
+		kind, model = table.Kind, table.Model
 	}
-	table, err := cfg.Table(ref)
-	if err != nil {
-		return "", fmt.Errorf("--harness: %w", err)
+	if model == "" {
+		model = config.DefaultWorkerModel
 	}
-	return table.Model, nil
+	return opts.Harnesses.Program(kind, model, root)
 }
 
 // pluginRoot is where the plugin's scripts/shims live. The bin/dispatch-launch
@@ -107,7 +114,7 @@ func pluginRoot(opts Options) (string, error) {
 	if root := opts.Env.Get("DISPATCH_PLUGIN_ROOT"); root != "" {
 		return root, nil
 	}
-	cfg, err := config.Load(opts.ConfigPath, opts.Env)
+	cfg, err := loadConfig(opts)
 	if err != nil {
 		return "", fmt.Errorf("no plugin root: set DISPATCH_PLUGIN_ROOT or plugin_root in the config: %w", err)
 	}

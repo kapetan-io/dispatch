@@ -73,7 +73,7 @@ func servicesFor(opts Options, cfg config.Config) httpservice.Services {
 // on a bad config key, rules that don't load, a lock another run holds, and a history
 // that can't be written.
 func runCommand(ctx context.Context, opts Options) error {
-	cfg, err := config.Load(opts.ConfigPath, opts.Env)
+	cfg, err := loadConfig(opts)
 	if err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func runCommand(ctx context.Context, opts Options) error {
 	sent := &typed.Log{}
 	exec := executor.New(executor.Env{
 		Config: cfg, Linear: func() linear.Workspace { return lin }, Herdr: opts.Herdr, Treehouse: opts.Treehouse,
-		PullRequests: opts.PullRequests, Launcher: launcherFor(opts, cfg.Plugins.Herdr.PluginRoot, nil, sent), Alerts: opts.Alerts,
+		PullRequests: opts.PullRequests, Launcher: launcherFor(opts, cfg.Plugins.Herdr.PluginRoot, nil, sent), Harnesses: opts.Harnesses, Alerts: opts.Alerts,
 		Environment: opts.Env, StateDir: opts.StateDir, Stderr: opts.Stderr, LaunchDeadline: opts.LaunchTimeout, Deadline: opts.ActionTimeout,
 		HTTP: services, Typed: sent, Clock: opts.Clock,
 	})
@@ -241,7 +241,7 @@ func tellCommand(ctx context.Context, opts Options, ticket, text string) error {
 
 // cycleCommand prints what the latest cycle wants and holds, from history.
 func cycleCommand(opts Options) error {
-	cfg, err := config.Load(opts.ConfigPath, opts.Env)
+	cfg, err := loadConfig(opts)
 	if err != nil {
 		return err
 	}

@@ -48,7 +48,13 @@ func TestLaunchStartsAWorkerTypedTheBuildKickoff(t *testing.T) {
 	assert.Equal(t, "thrawn01/eng-1", branchIn(t, tree))
 	require.Len(t, d.fakes().Herdr.Started(), 1)
 	started := d.fakes().Herdr.Started()[0]
-	assert.Equal(t, herdr.Worker{Workspace: "w2", Dir: tree, Label: "ENG-1", Name: "eng-1", Model: "sonnet", PluginRoot: "/plugin"}, started)
+	assert.Equal(t, herdr.Worker{Workspace: "w2", Dir: tree, Label: "ENG-1", Name: "eng-1", PluginRoot: "/plugin", Program: started.Program}, started)
+	assert.Equal(t, "claude", started.Program.AgentKind)
+	assert.Equal(t, []string{
+		"--model", "sonnet", "--plugin-dir", "/plugin", "--disallowedTools", "EnterPlanMode,ExitPlanMode",
+		"--settings", `{"crossSessionInbound":"accept"}`, "--dangerously-skip-permissions",
+	}, started.Program.Argv)
+	assert.Equal(t, []string{"/plugin/scripts/shims"}, started.Program.PathFirst)
 }
 
 func TestLaunchLabelsTheTabWithTheTicketAndTitle(t *testing.T) {
@@ -74,7 +80,7 @@ func TestLaunchTypesTheKickoffItIsGiven(t *testing.T) {
 	assert.Equal(t, "/dispatch:design ENG-1", out.result["kickoff"])
 	assert.Equal(t, []string{"w2:p2|/dispatch:design ENG-1"}, d.fakes().Herdr.Kicked())
 	require.Len(t, d.fakes().Herdr.Started(), 1)
-	assert.Equal(t, "opus", d.fakes().Herdr.Started()[0].Model)
+	assert.Equal(t, "opus", modelOf(d.fakes().Herdr.Started()[0].Program))
 }
 
 func TestLaunchStartsNewBranchesFromTheBase(t *testing.T) {
@@ -408,7 +414,7 @@ func TestLaunchReportsClaudeNeverStartedWhenItsCommandStaysAtTheShellPrompt(t *t
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpKickoff, herdr.ErrClaudeNeverStarted)
+	d.fakes().Herdr.Fail(herdrtest.OpKickoff, herdr.ErrNeverStarted)
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
@@ -637,7 +643,7 @@ func TestTickLaunchesWithTheBuiltInLauncher(t *testing.T) {
 	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, d.fakes().Herdr.Kicked())
 	require.Len(t, d.fakes().Herdr.Started(), 1)
 	started := d.fakes().Herdr.Started()[0]
-	assert.Equal(t, "sonnet", started.Model)
+	assert.Equal(t, "sonnet", modelOf(started.Program))
 	assert.Equal(t, "ENG-1 ticket ENG-1", started.Label)
 	assert.Equal(t, tree, d.fakes().Herdr.Opened()[0].Path)
 }
@@ -656,7 +662,7 @@ func TestLaunchTakesFlagsBeforeAndBetweenTheTicketAndBranch(t *testing.T) {
 		assert.Equal(t, "ok", out.result["status"])
 		assert.Equal(t, "thrawn01/eng-1", out.result["branch"])
 		require.Len(t, d.fakes().Herdr.Started(), 1)
-		assert.Equal(t, "opus", d.fakes().Herdr.Started()[0].Model)
+		assert.Equal(t, "opus", modelOf(d.fakes().Herdr.Started()[0].Program))
 	}
 }
 

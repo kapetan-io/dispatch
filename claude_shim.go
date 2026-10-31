@@ -8,7 +8,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/kapetan-io/dispatch/internal/herdr"
+	"github.com/kapetan-io/dispatch/internal/harness"
 )
 
 // checkFlag lets the shim script ask whether the dispatch on PATH is new enough
@@ -62,34 +62,19 @@ func hasSubcommand(args []string) bool {
 	return false
 }
 
-// hasFlag matches both `--name value` and `--name=value`.
-func hasFlag(args []string, names ...string) bool {
-	for _, arg := range args {
-		for _, name := range names {
-			if arg == name || strings.HasPrefix(arg, name+"=") {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func shimArgs(args []string, root string, worker bool) []string {
 	if slices.Contains(args, "-p") || slices.Contains(args, "--print") || hasSubcommand(args) {
 		return args
 	}
 	out := slices.Clone(args)
-	if !hasFlag(args, "--plugin-dir") && root != "" {
-		out = append(out, "--plugin-dir", root)
-	}
-	if worker && !hasFlag(args, "--disallowedTools", "--disallowed-tools") {
-		out = append(out, "--disallowedTools", "EnterPlanMode,ExitPlanMode")
-	}
-	if !hasFlag(args, "--settings") {
-		out = append(out, "--settings", herdr.SessionSettings)
-	}
-	if worker && !slices.Contains(args, "--dangerously-skip-permissions") {
-		out = append(out, "--dangerously-skip-permissions")
+	for _, flag := range harness.ClaudeCodeFlags(root) {
+		if flag.Has(args) || (flag.Workers && !worker) {
+			continue
+		}
+		out = append(out, flag.Names[0])
+		if flag.Value != "" {
+			out = append(out, flag.Value)
+		}
 	}
 	return out
 }

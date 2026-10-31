@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -52,8 +53,8 @@ type Agent struct {
 	PaneID      string
 	TabID       string
 	WorkspaceID string
-	// Session is the id of the Claude session in the pane, which Claude Code
-	// also puts in its hook input.
+	// Session is the id of the session in the pane, which Claude Code also puts
+	// in its hook input.
 	Session string
 }
 
@@ -77,15 +78,16 @@ type Herdr interface {
 	// OpenWorkspace returns the workspace showing the checkout, opening one
 	// nested under the repo when none shows it yet.
 	OpenWorkspace(ctx context.Context, w NewWorkspace) (workspaceID string, err error)
-	// StartWorker gives the workspace a new tab holding a running Claude agent,
-	// answering nothing yet. The workspace's agent-less tabs are closed. A failure
-	// after the tab came up still returns its pane, so the caller can tell a
-	// missing tab from a Claude that would not start.
+	// StartWorker gives the workspace a new tab holding a running agent of the
+	// worker's program, answering nothing yet. The workspace's agent-less tabs are
+	// closed. A failure after the tab came up still returns its pane, so the
+	// caller can tell a missing tab from a program that would not start.
 	StartWorker(ctx context.Context, w Worker) (Started, error)
-	// Kickoff types text into the Claude in pane, answering its startup dialogs
-	// first, and returns once herdr shows the agent running it. It fails with
-	// ErrClaudeNeverStarted or ErrKickoffUnconfirmed when the agent never runs it.
-	Kickoff(ctx context.Context, pane, text string) error
+	// Kickoff types text into the program in pane once its input box is ready,
+	// answering the startup dialogs the Startup lists first, and returns once herdr
+	// shows the agent running it. It fails with ErrNeverStarted or
+	// ErrKickoffUnconfirmed when the agent never runs it.
+	Kickoff(ctx context.Context, pane, text string, startup Startup) error
 }
 
 // NewWorkspace is a checkout to show in a workspace.
@@ -98,7 +100,7 @@ type NewWorkspace struct {
 	Label string
 }
 
-// Worker is a Claude agent to start in a workspace.
+// Worker is a program to start in a workspace.
 type Worker struct {
 	Workspace string
 	// Dir is where the agent runs.
@@ -107,12 +109,56 @@ type Worker struct {
 	Label string
 	// Name is the agent's name. When herdr already has an agent by that name, the
 	// worker gets a suffix.
-	Name  string
-	Model string
-	// PluginRoot holds the plugin the worker loads and the shims that put its
-	// flags back when herdr restarts it.
+	Name string
+	// PluginRoot is stamped as DISPATCH_PLUGIN_ROOT for every program, because
+	// dispatch's skills read it. A program that loads the plugin by flag carries the
+	// same root in Argv and PathFirst.
 	PluginRoot string
+	// Program is what herdr runs in the tab.
+	Program Program
 }
+
+// Program is what herdr runs in a worker's new tab, as a harness describes it.
+type Program struct {
+	// Name is how messages name the program, such as "Claude".
+	Name string
+	// AgentKind is herdr's --kind for the agent.
+	AgentKind string
+	// Argv follows the `--` of `herdr agent start`.
+	Argv []string
+	// PathFirst lists directories put before the inherited PATH.
+	PathFirst []string
+	// Env holds the program's own tab entries, beside the ones herdr stamps for
+	// every program. Claude Code sets none.
+	Env map[string]string
+	// Startup is every screen the program shows before it takes input.
+	Startup Startup
+}
+
+// Startup describes the screens a program shows on its way to an input box.
+// Kickoff checks each screen against Answers (the first that fully matches, so
+// put the more specific Answer first), then Unrun, then Ready, and types the
+// kickoff only after Ready matches.
+type Startup struct {
+	Answers []Answer
+	// Unrun matches the launch command still sitting at the shell prompt.
+	Unrun *regexp.Regexp
+	// Ready matches the screen once the program takes input.
+	Ready *regexp.Regexp
+}
+
+// Answer is one startup dialog. Every pattern in Shows must match the screen.
+// A dialog seen again gets the next Try, in a cycle, because a way of answering
+// may be lost.
+type Answer struct {
+	Shows []*regexp.Regexp
+	Tries []Try
+}
+
+// Try is one way to answer a dialog, a list of `pane send-keys` calls that each
+// send a list of keys together. {{"Down","Enter"}} is one call and
+// {{"2"},{"Enter"}} is two.
+type Try [][]string
 
 // Started is a worker's pane and the name its agent got.
 type Started struct {
@@ -122,12 +168,12 @@ type Started struct {
 
 // Reasons Kickoff gives up.
 var (
-	// ErrKickoffUnconfirmed means Claude was up but herdr never showed it running the kickoff.
+	// ErrKickoffUnconfirmed means the program was up but herdr never showed it running the kickoff.
 	ErrKickoffUnconfirmed = errors.New("herdr never showed the kickoff running")
-	// ErrClaudeNeverStarted means the command that starts Claude still showed at the shell prompt after Enter was pressed on it.
-	ErrClaudeNeverStarted = errors.New("Claude never started, because its launch command still showed at the shell prompt after Enter was pressed on it")
+	// ErrNeverStarted means the command that starts the program still showed at the shell prompt after Enter was pressed on it.
+	ErrNeverStarted = errors.New("the program never started, because its launch command still showed at the shell prompt after Enter was pressed on it")
 	// ErrEnterNotSent means the launch command still showed at the shell prompt and herdr refused every Enter sent to it.
-	ErrEnterNotSent = errors.New("Claude never started, because its launch command still showed at the shell prompt and herdr could not send Enter to it")
+	ErrEnterNotSent = errors.New("the program never started, because its launch command still showed at the shell prompt and herdr could not send Enter to it")
 )
 
 // ErrAgentBlocked is the refusal of a prompt to an agent that waits on a

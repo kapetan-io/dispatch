@@ -19,7 +19,7 @@ const ticketHintText = "This repo is managed by dispatch. Before you create or r
 // cannot make it fire. It prints nothing and succeeds everywhere else, even with
 // a missing or broken config, because the hook runs in every session on the machine.
 func ticketHint(ctx context.Context, opts Options) error {
-	cfg, err := config.Load(opts.ConfigPath, opts.Env)
+	cfg, err := loadConfig(opts)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}

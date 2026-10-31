@@ -45,8 +45,8 @@ type Typing interface {
 // Options names the tools a Local launcher drives and the places it runs them.
 // Zero values take the defaults.
 type Options struct {
-	// PluginRoot holds scripts/shims and is handed to the worker as its plugin.
-	// It has no default.
+	// PluginRoot is the plugin checkout, stamped on the worker as
+	// DISPATCH_PLUGIN_ROOT. It has no default.
 	PluginRoot string
 	// Herdr hosts the worker. Defaults to the installed herdr.
 	Herdr herdr.Herdr
@@ -109,7 +109,7 @@ type Local struct {
 func New(opts Options) *Local { return &Local{opts: opts.withDefaults()} }
 
 // Launch leases a treehouse tree for the ticket, opens a herdr workspace on it and
-// starts a Claude worker that is typed the kickoff. The Result says what
+// starts a worker that is typed the kickoff. The Result says what
 // happened, and progress goes to Options.Stderr.
 //
 // pool_exhausted is proven, never assumed. After a lease failure the pool is
@@ -159,8 +159,8 @@ func (l *launch) run(ctx context.Context) Result {
 	if l.opts.PluginRoot == "" {
 		return Result{Status: StatusUsageError, Detail: "no plugin root: set DISPATCH_PLUGIN_ROOT or plugin_root in the config"}
 	}
-	if req.Model == "" {
-		req.Model = "sonnet"
+	if req.Program.AgentKind == "" {
+		return Result{Status: StatusUsageError, Detail: "no program to run: the request names no harness"}
 	}
 	if req.Kickoff == "" {
 		req.Kickoff = "/dispatch:build " + req.Ticket
@@ -204,19 +204,20 @@ func (l *launch) run(ctx context.Context) Result {
 	l.opts.Typed.Clear(l.tree)
 	l.opts.Typed.Note(l.tree, req.Kickoff)
 
-	// An unconfirmed kickoff closes the workspace. Left open, its idle Claude
+	// An unconfirmed kickoff closes the workspace. Left open, its idle program
 	// would look like a live worker, and no cycle would retry or escalate.
-	if err := l.opts.Herdr.Kickoff(ctx, started.Pane, req.Kickoff); err != nil {
+	if err := l.opts.Herdr.Kickoff(ctx, started.Pane, req.Kickoff, req.Program.Startup); err != nil {
 		if l.opts.Herdr.CloseWorkspace(context.WithoutCancel(ctx), l.workspace) != nil {
 			l.workspaceOpen = true
 		}
 		l.opts.Typed.Clear(l.tree)
-		detail := "Claude started but herdr"
+		program := req.Program.Name
+		detail := program + " started but herdr"
 		switch {
 		case errors.Is(err, herdr.ErrEnterNotSent):
-			detail = "Claude never started, because its launch command still showed at the shell prompt and herdr could not send Enter to it, and herdr"
-		case errors.Is(err, herdr.ErrClaudeNeverStarted):
-			detail = "Claude never started, because its launch command still showed at the shell prompt after Enter was pressed on it, and herdr"
+			detail = program + " never started, because its launch command still showed at the shell prompt and herdr could not send Enter to it, and herdr"
+		case errors.Is(err, herdr.ErrNeverStarted):
+			detail = program + " never started, because its launch command still showed at the shell prompt after Enter was pressed on it, and herdr"
 		}
 		return Result{
 			Status:    StatusInjectionUnconfirmed,
@@ -554,7 +555,7 @@ func (l *launch) startWorker(ctx context.Context, name string) (herdr.Started, R
 		Dir:        l.tree,
 		Label:      l.tabLabel(),
 		Name:       name,
-		Model:      l.req.Model,
+		Program:    l.req.Program,
 		PluginRoot: l.opts.PluginRoot,
 	})
 	if err == nil {

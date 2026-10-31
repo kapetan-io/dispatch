@@ -26,7 +26,7 @@ const (
 	OpRead          = "read"
 	OpOpenWorkspace = "open-workspace"
 	// OpStartTab fails StartWorker before any tab exists. OpStartAgent fails it
-	// after the tab came up, with Claude not running in it.
+	// after the tab came up, with the program not running in it.
 	OpStartTab   = "start-tab"
 	OpStartAgent = "start-agent"
 	// OpKickoff fails Kickoff with the error given, such as
@@ -56,6 +56,7 @@ type Herdr struct {
 	opened      []herdr.NewWorkspace
 	workers     []herdr.Worker
 	kicked      []string
+	startups    []herdr.Startup
 	names       map[string]string // pane to the name of its agent
 	beforeClose func(workspace string)
 	slowRename  time.Duration // how long the next RenameWorkspace waits before it lands
@@ -198,6 +199,9 @@ func (h *Herdr) Started() []herdr.Worker { return logged(h, &h.workers) }
 
 // Kicked lists what Kickoff typed into agents, as "<pane>|<text>".
 func (h *Herdr) Kicked() []string { return h.log(&h.kicked) }
+
+// KickedWith lists the startup screens each Kickoff was given, in the order of Kicked.
+func (h *Herdr) KickedWith() []herdr.Startup { return logged(h, &h.startups) }
 
 // HasWorkspace says whether herdr still shows the workspace.
 func (h *Herdr) HasWorkspace(id string) bool {

@@ -177,22 +177,24 @@ func defaults() Config {
 }
 
 // Load reads path over the defaults and expands a leading ~ in every path to the HOME of env. It
-// fails on a setting dispatch does not know.
-func Load(path string, env environment.Environment) (Config, error) {
+// fails on a setting dispatch does not know, and on a harness table whose kind is not among kinds,
+// the kinds of the harnesses the caller drives.
+func Load(path string, env environment.Environment, kinds []string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("while reading config %s: %w", path, err)
 	}
-	return parse(string(data), path, env, true)
+	return parse(string(data), path, env, kinds, true)
 }
 
-// Parse reads config text as Load reads a file, without requiring the repos' clones to
-// exist, because the text comes from history and a clone may have moved since.
+// Parse reads config text as Load reads a file. It accepts any harness kind and does not
+// require the repos' clones to exist, because the text comes from history and a kind or
+// clone may have left this dispatch since.
 func Parse(text string, env environment.Environment) (Config, error) {
-	return parse(text, "recorded in history", env, false)
+	return parse(text, "recorded in history", env, nil, false)
 }
 
-func parse(text, path string, env environment.Environment, checkPaths bool) (Config, error) {
+func parse(text, path string, env environment.Environment, kinds []string, checkPaths bool) (Config, error) {
 	c := defaults()
 	meta, err := toml.Decode(text, &c)
 	if msg, ok := repoProblem(err); ok {
@@ -219,7 +221,7 @@ func parse(text, path string, env environment.Environment, checkPaths bool) (Con
 	if len(unknown) > 1 {
 		return Config{}, fmt.Errorf("while reading config %s: unknown settings:\n  %s", path, strings.Join(unknown, "\n  "))
 	}
-	if err := c.check(); err != nil {
+	if err := c.check(kinds); err != nil {
 		return Config{}, fmt.Errorf("while reading config %s: %w", path, err)
 	}
 	c.Plugins.Herdr.PluginRoot = env.ExpandHome(c.Plugins.Herdr.PluginRoot)
@@ -239,7 +241,7 @@ func parse(text, path string, env environment.Environment, checkPaths bool) (Con
 }
 
 // check rejects values that decode but make no sense.
-func (c Config) check() error {
+func (c Config) check(kinds []string) error {
 	if c.History.Rotate <= 0 || c.History.Keep <= 0 {
 		return errors.New("history.rotate and history.keep must be above zero")
 	}
@@ -256,7 +258,7 @@ func (c Config) check() error {
 		return err
 	}
 	for _, name := range slices.Sorted(maps.Keys(c.Harness)) {
-		if err := c.Harness[name].check(name); err != nil {
+		if err := c.Harness[name].check(name, kinds); err != nil {
 			return err
 		}
 	}

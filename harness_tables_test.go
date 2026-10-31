@@ -197,7 +197,7 @@ func TestLaunchStartsTheWorkerOnTheModelOfTheHarnessTable(t *testing.T) {
 
 	assert.Equal(t, "ok", out.result["status"])
 	require.Len(t, d.fakes().Herdr.Started(), 1)
-	assert.Equal(t, "opus", d.fakes().Herdr.Started()[0].Model)
+	assert.Equal(t, "opus", modelOf(d.fakes().Herdr.Started()[0].Program))
 }
 
 func TestLaunchRefusesHarnessAndModelTogether(t *testing.T) {

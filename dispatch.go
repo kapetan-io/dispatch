@@ -22,6 +22,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/environment"
+	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/launcher"
@@ -70,6 +71,9 @@ type Options struct {
 	HTTP httpservice.Services
 	// Alerts shows notifications. Defaults to macOS notifications through osascript on macOS and herdr notifications elsewhere.
 	Alerts notify.Alerts
+	// Harnesses are the programs workers can run, by the kind a [harness.<name>] table
+	// names. Defaults to Claude Code.
+	Harnesses harness.Registry
 	// Launcher starts the workers. Defaults to leasing a tree from Treehouse and
 	// starting the worker in Herdr.
 	Launcher launcher.Launcher
@@ -238,6 +242,9 @@ func Run(ctx context.Context, args []string, opts Options) error {
 }
 
 func withDefaults(o Options) Options {
+	if o.Harnesses == nil {
+		o.Harnesses = harness.Registry{config.KindClaudeCode: harness.ClaudeCode{}}
+	}
 	if o.Dir == "" {
 		o.Dir, _ = os.Getwd()
 	}
@@ -337,7 +344,7 @@ func keyFromCommand(ctx context.Context, opts Options, command string) (string, 
 // linearViewer prints the owner of the API key, so skills can assign tickets
 // without handling the key.
 func linearViewer(ctx context.Context, opts Options) error {
-	cfg, err := config.Load(opts.ConfigPath, opts.Env)
+	cfg, err := loadConfig(opts)
 	if err != nil {
 		return err
 	}
@@ -391,4 +398,9 @@ func (o Options) abs(path string) string {
 		return path
 	}
 	return filepath.Join(o.Dir, path)
+}
+
+// loadConfig reads the config, accepting the harness kinds dispatch drives.
+func loadConfig(opts Options) (config.Config, error) {
+	return config.Load(opts.ConfigPath, opts.Env, opts.Harnesses.Kinds())
 }

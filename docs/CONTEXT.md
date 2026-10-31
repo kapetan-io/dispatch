@@ -125,19 +125,23 @@ A git worktree in a repo's treehouse pool, leased or not; a rule reads which fro
 _Avoid_: worktree and checkout (the tools' words, used inside the tool adapters and for a plain git worktree of a repo), lease (the lease is the holding, not the tree), slot (room in the pool)
 
 **Harness**:
-The program that runs in a worker's session, such as Claude Code, which is the only one dispatch drives today. A harness table pairs a harness kind with a model.
+The program that runs in a worker's session, such as Claude Code, which is the only one dispatch drives today. A harness table pairs a harness kind with a model. A kind is the name `config.toml` gives the program, such as `claude-code`; herdr detects the same program under its own agent kind, such as `claude`.
 _Avoid_: agent (herdr's word, kept inside the herdr adapter), tool (the tools are herdr, treehouse, gh, Linear), model (a harness runs a model)
 
 **Harness table**:
 A `[harness.<name>]` table in `config.toml`, named everywhere as `harness.<name>`. A rule passes that name to `queueLaunch`; `worker` and `design` in `[rules]` or `[repos.<label>]` name the table the shipped rules use for build and design workers.
 _Avoid_: profile, role (a role is only which of `worker` / `design` a ticket's launch reads)
 
+**Program** (herdr):
+What herdr runs in a worker's new tab, as a harness describes it: a name for messages, the herdr agent kind, arguments, directories put ahead of PATH, tab environment, and the startup screens (dialogs to answer, the unrun launch command, the ready input box).
+_Avoid_: command line, launch spec
+
 **Launch**:
-A launch leases a tree for the ticket, creates the ticket's branch (at another ticket's PR head for a stacked launch), opens a herdr workspace, starts Claude and types the kickoff. A relaunch is a launch on a tree the ticket already holds. The launcher is the code that does it, run by the executor or by `dispatch launch`.
-_Avoid_: spawn, start (starting Claude is one step of a launch)
+A launch leases a tree for the ticket, creates the ticket's branch (at another ticket's PR head for a stacked launch), opens a herdr workspace, starts the harness and types the kickoff. A relaunch is a launch on a tree the ticket already holds. The launcher is the code that does it, run by the executor or by `dispatch launch`.
+_Avoid_: spawn, start (starting the harness is one step of a launch)
 
 **Kickoff**:
-The first command a launch types into the worker's new Claude session, `/dispatch:build <ticket>` unless the rule names another. A launch keeps a kickoff record in the state directory's `kickoffs` until the launch finishes. A kickoff record with no Stop from the worker since means the kickoff has not run, and the worker is unconfirmed.
+The first command a launch types into the worker's new session, `/dispatch:build <ticket>` unless the rule names another. A launch keeps a kickoff record in the state directory's `kickoffs` until the launch finishes. A kickoff record with no Stop from the worker since means the kickoff has not run, and the worker is unconfirmed.
 _Avoid_: initial prompt, first message
 
 **Stacked ticket**:

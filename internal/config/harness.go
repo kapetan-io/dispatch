@@ -6,10 +6,8 @@ import (
 	"strings"
 )
 
-// KindClaudeCode is the one harness kind dispatch drives.
+// KindClaudeCode is the kind of the Claude Code harness.
 const KindClaudeCode = "claude-code"
-
-var kinds = []string{KindClaudeCode}
 
 // harnessPrefix starts the name a rule or a role key uses for a [harness.<name>] table.
 const harnessPrefix = "harness."
@@ -23,12 +21,15 @@ type Harness struct {
 	Model string `toml:"model"`
 }
 
-func (h Harness) check(name string) error {
+// check fails on a table that cannot launch anything. The kinds are the harnesses the caller
+// drives. Nil accepts any kind, for config text read back from history.
+func (h Harness) check(name string, kinds []string) error {
+	sortedKinds := slices.Sorted(slices.Values(kinds))
 	if h.Kind == "" {
-		return fmt.Errorf("harness.%s: kind is missing (%s)", name, strings.Join(kinds, ", "))
+		return fmt.Errorf("harness.%s: kind is missing (%s)", name, strings.Join(sortedKinds, ", "))
 	}
-	if !slices.Contains(kinds, h.Kind) {
-		return fmt.Errorf("harness.%s: kind %q is not a harness this dispatch drives (%s)", name, h.Kind, strings.Join(kinds, ", "))
+	if kinds != nil && !slices.Contains(kinds, h.Kind) {
+		return fmt.Errorf("harness.%s: kind %q is not a harness this dispatch drives (%s)", name, h.Kind, strings.Join(sortedKinds, ", "))
 	}
 	if h.Model == "" {
 		return fmt.Errorf("harness.%s: model is missing", name)
