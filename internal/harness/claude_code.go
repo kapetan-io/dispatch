@@ -1,11 +1,13 @@
 package harness
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
+	"github.com/kapetan-io/dispatch/internal/sessionlog"
 )
 
 // sessionSettings makes a session deliver messages from other sessions instead of
@@ -54,6 +56,45 @@ func (ClaudeCode) Program(s Start) herdr.Program {
 			Ready: regexp.MustCompile(`❯`),
 		},
 	}
+}
+
+// Stop reads Claude Code's Stop hook input. BackgroundTasks is a pointer so a
+// missing field, which means a Claude Code version that predates it, differs from
+// an empty list.
+func (ClaudeCode) Stop(input []byte) (sessionlog.Stop, string, bool) {
+	var in struct {
+		SessionID       string `json:"session_id"`
+		CWD             string `json:"cwd"`
+		BackgroundTasks *[]struct {
+			Status string `json:"status"`
+		} `json:"background_tasks"`
+	}
+	if json.Unmarshal(input, &in) != nil {
+		return sessionlog.Stop{}, "", false
+	}
+	report := sessionlog.Stop{Session: in.SessionID, Reported: in.BackgroundTasks != nil}
+	if report.Reported {
+		for _, task := range *in.BackgroundTasks {
+			if task.Status == "running" {
+				report.Running++
+			}
+		}
+	}
+	return report, in.CWD, true
+}
+
+// Prompt reads Claude Code's UserPromptSubmit and Notification hook input. A
+// Notification carries no prompt.
+func (ClaudeCode) Prompt(input []byte) (sessionlog.Prompt, string, bool) {
+	var in struct {
+		SessionID string `json:"session_id"`
+		CWD       string `json:"cwd"`
+		Prompt    string `json:"prompt"`
+	}
+	if json.Unmarshal(input, &in) != nil {
+		return sessionlog.Prompt{}, "", false
+	}
+	return sessionlog.Prompt{Session: in.SessionID, Text: in.Prompt}, in.CWD, true
 }
 
 // Flag is a flag Claude Code sessions run with.

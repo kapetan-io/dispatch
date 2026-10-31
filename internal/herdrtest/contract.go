@@ -70,6 +70,32 @@ var Scenarios = []Scenario{
 		require.Len(t, snap.Agents, 1)
 		assert.Equal(t, herdr.Agent{Kind: "claude", Status: "idle", PaneID: second.Pane, TabID: second.Tab, WorkspaceID: first.Workspace}, snap.Agents[0])
 	}},
+	{Name: "AgentAtShowsTheAgentInThatPaneAlone", Run: func(t *testing.T, s Subject) {
+		first := s.Workspace("alpha")
+		second := s.Tab(first.Workspace, "beta")
+		s.Agent(first.Pane, "working")
+		s.Agent(second.Pane, "idle")
+
+		agent, ok, err := s.Herdr.AgentAt(context.Background(), second.Pane)
+
+		require.NoError(t, err)
+		require.True(t, ok)
+		assert.Equal(t, herdr.Agent{Kind: "claude", Status: "idle", PaneID: second.Pane, TabID: second.Tab, WorkspaceID: first.Workspace}, agent)
+	}},
+	{Name: "AgentAtAPaneWithNoAgentFindsNone", Run: func(t *testing.T, s Subject) {
+		layout := s.Workspace("alpha")
+
+		_, ok, err := s.Herdr.AgentAt(context.Background(), layout.Pane)
+
+		require.NoError(t, err)
+		assert.False(t, ok)
+	}},
+	{Name: "AgentAtAnUnknownPaneFindsNone", Run: func(t *testing.T, s Subject) {
+		_, ok, err := s.Herdr.AgentAt(context.Background(), "w999:p1")
+
+		require.NoError(t, err)
+		assert.False(t, ok)
+	}},
 	{Name: "ReadShowsAnAgentsChangedStatus", Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
 		s.Agent(layout.Pane, "working")

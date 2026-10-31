@@ -1,5 +1,7 @@
 package loop
 
+import "github.com/kapetan-io/dispatch/internal/sessionlog"
+
 // Operations a client asks of the running loop over its socket.
 const (
 	OpTick = "tick"
@@ -40,41 +42,20 @@ type Request struct {
 	Text   string `json:"text,omitempty"`
 	// Socket is the inbox of the Claude Code session that watches or unwatches Ticket.
 	Socket string `json:"socket,omitempty"`
-	// Stop is what the Stop hook saw.
-	Stop *Stop `json:"stop,omitempty"`
-	// Prompt is what the UserPromptSubmit hook saw.
-	Prompt *Prompt `json:"prompt,omitempty"`
+	// Stop is the turn end the session's harness reported.
+	Stop *sessionlog.Stop `json:"stop,omitempty"`
+	// Prompt is the message the session's harness reported it took.
+	Prompt *sessionlog.Prompt `json:"prompt,omitempty"`
 	// Typed is what a launch typed.
 	Typed *Typed `json:"typed,omitempty"`
 }
 
-// Prompt is a UserPromptSubmit hook's report of a message a Claude session in a worker's tree took.
-type Prompt struct {
-	Tree    string `json:"tree"`
-	Session string `json:"session"`
-	// At is when Claude took the message, in milliseconds.
-	At   int64  `json:"at"`
-	Text string `json:"text"`
-}
-
-// Typed is a launch's note that it typed Text into the Claude in Tree, or with Clear set that
-// it closed that Claude.
+// Typed is a launch's note that it typed Text into the session in Tree, or with Clear set that
+// it closed that session.
 type Typed struct {
 	Tree  string `json:"tree"`
 	Text  string `json:"text,omitempty"`
 	Clear bool   `json:"clear,omitempty"`
-}
-
-// Stop is a Stop hook's report of one turn a Claude session ended in a worker's tree.
-type Stop struct {
-	Tree    string `json:"tree"`
-	Session string `json:"session"`
-	// At is when the turn ended, in milliseconds.
-	At int64 `json:"at"`
-	// Reported is false when the hook input carried no background_tasks field.
-	Reported bool `json:"reported"`
-	// Running counts the background tasks the hook listed as running.
-	Running int `json:"running"`
 }
 
 // Response is the loop's answer. Lines are printed to stdout, one per ticket.

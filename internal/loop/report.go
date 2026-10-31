@@ -78,9 +78,9 @@ func (l *Loop) onRequest(r request) error {
 	return nil
 }
 
-// onStop stores a turn a worker's Claude session ended, where the next read finds it. The
+// onStop stores a turn a worker's session ended, where the next read finds it. The
 // loop is the only writer, so a read never races a half-written record.
-func (l *Loop) onStop(s *Stop) Response {
+func (l *Loop) onStop(s *sessionlog.Stop) Response {
 	if s == nil || s.Tree == "" || s.Session == "" {
 		return Response{Code: CodeFailed, Error: "a stop report needs a tree and a session"}
 	}
@@ -107,10 +107,10 @@ func (l *Loop) onStop(s *Stop) Response {
 	return Response{}
 }
 
-// onPrompt stores a command a worker's Claude session took, with who typed it, where the next
+// onPrompt stores a command a worker's session took, with who typed it, where the next
 // read finds it. A message that is not a command is only a wake. Take answers one message per
 // send, so a person who types the same text afterward reads as a person.
-func (l *Loop) onPrompt(p *Prompt) Response {
+func (l *Loop) onPrompt(p *sessionlog.Prompt) Response {
 	if p == nil || p.Tree == "" || p.Session == "" {
 		return Response{Code: CodeFailed, Error: "a prompt report needs a tree and a session"}
 	}
