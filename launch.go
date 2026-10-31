@@ -23,7 +23,8 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 	fs := flag.NewFlagSet("launch", flag.ContinueOnError)
 	fs.SetOutput(opts.Stderr)
 	base := fs.String("base", "", "ref a new branch starts from (default the repo's default branch)")
-	model := fs.String("model", "", "Claude model the worker runs (default sonnet)")
+	model := fs.String("model", "", "Claude model the worker runs (default sonnet; not with --harness)")
+	harness := fs.String("harness", "", "harness table the worker launches on, as harness.<name> (not with --model)")
 	kickoff := fs.String("kickoff", "", "first command typed into the worker (default /dispatch:build <TICKET>)")
 	title := fs.String("title", "", "ticket title; the worker's tab is labeled \"<TICKET> <title>\" (default the ticket alone)")
 	fs.Bool("no-focus", true, "accepted for compatibility; launches never take focus")
@@ -47,8 +48,17 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 	case res.Status != "":
 	case len(positional) > 2:
 		res = launcher.Result{Status: launcher.StatusUsageError, Detail: "unknown argument: " + positional[2]}
+	case *harness != "" && *model != "":
+		res = launcher.Result{Status: launcher.StatusUsageError, Detail: "--harness and --model together: pass one"}
 	default:
 		req := launcher.Request{RepoDir: opts.Dir, Base: *base, Title: *title, Model: *model, Kickoff: *kickoff}
+		if *harness != "" {
+			var err error
+			if req.Model, err = harnessModel(opts, *harness); err != nil {
+				res = launcher.Result{Status: launcher.StatusUsageError, Detail: err.Error()}
+				break
+			}
+		}
 		if len(positional) > 0 {
 			req.Ticket = positional[0]
 		}
@@ -75,6 +85,19 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 		return errors.New("launch " + res.Status)
 	}
 	return nil
+}
+
+// harnessModel is the model of the table that ref, spelled "harness.<name>", names in the config.
+func harnessModel(opts Options, ref string) (string, error) {
+	cfg, err := config.Load(opts.ConfigPath, opts.Env)
+	if err != nil {
+		return "", fmt.Errorf("--harness needs the config: %w", err)
+	}
+	table, err := cfg.Table(ref)
+	if err != nil {
+		return "", fmt.Errorf("--harness: %w", err)
+	}
+	return table.Model, nil
 }
 
 // pluginRoot is where the plugin's scripts/shims live. The bin/dispatch-launch

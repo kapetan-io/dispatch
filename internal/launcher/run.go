@@ -152,7 +152,7 @@ func (l *launch) log(format string, args ...any) {
 func (l *launch) run(ctx context.Context) Result {
 	req := &l.req
 	if req.Ticket == "" || req.Branch == "" {
-		l.log("usage: dispatch launch <TICKET> <BRANCH> [--base REF] [--model NAME] [--kickoff TEXT] [--title TEXT]")
+		l.log("usage: dispatch launch <TICKET> <BRANCH> [--base REF] [--model NAME | --harness harness.NAME] [--kickoff TEXT] [--title TEXT]")
 		return Result{Status: StatusUsageError, Detail: "TICKET and BRANCH are required"}
 	}
 	// Without it the worker starts with no dispatch plugin and no shims.

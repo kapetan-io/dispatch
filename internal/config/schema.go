@@ -52,6 +52,9 @@ func schemaOf(t reflect.Type) map[string]any {
 		if t == reflect.TypeFor[Repo]() {
 			required = []string{"path"}
 		}
+		if t == reflect.TypeFor[Harness]() {
+			required = []string{"kind", "model"}
+		}
 		if t == reflect.TypeFor[HTTPService]() {
 			required = []string{"base_url"}
 		}

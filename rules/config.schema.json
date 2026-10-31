@@ -19,6 +19,25 @@
       },
       "type": "object"
     },
+    "harness": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "model"
+        ],
+        "type": "object"
+      },
+      "type": "object"
+    },
     "history": {
       "additionalProperties": false,
       "properties": {
@@ -159,6 +178,9 @@
           "auto_merge": {
             "type": "boolean"
           },
+          "design": {
+            "type": "string"
+          },
           "ignore_comment_authors": {
             "items": {
               "type": "string"
@@ -172,6 +194,9 @@
             "type": "string"
           },
           "path": {
+            "type": "string"
+          },
+          "worker": {
             "type": "string"
           }
         },

@@ -124,6 +124,14 @@ _Avoid_: agent (herdr's word for any terminal agent, kept inside the herdr adapt
 A git worktree in a repo's treehouse pool, leased or not; a rule reads which from its `leased` fact. A ticket leases one and holds it under the ticket id until it is returned.
 _Avoid_: worktree and checkout (the tools' words, used inside the tool adapters and for a plain git worktree of a repo), lease (the lease is the holding, not the tree), slot (room in the pool)
 
+**Harness**:
+The program that runs in a worker's session, such as Claude Code, which is the only one dispatch drives today. A harness table pairs a harness kind with a model.
+_Avoid_: agent (herdr's word, kept inside the herdr adapter), tool (the tools are herdr, treehouse, gh, Linear), model (a harness runs a model)
+
+**Harness table**:
+A `[harness.<name>]` table in `config.toml`, named everywhere as `harness.<name>`. A rule passes that name to `queueLaunch`; `worker` and `design` in `[rules]` or `[repos.<label>]` name the table the shipped rules use for build and design workers.
+_Avoid_: profile, role (a role is only which of `worker` / `design` a ticket's launch reads)
+
 **Launch**:
 A launch leases a tree for the ticket, creates the ticket's branch (at another ticket's PR head for a stacked launch), opens a herdr workspace, starts Claude and types the kickoff. A relaunch is a launch on a tree the ticket already holds. The launcher is the code that does it, run by the executor or by `dispatch launch`.
 _Avoid_: spawn, start (starting Claude is one step of a launch)

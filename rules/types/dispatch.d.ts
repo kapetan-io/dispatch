@@ -161,7 +161,7 @@ declare module "dispatch" {
   export interface Config {
     dispatch: { rules: string; max_in_progress: number; resync: string };
     history: { dir: string; rotate: string; keep: string };
-    repos: { [label: string]: { path: string; open_pr_as: string; ignore_comment_authors: string[]; ignore_optional_checks: boolean; approval_checks: string[]; auto_merge: boolean } };
+    repos: { [label: string]: { path: string; open_pr_as: string; ignore_comment_authors: string[]; ignore_optional_checks: boolean; approval_checks: string[]; auto_merge: boolean; worker: string; design: string } };
     plugins: { linear: { teams: string[]; ai_label: string; repo_label_group: string; statuses: { todo: string; close_parent: string; blocker_done: string; in_progress: string; in_review: string; needs_human: string; finished: string[]; paused: string[] } }; herdr: { plugin_root: string }; github: {  }; treehouse: {  }; notify: {  } };
     http: { [label: string]: { base_url: string } };
     rules: { "blocked_renotify_minutes": number; "design_model": string; "launch_failure_limit": number; "nudge_limit": number; "worker_model": string; [key: string]: unknown };
@@ -226,7 +226,7 @@ declare module "dispatch" {
     worker: {
       of(t: Ticket): Worker;
       in(tree: Tree): Worker;
-      queueLaunch(t: Ticket, o: { once: Once; model?: string; kickoff?: string; uncapped?: boolean; stackOn?: PR }): Action;
+      queueLaunch(t: Ticket, o: { once: Once; harness?: string; model?: string; kickoff?: string; uncapped?: boolean; stackOn?: PR }): Action;
       queueNudge(t: Ticket, text: string, o: { once: Once }): Action;
       queueClose(w: Worker, o: { once: Once }): Action;
     };

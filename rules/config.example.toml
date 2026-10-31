@@ -6,3 +6,13 @@ design_model = "opus"              # design and design-review workers
 launch_failure_limit = 2           # failed launches in a row before the ticket goes to Needs Human
 nudge_limit = 2                    # PR nudges or relaunches per PR head before the ticket goes to Needs Human
 blocked_renotify_minutes = 15      # minutes between notices for a worker blocked on a question
+
+# Optional. Name a [harness.<name>] table to launch workers on it. Without these keys workers run on worker_model / design_model.
+# A [repos.<label>] table can set the same keys to override these for that repo.
+#
+# [harness.claude-opus]
+# kind = "claude-code"
+# model = "opus"
+#
+# [rules]
+# worker = "harness.claude-opus"

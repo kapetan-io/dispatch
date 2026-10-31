@@ -756,14 +756,14 @@ func TestTickReturnsTheTreeOfACanceledDesignTicket(t *testing.T) {
 
 func TestTickNamesTheRulesKeyAMissingConfigLeavesOut(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Config: "[rules]\nworker_model = \"sonnet\"\nlaunch_failure_limit = 2\n"})
+	d := newDispatch(t, dispatchOptions{Config: "[rules]\nworker_model = \"sonnet\"\ndesign_model = \"opus\"\n"})
 	d.ExactRules()
-	d.Linear.Tickets(withLabel(designTicket("ENG-1", "In Progress"), "design-review"))
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	out := d.Tick()
 
 	assert.Empty(t, d.Workers.Launched())
-	assert.Contains(t, out, `ENG-1 launch-worker threw: Error: config.toml has no [rules] key "design_model". Add design_model = ... under [rules]`)
+	assert.Contains(t, out, `ENG-1 launch-worker threw: Error: config.toml has no [rules] key "launch_failure_limit". Add launch_failure_limit = ... under [rules]`)
 	assert.Contains(t, out, "restart dispatch run")
 }
 

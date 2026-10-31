@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -36,6 +37,9 @@ type Config struct {
 	Repos    Repos                  `toml:"repos"`
 	Plugins  Plugins                `toml:"plugins"`
 	HTTP     map[string]HTTPService `toml:"http"`
+	// Harness holds the [harness.<name>] tables. Rules name one as "harness.<name>"
+	// and never see the tables themselves.
+	Harness map[string]Harness `toml:"harness" ctx:"-"`
 	// Rules is the user's own table. Dispatch never interprets it, apart from
 	// the five keys `dispatch rules init` writes (see the accessors below).
 	Rules Rules `toml:"rules"`
@@ -99,6 +103,10 @@ type Repo struct {
 	ApprovalChecks []string `toml:"approval_checks"`
 	// AutoMerge makes dispatch merge a ready PR once a review approves its head commit.
 	AutoMerge bool `toml:"auto_merge"`
+	// Worker and Design name the harness table, as "harness.<name>", that this repo's build and
+	// design workers launch on. Unset or empty means the [rules] value.
+	Worker string `toml:"worker,omitempty"`
+	Design string `toml:"design,omitempty"`
 }
 
 // Repos maps a repo label to its settings. It decodes itself so that every
@@ -244,7 +252,33 @@ func (c Config) check() error {
 			return fmt.Errorf("http.%s base_url must be an http or https URL with a host, no user, no query and no fragment, got %q", name, service.BaseURL)
 		}
 	}
-	return c.Rules.check()
+	if err := c.Rules.check(); err != nil {
+		return err
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.Harness)) {
+		if err := c.Harness[name].check(name); err != nil {
+			return err
+		}
+	}
+	for _, role := range roles {
+		if ref, _ := c.Rules[role].(string); ref != "" {
+			if err := c.checkHarnessRef("rules."+role, ref); err != nil {
+				return err
+			}
+		}
+	}
+	for _, label := range c.Repos.Labels() {
+		repo := c.Repos[label]
+		for i, ref := range []string{repo.Worker, repo.Design} {
+			if ref == "" {
+				continue
+			}
+			if err := c.checkHarnessRef("repos."+label+"."+roles[i], ref); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // repoProblem extracts the message of a problem Repos found in a repo table.

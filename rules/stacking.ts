@@ -98,7 +98,7 @@ whenever({
            && t.optedIn && nudgeable(t) && ctx.config.hasRepo(t.repo) && ctx.worker.of(t).state === "none"
            && restackOwed(t, ctx) && launchFailures(t, ctx) < launchFailureLimit(ctx),
   then: (t, ctx) => ctx.worker.queueLaunch(t, {
-           model: launchAs(t, ctx).model, kickoff: RESTACK(t), uncapped: true,
+           ...launchAs(t, ctx), kickoff: RESTACK(t), uncapped: true,
            once: ["restack", t.stack!.parent, t.statusSince, ctx.worker.of(t).goneSince, ctx.tree.pool(t.repo).returns],
          }),
 });

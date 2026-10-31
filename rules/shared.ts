@@ -13,12 +13,25 @@ export const isDesign = (t: Ticket) => t.hasLabel("design") || t.hasLabel("desig
 export const skill = (t: Ticket) =>
   t.hasLabel("design-review") ? "design-review" : t.hasLabel("design") ? "design" : "build";
 
-// The model and first command a ticket's worker starts with. A build worker gets the
-// launcher's default kickoff, as today.
-export const launchAs = (t: Ticket, ctx: Ctx): { model: string; kickoff?: string } =>
-  skill(t) === "build"
-    ? { model: ctx.config.rules.worker_model }
-    : { model: ctx.config.rules.design_model, kickoff: `/dispatch:${skill(t)} ${t.id}` };
+// What a ticket's worker starts on, and its first command. A repo's worker / design key beats
+// [rules], and with neither set the worker runs Claude Code on worker_model / design_model.
+// A build worker gets no kickoff, so the launcher types /dispatch:build <ticket>.
+// Those two models fall back to sonnet and opus (config.DefaultWorkerModel and
+// DefaultDesignModel) so a config without them still launches.
+export const launchAs = (t: Ticket, ctx: Ctx): { harness?: string; model?: string; kickoff?: string } => {
+  const role = skill(t) === "build" ? "worker" : "design";
+  // The index signature types a [rules] key as unknown, and a key the file lacks must not throw.
+  const rules: { [key: string]: unknown } = ctx.config.rules;
+  // The exact spelling wins, as the launcher's repo lookup does; a label differing in case still finds its table.
+  const repos = ctx.config.repos;
+  const label = t.repo !== undefined && t.repo in repos ? t.repo
+    : Object.keys(repos).find(l => l.toLowerCase() === t.repo?.toLowerCase());
+  // || skips an empty string, which a role key treats as unset.
+  const harness = (label && repos[label][role]) || (role in rules ? rules[role] as string : undefined);
+  const model = `${role}_model` in rules ? rules[`${role}_model`] as string : role === "worker" ? "sonnet" : "opus";
+  const target = harness ? { harness } : { model };
+  return role === "worker" ? target : { ...target, kickoff: `/dispatch:${skill(t)} ${t.id}` };
+};
 
 // Tickets whose worker dispatch talks to. Parents have no worker, and design
 // workers wait on you, so neither is nudged.
