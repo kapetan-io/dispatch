@@ -1,12 +1,16 @@
-// Package launcher leases a tree, opens a herdr workspace and starts a Claude
+// Package launcher leases a tree, opens a herdr workspace and starts a
 // worker for one ticket.
 package launcher
 
-import "context"
+import (
+	"context"
+
+	"github.com/kapetan-io/dispatch/internal/herdr"
+)
 
 // Launcher starts a worker for a ticket.
 type Launcher interface {
-	// Launch leases a tree for the ticket's branch and starts a Claude worker on
+	// Launch leases a tree for the ticket's branch and starts a worker on
 	// it. The Result says what happened, and never fails to carry a status.
 	Launch(ctx context.Context, r Request) Result
 }
@@ -27,8 +31,9 @@ type Request struct {
 	// Stack starts a new branch at Stack.Head and records the stack parent and fork point. It
 	// overrides Base. An existing branch gets neither the start point nor the record.
 	Stack *Stack
-	// Model is the Claude model the worker runs. Defaults to sonnet.
-	Model string
+	// Program is what herdr runs for the worker, as a harness describes it. It
+	// has no default.
+	Program herdr.Program
 	// Kickoff is the first command typed into the worker. Defaults to
 	// "/dispatch:build <Ticket>".
 	Kickoff string

@@ -577,7 +577,7 @@ func TestTickTypesTheDesignKickoffWithTheBuiltInLauncher(t *testing.T) {
 
 	assert.Equal(t, []string{"w2:p2|/dispatch:design ENG-1"}, d.Workers.Kicked())
 	require.Len(t, d.Workers.Started(), 1)
-	assert.Equal(t, "opus", d.Workers.Started()[0].Model)
+	assert.Equal(t, "opus", modelOf(d.Workers.Started()[0].Program))
 }
 
 func TestTickNeverNudgesOrEscalatesADesignWorker(t *testing.T) {
@@ -695,7 +695,7 @@ func TestTickCountsADesignReviewAgainstMaxInProgress(t *testing.T) {
 	require.NoError(t, plan.Err)
 	assert.Regexp(t, planRow("waiting", "ENG-2"), plan.Stdout)
 	require.Len(t, d.Workers.Started(), 1)
-	assert.Equal(t, "opus", d.Workers.Started()[0].Model)
+	assert.Equal(t, "opus", modelOf(d.Workers.Started()[0].Program))
 }
 
 func TestTickHoldsAPromotionWhileADesignReviewTakesTheLastSlot(t *testing.T) {

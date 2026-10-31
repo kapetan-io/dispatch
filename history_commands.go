@@ -46,7 +46,7 @@ func explainCommand(opts Options, ticket string, asJSON bool) error {
 	if !ticketID.MatchString(ticket) {
 		return fmt.Errorf("%q is not a ticket identifier such as ENG-123", ticket)
 	}
-	cfg, err := config.Load(opts.ConfigPath, opts.Env)
+	cfg, err := loadConfig(opts)
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func replayCommand(opts Options, args []string) error {
 	if fs.NArg() > 0 {
 		return errors.New("replay takes flags only")
 	}
-	cfg, err := config.Load(opts.ConfigPath, opts.Env)
+	cfg, err := loadConfig(opts)
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func stateCommand(ctx context.Context, opts Options, args []string) error {
 // wait starts again. With quiet, the messages the first cycle wants get a Done receipt flagged as reset,
 // so a restart does not tell every worker again what it was told before.
 func resetState(ctx context.Context, opts Options, quiet bool) error {
-	cfg, err := config.Load(opts.ConfigPath, opts.Env)
+	cfg, err := loadConfig(opts)
 	if err != nil {
 		return err
 	}

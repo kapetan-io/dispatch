@@ -20,6 +20,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/environment"
+	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
@@ -51,8 +52,10 @@ type Env struct {
 	Treehouse    treehouse.Pool
 	PullRequests pullrequest.Repository
 	Launcher     launcher.Launcher
-	Alerts       notify.Alerts
-	HTTP         httpservice.Services
+	// Harnesses holds the adapter for each kind a harness table can name.
+	Harnesses harness.Registry
+	Alerts    notify.Alerts
+	HTTP      httpservice.Services
 	// Environment is what the git commands that return a tree run with.
 	Environment environment.Environment
 	StateDir    string
@@ -217,6 +220,8 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World) Res
 	}
 	model, _ := w.Options["model"].(string)
 	ref, _ := w.Options["harness"].(string)
+	// Without a harness table, a launch runs Claude Code.
+	kind := config.KindClaudeCode
 	switch {
 	case ref != "" && model != "":
 		return Result{Outcome: ledger.Refused, Detail: fmt.Sprintf("launch of %s passes both harness %q and model %q: pass one", t.Identifier, ref, model)}
@@ -225,13 +230,17 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World) Res
 		if err != nil {
 			return Result{Outcome: ledger.Refused, Detail: fmt.Sprintf("launch of %s passes harness %q: %v", t.Identifier, ref, err)}
 		}
-		model = table.Model
+		kind, model = table.Kind, table.Model
 	case model == "":
 		model = cfg.WorkerModel()
 	}
+	program, err := e.Harnesses.Program(kind, model, cfg.Plugins.Herdr.PluginRoot)
+	if err != nil {
+		return Result{Outcome: ledger.Refused, Detail: fmt.Sprintf("launch of %s: %v", t.Identifier, err)}
+	}
 	kickoff, _ := w.Options["kickoff"].(string)
 	req := launcher.Request{
-		RepoDir: repo.Path, Ticket: t.Identifier, Title: t.Title, Branch: t.Branch, Model: model, Kickoff: kickoff,
+		RepoDir: repo.Path, Ticket: t.Identifier, Title: t.Title, Branch: t.Branch, Program: program, Kickoff: kickoff,
 	}
 	if on, ok := w.Options["stackOn"].(map[string]any); ok {
 		ticket, _ := on["ticket"].(string)

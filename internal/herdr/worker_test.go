@@ -15,8 +15,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 )
+
+// claude is the program a Claude Code worker runs, which every test here starts and kicks off.
+var claude = harness.ClaudeCode{}.Program(harness.Start{Model: "sonnet", PluginRoot: "/plugin"})
 
 const envState = "HERDR_TEST_STATE"
 
@@ -227,7 +231,7 @@ func TestStartWorkerStampsTheTabAndStartsClaudeInIt(t *testing.T) {
 	s.workerStarts()
 
 	started, err := s.cli.StartWorker(context.Background(), herdr.Worker{
-		Workspace: "w9", Dir: "/t/1", Label: "ENG-1 Fix the thing", Name: "eng-1", Model: "sonnet", PluginRoot: "/plugin",
+		Workspace: "w9", Dir: "/t/1", Label: "ENG-1 Fix the thing", Name: "eng-1", PluginRoot: "/plugin", Program: claude,
 	})
 
 	require.NoError(t, err)
@@ -249,7 +253,7 @@ func TestStartWorkerStampsTheNamedDispatchBin(t *testing.T) {
 	cli := s.cli.WithDispatchBin("/opt/dispatch/bin/dispatch")
 
 	_, err := cli.StartWorker(context.Background(), herdr.Worker{
-		Workspace: "w9", Dir: "/t/1", Label: "ENG-1 Fix the thing", Name: "eng-1", Model: "sonnet", PluginRoot: "/plugin",
+		Workspace: "w9", Dir: "/t/1", Label: "ENG-1 Fix the thing", Name: "eng-1", PluginRoot: "/plugin", Program: claude,
 	})
 
 	require.NoError(t, err)
@@ -262,7 +266,7 @@ func TestStartWorkerNeverGivesClaudeASessionName(t *testing.T) {
 	s := newStatefulHerdr(t)
 	s.workerStarts()
 
-	_, err := s.cli.StartWorker(context.Background(), herdr.Worker{Workspace: "w9", Dir: "/t/1", Label: "ENG-1", Name: "eng-1", Model: "sonnet", PluginRoot: "/plugin"})
+	_, err := s.cli.StartWorker(context.Background(), herdr.Worker{Workspace: "w9", Dir: "/t/1", Label: "ENG-1", Name: "eng-1", PluginRoot: "/plugin", Program: claude})
 
 	// Claude draws a --name below an open question, which hides the question
 	// from herdr's blocked detection.
@@ -281,7 +285,7 @@ func TestStartWorkerClosesTheAgentlessTabsOfTheWorkspace(t *testing.T) {
 		`{"pane_id":"w9:p2","workspace_id":"w9","tab_id":"w9:t2","agent":"claude"},`+
 		`{"pane_id":"w2:p1","workspace_id":"w2","tab_id":"w2:t1","agent":""}]}}`)
 
-	_, err := s.cli.StartWorker(context.Background(), herdr.Worker{Workspace: "w9", Dir: "/t/1", Label: "ENG-1", Name: "eng-1", Model: "sonnet", PluginRoot: "/plugin"})
+	_, err := s.cli.StartWorker(context.Background(), herdr.Worker{Workspace: "w9", Dir: "/t/1", Label: "ENG-1", Name: "eng-1", PluginRoot: "/plugin", Program: claude})
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{"tab close w9:t0"}, s.callsStarting("tab close"))
@@ -292,7 +296,7 @@ func TestStartWorkerRetriesAFailedStartOnceThenReportsThePane(t *testing.T) {
 	s.workerStarts()
 	s.write("start-fails", "")
 
-	started, err := s.cli.StartWorker(context.Background(), herdr.Worker{Workspace: "w9", Dir: "/t/1", Label: "ENG-1", Name: "eng-1", Model: "sonnet", PluginRoot: "/plugin"})
+	started, err := s.cli.StartWorker(context.Background(), herdr.Worker{Workspace: "w9", Dir: "/t/1", Label: "ENG-1", Name: "eng-1", PluginRoot: "/plugin", Program: claude})
 
 	// The first start fails and the second runs after a pause, since a
 	// timed-out start may still bring Claude up.
@@ -307,7 +311,7 @@ func TestStartWorkerKeepsAnAgentWhoseStartTimedOutButCameUp(t *testing.T) {
 	s.write("start-fails", "")
 	s.write("agents.json", `{"result":{"agents":[{"name":"eng-1","pane_id":"w9:p1","agent":"claude","agent_status":"idle"}]}}`)
 
-	started, err := s.cli.StartWorker(context.Background(), herdr.Worker{Workspace: "w9", Dir: "/t/1", Label: "ENG-1", Name: "eng-1", Model: "sonnet", PluginRoot: "/plugin"})
+	started, err := s.cli.StartWorker(context.Background(), herdr.Worker{Workspace: "w9", Dir: "/t/1", Label: "ENG-1", Name: "eng-1", PluginRoot: "/plugin", Program: claude})
 
 	require.NoError(t, err)
 	assert.Equal(t, "w9:p1", started.Pane)
@@ -319,7 +323,7 @@ func TestStartWorkerNamesARelaunchedWorkerApartFromItsPredecessor(t *testing.T) 
 	s.workerStarts()
 	s.write("agents.json", `{"result":{"agents":[{"name":"eng-1","pane_id":"w1:p1","agent":"claude","agent_status":"done"}]}}`)
 
-	started, err := s.cli.StartWorker(context.Background(), herdr.Worker{Workspace: "w9", Dir: "/t/1", Label: "ENG-1", Name: "eng-1", Model: "sonnet", PluginRoot: "/plugin"})
+	started, err := s.cli.StartWorker(context.Background(), herdr.Worker{Workspace: "w9", Dir: "/t/1", Label: "ENG-1", Name: "eng-1", PluginRoot: "/plugin", Program: claude})
 
 	require.NoError(t, err)
 	assert.Regexp(t, `^eng-1-r\d+$`, started.Agent)
@@ -332,7 +336,7 @@ func TestStartWorkerFailsWhenTheTabCannotBeCreated(t *testing.T) {
 	s := newStatefulHerdr(t)
 	s.write("start-works", "")
 
-	started, err := s.cli.StartWorker(context.Background(), herdr.Worker{Workspace: "w9", Dir: "/t/1", Label: "ENG-1", Name: "eng-1", Model: "sonnet", PluginRoot: "/plugin"})
+	started, err := s.cli.StartWorker(context.Background(), herdr.Worker{Workspace: "w9", Dir: "/t/1", Label: "ENG-1", Name: "eng-1", PluginRoot: "/plugin", Program: claude})
 
 	require.ErrorContains(t, err, "herdr tab create failed in w9: "+herdrNoWay)
 	assert.Equal(t, herdr.Started{}, started)
@@ -346,7 +350,7 @@ func TestKickoffAnswersTheConsentAndFolderTrustDialogs(t *testing.T) {
 		"Do you trust this folder?  ❯ No, exit  Yes, proceed",
 		"❯")
 
-	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1")
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
 
 	require.NoError(t, err)
 	// The consent dialog is answered two ways in turn, because herdr's key
@@ -366,7 +370,7 @@ func TestKickoffPressesEnterOnlyOnTheFolderTrustDialogWhenYesIsSelected(t *testi
 	s := newStatefulHerdr(t)
 	s.screens("Do you trust this folder?  No, exit  ❯ Yes, proceed", "❯")
 
-	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1")
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{"pane send-keys w9:p1 Enter", "pane send-keys w9:p1 Enter"}, s.callsStarting("pane send-keys"))
@@ -376,7 +380,7 @@ func TestKickoffPressesEnterOnAClaudeCommandLeftUnrunAtTheShellPrompt(t *testing
 	s := newStatefulHerdr(t)
 	s.screens("~/gubernator  thrawn01/eng-332 *35\n❯ claude --model opus --plugin-dir /plugin", "❯")
 
-	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1")
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
 
 	require.NoError(t, err)
 	// The first Enter runs the stranded command, the second submits the kickoff.
@@ -388,9 +392,9 @@ func TestKickoffReportsClaudeNeverStartedWhenItsCommandStaysAtTheShellPrompt(t *
 	s := newStatefulHerdr(t)
 	s.screens("❯ claude --model opus --plugin-dir /plugin")
 
-	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1")
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
 
-	require.ErrorIs(t, err, herdr.ErrClaudeNeverStarted)
+	require.ErrorIs(t, err, herdr.ErrNeverStarted)
 	assert.NotErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
 	assert.Empty(t, s.callsStarting("pane run"))
 }
@@ -399,7 +403,7 @@ func TestKickoffGivesUpWhenClaudeNeverShowsAnInputBox(t *testing.T) {
 	s := newStatefulHerdr(t)
 	s.screens("loading")
 
-	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1")
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
 
 	require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
 	assert.Empty(t, s.callsStarting("pane run"))
@@ -410,7 +414,7 @@ func TestKickoffGivesUpWhenTheAgentNeverLeavesIdle(t *testing.T) {
 	s.write("wait-fails", "100")
 	s.write("agents.json", `{"result":{"agents":[{"name":"x","pane_id":"w9:p1","agent":"claude","agent_status":"idle"}]}}`)
 
-	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1")
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
 
 	require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
 	assert.Len(t, s.callsStarting("pane run"), 3)
@@ -420,7 +424,7 @@ func TestKickoffGivesUpWhenTheAgentVanishesAfterTheKickoff(t *testing.T) {
 	s := newStatefulHerdr(t)
 	s.write("wait-fails", "100")
 
-	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1")
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
 
 	require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
 	assert.Equal(t, []string{"pane run w9:p1 /dispatch:build ENG-1"}, s.callsStarting("pane run"))
@@ -435,7 +439,7 @@ func TestKickoffNeverRetypesAKickoffThatIsRunningOrFinished(t *testing.T) {
 			s.write("wait-fails", "1")
 			s.write("agents.json", `{"result":{"agents":[{"name":"x","pane_id":"w9:p1","agent":"claude","agent_status":"`+status+`"}]}}`)
 
-			err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1")
+			err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
 
 			require.NoError(t, err)
 			assert.Equal(t, []string{"pane run w9:p1 /dispatch:build ENG-1"}, s.callsStarting("pane run"))
@@ -448,7 +452,7 @@ func TestKickoffRetypesWhileTheAgentStaysIdle(t *testing.T) {
 	s.write("wait-fails", "1")
 	s.write("agents.json", `{"result":{"agents":[{"name":"x","pane_id":"w9:p1","agent":"claude","agent_status":"idle"}]}}`)
 
-	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1")
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{"pane run w9:p1 /dispatch:build ENG-1", "pane run w9:p1 /dispatch:build ENG-1"}, s.callsStarting("pane run"))
@@ -460,7 +464,7 @@ func TestKickoffPressesEnterInsteadOfRetypingAKickoffThatWasTypedButNotSubmitted
 	s.write("agents.json", `{"result":{"agents":[{"name":"x","pane_id":"w9:p1","agent":"claude","agent_status":"idle"}]}}`)
 	s.screens("❯", "❯ /dispatch:design ENG-1")
 
-	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:design ENG-1")
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:design ENG-1", claude.Startup)
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{"pane run w9:p1 /dispatch:design ENG-1"}, s.callsStarting("pane run"))
@@ -472,7 +476,7 @@ func TestKickoffRecordsTheScreensItReadsWhenTraced(t *testing.T) {
 	trace := filepath.Join(s.dir, "trace.log")
 	s.cli.WithTrace(trace)
 
-	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1")
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
 
 	require.NoError(t, err)
 	b, err := os.ReadFile(trace)
@@ -487,9 +491,9 @@ func TestKickoffTraceShowsEachEnterPressedAtAStrandedCommand(t *testing.T) {
 	s.cli.WithTrace(trace)
 	s.screens("❯ claude --model opus --plugin-dir /plugin")
 
-	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1")
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
 
-	require.ErrorIs(t, err, herdr.ErrClaudeNeverStarted)
+	require.ErrorIs(t, err, herdr.ErrNeverStarted)
 	b, err := os.ReadFile(trace)
 	require.NoError(t, err)
 	assert.Equal(t, 30, strings.Count(string(b), " enter\n"))
@@ -502,10 +506,10 @@ func TestKickoffTraceShowsEnterHerdrRefusedToSend(t *testing.T) {
 	s.screens("❯ claude --model opus --plugin-dir /plugin")
 	s.write("send-keys-fails", "")
 
-	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1")
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
 
 	require.ErrorIs(t, err, herdr.ErrEnterNotSent)
-	assert.NotErrorIs(t, err, herdr.ErrClaudeNeverStarted)
+	assert.NotErrorIs(t, err, herdr.ErrNeverStarted)
 	b, err := os.ReadFile(trace)
 	require.NoError(t, err)
 	assert.Equal(t, 0, strings.Count(string(b), " enter\n"))

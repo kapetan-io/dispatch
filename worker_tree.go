@@ -5,15 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-
-	"github.com/kapetan-io/dispatch/internal/config"
 )
 
 // workerTree returns the managed worktree a worker runs in when dir is inside one. The
 // plugin's hooks run in every Claude session on the machine, so a session outside a pool
 // tree of a repo listed under [repos] gets false and the hook stays silent.
 func workerTree(ctx context.Context, opts Options, dir string) (string, bool) {
-	cfg, err := config.Load(opts.ConfigPath, opts.Env)
+	cfg, err := loadConfig(opts)
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", false
 	}

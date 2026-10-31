@@ -4,18 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"os"
-	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 )
-
-// SessionSettings makes a session deliver messages from other sessions instead of
-// holding them for review, whatever the user's own settings say.
-const SessionSettings = `{"crossSessionInbound":"accept"}`
 
 func (c *CLI) OpenWorkspace(ctx context.Context, w NewWorkspace) (string, error) {
 	var list struct {
@@ -96,20 +93,22 @@ func (c *CLI) listAgents(ctx context.Context) []listedAgent {
 }
 
 func (c *CLI) StartWorker(ctx context.Context, w Worker) (Started, error) {
-	// The shim dir carries a `claude` wrapper that re-adds the plugin and worker
-	// flags when herdr restarts it with a bare `claude --resume`, since herdr
-	// does not replay agent argv. worktree open carries no --env but tab create
-	// does, so the worker runs in a fresh stamped tab and the agent-less tabs
-	// the workspace opened with are closed.
-	shims := filepath.Join(w.PluginRoot, "scripts", "shims")
+	// worktree open carries no --env but tab create does, so the worker runs in a
+	// fresh stamped tab and the agent-less tabs the workspace opened with are
+	// closed. The program's PathFirst directories hold wrappers that re-add its
+	// flags when herdr restarts it, since herdr does not replay agent argv.
+	path := strings.Join(append(slices.Clone(w.Program.PathFirst), c.env.Get("PATH")), ":")
 	args := []string{"tab", "create", "--workspace", w.Workspace, "--cwd", w.Dir, "--label", w.Label,
-		"--env", "PATH=" + shims + ":" + c.env.Get("PATH"),
+		"--env", "PATH=" + path,
 		"--env", "AUTONOMOUS_WORKER=1",
 		"--env", "DISPATCH_PLUGIN_ROOT=" + w.PluginRoot}
-	// The shim runs DISPATCH_BIN, so a dispatch on PATH that is older than the
+	// A wrapper runs DISPATCH_BIN, so a dispatch on PATH that is older than the
 	// plugin, or absent, cannot break the worker's start or restart.
 	if c.dispatchBin != "" {
 		args = append(args, "--env", "DISPATCH_BIN="+c.dispatchBin)
+	}
+	for _, key := range slices.Sorted(maps.Keys(w.Program.Env)) {
+		args = append(args, "--env", key+"="+w.Program.Env[key])
 	}
 	out, _ := c.combined(ctx, append(args, "--no-focus")...)
 	var created struct {
@@ -127,14 +126,14 @@ func (c *CLI) StartWorker(ctx context.Context, w Worker) (Started, error) {
 	c.closeAgentlessTabs(ctx, w.Workspace, pane)
 
 	started := Started{Pane: pane}
-	// A timed-out start may still bring Claude up, so retry only into a pane
-	// that has no Claude agent.
+	// A timed-out start may still bring the program up, so retry only into a pane
+	// that has no agent of its kind.
 	ok := c.startAgent(ctx, w, &started)
 	if !ok {
 		c.sleep(ctx, 3*c.pace)
-		ok = c.paneHasClaude(ctx, pane) || c.startAgent(ctx, w, &started)
+		ok = c.paneHasAgent(ctx, pane, w.Program.AgentKind) || c.startAgent(ctx, w, &started)
 	}
-	if !ok && !c.paneHasClaude(ctx, pane) {
+	if !ok && !c.paneHasAgent(ctx, pane, w.Program.AgentKind) {
 		return started, fmt.Errorf("herdr agent start failed in pane %s", pane)
 	}
 	return started, nil
@@ -177,10 +176,8 @@ func (c *CLI) startAgent(ctx context.Context, w Worker, started *Started) bool {
 		c.log("pane %s shell not ready yet (%d/15)", started.Pane, try)
 		c.sleep(ctx, c.pace)
 	}
-	out, err := c.combined(ctx, "agent", "start", started.Agent, "--kind", "claude", "--pane", started.Pane, "--timeout", "90000", "--",
-		"--model", w.Model, "--plugin-dir", w.PluginRoot,
-		"--disallowedTools", "EnterPlanMode,ExitPlanMode", "--settings", SessionSettings,
-		"--dangerously-skip-permissions")
+	args := []string{"agent", "start", started.Agent, "--kind", w.Program.AgentKind, "--pane", started.Pane, "--timeout", "90000", "--"}
+	out, err := c.combined(ctx, append(args, w.Program.Argv...)...)
 	if err != nil {
 		c.log("agent start failed: %s", out)
 		return false
@@ -188,9 +185,9 @@ func (c *CLI) startAgent(ctx context.Context, w Worker, started *Started) bool {
 	return true
 }
 
-func (c *CLI) paneHasClaude(ctx context.Context, pane string) bool {
+func (c *CLI) paneHasAgent(ctx context.Context, pane, kind string) bool {
 	for _, a := range c.listAgents(ctx) {
-		if a.PaneID == pane && a.Agent == "claude" {
+		if a.PaneID == pane && a.Agent == kind {
 			return true
 		}
 	}
@@ -198,12 +195,12 @@ func (c *CLI) paneHasClaude(ctx context.Context, pane string) bool {
 }
 
 // Kickoff confirms a submitted kickoff by herdr's agent status leaving idle,
-// never by finding its text on screen. While a skill runs, Claude's screen shows
+// never by finding its text on screen. While a skill runs, the screen shows
 // only the spinner and an empty input box, and a text probe misread that as a
 // lost kickoff and typed it again. The kickoff is retyped only while the agent
 // is still idle with the text gone from its input box.
-func (c *CLI) Kickoff(ctx context.Context, pane, text string) error {
-	// A prefix is enough to find the typed kickoff, which Claude may wrap.
+func (c *CLI) Kickoff(ctx context.Context, pane, text string, startup Startup) error {
+	// A prefix is enough to find the typed kickoff, which the program may wrap.
 	probe := text
 	if r := []rune(text); len(r) > 24 {
 		probe = string(r[:24])
@@ -216,37 +213,27 @@ func (c *CLI) Kickoff(ctx context.Context, pane, text string) error {
 	ready := false
 	unrun := false // the launch command was last seen unexecuted at the shell prompt
 	entered := 0   // Enters herdr accepted while the launch command showed at the shell prompt
-	consentTry := 0
+	sightings := make([]int, len(startup.Answers))
+screens:
 	for range 30 {
 		screen := visible()
 		c.record("dialogs", screen)
-		lower := strings.ToLower(screen)
-		// One-time bypass-permissions consent. Match the option text, never
-		// "bypass permissions", which the status line shows forever after.
-		if strings.Contains(lower, "yes, i accept") {
-			if consentTry%2 == 0 {
-				_ = c.run(ctx, "pane", "send-keys", pane, "Down", "Enter")
-			} else {
-				_ = c.run(ctx, "pane", "send-keys", pane, "2")
-				_ = c.run(ctx, "pane", "send-keys", pane, "Enter")
+		for i, answer := range startup.Answers {
+			if !answer.shows(screen) {
+				continue
 			}
-			consentTry++
-			c.sleep(ctx, c.pace)
-			continue
-		}
-		// First-run folder trust. The cursor may default to "No, exit".
-		if strings.Contains(lower, "trust this folder") {
-			if cursorOnNo.MatchString(screen) {
-				_ = c.run(ctx, "pane", "send-keys", pane, "Down")
+			try := answer.Tries[sightings[i]%len(answer.Tries)]
+			sightings[i]++
+			for _, keys := range try {
+				_ = c.run(ctx, append([]string{"pane", "send-keys", pane}, keys...)...)
 			}
-			_ = c.run(ctx, "pane", "send-keys", pane, "Enter")
 			c.sleep(ctx, c.pace)
-			continue
+			continue screens
 		}
-		// The shell's own prompt also draws ❯. A launch command still after it
-		// means Enter was lost, so press it rather than type the kickoff onto
-		// that command line.
-		if shellCommand.MatchString(screen) {
+		// A shell prompt can match Ready too. When Unrun matches, the launch command is
+		// still on the line and Enter was lost, so press it rather than type the
+		// kickoff onto that line.
+		if startup.Unrun != nil && startup.Unrun.MatchString(screen) {
 			unrun = true
 			if err := c.run(ctx, "pane", "send-keys", pane, "Enter"); err != nil {
 				c.record("enter-failed", err.Error())
@@ -257,7 +244,7 @@ func (c *CLI) Kickoff(ctx context.Context, pane, text string) error {
 			c.sleep(ctx, c.pace)
 			continue
 		}
-		if strings.Contains(screen, "❯") {
+		if startup.Ready != nil && startup.Ready.MatchString(screen) {
 			unrun = false
 			ready = true
 			break
@@ -313,15 +300,15 @@ func (c *CLI) unconfirmed(unrun bool, entered int) error {
 		return ErrEnterNotSent
 	}
 	if unrun {
-		return ErrClaudeNeverStarted
+		return ErrNeverStarted
 	}
 	return ErrKickoffUnconfirmed
 }
 
-var (
-	shellCommand = regexp.MustCompile(`❯ *claude +--`)
-	cursorOnNo   = regexp.MustCompile(`(?i)❯ *(no|don.t)`)
-)
+// shows reports whether every pattern of the dialog matches the screen.
+func (a Answer) shows(screen string) bool {
+	return len(a.Shows) > 0 && len(a.Tries) > 0 && !slices.ContainsFunc(a.Shows, func(re *regexp.Regexp) bool { return !re.MatchString(screen) })
+}
 
 func (c *CLI) record(label, body string) {
 	if c.trace == "" {

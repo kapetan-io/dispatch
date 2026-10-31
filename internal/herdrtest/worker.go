@@ -77,13 +77,13 @@ func (h *Herdr) StartWorker(ctx context.Context, w herdr.Worker) (herdr.Started,
 	for i := 1; slices.Contains(h.agentNames(), name); i++ {
 		name = fmt.Sprintf("%s-r%d", w.Name, i)
 	}
-	h.agents = append(h.agents, herdr.Agent{Kind: "claude", Status: "idle", PaneID: pane, TabID: tab, WorkspaceID: w.Workspace})
+	h.agents = append(h.agents, herdr.Agent{Kind: w.Program.AgentKind, Status: "idle", PaneID: pane, TabID: tab, WorkspaceID: w.Workspace})
 	h.names[pane] = name
 	h.workers = append(h.workers, w)
 	return herdr.Started{Pane: pane, Agent: name}, nil
 }
 
-func (h *Herdr) Kickoff(ctx context.Context, pane, text string) error {
+func (h *Herdr) Kickoff(ctx context.Context, pane, text string, startup herdr.Startup) error {
 	h.journal.Record("herdr", "kickoff", pane, text)
 	if err := ctx.Err(); err != nil {
 		return err
@@ -102,6 +102,7 @@ func (h *Herdr) Kickoff(ctx context.Context, pane, text string) error {
 		}
 	})
 	h.kicked = append(h.kicked, pane+"|"+text)
+	h.startups = append(h.startups, startup)
 	return nil
 }
 

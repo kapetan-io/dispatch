@@ -30,6 +30,8 @@ import (
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/environment"
+	"github.com/kapetan-io/dispatch/internal/harness"
+	"github.com/kapetan-io/dispatch/internal/harnesstest"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
@@ -86,6 +88,9 @@ type dispatchOptions struct {
 	// Dir is the working directory commands run in. Empty leaves it at the test process's. Tests set it
 	// here and never call t.Chdir.
 	Dir string
+	// FakeHarness registers the fake harness under its own kind, which a [harness.<name>] table
+	// can then name.
+	FakeHarness bool
 	// RepoSettings is TOML lines added to the dispatch repo's [repos.dispatch] table.
 	RepoSettings string
 	// ExactRules keeps the [rules] table as Config wrote it, without the shipped keys filled in.
@@ -125,6 +130,7 @@ type Dispatch struct {
 	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
 	// with the launcher built into dispatch, over tools.Herdr and tools.Treehouse.
 	builtinLauncher bool
+	fakeHarness     bool
 	// builtinAlerts leaves Options.Alerts empty, so alerts go through the
 	// notifier dispatch picks for the operating system.
 	builtinAlerts bool
@@ -239,6 +245,7 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 		d.repos = nil
 	}
 	d.builtinLauncher = opts.Launcher == builtinLauncher
+	d.fakeHarness = opts.FakeHarness
 	if opts.Rules != nil {
 		d.rulesDir = rulesDir(t, opts.Rules)
 	}
@@ -1288,6 +1295,9 @@ func (d *Dispatch) options(extra dispatch.Options) dispatch.Options {
 	if !d.builtinLauncher {
 		extra.Launcher = d.tools.Launcher
 	}
+	if d.fakeHarness {
+		extra.Harnesses = harness.Registry{config.KindClaudeCode: harness.ClaudeCode{}, harnesstest.Kind: d.tools.Harness}
+	}
 	if extra.RulesDir == "" && !strings.Contains(d.extra, "\nrules = ") {
 		extra.RulesDir = d.rulesDir
 	}
@@ -1860,7 +1870,7 @@ func (d *Dispatch) launchResult(result string) {
 func (d *Dispatch) launches() []string {
 	var found []string
 	for _, r := range d.tools.Launcher.Launched() {
-		line := fmt.Sprintf("%s %s %s --model %s", r.RepoDir, r.Ticket, r.Branch, r.Model)
+		line := fmt.Sprintf("%s %s %s --model %s", r.RepoDir, r.Ticket, r.Branch, modelOf(r.Program))
 		if r.Kickoff != "" {
 			line += " --kickoff " + r.Kickoff
 		}
@@ -2001,7 +2011,7 @@ func loadExample(t *testing.T, body string) (config.Config, error) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
-	return config.Load(path, environment.Process())
+	return config.Load(path, environment.Process(), []string{config.KindClaudeCode})
 }
 
 const (
@@ -2358,7 +2368,7 @@ func (d *Dispatch) rules(dir string, args ...string) (string, error) {
 // Root tests drive dispatch the way an operator does, so a refactor below the command line leaves them
 // untouched. A test case may import the adapters of the external tools and their fakes, the config
 // and the environment, which an operator also sees. Any other internal package is dispatch's own
-// state and logic. harness_test.go is the one file that waits on the loop and writes history fixtures.
+// state and logic. driver_test.go is the one file that waits on the loop and writes history fixtures.
 func TestRootTestsImportNoDispatchState(t *testing.T) {
 	t.Parallel()
 	const internal = "github.com/kapetan-io/dispatch/internal/"
@@ -2368,7 +2378,7 @@ func TestRootTestsImportNoDispatchState(t *testing.T) {
 	require.NotEmpty(t, files)
 
 	for _, file := range files {
-		if file == "harness_test.go" {
+		if file == "driver_test.go" {
 			continue
 		}
 		parsed, err := parser.ParseFile(token.NewFileSet(), file, nil, parser.ImportsOnly)
@@ -2668,4 +2678,13 @@ func exists(path string) bool {
 func (d *Dispatch) SavedFromMain(name string) {
 	d.t.Helper()
 	require.NoError(d.t, os.CopyFS(filepath.Join(d.state, "events"), os.DirFS(filepath.Join("testdata", name))))
+}
+
+// modelOf is the model a program was asked to run.
+func modelOf(program herdr.Program) string {
+	i := slices.Index(program.Argv, "--model")
+	if i < 0 || i+1 >= len(program.Argv) {
+		return ""
+	}
+	return program.Argv[i+1]
 }

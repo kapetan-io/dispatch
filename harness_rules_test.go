@@ -35,7 +35,7 @@ func TestTheStackingExampleLaunchesTheStackedTicketOnTheRepoTable(t *testing.T) 
 	d.Tick()
 
 	require.Len(t, d.fakes().Herdr.Started(), 1)
-	assert.Equal(t, "opus", d.fakes().Herdr.Started()[0].Model)
+	assert.Equal(t, "opus", modelOf(d.fakes().Herdr.Started()[0].Program))
 	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-2 --base thrawn01/eng-1"}, d.fakes().Herdr.Kicked())
 }
 
@@ -55,6 +55,6 @@ func TestTheStackingExampleRelaunchesARestackOnTheRepoTable(t *testing.T) {
 	d.Tick()
 
 	require.Len(t, d.fakes().Herdr.Started(), 1)
-	assert.Equal(t, "opus", d.fakes().Herdr.Started()[0].Model)
+	assert.Equal(t, "opus", modelOf(d.fakes().Herdr.Started()[0].Program))
 	require.Len(t, d.receiptsOfKind("ENG-2", "launch"), 1)
 }

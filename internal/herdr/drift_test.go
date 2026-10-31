@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
 )
 
@@ -59,6 +60,7 @@ func TestRealHerdrKeepsTheHerdrContract(t *testing.T) {
 			scenario.Run(t, herdrtest.Subject{
 				Herdr:      session.CLI().WithDispatchBin(built),
 				PluginRoot: plugin,
+				Program:    harness.ClaudeCode{}.Program(harness.Start{Model: "sonnet", PluginRoot: plugin}),
 				Checkout:   func() (string, string) { return herdrtest.NewCheckout(t) },
 				Workspace: func(label string) herdrtest.Layout {
 					out, err := session.Output(ctx, "workspace", "create", "--cwd", cwd, "--label", label, "--no-focus")

@@ -22,12 +22,14 @@ type Subject struct {
 	Workspace func(label string) Layout
 	// Tab adds a tab labeled label, with one pane, to a workspace.
 	Tab func(workspace, label string) Layout
-	// Agent starts a claude agent in the pane, reporting status.
+	// Agent starts an agent in the pane, reporting status.
 	Agent func(pane, status string)
 	// Checkout makes a git repo with a linked worktree and returns both paths.
 	Checkout func() (repo, tree string)
-	// PluginRoot is the plugin a worker loads, with scripts/shims in it.
+	// PluginRoot is the plugin a worker loads.
 	PluginRoot string
+	// Program is what the workers it starts run.
+	Program herdr.Program
 }
 
 // Scenario is one situation with the outcome both the fake and the real herdr
@@ -224,12 +226,12 @@ var Scenarios = []Scenario{
 		require.NoError(t, err)
 		assert.Len(t, snap.Workspaces, 2)
 	}},
-	{Name: "StartWorkerRunsClaudeInANewTab", Run: func(t *testing.T, s Subject) {
+	{Name: "StartWorkerRunsTheProgramInANewTab", Run: func(t *testing.T, s Subject) {
 		repo, tree := s.Checkout()
 		id, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
 		require.NoError(t, err)
 
-		started, err := s.Herdr.StartWorker(context.Background(), herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1 title", Name: "eng-1", Model: "sonnet", PluginRoot: s.PluginRoot})
+		started, err := s.Herdr.StartWorker(context.Background(), herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1 title", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
 
 		require.NoError(t, err)
 		assert.Equal(t, "eng-1", started.Agent)
@@ -246,7 +248,7 @@ var Scenarios = []Scenario{
 		assert.Equal(t, "ENG-1 title", tabs[0].Label)
 		assert.Contains(t, snap.Panes, herdr.Pane{ID: started.Pane, TabID: tabs[0].ID, WorkspaceID: id})
 		require.Len(t, snap.Agents, 1)
-		assert.Equal(t, "claude", snap.Agents[0].Kind)
+		assert.Equal(t, s.Program.AgentKind, snap.Agents[0].Kind)
 		assert.Equal(t, started.Pane, snap.Agents[0].PaneID)
 		assert.Equal(t, "idle", snap.Agents[0].Status)
 	}},
@@ -254,7 +256,7 @@ var Scenarios = []Scenario{
 		repo, tree := s.Checkout()
 		id, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
 		require.NoError(t, err)
-		worker := herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1", Name: "eng-1", Model: "sonnet", PluginRoot: s.PluginRoot}
+		worker := herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program}
 		first, err := s.Herdr.StartWorker(context.Background(), worker)
 		require.NoError(t, err)
 
@@ -268,7 +270,7 @@ var Scenarios = []Scenario{
 	{Name: "StartWorkerRefusesAnUnknownWorkspace", Run: func(t *testing.T, s Subject) {
 		_, tree := s.Checkout()
 
-		started, err := s.Herdr.StartWorker(context.Background(), herdr.Worker{Workspace: "w999", Dir: tree, Label: "ENG-1", Name: "eng-1", Model: "sonnet", PluginRoot: s.PluginRoot})
+		started, err := s.Herdr.StartWorker(context.Background(), herdr.Worker{Workspace: "w999", Dir: tree, Label: "ENG-1", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
 
 		require.ErrorContains(t, err, "workspace_not_found")
 		assert.Empty(t, started.Pane)
@@ -277,10 +279,10 @@ var Scenarios = []Scenario{
 		repo, tree := s.Checkout()
 		id, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
 		require.NoError(t, err)
-		started, err := s.Herdr.StartWorker(context.Background(), herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1", Name: "eng-1", Model: "sonnet", PluginRoot: s.PluginRoot})
+		started, err := s.Herdr.StartWorker(context.Background(), herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
 		require.NoError(t, err)
 
-		require.NoError(t, s.Herdr.Kickoff(context.Background(), started.Pane, "/dispatch:build ENG-1"))
+		require.NoError(t, s.Herdr.Kickoff(context.Background(), started.Pane, "/dispatch:build ENG-1", s.Program.Startup))
 
 		snap, err := s.Herdr.Read(context.Background())
 		require.NoError(t, err)
@@ -290,7 +292,7 @@ var Scenarios = []Scenario{
 	{Name: "KickoffGivesUpOnAPaneWithNoAgent", Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
 
-		err := s.Herdr.Kickoff(context.Background(), layout.Pane, "/dispatch:build ENG-1")
+		err := s.Herdr.Kickoff(context.Background(), layout.Pane, "/dispatch:build ENG-1", s.Program.Startup)
 
 		// The adapter waits for an input box that never comes, so this takes
 		// about 30s against real herdr.

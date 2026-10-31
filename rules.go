@@ -77,7 +77,7 @@ func rulesDir(opts Options, arg string, cfg *config.Config) (string, error) {
 
 func rulesInit(opts Options, arg string) error {
 	var cfg *config.Config
-	if c, err := config.Load(opts.ConfigPath, opts.Env); err == nil {
+	if c, err := loadConfig(opts); err == nil {
 		cfg = &c
 	} else if _, statErr := os.Stat(opts.ConfigPath); statErr == nil {
 		return err
@@ -140,7 +140,7 @@ func rulesInit(opts Options, arg string) error {
 }
 
 func rulesCheck(ctx context.Context, opts Options, arg string) error {
-	cfg, err := config.Load(opts.ConfigPath, opts.Env)
+	cfg, err := loadConfig(opts)
 	if err != nil {
 		return err
 	}
@@ -391,7 +391,7 @@ func heldSummary(result rules.Result, rule string) string {
 
 func rulesTest(opts Options, arg string) error {
 	var cfgPtr *config.Config
-	if loaded, err := config.Load(opts.ConfigPath, opts.Env); err == nil {
+	if loaded, err := loadConfig(opts); err == nil {
 		cfgPtr = &loaded
 	}
 	dir, err := rulesDir(opts, arg, cfgPtr)

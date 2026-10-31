@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kapetan-io/dispatch/internal/harnesstest"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/journal"
 	"github.com/kapetan-io/dispatch/internal/launchertest"
@@ -22,6 +23,7 @@ type Tools struct {
 	Treehouse    *treehousetest.Pool
 	PullRequests *pullrequesttest.Repository
 	Herdr        *herdrtest.Herdr
+	Harness      *harnesstest.Harness
 	Alerts       *notifytest.Alerts
 	Launcher     *launchertest.Launcher
 	Linear       *lineartest.Workspace
@@ -31,7 +33,7 @@ type Tools struct {
 func New(t testing.TB) *Tools {
 	t.Helper()
 	j := &journal.Journal{}
-	return &Tools{Journal: j, Treehouse: treehousetest.New(j), PullRequests: pullrequesttest.New(j), Herdr: herdrtest.New(j), Alerts: notifytest.New(j), Launcher: launchertest.New(j), Linear: lineartest.New(j)}
+	return &Tools{Journal: j, Treehouse: treehousetest.New(j), PullRequests: pullrequesttest.New(j), Herdr: herdrtest.New(j), Harness: harnesstest.New(), Alerts: notifytest.New(j), Launcher: launchertest.New(j), Linear: lineartest.New(j)}
 }
 
 // Calls lists the calls to a tool's operation, each as its arguments joined by
