@@ -216,7 +216,17 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World) Res
 		return Result{Outcome: ledger.Refused, Detail: t.Identifier + " has no configured repo"}
 	}
 	model, _ := w.Options["model"].(string)
-	if model == "" {
+	ref, _ := w.Options["harness"].(string)
+	switch {
+	case ref != "" && model != "":
+		return Result{Outcome: ledger.Refused, Detail: fmt.Sprintf("launch of %s passes both harness %q and model %q: pass one", t.Identifier, ref, model)}
+	case ref != "":
+		table, err := cfg.Table(ref)
+		if err != nil {
+			return Result{Outcome: ledger.Refused, Detail: fmt.Sprintf("launch of %s passes harness %q: %v", t.Identifier, ref, err)}
+		}
+		model = table.Model
+	case model == "":
 		model = cfg.WorkerModel()
 	}
 	kickoff, _ := w.Options["kickoff"].(string)

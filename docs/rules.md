@@ -11,7 +11,7 @@ dispatch rules init ~/rules    # or to a directory you name
 
 `init` writes the 27 shipped rules, their scenario tests, the generated types an editor reads, a `tsconfig.json`, a JSON schema for `config.toml`, and `config.example.toml`. It refuses to overwrite a file, so run it into an empty directory, and nothing is written when any file would collide.
 
-The rules read five keys of the `[rules]` table in `config.toml`. Copy them from `config.example.toml`:
+The rules read these keys of the `[rules]` table in `config.toml`. Copy them from `config.example.toml`. `worker_model` and `design_model` are optional, since the shipped rules fall back to `sonnet` and `opus`, and `worker` / `design` can name a harness table instead (see `docs/config.md`):
 
 ```toml
 [rules]
@@ -75,6 +75,7 @@ whenever({
 - `whenever` wants `then` while `if` is true, for every record of the kind in every cycle. `on` runs once per new event of a type. `exempt` switches named `whenever` rules off for the records its `if` is true of (see below).
 - Every queued action carries `once: [topic, ...values]`. The action runs once per key, so the key says what must change before it runs again.
 - `ctx.notify.queueSend` takes a `reason` option, the words the notification's followers read after `dispatch event (`. With none, the reason is the once key's topic. Following sessions key on the words the shipped rules pass, such as `PR ready for review` (see `skills/dispatch/SKILL.md`), so rewording one changes what a following session does.
+- `queueLaunch` takes `harness: "harness.<name>"` to launch on a `[harness.<name>]` table, or `model` to launch Claude Code with that model. Both together, or a `harness` that names no table, is refused with a detail naming it. With neither, the worker runs Claude Code on `worker_model`. The shipped `launchAs` (in `shared.ts`) returns the table a repo's or `[rules]`'s `worker` / `design` key names, else `worker_model` or `design_model` for the ticket's role, so a rule that spreads it gets the right one.
 - `queueLaunch` takes `stackOn: pr` to start the ticket's branch at that PR's head and write a stack record, so the ticket builds before the PR's ticket merges. The launch receipt says `stacked on <ticket> at <short head> (<branch>)`. A relaunch, or a launch on a branch that exists, writes and changes no record. A worker launched with `/dispatch:build <id> --base <branch>` opens its PR against that branch.
 - `t.stack` is the stack record of the ticket's branch, undefined for a branch with none and unknown when the clone's records can't be read or the record is partial. `t.branch` is the ticket's branch, `blocker.ticket` is the tracked ticket of a blocker, and `ctx.pr.of(t)` is the ticket's PR, undefined when dispatch read it and found none and unknown when it didn't read it this cycle.
 - A rule keeps no state. Reading a fact whose read failed throws `Unknown`, and the rule is held for that record even if it catches the error. Wrap a read in `known(() => ...)` to ask whether it could be read.

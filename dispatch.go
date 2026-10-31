@@ -112,7 +112,7 @@ const usage = `usage: dispatch run
        dispatch ticket-hint
        dispatch repo-settings
        dispatch linear-viewer
-       dispatch launch <ticket> <branch> [--base REF] [--model NAME] [--kickoff TEXT] [--title TEXT]
+       dispatch launch <ticket> <branch> [--base REF] [--model NAME | --harness harness.NAME] [--kickoff TEXT] [--title TEXT]
        dispatch claude-shim [CLAUDE ARGS]
        dispatch record-stop
        dispatch wake

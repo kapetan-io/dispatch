@@ -63,6 +63,8 @@ ignore_comment_authors = []
 ignore_optional_checks = false
 approval_checks = []
 auto_merge = false
+worker = ""
+design = ""
 ```
 
 Repos have no default, so the block shows one repo with every setting at its default, and `path` is required. Without any `[repos.<label>]` table, every In Progress ticket escalates to Needs Human because its repo isn't configured. A leading `~` in `dispatch.rules`, `history.dir`, `plugins.herdr.plugin_root` and in every repo's `path` expands to your home directory.
@@ -85,12 +87,14 @@ Repos have no default, so the block shows one repo with every setting at its def
 
 ## `[rules]`
 
-Your own table. Dispatch never interprets it, and a rule reads a key as `ctx.config.rules.<key>`. A rule that reads a key the file lacks fails `dispatch rules check`, naming the key. `dispatch rules init` writes the five keys the shipped rules read, with today's values. `dispatch run` and `dispatch rules check` read them from the file when they start, so edit config.toml and then restart `dispatch run`. A key the file lacks is an error, not a default: the rule that reads it throws, and `dispatch tick` prints the throw. The values below are what `init` writes.
+Your own table. Dispatch never interprets it, and a rule reads a key as `ctx.config.rules.<key>`. A rule that reads a key the file lacks fails `dispatch rules check`, naming the key. `dispatch rules init` writes the keys the shipped rules read, with today's values. `dispatch run` and `dispatch rules check` read them from the file when they start, so edit config.toml and then restart `dispatch run`. A key the file lacks is an error, not a default, for `launch_failure_limit`, `nudge_limit` and `blocked_renotify_minutes`: the rule that reads one throws, and `dispatch tick` prints the throw. The shipped rules fall back to `sonnet` and `opus` for a missing `worker_model` or `design_model`. The values below are what `init` writes.
 
 | Key | Written by init | What it does |
 |---|---|---|
-| `worker_model` | `sonnet` | The model name passed to `claude --model` for every build worker. |
-| `design_model` | `opus` | The model name passed to `claude --model` for the worker of a `design` or `design-review` ticket. |
+| `worker_model` | `sonnet` | The model name passed to `claude --model` for every build worker. The shipped rules read it only when `worker` is unset, and use `sonnet` when the file lacks it. |
+| `design_model` | `opus` | The model name passed to `claude --model` for the worker of a `design` or `design-review` ticket. The shipped rules read it only when `design` is unset, and use `opus` when the file lacks it. |
+| `worker` | none | The `harness.<name>` table build workers launch on. A repo's `worker` wins. Unset (or `""`) means Claude Code on `worker_model`. `init` does not write it. |
+| `design` | none | The same for `design` and `design-review` workers, falling back to `design_model`. |
 | `launch_failure_limit` | `2` | Failed launches in a row before the ticket goes to Needs Human with the launcher's error. A full treehouse pool (`pool_exhausted`) never counts. A launch tries a failed treehouse lease or git checkout 3 times before it counts as a failure, since a lock held by another process clears in seconds. Closing a Claude whose launch died before its kickoff ran counts as one failure. |
 | `nudge_limit` | `2` | PR nudges to an idle In Review worker with no push before the ticket goes to Needs Human. The count resets when a push moves the PR head, and it also caps relaunches of a gone worker that never pushes. In Progress tickets never read it, since an idle In Progress worker is never nudged. |
 | `blocked_renotify_minutes` | `15` | Minutes between notifications for a worker that stays blocked on a question, a notification can only go out in a cycle, so it can come later than the period by up to one `resync`. The first notification comes on the first cycle that sees the worker blocked. `0` notifies in every cycle while it is blocked. |
@@ -100,6 +104,38 @@ Your own table. Dispatch never interprets it, and a rule reads a key as `ctx.con
 worker_model = "opus"
 nudge_limit = 3
 ```
+
+## `[harness.<name>]`
+
+A harness table pairs the program that runs in a worker's session with a model. Claude Code is the only harness, so `kind` is `claude-code`. Both keys are required.
+
+```toml
+[harness.claude-sonnet]
+kind = "claude-code"
+model = "sonnet"
+
+[harness.claude-opus]
+kind = "claude-code"
+model = "opus"
+
+[rules]
+worker = "harness.claude-sonnet"
+design = "harness.claude-opus"
+
+[repos.dispatch]
+path = "~/Development/dispatch"
+worker = "harness.claude-opus"
+```
+
+The shipped rules launch a build worker on the table that `[repos.<label>].worker` names, else the one `[rules].worker` names, else Claude Code with `worker_model`. Design workers do the same with `design` and `design_model`. A rule can also pass `harness: "harness.<name>"` to `queueLaunch`, and `dispatch launch --harness harness.<name>` launches on a table. Rules never read the tables, only the names.
+
+The load fails, naming the key or table, when a `worker` or `design` key isn't of the form `harness.<name>`, names a table the file lacks, or when a table has a missing or unknown `kind` or a missing `model`:
+
+```
+config: rules.worker names harness.claude-snnet, which has no [harness.claude-snnet] table
+```
+
+A `[rules]` table that already holds its own `worker` or `design` key fails the same way, since those keys now name a table.
 
 ## `[http.<name>]`
 
@@ -164,6 +200,8 @@ auto_merge = true
 | `ignore_optional_checks` | `false` | When `true`, only checks GitHub requires for merging count, for dispatch and the worker. A failing or never-finishing check GitHub doesn't require draws no nudge, doesn't hold back ready and doesn't mute a change-request nudge. A branch that requires no checks has no check that counts. |
 | `approval_checks` | `[]` | Names of checks that pass only after a human approves the PR, such as `"Mergify Merge Protections"`, matched by full name without regard to case. They draw no nudge and never hold back ready, so a draft waiting for review is still reported ready, and a PR you opened stays at ⏳ until the check passes. A review's approval counts for nothing while one has not passed, so `auto_merge` waits for the check to pass. A failing or running build check still counts, even beside an approval check. Like `ignore_optional_checks`, it makes dispatch read each check of a PR that isn't passing, so such a PR with more than 100 checks fails to read. |
 | `auto_merge` | `false` | Merge a ready PR once a review approves its head commit. See [Auto-merge](#auto-merge). |
+| `worker` | none | The harness table, written `harness.<name>`, that this repo's build workers launch on. Unset (or `""`) means the `[rules]` value. See [`[harness.<name>]`](#harnessname). `dispatch repo-settings` prints nothing for a key that is unset. |
+| `design` | none | The same for the workers of `design` and `design-review` tickets. |
 
 The load fails, naming the repo and the fix, on a `label = "path"` entry under `[repos]`, a table without `path`, two tables with one `path`, an unknown key in a table, an `open_pr_as` other than `"open"` or `"draft"`, and a top-level `auto_merge`.
 

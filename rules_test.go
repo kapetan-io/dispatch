@@ -616,7 +616,7 @@ func TestConfigSchemaNamesEveryTableTheLoaderReads(t *testing.T) {
 	for name := range schema.Properties {
 		tables = append(tables, name)
 	}
-	assert.ElementsMatch(t, []string{"dispatch", "history", "repos", "plugins", "http", "rules"}, tables)
+	assert.ElementsMatch(t, []string{"dispatch", "history", "repos", "plugins", "http", "rules", "harness"}, tables)
 	assert.False(t, schema.AdditionalProperties)
 	assert.Equal(t, true, schema.Properties["rules"].AdditionalProperties)
 }

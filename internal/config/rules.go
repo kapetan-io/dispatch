@@ -38,7 +38,7 @@ func (r Rules) check() error {
 			}
 		}
 	}
-	for _, key := range []string{"worker_model", "design_model"} {
+	for _, key := range []string{"worker_model", "design_model", "worker", "design"} {
 		if v, ok := r[key]; ok {
 			if _, isString := v.(string); !isString {
 				return fmt.Errorf("rules.%s must be a string, got %v", key, v)
