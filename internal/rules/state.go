@@ -336,11 +336,24 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 	}
 	s.dispatch = newRecord("dispatch", "dispatch", "dispatch", dispatch)
 	s.add(s.dispatch)
+	labels := map[string][]string{}
+	for label, name := range w.Remotes {
+		labels[strings.ToLower(name)] = append(labels[strings.ToLower(name)], label)
+	}
 	for _, item := range w.Inbox {
+		repo := Known[*string](nil, at)
+		switch named := labels[strings.ToLower(item.RepoName)]; len(named) {
+		case 0:
+		case 1:
+			repo = Known(&named[0], at)
+		default:
+			slices.Sort(named)
+			repo = Unread[*string](fmt.Sprintf("%s is the repo of more than one clone's chosen remote: %s", item.RepoName, strings.Join(named, ", ")))
+		}
 		s.add(newRecord("inbox", item.ID, item.ID, &InboxItem{
 			ID: Known(item.ID, at), Reason: Known(item.Reason, at), Unread: Known(item.Unread, at), UpdatedAt: Known(item.UpdatedAt, at),
 			RepoName: Known(item.RepoName, at), SubjectType: Known(item.SubjectType, at), Title: Known(item.Title, at),
-			APIURL: Known[*string](nilIfEmpty(item.APIURL), at), Repo: Known[*string](nil, at),
+			APIURL: Known[*string](nilIfEmpty(item.APIURL), at), Repo: repo,
 		}))
 	}
 

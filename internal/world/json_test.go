@@ -56,6 +56,8 @@ func full() world.World {
 		Inbox:        []inbox.Item{{ID: "24986796502", Reason: "review_requested", Unread: true, UpdatedAt: "2026-10-31T09:16:46Z", RepoName: "acme/widgets", SubjectType: "PullRequest", Title: "Fix the retry loop", APIURL: "https://api.github.com/repos/acme/widgets/pulls/7"}},
 		InboxErr:     errors.New("gh: HTTP 502"),
 		InboxReadAt:  time.UnixMilli(1760450400000).UTC(),
+		Remotes:      map[string]string{"tiger": "acme/widgets"},
+		RemoteErrs:   map[string]error{"lion": errors.New("git config failed")},
 	}
 }
 

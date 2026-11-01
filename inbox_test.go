@@ -3,6 +3,10 @@ package dispatch_test
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -399,4 +403,234 @@ func TestAnInboxOf60ItemsGivesALiveRuleTheNewest50(t *testing.T) {
 		assert.False(t, strings.Contains(bodies, fmt.Sprintf(`"id":"t%02d"`, n)))
 	}
 	assert.True(t, strings.Contains(bodies, `"id":"t60"`))
+}
+
+const tellRepo = `whenever({ name: "repo", each: "inbox", if: (i) => true,
+  then: (i, ctx) => ctx.http.queuePost("sentry", "/repo", { id: i.id, repo: i.repo === undefined ? "none" : i.repo }, { once: ["repo", i.id, String(i.repo)] }) });`
+
+// cloneAt makes dir a git clone with the remotes named, so the dispatch under test reads real ones.
+func cloneAt(t *testing.T, dir string, remotes map[string]string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	hintGit(t, dir, "init", "-q", "--initial-branch=main")
+	for _, name := range slices.Sorted(maps.Keys(remotes)) {
+		hintGit(t, dir, "remote", "add", name, remotes[name])
+	}
+}
+
+// breakGitConfig leaves the clone's directory in place, so only the remote read fails.
+func breakGitConfig(t *testing.T, dir string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".git", "config"), []byte("[remote\n"), 0o644))
+}
+
+func TestAnInboxItemCarriesTheLabelOfTheCloneWhoseOriginNamesItsRepo(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: rule(tellRepo)})
+	sentry := d.Services.Sentry()
+	sentry.Respond("sentry", "POST", "/repo", 200, "{}")
+	cloneAt(t, d.Repo, map[string]string{"origin": "git@github.com:acme/widgets.git"})
+	d.Tools().Inbox.Put("1", thread("review_requested", true, "2026-10-31T09:00:00Z", "acme/widgets", "Fix"))
+	d.Tools().Inbox.Put("2", thread("mention", true, "2026-10-31T08:00:00Z", "stranger/thing", "Other"))
+
+	d.Tick()
+
+	assert.ElementsMatch(t, []string{`{"id":"1","repo":"dispatch"}`, `{"id":"2","repo":"none"}`}, postBodies(sentry, "/repo"))
+}
+
+func TestACloneMatchesOnlyItsChosenRemote(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name     string
+		settings string
+		want     string
+	}{
+		{name: "originByDefault", settings: "", want: `{"id":"1","repo":"none"}`},
+		{name: "githubRemoteUpstream", settings: "github_remote = \"upstream\"\n", want: `{"id":"1","repo":"dispatch"}`},
+		{name: "githubRemoteMissing", settings: "github_remote = \"nowhere\"\n", want: `{"id":"1","repo":"none"}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			d := newDispatch(t, dispatchOptions{Rules: rule(tellRepo), RepoSettings: test.settings})
+			sentry := d.Services.Sentry()
+			sentry.Respond("sentry", "POST", "/repo", 200, "{}")
+			// A fork clone: origin is the owner's fork and the items come from the upstream repo.
+			cloneAt(t, d.Repo, map[string]string{"origin": "git@github.com:me/widgets.git", "upstream": "git@github.com:acme/widgets.git"})
+			d.Tools().Inbox.Put("1", thread("review_requested", true, "2026-10-31T09:00:00Z", "acme/widgets", "Fix"))
+
+			d.Tick()
+
+			assert.Equal(t, []string{test.want}, postBodies(sentry, "/repo"))
+		})
+	}
+}
+
+func TestAnItemTwoClonesNameHasNoKnownRepoAndHoldsTheRuleForThatItem(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: rule(tellRepo)})
+	sentry := d.Services.Sentry()
+	sentry.Respond("sentry", "POST", "/repo", 200, "{}")
+	cloneAt(t, d.Repo, map[string]string{"origin": "git@github.com:acme/widgets.git"})
+	second := filepath.Join(d.dir, "second")
+	cloneAt(t, second, map[string]string{"origin": "https://github.com/acme/widgets"})
+	d.addRepo("second", second)
+	d.Tools().Inbox.Put("1", thread("review_requested", true, "2026-10-31T09:00:00Z", "acme/widgets", "Fix"))
+	d.Tools().Inbox.Put("2", thread("mention", true, "2026-10-31T08:00:00Z", "stranger/thing", "Other"))
+
+	d.Tick()
+
+	assert.Equal(t, []string{`{"id":"2","repo":"none"}`}, postBodies(sentry, "/repo"))
+}
+
+func TestAFailedRemoteReadKeepsTheCloneLastGoodRepo(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: rule(tellRepo)})
+	sentry := d.Services.Sentry()
+	sentry.Respond("sentry", "POST", "/repo", 200, "{}")
+	cloneAt(t, d.Repo, map[string]string{"origin": "git@github.com:acme/widgets.git"})
+	d.Tools().Inbox.Put("1", thread("review_requested", true, "2026-10-31T09:00:00Z", "acme/widgets", "Fix"))
+	d.Tick()
+	require.Equal(t, []string{`{"id":"1","repo":"dispatch"}`}, postBodies(sentry, "/repo"))
+
+	// A config git cannot parse fails the read, which is not the same as a missing remote.
+	breakGitConfig(t, d.Repo)
+	d.Tools().Inbox.Put("2", thread("mention", true, "2026-10-31T09:05:00Z", "acme/widgets", "Other"))
+	d.Advance(5 * time.Minute)
+	d.Tick()
+
+	assert.Equal(t, []string{`{"id":"1","repo":"dispatch"}`, `{"id":"2","repo":"dispatch"}`}, postBodies(sentry, "/repo"))
+	assert.Contains(t, d.loopErr(), "dispatch: while reading the origin remote of the dispatch clone:")
+}
+
+func TestAFailedRemoteReadWithNoEarlierReadMatchesNothing(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: rule(tellRepo)})
+	sentry := d.Services.Sentry()
+	sentry.Respond("sentry", "POST", "/repo", 200, "{}")
+	cloneAt(t, d.Repo, map[string]string{"origin": "git@github.com:acme/widgets.git"})
+	breakGitConfig(t, d.Repo)
+	d.Tools().Inbox.Put("1", thread("review_requested", true, "2026-10-31T09:00:00Z", "acme/widgets", "Fix"))
+
+	d.Tick()
+
+	assert.Equal(t, []string{`{"id":"1","repo":"none"}`}, postBodies(sentry, "/repo"))
+}
+
+func TestStateResetQuietRefusesWhileACloneRemoteCannotBeRead(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: rule(tellRepo)})
+	d.Services.Sentry()
+	cloneAt(t, d.Repo, map[string]string{"origin": "git@github.com:acme/widgets.git"})
+	d.Tick()
+	d.Stop()
+	breakGitConfig(t, d.Repo)
+
+	res := d.Run("state", "reset", "--quiet")
+
+	require.ErrorContains(t, res.Err, "the remote of the dispatch clone")
+}
+
+func TestRulesCheckCountsTheItemsInConfiguredRepos(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: rule(tellRepo)})
+	d.Services.Sentry()
+	cloneAt(t, d.Repo, map[string]string{"origin": "git@github.com:acme/widgets.git"})
+	d.Tools().Inbox.Put("1", thread("mention", true, "2026-10-31T09:00:00Z", "acme/widgets", "Fix"))
+	d.Tools().Inbox.Put("2", thread("author", false, "2026-10-31T08:00:00Z", "acme/gadgets", "Add"))
+
+	res := d.Run("rules", "check")
+
+	require.NoError(t, res.Err)
+	assert.Regexp(t, `inbox +2 inbox items \(newest 50 of the GitHub inbox\), 1 unread, 1 in configured repos`, res.Stdout)
+}
+
+func TestWithNoRuleOverTheInboxHistoryHoldsNoCloneRemotes(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
+	cloneAt(t, d.Repo, map[string]string{"origin": "git@github.com:acme/widgets.git"})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	d.Tick()
+	d.Stop()
+
+	for _, body := range d.StateFiles() {
+		// NotContains would print the whole segment on failure.
+		assert.False(t, strings.Contains(body, `"remotes":`))
+		assert.False(t, strings.Contains(body, `"remoteErrs"`))
+	}
+}
+
+func TestReplayOfARunThatReadCloneRemotesReportsEveryCycleTheSameAsLive(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: rule(tellRepo)})
+	sentry := d.Services.Sentry()
+	sentry.Respond("sentry", "POST", "/repo", 200, "{}")
+	cloneAt(t, d.Repo, map[string]string{"origin": "git@github.com:acme/widgets.git"})
+	d.Tools().Inbox.Put("1", thread("review_requested", true, "2026-10-31T09:00:00Z", "acme/widgets", "Fix"))
+	d.Tick()
+	breakGitConfig(t, d.Repo)
+	d.Advance(5 * time.Minute)
+	d.Tick()
+	d.Stop()
+
+	cycles, matched := replayOf(t, d)
+
+	assert.Greater(t, cycles, 1)
+	assert.Equal(t, cycles, matched)
+}
+
+func TestInboxScenarioLabelsItemsByTheCloneGitHubRepo(t *testing.T) {
+	t.Parallel()
+	files := rule(tellRepo)
+	files["inbox.test.ts"] = `import { scenario, pool, inbox, rulesFrom } from "dispatch/testing";
+const rules = rulesFrom("./dispatch");
+
+scenario(rules, "gives an item in a configured repo its label and any other repo none", s => {
+  s.config({ http: { sentry: { baseUrl: "https://sentry.test/api/0" } } });
+  s.given(pool("dispatch", { github: "acme/widgets" }), inbox("t1", { repoName: "acme/widgets" }), inbox("t2", { repoName: "stranger/thing" }));
+  s.start();
+  s.expect([["repo", "post", "sentry"], ["repo", "post", "sentry"]]);
+});
+
+scenario(rules, "holds the rule for an item two labels name", s => {
+  s.config({ http: { sentry: { baseUrl: "https://sentry.test/api/0" } } });
+  s.given(pool("dispatch", { github: "acme/widgets" }), pool("second", { github: "acme/widgets" }), inbox("t1", { repoName: "acme/widgets" }), inbox("t2", { repoName: "stranger/thing" }));
+  s.start();
+  s.expect([["repo", "post", "sentry"]]);
+});
+
+scenario(rules, "keeps the repo given before a failed remote read", s => {
+  s.config({ http: { sentry: { baseUrl: "https://sentry.test/api/0" } } });
+  s.given(pool("dispatch", { github: "acme/widgets" }), inbox("t1", { repoName: "acme/widgets" }));
+  s.unread("remotes:dispatch");
+  s.given(pool("second", { github: "acme/gadgets" }), inbox("t2", { repoName: "acme/gadgets" }));
+  s.start();
+  s.expect([["repo", "post", "sentry"], ["repo", "post", "sentry"]]);
+});
+`
+	d := newDispatch(t, dispatchOptions{Rules: files})
+	d.Services.Sentry()
+
+	res := d.Run("rules", "test")
+
+	require.NoError(t, res.Err, res.Stdout)
+	assert.Contains(t, res.Stdout, "ok   inbox.test.ts: gives an item in a configured repo its label and any other repo none")
+	assert.Contains(t, res.Stdout, "ok   inbox.test.ts: holds the rule for an item two labels name")
+	assert.Contains(t, res.Stdout, "ok   inbox.test.ts: keeps the repo given before a failed remote read")
+}
+
+func TestRulesCheckCountsAnItemTwoClonesNameAsInAConfiguredRepo(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: rule(tellRepo)})
+	d.Services.Sentry()
+	cloneAt(t, d.Repo, map[string]string{"origin": "git@github.com:acme/widgets.git"})
+	second := filepath.Join(d.dir, "second")
+	cloneAt(t, second, map[string]string{"origin": "https://github.com/acme/widgets"})
+	d.addRepo("second", second)
+	d.Tools().Inbox.Put("1", thread("mention", true, "2026-10-31T09:00:00Z", "acme/widgets", "Fix"))
+
+	res := d.Run("rules", "check")
+
+	require.NoError(t, res.Err)
+	assert.Regexp(t, `1 unread, 1 in configured repos`, res.Stdout)
 }

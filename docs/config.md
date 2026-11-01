@@ -63,6 +63,7 @@ ignore_comment_authors = []
 ignore_optional_checks = false
 approval_checks = []
 auto_merge = false
+github_remote = ""
 worker = ""
 design = ""
 ```
@@ -200,6 +201,7 @@ auto_merge = true
 | `ignore_optional_checks` | `false` | When `true`, only checks GitHub requires for merging count, for dispatch and the worker. A failing or never-finishing check GitHub doesn't require draws no nudge, doesn't hold back ready and doesn't mute a change-request nudge. A branch that requires no checks has no check that counts. |
 | `approval_checks` | `[]` | Names of checks that pass only after a human approves the PR, such as `"Mergify Merge Protections"`, matched by full name without regard to case. They draw no nudge and never hold back ready, so a draft waiting for review is still reported ready, and a PR you opened stays at ⏳ until the check passes. A review's approval counts for nothing while one has not passed, so `auto_merge` waits for the check to pass. A failing or running build check still counts, even beside an approval check. Like `ignore_optional_checks`, it makes dispatch read each check of a PR that isn't passing, so such a PR with more than 100 checks fails to read. |
 | `auto_merge` | `false` | Merge a ready PR once a review approves its head commit. See [Auto-merge](#auto-merge). |
+| `github_remote` | none | The remote of this clone whose GitHub repo an inbox item must name for the item's `repo` to be this label. Unset (or `""`) means `origin`, so a clone with `origin` and `upstream` matches only `origin`'s repo. A fork clone whose inbox items come from the upstream repo sets `"upstream"`. A remote that is missing or not on github.com matches nothing. Dispatch reads it with `git config` only while a loaded rule runs over `inbox`. See [Reading the GitHub inbox](rules.md#reading-the-github-inbox). |
 | `worker` | none | The harness table, written `harness.<name>`, that this repo's build workers launch on. Unset (or `""`) means the `[rules]` value. See [`[harness.<name>]`](#harnessname). `dispatch repo-settings` prints nothing for a key that is unset. |
 | `design` | none | The same for the workers of `design` and `design-review` tickets. |
 

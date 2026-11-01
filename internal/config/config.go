@@ -103,10 +103,24 @@ type Repo struct {
 	ApprovalChecks []string `toml:"approval_checks"`
 	// AutoMerge makes dispatch merge a ready PR once a review approves its head commit.
 	AutoMerge bool `toml:"auto_merge"`
+	// GithubRemote names the remote of the clone whose GitHub repo this label stands for when rules
+	// read the inbox. Unset means origin.
+	GithubRemote string `toml:"github_remote,omitempty"`
 	// Worker and Design name the harness table, as "harness.<name>", that this repo's build and
 	// design workers launch on. Unset or empty means the [rules] value.
 	Worker string `toml:"worker,omitempty"`
 	Design string `toml:"design,omitempty"`
+}
+
+// DefaultGithubRemote is the remote an inbox item's repo is matched against when GithubRemote is unset.
+const DefaultGithubRemote = "origin"
+
+// ChosenRemote is the name of the remote to match inbox items against: GithubRemote, or origin when unset.
+func (r Repo) ChosenRemote() string {
+	if r.GithubRemote == "" {
+		return DefaultGithubRemote
+	}
+	return r.GithubRemote
 }
 
 // Repos maps a repo label to its settings. It decodes itself so that every

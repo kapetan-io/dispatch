@@ -277,6 +277,9 @@ func firstUnread(w world.World) error {
 			return err
 		}
 	}
+	for label, err := range w.RemoteErrs {
+		return fmt.Errorf("the remote of the %s clone: %w", label, err)
+	}
 	for id := range w.PRReadFailed {
 		return fmt.Errorf("the pull request of %s", id)
 	}

@@ -44,7 +44,7 @@ func TestingDeclarations() string {
     commands?: { name: string; args?: string; cut?: boolean; at: number; by: "person" | "dispatch" }[];
     turns?: { at: number; running: boolean }[]; sessionUnread?: string;
   }): Fixture;
-  export function pool(repo: string, fields?: { free?: number; returns?: number }): Fixture;
+  export function pool(repo: string, fields?: { free?: number; returns?: number; github?: string }): Fixture;
   export function comment(ticket: string, fields?: { body?: string; at?: string; author?: string; byDispatch?: boolean }): Fixture;
   export function pr(ticket: string, fields?: {
     head?: string; draft?: boolean; approved?: boolean; ready?: boolean; conflict?: boolean; problems?: string[];
@@ -134,7 +134,7 @@ func (s *State) inboxSummary() string {
 		if item.Unread.Value {
 			unread++
 		}
-		if item.Repo.Value != nil {
+		if item.Repo.Value != nil || item.Repo.Unknown != "" {
 			configured++
 		}
 	}

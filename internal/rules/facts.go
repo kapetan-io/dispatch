@@ -189,7 +189,7 @@ type InboxItem struct {
 	SubjectType Fact[string]  `js:"subjectType" doc:"GitHub's subject.type: PullRequest, Issue, Release, ..."`
 	Title       Fact[string]  `js:"title"`
 	APIURL      Fact[*string] `js:"apiUrl" doc:"GitHub's subject.url, an API URL, undefined when GitHub gives none."`
-	Repo        Fact[*string] `js:"repo" doc:"The [repos.<label>] whose chosen remote names repoName. Undefined for now."`
+	Repo        Fact[*string] `js:"repo" doc:"The [repos.<label>] whose chosen remote names repoName. Unknown when more than one clone's chosen remote names it."`
 }
 
 // Comment is a ticket comment, the payload of comment.posted.

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -115,6 +116,9 @@ func (s *scenario) apply(f map[string]any, seen bool) {
 		repo := f["repo"].(string)
 		if v, ok := fields["returns"]; ok {
 			s.pools[repo] = int(toInt(v))
+		}
+		if v, ok := fields["github"]; ok {
+			s.github[repo] = fmt.Sprint(v)
 		}
 		if _, _, ok := s.cfg.Repos.Find(repo); !ok {
 			s.cfg.Repos[repo] = config.Repo{Path: "/work/" + repo, OpenPRAs: config.OpenPRAsOpen}
@@ -496,7 +500,12 @@ func (s *scenario) world() world.World {
 		w.PRs[id] = *pr
 	}
 	s.readInbox()
+	s.readRemotes()
 	w.Inbox, w.InboxReadAt = s.inboxGood, s.inboxReadAt
+	w.Remotes, w.RemoteErrs = maps.Clone(s.remotesGood), map[string]error{}
+	for label := range s.remotesFailed {
+		w.RemoteErrs[label] = errors.New("scenario marked it unread")
+	}
 	if s.inboxFailed {
 		w.InboxErr = errors.New("gh: HTTP 502 (the scenario failed the inbox read)")
 	}
@@ -564,6 +573,24 @@ func (s *scenario) readInbox() {
 		items = append(items, item)
 	}
 	s.inboxGood, s.inboxReadAt = inbox.Newest(items), s.now
+}
+
+// readRemotes is the scenario's read of each clone's chosen remote, made only while a loaded rule
+// runs over inbox, as dispatch does. A clone whose read failed keeps what it last read.
+func (s *scenario) readRemotes() {
+	if !s.rules.RunsOver("inbox") {
+		return
+	}
+	for label, name := range s.github {
+		if s.remotesFailed[label] {
+			continue
+		}
+		if name == "" {
+			delete(s.remotesGood, label)
+			continue
+		}
+		s.remotesGood[label] = name
+	}
 }
 
 // trackWaiting starts a new stretch of waiting for each ticket that has
