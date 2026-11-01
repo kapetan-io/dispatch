@@ -175,14 +175,14 @@ func rulesCheck(ctx context.Context, opts Options, arg string) error {
 	if err != nil {
 		return err
 	}
-	w, err := world.Read(ctx, world.Sources{
-		Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests, Env: opts.Env,
-		StateDir: opts.StateDir, Stderr: opts.Stderr, Tolerant: true,
-	}, world.ScopeOf(cfg), opts.Clock.Now())
+	src := sources(opts, lin, loaded)
+	src.Tolerant = true
+	w, err := world.Read(ctx, src, world.ScopeOf(cfg), opts.Clock.Now())
 	if err != nil {
 		return err
 	}
 	state := rules.FromWorld(w, cfg, nil, viewer.Name)
+	state.InboxRead = src.Inbox != nil
 	// A check acts on nothing, and a token_command can prompt to unlock a password manager,
 	// so it calls only services a caller gave it. A get otherwise reads as an unknown.
 	state.HTTP = opts.HTTP

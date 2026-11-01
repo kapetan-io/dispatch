@@ -60,6 +60,7 @@ func Declarations(rules config.Rules) string {
 	b.WriteString(configDeclaration(rules))
 	b.WriteString(staticDeclarations)
 	b.WriteString("  export interface Ctx {\n")
+	b.WriteString("    /** The one dispatch record, read-only, as `each: \"dispatch\"` sees it. Reads are logged like any record read. */\n    dispatch: Dispatch;\n")
 	b.WriteString("    now: number;\n    every(period: number, since: number): number;\n    config: Config;\n")
 	b.WriteString("    ledger: {\n      receipts(subject: Ticket | PR | Tree | Worker, filter?: { kind?: string | string[]; topic?: string }): Receipt[];\n      done(subject: Ticket | PR | Tree | Worker, once: Once): boolean;\n    };\n")
 	b.WriteString(ctxPlugins())

@@ -25,6 +25,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
+	"github.com/kapetan-io/dispatch/internal/inbox"
 	"github.com/kapetan-io/dispatch/internal/launcher"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/loop"
@@ -32,6 +33,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/world"
 )
 
 // RuleTimeout bounds how long one call of a rule's if and then may run.
@@ -66,6 +68,8 @@ type Options struct {
 	// gh, which cuts each call off after 30 seconds so a stalled network can't
 	// hold up the loop.
 	PullRequests pullrequest.Repository
+	// Inbox is the owner's GitHub notifications inbox. Defaults to the installed gh.
+	Inbox inbox.Inbox
 	// HTTP reaches the services config.toml names under [http.<name>]. Defaults to
 	// calling them over HTTP with the token each token_command prints.
 	HTTP httpservice.Services
@@ -267,6 +271,9 @@ func withDefaults(o Options) Options {
 	if o.PullRequests == nil {
 		o.PullRequests = pullrequest.NewCLI("gh", pullrequest.WithEnv(o.Env))
 	}
+	if o.Inbox == nil {
+		o.Inbox = inbox.NewCLI("gh", inbox.WithEnv(o.Env))
+	}
 	if o.Alerts == nil {
 		o.Alerts = notify.NewAlerts(runtime.GOOS, o.Env)
 	}
@@ -405,4 +412,17 @@ func (o Options) abs(path string) string {
 // loadConfig reads the config, accepting the harness kinds dispatch drives.
 func loadConfig(opts Options) (config.Config, error) {
 	return config.Load(opts.ConfigPath, opts.Env, opts.Harnesses.Kinds())
+}
+
+// sources are the tools one read goes through. The inbox is wired only while a loaded rule runs
+// over it, so an owner with no inbox rule makes no gh call for it and a failing gh login costs them nothing.
+func sources(opts Options, lin linear.Workspace, loaded *rules.Rules) world.Sources {
+	src := world.Sources{
+		Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
+		Env: opts.Env, StateDir: opts.StateDir, Stderr: opts.Stderr,
+	}
+	if loaded.RunsOver("inbox") {
+		src.Inbox = opts.Inbox
+	}
+	return src
 }

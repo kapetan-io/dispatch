@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/inbox"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
@@ -124,6 +125,8 @@ func (s *scenario) apply(f map[string]any, seen bool) {
 		s.applyPR(f["ticket"].(string), fields)
 	case "tree":
 		s.applyTree(f["path"].(string), fields)
+	case "inbox":
+		s.applyInbox(f["id"].(string), fields)
 	default:
 		s.fail("unknown fixture %v", f["__kind"])
 	}
@@ -492,7 +495,75 @@ func (s *scenario) world() world.World {
 		}
 		w.PRs[id] = *pr
 	}
+	s.readInbox()
+	w.Inbox, w.InboxReadAt = s.inboxGood, s.inboxReadAt
+	if s.inboxFailed {
+		w.InboxErr = errors.New("gh: HTTP 502 (the scenario failed the inbox read)")
+	}
 	return w
+}
+
+// inboxModel is an inbox item a fixture gave. The API URL defaults to .../pulls/<id> whatever the
+// subjectType; give apiUrl when a rule reads it.
+type inboxModel struct {
+	item   inbox.Item
+	apiSet bool
+}
+
+// applyInbox gives the item id the fields named, and defaults for the rest when the id is new.
+func (s *scenario) applyInbox(id string, fields map[string]any) {
+	m, ok := s.inbox[id]
+	if !ok {
+		m = &inboxModel{item: inbox.Item{
+			ID: id, Reason: "subscribed", Unread: true, UpdatedAt: s.now.UTC().Format(time.RFC3339),
+			RepoName: "acme/widgets", SubjectType: "PullRequest", Title: id,
+		}}
+		s.inbox[id] = m
+		s.inboxOrder = append(s.inboxOrder, id)
+	}
+	if v, ok := str(fields, "reason"); ok {
+		m.item.Reason = v
+	}
+	if v, ok := boolean(fields, "unread"); ok {
+		m.item.Unread = v
+	}
+	if v, ok := str(fields, "updatedAt"); ok {
+		if _, err := time.Parse(time.RFC3339, v); err != nil {
+			s.fail("inbox(%q): updatedAt %q is not RFC 3339", id, v)
+		}
+		m.item.UpdatedAt = v
+	}
+	if v, ok := str(fields, "repoName"); ok {
+		m.item.RepoName = v
+	}
+	if v, ok := str(fields, "subjectType"); ok {
+		m.item.SubjectType = v
+	}
+	if v, ok := str(fields, "title"); ok {
+		m.item.Title = v
+	}
+	if v, ok := str(fields, "apiUrl"); ok {
+		m.item.APIURL, m.apiSet = v, true
+	}
+}
+
+// readInbox is the scenario's read of the inbox: the items the fixtures gave, through the one
+// sort and cap, unless a read already failed. It reads only while a loaded rule runs over inbox,
+// as dispatch does.
+func (s *scenario) readInbox() {
+	if s.inboxFailed || !s.rules.RunsOver("inbox") {
+		return
+	}
+	items := make([]inbox.Item, 0, len(s.inboxOrder))
+	for _, id := range s.inboxOrder {
+		m := s.inbox[id]
+		item := m.item
+		if !m.apiSet {
+			item.APIURL = fmt.Sprintf("https://api.github.com/repos/%s/pulls/%s", item.RepoName, item.ID)
+		}
+		items = append(items, item)
+	}
+	s.inboxGood, s.inboxReadAt = inbox.Newest(items), s.now
 }
 
 // trackWaiting starts a new stretch of waiting for each ticket that has

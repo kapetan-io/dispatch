@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
+	"github.com/kapetan-io/dispatch/internal/inbox"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
@@ -52,6 +53,9 @@ func full() world.World {
 		Nudged:       map[string]bool{"ENG-1": true},
 		StackRecords: map[string]stackrecord.Records{"tiger": {Whole: map[string]stackrecord.Record{"eng-1": {Parent: "ENG-2", ForkPoint: "abc"}}, Partial: map[string]bool{"eng-7": true}}},
 		StackErrs:    map[string]error{"lion": errors.New("stack records unread")},
+		Inbox:        []inbox.Item{{ID: "24986796502", Reason: "review_requested", Unread: true, UpdatedAt: "2026-10-31T09:16:46Z", RepoName: "acme/widgets", SubjectType: "PullRequest", Title: "Fix the retry loop", APIURL: "https://api.github.com/repos/acme/widgets/pulls/7"}},
+		InboxErr:     errors.New("gh: HTTP 502"),
+		InboxReadAt:  time.UnixMilli(1760450400000).UTC(),
 	}
 }
 

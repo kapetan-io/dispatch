@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/inbox"
 )
 
 // testingModule is what `import ... from "dispatch/testing"` gives a scenario.
@@ -18,6 +19,7 @@ export const pool = (repo, fields = {}) => ({ __kind: "pool", repo, fields });
 export const comment = (ticket, fields = {}) => ({ __kind: "comment", ticket, fields });
 export const pr = (ticket, fields = {}) => ({ __kind: "pr", ticket, fields });
 export const tree = (path, fields = {}) => ({ __kind: "tree", path, fields });
+export const inbox = (id, fields = {}) => ({ __kind: "inbox", id, fields });
 `
 
 // TestingDeclarations returns the contents of dispatch-testing.d.ts.
@@ -49,6 +51,9 @@ func TestingDeclarations() string {
     activityAt?: string; activitySummary?: string; threadAt?: string;
   }): Fixture;
   export function tree(path: string, fields?: { holder?: string; pushed?: boolean; trackedChanges?: boolean }): Fixture;
+  export function inbox(id: string, fields?: {
+    reason?: string; unread?: boolean; updatedAt?: string; repoName?: string; subjectType?: string; title?: string; apiUrl?: string;
+  }): Fixture;
   export type Expected = [rule: string, receipt: string, subject: string, ...rest: string[]];
   export interface Scenario {
     config(c: { maxInProgress?: number; rules?: Record<string, unknown>; http?: Record<string, { baseUrl: string }>; repos?: Record<string, { autoMerge?: boolean; openPrAs?: "open" | "draft" }> }): void;
@@ -56,7 +61,7 @@ func TestingDeclarations() string {
     see(...fixtures: Fixture[]): void;
     land(receipt: string, subject: string, o?: { outcome?: "done" | "refused" | "failed"; detail?: string }): void;
     http(service: string, path: string, body: unknown, o?: { status?: number; method?: "GET" | "POST" }): void;
-    unread(source: "herdr" | "treehouse" | string): void;
+    unread(source: "herdr" | "treehouse" | "inbox" | string): void;
     resync(): void;
     start(): void;
     restart(): void;
@@ -110,5 +115,28 @@ func (s *State) Summary(statuses config.Statuses) []SummaryLine {
 		{"worker", fmt.Sprintf("%d workers, %d running", workers, running)},
 		{"tree", fmt.Sprintf("%d trees in %d pools", count("tree"), len(s.Config.Repos))},
 		{"escalation", fmt.Sprintf("%d escalations in the ledger", count("escalation"))},
+		{"inbox", s.inboxSummary()},
 	}
+}
+
+// inboxSummary says what a check read of the inbox. A count of 0 would claim an empty inbox
+// when the read was never made or failed, so those say so instead.
+func (s *State) inboxSummary() string {
+	switch {
+	case !s.InboxRead:
+		return "not read (no loaded rule runs over inbox)"
+	case s.inboxUnread != "":
+		return "not read: " + s.inboxUnread
+	}
+	unread, configured := 0, 0
+	for _, r := range s.kinds["inbox"] {
+		item := r.v.Interface().(*InboxItem)
+		if item.Unread.Value {
+			unread++
+		}
+		if item.Repo.Value != nil {
+			configured++
+		}
+	}
+	return fmt.Sprintf("%d inbox items (newest %d of the GitHub inbox), %d unread, %d in configured repos", len(s.kinds["inbox"]), inbox.Limit, unread, configured)
 }

@@ -51,6 +51,11 @@ func (s *State) Carry(mem *world.Memory, started int64) *world.Memory {
 				if derivedTimes[name] {
 					continue
 				}
+				// Until a read succeeds there is nothing to remember, and a fact that history written
+				// before the inbox existed lacks would make its replay differ.
+				if name == "inboxReadAt" && f.FieldByName("Value").IsNil() {
+					continue
+				}
 				val := f.FieldByName("Value").Interface()
 				// A comment or activity is the same one while its own time is, and
 				// the time dispatch first saw it is what the fact carries.

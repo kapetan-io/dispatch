@@ -65,7 +65,7 @@ One value in the world, with the time it was first seen at that value (its `sinc
 _Avoid_: field, property
 
 **Unknown**:
-A fact whose read failed or came back cut short. A `whenever` rule that reads one holds for that record, and an `on` rule drops its event, so a failed read never counts as "no".
+A fact whose read failed or came back cut short. A `whenever` rule that reads one holds for that record, and an `on` rule drops its event, so a failed read never counts as "no". A failed inbox read is the exception: it keeps the last good items known, because nothing else points at an inbox item.
 _Avoid_: missing, empty, null
 
 **Cycle**:
@@ -81,7 +81,7 @@ Anything telling dispatch something changed: a source read that differs from wha
 _Avoid_: notification (a notification tells you), trigger
 
 **Resync**:
-The 5-minute event that re-reads every source (Linear, GitHub, herdr, treehouse and Stop records) and runs a cycle. It is the only clock rules wait on, so a wait ends up to 5 minutes after its deadline.
+The 5-minute event that re-reads every source (Linear, GitHub, the GitHub inbox while a rule runs over it, herdr, treehouse and Stop records) and runs a cycle. It is the only clock rules wait on, so a wait ends up to 5 minutes after its deadline.
 _Avoid_: tick (`dispatch tick` forces one early), poll interval
 
 **Ledger**:
@@ -184,6 +184,10 @@ _Avoid_: task, job, and the tool-named spelling such as `herdr.launch` (from bef
 Telling you, and the sessions following the ticket, that something happened on it, such as Needs Human or a ready PR. It shows as an alert, then goes to each follower.
 _Avoid_: notice, event (an event tells dispatch; a follower's message still starts with `dispatch event`, which sessions act on), nudge (a nudge goes to the worker)
 
+**Inbox item**:
+One entry in the dispatch owner's GitHub notifications inbox, as GitHub lists it: why GitHub sent it (`review_requested`, `mention`, ...), the repo, and the PR or issue it's about. While a loaded rule runs over them, the world holds the newest 50, read on every resync. Not the loop's `inbox` channel or a session's inbox socket.
+_Avoid_: notification, alert (both mean dispatch telling you)
+
 **Alert**:
 The pop-up that shows you a notification, through osascript on macOS or through herdr elsewhere.
 _Avoid_: toast, banner
@@ -205,7 +209,7 @@ The segment files dispatch writes under `[history].dir`. A segment is one `event
 _Avoid_: log, journal (the tool fakes' record of calls)
 
 **Record**:
-One thing a rule reads: a ticket, PR, worker, tree, escalation or the dispatch record, built from the world and the ledger each cycle. Elsewhere "record" keeps its plain sense, as in a Stop record, a send record, a kickoff record, and a receipt (the ledger's record of one action).
+One thing a rule reads: a ticket, PR, worker, tree, escalation, inbox item or the dispatch record, built from the world and the ledger each cycle. Elsewhere "record" keeps its plain sense, as in a Stop record, a send record, a kickoff record, and a receipt (the ledger's record of one action).
 _Avoid_: object, entity, fact (a fact is one value in the world, such as a ticket's status)
 
 **Replay**:

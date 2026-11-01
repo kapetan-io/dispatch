@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/sobek"
 
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/inbox"
 	// The fake is plain Go with no testing import, so the binary can answer a scenario's requests with it.
 	"github.com/kapetan-io/dispatch/internal/httpservicetest"
 	"github.com/kapetan-io/dispatch/internal/ledger"
@@ -180,6 +181,13 @@ type scenario struct {
 	poolUnread  map[string]bool
 	prUnread    map[string]bool
 	stackUnread map[string]bool
+	// inbox holds the items the fixtures gave. inboxGood and inboxReadAt are what the last good read
+	// saw, which a failed read leaves as it was.
+	inbox       map[string]*inboxModel
+	inboxOrder  []string
+	inboxFailed bool
+	inboxGood   []inbox.Item
+	inboxReadAt time.Time
 	events      []Event
 	// services answers the requests a then makes, and kept holds what its gets got since the last resync.
 	services *httpservicetest.Fake
@@ -209,7 +217,7 @@ func newScenario(h *scenarioHost, rules *Rules) *scenario {
 		host: h, rules: rules, cfg: cfg, led: &ledger.Ledger{}, now: scenarioStart, dirty: true,
 		services: httpservicetest.New(cfg.HTTP), kept: map[string]Exchange{},
 		m:      newModel(),
-		thrown: map[string]bool{}, pools: map[string]int{}, poolUnread: map[string]bool{}, prUnread: map[string]bool{}, stackUnread: map[string]bool{},
+		thrown: map[string]bool{}, pools: map[string]int{}, poolUnread: map[string]bool{}, prUnread: map[string]bool{}, stackUnread: map[string]bool{}, inbox: map[string]*inboxModel{},
 	}
 }
 
@@ -234,7 +242,7 @@ func (s *scenario) object() *sobek.Object {
 		for _, a := range call.Arguments {
 			m, ok := a.Export().(map[string]any)
 			if !ok {
-				s.fail("expected fixtures made by ticket(), worker(), pool(), comment(), pr() or tree()")
+				s.fail("expected fixtures made by ticket(), worker(), pool(), comment(), pr(), tree() or inbox()")
 			}
 			out = append(out, m)
 		}
@@ -556,10 +564,14 @@ func (s *scenario) unread(source string) {
 		}
 	case strings.HasPrefix(source, "stack:"):
 		s.stackUnread[strings.TrimPrefix(source, "stack:")] = true
+	case source == "inbox":
+		// world() reads lazily, so without this the failure would leave no last good read.
+		s.readInbox()
+		s.inboxFailed = true
 	case strings.HasPrefix(source, "github:"):
 		s.prUnread[strings.TrimPrefix(source, "github:")] = true
 	default:
-		s.fail("unread(%q): the sources are herdr, treehouse, treehouse:<repo>, stack, stack:<repo> and github:<ticket>", source)
+		s.fail("unread(%q): the sources are herdr, treehouse, treehouse:<repo>, stack, stack:<repo>, inbox and github:<ticket>", source)
 	}
 	s.dirty = true
 }

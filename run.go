@@ -21,7 +21,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/typed"
-	"github.com/kapetan-io/dispatch/internal/world"
 )
 
 // Clock is the loop's timers, the deadlines on the work dispatch starts, and the ingest time
@@ -133,10 +132,7 @@ func runCommand(ctx context.Context, opts Options) error {
 	})
 	return loop.New(loop.Options{
 		Config: cfg, ConfigText: string(text), StateDir: opts.StateDir, Rules: loaded, Clock: opts.Clock,
-		Sources: world.Sources{
-			Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
-			Env: opts.Env, StateDir: opts.StateDir, Stderr: opts.Stderr,
-		},
+		Sources:  sources(opts, lin, loaded),
 		Executor: exec, Typed: sent, HTTP: services, Herdr: opts.Herdr, Alerts: opts.Alerts, Usage: lin.Usage,
 		Viewer: viewer.Name, Out: opts.Stdout, Err: opts.Stderr,
 	}).Run(ctx)

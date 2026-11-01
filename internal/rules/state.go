@@ -138,6 +138,12 @@ type State struct {
 	seq           int
 	// started is when this dispatch began, for the dispatch record.
 	started time.Time
+	// dispatch is the one dispatch record, which ctx.dispatch reads.
+	dispatch *record
+	// InboxRead is set by `rules check` from whether Sources carried an Inbox. FromWorld cannot tell an
+	// unread inbox from an empty one, and the check's summary line must.
+	InboxRead   bool
+	inboxUnread string
 }
 
 // NewState returns an empty state to fill with records.
@@ -321,7 +327,22 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 		}
 	}
 
-	s.add(newRecord("dispatch", "dispatch", "dispatch", &Dispatch{ID: Known("dispatch", at), StartedAt: Known(at, at)}))
+	dispatch := &Dispatch{ID: Known("dispatch", at), StartedAt: Known(at, at), InboxReadAt: Known[*int64](nil, at)}
+	if !w.InboxReadAt.IsZero() {
+		dispatch.InboxReadAt = Known(new(w.InboxReadAt.UnixMilli()), at)
+	}
+	if w.InboxErr != nil {
+		s.inboxUnread = w.InboxErr.Error()
+	}
+	s.dispatch = newRecord("dispatch", "dispatch", "dispatch", dispatch)
+	s.add(s.dispatch)
+	for _, item := range w.Inbox {
+		s.add(newRecord("inbox", item.ID, item.ID, &InboxItem{
+			ID: Known(item.ID, at), Reason: Known(item.Reason, at), Unread: Known(item.Unread, at), UpdatedAt: Known(item.UpdatedAt, at),
+			RepoName: Known(item.RepoName, at), SubjectType: Known(item.SubjectType, at), Title: Known(item.Title, at),
+			APIURL: Known[*string](nilIfEmpty(item.APIURL), at), Repo: Known[*string](nil, at),
+		}))
+	}
 
 	for _, t := range w.Tickets {
 		s.ticketRecord(t)
@@ -719,4 +740,11 @@ func waitingOn(pr pullrequest.PullRequest, openAs string) string {
 		return string(w)
 	}
 	return "nobody"
+}
+
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return new(s)
 }
