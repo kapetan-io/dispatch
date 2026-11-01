@@ -1,11 +1,19 @@
 package harness
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"net"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
+	"time"
 
+	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 )
@@ -95,6 +103,53 @@ func (ClaudeCode) Prompt(input []byte) (sessionlog.Prompt, string, bool) {
 		return sessionlog.Prompt{}, "", false
 	}
 	return sessionlog.Prompt{Session: in.SessionID, Text: in.Prompt}, in.CWD, true
+}
+
+// messagingSocketEnv names the variable Claude Code sets to a session's inbox socket.
+const messagingSocketEnv = "CLAUDE_CODE_MESSAGING_SOCKET"
+
+const sendTimeout = 5 * time.Second
+
+// Follower reads the inbox socket Claude Code gives the session. Only an absolute path is
+// taken, because the sender may run from any directory.
+func (ClaudeCode) Follower(env environment.Environment) (string, error) {
+	socket := env.Get(messagingSocketEnv)
+	if socket == "" {
+		return "", fmt.Errorf("%w: %s is not set, so this is not a Claude Code session; run watch from one",
+			ErrNotThisHarness, messagingSocketEnv)
+	}
+	if !filepath.IsAbs(socket) {
+		return "", fmt.Errorf("socket path %q is not absolute", socket)
+	}
+	return socket, nil
+}
+
+// Deliver writes one message into a Claude Code session's inbox socket. The
+// frame is undocumented, taken from the binary's own debug hint and a captured
+// SendMessage (anthropics/claude-code#93720), and observed working on Claude
+// Code 2.1.296. A Claude Code release that changes it breaks here and nowhere else.
+// The socket never replies. A socket that refuses the connection or whose file is
+// gone belongs to a session that has exited.
+func (ClaudeCode) Deliver(ctx context.Context, address, text string) error {
+	line, err := json.Marshal(map[string]any{
+		"type":    "user",
+		"message": map[string]string{"role": "user", "content": text},
+	})
+	if err != nil {
+		return err
+	}
+	dialer := net.Dialer{Timeout: sendTimeout}
+	conn, err := dialer.DialContext(ctx, "unix", address)
+	if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("%w: %w", ErrGone, err)
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetWriteDeadline(time.Now().Add(sendTimeout))
+	_, err = conn.Write(append(line, '\n'))
+	return err
 }
 
 // Flag is a flag Claude Code sessions run with.

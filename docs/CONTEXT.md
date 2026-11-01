@@ -125,7 +125,7 @@ A git worktree in a repo's treehouse pool, leased or not; a rule reads which fro
 _Avoid_: worktree and checkout (the tools' words, used inside the tool adapters and for a plain git worktree of a repo), lease (the lease is the holding, not the tree), slot (room in the pool)
 
 **Harness**:
-The program that runs in a worker's session, such as Claude Code, which is the only one dispatch drives today. A harness table pairs a harness kind with a model. A kind is the name `config.toml` gives the program, such as `claude-code`; herdr detects the same program under its own agent kind, such as `claude`.
+The program that runs in a worker's session, such as Claude Code, which is the only one dispatch drives today. Every harness receives follower messages, so an adapter that cannot is not a harness dispatch drives. A harness table pairs a harness kind with a model. A kind is the name `config.toml` gives the program, such as `claude-code`; herdr detects the same program under its own agent kind, such as `claude`.
 _Avoid_: agent (herdr's word, kept inside the herdr adapter), tool (the tools are herdr, treehouse, gh, Linear), model (a harness runs a model)
 
 **Harness table**:
@@ -189,7 +189,7 @@ The pop-up that shows you a notification, through osascript on macOS or through 
 _Avoid_: toast, banner
 
 **Follower**:
-A Claude Code session that ran `dispatch watch` on a ticket and gets its notifications as messages. Followers live in the running dispatch process and end at a restart. The loop's stderr calls a follower's socket a watcher socket.
+A session of a harness dispatch can deliver to that ran `dispatch watch` on a ticket and gets its notifications as messages through that harness. Followers live in the running dispatch process and end at a restart. The loop's stderr calls a follower's address a watcher socket.
 _Avoid_: subscriber (`dispatch subscribe` is gone)
 
 **Loop**:

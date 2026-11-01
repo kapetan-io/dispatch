@@ -3,9 +3,13 @@
 package harnesstest
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"regexp"
+	"sync"
 
+	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
@@ -16,10 +20,71 @@ const Kind = "fake"
 
 // Harness is a program that is not Claude Code, so a test can launch something whose
 // kind no code path special-cases.
-type Harness struct{}
+type Harness struct {
+	mu      sync.Mutex
+	inboxes map[string]*inbox
+}
+
+type inbox struct {
+	exited    bool
+	delivered []string
+}
+
+// InboxEnv names the variable that carries a fake session's inbox address.
+const InboxEnv = "FAKE_HARNESS_INBOX"
 
 // New returns the fake harness.
-func New() *Harness { return &Harness{} }
+func New() *Harness { return &Harness{inboxes: map[string]*inbox{}} }
+
+// Open starts a fake session with an inbox and returns the address it delivers to.
+func (h *Harness) Open() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	address := fmt.Sprintf("/fake/inbox/%d", len(h.inboxes)+1)
+	h.inboxes[address] = &inbox{}
+	return address
+}
+
+// Exit ends the fake session at address, so delivery to it reports the session gone.
+func (h *Harness) Exit(address string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if in := h.inboxes[address]; in != nil {
+		in.exited = true
+	}
+}
+
+// Delivered lists what Deliver put into the session at address, in order.
+func (h *Harness) Delivered(address string) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if in := h.inboxes[address]; in != nil {
+		return append([]string(nil), in.delivered...)
+	}
+	return nil
+}
+
+// Follower reads the address of the fake session the command runs in.
+func (*Harness) Follower(env environment.Environment) (string, error) {
+	address := env.Get(InboxEnv)
+	if address == "" {
+		return "", fmt.Errorf("%w: %s is not set, so this is not a Fake session; run watch from one",
+			harness.ErrNotThisHarness, InboxEnv)
+	}
+	return address, nil
+}
+
+// Deliver records text in the inbox at address.
+func (h *Harness) Deliver(_ context.Context, address, text string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	in := h.inboxes[address]
+	if in == nil || in.exited {
+		return fmt.Errorf("%w: %s", harness.ErrGone, address)
+	}
+	in.delivered = append(in.delivered, text)
+	return nil
+}
 
 func (*Harness) AgentKind() string { return Kind }
 

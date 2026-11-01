@@ -310,6 +310,12 @@ func expiring[T any](d *Dispatch, what string, run func() T) T {
 	}
 }
 
+// FakeSession makes the commands that follow run in the fake harness's session whose inbox is
+// address, and in no Claude session.
+func (d *Dispatch) FakeSession(address string) {
+	d.env = d.env.With("CLAUDE_CODE_MESSAGING_SOCKET", "").With(harnesstest.InboxEnv, address)
+}
+
 // Tools is the fakes behind dispatch, for a test to make one fail or to read what it recorded.
 func (d *Dispatch) Tools() *tooltest.Tools { return d.tools }
 

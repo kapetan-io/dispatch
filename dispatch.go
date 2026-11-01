@@ -174,10 +174,11 @@ const usage = `usage: dispatch run
                label follows within seconds. Finds the session's harness from the herdr pane in HERDR_PANE_ID.
                Does nothing when the pane is unset, unlisted or runs no harness dispatch has an adapter
                for, outside a worktree of a repo listed under [repos], or when no loop runs. The plugin's Notification and UserPromptSubmit hooks run it
-  watch        make this Claude Code session follow the ticket, so each notification dispatch sends about
-               it is also sent to this session as a message. A session can follow several
-               tickets, and a ticket can have several followers. Fails outside a Claude Code
-               session, when the socket path is not absolute, or when no dispatch is running.
+  watch        make this session follow the ticket, so each notification dispatch sends about
+               it is also sent to this session as a message through its harness. A session can follow
+               several tickets, and a ticket can have several followers. Fails outside a session of a
+               harness dispatch drives (for Claude Code, when the messaging socket is unset or its path
+               is not absolute), or when no dispatch is running.
                Dispatch keeps followers in memory, so run it again after a restart
   unwatch      stop this session following the ticket; fails when no dispatch is running`
 
@@ -362,20 +363,21 @@ func linearViewer(ctx context.Context, opts Options) error {
 	return json.NewEncoder(opts.Stdout).Encode(viewer)
 }
 
-// follow makes the calling Claude Code session start or stop following a ticket.
+// follow makes the calling session start or stop following a ticket, through the
+// harness the session runs.
 func follow(ctx context.Context, opts Options, watch bool, ticket string) error {
 	if !ticketID.MatchString(ticket) {
 		return fmt.Errorf("%q is not a ticket identifier such as ENG-123", ticket)
 	}
-	socket := opts.Env.Get(messagingSocketEnv)
-	if socket == "" {
-		return fmt.Errorf("%s is not set, so this is not a Claude Code session; run watch from one", messagingSocketEnv)
+	kind, address, err := opts.Harnesses.Follower(opts.Env)
+	if err != nil {
+		return err
 	}
 	op, verb := loop.OpUnwatch, "unwatching"
 	if watch {
 		op, verb = loop.OpWatch, "watching"
 	}
-	resp, err := loop.Ask(ctx, opts.StateDir, loop.Request{Op: op, Ticket: ticket, Socket: socket})
+	resp, err := loop.Ask(ctx, opts.StateDir, loop.Request{Op: op, Ticket: ticket, Follower: &notify.Follower{Kind: kind, Address: address}})
 	if errors.Is(err, loop.ErrNotRunning) {
 		return notRunning()
 	}
@@ -391,9 +393,6 @@ func follow(ctx context.Context, opts Options, watch bool, ticket string) error 
 
 // ticketID is the shape of a Linear identifier.
 var ticketID = regexp.MustCompile(`^[A-Z][A-Z0-9]*-[0-9]+$`)
-
-// messagingSocketEnv names the variable Claude Code sets to a session's inbox socket.
-const messagingSocketEnv = "CLAUDE_CODE_MESSAGING_SOCKET"
 
 // abs makes a relative path relative to the command's working directory.
 func (o Options) abs(path string) string {

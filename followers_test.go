@@ -624,3 +624,66 @@ func TestTickDoesNotMessageFollowersThatAnApprovedPRIsReadyToMergeWhenAutoMergeM
 	assert.Contains(t, next(t, lines), "dispatch event (PR approved): ENG-1 was approved and merged")
 	assert.Empty(t, lines)
 }
+
+func TestTickMessagesAFollowerThroughItsOwnHarness(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{FakeHarness: true})
+	inbox := d.Tools().Harness.Open()
+	d.FakeSession(inbox)
+	d.StartBeforeTheEvents()
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+
+	d.Tick()
+
+	require.Len(t, d.Tools().Harness.Delivered(inbox), 1)
+	assert.Contains(t, d.Tools().Harness.Delivered(inbox)[0], "dispatch event (PR ready for review): ENG-1 is ready for review")
+}
+
+func TestTickDropsAFollowerOfAnotherHarnessWhoseSessionExited(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{FakeHarness: true})
+	inbox := d.Tools().Harness.Open()
+	d.FakeSession(inbox)
+	d.StartBeforeTheEvents()
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+	d.Tools().Harness.Exit(inbox)
+
+	d.Tick()
+
+	assert.Contains(t, d.LoopStderr(), "dropped watcher socket "+inbox)
+	assert.Empty(t, d.Tools().Harness.Delivered(inbox))
+}
+
+func TestWatchOutsideAnyHarnessSessionNamesWhatEachHarnessNeeds(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{FakeHarness: true, Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": ""}})
+
+	err := d.Run("watch", "ENG-1").Err
+
+	require.ErrorContains(t, err, "not a session of a harness dispatch drives")
+	assert.ErrorContains(t, err, "CLAUDE_CODE_MESSAGING_SOCKET is not set")
+	assert.ErrorContains(t, err, "FAKE_HARNESS_INBOX"+" is not set")
+}
+
+func TestUnwatchStopsMessagesToAFollowerOfAnotherHarness(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{FakeHarness: true})
+	inbox := d.Tools().Harness.Open()
+	d.FakeSession(inbox)
+	d.StartBeforeTheEvents()
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+	require.NoError(t, d.Run("unwatch", "ENG-1").Err)
+
+	d.Tick()
+
+	assert.Empty(t, d.Tools().Harness.Delivered(inbox))
+}

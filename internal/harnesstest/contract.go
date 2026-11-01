@@ -1,11 +1,15 @@
 package harnesstest
 
 import (
+	"context"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/harness"
 )
 
@@ -18,6 +22,21 @@ type Subject struct {
 	// PromptInput is what the program's own hook hands dispatch when text was typed into
 	// the session. Empty text is a session that went idle.
 	PromptInput func(session, dir, text string) []byte
+	// OpenSession starts a session of this harness that follows nothing yet, and cleans
+	// it up when t ends.
+	OpenSession func(t *testing.T) Session
+}
+
+// Session is a running session of the harness under test.
+type Session struct {
+	// Env is the environment of a command the session runs.
+	Env environment.Environment
+	// Address is where the harness delivers the session's messages.
+	Address string
+	// Delivered lists the messages the session has received, in order.
+	Delivered func() []string
+	// Exit ends the session.
+	Exit func()
 }
 
 // Scenario is one situation with the outcome every adapter must give.
@@ -99,5 +118,29 @@ var Scenarios = []Scenario{
 		_, _, ok := s.Harness.Prompt([]byte("not json"))
 
 		assert.False(t, ok)
+	}},
+	{Name: "DeliverReachesAFollower", Run: func(t *testing.T, s Subject) {
+		session := s.OpenSession(t)
+		address, err := s.Harness.Follower(session.Env)
+		require.NoError(t, err)
+
+		require.NoError(t, s.Harness.Deliver(context.Background(), address, "dispatch event: ENG-1 is ready"))
+
+		require.Eventually(t, func() bool {
+			return slices.Contains(session.Delivered(), "dispatch event: ENG-1 is ready")
+		}, 5*time.Second, 10*time.Millisecond)
+	}},
+	{Name: "DeliverToAnExitedFollowerIsGone", Run: func(t *testing.T, s Subject) {
+		session := s.OpenSession(t)
+		session.Exit()
+
+		err := s.Harness.Deliver(context.Background(), session.Address, "dispatch event: ENG-1 is ready")
+
+		assert.ErrorIs(t, err, harness.ErrGone)
+	}},
+	{Name: "FollowerOfAnotherHarnessIsNotThisHarness", Run: func(t *testing.T, s Subject) {
+		_, err := s.Harness.Follower(environment.Environment{})
+
+		assert.ErrorIs(t, err, harness.ErrNotThisHarness)
 	}},
 }
