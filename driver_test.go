@@ -117,7 +117,9 @@ type Dispatch struct {
 	// env is the environment every command runs with, and cwd the directory it runs in. Empty cwd
 	// runs in the test process's.
 	env environment.Environment
-	cwd string
+	// hookPaneShown is whether the fake herdr lists the pane hooks run in.
+	hookPaneShown bool
+	cwd           string
 
 	t             *testing.T
 	configuredKey bool
@@ -256,7 +258,7 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 		d.config(opts.Config + "\n[plugins.linear]\napi_key_keychain = \"dispatch-test-no-such-entry\"\n")
 	}
 	d.Home = t.TempDir()
-	d.env = environment.Process().With("HOME", d.Home).With("LINEAR_API_KEY", "")
+	d.env = environment.Process().With("HOME", d.Home).With("LINEAR_API_KEY", "").With("HERDR_PANE_ID", hookPane)
 	for _, name := range slices.Sorted(maps.Keys(opts.Env)) {
 		if name == "HOME" {
 			d.Home = opts.Env[name]
@@ -267,6 +269,9 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 	d.timeouts = dispatch.Options{RuleTimeout: opts.RuleTimeout, ActionTimeout: opts.ActionTimeout}
 	return d
 }
+
+// hookPane is the herdr pane a hook command runs in, which holds a Claude Code agent.
+const hookPane = "hooks:p1"
 
 // Run runs one command the way main does. tick, tell, watch and unwatch start the loop first.
 func (d *Dispatch) Run(args ...string) Result {
@@ -1269,6 +1274,12 @@ func (d *Dispatch) writeConfig(body string) {
 
 // options is the Options every command runs over: the fakes.
 func (d *Dispatch) options(extra dispatch.Options) dispatch.Options {
+	// A command given stdin is a hook. It runs in a herdr pane that holds the session, and finds its
+	// harness from that pane. Other commands never see the pane, so it stays out of their snapshots.
+	if extra.Stdin != nil && !d.hookPaneShown {
+		d.hookPaneShown = true
+		d.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: "idle", PaneID: hookPane})
+	}
 	d.writeConfig(d.withRules(d.withHistory(d.extra)) + d.historyTOML() + d.reposTOML())
 	extra.ConfigPath = filepath.Join(d.dir, "config.toml")
 	extra.StateDir = d.state
@@ -1298,6 +1309,12 @@ func (d *Dispatch) options(extra dispatch.Options) dispatch.Options {
 	if d.fakeHarness {
 		extra.Harnesses = harness.Registry{config.KindClaudeCode: harness.ClaudeCode{}, harnesstest.Kind: d.tools.Harness}
 	}
+	// Run fills in Claude Code when the test registers nothing else.
+	registered := extra.Harnesses
+	if registered == nil {
+		registered = harness.Registry{config.KindClaudeCode: harness.ClaudeCode{}}
+	}
+	d.tools.Herdr.AcceptKinds(registered.AgentKinds()...)
 	if extra.RulesDir == "" && !strings.Contains(d.extra, "\nrules = ") {
 		extra.RulesDir = d.rulesDir
 	}
@@ -2687,4 +2704,23 @@ func modelOf(program herdr.Program) string {
 		return ""
 	}
 	return program.Argv[i+1]
+}
+
+// FromPane makes the hooks that run next run in the herdr pane given, as HERDR_PANE_ID tells them,
+// until the returned function is called. An empty pane is a session outside herdr.
+func (d *Dispatch) FromPane(pane string) (restore func()) {
+	was := d.env
+	d.env = d.env.With("HERDR_PANE_ID", pane)
+	return func() { d.env = was }
+}
+
+// SessionOf puts a session of the herdr agent kind in ticket's workspace, in its own pane, and
+// returns the pane. The workspace holds no other agent.
+func (d *Dispatch) SessionOf(ticket, kind, status string) string {
+	d.t.Helper()
+	id := "w-" + ticket
+	d.tools.Herdr.AddTab(herdr.Tab{ID: id + ":t1", Label: ticket, WorkspaceID: id})
+	d.tools.Herdr.AddPane(herdr.Pane{ID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
+	d.tools.Herdr.AddAgent(herdr.Agent{Kind: kind, Status: status, Session: "worker", PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
+	return id + ":p1"
 }

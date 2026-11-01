@@ -35,8 +35,8 @@ const (
 )
 
 // Typing is where a launch notes what it types into the worker, so the prompt hook can tell
-// dispatch's messages from a person's. A note for the Claude it is about to start replaces
-// whatever an earlier Claude in that tree was sent.
+// dispatch's messages from a person's. A note for the session it is about to start replaces
+// whatever an earlier session in that tree was sent.
 type Typing interface {
 	Note(tree, text string)
 	Clear(tree string)
@@ -55,7 +55,7 @@ type Options struct {
 	// Stderr receives progress. Defaults to discarding it.
 	Stderr io.Writer
 	// StateDir is where a launch records that its kickoff is unconfirmed, so a
-	// tick can find a Claude the launch died on. Empty records nothing.
+	// tick can find a session the launch died on. Empty records nothing.
 	StateDir string
 	// Clock stamps a launch's kickoff record, which the rules compare with the loop's clock,
 	// and runs the preflight deadline. Defaults to the wall clock.
@@ -232,7 +232,7 @@ func (l *launch) run(ctx context.Context) Result {
 }
 
 // beginKickoff marks the launch unconfirmed until it returns. A launch killed
-// before then leaves the mark, which is how a later tick knows the Claude in
+// before then leaves the mark, which is how a later tick knows the session in
 // this tree never got its kickoff.
 func (l *launch) beginKickoff() {
 	if l.opts.StateDir == "" {
@@ -247,7 +247,7 @@ func (l *launch) beginKickoff() {
 }
 
 // clearKickoff runs on every return, because a launch that reports its own failure has
-// already closed its workspace. When that close failed, the idle Claude is still there, and
+// already closed its workspace. When that close failed, the idle session is still there, and
 // the mark stays so a later cycle closes it.
 func (l *launch) clearKickoff() {
 	if l.opts.StateDir != "" && !l.workspaceOpen {
@@ -485,7 +485,7 @@ func (l *launch) leaseFailure(ctx context.Context, leaseErr string) Result {
 }
 
 // giveBack closes the workspace and returns the lease when this run took the
-// lease, so a failed launch holds no pool slot. Any Claude in the workspace
+// lease, so a failed launch holds no pool slot. Any session in the workspace
 // has not been given the kickoff yet, so closing it loses no work. A lease
 // from an earlier run may hold a worker's uncommitted work, and the forced
 // return would discard it, so that one is kept.
@@ -525,14 +525,12 @@ func (l *launch) openWorkspace(ctx context.Context) (Result, bool) {
 		}
 	}
 	if l.workspace != "" {
-		for _, a := range snap.Agents {
-			if a.WorkspaceID == l.workspace && a.Kind == "claude" {
-				return Result{
-					Status:    StatusAlreadyRunning,
-					Detail:    fmt.Sprintf("workspace %s already has a Claude pane (%s); not typing a second kickoff", l.workspace, a.PaneID),
-					Workspace: l.workspace, Pane: a.PaneID, Worktree: l.tree,
-				}, false
-			}
+		if a, ok := snap.SessionIn(l.workspace); ok {
+			return Result{
+				Status:    StatusAlreadyRunning,
+				Detail:    fmt.Sprintf("workspace %s already has a %s session in pane %s; not typing a second kickoff", l.workspace, a.Kind, a.PaneID),
+				Workspace: l.workspace, Pane: a.PaneID, Worktree: l.tree,
+			}, false
 		}
 		return Result{}, true
 	}

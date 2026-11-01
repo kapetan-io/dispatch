@@ -8,7 +8,7 @@ import (
 )
 
 // workerTree returns the managed worktree a worker runs in when dir is inside one. The
-// plugin's hooks run in every Claude session on the machine, so a session outside a pool
+// plugin's hooks run in every session on the machine, so a session outside a pool
 // tree of a repo listed under [repos] gets false and the hook stays silent.
 func workerTree(ctx context.Context, opts Options, dir string) (string, bool) {
 	cfg, err := loadConfig(opts)

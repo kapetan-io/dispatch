@@ -11,6 +11,7 @@ import (
 	"io"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,6 +24,18 @@ type Snapshot struct {
 	Tabs       []Tab
 	Panes      []Pane
 	Agents     []Agent
+}
+
+// SessionIn is the one session in workspace: the first agent there. A snapshot holds
+// only agents of the kinds its reader was built with, so an agent dispatch can't run,
+// such as a Pi a person opened, is never the session.
+func (s Snapshot) SessionIn(workspace string) (Agent, bool) {
+	for _, a := range s.Agents {
+		if a.WorkspaceID == workspace {
+			return a, true
+		}
+	}
+	return Agent{}, false
 }
 
 // Tab is a herdr tab and the label it shows.
@@ -46,15 +59,16 @@ type Workspace struct {
 	CheckoutPath string
 }
 
-// Agent is a terminal agent such as a Claude worker.
+// Agent is a terminal agent such as a worker's session.
 type Agent struct {
+	// Kind is the agent kind herdr detected, such as "claude".
 	Kind        string
 	Status      string
 	PaneID      string
 	TabID       string
 	WorkspaceID string
-	// Session is the id of the session in the pane, which Claude Code also puts
-	// in its hook input.
+	// Session is the id of the session in the pane, which the harness also puts
+	// in the reports its hooks send.
 	Session string
 }
 
@@ -66,6 +80,10 @@ type Herdr interface {
 	// blocked agent before sending any input, so a question on screen is never
 	// answered by accident. The refusal satisfies errors.Is(err, ErrAgentBlocked).
 	Prompt(ctx context.Context, pane, text string) error
+	// AgentAt returns the agent in pane, asking herdr about that pane alone. A pane
+	// with no agent is not an error, because hooks run in panes that hold none. It is
+	// not filtered by WithKinds; the caller decides whether it runs the agent's kind.
+	AgentAt(ctx context.Context, pane string) (Agent, bool, error)
 	// RenameWorkspace sets a workspace's label.
 	RenameWorkspace(ctx context.Context, id, label string) error
 	// RenameTab sets a tab's label.
@@ -223,6 +241,7 @@ type CLI struct {
 	progress    io.Writer
 	env         environment.Environment
 	dispatchBin string
+	kinds       []string
 }
 
 // NewCLI returns a Herdr that runs bin. Arguments in global come before every
@@ -244,6 +263,13 @@ func (c *CLI) WithEnv(env environment.Environment) *CLI {
 // build one, because its own binary is not a dispatch.
 func (c *CLI) WithDispatchBin(bin string) *CLI {
 	c.dispatchBin = bin
+	return c
+}
+
+// WithKinds makes Read leave out agents of every other kind, so a session dispatch
+// has no harness for is never a worker's session. Unset, Read keeps every kind.
+func (c *CLI) WithKinds(kinds ...string) *CLI {
+	c.kinds = kinds
 	return c
 }
 
@@ -339,9 +365,50 @@ func (c *CLI) Read(ctx context.Context) (Snapshot, error) {
 		s.Workspaces = append(s.Workspaces, ws)
 	}
 	for _, a := range agents.Result.Agents {
+		if c.kinds != nil && !slices.Contains(c.kinds, a.Agent) {
+			continue
+		}
 		s.Agents = append(s.Agents, Agent{Kind: a.Agent, Status: a.Status, PaneID: a.PaneID, TabID: a.TabID, WorkspaceID: a.WorkspaceID, Session: a.Session.Value})
 	}
 	return s, nil
+}
+
+func (c *CLI) AgentAt(ctx context.Context, pane string) (Agent, bool, error) {
+	cmd := c.command(ctx, "agent", "get", pane)
+	// A herdr wrapped in a script leaves a child holding stdout after the timeout kills the script.
+	cmd.WaitDelay = time.Second
+	out, err := cmd.Output()
+	if err != nil {
+		// herdr prints its refusal body on stderr.
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			var body refusalBody
+			if json.Unmarshal(bytes.TrimSpace(exit.Stderr), &body) == nil && body.Error.Code == "agent_not_found" {
+				return Agent{}, false, nil
+			}
+			return Agent{}, false, fmt.Errorf("while running herdr agent get %s: %w: %s", pane, err, bytes.TrimSpace(exit.Stderr))
+		}
+		return Agent{}, false, fmt.Errorf("while running herdr agent get %s: %w", pane, err)
+	}
+	var got struct {
+		Result struct {
+			Agent struct {
+				Agent       string `json:"agent"`
+				Status      string `json:"agent_status"`
+				PaneID      string `json:"pane_id"`
+				TabID       string `json:"tab_id"`
+				WorkspaceID string `json:"workspace_id"`
+				Session     struct {
+					Value string `json:"value"`
+				} `json:"agent_session"`
+			} `json:"agent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		return Agent{}, false, fmt.Errorf("while reading herdr agent get %s output: %w", pane, err)
+	}
+	a := got.Result.Agent
+	return Agent{Kind: a.Agent, Status: a.Status, PaneID: a.PaneID, TabID: a.TabID, WorkspaceID: a.WorkspaceID, Session: a.Session.Value}, true, nil
 }
 
 func (c *CLI) Prompt(ctx context.Context, pane, text string) error {

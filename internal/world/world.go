@@ -87,7 +87,7 @@ type World struct {
 	// Tickets without a record are absent.
 	Stops map[string]stops.Record
 	// Sessions maps an In Progress or In Review ticket identifier to the log of its
-	// worker's current Claude session. SessionErrs holds the tickets whose log could not
+	// worker's current session. SessionErrs holds the tickets whose log could not
 	// be read, which is unknown, not empty. A ticket in neither map has no worker or is
 	// not In Progress or In Review.
 	Sessions    map[string]sessionlog.Log
@@ -305,7 +305,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 // session that ran in it.
 func (w *World) readSession(stateDir, ticket string, wk Worker) {
 	if wk.Session == "" {
-		w.SessionErrs[ticket] = errors.New("herdr reports no Claude session for the worker")
+		w.SessionErrs[ticket] = errors.New("herdr reports no session for the worker")
 		return
 	}
 	log, err := sessionlog.Read(stateDir, wk.TreePath, wk.Session)
@@ -436,7 +436,7 @@ func (s Scope) ReadsPR(t linear.Ticket, state WorkerState) bool {
 	return state == NoWorker || state == Idle
 }
 
-// kickoffRan reports whether the worker's Claude ended a turn after at, which proves its
+// kickoffRan reports whether the worker's session ended a turn after at, which proves its
 // kickoff ran even if the launch that marked it was killed before it said so. A Stop from
 // another session in the tree proves nothing. With no session known it falls back to the
 // newest Stop of any session. A Stop record that exists but can't

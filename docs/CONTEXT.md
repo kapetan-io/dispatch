@@ -97,11 +97,11 @@ Starts each action a cycle wants whose once key the ledger doesn't cover, off th
 _Avoid_: runner, worker (a worker is the ticket's place on its tree, where its Claude sessions run)
 
 **Command**:
-A message to a worker that starts with `/name`, as Claude took it, recorded with its arguments (cut at 1KB), the time and whether a person or dispatch sent it.
+A message to a worker that starts with `/name`, as the session took it, recorded with its arguments (cut at 1KB), the time and whether a person or dispatch sent it.
 _Avoid_: prompt, message (both include text that isn't a command), skill (a skill the model loads by itself is not a command)
 
 **Turn**:
-One reply a worker's Claude session finished, ending in a Stop, with whether a background task was still running.
+One reply a worker's session finished, ending in a Stop, with whether a background task was still running.
 _Avoid_: stop (a Stop record keeps only the latest turn)
 
 **Session log**:
@@ -117,8 +117,8 @@ The first word of a worker's herdr workspace label. It says who the ticket is wa
 _Avoid_: status icon, status
 
 **Worker**:
-The ticket's place on a tree it holds: the tree, the herdr workspace showing that tree, and the Claude session running there now, if any. Claude sessions come and go inside it: a relaunch keeps the same worker with a new session, and the worker lasts as long as the ticket holds the tree. A ticket that holds trees in two repos has a worker on each. The worker's state is its Claude session's: `working`, `idle`, `blocked`, or `none` when no Claude session runs there. Looking up a ticket that holds no tree also answers `none`, though there is no worker. Some messages use "worker" for the Claude session: "has no worker" and "gone" mean the state `none`, and "a worker is running" means a Claude session runs there.
-_Avoid_: agent (herdr's word for any terminal agent, kept inside the herdr adapter), runner, executor, session (a session is one Claude run inside the worker)
+The ticket's place on a tree it holds: the tree, the herdr workspace showing that tree, and the harness session running there now, if any. Only a session of a harness dispatch has an adapter for counts; an agent of another kind a person opened in the workspace, such as a Pi, is ignored. Sessions come and go inside it: a relaunch keeps the same worker with a new session, and the worker lasts as long as the ticket holds the tree. A ticket that holds trees in two repos has a worker on each. The worker's state is its session's: `working`, `idle`, `blocked`, or `none` when no session runs there. Looking up a ticket that holds no tree also answers `none`, though there is no worker. Some messages use "worker" for the session: "has no worker" and "gone" mean the state `none`, and "a worker is running" means a session runs there.
+_Avoid_: agent (herdr's word for any terminal agent, kept inside the herdr adapter; dispatch's word is harness), runner, executor, session (a session is one harness run inside the worker)
 
 **Tree**:
 A git worktree in a repo's treehouse pool, leased or not; a rule reads which from its `leased` fact. A ticket leases one and holds it under the ticket id until it is returned.
@@ -165,11 +165,11 @@ Moving a stacked ticket's own commits onto the default branch after its stack pa
 _Avoid_: rebase (the git step), retarget (one step of it)
 
 **Nudge**:
-Text dispatch types into a worker's pane, such as the PR nudge or a `dispatch tell`. dispatch never types into a blocked Claude session, since the text would answer its question; the shipped rules nudge only an idle one. A nudge that starts with /name is also a command, and dispatch keeps a send record of it before typing.
+Text dispatch types into a worker's pane, such as the PR nudge or a `dispatch tell`. dispatch never types into a blocked session, since the text would answer its question; the shipped rules nudge only an idle one. A nudge that starts with /name is also a command, and dispatch keeps a send record of it before typing.
 _Avoid_: notification (that goes to you), prompt
 
 **Close**:
-Closing a worker's herdr workspace, which ends its Claude session and keeps its tree, so a relaunch can start a new session in the same worker.
+Closing a worker's herdr workspace, which ends its session and keeps its tree, so a relaunch can start a new session in the same worker.
 _Avoid_: kill, stop (a Stop is a turn ending)
 
 **Return**:
@@ -225,5 +225,5 @@ A case in a `*.test.ts` file that `dispatch rules test` runs. It sets up a world
 _Avoid_: contract scenario (a tool fake against its adapter), unit test
 
 **Stop record**:
-The latest Stop of each worker session, from the Stop hook through `dispatch record-stop`, saying whether background tasks were still running. A Stop that ended at or before its tree's last return is ignored.
+The latest turn end of each worker session, from the harness's report through `dispatch record-stop`, which finds the harness from the herdr pane the hook runs in (`HERDR_PANE_ID`), saying whether background tasks were still running. A turn end at or before its tree's last return is ignored.
 _Avoid_: stop file, turn (the session log keeps every turn)

@@ -11,7 +11,11 @@ import (
 func TestFakeHarness(t *testing.T) {
 	for _, scenario := range harnesstest.Scenarios {
 		t.Run(scenario.Name, func(t *testing.T) {
-			scenario.Run(t, harnesstest.Subject{Harness: harnesstest.New()})
+			scenario.Run(t, harnesstest.Subject{
+				Harness:     harnesstest.New(),
+				StopInput:   harnesstest.StopInput,
+				PromptInput: harnesstest.PromptInput,
+			})
 		})
 	}
 }
