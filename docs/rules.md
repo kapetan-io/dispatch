@@ -180,6 +180,31 @@ whenever({
 
 Add a rule by creating a file and importing it from `dispatch.ts`, which is the list of what runs. `extras.ts`, `commands.ts` and `stacking.ts` are examples that `dispatch.ts` doesn't import.
 
+## Reading the GitHub inbox
+
+A rule with `each: "inbox"` runs once per item in your GitHub notifications inbox, such as a review request or a mention. While any loaded rule runs over `inbox`, dispatch asks `gh` for the newest 50 items, read or unread, from any repo, on every resync and `dispatch tick`. With no such rule it makes no call.
+
+```ts
+whenever({
+  name: "tell-me-about-review-requests",
+  each: "inbox",
+  if:   (item) => item.unread && item.reason === "review_requested" && item.subjectType === "PullRequest",
+  then: (item, ctx) => ctx.http.queuePost("chat", "/review", { title: item.title, repo: item.repoName }, { once: ["review", item.id, item.updatedAt] }),
+});
+```
+
+- An item has `id` (GitHub's thread id, the same as notifications arrive on the thread), `reason`, `unread`, `updatedAt` (RFC 3339 as GitHub wrote it), `repoName` (`owner/name`), `subjectType` (`PullRequest`, `Issue`, `Release`, ...), `title` and `apiUrl` (the subject's API URL, undefined when GitHub gives none). Dispatch copies them and corrects none. `repo` exists but is always undefined for now.
+- GitHub replaces a thread's `reason` with the newest one, so a review request followed by a mention reads `mention`. A rule that must not miss a review request checks the PR itself.
+- An action like `ctx.http.queuePost` has the service as its subject, not the item, so put `item.id` in the once key. `[topic, item.id]` acts once per item and `[topic, item.id, item.updatedAt]` once per update.
+- The first time an inbox rule loads, every item in the 50 is new to the ledger, so the rule acts on all of them. `unread` is a weak cutoff, because an item you opened before the next resync already reads `false`. Use a date (`item.updatedAt`) when that matters.
+- To read the PR, add an `[http.github]` service with `base_url = "https://api.github.com"` and `token_command = "gh auth token"`, and call `ctx.http.get("github", path)` with `apiUrl` minus the base. A `get` runs only in `then` and sends a request every cycle the rule's `if` holds, so put the cheap checks (`subjectType`, `unread`) in `if`.
+- Your GitHub login is not in the world, because dispatch's viewer is your Linear name. A rule reads `/user` from the service, or a key in `[rules]`.
+- `ctx.dispatch.inboxReadAt` is the time, in milliseconds since the epoch, of the last good inbox read, and is undefined until the first. Use it to judge staleness (`ctx.now - ctx.dispatch.inboxReadAt`), not newness: rules run right after the read, so a once key on `[item.id, item.updatedAt]` is how a rule finds new and changed items.
+- When a read fails, dispatch prints `dispatch: while reading the inbox: <gh error>` to stderr and keeps the items and `inboxReadAt` of the last good read. Rules over inbox items run on those items, and rules over tickets, PRs, workers and trees run as usual. After a restart there are no items until a read succeeds. [ADR 0005](adr/0005-a-failed-read-of-a-source-nothing-references-keeps-its-last-good-read.md) has the reasoning.
+- GitHub's notifications endpoints accept only a classic personal access token with the `notifications` or `repo` scope. A fine-grained `gh` login fails every read.
+- `rules check` prints `inbox  N inbox items (newest 50 of the GitHub inbox), U unread, C in configured repos`, `inbox  not read (no loaded rule runs over inbox)`, or `inbox  not read: <gh error>` when the read failed. `dispatch state reset --quiet` refuses while the inbox can't be read, because it would record no receipts and the next run would act on every item.
+- `rules test` gives a scenario items with `inbox("t1", { reason: "review_requested", unread: true, updatedAt: "2026-10-31T09:00:00Z", repoName: "acme/widgets", subjectType: "PullRequest", title: "Fix", apiUrl: "..." })`. Giving an id again changes only the fields it names. `s.unread("inbox")` fails every later read: the items given before it stay, and items given after it don't appear. Test a recovery or a restart with `dispatch run`, since `s.unread` has no undo.
+
 ## Stacking tickets
 
 People split a feature into tickets that build on each other, and by default each waits for the one before it to merge. Add `import "./stacking";` to `dispatch.ts` and a ticket launches on its blocker's unmerged PR instead:

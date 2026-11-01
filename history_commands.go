@@ -229,10 +229,9 @@ func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *wo
 	if _, err := lin.Workspace(ctx); err != nil {
 		return nil, nil, err
 	}
-	wd, err := world.Read(ctx, world.Sources{
-		Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests, Env: opts.Env,
-		StateDir: opts.StateDir, Stderr: opts.Stderr, Tolerant: true, Resilient: true,
-	}, world.ScopeOf(cfg), at)
+	src := sources(opts, lin, loaded)
+	src.Tolerant, src.Resilient = true, true
+	wd, err := world.Read(ctx, src, world.ScopeOf(cfg), at)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -273,7 +272,7 @@ func firstUnread(w world.World) error {
 	for label, err := range w.PoolErrs {
 		return fmt.Errorf("the %s pool: %w", label, err)
 	}
-	for _, err := range []error{w.LinearErr, w.HerdrErr, w.HoldersErr, w.ChildrenErr} {
+	for _, err := range []error{w.LinearErr, w.HerdrErr, w.HoldersErr, w.ChildrenErr, w.InboxErr} {
 		if err != nil {
 			return err
 		}

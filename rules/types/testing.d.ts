@@ -24,6 +24,9 @@ declare module "dispatch/testing" {
     activityAt?: string; activitySummary?: string; threadAt?: string;
   }): Fixture;
   export function tree(path: string, fields?: { holder?: string; pushed?: boolean; trackedChanges?: boolean }): Fixture;
+  export function inbox(id: string, fields?: {
+    reason?: string; unread?: boolean; updatedAt?: string; repoName?: string; subjectType?: string; title?: string; apiUrl?: string;
+  }): Fixture;
   export type Expected = [rule: string, receipt: string, subject: string, ...rest: string[]];
   export interface Scenario {
     config(c: { maxInProgress?: number; rules?: Record<string, unknown>; http?: Record<string, { baseUrl: string }>; repos?: Record<string, { autoMerge?: boolean; openPrAs?: "open" | "draft" }> }): void;
@@ -31,7 +34,7 @@ declare module "dispatch/testing" {
     see(...fixtures: Fixture[]): void;
     land(receipt: string, subject: string, o?: { outcome?: "done" | "refused" | "failed"; detail?: string }): void;
     http(service: string, path: string, body: unknown, o?: { status?: number; method?: "GET" | "POST" }): void;
-    unread(source: "herdr" | "treehouse" | string): void;
+    unread(source: "herdr" | "treehouse" | "inbox" | string): void;
     resync(): void;
     start(): void;
     restart(): void;

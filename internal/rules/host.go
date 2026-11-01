@@ -88,6 +88,11 @@ func (r *Rules) Defs() []RuleInfo {
 	return out
 }
 
+// RunsOver reports whether a loaded rule runs over records of the kind.
+func (r *Rules) RunsOver(kind string) bool {
+	return r != nil && slices.ContainsFunc(r.defs, func(d *ruleDef) bool { return d.each == kind })
+}
+
 // RuleInfo describes one loaded rule.
 type RuleInfo struct {
 	Name   string

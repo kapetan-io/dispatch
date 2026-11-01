@@ -174,6 +174,22 @@ type Escalation struct {
 type Dispatch struct {
 	ID        Fact[string] `js:"id"`
 	StartedAt Fact[int64]  `js:"startedAt"`
+	// A failed inbox read leaves InboxReadAt as it was.
+	InboxReadAt Fact[*int64] `js:"inboxReadAt" doc:"Milliseconds since the epoch of the last good read of the GitHub inbox, undefined until the first. A failed read leaves it as it was. Use it for staleness (ctx.now - ctx.dispatch.inboxReadAt), not for newness: a once key on [item.id, item.updatedAt] finds new and changed items."`
+}
+
+// InboxItem is one entry in the dispatch owner's GitHub notifications inbox, as GitHub listed it at
+// the last good read. Dispatch copies the fields and corrects none of them.
+type InboxItem struct {
+	ID          Fact[string]  `js:"id" doc:"GitHub's thread id. It stays the same as notifications arrive on the thread."`
+	Reason      Fact[string]  `js:"reason" doc:"GitHub's current reason: review_requested, mention, author, ... GitHub replaces it with the newest one, so a reason it has replaced is gone."`
+	Unread      Fact[bool]    `js:"unread"`
+	UpdatedAt   Fact[string]  `js:"updatedAt" doc:"GitHub's updated_at, RFC 3339 as written."`
+	RepoName    Fact[string]  `js:"repoName" doc:"owner/name."`
+	SubjectType Fact[string]  `js:"subjectType" doc:"GitHub's subject.type: PullRequest, Issue, Release, ..."`
+	Title       Fact[string]  `js:"title"`
+	APIURL      Fact[*string] `js:"apiUrl" doc:"GitHub's subject.url, an API URL, undefined when GitHub gives none."`
+	Repo        Fact[*string] `js:"repo" doc:"The [repos.<label>] whose chosen remote names repoName. Undefined for now."`
 }
 
 // Comment is a ticket comment, the payload of comment.posted.
@@ -213,6 +229,7 @@ var Kinds = []Kind{
 	{"tree", "Tree", reflect.TypeFor[Tree]()},
 	{"escalation", "Escalation", reflect.TypeFor[Escalation]()},
 	{"dispatch", "Dispatch", reflect.TypeFor[Dispatch]()},
+	{"inbox", "InboxItem", reflect.TypeFor[InboxItem]()},
 }
 
 // EventKind describes one event type an on rule can match.

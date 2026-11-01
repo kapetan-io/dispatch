@@ -15,6 +15,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
+	"github.com/kapetan-io/dispatch/internal/inbox"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
@@ -30,6 +31,8 @@ type Sources struct {
 	Herdr        herdr.Herdr
 	Treehouse    treehouse.Pool
 	PullRequests pullrequest.Repository
+	// Inbox is the owner's GitHub inbox. Nil means no read is made.
+	Inbox inbox.Inbox
 	// Env is what the git commands that inspect a tree run with.
 	Env environment.Environment
 	// StateDir holds the Stop records and session logs.
@@ -130,6 +133,13 @@ type World struct {
 	// read. They show as working until the next one, so nothing that waits for an
 	// idle worker acts on a worker that is already busy with the nudge.
 	Nudged map[string]bool
+	// Inbox holds the items of the last good read of the owner's GitHub inbox, newest 50 by
+	// UpdatedAt. When InboxErr is set the read failed and these are still the last good ones,
+	// as is InboxReadAt, because nothing else points at an inbox item. InboxReadAt is zero
+	// until a read has succeeded.
+	Inbox       []inbox.Item
+	InboxErr    error
+	InboxReadAt time.Time
 }
 
 // Part names the sources one read goes through.
@@ -142,8 +152,11 @@ const (
 	FromLocal
 	// FromGitHub reads the PR of each ticket that has one to read.
 	FromGitHub
+	// FromInbox reads the owner's GitHub inbox. It is its own part so the Refresh after a worker goes
+	// idle or an action finishes makes no gh call. Only Everything, which start and resync read, includes it.
+	FromInbox
 	// Everything reads every source.
-	Everything = FromLinear | FromLocal | FromGitHub
+	Everything = FromLinear | FromLocal | FromGitHub | FromInbox
 )
 
 // Read takes one reading of the world. The failures that leave nothing to
@@ -297,6 +310,9 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 	if parts&FromGitHub != 0 || prev.At.IsZero() {
 		w.readPRs(ctx, src, scope)
 	}
+	if parts&FromInbox != 0 || prev.At.IsZero() {
+		w.readInbox(ctx, src, now)
+	}
 	return w, nil
 }
 
@@ -384,6 +400,23 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 			w.PRs[t.Identifier] = pr
 		}
 	}
+}
+
+// readInbox reads the inbox if Sources has one. A failed read assigns neither the items nor the
+// time, because no other record points at an inbox item (ADR 0005).
+func (w *World) readInbox(ctx context.Context, src Sources, now time.Time) {
+	if src.Inbox == nil {
+		return
+	}
+	readCtx, done := bound(ctx)
+	items, err := src.Inbox.Read(readCtx)
+	done()
+	if err != nil {
+		w.InboxErr = err
+		_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the inbox: %v\n", err)
+		return
+	}
+	w.Inbox, w.InboxErr, w.InboxReadAt = items, nil, now
 }
 
 // DesignLabels mark tickets whose sessions the dispatcher never nudges.

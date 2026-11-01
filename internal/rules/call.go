@@ -342,6 +342,9 @@ func (c *call) ctx() sobek.Value {
 	})
 	_ = ctx.Set("ledger", led)
 
+	if c.state.dispatch != nil {
+		_ = ctx.Set("dispatch", c.recordValue(c.state.dispatch))
+	}
 	_ = ctx.Set("ticket", c.ticketAPI())
 	_ = ctx.Set("worker", c.workerAPI())
 	_ = ctx.Set("tree", c.treeAPI())

@@ -1303,6 +1303,7 @@ func (d *Dispatch) options(extra dispatch.Options) dispatch.Options {
 	extra.Herdr = d.tools.Herdr
 	extra.Treehouse = d.tools.Treehouse
 	extra.PullRequests = d.tools.PullRequests
+	extra.Inbox = d.tools.Inbox
 	if d.http != nil {
 		extra.HTTP = d.http
 	}

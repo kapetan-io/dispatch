@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
+	"github.com/kapetan-io/dispatch/internal/inbox"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
@@ -45,6 +46,10 @@ type worldRecord struct {
 	StackRecords map[string]stackrecord.Records     `json:"stackRecords,omitempty"`
 	StackErrs    map[string]string                  `json:"stackErrs,omitempty"`
 	Nudged       map[string]bool                    `json:"nudged,omitempty"`
+	Inbox        []inbox.Item                       `json:"inbox,omitempty"`
+	InboxErr     string                             `json:"inboxErr,omitempty"`
+	// omitzero, because omitempty never omits a time.Time.
+	InboxReadAt time.Time `json:"inboxReadAt,omitzero"`
 }
 
 // treeRecord adds the clone directory that treehouse.Tree's own JSON leaves out.
@@ -62,6 +67,7 @@ func (w World) MarshalJSON() ([]byte, error) {
 		ChildrenErr: errText(w.ChildrenErr), Unfinished: w.Unfinished, Work: w.Work, CheckErrors: errTexts(w.CheckErrors),
 		Untracked: w.Untracked, PRs: w.PRs, PRReadFailed: w.PRReadFailed, UnreadRepos: w.UnreadRepos, Nudged: w.Nudged,
 		StackRecords: w.StackRecords, StackErrs: errTexts(w.StackErrs),
+		Inbox: w.Inbox, InboxErr: errText(w.InboxErr), InboxReadAt: w.InboxReadAt,
 	}
 	for _, t := range w.Trees {
 		r.Trees = append(r.Trees, treeRecord{Tree: t, RepoDir: t.RepoDir})
@@ -82,6 +88,7 @@ func (w *World) UnmarshalJSON(b []byte) error {
 		ChildrenErr: asError(r.ChildrenErr), Unfinished: r.Unfinished, Work: r.Work, CheckErrors: asErrors(r.CheckErrors),
 		Untracked: r.Untracked, PRs: r.PRs, PRReadFailed: r.PRReadFailed, UnreadRepos: r.UnreadRepos, Nudged: r.Nudged,
 		StackRecords: r.StackRecords, StackErrs: asErrors(r.StackErrs),
+		Inbox: r.Inbox, InboxErr: asError(r.InboxErr), InboxReadAt: r.InboxReadAt,
 	}
 	for _, t := range r.Trees {
 		t.Tree.RepoDir = t.RepoDir

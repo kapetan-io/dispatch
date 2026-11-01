@@ -125,6 +125,26 @@ declare module "dispatch" {
   export interface Dispatch {
     readonly id: string;
     readonly startedAt: number;
+    /** Milliseconds since the epoch of the last good read of the GitHub inbox, undefined until the first. A failed read leaves it as it was. Use it for staleness (ctx.now - ctx.dispatch.inboxReadAt), not for newness: a once key on [item.id, item.updatedAt] finds new and changed items. */
+    readonly inboxReadAt: number | undefined;
+  }
+  export interface InboxItem {
+    /** GitHub's thread id. It stays the same as notifications arrive on the thread. */
+    readonly id: string;
+    /** GitHub's current reason: review_requested, mention, author, ... GitHub replaces it with the newest one, so a reason it has replaced is gone. */
+    readonly reason: string;
+    readonly unread: boolean;
+    /** GitHub's updated_at, RFC 3339 as written. */
+    readonly updatedAt: string;
+    /** owner/name. */
+    readonly repoName: string;
+    /** GitHub's subject.type: PullRequest, Issue, Release, ... */
+    readonly subjectType: string;
+    readonly title: string;
+    /** GitHub's subject.url, an API URL, undefined when GitHub gives none. */
+    readonly apiUrl: string | undefined;
+    /** The [repos.<label>] whose chosen remote names repoName. Undefined for now. */
+    readonly repo: string | undefined;
   }
   export interface Comment {
     id: string;
@@ -142,7 +162,7 @@ declare module "dispatch" {
     head: string;
     pr: PR;
   }
-  export type RecordKind = "ticket" | "pr" | "worker" | "tree" | "escalation" | "dispatch";
+  export type RecordKind = "ticket" | "pr" | "worker" | "tree" | "escalation" | "dispatch" | "inbox";
   export interface RecordMap {
     "ticket": Ticket;
     "pr": PR;
@@ -150,6 +170,7 @@ declare module "dispatch" {
     "tree": Tree;
     "escalation": Escalation;
     "dispatch": Dispatch;
+    "inbox": InboxItem;
   }
   export type RecordOf<K extends RecordKind> = RecordMap[K];
   export interface EventMap {
@@ -206,6 +227,8 @@ declare module "dispatch" {
   export function minutes(n: number): number;
   export function hours(n: number): number;
   export interface Ctx {
+    /** The one dispatch record, read-only, as `each: "dispatch"` sees it. Reads are logged like any record read. */
+    dispatch: Dispatch;
     now: number;
     every(period: number, since: number): number;
     config: Config;
