@@ -143,7 +143,7 @@ declare module "dispatch" {
     readonly title: string;
     /** GitHub's subject.url, an API URL, undefined when GitHub gives none. */
     readonly apiUrl: string | undefined;
-    /** The [repos.<label>] whose chosen remote names repoName. Undefined for now. */
+    /** The [repos.<label>] whose chosen remote names repoName. Unknown when more than one clone's chosen remote names it. */
     readonly repo: string | undefined;
   }
   export interface Comment {
@@ -182,7 +182,7 @@ declare module "dispatch" {
   export interface Config {
     dispatch: { rules: string; max_in_progress: number; resync: string };
     history: { dir: string; rotate: string; keep: string };
-    repos: { [label: string]: { path: string; open_pr_as: string; ignore_comment_authors: string[]; ignore_optional_checks: boolean; approval_checks: string[]; auto_merge: boolean; worker: string; design: string } };
+    repos: { [label: string]: { path: string; open_pr_as: string; ignore_comment_authors: string[]; ignore_optional_checks: boolean; approval_checks: string[]; auto_merge: boolean; github_remote: string; worker: string; design: string } };
     plugins: { linear: { teams: string[]; ai_label: string; repo_label_group: string; statuses: { todo: string; close_parent: string; blocker_done: string; in_progress: string; in_review: string; needs_human: string; finished: string[]; paused: string[] } }; herdr: { plugin_root: string }; github: {  }; treehouse: {  }; notify: {  } };
     http: { [label: string]: { base_url: string } };
     rules: { "blocked_renotify_minutes": number; "design_model": string; "launch_failure_limit": number; "nudge_limit": number; "worker_model": string; [key: string]: unknown };

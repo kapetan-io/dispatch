@@ -188,7 +188,12 @@ type scenario struct {
 	inboxFailed bool
 	inboxGood   []inbox.Item
 	inboxReadAt time.Time
-	events      []Event
+	// github holds the owner/name each pool fixture gave its clone's chosen remote. remotesGood is
+	// what the last good read saw, which a failed read of that clone leaves as it was.
+	github        map[string]string
+	remotesGood   map[string]string
+	remotesFailed map[string]bool
+	events        []Event
 	// services answers the requests a then makes, and kept holds what its gets got since the last resync.
 	services *httpservicetest.Fake
 	kept     map[string]Exchange
@@ -217,7 +222,7 @@ func newScenario(h *scenarioHost, rules *Rules) *scenario {
 		host: h, rules: rules, cfg: cfg, led: &ledger.Ledger{}, now: scenarioStart, dirty: true,
 		services: httpservicetest.New(cfg.HTTP), kept: map[string]Exchange{},
 		m:      newModel(),
-		thrown: map[string]bool{}, pools: map[string]int{}, poolUnread: map[string]bool{}, prUnread: map[string]bool{}, stackUnread: map[string]bool{}, inbox: map[string]*inboxModel{},
+		thrown: map[string]bool{}, pools: map[string]int{}, poolUnread: map[string]bool{}, prUnread: map[string]bool{}, stackUnread: map[string]bool{}, inbox: map[string]*inboxModel{}, github: map[string]string{}, remotesGood: map[string]string{}, remotesFailed: map[string]bool{},
 	}
 }
 
@@ -568,10 +573,13 @@ func (s *scenario) unread(source string) {
 		// world() reads lazily, so without this the failure would leave no last good read.
 		s.readInbox()
 		s.inboxFailed = true
+	case strings.HasPrefix(source, "remotes:"):
+		s.readRemotes()
+		s.remotesFailed[strings.TrimPrefix(source, "remotes:")] = true
 	case strings.HasPrefix(source, "github:"):
 		s.prUnread[strings.TrimPrefix(source, "github:")] = true
 	default:
-		s.fail("unread(%q): the sources are herdr, treehouse, treehouse:<repo>, stack, stack:<repo>, inbox and github:<ticket>", source)
+		s.fail("unread(%q): the sources are herdr, treehouse, treehouse:<repo>, stack, stack:<repo>, inbox, remotes:<repo> and github:<ticket>", source)
 	}
 	s.dirty = true
 }

@@ -49,7 +49,9 @@ type worldRecord struct {
 	Inbox        []inbox.Item                       `json:"inbox,omitempty"`
 	InboxErr     string                             `json:"inboxErr,omitempty"`
 	// omitzero, because omitempty never omits a time.Time.
-	InboxReadAt time.Time `json:"inboxReadAt,omitzero"`
+	InboxReadAt time.Time         `json:"inboxReadAt,omitzero"`
+	Remotes     map[string]string `json:"remotes,omitempty"`
+	RemoteErrs  map[string]string `json:"remoteErrs,omitempty"`
 }
 
 // treeRecord adds the clone directory that treehouse.Tree's own JSON leaves out.
@@ -68,6 +70,7 @@ func (w World) MarshalJSON() ([]byte, error) {
 		Untracked: w.Untracked, PRs: w.PRs, PRReadFailed: w.PRReadFailed, UnreadRepos: w.UnreadRepos, Nudged: w.Nudged,
 		StackRecords: w.StackRecords, StackErrs: errTexts(w.StackErrs),
 		Inbox: w.Inbox, InboxErr: errText(w.InboxErr), InboxReadAt: w.InboxReadAt,
+		Remotes: w.Remotes, RemoteErrs: errTexts(w.RemoteErrs),
 	}
 	for _, t := range w.Trees {
 		r.Trees = append(r.Trees, treeRecord{Tree: t, RepoDir: t.RepoDir})
@@ -89,6 +92,7 @@ func (w *World) UnmarshalJSON(b []byte) error {
 		Untracked: r.Untracked, PRs: r.PRs, PRReadFailed: r.PRReadFailed, UnreadRepos: r.UnreadRepos, Nudged: r.Nudged,
 		StackRecords: r.StackRecords, StackErrs: asErrors(r.StackErrs),
 		Inbox: r.Inbox, InboxErr: asError(r.InboxErr), InboxReadAt: r.InboxReadAt,
+		Remotes: r.Remotes, RemoteErrs: asErrors(r.RemoteErrs),
 	}
 	for _, t := range r.Trees {
 		t.Tree.RepoDir = t.RepoDir

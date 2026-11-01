@@ -9,11 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/environment"
+	"github.com/kapetan-io/dispatch/internal/gitremote"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/inbox"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
@@ -140,6 +142,11 @@ type World struct {
 	Inbox       []inbox.Item
 	InboxErr    error
 	InboxReadAt time.Time
+	// Remotes maps a repo label to the owner/name its clone's chosen remote points at. A label is
+	// absent when the remote is missing or not on GitHub. A failed read of one clone leaves its last
+	// good value and sets RemoteErrs[label]. Read only while Sources.Inbox is set.
+	Remotes    map[string]string
+	RemoteErrs map[string]error
 }
 
 // Part names the sources one read goes through.
@@ -311,7 +318,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		w.readPRs(ctx, src, scope)
 	}
 	if parts&FromInbox != 0 || prev.At.IsZero() {
-		w.readInbox(ctx, src, now)
+		w.readInbox(ctx, src, scope, now)
 	}
 	return w, nil
 }
@@ -404,10 +411,11 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 
 // readInbox reads the inbox if Sources has one. A failed read assigns neither the items nor the
 // time, because no other record points at an inbox item (ADR 0005).
-func (w *World) readInbox(ctx context.Context, src Sources, now time.Time) {
+func (w *World) readInbox(ctx context.Context, src Sources, scope Scope, now time.Time) {
 	if src.Inbox == nil {
 		return
 	}
+	w.readRemotes(ctx, src, scope)
 	readCtx, done := bound(ctx)
 	items, err := src.Inbox.Read(readCtx)
 	done()
@@ -480,4 +488,29 @@ func kickoffRan(stateDir string, wk Worker, at time.Time) bool {
 	}
 	rec, ok := stops.Read(stateDir, wk.TreePath, wk.Session)
 	return ok && rec.At.After(at)
+}
+
+// readRemotes reads the chosen remote of every configured clone. A clone whose read fails keeps its
+// last good owner/name, so a git hiccup never turns a known repo label into undefined (ADR 0005).
+func (w *World) readRemotes(ctx context.Context, src Sources, scope Scope) {
+	remotes, errs := maps.Clone(w.Remotes), map[string]error{}
+	if remotes == nil {
+		remotes = map[string]string{}
+	}
+	for label, repo := range scope.Repos {
+		readCtx, done := bound(ctx)
+		name, err := gitremote.Read(readCtx, src.Env, repo.Path, repo.ChosenRemote())
+		done()
+		if err != nil {
+			errs[label] = err
+			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the %s remote of the %s clone: %v\n", repo.ChosenRemote(), label, err)
+			continue
+		}
+		if name == "" {
+			delete(remotes, label)
+			continue
+		}
+		remotes[label] = name
+	}
+	w.Remotes, w.RemoteErrs = remotes, errs
 }

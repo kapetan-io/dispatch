@@ -181,6 +181,9 @@
           "design": {
             "type": "string"
           },
+          "github_remote": {
+            "type": "string"
+          },
           "ignore_comment_authors": {
             "items": {
               "type": "string"
