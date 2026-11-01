@@ -555,7 +555,7 @@ func (e *Executor) notify(ctx context.Context, w rules.Want, wd world.World) Res
 	if t.Identifier == "" {
 		t.Identifier = w.Subject
 	}
-	post := notify.Post{Alerts: e.Alerts, Followers: e.Followers, Stderr: e.Stderr}
+	post := notify.Post{Alerts: e.Alerts, Followers: e.Followers, Harnesses: e.Harnesses, Stderr: e.Stderr}
 	reason, ok := w.Options["reason"].(string)
 	if !ok && len(w.Once) > 0 {
 		reason, _ = w.Once[0].(string)

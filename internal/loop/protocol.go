@@ -1,6 +1,9 @@
 package loop
 
-import "github.com/kapetan-io/dispatch/internal/sessionlog"
+import (
+	"github.com/kapetan-io/dispatch/internal/notify"
+	"github.com/kapetan-io/dispatch/internal/sessionlog"
+)
 
 // Operations a client asks of the running loop over its socket.
 const (
@@ -13,7 +16,7 @@ const (
 	OpPending = "pending"
 	// OpStop carries a Stop hook's report, which the loop stores.
 	OpStop = "stop"
-	// OpWatch and OpUnwatch add or remove a Claude Code session on a ticket's followers.
+	// OpWatch and OpUnwatch add or remove a session on a ticket's followers.
 	OpWatch   = "watch"
 	OpUnwatch = "unwatch"
 	// OpWake reads herdr and the pools again and runs a cycle, without a resync, and
@@ -40,8 +43,8 @@ type Request struct {
 	Op     string `json:"op"`
 	Ticket string `json:"ticket,omitempty"`
 	Text   string `json:"text,omitempty"`
-	// Socket is the inbox of the Claude Code session that watches or unwatches Ticket.
-	Socket string `json:"socket,omitempty"`
+	// Follower is the session that watches or unwatches Ticket.
+	Follower *notify.Follower `json:"follower,omitempty"`
 	// Stop is the turn end the session's harness reported.
 	Stop *sessionlog.Stop `json:"stop,omitempty"`
 	// Prompt is the message the session's harness reported it took.

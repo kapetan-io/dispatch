@@ -147,11 +147,14 @@ func (l *Loop) onFollow(r request) Response {
 		return Response{Code: CodeFailed, Error: "this dispatch has no followers to keep"}
 	}
 	f := l.o.Executor.Followers
+	if r.Follower == nil {
+		return Response{Code: CodeFailed, Error: "watch and unwatch need the session that follows"}
+	}
 	if r.Op == OpUnwatch {
-		f.Unfollow(r.Ticket, r.Socket)
+		f.Unfollow(r.Ticket, *r.Follower)
 		return Response{}
 	}
-	if err := f.Follow(r.Ticket, r.Socket); err != nil {
+	if err := f.Follow(r.Ticket, *r.Follower); err != nil {
 		return Response{Code: CodeFailed, Error: err.Error()}
 	}
 	return Response{}

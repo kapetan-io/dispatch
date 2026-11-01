@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/linear"
 )
 
@@ -14,6 +15,8 @@ import (
 type Post struct {
 	Alerts    Alerts
 	Followers *Followers
+	// Harnesses deliver to a follower, by the kind it runs.
+	Harnesses harness.Registry
 	Stderr    io.Writer
 }
 
