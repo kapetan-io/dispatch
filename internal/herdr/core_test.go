@@ -134,6 +134,7 @@ func fails(kind, message string) string {
 
 type spec struct {
 	address, name, state, reason, status, kind, program string
+	finishedMS                                          uint64
 	labels                                              map[string]string
 }
 
@@ -155,8 +156,8 @@ func term(s spec) string {
 	if s.reason != "" {
 		reason = fmt.Sprintf("%q", s.reason)
 	}
-	return fmt.Sprintf(`{"address":%q,"name":%q,"state":%q,"reason":%s,"labels":%s,"status":%s,"foreground":%s}`,
-		s.address, s.name, s.state, reason, labels, status, foreground)
+	return fmt.Sprintf(`{"address":%q,"name":%q,"state":%q,"reason":%s,"finished_ms":%d,"labels":%s,"status":%s,"foreground":%s}`,
+		s.address, s.name, s.state, reason, s.finishedMS, labels, status, foreground)
 }
 
 func list(terminals ...string) string {
@@ -534,6 +535,63 @@ func TestCoreStartWorkerStartsFreshWhenResumingIsNotPossible(t *testing.T) {
 			assert.Equal(t, "new-session", run["labels"].(map[string]any)["dispatch.session"])
 		})
 	}
+}
+
+func TestCoreStartWorkerDecidesByTheTerminalThatFinishedLast(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		listed func(stopped, exited spec) string
+		want   []any
+	}{
+		{name: "NewerCrashListedFirst", listed: func(stopped, exited spec) string { return list(term(exited), term(stopped)) }, want: []any{"--session-id", "new-session"}},
+		{name: "NewerCrashListedLast", listed: func(stopped, exited spec) string { return list(term(stopped), term(exited)) }, want: []any{"--session-id", "new-session"}},
+		{name: "NewerStopListedFirst", listed: func(stopped, exited spec) string { return list(term(stopped), term(exited)) }, want: []any{"--resume", "sess-t1"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			shims := t.TempDir()
+			require.NoError(t, os.WriteFile(shims+"/claude", []byte("#!/bin/sh\n"), 0o755))
+			stopped := worker("t1", "spA", "tbA", "")
+			stopped.state, stopped.program, stopped.reason, stopped.finishedMS = "finished", "", "server_stop", 2000
+			exited := worker("t2", "spA", "tbA", "")
+			exited.state, exited.program, exited.reason, exited.finishedMS = "finished", "", "exited", 4000
+			if test.name == "NewerStopListedFirst" {
+				stopped.finishedMS, exited.finishedMS = 4000, 2000
+			}
+			core, calls := coreStandIn(t, map[string][]string{
+				"terminal.list": {test.listed(stopped, exited)},
+				"terminal.rm":   {ok(`{}`)},
+				"terminal.run":  {ok(term(worker("t3", "spA", "tbA", "")))},
+			})
+
+			_, err := core.StartWorker(context.Background(), herdr.Worker{Dir: t.TempDir(), Program: herdr.Program{
+				AgentKind: "claude", PathFirst: []string{shims}, Session: "new-session", SessionFlag: "--session-id", ResumeFlag: "--resume",
+			}})
+
+			require.NoError(t, err)
+			assert.Equal(t, append([]any{shims + "/claude"}, test.want...), calls.Params(t, "terminal.run")[0]["argv"])
+		})
+	}
+}
+
+func TestCoreStartWorkerNeverResumesAnEarlierTicketsSessionOnAFreshLease(t *testing.T) {
+	shims := t.TempDir()
+	require.NoError(t, os.WriteFile(shims+"/claude", []byte("#!/bin/sh\n"), 0o755))
+	stopped := worker("t1", "spA", "tbA", "")
+	stopped.state, stopped.program, stopped.reason = "finished", "", "server_stop"
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.list": {list(term(stopped))},
+		"terminal.rm":   {ok(`{}`)},
+		"terminal.run":  {ok(term(worker("t2", "spA", "tbA", "")))},
+	})
+
+	_, err := core.StartWorker(context.Background(), herdr.Worker{Dir: t.TempDir(), FreshLease: true, Program: herdr.Program{
+		AgentKind: "claude", PathFirst: []string{shims}, Session: "new-session", SessionFlag: "--session-id", ResumeFlag: "--resume",
+	}})
+
+	require.NoError(t, err)
+	run := calls.Params(t, "terminal.run")[0]
+	assert.Equal(t, []any{shims + "/claude", "--session-id", "new-session"}, run["argv"])
+	assert.Equal(t, "new-session", run["labels"].(map[string]any)["dispatch.session"])
 }
 
 func TestCoreStartWorkerStartsFreshWhenTheStoppedTerminalHasNoSession(t *testing.T) {

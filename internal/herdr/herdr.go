@@ -136,6 +136,9 @@ type Worker struct {
 	// dispatch's skills read it. A program that loads the plugin by flag carries the
 	// same root in Argv and PathFirst.
 	PluginRoot string
+	// FreshLease is set when this launch took the tree's lease for the ticket, so a
+	// session left on the tree belongs to an earlier ticket and is never resumed.
+	FreshLease bool
 	// Program is what herdr runs in the tab.
 	Program Program
 }

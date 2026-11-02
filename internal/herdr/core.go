@@ -92,6 +92,7 @@ type terminal struct {
 	Name       string            `json:"name"`
 	State      string            `json:"state"`
 	Reason     string            `json:"reason"`
+	FinishedMS uint64            `json:"finished_ms"`
 	Labels     map[string]string `json:"labels"`
 	Status     *terminalStatus   `json:"status"`
 	Foreground *struct {
@@ -295,13 +296,15 @@ func (c *Core) StartWorker(ctx context.Context, w Worker) (Started, error) {
 	if err != nil {
 		return Started{}, err
 	}
-	// Only a Claude lost to the core or the machine resumes. The newest finished terminal
-	// decides, and every one is removed before the new run.
+	// Only a Claude lost to the core or the machine resumes, and only for the ticket that
+	// owned the tree: a launch that took the lease fresh never resumes an earlier ticket's
+	// session. terminal.list promises no order, so the terminal that finished last decides.
 	var previous string
+	var latest uint64
 	for _, t := range existing {
-		if t.startedByDispatch() && !t.live() {
-			previous = ""
-			if slices.Contains(resumable, t.Reason) {
+		if t.startedByDispatch() && !t.live() && t.FinishedMS >= latest {
+			latest, previous = t.FinishedMS, ""
+			if slices.Contains(resumable, t.Reason) && !w.FreshLease {
 				previous = t.Labels[LabelSession]
 			}
 		}

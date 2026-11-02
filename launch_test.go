@@ -49,7 +49,7 @@ func TestLaunchStartsAWorkerTypedTheBuildKickoff(t *testing.T) {
 	assert.Equal(t, "thrawn01/eng-1", branchIn(t, tree))
 	require.Len(t, d.fakes().Herdr.Started(), 1)
 	started := d.fakes().Herdr.Started()[0]
-	assert.Equal(t, herdr.Worker{Workspace: "w2", Dir: tree, Label: "ENG-1", Name: "eng-1", PluginRoot: "/plugin", Program: started.Program}, started)
+	assert.Equal(t, herdr.Worker{Workspace: "w2", Dir: tree, FreshLease: true, Label: "ENG-1", Name: "eng-1", PluginRoot: "/plugin", Program: started.Program}, started)
 	assert.Equal(t, "claude", started.Program.AgentKind)
 	assert.Equal(t, []string{
 		"--model", "sonnet", "--plugin-dir", "/plugin", "--disallowedTools", "EnterPlanMode,ExitPlanMode",
@@ -126,6 +126,8 @@ func TestLaunchReusesTheLeaseOfAnEarlierRun(t *testing.T) {
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, tree, out.result["worktree"])
 	assert.Empty(t, d.fakes().Calls("treehouse", "lease"))
+	require.Len(t, d.fakes().Herdr.Started(), 1)
+	assert.False(t, d.fakes().Herdr.Started()[0].FreshLease)
 }
 
 func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {

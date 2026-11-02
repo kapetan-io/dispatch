@@ -554,6 +554,7 @@ func (l *launch) startWorker(ctx context.Context, name string) (herdr.Started, R
 	started, err := l.opts.Herdr.StartWorker(ctx, herdr.Worker{
 		Workspace:  l.workspace,
 		Dir:        l.tree,
+		FreshLease: l.fresh,
 		Label:      l.tabLabel(),
 		Name:       name,
 		Program:    l.req.Program,
