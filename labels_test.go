@@ -742,6 +742,29 @@ func TestTickRetriesARenameHerdrRefused(t *testing.T) {
 	assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, d.Workers.Renames())
 }
 
+func TestFailedRenameIsTriedAgainAtTheNextResyncAndNotAtEveryRead(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.Workers.Stop("ENG-1", stopTasks{})
+	d.Workers.FailRenames(errors.New("exit status 1"))
+	d.Tick()
+	const attempt = "while renaming workspace w-ENG-1"
+	require.Equal(t, 1, strings.Count(d.LoopStderr(), attempt))
+	wake := fmt.Sprintf(`{"hook_event_name":"Notification","notification_type":"idle_prompt","session_id":"worker","cwd":%q}`, d.Workers.Tree("ENG-1"))
+
+	for range 3 {
+		d.HookAndWait("wake", wake)
+	}
+
+	assert.Equal(t, 1, strings.Count(d.LoopStderr(), attempt))
+	d.Workers.FailRenames(nil)
+	d.Advance(time.Hour)
+	require.Eventually(t, func() bool { return len(d.Workers.Renames()) == 1 }, 5*time.Second, 5*time.Millisecond)
+	assert.Equal(t, []string{"w-ENG-1|💤 ENG-1"}, d.Workers.Renames())
+}
+
 func TestTickLabelsEveryWorkerAfterOneTick(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})

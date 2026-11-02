@@ -578,7 +578,9 @@ func (l *Loop) onRead(m readDone) error {
 		}
 	}
 	l.nudgedDuring = nil
-	if m.parts&world.FromLocal != 0 {
+	// Only a resync forgets what was sent, so a rename that failed is tried again then and not on
+	// every read.
+	if m.parts == world.Everything {
 		l.renaming = map[string]string{}
 	}
 	// A PR is read for a worker that is idle or gone, so one that just became so has its PR
