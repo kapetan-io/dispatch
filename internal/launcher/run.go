@@ -308,7 +308,12 @@ func (l *launch) fetchAndLease(ctx context.Context) (Result, bool) {
 	if dir, err := l.git(ctx, l.repo, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil {
 		clone = strings.TrimSpace(dir)
 	}
+	resume := func() {}
+	if l.req.WhileQueued != nil {
+		resume = l.req.WhileQueued()
+	}
 	done, ok := takeTurn(ctx, clone)
+	resume()
 	if !ok {
 		return Result{Status: StatusPoolError, Detail: "interrupted while waiting for another launch into " + l.repo}, false
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
@@ -1099,6 +1100,55 @@ func TestLaunchesIntoOneRepoTakeTurnsLeasing(t *testing.T) {
 	assert.Equal(t, "ok", results[0].result["status"])
 	assert.Equal(t, "ok", results[1].result["status"])
 	assert.Equal(t, 1, d.fakes().Treehouse.PeakLeasing(d.Repo))
+}
+
+func TestLaunchesQueuedForTheirTurnKeepTheirWholeDeadline(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	for _, name := range []string{"tree2", "tree3"} {
+		extra := filepath.Join(filepath.Dir(d.Repo), name)
+		hintGit(t, d.Repo, "worktree", "add", "-q", "--detach", extra)
+		d.fakes().Treehouse.AddTree(d.Repo, extra)
+	}
+	release := d.fakes().Treehouse.GateLeases()
+	d.Linear.Tickets(
+		ticket("ENG-1", "In Progress", "dispatch"),
+		ticket("ENG-2", "In Progress", "dispatch"),
+		ticket("ENG-3", "In Progress", "dispatch"),
+	)
+
+	// GateLeases holds each launch's lease open until released and the fake clock moves only when
+	// advanced, so each launch holds the repo's turn for 60ms of its 100ms deadline. The third
+	// waits 120ms in the queue, more than its whole deadline.
+	ticked := later(func() Result { return d.RunWith(dispatch.Options{LaunchTimeout: 100 * time.Millisecond}, "tick") })
+	for held := 1; held <= 3; held++ {
+		require.Eventually(t, func() bool { return len(d.fakes().Calls("treehouse", "lease")) == held }, 20*time.Second, time.Millisecond)
+		d.advance(60 * time.Millisecond)
+		release()
+	}
+	res := ticked()
+
+	require.NoError(t, res.Err)
+	assert.Len(t, d.fakes().Herdr.Started(), 3)
+}
+
+func TestALaunchThatHangsAfterItsTurnStillTimesOut(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	release := d.fakes().Treehouse.GateLeases()
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	ticked := later(func() Result { return d.RunWith(dispatch.Options{LaunchTimeout: 100 * time.Millisecond}, "tick") })
+	require.Eventually(t, func() bool { return len(d.fakes().Calls("treehouse", "lease")) == 1 }, 20*time.Second, time.Millisecond)
+	assert.Equal(t, 100*time.Millisecond, d.Deadline("launch ENG-1"))
+	d.Expire("launch ENG-1")
+	release()
+	res := ticked()
+
+	require.ErrorContains(t, res.Err, "ENG-1 launch failed")
+	assert.Empty(t, d.fakes().Herdr.Started())
 }
 
 func TestLaunchesIntoDifferentReposLeaseTogether(t *testing.T) {

@@ -40,6 +40,10 @@ type Request struct {
 	// Kickoff is the first command typed into the worker. Defaults to
 	// "/dispatch:build <Ticket>".
 	Kickoff string
+	// WhileQueued is called before the launch waits for its turn at the clone, and the func it
+	// returns when the turn comes. The caller stops its launch deadline in between, so time spent
+	// behind other launches does not count against this one. Optional.
+	WhileQueued func() (resume func())
 }
 
 // Stack is the PR a stacked ticket's branch starts at.

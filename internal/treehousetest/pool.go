@@ -32,6 +32,7 @@ type Pool struct {
 	treesDelay   time.Duration
 	leaseHold    time.Duration
 	leaseQuorum  int
+	leaseGate    chan struct{}
 	quorumMet    bool
 	leasing      map[string]int
 	peakLeasing  map[string]int
@@ -150,6 +151,17 @@ func (p *Pool) HoldLeases(d time.Duration) {
 	p.leaseHold = d
 }
 
+// GateLeases makes every Lease call wait until the test calls the returned release,
+// which lets one waiting call finish. A test uses it to hold a lease open while it moves
+// a fake clock.
+func (p *Pool) GateLeases() (release func()) {
+	gate := make(chan struct{}, 64)
+	p.mu.Lock()
+	p.leaseGate = gate
+	p.mu.Unlock()
+	return func() { gate <- struct{}{} }
+}
+
 // AwaitLeases makes every Lease call wait until n Lease calls are running at once
 // in all pools together, so a test sees two launches overlap without guessing how
 // long the second takes to arrive. A wait that outlasts ten seconds gives up.
@@ -231,7 +243,7 @@ func (p *Pool) Lease(ctx context.Context, repoDir, ticket string) (treehouse.Tre
 		return treehouse.Tree{}, err
 	}
 	p.mu.Lock()
-	key, hold := p.poolKey(repoDir), p.leaseHold
+	key, hold, gate := p.poolKey(repoDir), p.leaseHold, p.leaseGate
 	p.leasing[key]++
 	p.peakLeasing[key] = max(p.peakLeasing[key], p.leasing[key])
 	total := 0
@@ -241,6 +253,12 @@ func (p *Pool) Lease(ctx context.Context, repoDir, ticket string) (treehouse.Tre
 	p.peakAll = max(p.peakAll, total)
 	p.mu.Unlock()
 	time.Sleep(hold)
+	if gate != nil {
+		select {
+		case <-gate:
+		case <-time.After(20 * time.Second):
+		}
+	}
 	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
 		p.mu.Lock()
 		total := 0

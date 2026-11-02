@@ -48,6 +48,15 @@ func (w wallTimer) Stop() bool          { return w.t.Stop() }
 // context ends with context.DeadlineExceeded once c passes d, and its Deadline is the parent's. The caller
 // must call the returned cancel.
 func WithTimeout(parent context.Context, c Clock, what string, d time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel, _ := WithPausableTimeout(parent, c, what, d)
+	return ctx, cancel
+}
+
+// WithPausableTimeout is WithTimeout with a pause for time the work spends waiting on something
+// it does not control. pause stops the deadline's clock, and the func it returns starts it again
+// with the time left, so the wait costs the work none of its budget. The context still ends
+// at once when the parent does. The returned resume does nothing when called a second time or after cancel.
+func WithPausableTimeout(parent context.Context, c Clock, what string, d time.Duration) (context.Context, context.CancelFunc, func() (resume func())) {
 	ctx := &timeoutContext{Context: parent, done: make(chan struct{})}
 	// Already over, as context.WithTimeout returns it, so work that checks Err first never starts.
 	if err := parent.Err(); err != nil {
@@ -55,23 +64,50 @@ func WithTimeout(parent context.Context, c Clock, what string, d time.Duration) 
 	} else if d <= 0 {
 		ctx.end(context.DeadlineExceeded)
 	}
-	timer := c.NewDeadline(what, d)
 	released := make(chan struct{})
-	go func() {
+	var mu sync.Mutex
+	var timer Timer
+	var startedAt time.Time
+	left := d
+	watch := func() {
+		mu.Lock()
+		defer mu.Unlock()
 		select {
-		case <-timer.C():
-			ctx.end(context.DeadlineExceeded)
-		case <-parent.Done():
-			ctx.end(parent.Err())
 		case <-released:
+			return
+		default:
 		}
-	}()
-	var once sync.Once
-	return ctx, func() {
-		timer.Stop()
-		ctx.end(context.Canceled)
-		once.Do(func() { close(released) })
+		t := c.NewDeadline(what, max(left, time.Nanosecond))
+		timer, startedAt = t, c.Now()
+		go func() {
+			select {
+			case <-t.C():
+				ctx.end(context.DeadlineExceeded)
+			case <-parent.Done():
+				ctx.end(parent.Err())
+			case <-released:
+			}
+		}()
 	}
+	watch()
+	var once sync.Once
+	cancel := func() {
+		mu.Lock()
+		timer.Stop()
+		once.Do(func() { close(released) })
+		mu.Unlock()
+		ctx.end(context.Canceled)
+	}
+	pause := func() func() {
+		mu.Lock()
+		if timer.Stop() {
+			left -= c.Now().Sub(startedAt)
+		}
+		mu.Unlock()
+		var resumed sync.Once
+		return func() { resumed.Do(watch) }
+	}
+	return ctx, cancel, pause
 }
 
 type timeoutContext struct {
