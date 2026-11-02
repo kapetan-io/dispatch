@@ -11,17 +11,31 @@ import (
 )
 
 // ticketMethods are the methods a ticket record has beyond its facts.
-const ticketMethods = "  hasLabel(name: string): boolean;\n"
+const ticketMethods = "    /** True when the ticket has a label of this name, ignoring case. Reads labels, so it is unknown when the label list was cut short. */\n    hasLabel(name: string): boolean;\n"
 
 // helperTypes are the plain value types records hold, named in the order they are declared.
 var helperTypes = []reflect.Type{
 	reflect.TypeFor[Seen](), reflect.TypeFor[Label](), reflect.TypeFor[Stop](), reflect.TypeFor[Command](), reflect.TypeFor[Turn](), reflect.TypeFor[Blocker](), reflect.TypeFor[Stack](),
 }
 
-// typeDocs are the descriptions of the helper types that have one.
+// typeDocs are the descriptions of the record and helper types.
 var typeDocs = map[reflect.Type]string{
-	reflect.TypeFor[Command](): "A slash command the worker's current Claude session took.",
-	reflect.TypeFor[Turn]():    "A turn the worker's current Claude session ended.",
+	reflect.TypeFor[Seen]():       "An item from a source, such as a comment, and when dispatch first saw it.",
+	reflect.TypeFor[Label]():      "A Linear label and the label group it belongs to.",
+	reflect.TypeFor[Stop]():       "When a worker's latest turn ended.",
+	reflect.TypeFor[Command]():    "A slash command the worker's current Claude session took.",
+	reflect.TypeFor[Turn]():       "A turn the worker's current Claude session ended.",
+	reflect.TypeFor[Blocker]():    "A ticket that blocks another.",
+	reflect.TypeFor[Stack]():      "Where a stacked ticket's branch started.",
+	reflect.TypeFor[Ticket]():     "A ticket dispatch tracks, from Linear or from the local ticket database. Every fact is read-only, and reading one whose read failed throws Unknown.",
+	reflect.TypeFor[Worker]():     "A ticket's place on a tree it holds, and the Claude session there, if any. Every ticket has one, with state none when no session runs.",
+	reflect.TypeFor[PR]():         "A ticket's pull request. Dispatch reads the open PR of an In Review ticket whose worker is idle or gone, when its labels were read in full, it has no children, it isn't a design ticket and its repo has a path, and the merged PR of an unfinished local ticket. A merged PR has approved, ready and needsWork false and empty activity.",
+	reflect.TypeFor[Tree]():       "A tree in a repo's treehouse pool.",
+	reflect.TypeFor[Escalation](): "A ticket's move to Needs Human and the comment that explains it, one for each escalate receipt in the ledger.",
+	reflect.TypeFor[Dispatch]():   "Dispatch itself, so a rule can run once per cycle.",
+	reflect.TypeFor[InboxItem]():  "One of the newest 50 entries in the dispatch owner's GitHub notifications inbox, read ones included, as GitHub listed it at the last good read. Dispatch copies the fields and corrects none of them.",
+	reflect.TypeFor[Comment]():    "A comment posted on a ticket, the payload of comment.posted. Only a rule scenario (dispatch rules test) raises it today.",
+	reflect.TypeFor[CheckRun]():   "A finished check on a pull request, the payload of check.completed. Nothing raises it today, so an on rule for it never fires.",
 }
 
 // Declarations returns the contents of dispatch.d.ts. rules is the user's
@@ -37,103 +51,151 @@ func Declarations(rules config.Rules) string {
 		fmt.Fprintf(&b, "  export interface %s {\n%s  }\n", t.Name(), indentFields(structFields(t, false), "    "))
 	}
 	for _, k := range Kinds {
+		if doc, ok := typeDocs[k.Type]; ok {
+			fmt.Fprintf(&b, "  /** %s */\n", doc)
+		}
 		fmt.Fprintf(&b, "  export interface %s {\n%s", k.TS, indentFields(structFields(k.Type, true), "    "))
 		if k.Name == "ticket" {
-			b.WriteString("  " + ticketMethods)
+			b.WriteString(ticketMethods)
 		}
 		b.WriteString("  }\n")
 	}
 	for _, e := range Events {
+		if doc, ok := typeDocs[e.Type]; ok {
+			fmt.Fprintf(&b, "  /** %s */\n", doc)
+		}
 		fmt.Fprintf(&b, "  export interface %s {\n%s  }\n", e.TS, indentFields(structFields(e.Type, false), "    "))
 	}
-	b.WriteString("  export type RecordKind = " + joinQuoted(kindNames()) + ";\n")
-	b.WriteString("  export interface RecordMap {\n")
+	b.WriteString("  /** The kinds of record a whenever rule can run over, as each names them. */\n  export type RecordKind = " + joinQuoted(kindNames()) + ";\n")
+	b.WriteString("  /** The record type of each kind. */\n  export interface RecordMap {\n")
 	for _, k := range Kinds {
 		fmt.Fprintf(&b, "    %q: %s;\n", k.Name, k.TS)
 	}
-	b.WriteString("  }\n  export type RecordOf<K extends RecordKind> = RecordMap[K];\n")
-	b.WriteString("  export interface EventMap {\n")
+	b.WriteString("  }\n  /** The record type of kind K. */\n  export type RecordOf<K extends RecordKind> = RecordMap[K];\n")
+	b.WriteString("  /** The payload type of each event an on rule can match. */\n  export interface EventMap {\n")
 	for _, e := range Events {
 		fmt.Fprintf(&b, "    %q: %s;\n", e.Name, e.TS)
 	}
-	b.WriteString("  }\n  export type EventType = keyof EventMap;\n  export type EventOf<E extends EventType> = EventMap[E];\n")
+	b.WriteString("  }\n  /** The names of the events an on rule can match. */\n  export type EventType = keyof EventMap;\n  /** The payload type of event E. */\n  export type EventOf<E extends EventType> = EventMap[E];\n")
 	b.WriteString(configDeclaration(rules))
 	b.WriteString(staticDeclarations)
-	b.WriteString("  export interface Ctx {\n")
+	b.WriteString("  /** What a rule's if and then receive besides the record: the cycle's time, the settings, the ledger and a group of reads and queued actions for each plugin. */\n  export interface Ctx {\n")
 	b.WriteString("    /** The one dispatch record, read-only, as `each: \"dispatch\"` sees it. Reads are logged like any record read. */\n    dispatch: Dispatch;\n")
-	b.WriteString("    now: number;\n    every(period: number, since: number): number;\n    config: Config;\n")
-	b.WriteString("    ledger: {\n      receipts(subject: Ticket | PR | Tree | Worker, filter?: { kind?: string | string[]; topic?: string }): Receipt[];\n      done(subject: Ticket | PR | Tree | Worker, once: Once): boolean;\n    };\n")
+	b.WriteString("    /** The time of this cycle, in milliseconds since the epoch. It is the same for every rule in the cycle. */\n    now: number;\n")
+	b.WriteString("    /** How many whole periods have passed since since, both in milliseconds. Put it in a once key to act again each period. period must be above zero. */\n    every(period: number, since: number): number;\n")
+	b.WriteString("    /** The settings of config.toml, read-only. Reading a [rules] key the file lacks throws. */\n    config: Config;\n")
+	b.WriteString("    /** The ledger of actions dispatch has run. */\n    ledger: {\n      /** The receipts of actions queued for the subject, newest first. kind filters by action kind such as nudge, topic by the first element of the once key. */\n      receipts(subject: Ticket | PR | Tree | Worker, filter?: { kind?: string | string[]; topic?: string }): Receipt[];\n      /** True when an action of any kind with this once key landed for the subject, or was attempted and may have landed. A refused or failed one doesn't count. */\n      done(subject: Ticket | PR | Tree | Worker, once: Once): boolean;\n    };\n")
 	b.WriteString(ctxPlugins())
 	b.WriteString("  }\n")
 	b.WriteString("}\n")
 	return b.String()
 }
 
-const staticDeclarations = `  export type Once = [topic: string, ...values: (string | number | boolean | undefined)[]];
+const staticDeclarations = `  /** What makes an action run once: the topic and the values that must change before it runs again. */
+  export type Once = [topic: string, ...values: (string | number | boolean | undefined)[]];
+  /** The ledger's record of one action. */
   export interface Receipt {
+    /** The action, such as nudge or move. */
     kind: string;
+    /** The key the action ran under. */
     once: Once;
+    /** The name of the rule that queued it. */
     rule: string;
+    /** How it ended, absent while the action is attempted. */
     outcome?: "done" | "refused" | "failed";
+    /** What happened, in words. */
     detail: string;
+    /** When it began, in milliseconds since the epoch. */
     started: number;
+    /** When it ended, absent until it does. */
     ended?: number;
+    /** True for a Done receipt written for something that was never sent. receipts and done include it, so a rule that counts sent messages must skip it. */
     reset?: boolean;
   }
-  export interface HttpResponse { status: number; body: unknown }
+  /** The answer to an http get. */
+  export interface HttpResponse {
+    /** The HTTP status code. */
+    status: number;
+    /** The response body parsed as JSON. */
+    body: unknown;
+  }
+  /** A job key a rule can move a ticket to. */
   export type MovableJob = "todo" | "in_progress" | "in_review" | "needs_human" | "close_parent" | "blocker_done";
+  /** Every job a ticket's status can do. */
   export type Job = MovableJob | "finished" | "paused";
+  /** A local ticket for queueCreate to file. */
   export interface TicketDraft {
+    /** The new ticket's title. */
     readonly title: string;
-    /** A [repos.<label>] table. */
+    /** The [repos.<label>] table the ticket belongs to. */
     readonly repo: string;
+    /** The new ticket's description. */
     readonly description?: string;
+    /** The labels the ticket starts with. */
     readonly labels?: readonly string[];
+    /** The key-value pairs the ticket starts with. */
     readonly attributes?: Readonly<Record<string, string>>;
-    /** LOC-<n> */
+    /** The id of the parent ticket, such as LOC-12. */
     readonly parent?: string;
-    /** LOC-<n> */
+    /** The ids of the tickets that block this one, such as LOC-12. */
     readonly blockedBy?: readonly string[];
-    /** A PR in repo. */
+    /** A PR number in repo. The ticket's tree starts at that PR's head. */
     readonly startPR?: number;
-    /** A job key, as queueMove takes. Default todo. */
+    /** The job the ticket starts in, as a job key queueMove takes. Defaults to todo. */
     readonly status?: MovableJob;
   }
+  /** What queueEdit changes on a local ticket. A field left out stays as it is. */
   export interface TicketChanges {
+    /** The new title. */
     readonly title?: string;
+    /** The new description. */
     readonly description?: string;
+    /** The [repos.<label>] table to move the ticket to. */
     readonly repo?: string;
+    /** Labels to add. */
     readonly addLabels?: readonly string[];
+    /** Labels to remove. */
     readonly removeLabels?: readonly string[];
+    /** Key-value pairs to set. */
     readonly setAttributes?: Readonly<Record<string, string>>;
+    /** Keys to remove. */
     readonly unsetAttributes?: readonly string[];
-    /** null clears. */
+    /** The new parent's id. null clears the parent. */
     readonly parent?: string | null;
-    /** Replaces; [] clears. */
+    /** The ids of the tickets that block this one. Replaces the list, and [] clears it. */
     readonly blockedBy?: readonly string[];
-    /** 0 clears. */
+    /** The PR number the ticket's tree starts at. 0 clears it. */
     readonly startPR?: number;
   }
+  /** What ctx.ticket.search matches. A field left out matches every ticket. */
   export interface TicketFilter {
     /** Tickets whose status does this job. */
     readonly status?: Job;
-    /** Match ignoring case. */
+    /** Tickets with these labels, matched ignoring case. */
     readonly labels?: readonly string[];
-    /** Match exactly. */
+    /** Tickets with these key-value pairs, matched exactly. */
     readonly attributes?: Readonly<Record<string, string>>;
-    /** Only tickets outside a finished status. */
+    /** True for only the tickets outside a finished status. */
     readonly open?: boolean;
   }
+  /** A local ticket ctx.ticket.search found. */
   export interface FoundTicket {
+    /** The ticket's id, such as LOC-3. */
     readonly id: string;
+    /** The ticket's title. */
     readonly title: string;
-    /** As the ticket record's status. */
+    /** The ticket's status, as the status fact spells it. */
     readonly status: string;
+    /** True when the ticket's status does the finished job. */
     readonly finished: boolean;
+    /** The names of the ticket's labels. */
     readonly labels: readonly string[];
+    /** The ticket's key-value pairs. */
     readonly attributes: Readonly<Record<string, string>>;
   }
+  /** What a queue method returns. Return it, or an array of them, from then. */
   export interface Action { readonly queued: true }
+  /** Each cycle, runs then for every record of kind each whose if is true. A once key on each action keeps it from running again. An if that reads an unknown fact holds the rule for that record. */
   export function whenever<K extends RecordKind>(rule: {
     name: string;
     each: K;
@@ -141,6 +203,7 @@ const staticDeclarations = `  export type Once = [topic: string, ...values: (str
     then: (record: RecordOf<K>, ctx: Ctx) => Action | Action[] | void;
     shadow?: boolean;
   }): void;
+  /** Runs then for each event of type event whose if is true. An if that reads an unknown fact drops the event. */
   export function on<E extends EventType>(rule: {
     name: string;
     event: E;
@@ -156,38 +219,63 @@ const staticDeclarations = `  export type Once = [topic: string, ...values: (str
     rules: string[];
     if: (record: RecordOf<K>, ctx: Ctx) => boolean;
   }): void;
+  /** True when read returns without throwing Unknown. Use it to branch on a fact that may be unknown instead of holding the rule. */
   export function known(read: () => unknown): boolean;
+  /** n minutes, in milliseconds. */
   export function minutes(n: number): number;
+  /** n hours, in milliseconds. */
   export function hours(n: number): number;
 `
+
+// pluginDocs describe the ctx group of each plugin.
+var pluginDocs = map[string]string{
+	"ticket": "Reads of tickets and the actions that change them.",
+	"worker": "Reads of workers and the actions that start, nudge and close them.",
+	"tree":   "Reads of the treehouse pools and the action that returns a tree.",
+	"pr":     "Reads of pull requests and the action that merges one.",
+	"notify": "Notifications to you and to followers.",
+	"http":   "Calls to the services named in [http.<name>].",
+}
 
 // ctxPlugins declares each plugin's reads and the actions it lets a rule queue.
 func ctxPlugins() string {
 	reads := map[string]string{
-		"ticket": `      parent(t: Ticket): Ticket | undefined;
+		"ticket": `      /** The parent of t. Parent links are read only for the children of an In Progress parent that isn't a design ticket, so it is undefined for every other ticket even when t has a parent. It never reads unknown. */
+      parent(t: Ticket): Ticket | undefined;
+      /** The children of t in every status, as tickets. Unknown when they weren't read: children are read only for an In Progress parent that isn't a design ticket, and a failed read leaves them unknown. */
       children(t: Ticket): Ticket[];
+      /** The tickets blocking t. Unknown when the ticket has more relations than dispatch reads, because a blocker may be missing. */
       blockers(t: Ticket): Blocker[];
+      /** The blockers dispatch read. Unlike blockers(t) it doesn't throw when the list was cut short, so use it when you can act on a partial list. */
       blockersRead(t: Ticket): Blocker[];
+      /** When t's current stretch of waiting on open blockers began, in milliseconds since the epoch. It is the time of t's status when no blocker is open now. Only the blockers dispatch read count, so a cut-short list is not flagged. */
       waitingSince(t: Ticket): number;
       /** Searches every local ticket, finished ones included. Only in then. Throws when local tickets are off. */
       search(filter: TicketFilter): ReadonlyArray<FoundTicket>;
 `,
-		"worker": `      of(t: Ticket): Worker;
+		"worker": `      /** The worker on the first tree t holds. Every ticket has one, with state none when no session runs. */
+      of(t: Ticket): Worker;
+      /** The worker running in the tree. A tree with no worker has one with state none. */
       in(tree: Tree): Worker;
 `,
-		"tree": `      pool(repo: string | undefined): { returns: number };
+		"tree": `      /** How many trees came back to the repo's pool since dispatch first read the pool (kept across restarts), whoever returned them. Unknown when repo is undefined, has no [repos] table, or its pool wasn't read. */
+      pool(repo: string | undefined): { returns: number };
+      /** True when t holds a tree. Unknown when the pool of t's repo wasn't read. Not detected when t has no known repo. */
       leased(t: Ticket): boolean;
 `,
-		"pr": `      of(t: Ticket): PR | undefined;
+		"pr": `      /** The PR of t, undefined when dispatch read the PR and found none, unknown when it didn't read it this cycle or the read failed. */
+      of(t: Ticket): PR | undefined;
 `,
 		"notify": "",
-		"http": `      get(service: string, path: string): HttpResponse;
+		"http": `      /** Calls GET on the service named in [http.<name>] and returns the response. Only in then. A request that fails, times out or answers outside 2xx makes the read unknown. A body that isn't JSON throws an ordinary error. */
+      get(service: string, path: string): HttpResponse;
+      /** The response a get kept since the last resync, without a request. Unknown when none is kept. */
       last(service: string, path: string): HttpResponse;
 `,
 	}
 	var b strings.Builder
 	for _, plugin := range []string{"ticket", "worker", "tree", "pr", "notify", "http"} {
-		fmt.Fprintf(&b, "    %s: {\n%s", plugin, reads[plugin])
+		fmt.Fprintf(&b, "    /** %s */\n    %s: {\n%s", pluginDocs[plugin], plugin, reads[plugin])
 		for _, a := range Actions {
 			if a.Plugin != plugin {
 				continue
@@ -201,7 +289,7 @@ func ctxPlugins() string {
 				opts += "; " + a.Options
 			}
 			params = append(params, "o: { "+opts+" }")
-			fmt.Fprintf(&b, "      %s(%s): Action;\n", a.Method, strings.Join(params, ", "))
+			fmt.Fprintf(&b, "      /** %s */\n      %s(%s): Action;\n", a.Doc, a.Method, strings.Join(params, ", "))
 		}
 		b.WriteString("    };\n")
 	}
@@ -296,15 +384,25 @@ func tsType(t reflect.Type, ref string) string {
 	return "unknown"
 }
 
+// configDocs describe the top-level tables of ctx.config.
+var configDocs = map[string]string{
+	"dispatch": "The [dispatch] table. max_in_progress is the most workers running at once and resync how often every source is re-read.",
+	"history":  "The [history] table. dir is where dispatch writes its history, rotate how old a segment gets before a new one starts, and keep how long old segments last.",
+	"repos":    "The [repos.<label>] tables by label: each repo's path, how it opens PRs, and its review and auto-merge settings.",
+	"plugins":  "The [plugins.*] tables: the Linear teams, ai label and status names, the herdr plugin root, and which of github, treehouse, notify and local are on.",
+	"http":     "The [http.<name>] tables by name, each with the base_url of a service rules call.",
+	"rules":    "The [rules] table, which holds the keys the shipped rules and your own rules read. A key the file lacks throws when read.",
+}
+
 // configDeclaration declares ctx.config from the config structs, with the keys
 // of the user's [rules] table typed by the values the file gives them.
 func configDeclaration(rules config.Rules) string {
 	var b strings.Builder
-	b.WriteString("  export interface Config {\n")
+	b.WriteString("  /** The settings of config.toml a rule can read through ctx.config. */\n  export interface Config {\n")
 	for _, f := range configFields(reflect.TypeFor[config.Config](), rules) {
-		fmt.Fprintf(&b, "    %s: %s;\n", f.name, f.ts)
+		fmt.Fprintf(&b, "    /** %s */\n    %s: %s;\n", configDocs[f.name], f.name, f.ts)
 	}
-	b.WriteString("    hasRepo(label: string | undefined): boolean;\n  }\n")
+	b.WriteString("    /** True when config.toml has a [repos.<label>] table of this name, false for undefined. */\n    hasRepo(label: string | undefined): boolean;\n  }\n")
 	return b.String()
 }
 

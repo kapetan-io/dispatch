@@ -80,6 +80,8 @@ dispatch reads the PR only when the worker is idle or gone.
 | Gone | n/a | checks running | 🟡 | Nothing |
 | Gone | n/a | anything else | 🟢 | Relaunches the worker for a PR that needs work or an unseen review thread |
 
+The Stop record column above is what the emoji label reads, for a worker in any status. The `busy` and `lastStop` facts rules read come from the Stop record only for an idle worker on an In Progress ticket, so for an In Review worker `busy` is false and `lastStop` is when dispatch first saw it idle.
+
 A PR that waits on its approvers still nudges its worker for a failed check, a merge conflict, changes requested or new activity.
 
 An idle In Review worker whose PR gains a review or comment gets the activity nudge once per new item.

@@ -452,6 +452,36 @@ func TestRulesInitDescribesTurnsAndCommandsInTheTypes(t *testing.T) {
 	assert.Regexp(t, `/\*\* Every turn the worker's current Claude session has ended[^\n]*\*/\n    readonly turns: Turn\[\];`, string(types))
 }
 
+func TestRulesInitDescribesEveryDeclaration(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	dir := filepath.Join(t.TempDir(), "rules")
+	require.NoError(t, d.Run("rules", "init", dir).Err)
+	types, err := os.ReadFile(filepath.Join(dir, "types", "dispatch.d.ts"))
+	require.NoError(t, err)
+
+	// The members of a rule function's argument (name, each, if, then) are the rule's shape, not facts.
+	declaration := regexp.MustCompile(`^ +(export (interface|type|function) |(readonly )?\w+\??[:(])`)
+	var bare []string
+	var prev string
+	var inFunction bool
+	for _, line := range strings.Split(string(types), "\n") {
+		switch {
+		case strings.HasPrefix(line, "  export function ") && strings.HasSuffix(line, "{"):
+			inFunction = true
+		case inFunction && strings.HasPrefix(line, "  }"):
+			inFunction = false
+		}
+		inside := inFunction && !strings.HasPrefix(line, "  export function ")
+		if declaration.MatchString(line) && !inside && !strings.HasSuffix(strings.TrimSpace(prev), "*/") {
+			bare = append(bare, strings.TrimSpace(line))
+		}
+		prev = line
+	}
+
+	assert.Empty(t, bare)
+}
+
 func TestRulesInitWritesTypesWithoutTheLinearKeySettings(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
