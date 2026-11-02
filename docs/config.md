@@ -177,6 +177,28 @@ Local tickets are tickets kept in dispatch's own database, beside Linear's. Writ
 |---|---|---|
 | `path` | `tickets.db` in the state directory | The database file. A leading `~` is expanded. The first `dispatch run` creates it with mode 0600. Rules never see this setting in `ctx.config`. |
 
+With `dispatch run` going, file a ticket for a configured repo and start it. `create` prints the new id, and a ticket starts in the status that does `todo`:
+
+```
+$ dispatch ticket create --repo dispatch --title "Retry webhooks on 502"
+LOC-1
+$ dispatch ticket show LOC-1
+LOC-1 Retry webhooks on 502
+status      Todo
+repo        dispatch
+branch      loc-1-retry-webhooks-on-502
+filed by    you
+labels      -
+attributes  -
+parent      -
+blocked by  -
+start PR    -
+$ dispatch ticket move LOC-1 "In Progress"
+LOC-1 In Progress
+```
+
+The shipped rules then launch a worker on that branch at the next resync. `dispatch ticket` reaches the database through the running `dispatch run`, so it exits 3 with `dispatch: not running` when none runs.
+
 - There is no status setting. A new database is seeded once with Backlog, Todo, In Progress, In Review, Needs Human, Done and Canceled, each with the jobs `dispatch ticket statuses` lists, and dispatch never changes them afterwards. Each of the jobs `todo`, `in_progress`, `in_review`, `needs_human`, `close_parent` and `blocker_done` must belong to exactly one status, or `dispatch run` stops at start.
 - Only the `dispatch run` that holds `dispatch.lock` opens the file, and a second `dispatch run` that points `path` at the same file stops after 5 seconds. Every other session reaches it through `dispatch ticket`. Stop `dispatch run` before copying the file.
 - `dispatch run` also stops at start when the file's next ticket number is at or below a `LOC-<n>` that history or a tree's lease names, or when the file holds a ticket in a status it lacks, a link to a missing ticket or a parent loop.
