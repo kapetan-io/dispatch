@@ -101,9 +101,10 @@ func (s *CoreSession) Restart(t testing.TB) {
 	s.Run(t, "server", "start")
 }
 
-// Core is the real app adapter pointed at the scratch core.
+// Core is the real app adapter pointed at the scratch core. Its app command is true, so no
+// test names or closes a space in the maintainer's app window.
 func (s *CoreSession) Core() *herdr.Core {
-	return herdr.NewCore(s.hc).WithEnv(s.Env)
+	return herdr.NewCore(s.hc).WithEnv(s.Env).WithApp("/usr/bin/true")
 }
 
 // CoreLeftovers lists the sockets of scratch cores that process pid started and left behind.

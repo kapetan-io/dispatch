@@ -86,12 +86,13 @@ type Herdr interface {
 	// adapter does not filter it by WithKinds, and the caller decides whether it runs the
 	// agent's kind. Core returns only a worker it started that runs one of its kinds.
 	AgentAt(ctx context.Context, pane string) (Agent, bool, error)
-	// RenameWorkspace sets a workspace's label. Core leaves the name to the Herdr app.
+	// RenameWorkspace sets a workspace's label. Core names the space in the Herdr app window, if one is open.
 	RenameWorkspace(ctx context.Context, id, label string) error
-	// RenameTab sets a tab's label. Core leaves the name to the Herdr app.
+	// RenameTab sets a tab's label. Core names the tab in the Herdr app window, if one is open.
 	RenameTab(ctx context.Context, id, label string) error
 	// CloseWorkspace closes a workspace and removes its tabs, panes and agents,
-	// which ends any worker running there.
+	// which ends any worker running there. Core also closes the space in the app window when
+	// no terminal is left in it.
 	CloseWorkspace(ctx context.Context, id string) error
 	// CloseTab closes a tab and removes its panes and agents.
 	CloseTab(ctx context.Context, id string) error

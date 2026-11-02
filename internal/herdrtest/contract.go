@@ -404,7 +404,7 @@ var Scenarios = []Scenario{
 	}},
 }
 
-// snapshotTabLabel is the label the snapshot shows for a tab, which the Herdr app adapter leaves empty.
+// snapshotTabLabel is the label the snapshot shows for a tab, which the Herdr app adapter leaves empty unless the app window named it.
 func snapshotTabLabel(snap herdr.Snapshot, id string) string {
 	for _, tab := range snap.Tabs {
 		if tab.ID == id {

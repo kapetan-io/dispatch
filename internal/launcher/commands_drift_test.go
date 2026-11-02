@@ -92,6 +92,9 @@ func realClaudeTakesDispatchsCommands(t *testing.T, app bool) {
 	out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "dispatch"), "github.com/kapetan-io/dispatch/internal/herdrtest/driftdispatch").CombinedOutput()
 	t.Log(string(out))
 	require.NoError(t, err)
+	// The launch under the app host closes the workspace when a launch fails, and that must
+	// not reach the maintainer's app window.
+	require.NoError(t, os.Symlink("/usr/bin/true", filepath.Join(bin, "herdr-app")))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("DISPATCH_DRIFT_CONFIG", config)
 	t.Setenv("DISPATCH_DRIFT_STATE", state)

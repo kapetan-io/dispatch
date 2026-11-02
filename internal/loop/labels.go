@@ -37,9 +37,9 @@ func label(emoji string, t linear.Ticket) string { return emoji + " " + t.Identi
 
 func tabLabel(t linear.Ticket) string { return herdr.TabLabel(t.Identifier, t.Title) }
 
-// differs is true when the workspace or tab needs renaming to want. A rename already
-// on its way to want needs none, and one on its way to another label needs it even when
-// the last read of herdr shows want, because that read predates the rename.
+// differs is true when the workspace or tab needs renaming to want. A rename sent since the
+// last resync to want needs none, whether or not it landed, and one sent to another label
+// needs it even when the last read of herdr shows want, because that read predates the rename.
 func (l *Loop) differs(id, have, want string) bool {
 	if sent, ok := l.renaming[id]; ok {
 		return sent != want
@@ -164,7 +164,7 @@ func (l *Loop) workspaceEmoji(w world.Worker, pr pullrequest.PullRequest, openAs
 }
 
 // renameWorkspaces fixes the labels that differ, off the loop goroutine. A failed
-// rename is tried again after the next read of herdr, because the label still differs.
+// rename is tried again at the next resync, because the label still differs then.
 // One batch runs at a time, and renameDone checks again against the latest read, so a
 // slow rename of an older label can't land after a newer one.
 func (l *Loop) renameWorkspaces() {
