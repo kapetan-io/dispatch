@@ -282,3 +282,11 @@ scenario(rules, "a restack owed leaves no blocker hold comment", s => {
   s.given(ticket("ENG-3", { ...build, stack, blockers: [{ id: "ENG-2", status: "done" }, { id: "ENG-4", status: "in_progress" }] }), ticket("ENG-4", build), worker("ENG-4", "working"));
   s.expect([["relaunch-for-restack", "launch", "ENG-3"]]);
 });
+
+scenario(rules, "no-stacked-worker-on-merged-local-ticket holds the stacked launch for a local ticket whose PR merged", s => {
+  s.given(ticket("LOC-3", { ...build, ...blockedBy("LOC-2") }),
+          ticket("LOC-2", review), worker("LOC-2", "idle"), pr("LOC-2", { ready: true, head: "p1" }));
+  s.advance(1000);
+  s.see(pr("LOC-3", { merged: true }));
+  s.expect([["finish-merged-local-ticket", "move", "LOC-3", "blocker_done"], ["notify-ready-for-review", "notify", "LOC-2"]]);
+});

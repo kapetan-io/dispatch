@@ -649,22 +649,28 @@ func (s *State) prRecords(w world.World) {
 	at := s.ms()
 	scope := s.scope
 	for _, t := range w.Tickets {
-		if _, read := scope.PRRepo(t, w.Workers[t.Identifier].State); read {
+		if _, read := scope.PRRepo(t, w.Workers[t.Identifier].State); read || w.MergedReadCovers(scope, t) {
 			s.prRead[t.Identifier] = true
 		}
 		pr, ok := w.PRs[t.Identifier]
+		merged, wasMerged := w.MergedPRs[t.Identifier]
 		failed := w.PRReadFailed[t.Identifier]
-		if !ok && !failed {
+		if !ok && !wasMerged && !failed {
 			continue
 		}
 		repo, _ := s.scope.RepoOf(t)
 		_, settings, _ := s.Config.Repos.Find(repo)
+		if wasMerged {
+			pr = pullrequest.PullRequest{Number: merged.Number, URL: merged.URL, Head: merged.Head}
+		}
 		rec := &PR{
 			Ticket:          Known(Ref{Kind: "ticket", ID: t.Identifier}, at),
 			Number:          Known(int64(pr.Number), at),
 			URL:             Known(pr.URL, at),
 			Head:            Known(pr.Head, at),
-			Closed:          Known(false, at),
+			Closed:          Known(wasMerged, at),
+			Merged:          Known(wasMerged, at),
+			MergedAt:        Known(mergedAtMillis(merged), at),
 			Draft:           Known(pr.Draft, at),
 			Approved:        Known(pr.Approved, at),
 			Ready:           Known(pr.Ready, at),
@@ -762,4 +768,12 @@ func nilIfEmpty(s string) *string {
 		return nil
 	}
 	return new(s)
+}
+
+// mergedAtMillis is when the PR merged, 0 for the zero MergedPR of a PR that has not merged.
+func mergedAtMillis(m pullrequest.MergedPR) int64 {
+	if m.MergedAt.IsZero() {
+		return 0
+	}
+	return m.MergedAt.UnixMilli()
 }

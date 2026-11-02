@@ -7,6 +7,15 @@ import type { Ticket, PR, Ctx, Receipt, Seen, Once } from "dispatch";
 export const launchFailureLimit = (ctx: Ctx): number => ctx.config.rules.launch_failure_limit;
 export const nudgeLimit = (ctx: Ctx): number => ctx.config.rules.nudge_limit;
 
+// A local ticket's PR merged after the ticket entered its status. ctx.pr.of answers undefined for a
+// ticket whose merged PR was looked for and not found, and unknown while the look failed, which holds
+// a launch. The system test comes first because a Linear ticket's unread PR would otherwise hold its launch.
+export const prMerged = (t: Ticket, ctx: Ctx): boolean => {
+  if (t.system !== "local") return false;
+  const pr = ctx.pr.of(t);
+  return pr !== undefined && pr.merged && pr.mergedAt > t.statusSince;
+};
+
 export const isDesign = (t: Ticket) => t.hasLabel("design") || t.hasLabel("design-review");
 
 // The skill a ticket's worker runs. A ticket carrying both design labels is a review.

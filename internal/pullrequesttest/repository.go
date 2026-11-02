@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/kapetan-io/dispatch/internal/journal"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
@@ -35,8 +36,10 @@ type Repository struct {
 	checks    map[int]map[string]any
 	pushes    map[string]string
 	merged    []string
+	history   []MergedListing
 	readFail  error
 	mergeFail error
+	mergedErr error
 }
 
 // New returns a Repository with no pull requests that records its calls in j.
@@ -311,3 +314,66 @@ func nodes(page map[string]any) []map[string]any {
 }
 
 var _ pullrequest.Repository = (*Repository)(nil)
+
+// MergedListing is a pull request that merged, as GitHub lists it among a branch's merged pull requests.
+type MergedListing struct {
+	// Branch is the head branch's name.
+	Branch string
+	// Base is the branch the PR merged into.
+	Base     string
+	Number   int
+	URL      string
+	Head     string
+	MergedAt time.Time
+	// Fork marks a PR whose head lives in a fork, which shares the branch's name by chance.
+	Fork bool
+}
+
+// RecordMerged adds a merged pull request to what GitHub lists for its branch.
+func (r *Repository) RecordMerged(pr MergedListing) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.history = append(r.history, pr)
+}
+
+// FailReadMerged makes every ReadMerged fail with err. FailReadMerged(nil) restores normal reads.
+func (r *Repository) FailReadMerged(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.mergedErr = err
+}
+
+func (r *Repository) ReadMerged(ctx context.Context, repoDir string, branches []string) (map[string]pullrequest.MergedPR, error) {
+	return pullrequest.FindMerged(ctx, branches, mergedSource{r})
+}
+
+// mergedSource answers FindMerged with the merged pull requests the test recorded, in the shape of
+// the query's answer.
+type mergedSource struct{ repo *Repository }
+
+func (s mergedSource) MergedPage(ctx context.Context, branches []string) ([]byte, error) {
+	r := s.repo
+	r.journal.Record("pullrequest", "merged", strings.Join(branches, ","))
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.mergedErr != nil {
+		return nil, r.mergedErr
+	}
+	repo := map[string]any{"defaultBranchRef": map[string]any{"name": "main"}}
+	for i, branch := range branches {
+		nodes := []any{}
+		for _, pr := range r.history {
+			if pr.Branch == branch {
+				nodes = append(nodes, map[string]any{
+					"number": pr.Number, "url": pr.URL, "headRefOid": pr.Head, "baseRefName": pr.Base,
+					"isCrossRepository": pr.Fork, "mergedAt": pr.MergedAt.UTC().Format(time.RFC3339),
+				})
+			}
+		}
+		repo[fmt.Sprintf("b%d", i)] = map[string]any{"nodes": nodes}
+	}
+	return json.Marshal(map[string]any{"data": map[string]any{"repository": repo}})
+}

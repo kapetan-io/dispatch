@@ -50,7 +50,7 @@ func TestingDeclarations() string {
   export function comment(ticket: string, fields?: { body?: string; at?: string; author?: string; byDispatch?: boolean }): Fixture;
   export function pr(ticket: string, fields?: {
     head?: string; draft?: boolean; approved?: boolean; ready?: boolean; conflict?: boolean; problems?: string[];
-    activityAt?: string; activitySummary?: string; threadAt?: string;
+    activityAt?: string; activitySummary?: string; threadAt?: string; merged?: boolean;
   }): Fixture;
   export function tree(path: string, fields?: { holder?: string; pushed?: boolean; trackedChanges?: boolean }): Fixture;
   export function inbox(id: string, fields?: {
@@ -130,7 +130,7 @@ func (s *State) Summary(statuses config.Statuses) []SummaryLine {
 	}
 	return []SummaryLine{
 		{"ticket", fmt.Sprintf("%d tracked tickets (%s)", count("ticket"), scope)},
-		{"pr", fmt.Sprintf("%d open PRs read (In Review tickets whose worker is idle or gone)", count("pr"))},
+		{"pr", fmt.Sprintf("%d PRs read (open PRs of In Review tickets whose worker is idle or gone, merged PRs of local tickets)", count("pr"))},
 		{"worker", fmt.Sprintf("%d workers, %d running", workers, running)},
 		{"tree", fmt.Sprintf("%d trees in %d pools", count("tree"), len(s.Config.Repos))},
 		{"escalation", fmt.Sprintf("%d escalations in the ledger", count("escalation"))},

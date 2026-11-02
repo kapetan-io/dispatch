@@ -22,7 +22,7 @@ declare module "dispatch/testing" {
   export function comment(ticket: string, fields?: { body?: string; at?: string; author?: string; byDispatch?: boolean }): Fixture;
   export function pr(ticket: string, fields?: {
     head?: string; draft?: boolean; approved?: boolean; ready?: boolean; conflict?: boolean; problems?: string[];
-    activityAt?: string; activitySummary?: string; threadAt?: string;
+    activityAt?: string; activitySummary?: string; threadAt?: string; merged?: boolean;
   }): Fixture;
   export function tree(path: string, fields?: { holder?: string; pushed?: boolean; trackedChanges?: boolean }): Fixture;
   export function inbox(id: string, fields?: {

@@ -1,6 +1,6 @@
 import { whenever, exempt } from "dispatch";
 import type { Ticket, PR, Ctx, Blocker } from "dispatch";
-import { openBlockers, abandonedBlocker, startableChild, isDesign, nudgeable, launchAs, heard, escalate,
+import { prMerged, openBlockers, abandonedBlocker, startableChild, isDesign, nudgeable, launchAs, heard, escalate,
          launchFailures, launchFailureLimit, stoppedSinceLastNudge } from "./shared";
 import { ACTIVITY_NUDGE } from "./texts";
 
@@ -196,4 +196,11 @@ exempt({
   each:  "ticket",
   rules: ["escalate-abandoned-blocker"],
   if:    (t, ctx) => t.stack !== undefined && ctx.ticket.blockersRead(t).some(b => b.id === t.stack!.parent && b.abandoned),
+});
+
+exempt({
+  name:  "no-stacked-worker-on-merged-local-ticket",
+  each:  "ticket",
+  rules: ["launch-stacked-worker"],
+  if:    (t, ctx) => prMerged(t, ctx),
 });

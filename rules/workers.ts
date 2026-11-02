@@ -1,5 +1,5 @@
 import { whenever, exempt, minutes } from "dispatch";
-import { isDesign, openBlockers, abandonedBlocker, nudgeable, launchAs, heard, launchFailures, relaunches,
+import { isDesign, prMerged, openBlockers, abandonedBlocker, nudgeable, launchAs, heard, launchFailures, relaunches,
          launchFailureLimit, nudgeLimit, UNCONFIRMED_CLOSE } from "./shared";
 
 // A worker exists while an opted-in ticket is In Progress, unblocked, and has none.
@@ -78,4 +78,13 @@ exempt({
   each:  "ticket",
   rules: ["launch-worker"],
   if:    (t) => t.system === "local" && isDesign(t),
+});
+
+// A local ticket whose PR merged is about to be closed by finish-merged-local-ticket, so a worker
+// launched now would start work on a finished ticket.
+exempt({
+  name:  "no-worker-on-merged-local-ticket",
+  each:  "ticket",
+  rules: ["launch-worker"],
+  if:    (t, ctx) => prMerged(t, ctx),
 });

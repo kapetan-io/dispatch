@@ -183,6 +183,10 @@ type World struct {
 	// whose read errored, as opposed to finding no open PR.
 	PRs          map[string]pullrequest.PullRequest
 	PRReadFailed map[string]bool
+	// MergedPRs maps a local ticket's identifier to the newest PR from its repo that merged
+	// into the default branch from its branch. A ticket the merged read covers with no such
+	// PR is absent. A failed merged read puts the tickets it covered in PRReadFailed.
+	MergedPRs map[string]pullrequest.MergedPR
 	// UnreadRepos are the repo labels whose pool could not be read.
 	UnreadRepos map[string]bool
 	// StackRecords maps a repo label to the stack records of its clone. StackErrs holds the
@@ -415,6 +419,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 	}
 	if parts&FromGitHub != 0 || prev.At.IsZero() {
 		w.readPRs(ctx, src, scope)
+		w.readMergedPRs(ctx, src, scope)
 	}
 	if parts&FromInbox != 0 || prev.At.IsZero() {
 		w.readInbox(ctx, src, scope, now)
@@ -506,6 +511,78 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 			w.PRs[t.Identifier] = pr
 		}
 	}
+}
+
+// readMergedPRs reads the merged PR of each local ticket for which MergedRepo is true, one query
+// for each batch of a repo's branches. A failed query is reported once and holds back only the
+// tickets it covered.
+func (w *World) readMergedPRs(ctx context.Context, src Sources, scope Scope) {
+	w.MergedPRs = map[string]pullrequest.MergedPR{}
+	type repoTickets struct {
+		path, label string
+		tickets     []ticket.Ticket
+	}
+	var repos []*repoTickets
+	for _, t := range w.Tickets {
+		settings, ok := scope.MergedRepo(t)
+		if !ok || w.hasPRRead(t.Identifier) {
+			continue
+		}
+		i := slices.IndexFunc(repos, func(r *repoTickets) bool { return r.path == settings.Path })
+		if i < 0 {
+			label, _ := scope.RepoOf(t)
+			repos, i = append(repos, &repoTickets{path: settings.Path, label: label}), len(repos)
+		}
+		repos[i].tickets = append(repos[i].tickets, t)
+	}
+	for _, repo := range repos {
+		for batch := range slices.Chunk(repo.tickets, pullrequest.MergedBatch) {
+			branches := make([]string, len(batch))
+			for i, t := range batch {
+				branches[i] = t.Branch
+			}
+			readCtx, done := bound(ctx)
+			found, err := src.PullRequests.ReadMerged(readCtx, repo.path, branches)
+			done()
+			if err != nil {
+				_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the merged PRs of the %s repo: %v\n", repo.label, err)
+				for _, t := range batch {
+					w.PRReadFailed[t.Identifier] = true
+				}
+				continue
+			}
+			for _, t := range batch {
+				if pr, ok := found[t.Branch]; ok {
+					w.MergedPRs[t.Identifier] = pr
+				}
+			}
+		}
+	}
+}
+
+// hasPRRead reports whether a PR read of the ticket found a PR or failed, so the merged read has
+// nothing to add.
+func (w *World) hasPRRead(id string) bool {
+	_, found := w.PRs[id]
+	return found || w.PRReadFailed[id]
+}
+
+// MergedRepo is the settings of the repo whose merged PRs a read of the local ticket would look in.
+// It is false for a Linear ticket and for a ticket in a finished status, which nothing closes again.
+func (s Scope) MergedRepo(t ticket.Ticket) (config.Repo, bool) {
+	if ticket.SystemOf(t.Identifier) != ticket.SystemLocal || t.Branch == "" || s.Is(t, ticket.Finished) {
+		return config.Repo{}, false
+	}
+	label, ok := s.RepoOf(t)
+	_, settings, _ := s.Repos.Find(label)
+	return settings, ok && settings.Path != ""
+}
+
+// MergedReadCovers reports whether the merged read covered the ticket this cycle, which is when the
+// absence of a PR record means the ticket has none.
+func (w World) MergedReadCovers(scope Scope, t ticket.Ticket) bool {
+	_, ok := scope.MergedRepo(t)
+	return ok && !w.hasPRRead(t.Identifier)
 }
 
 // readInbox reads the inbox if Sources has one. A failed read assigns neither the items nor the

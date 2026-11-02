@@ -54,6 +54,8 @@ type scenarioModel struct {
 	sessions      map[string]sessionlog.Log
 	sessionUnread map[string]string
 	prs           map[string]*pullrequest.PullRequest
+	// merged holds the merged PR of a local ticket's branch and when it merged.
+	merged map[string]pullrequest.MergedPR
 	// stacks holds the stack record fixture of each ticket's branch. A record with only one key
 	// is partial.
 	stacks map[string]stackrecord.Record
@@ -64,7 +66,7 @@ type scenarioModel struct {
 func newModel() *scenarioModel {
 	return &scenarioModel{
 		tickets: map[string]*ticket.Ticket{}, parent: map[string]string{}, workers: map[string]*world.Worker{},
-		stops: map[string]stops.Record{}, sessions: map[string]sessionlog.Log{}, sessionUnread: map[string]string{}, prs: map[string]*pullrequest.PullRequest{}, stacks: map[string]stackrecord.Record{}, stamps: map[string]*stamp{},
+		stops: map[string]stops.Record{}, sessions: map[string]sessionlog.Log{}, sessionUnread: map[string]string{}, prs: map[string]*pullrequest.PullRequest{}, merged: map[string]pullrequest.MergedPR{}, stacks: map[string]stackrecord.Record{}, stamps: map[string]*stamp{},
 	}
 }
 
@@ -350,6 +352,15 @@ func (s *scenario) applyComment(ticket string, fields map[string]any, seen bool)
 
 func (s *scenario) applyPR(ticket string, fields map[string]any) {
 	m := s.model()
+	// A merged PR carries only its merge, so the other fields are ignored.
+	if merged, ok := boolean(fields, "merged"); ok {
+		if !merged {
+			delete(m.merged, ticket)
+		} else {
+			m.merged[ticket] = pullrequest.MergedPR{Number: 1, URL: "https://github.test/pr/" + ticket, Head: "head-1", MergedAt: s.now}
+		}
+		return
+	}
 	pr, exists := m.prs[ticket]
 	if !exists {
 		pr = &pullrequest.PullRequest{Number: 1, URL: "https://github.test/pr/" + ticket, Head: "head-1"}
@@ -431,7 +442,11 @@ func (s *scenario) world() world.World {
 		Untracked: map[string][]string{}, PRs: map[string]pullrequest.PullRequest{}, PRReadFailed: map[string]bool{},
 		PoolErrs: map[string]error{}, UnreadRepos: map[string]bool{},
 	}
+	// A Linear read lists the started tickets. A local read lists every ticket outside a finished status.
 	started := func(t *ticket.Ticket) bool {
+		if ticket.SystemOf(t.Identifier) == ticket.SystemLocal {
+			return !scope.Is(*t, ticket.Finished)
+		}
 		return scope.Is(*t, ticket.InProgress) || scope.Is(*t, ticket.InReview) || scope.Is(*t, ticket.NeedsHuman)
 	}
 	workerOf := func(id string) world.Worker {
@@ -523,6 +538,12 @@ func (s *scenario) world() world.World {
 			continue
 		}
 		w.PRs[id] = *pr
+	}
+	w.MergedPRs = map[string]pullrequest.MergedPR{}
+	for id, merged := range m.merged {
+		if t, ok := m.tickets[id]; ok && w.MergedReadCovers(scope, *t) {
+			w.MergedPRs[id] = merged
+		}
 	}
 	s.readInbox()
 	s.readRemotes()
