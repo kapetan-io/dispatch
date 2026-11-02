@@ -137,6 +137,9 @@ type Worker struct {
 	// dispatch's skills read it. A program that loads the plugin by flag carries the
 	// same root in Argv and PathFirst.
 	PluginRoot string
+	// FreshLease is set when this launch took the tree's lease for the ticket, so a
+	// session left on the tree belongs to an earlier ticket and is never resumed.
+	FreshLease bool
 	// Program is what herdr runs in the tab.
 	Program Program
 }
@@ -162,6 +165,10 @@ type Program struct {
 	// SessionFlag starts the program on Session (Claude: "--session-id"). An
 	// adapter appends SessionFlag and Session to Argv, which holds neither.
 	SessionFlag string
+	// ResumeFlag continues an earlier session instead (Claude: "--resume"). Core
+	// uses it through ResumeArgv after a core restart. Empty when the program
+	// can't resume.
+	ResumeFlag string
 }
 
 // StartArgv is Argv followed by the flag that starts the program on its chosen
@@ -172,6 +179,15 @@ func (p Program) StartArgv() []string {
 		argv = append(argv, p.SessionFlag, p.Session)
 	}
 	return argv
+}
+
+// ResumeArgv is Argv followed by the flag that continues session, or false when the
+// program can't resume.
+func (p Program) ResumeArgv(session string) ([]string, bool) {
+	if session == "" || p.ResumeFlag == "" {
+		return nil, false
+	}
+	return append(slices.Clone(p.Argv), p.ResumeFlag, session), true
 }
 
 // Startup describes the screens a program shows on its way to an input box.
