@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treekey"
 )
 
@@ -39,8 +40,10 @@ func Mark(stateDir, tree string, at time.Time) (string, error) {
 // MarkUnlessHeld records the launch like Mark, but when a record is already there it adds this
 // launch as a further owner instead of replacing the others. The time moves to this launch's
 // start, because a record left by a dead launch would otherwise date this one as already past
-// its grace period. A launch that may be refused uses it, so its release never erases the
-// record while another launch still holds it.
+// its grace period. It stays put when a Stop on the tree is newer than the record, because that
+// Stop shows the record's kickoff ran, and a later time would read the worker as unconfirmed
+// again. A launch that may be refused uses it, so its release never erases the record while
+// another launch still holds it.
 func MarkUnlessHeld(stateDir, tree string, at time.Time) (string, error) {
 	return mark(stateDir, tree, at, false)
 }
@@ -59,8 +62,11 @@ func mark(stateDir, tree string, at time.Time, replace bool) (string, error) {
 	_, _ = rand.Read(raw[:])
 	id := hex.EncodeToString(raw[:])
 	owners := []string{id}
-	if _, heldOwners, ok := read(stateDir, tree); ok && !replace {
+	if held, heldOwners, ok := read(stateDir, tree); ok && !replace {
 		owners = append(heldOwners, id)
+		if stop, stopped := stops.Read(stateDir, tree, ""); stopped && stop.At.After(held) {
+			at = held
+		}
 	}
 	return id, write(name, at, owners)
 }

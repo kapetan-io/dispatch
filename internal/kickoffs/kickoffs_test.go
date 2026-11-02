@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
+	"github.com/kapetan-io/dispatch/internal/stops"
 )
 
 // Package exception: needs concurrent callers, which the CLI cannot arrange.
@@ -68,4 +69,20 @@ func TestARecordTwoLaunchesShareSurvivesTheFirstToRelease(t *testing.T) {
 
 	_, held = kickoffs.Since(state, tree)
 	assert.False(t, held)
+}
+
+// Package exception: needs a Stop recorded between two launches on one tree, which the CLI cannot arrange.
+func TestASharedRecordKeepsItsTimeWhenAStopShowsItsKickoffRan(t *testing.T) {
+	state, tree := t.TempDir(), t.TempDir()
+	_, err := kickoffs.Mark(state, tree, time.UnixMilli(1000))
+	require.NoError(t, err)
+	require.NoError(t, stops.Write(state, tree, "session", stops.Record{At: time.UnixMilli(1500), Reported: true}))
+	refused, err := kickoffs.MarkUnlessHeld(state, tree, time.UnixMilli(2000))
+	require.NoError(t, err)
+
+	kickoffs.Release(state, tree, refused)
+
+	at, held := kickoffs.Since(state, tree)
+	assert.True(t, held)
+	assert.Equal(t, time.UnixMilli(1000), at)
 }
