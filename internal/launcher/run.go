@@ -301,16 +301,30 @@ func (l *launch) preflight(ctx context.Context) (Result, bool) {
 	}
 }
 
-// fetchAndLease holds the clone's turn for every fetch a launch makes, treehouse's
+// fetchAndLease holds the clone for every fetch a launch makes, treehouse's
 // own included, so launches into one repo queue here and then go on in parallel.
 func (l *launch) fetchAndLease(ctx context.Context) (Result, bool) {
 	clone := l.repo
 	if dir, err := l.git(ctx, l.repo, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil {
 		clone = strings.TrimSpace(dir)
 	}
-	done, ok := takeTurn(ctx, clone)
+	resume := func() {}
+	if l.req.WhileQueued != nil {
+		resume = l.req.WhileQueued()
+	}
+	queue, stop := ctx, func() {}
+	if l.req.QueueLimit > 0 {
+		queue, stop = clock.WithTimeout(ctx, l.opts.Clock, "queue "+l.req.Ticket, l.req.QueueLimit)
+	}
+	done, ok := holdClone(queue, clone)
+	stop()
+	resume()
 	if !ok {
-		return Result{Status: StatusPoolError, Detail: "interrupted while waiting for another launch into " + l.repo}, false
+		detail := "interrupted while waiting for another launch into " + l.repo
+		if ctx.Err() == nil {
+			detail = fmt.Sprintf("gave up waiting for another launch into %s after %s", l.repo, l.req.QueueLimit)
+		}
+		return Result{Status: StatusPoolError, Detail: detail}, false
 	}
 	defer done()
 	return l.leaseTree(ctx, l.trackBranch(ctx))

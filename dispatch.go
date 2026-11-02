@@ -102,7 +102,8 @@ type Options struct {
 	// LocalLockTimeout is how long `dispatch run` waits for a local ticket database another process
 	// holds. Defaults to 5 seconds.
 	LocalLockTimeout time.Duration
-	// LaunchTimeout is how long a launch may take before it is given up on, 25 seconds by default,
+	// LaunchTimeout is how long a launch may take before it is given up on, 25 seconds by default and
+	// not counting time spent waiting behind another launch into the same repo,
 	// and ActionTimeout how long every other action may take, 1 minute by default.
 	LaunchTimeout, ActionTimeout time.Duration
 	// Clock runs the loop's timers (the resync and history rotation) and every timeout

@@ -40,7 +40,11 @@ import (
 
 // Deadlines. A launch takes 8 to 13 seconds when it works. One that lands after its
 // deadline shows up as a worker on the next read, which makes the launch rule false.
+// A launch's deadline stops while it waits behind another launch into the same repo, and the
+// wait has its own limit of QueueDeadlines launch deadlines, so a launch that hangs while it
+// holds the repo fails the ones behind it instead of stalling them.
 const (
+	QueueDeadlines  = 4
 	LaunchDeadline  = 25 * time.Second
 	DefaultDeadline = time.Minute
 )
@@ -187,12 +191,12 @@ func (e *Executor) deadline(receipt string) time.Duration {
 
 // Run carries out w against what wd read when the cycle ran.
 func (e *Executor) Run(ctx context.Context, w rules.Want, wd world.World) Result {
-	ctx, cancel := clock.WithTimeout(ctx, e.Clock, w.Receipt+" "+w.Subject, e.deadline(w.Receipt))
+	ctx, cancel, queued := clock.WithPausableTimeout(ctx, e.Clock, w.Receipt+" "+w.Subject, e.deadline(w.Receipt))
 	defer cancel()
 	var res Result
 	switch w.Receipt {
 	case "launch":
-		res = e.launch(ctx, w, wd)
+		res = e.launch(ctx, w, wd, queued)
 	case "nudge":
 		res = e.nudge(ctx, w, wd)
 	case "close":
@@ -241,7 +245,7 @@ func failed(format string, args ...any) Result {
 	return Result{Outcome: ledger.Failed, Detail: fmt.Sprintf(format, args...)}
 }
 
-func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World) Result {
+func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World, queued func() func()) Result {
 	t, ok := ticketOf(wd, w.Subject)
 	if !ok {
 		return failed("%s was not read", w.Subject)
@@ -275,7 +279,7 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World) Res
 	}
 	kickoff, _ := w.Options["kickoff"].(string)
 	req := launcher.Request{
-		RepoDir: repo.Path, Ticket: t.Identifier, Title: t.Title, Branch: t.Branch, StartPR: t.StartPR, Program: program, Kickoff: kickoff,
+		RepoDir: repo.Path, Ticket: t.Identifier, Title: t.Title, Branch: t.Branch, StartPR: t.StartPR, Program: program, Kickoff: kickoff, WhileQueued: queued, QueueLimit: QueueDeadlines * e.deadline(w.Receipt),
 	}
 	if on, ok := w.Options["stackOn"].(map[string]any); ok {
 		ticket, _ := on["ticket"].(string)
