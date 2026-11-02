@@ -106,7 +106,10 @@ func TestTickKeepsALocalTicketMovedBackOutOfDone(t *testing.T) {
 	d.mergeLocal("LOC-1", mergedPR{})
 	d.settles("LOC-1", "Done")
 
-	d.Advance(time.Minute)
+	// A second PR of the branch merged while the ticket was Done. Its head differs from the first
+	// PR's, so only the ticket's status entry time, not a spent once key, keeps it from closing again.
+	d.mergeLocal("LOC-1", mergedPR{head: "a2"})
+	d.Advance(5 * time.Minute)
 	d.ticketOut("move", "LOC-1", "In Progress")
 	d.Tick()
 	d.Tick()
@@ -174,4 +177,27 @@ func TestTickPrintsAFailedMergedReadOnceNotOncePerTicket(t *testing.T) {
 	failed := len(d.Tools().Calls("pullrequest", "merged")) - reads
 	assert.Positive(t, failed)
 	assert.Equal(t, failed, strings.Count(d.LoopErr(), "gh: HTTP 502\n"))
+}
+
+func TestTickHoldsALocalLaunchWhileTheMergedReadFails(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nmax_in_progress = 1\n" + localOn})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+	d.StartBeforeTheEvents()
+	d.fileLocal("In Progress")
+	d.GitHub.FailMergedReads(errors.New("gh: HTTP 502"))
+	d.Advance(5 * time.Minute)
+
+	// The Linear worker finishes, which frees the slot the local ticket waited for.
+	d.Linear.Tickets(ticket("ENG-1", "Done", "dispatch"))
+	d.Tick()
+
+	assert.Empty(t, d.Workers.Launched())
+	assert.Contains(t, d.plan(), "exemption no-worker-on-merged-local-ticket read an unknown: the PR for LOC-1 could not be read")
+
+	d.GitHub.FailMergedReads(nil)
+	d.Tick()
+
+	assert.Len(t, d.Workers.Launched(), 1)
 }

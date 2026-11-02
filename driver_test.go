@@ -1114,6 +1114,8 @@ type mergedPR struct {
 	base string
 	// fork marks a PR from a fork that shares the branch's name.
 	fork bool
+	// head is the PR's head commit, a1 when empty.
+	head string
 	// after is when it merged, relative to the clock's time, a minute when zero.
 	after time.Duration
 }
@@ -1123,7 +1125,7 @@ func (g *GitHub) PullRequestMerged(ticket string, pr mergedPR) {
 	g.d.t.Helper()
 	g.d.tools.PullRequests.RecordMerged(pullrequesttest.MergedListing{
 		Branch: prBranch(ticket), Base: cmp.Or(pr.base, "main"), Number: 7, URL: "https://github.com/kapetan-io/dispatch/pull/7",
-		Head: "a1", Fork: pr.fork, MergedAt: g.d.Clock.Now().Add(cmp.Or(pr.after, time.Minute)),
+		Head: cmp.Or(pr.head, "a1"), Fork: pr.fork, MergedAt: g.d.Clock.Now().Add(cmp.Or(pr.after, time.Minute)),
 	})
 }
 
