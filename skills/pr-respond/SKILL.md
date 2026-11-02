@@ -34,6 +34,7 @@ Treat every review comment as a claim to check with evidence: a failing test or 
 A finding is confirmed only when every claim on its list is confirmed. Until then, don't tell the user it is real, change the PR body, or move the ticket because of it (an escalation to Needs Human below is not that). Check the not-checked claims first, and leave one not checked only after you tried and couldn't.
 
 Fix and reply to a confirmed finding, resolve it, and record the fix as a divergence when it changes something the design describes. Reply to an unconfirmed finding from a bot with your evidence, saying which claims you couldn't check, and resolve it. Reply to an unconfirmed finding from a person with your evidence, ask the user in chat whether to hold your ground, and move the ticket to Needs Human.
+
 ## A question
 
 A question is not a claim. Answer a question about what the code does on the PR, with evidence. If the answer is a call the Rules reserve for the user, move the ticket to Needs Human, ask in chat, and post nothing on the PR. When the user answers in chat, write the answer on the ticket, move the ticket back to In Progress, and reply to the question on the PR quoting their answer. Any other question is yours to answer on the PR. Resolve a question's thread once you have answered it.
