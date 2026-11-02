@@ -254,7 +254,7 @@ Where tickets come from and are written back: Linear, or dispatch's own local ti
 _Avoid_: source (what the world reads), tracker
 
 **Local ticket**:
-A ticket in dispatch's own database, id `LOC-<n>`, which only the holder of `dispatch.lock` opens. `dispatch ticket` reaches it through the running `dispatch run`. Numbers count up and are never reused, and nothing deletes a ticket.
+A ticket in dispatch's own database, id `LOC-<n>`, which only the holder of `dispatch.lock` opens for writing. `dispatch ticket` reaches it through the running `dispatch run`; `dispatch rules check` and `dispatch state reset` read it without writing, under the lock or by asking the running `dispatch run`. Numbers count up and are never reused, and nothing deletes a ticket.
 _Avoid_: internal ticket, offline ticket
 
 **Attribute**:

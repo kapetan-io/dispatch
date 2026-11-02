@@ -17,7 +17,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/linear"
-	"github.com/kapetan-io/dispatch/internal/localticket"
 	"github.com/kapetan-io/dispatch/internal/lock"
 	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/kapetan-io/dispatch/internal/rules"
@@ -126,13 +125,7 @@ func runCommand(ctx context.Context, opts Options) error {
 	}
 	services := servicesFor(opts, cfg)
 	sent := &typed.Log{}
-	var local *localticket.Options
-	if cfg.Plugins.Local.On {
-		local = &localticket.Options{Path: cfg.Plugins.Local.Path, Repos: cfg.Repos.Labels(), LockTimeout: opts.LocalLockTimeout}
-		if local.Path == "" {
-			local.Path = filepath.Join(opts.StateDir, "tickets.db")
-		}
-	}
+	local := localOptions(opts, cfg)
 	exec := executor.New(executor.Env{
 		Config: cfg, Systems: executor.Systems{Linear: linear.System{
 			Workspace: func() linear.Workspace { return lin }, AILabel: cfg.Plugins.Linear.AILabel, Teams: cfg.Plugins.Linear.Teams, Statuses: cfg.Plugins.Linear.Statuses.Table(),

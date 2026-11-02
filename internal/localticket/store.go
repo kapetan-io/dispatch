@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -92,6 +93,61 @@ func Open(o Options) (*Store, error) {
 	return s, nil
 }
 
+// OpenReadOnly opens the file for a command that runs while dispatch run is stopped. It never creates,
+// seeds or writes the file. It checks the file's statuses and tickets, but not Options.Highest, which
+// guards a start against a replaced file. A file that does not exist or is empty returns a nil Store,
+// because it holds no local tickets, and the caller shows the default statuses a start would seed. A
+// file a killed first start left without statuses reads with those defaults.
+func OpenReadOnly(o Options) (*Store, error) {
+	timeout := o.LockTimeout
+	if timeout <= 0 {
+		timeout = defaultLockTimeout
+	}
+	info, err := os.Stat(o.Path)
+	if errors.Is(err, fs.ErrNotExist) || (err == nil && info.Size() == 0) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("while opening %s: %w", o.Path, err)
+	}
+	db, err := bolt.Open(o.Path, 0o600, &bolt.Options{ReadOnly: true, Timeout: timeout})
+	if errors.Is(err, bolt.ErrTimeout) {
+		return nil, &Error{Kind: ErrHeld, Msg: fmt.Sprintf("%s is held by another process after %s; another dispatch run or a file sync tool may hold it", o.Path, timeout)}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("while opening %s: %w", o.Path, err)
+	}
+	s := &Store{db: db, repos: o.Repos, now: o.Now}
+	if err := s.load(o.Highest); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("local tickets in %s: %w", o.Path, err)
+	}
+	return s, nil
+}
+
+// load reads the statuses and checks the file, which only reads.
+func (s *Store) load(highest uint64) (err error) {
+	defer recoverTo(&err)
+	return s.db.View(func(tx *bolt.Tx) error {
+		if tx.Bucket(statusBucket) == nil || tx.Bucket(ticketBucket) == nil || tx.Bucket(commentBucket) == nil {
+			s.statuses = ticket.DefaultStatuses()
+			return nil
+		}
+		statuses, err := readStatuses(tx)
+		if err != nil {
+			return err
+		}
+		if len(statuses) == 0 {
+			statuses = ticket.DefaultStatuses()
+		}
+		if err := statuses.Check(); err != nil {
+			return err
+		}
+		s.statuses = statuses
+		return check(tx, statuses, highest)
+	})
+}
+
 func (s *Store) start(highest uint64) (err error) {
 	defer recoverTo(&err)
 	// A file that needs nothing is only read, so a refused start leaves it as it was.
@@ -135,17 +191,7 @@ func (s *Store) start(highest uint64) (err error) {
 			return err
 		}
 	}
-	return s.db.View(func(tx *bolt.Tx) error {
-		statuses, err := readStatuses(tx)
-		if err != nil {
-			return err
-		}
-		if err := statuses.Check(); err != nil {
-			return err
-		}
-		s.statuses = statuses
-		return check(tx, statuses, highest)
-	})
+	return s.load(highest)
 }
 
 // Close releases the file.

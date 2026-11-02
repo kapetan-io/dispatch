@@ -51,8 +51,14 @@ type Sources struct {
 	Resilient bool
 	// LocalOn is true when local tickets are on, so a Linear read that returns a LOC- id fails.
 	LocalOn bool
-	// Local is the local ticket database, nil when it is not open.
-	Local *localticket.Store
+	// Local is where the local tickets are read from, nil when no database is open or read.
+	Local LocalTickets
+}
+
+// LocalTickets is the local ticket database, as the open file or as a Snapshot of it.
+type LocalTickets interface {
+	Statuses() ticket.Statuses
+	Tracked(holders []string, wantChildren func(ticket.Ticket) bool) (localticket.Tracked, error)
 }
 
 // Scope is the part of the config a read depends on.
