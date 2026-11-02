@@ -378,7 +378,7 @@ func TestTickKeepsTheTreeWhenTheWorkspaceWillNotClose(t *testing.T) {
 
 	res := d.Run("tick")
 
-	require.ErrorContains(t, res.Err, "while closing herdr workspace w-ENG-1")
+	require.ErrorContains(t, res.Err, "while closing workspace w-ENG-1")
 	assert.Empty(t, d.Trees.Returned())
 	returns := teardownReceipts(d, "ENG-1", "return")
 	require.Len(t, returns, 1)
@@ -1173,7 +1173,7 @@ func teardownReceipts(d *Dispatch, ticket, kind string) []Receipt {
 // Clean makes the ticket's tree a clean, pushed clone and returns its path.
 func (t *Trees) Clean(ticket string) string { return t.d.gitTree(ticket) }
 
-// Leased holds the tree for the ticket with no herdr workspace on it.
+// Leased holds the tree for the ticket with no workspace on it.
 func (t *Trees) Leased(ticket, path string) { t.d.lease(ticket, path) }
 
 // Dirty stages a new file in the tree.

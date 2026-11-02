@@ -77,7 +77,7 @@ func (d *Dispatch) AddRepo(label, dir string) { d.addRepo(label, dir) }
 // ForgetRepos drops every repo added after the dispatch repo.
 func (d *Dispatch) ForgetRepos() { d.resetRepos() }
 
-// RealLauncher makes launches open a herdr workspace over a pooled tree, so a launched worker
+// RealLauncher makes launches open a workspace over a pooled tree, so a launched worker
 // counts against max_in_progress the way it does in production.
 func (d *Dispatch) RealLauncher() {
 	d.t.Helper()

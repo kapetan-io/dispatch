@@ -177,7 +177,7 @@ func (c *CLI) startAgent(ctx context.Context, w Worker, started *Started) bool {
 		c.sleep(ctx, c.pace)
 	}
 	args := []string{"agent", "start", started.Agent, "--kind", w.Program.AgentKind, "--pane", started.Pane, "--timeout", "90000", "--"}
-	out, err := c.combined(ctx, append(args, w.Program.Argv...)...)
+	out, err := c.combined(ctx, append(args, w.Program.StartArgv()...)...)
 	if err != nil {
 		c.log("agent start failed: %s", out)
 		return false

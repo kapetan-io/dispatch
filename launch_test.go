@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -1279,4 +1280,65 @@ func TestLaunchReturnsATreeTreehouseLeasedBeforeItFailedWhenTheWorkspaceFails(t 
 
 	assert.Equal(t, "workspace_failed", out.result["status"])
 	assert.Equal(t, []string{d.Repo + "|" + tree + "|ENG-1"}, d.Trees.Returned())
+}
+
+func TestLaunchStartsClaudeOnASessionIdDispatchChose(t *testing.T) {
+	t.Parallel()
+	uuid := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	var ids []string
+	for range 2 {
+		d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+		d.Trees.Pooled()
+
+		assert.Equal(t, "ok", d.launch("ENG-1", "thrawn01/eng-1").result["status"])
+
+		started := d.fakes().Herdr.Started()
+		require.Len(t, started, 1)
+		assert.Equal(t, "--session-id", started[0].Program.SessionFlag)
+		assert.Regexp(t, uuid, started[0].Program.Session)
+		assert.NotContains(t, started[0].Program.Argv, "--session-id")
+		snap, err := d.fakes().Herdr.Read(context.Background())
+		require.NoError(t, err)
+		require.Len(t, snap.Agents, 1)
+		assert.Equal(t, started[0].Program.Session, snap.Agents[0].Session)
+		ids = append(ids, started[0].Program.Session)
+	}
+	assert.NotEqual(t, ids[0], ids[1])
+}
+
+func TestRecordStopFromAnotherClaudeSessionInAWorkersTreeDoesNotCountAsTheWorkers(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name  string
+		other bool
+		want  string
+		turns []string
+	}{
+		{"WorkersOwnSession", false, "💤", []string{"ENG-1: turns  of 0", "ENG-1: turns idle of 1"}},
+		{"StrangerSession", true, "🟢", []string{"ENG-1: turns  of 0"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(turnsRule)})
+			d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+			tree := d.Trees.Pooled()
+			out := d.launch("ENG-1", "thrawn01/eng-1")
+			require.Equal(t, "ok", out.result["status"])
+			session := d.fakes().Herdr.Started()[0].Program.Session
+			pane := out.result["pane"]
+			d.fakes().Herdr.SetStatus(pane, "idle")
+			d.StartBeforeTheEvents()
+			defer d.FromPane(pane)()
+			if test.other {
+				session = "a-stranger"
+			}
+
+			input := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"background_tasks":[]}`, session, tree)
+			require.NoError(t, d.Hook("record-stop", input).Err)
+
+			d.Tick()
+			renames := d.Workers.Renames()
+			assert.Equal(t, "w2|"+test.want+" ENG-1", renames[len(renames)-1])
+			assert.Equal(t, test.turns, d.Linear.Comments())
+		})
+	}
 }

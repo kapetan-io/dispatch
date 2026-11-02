@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch/internal/harness"
+	"github.com/kapetan-io/dispatch/internal/harnesstest"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 )
 
@@ -245,6 +246,34 @@ func TestStartWorkerStampsTheTabAndStartsClaudeInIt(t *testing.T) {
 	assert.NotContains(t, tabs[0], "DISPATCH_BIN")
 	assert.Equal(t, []string{"agent start eng-1 --kind claude --pane w9:p1 --timeout 90000 -- --model sonnet --plugin-dir /plugin --disallowedTools EnterPlanMode,ExitPlanMode --settings {\"crossSessionInbound\":\"accept\"} --dangerously-skip-permissions"},
 		s.callsStarting("agent start"))
+}
+
+func TestStartWorkerStartsClaudeOnTheChosenSessionId(t *testing.T) {
+	s := newStatefulHerdr(t)
+	s.workerStarts()
+	program := harness.ClaudeCode{}.Program(harness.Start{Model: "sonnet", PluginRoot: "/plugin", Session: "7d5b1f0e-2c3a-4e55-9a60-0c1d2e3f4a5b"})
+
+	_, err := s.cli.StartWorker(context.Background(), herdr.Worker{
+		Workspace: "w9", Dir: "/t/1", Label: "ENG-1", Name: "eng-1", PluginRoot: "/plugin", Program: program,
+	})
+
+	require.NoError(t, err)
+	starts := s.callsStarting("agent start")
+	require.Len(t, starts, 1)
+	assert.True(t, strings.HasSuffix(starts[0], " --dangerously-skip-permissions --session-id 7d5b1f0e-2c3a-4e55-9a60-0c1d2e3f4a5b"), starts[0])
+}
+
+func TestStartWorkerPassesNoSessionArgumentsWhenTheProgramHasNoSessionFlag(t *testing.T) {
+	s := newStatefulHerdr(t)
+	s.workerStarts()
+	program := harnesstest.New().Program(harness.Start{Model: "tiny", Session: "chosen"})
+
+	_, err := s.cli.StartWorker(context.Background(), herdr.Worker{
+		Workspace: "w9", Dir: "/t/1", Label: "ENG-1", Name: "eng-1", PluginRoot: "/plugin", Program: program,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"agent start eng-1 --kind fake --pane w9:p1 --timeout 90000 -- --model tiny"}, s.callsStarting("agent start"))
 }
 
 func TestStartWorkerStampsTheNamedDispatchBin(t *testing.T) {

@@ -974,7 +974,7 @@ func stateName(id string) string {
 // Workers is herdr: the workspaces, agents and prompts of the workers.
 type Workers struct{ d *Dispatch }
 
-// Running gives a ticket a leased tree and a herdr workspace on it. An empty status means the
+// Running gives a ticket a leased tree and a workspace on it. An empty status means the
 // workspace has no Claude agent.
 func (w *Workers) Running(ticket, status string) { w.d.worker(ticket, status) }
 
@@ -1064,7 +1064,7 @@ func (w *Workers) StopFrom(session, ticket string, tasks stopTasks) {
 // Trees is the treehouse pool over real git worktrees.
 type Trees struct{ d *Dispatch }
 
-// CleanLeased leases the ticket a clean, pushed tree that has no herdr workspace.
+// CleanLeased leases the ticket a clean, pushed tree that has no workspace.
 func (t *Trees) CleanLeased(ticket string) {
 	t.d.lease(ticket, t.d.gitTree(ticket))
 }
@@ -1776,7 +1776,7 @@ func (d *Dispatch) tickets(tickets ...fakeTicket) {
 	d.linear.setTickets(tickets)
 }
 
-// worker gives a ticket a leased tree and a herdr workspace on it. An empty
+// worker gives a ticket a leased tree and a workspace on it. An empty
 // status means the workspace has no Claude agent.
 func (d *Dispatch) worker(ticket, status string) {
 	d.workerOn(ticket, filepath.Join(d.dir, "trees", ticket), "w-"+ticket, status)
@@ -1862,7 +1862,7 @@ func (d *Dispatch) labelTab(ticket, label string) {
 	d.tools.Herdr.SetTabLabel("w-"+ticket+":t1", label)
 }
 
-// closes lists the herdr workspaces that were closed.
+// closes lists the workspaces that were closed.
 func (d *Dispatch) closes() []string {
 	return d.tools.Herdr.ClosedWorkspaces()
 }
@@ -2115,7 +2115,7 @@ func parent(id, status string) fakeTicket {
 	return ticket(id, status, "dispatch")
 }
 
-// parentsRealLauncher makes launches create a herdr workspace, so a launched worker
+// parentsRealLauncher makes launches create a workspace, so a launched worker
 // counts against the cap the way it does in production. The fake launcher leaves no trace.
 func parentsRealLauncher(d *Dispatch) {
 	d.builtinLauncher = true
@@ -2540,7 +2540,7 @@ func (d *Dispatch) gitTree(ticket string) string {
 	return path
 }
 
-// lease holds a tree for a ticket with no herdr workspace on it.
+// lease holds a tree for a ticket with no workspace on it.
 func (d *Dispatch) lease(ticket, path string) {
 	d.tools.Treehouse.Clear(d.Repo)
 	d.tools.Treehouse.Seed(d.Repo, treehouse.Tree{Path: path, Status: "leased", LeaseHolder: ticket})

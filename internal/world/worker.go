@@ -6,7 +6,7 @@ import (
 )
 
 // A worker is found by the join from a ticket to each tree it holds (the lease
-// holder is the ticket id), to the herdr workspace showing that tree, to the
+// holder is the ticket id), to the workspace showing that tree, to the
 // session of a registered harness that herdr reports there. herdr's own agent names are not used,
 // because they clear when the program exits.
 
@@ -21,7 +21,7 @@ const (
 	Blocked  WorkerState = "blocked"
 )
 
-// Worker is the ticket's place on one tree it holds: the tree, the herdr workspace
+// Worker is the ticket's place on one tree it holds: the tree, the workspace
 // showing it, and the session there now, if any.
 type Worker struct {
 	State       WorkerState

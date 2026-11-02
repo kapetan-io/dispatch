@@ -187,12 +187,12 @@ func (l *Loop) renameWorkspaces() {
 		defer cancel()
 		for _, r := range workspaces {
 			if err := l.o.Herdr.RenameWorkspace(ctx, r.id, r.label); err != nil {
-				_, _ = fmt.Fprintf(l.o.Err, "dispatch: while renaming herdr workspace %s: %v\n", r.id, err)
+				_, _ = fmt.Fprintf(l.o.Err, "dispatch: while renaming workspace %s: %v\n", r.id, err)
 			}
 		}
 		for _, r := range tabs {
 			if err := l.o.Herdr.RenameTab(ctx, r.id, r.label); err != nil {
-				_, _ = fmt.Fprintf(l.o.Err, "dispatch: while renaming herdr tab %s: %v\n", r.id, err)
+				_, _ = fmt.Fprintf(l.o.Err, "dispatch: while renaming tab %s: %v\n", r.id, err)
 			}
 		}
 		select {

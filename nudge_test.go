@@ -103,7 +103,7 @@ func (w *Workers) VanishAfterSnapshot(ticket string) { w.d.vanishAfterSnapshot(t
 // Unblock undoes BlockAfterSnapshot.
 func (w *Workers) Unblock(ticket string) { w.d.unblock(ticket) }
 
-// Gone closes the ticket's herdr workspace, which leaves its tree leased and no worker for dispatch to see.
+// Gone closes the ticket's workspace, which leaves its tree leased and no worker for dispatch to see.
 func (w *Workers) Gone(ticket string) {
 	require.NoError(w.d.t, w.d.tools.Herdr.CloseWorkspace(context.Background(), "w-"+ticket))
 }
@@ -318,7 +318,7 @@ func TestTickNotifiesAgainWhileAWorkerStaysBlocked(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
 			d.Linear.Tickets(ticket("ENG-1", status, "dispatch"))
 			d.Workers.Running("ENG-1", "blocked")
-			const want = "ENG-1 is waiting on your answer in its herdr workspace"
+			const want = "ENG-1 is waiting on your answer in its workspace"
 
 			var counts []int
 			for i := range 7 {
@@ -553,8 +553,8 @@ func TestTickTracksBlockedTicksPerTicket(t *testing.T) {
 	d.Workers.Running("ENG-1", "blocked")
 	d.Workers.Running("ENG-2", "working")
 	const (
-		first  = "ENG-1 is waiting on your answer in its herdr workspace"
-		second = "ENG-2 is waiting on your answer in its herdr workspace"
+		first  = "ENG-1 is waiting on your answer in its workspace"
+		second = "ENG-2 is waiting on your answer in its workspace"
 	)
 
 	d.Tick()
@@ -652,7 +652,7 @@ func TestTickNotifiesWhenAReviewWorkerIsBlockedOnAQuestion(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its herdr workspace"}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its workspace"}, d.Alerts.Shown())
 }
 
 func TestTickNotifiesWhenAReviewTicketThatAlsoCarriesDesignIsBlocked(t *testing.T) {
@@ -663,7 +663,7 @@ func TestTickNotifiesWhenAReviewTicketThatAlsoCarriesDesignIsBlocked(t *testing.
 
 	d.Tick()
 
-	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its herdr workspace"}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its workspace"}, d.Alerts.Shown())
 }
 
 func TestTickNotifiesWhenAReviewTicketEntersNeedsHuman(t *testing.T) {

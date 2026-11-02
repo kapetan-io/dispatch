@@ -38,7 +38,7 @@ func (d *Dispatch) unreadRepo(label string) {
 	d.addRepo(label, filepath.Join(d.dir, "moved"))
 }
 
-// realLauncher makes a launch create a herdr workspace, so a launched worker counts against the cap.
+// realLauncher makes a launch create a workspace, so a launched worker counts against the cap.
 func (d *Dispatch) realLauncher() { parentsRealLauncher(d) }
 
 // herdrDown makes herdr refuse every read, or answer again when on is false.

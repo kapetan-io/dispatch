@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -123,6 +124,12 @@ func TestRealClaudeTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t
 		require.Fail(t, "herdr shows no agent in the worker's pane")
 		return world.Worker{}
 	}
+	// The id herdr learns from Claude is the one dispatch chose and passed on the command line.
+	require.Eventually(t, func() bool {
+		id := worker().Session
+		out, err := exec.Command("ps", "-axo", "args").Output()
+		return err == nil && id != "" && strings.Contains(string(out), "--session-id "+id)
+	}, 30*time.Second, 200*time.Millisecond)
 	settled := func(wantTurns int) {
 		t.Helper()
 		t.Cleanup(func() {

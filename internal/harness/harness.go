@@ -4,6 +4,7 @@ package harness
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"maps"
@@ -68,6 +69,8 @@ var (
 type Start struct {
 	Model      string
 	PluginRoot string
+	// Session is the id dispatch chose for the program's session.
+	Session string
 }
 
 // Registry maps the kind a [harness.<name>] table names, such as "claude-code",
@@ -85,7 +88,7 @@ func (r Registry) Program(kind, model, pluginRoot string) (herdr.Program, error)
 	if !ok {
 		return herdr.Program{}, fmt.Errorf("no harness adapter for kind %q", kind)
 	}
-	return h.Program(Start{Model: model, PluginRoot: pluginRoot}), nil
+	return h.Program(Start{Model: model, PluginRoot: pluginRoot, Session: newSessionID()}), nil
 }
 
 // ForAgent returns the harness herdr detects as agentKind.
@@ -129,4 +132,13 @@ func (r Registry) Follower(env environment.Environment) (string, string, error) 
 		return "", "", errors.New(reasons[0])
 	}
 	return "", "", fmt.Errorf("this is not a session of a harness dispatch drives: %s", strings.Join(reasons, "; "))
+}
+
+// newSessionID returns a random version 4 UUID, the form Claude's --session-id takes.
+func newSessionID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
