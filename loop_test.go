@@ -1127,3 +1127,29 @@ whenever({
 
 	assert.Equal(t, []string{"ENG-1: ordered second"}, d.Linear.Changes())
 }
+
+func TestRunPrintsAFailedLeaseAndAFailedSwitchWithTheTicketAndTheMessage(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		status string
+		detail string
+	}{
+		{"lease_failed", "treehouse lease failed but the pool is not exhausted (treehouse stderr: no worktree)"},
+		{"switch_failed", "git switch to b failed in leased tree /t/1 (lease returned): fatal: invalid reference: origin/b"},
+	} {
+		t.Run(test.status, func(t *testing.T) {
+			t.Parallel()
+			d := newDispatch(t, dispatchOptions{})
+			d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+			d.Workers.LaunchResult(`{"status":"` + test.status + `","detail":"` + test.detail + `"}`)
+
+			d.StartBeforeTheEvents()
+			want := "launch ENG-1 failed: " + test.status + ": " + test.detail
+			require.Eventually(t, func() bool { return strings.Contains(d.LoopOut(), want) }, 15*time.Second, 10*time.Millisecond)
+
+			d.Stop()
+			assert.Empty(t, d.Linear.Changes())
+		})
+	}
+}

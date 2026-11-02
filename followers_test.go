@@ -293,11 +293,11 @@ func TestTickMessagesFollowersAboutAnEscalation(t *testing.T) {
 	d.Workers.LaunchResult(`{"status":"pool_error","detail":"treehouse lease failed"}`)
 	require.NoError(t, d.Run("watch", "ENG-1").Err)
 
-	// Each tick retries the launch, and the second failure reaches the limit.
+	// Each tick launches again, and the second failure reaches the limit.
 	res := d.Run("tick")
 	require.ErrorContains(t, res.Err, "pool_error")
 	assert.Empty(t, lines)
-	// A receipt is told from its retry by its start time, which the fake clock only changes when moved.
+	// A receipt is told from the next tick's by its start time, which the fake clock only changes when moved.
 	d.Advance(time.Second)
 	res = d.Run("tick")
 	require.ErrorContains(t, res.Err, "pool_error")
