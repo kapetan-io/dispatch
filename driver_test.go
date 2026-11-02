@@ -1734,6 +1734,22 @@ func (c *fakeClock) untilDeadline(what string) (time.Duration, bool) {
 	return 0, false
 }
 
+// deadlinesNamed counts the deadlines ever started under names with this prefix and how many are
+// still running, so a test can tell that work paused its deadline.
+func (c *fakeClock) deadlinesNamed(prefix string) (started, live int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, t := range c.timers {
+		if strings.HasPrefix(t.what, prefix) {
+			started++
+			if !t.done {
+				live++
+			}
+		}
+	}
+	return started, live
+}
+
 // expire fires the first live deadline named what and leaves the time alone, so deadlines due at
 // the same instant, such as a rule's budget and the request inside it, pass one at a time.
 func (c *fakeClock) expire(what string) int {

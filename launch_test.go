@@ -1122,10 +1122,18 @@ func TestLaunchesQueuedForTheirTurnKeepTheirWholeDeadline(t *testing.T) {
 	// advanced, so each launch holds the repo's turn for 60ms of its 100ms deadline. The third
 	// waits 120ms in the queue, more than its whole deadline.
 	ticked := later(func() Result { return d.RunWith(dispatch.Options{LaunchTimeout: 100 * time.Millisecond}, "tick") })
+	// Each launch starts a deadline and stops it to queue, and the one holding the turn starts a
+	// second. The clock must not move before the other two have stopped theirs, or their time runs.
+	require.Eventually(t, func() bool {
+		started, live := d.Clock.deadlinesNamed("launch ENG-")
+		return started == 4 && live == 1
+	}, 20*time.Second, time.Millisecond)
 	for held := 1; held <= 3; held++ {
 		require.Eventually(t, func() bool { return len(d.fakes().Calls("treehouse", "lease")) == held }, 20*time.Second, time.Millisecond)
 		d.advance(60 * time.Millisecond)
 		release()
+		// The next advance would otherwise land on this launch's remaining work and time it out.
+		require.Eventually(t, func() bool { return len(d.fakes().Herdr.Started()) == held }, 20*time.Second, time.Millisecond)
 	}
 	res := ticked()
 
