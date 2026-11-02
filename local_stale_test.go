@@ -23,8 +23,7 @@ const commentWithStatusSince = `whenever({ name: "since", each: "ticket", if: (t
 const commentOnLocalByAttribute = `whenever({ name: "ask", each: "ticket", if: (t) => t.system === "local" && t.attributes.area === "webhooks",
   then: (t, ctx) => ctx.ticket.queueComment(t, "seen", { once: ["ask", t.id] }) });`
 
-// The two actions run side by side, so either may land first. Whichever does, the other sees a status
-// it did not read and fails without writing.
+// A rule sees the time the database recorded for the status, not the time dispatch first read it.
 func TestTickKeepsALocalTicketsStatusSinceFromTheDatabase(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: localOn, Rules: rule(commentWithStatusSince)})
