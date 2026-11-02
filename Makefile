@@ -20,6 +20,10 @@ test-slow: ## Run the whole suite including tests tagged tests_slow
 test-race: ## Run the fast suite under the race detector
 	go test -race ./...
 
+.PHONY: test-claude
+test-claude: ## Run the real Claude Code worker scenarios (needs a logged-in claude, spends Haiku turns)
+	go test -tags claude -count=1 ./internal/harness/
+
 .PHONY: test-drift
 test-drift: ## Check the fakes against the installed tools (CI skips this)
 	@# Strip credentials so a drift test cannot reach a GitHub or Linear account.
