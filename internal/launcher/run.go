@@ -118,8 +118,8 @@ func New(opts Options) *Local { return &Local{opts: opts.withDefaults()} }
 // waiting for the shell before starting the agent, answering the consent and
 // folder-trust dialogs, and confirming the kickoff landed. The herdr adapter
 // does all of it behind OpenWorkspace, StartWorker and Kickoff. A StartWorker that finds a
-// session already running on the tree ends the launch as already_running, closing and
-// returning nothing.
+// session already running on the tree ends the launch as already_running, and one that finds only
+// a terminal with no Claude ends it as terminal_without_agent. Both close and return nothing.
 func (r *Local) Launch(ctx context.Context, req Request) Result {
 	l := &launch{req: req, opts: r.opts}
 	return l.run(ctx)
@@ -565,6 +565,11 @@ func (l *launch) startWorker(ctx context.Context, name string) (herdr.Started, R
 	// Whoever owns the session owns the workspace too, so this launch closes and returns nothing.
 	if errors.Is(err, herdr.ErrSessionRunning) {
 		return started, Result{Status: StatusAlreadyRunning, Detail: fmt.Sprintf("workspace %s already has a session; not typing a second kickoff", l.workspace), Workspace: l.workspace, Worktree: l.tree}, false
+	}
+	// A racing launch may own this terminal, so leave the workspace and tree alone, as above.
+	var held *herdr.TerminalWithoutAgent
+	if errors.As(err, &held) {
+		return started, Result{Status: StatusTerminalWithoutAgent, Detail: fmt.Sprintf("terminal %s holds %s but runs no Claude; remove it so a worker can start", held.Address, l.tree), Workspace: l.workspace, Worktree: l.tree}, false
 	}
 	l.giveBack(ctx)
 	if started.Pane == "" {

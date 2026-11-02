@@ -225,6 +225,21 @@ func TestCoreRefusesToStartBesideAClaudeTheUserStartedInTheSpace(t *testing.T) {
 	assert.Len(t, r.terminals(t, false).Terminals, 1)
 }
 
+func TestCoreNamesAWorkerTerminalThatRunsNoClaudeAndLeavesItRunning(t *testing.T) {
+	r := newCoreRig(t)
+	r.session.Run(t, "run", "--bg", "--name", "stuck", "--", "sleep", "300")
+	r.session.Run(t, "label", "stuck", "herdr.space="+r.space, "dispatch.tree="+r.worker.Dir)
+
+	_, err := r.core.StartWorker(context.Background(), r.worker)
+
+	var held *herdr.TerminalWithoutAgent
+	require.ErrorAs(t, err, &held)
+	assert.NotEmpty(t, held.Address)
+	live := r.terminals(t, false)
+	require.Len(t, live.Terminals, 1)
+	assert.Equal(t, held.Address, live.Terminals[0].Address)
+}
+
 func TestCoreReadsAWorkerWhoseClaudeWasKilledAsHavingNoAgent(t *testing.T) {
 	r := newCoreRig(t)
 	started := r.launched(t)

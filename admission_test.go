@@ -117,6 +117,24 @@ func TestTickEscalatesAfterRepeatedLaunchFailures(t *testing.T) {
 	assert.Contains(t, changes[1], "treehouse lease failed")
 }
 
+func TestTickEscalatesATreeHeldByATerminalWithNoClaude(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.LaunchResult(`{"status":"terminal_without_agent","detail":"terminal t7 holds the tree but runs no Claude"}`)
+
+	res := d.Run("tick")
+	require.ErrorContains(t, res.Err, "ENG-1 launch failed: terminal_without_agent: terminal t7")
+	d.Advance(time.Second)
+	res = d.Run("tick")
+
+	assert.Contains(t, res.Stdout, "ENG-1 escalated: its worker failed to launch 2 times in a row")
+	changes := d.Linear.Changes()
+	require.Len(t, changes, 2)
+	assert.Equal(t, needsHuman, changes[0])
+	assert.Contains(t, changes[1], "terminal t7")
+}
+
 func TestTickNeverEscalatesForAFullPool(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})

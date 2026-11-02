@@ -412,22 +412,26 @@ func TestCoreNamesOneTreeTheSameWhateverItsSpelling(t *testing.T) {
 	assert.NotEqual(t, first, other)
 }
 
-func TestCoreStartWorkerStartsNothingWhereASessionRuns(t *testing.T) {
+func TestCoreStartWorkerStartsNothingWhereAClaudeRuns(t *testing.T) {
+	shims := t.TempDir()
+	require.NoError(t, os.WriteFile(shims+"/claude", []byte("#!/bin/sh\n"), 0o755))
+	users := spec{address: "t2", program: "/Users/me/.local/bin/claude", status: "idle", labels: map[string]string{"herdr.space": "spA"}}
 	loading := worker("t1", "spA", "tbA", "")
 	loading.program = "/bin/sh"
-	users := spec{address: "t2", program: "/Users/me/.local/bin/claude", status: "idle", labels: map[string]string{"herdr.space": "spA"}}
 	for _, test := range []struct {
 		name     string
-		existing spec
+		existing []spec
 	}{
-		{"AWorkerWhoseClaudeIsStillLoading", loading},
-		{"AClaudeTheUserStartedInTheSpace", users},
+		{"AClaudeTheUserStartedInTheSpace", []spec{users}},
+		{"AClaudeBesideATerminalThatRunsNone", []spec{loading, worker("t3", "spA", "tbB", "idle")}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			shims := t.TempDir()
-			require.NoError(t, os.WriteFile(shims+"/claude", []byte("#!/bin/sh\n"), 0o755))
-			test.existing.labels["herdr.space"] = "spA"
-			core, calls := coreStandIn(t, map[string][]string{"terminal.list": {list(term(test.existing))}})
+			var terminals []string
+			for _, s := range test.existing {
+				s.labels["herdr.space"] = "spA"
+				terminals = append(terminals, term(s))
+			}
+			core, calls := coreStandIn(t, map[string][]string{"terminal.list": {list(terminals...)}})
 
 			_, err := core.StartWorker(context.Background(), herdr.Worker{Dir: t.TempDir(), Program: herdr.Program{AgentKind: "claude", PathFirst: []string{shims}}})
 
@@ -436,6 +440,25 @@ func TestCoreStartWorkerStartsNothingWhereASessionRuns(t *testing.T) {
 			assert.Empty(t, calls.Params(t, "terminal.kill"))
 		})
 	}
+}
+
+func TestCoreStartWorkerNamesTheTerminalThatHoldsTheTreeWithNoClaude(t *testing.T) {
+	shims := t.TempDir()
+	require.NoError(t, os.WriteFile(shims+"/claude", []byte("#!/bin/sh\n"), 0o755))
+	stuck := worker("t1", "spA", "tbA", "")
+	stuck.program = "/bin/sh"
+	other := spec{address: "t9", program: "/bin/zsh", labels: map[string]string{"herdr.space": "spA"}}
+	core, calls := coreStandIn(t, map[string][]string{"terminal.list": {list(term(other), term(stuck))}})
+
+	_, err := core.StartWorker(context.Background(), herdr.Worker{Dir: t.TempDir(), Program: herdr.Program{AgentKind: "claude", PathFirst: []string{shims}}})
+
+	var held *herdr.TerminalWithoutAgent
+	require.ErrorAs(t, err, &held)
+	assert.Equal(t, "t1", held.Address)
+	assert.NotErrorIs(t, err, herdr.ErrSessionRunning)
+	assert.Empty(t, calls.Params(t, "terminal.run"))
+	assert.Empty(t, calls.Params(t, "terminal.kill"))
+	assert.Empty(t, calls.Params(t, "terminal.rm"))
 }
 
 func TestCoreStartWorkerReportsALosingRaceAsASessionRunning(t *testing.T) {

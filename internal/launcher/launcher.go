@@ -48,9 +48,10 @@ type Stack struct {
 
 // Launcher statuses that the dispatcher treats specially.
 const (
-	StatusOK             = "ok"
-	StatusAlreadyRunning = "already_running"
-	StatusPoolExhausted  = "pool_exhausted"
+	StatusOK                   = "ok"
+	StatusAlreadyRunning       = "already_running"
+	StatusPoolExhausted        = "pool_exhausted"
+	StatusTerminalWithoutAgent = "terminal_without_agent"
 )
 
 // Result is the one JSON object a launch prints, status first.
