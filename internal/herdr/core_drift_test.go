@@ -225,6 +225,21 @@ func TestCoreRefusesToStartBesideAClaudeTheUserStartedInTheSpace(t *testing.T) {
 	assert.Len(t, r.terminals(t, false).Terminals, 1)
 }
 
+func TestCoreNamesAWorkerTerminalThatRunsNoClaudeAndLeavesItRunning(t *testing.T) {
+	r := newCoreRig(t)
+	r.session.Run(t, "run", "--bg", "--name", "stuck", "--", "sleep", "300")
+	r.session.Run(t, "label", "stuck", "herdr.space="+r.space, "dispatch.tree="+r.worker.Dir)
+
+	_, err := r.core.StartWorker(context.Background(), r.worker)
+
+	var held *herdr.TerminalWithoutAgent
+	require.ErrorAs(t, err, &held)
+	assert.NotEmpty(t, held.Address)
+	live := r.terminals(t, false)
+	require.Len(t, live.Terminals, 1)
+	assert.Equal(t, held.Address, live.Terminals[0].Address)
+}
+
 func TestCoreReadsAWorkerWhoseClaudeWasKilledAsHavingNoAgent(t *testing.T) {
 	r := newCoreRig(t)
 	started := r.launched(t)
@@ -489,4 +504,124 @@ func TestHcRefusesAnIdleOnlySendToATerminalThatReportsNoStatus(t *testing.T) {
 	kind := r.rpc(t, "terminal.send", map[string]any{"terminal": started.Pane, "text": "x", "if": "idle"})
 
 	assert.Equal(t, "status_mismatch", kind)
+}
+
+// recordedArgs is the argv the stand-in Claude saw when it last started in the worker's tree.
+func (r *coreRig) recordedArgs(t *testing.T) []string {
+	t.Helper()
+	var recorded struct {
+		Args []string `json:"args"`
+	}
+	b, err := os.ReadFile(filepath.Join(r.worker.Dir, "standin-claude.json"))
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(b, &recorded))
+	return recorded.Args
+}
+
+func TestCoreStartWorkerResumesAfterACoreRestart(t *testing.T) {
+	r := newCoreRig(t)
+	first := r.launched(t)
+	require.NotEmpty(t, first.Pane)
+
+	r.session.Restart(t)
+
+	require.Eventually(t, func() bool {
+		for _, term := range r.terminals(t, true).Terminals {
+			if term.State == "finished" && term.Reason == "server_stop" {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 100*time.Millisecond)
+	r.launched(t)
+	all := r.terminals(t, true)
+	require.Len(t, all.Terminals, 1)
+	assert.Equal(t, r.worker.Program.Session, all.Terminals[0].Labels["dispatch.session"])
+	args := r.recordedArgs(t)
+	assert.Contains(t, args, "--model")
+	assert.Contains(t, args, "--resume")
+	assert.Contains(t, args, r.worker.Program.Session)
+	assert.NotContains(t, args, "--session-id")
+}
+
+func TestCoreStartWorkerStartsFreshAfterACrash(t *testing.T) {
+	r := newCoreRig(t)
+	first := r.launched(t)
+	r.session.Run(t, "kill", first.Pane)
+	require.Eventually(t, func() bool { _, ok := r.agent(t); return !ok }, 10*time.Second, 100*time.Millisecond)
+	r.worker.Program.Session = "6f0c1e2a-0000-4000-8000-000000000002"
+
+	r.launched(t)
+
+	all := r.terminals(t, true)
+	require.Len(t, all.Terminals, 1)
+	assert.Equal(t, "6f0c1e2a-0000-4000-8000-000000000002", all.Terminals[0].Labels["dispatch.session"])
+	args := r.recordedArgs(t)
+	assert.Contains(t, args, "--session-id")
+	assert.NotContains(t, args, "--resume")
+}
+
+func TestCoreCloseWorkspaceRemovesFinishedWorkerTerminalsAfterACoreRestart(t *testing.T) {
+	r := newCoreRig(t)
+	r.launched(t)
+	r.session.Restart(t)
+	require.Eventually(t, func() bool {
+		snap, err := r.core.Read(context.Background())
+		return err == nil && len(snap.Workspaces) == 1 && len(snap.Agents) == 0
+	}, 10*time.Second, 100*time.Millisecond)
+
+	require.NoError(t, r.core.CloseWorkspace(context.Background(), r.space))
+
+	assert.Empty(t, r.terminals(t, true).Terminals)
+	r.worker.Program.Session = "6f0c1e2a-0000-4000-8000-000000000003"
+	r.launched(t)
+	args := r.recordedArgs(t)
+	assert.Contains(t, args, "--session-id")
+	assert.Contains(t, args, "6f0c1e2a-0000-4000-8000-000000000003")
+	assert.NotContains(t, args, "--resume")
+}
+
+// killHolder kills the scratch core's holder process of the worker's terminal, which leaves
+// the terminal finished with reason holder_lost, and removes the socket the holder leaves behind.
+func (r *coreRig) killHolder(t *testing.T) {
+	t.Helper()
+	prefix := strings.TrimSuffix(r.session.Socket, ".sock") + ".holder."
+	out, err := exec.Command("ps", "-axo", "pid,command").Output()
+	require.NoError(t, err)
+	killed := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		_, command, found := strings.Cut(strings.TrimSpace(line), " ")
+		if !found || !strings.Contains(command, "hold --socket "+prefix) {
+			continue
+		}
+		require.NoError(t, exec.Command("kill", "-9", strings.Fields(line)[0]).Run())
+		_, socket, _ := strings.Cut(command, "--socket ")
+		require.NoError(t, os.Remove(strings.TrimSpace(socket)))
+		killed++
+	}
+	require.Equal(t, 1, killed)
+}
+
+func TestCoreStartWorkerResumesAfterItsHolderWasLost(t *testing.T) {
+	r := newCoreRig(t)
+	r.launched(t)
+
+	r.killHolder(t)
+
+	require.Eventually(t, func() bool {
+		for _, term := range r.terminals(t, true).Terminals {
+			if term.State == "finished" && term.Reason == "holder_lost" {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 100*time.Millisecond)
+	r.launched(t)
+	all := r.terminals(t, true)
+	require.Len(t, all.Terminals, 1)
+	assert.Equal(t, r.worker.Program.Session, all.Terminals[0].Labels["dispatch.session"])
+	args := r.recordedArgs(t)
+	assert.Contains(t, args, "--resume")
+	assert.Contains(t, args, r.worker.Program.Session)
+	assert.NotContains(t, args, "--session-id")
 }

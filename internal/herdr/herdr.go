@@ -104,7 +104,8 @@ type Herdr interface {
 	// worker's program, answering nothing yet. The workspace's agent-less tabs are
 	// closed. A failure after the tab came up still returns its pane, so the
 	// caller can tell a missing tab from a program that would not start. It fails with
-	// ErrSessionRunning, starting nothing, when a session already runs on the tree.
+	// ErrSessionRunning, starting nothing, when a session already runs on the tree, and with
+	// *TerminalWithoutAgent when a terminal dispatch started for the tree runs no Claude.
 	StartWorker(ctx context.Context, w Worker) (Started, error)
 	// Kickoff types text into the program in pane once its input box is ready,
 	// answering the startup dialogs the Startup lists first, and returns once herdr
@@ -137,6 +138,9 @@ type Worker struct {
 	// dispatch's skills read it. A program that loads the plugin by flag carries the
 	// same root in Argv and PathFirst.
 	PluginRoot string
+	// FreshLease is set when this launch took the tree's lease for the ticket, so a
+	// session left on the tree belongs to an earlier ticket and is never resumed.
+	FreshLease bool
 	// Program is what herdr runs in the tab.
 	Program Program
 }
@@ -162,6 +166,10 @@ type Program struct {
 	// SessionFlag starts the program on Session (Claude: "--session-id"). An
 	// adapter appends SessionFlag and Session to Argv, which holds neither.
 	SessionFlag string
+	// ResumeFlag continues an earlier session instead (Claude: "--resume"). Core
+	// uses it through ResumeArgv after a core restart. Empty when the program
+	// can't resume.
+	ResumeFlag string
 }
 
 // StartArgv is Argv followed by the flag that starts the program on its chosen
@@ -172,6 +180,15 @@ func (p Program) StartArgv() []string {
 		argv = append(argv, p.SessionFlag, p.Session)
 	}
 	return argv
+}
+
+// ResumeArgv is Argv followed by the flag that continues session, or false when the
+// program can't resume.
+func (p Program) ResumeArgv(session string) ([]string, bool) {
+	if session == "" || p.ResumeFlag == "" {
+		return nil, false
+	}
+	return append(slices.Clone(p.Argv), p.ResumeFlag, session), true
 }
 
 // Startup describes the screens a program shows on its way to an input box.
@@ -261,6 +278,16 @@ var (
 	// ErrSessionRunning means StartWorker found a session on the tree and started nothing.
 	ErrSessionRunning = errors.New("a session already runs on the tree")
 )
+
+// TerminalWithoutAgent means StartWorker found a live terminal started by dispatch for the
+// tree, with no Claude running in the tree's space, and started nothing. The terminal may be
+// stuck or may belong to a racing launch whose Claude is still loading, so dispatch leaves it
+// for a person to remove.
+type TerminalWithoutAgent struct{ Address string }
+
+func (e *TerminalWithoutAgent) Error() string {
+	return "terminal " + e.Address + " holds the tree but runs no Claude"
+}
 
 // NothingTyped reports whether an error from Prompt proves the text never reached the
 // program, so the caller may withdraw its record of having sent it. Any other failure, a

@@ -49,7 +49,7 @@ func TestLaunchStartsAWorkerTypedTheBuildKickoff(t *testing.T) {
 	assert.Equal(t, "thrawn01/eng-1", branchIn(t, tree))
 	require.Len(t, d.fakes().Herdr.Started(), 1)
 	started := d.fakes().Herdr.Started()[0]
-	assert.Equal(t, herdr.Worker{Workspace: "w2", Dir: tree, Label: "ENG-1", Name: "eng-1", PluginRoot: "/plugin", Program: started.Program}, started)
+	assert.Equal(t, herdr.Worker{Workspace: "w2", Dir: tree, FreshLease: true, Label: "ENG-1", Name: "eng-1", PluginRoot: "/plugin", Program: started.Program}, started)
 	assert.Equal(t, "claude", started.Program.AgentKind)
 	assert.Equal(t, []string{
 		"--model", "sonnet", "--plugin-dir", "/plugin", "--disallowedTools", "EnterPlanMode,ExitPlanMode",
@@ -126,6 +126,24 @@ func TestLaunchReusesTheLeaseOfAnEarlierRun(t *testing.T) {
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, tree, out.result["worktree"])
 	assert.Empty(t, d.fakes().Calls("treehouse", "lease"))
+	require.Len(t, d.fakes().Herdr.Started(), 1)
+	assert.False(t, d.fakes().Herdr.Started()[0].FreshLease)
+}
+
+func TestLaunchReusesTheLeaseOfAnEarlierRunWhenTheFirstPoolReadFails(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
+	d.fakes().Treehouse.FailTrees(errors.New("exit status 1"))
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Equal(t, tree, out.result["worktree"])
+	assert.Empty(t, d.fakes().Calls("treehouse", "lease"))
+	require.Len(t, d.fakes().Herdr.Started(), 1)
+	assert.False(t, d.fakes().Herdr.Started()[0].FreshLease)
 }
 
 func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {

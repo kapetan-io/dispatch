@@ -43,6 +43,7 @@ func (ClaudeCode) Program(s Start) herdr.Program {
 		// Not in ClaudeCodeFlags, so the restart shim never reuses an old id.
 		Session:     s.Session,
 		SessionFlag: "--session-id",
+		ResumeFlag:  "--resume",
 		Startup: herdr.Startup{
 			Answers: []herdr.Answer{
 				// One-time bypass-permissions consent. Match the option text, never

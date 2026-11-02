@@ -118,8 +118,8 @@ func New(opts Options) *Local { return &Local{opts: opts.withDefaults()} }
 // waiting for the shell before starting the agent, answering the consent and
 // folder-trust dialogs, and confirming the kickoff landed. The herdr adapter
 // does all of it behind OpenWorkspace, StartWorker and Kickoff. A StartWorker that finds a
-// session already running on the tree ends the launch as already_running, closing and
-// returning nothing.
+// session already running on the tree ends the launch as already_running, and one that finds only
+// a terminal with no Claude ends it as terminal_without_agent. Both close and return nothing.
 func (r *Local) Launch(ctx context.Context, req Request) Result {
 	l := &launch{req: req, opts: r.opts}
 	return l.run(ctx)
@@ -140,6 +140,9 @@ type launch struct {
 	// fresh is set when this run took the lease, as opposed to finding one from
 	// an earlier run.
 	fresh bool
+	// leaseAsked is set once this run has asked treehouse for a lease, so a lease a later
+	// attempt finds may be one that call took.
+	leaseAsked bool
 	// stacked is what Result.Stacked reports.
 	stacked bool
 }
@@ -328,7 +331,7 @@ func (l *launch) leaseTree(ctx context.Context, existed bool) (Result, bool) {
 			}
 		}
 		var again bool
-		if res, again = l.leaseOnce(ctx, attempt > 1); res.Status == "" {
+		if res, again = l.leaseOnce(ctx); res.Status == "" {
 			break
 		} else if !again {
 			return res, false
@@ -341,9 +344,10 @@ func (l *launch) leaseTree(ctx context.Context, existed bool) (Result, bool) {
 }
 
 // leaseOnce takes the lease, or says in again whether the failure it reports could be gone on
-// the next try. A lease it finds on a retry is one an earlier attempt took before treehouse
-// failed, so it counts as this launch's own and gets its checkout.
-func (l *launch) leaseOnce(ctx context.Context, retry bool) (res Result, again bool) {
+// the next try. A lease it finds after an earlier attempt asked for one is that attempt's own,
+// taken before treehouse failed, so it counts as this launch's and gets its checkout. One found
+// after only failed pool reads is an earlier run's.
+func (l *launch) leaseOnce(ctx context.Context) (res Result, again bool) {
 	req := l.req
 	trees, err := l.opts.Treehouse.Trees(ctx, l.repo)
 	if err != nil {
@@ -354,12 +358,13 @@ func (l *launch) leaseOnce(ctx context.Context, retry bool) (res Result, again b
 	for _, t := range trees {
 		if t.LeaseHolder == req.Ticket {
 			l.tree = t.Path
-			l.fresh = retry
+			l.fresh = l.leaseAsked
 			return Result{}, false
 		}
 	}
 
 	l.log("leasing a treehouse tree for %s", req.Ticket)
+	l.leaseAsked = true
 	leased, err := l.opts.Treehouse.Lease(ctx, l.repo, req.Ticket)
 	if err != nil {
 		if errors.Is(err, treehouse.ErrNoPath) {
@@ -554,6 +559,7 @@ func (l *launch) startWorker(ctx context.Context, name string) (herdr.Started, R
 	started, err := l.opts.Herdr.StartWorker(ctx, herdr.Worker{
 		Workspace:  l.workspace,
 		Dir:        l.tree,
+		FreshLease: l.fresh,
 		Label:      l.tabLabel(),
 		Name:       name,
 		Program:    l.req.Program,
@@ -565,6 +571,11 @@ func (l *launch) startWorker(ctx context.Context, name string) (herdr.Started, R
 	// Whoever owns the session owns the workspace too, so this launch closes and returns nothing.
 	if errors.Is(err, herdr.ErrSessionRunning) {
 		return started, Result{Status: StatusAlreadyRunning, Detail: fmt.Sprintf("workspace %s already has a session; not typing a second kickoff", l.workspace), Workspace: l.workspace, Worktree: l.tree}, false
+	}
+	// A racing launch may own this terminal, so leave the workspace and tree alone, as above.
+	var held *herdr.TerminalWithoutAgent
+	if errors.As(err, &held) {
+		return started, Result{Status: StatusTerminalWithoutAgent, Detail: fmt.Sprintf("terminal %s holds %s but runs no Claude; remove it so a worker can start", held.Address, l.tree), Workspace: l.workspace, Worktree: l.tree}, false
 	}
 	l.giveBack(ctx)
 	if started.Pane == "" {

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch"
+	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/journal"
 	"github.com/kapetan-io/dispatch/internal/lineartest"
@@ -26,6 +28,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/notifytest"
 	"github.com/kapetan-io/dispatch/internal/pullrequesttest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
+	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -37,10 +40,27 @@ import (
 // login fails the test. It spends a few short Claude turns.
 // Run with: go test -tags drift ./internal/launcher/
 func TestRealClaudeTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t *testing.T) {
+	realClaudeTakesDispatchsCommands(t, false)
+}
+
+// TestRealClaudeUnderTheAppHostTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch is the
+// same run with host = "app", over a scratch herdr-core. It also checks that the Worker label dispatch put
+// on the terminal is the session id in Claude's transcript, and that the worker's Stop reached its
+// Stop record, which only happens when the hook found the terminal through HC_TERMINAL_ID.
+func TestRealClaudeUnderTheAppHostTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t *testing.T) {
+	realClaudeTakesDispatchsCommands(t, true)
+}
+
+func realClaudeTakesDispatchsCommands(t *testing.T, app bool) {
 	t.Cleanup(func() {
 		left, err := herdrtest.Leftovers(os.Getpid())
 		require.NoError(t, err)
 		assert.Empty(t, left)
+		if app {
+			leftCores, err := herdrtest.CoreLeftovers(os.Getpid())
+			require.NoError(t, err)
+			assert.Empty(t, leftCores)
+		}
 	})
 	_, err := exec.LookPath("treehouse")
 	require.NoError(t, err)
@@ -60,7 +80,11 @@ func TestRealClaudeTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(state) })
 	config := filepath.Join(root, "config.toml")
-	require.NoError(t, os.WriteFile(config, []byte(fmt.Sprintf("[repos.drift]\npath = %q\n\n[history]\ndir = %q\n", repo, filepath.Join(state, "events"))), 0o644))
+	settings := fmt.Sprintf("[repos.drift]\npath = %q\n\n[history]\ndir = %q\n", repo, filepath.Join(state, "events"))
+	if app {
+		settings += "\n[plugins.herdr]\nhost = \"app\"\n"
+	}
+	require.NoError(t, os.WriteFile(config, []byte(settings), 0o644))
 
 	// The plugin's hooks run `dispatch` from the PATH the worker's shell has, which the herdr
 	// server hands down from this process, so the build that reads the temp state goes first.
@@ -68,13 +92,47 @@ func TestRealClaudeTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t
 	out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "dispatch"), "github.com/kapetan-io/dispatch/internal/herdrtest/driftdispatch").CombinedOutput()
 	t.Log(string(out))
 	require.NoError(t, err)
+	// The launch under the app host closes the workspace when a launch fails, and that must
+	// not reach the maintainer's app window.
+	require.NoError(t, os.Symlink("/usr/bin/true", filepath.Join(bin, "herdr-app")))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("DISPATCH_DRIFT_CONFIG", config)
 	t.Setenv("DISPATCH_DRIFT_STATE", state)
 	// The loop and the launch share this pool.
 	t.Setenv("TREEHOUSE_ROOT", filepath.Join(root, "pool"))
-	session := herdrtest.StartSession(t)
-	cli := session.CLI()
+	var cli herdr.Herdr
+	var env []string
+	var shimEnv string
+	var core *herdrtest.CoreSession
+	var screen func(pane string) string
+	if app {
+		// The scratch core's XDG data, state and cache directories would reach Claude and make its
+		// installer re-point ~/.local/bin/claude into them, so driftdispatch's claude shim restores
+		// the DISPATCH_DRIFT_REAL_* values. The runtime and config directories stay scratch, because
+		// the hooks' hc finds its core through them.
+		shimEnv = filepath.Join(root, "shim.env")
+		t.Setenv("DISPATCH_DRIFT_SHIM_TRACE", shimEnv)
+		t.Setenv("DISPATCH_DRIFT_RESTORE_XDG", "1")
+		for _, name := range []string{"XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"} {
+			if value, ok := os.LookupEnv(name); ok {
+				t.Setenv("DISPATCH_DRIFT_REAL_"+name, value)
+			}
+		}
+		// A herdr TUI pane that started this test would let the Stop hook find the worker through
+		// HERDR_PANE_ID and pass without HC_TERMINAL_ID.
+		t.Setenv("HERDR_PANE_ID", "")
+		t.Setenv("HERDR_SOCKET_PATH", "")
+		core = herdrtest.StartCoreSession(t)
+		cli, env = core.Core().WithKinds("claude"), core.Env
+		screen = func(pane string) string { return core.Run(t, "read", pane) }
+	} else {
+		session := herdrtest.StartSession(t)
+		cli, env = session.CLI(), session.Env(t)
+		screen = func(pane string) string {
+			out, _ := session.Output(context.Background(), "pane", "read", pane)
+			return string(out)
+		}
+	}
 
 	calls := &journal.Journal{}
 	// The hooks and the launch report to a running dispatch, so one runs over the same state.
@@ -101,7 +159,7 @@ func TestRealClaudeTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t
 	const kickoff = "/dispatch:principles"
 	cmd := exec.Command(filepath.Join(plugin, "bin", "dispatch-launch"), "ENG-1", "drift/eng-1", "--kickoff", kickoff)
 	cmd.Dir = repo
-	cmd.Env = append(session.Env(t), "TREEHOUSE_ROOT="+filepath.Join(root, "pool"))
+	cmd.Env = append(append([]string{}, env...), "TREEHOUSE_ROOT="+filepath.Join(root, "pool"))
 	stdout, err := cmd.Output()
 	t.Log(string(stdout))
 	require.NoError(t, err)
@@ -125,11 +183,13 @@ func TestRealClaudeTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t
 		return world.Worker{}
 	}
 	// The id herdr learns from Claude is the one dispatch chose and passed on the command line.
-	require.Eventually(t, func() bool {
-		id := worker().Session
-		out, err := exec.Command("ps", "-axo", "args").Output()
-		return err == nil && id != "" && strings.Contains(string(out), "--session-id "+id)
-	}, 30*time.Second, 200*time.Millisecond)
+	if !app {
+		require.Eventually(t, func() bool {
+			id := worker().Session
+			out, err := exec.Command("ps", "-axo", "args").Output()
+			return err == nil && id != "" && strings.Contains(string(out), "--session-id "+id)
+		}, 30*time.Second, 200*time.Millisecond)
+	}
 	settled := func(wantTurns int) {
 		t.Helper()
 		t.Cleanup(func() {
@@ -143,8 +203,7 @@ func TestRealClaudeTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t
 				}
 				return nil
 			})
-			screen, _ := session.Output(context.Background(), "pane", "read", launched.Pane)
-			t.Logf("agent %+v\nscreen:\n%s", worker(), screen)
+			t.Logf("agent %+v\nscreen:\n%s", worker(), screen(launched.Pane))
 		})
 		require.Eventually(t, func() bool {
 			snap, err := cli.Read(context.Background())
@@ -181,8 +240,59 @@ func TestRealClaudeTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t
 	}
 	assert.Equal(t, "and then reply with the word done", log.Commands[2].Args)
 
+	if app {
+		// ps shows no --session-id for a core terminal, so the Worker label is compared with the
+		// session id in the transcript Claude wrote for the worker's tree.
+		id := worker().Session
+		require.NotEmpty(t, id)
+		assert.Equal(t, []string{id}, transcriptSessions(t, launched.Worktree))
+		// settled already needed the hook's Stop report to reach a turn, so a hook that missed the
+		// terminal through HC_TERMINAL_ID times out there. This reads the Stop record the same report wrote.
+		assert.Eventually(t, func() bool {
+			_, found := stops.Read(state, launched.Worktree, id)
+			return found
+		}, 10*time.Second, 100*time.Millisecond)
+		// The hooks run in the shim's environment, so they reach the scratch core and not the maintainer's.
+		raw, err := os.ReadFile(shimEnv)
+		require.NoError(t, err)
+		assert.Contains(t, string(raw), "HC_SOCKET="+core.Socket+"\n")
+		assert.Contains(t, string(raw), "HC_SESSION="+core.Env.Get("HC_SESSION")+"\n")
+	}
+
 	// The run's history belongs in the temp state, not the folder a real restart resumes from.
 	segments, err := os.ReadDir(filepath.Join(state, "events"))
 	require.NoError(t, err)
 	assert.NotEmpty(t, segments)
+}
+
+// transcriptSessions returns the sessionId recorded in each of Claude's transcripts for tree,
+// asserting each matches its file name.
+func transcriptSessions(t *testing.T, tree string) []string {
+	t.Helper()
+	home := os.Getenv("CLAUDE_CONFIG_DIR")
+	if home == "" {
+		user, err := os.UserHomeDir()
+		require.NoError(t, err)
+		home = filepath.Join(user, ".claude")
+	}
+	// Claude names a tree's transcript directory after its path with every non-alphanumeric character as "-".
+	dir := filepath.Join(home, "projects", regexp.MustCompile(`[^a-zA-Z0-9]`).ReplaceAllString(tree, "-"))
+	files, err := filepath.Glob(filepath.Join(dir, "*.jsonl"))
+	require.NoError(t, err)
+	var ids []string
+	for _, file := range files {
+		raw, err := os.ReadFile(file)
+		require.NoError(t, err)
+		for _, line := range strings.Split(string(raw), "\n") {
+			var entry struct {
+				SessionID string `json:"sessionId"`
+			}
+			if json.Unmarshal([]byte(line), &entry) == nil && entry.SessionID != "" {
+				assert.Equal(t, strings.TrimSuffix(filepath.Base(file), ".jsonl"), entry.SessionID)
+				ids = append(ids, entry.SessionID)
+				break
+			}
+		}
+	}
+	return ids
 }

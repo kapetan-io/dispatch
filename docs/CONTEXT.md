@@ -23,7 +23,7 @@ One situation run against both a tool fake and the real adapter, which must give
 _Avoid_: shared test, conformance test
 
 **Drift check**:
-The contract scenarios run under `-tags drift` against the installed herdr and treehouse, in a throwaway `dispatch-drift-*` session and pool, and against the installed `hc` on a scratch core (own `HC_SESSION`, scratch XDG paths, a `/tmp` socket), never the user's core. It never touches a GitHub or Linear account. It also runs the drift tests that have no fake to compare: the flags dispatch passes to gh against the installed gh's `--help`, and the launcher's commands against the installed tools. One launcher drift test (internal/launcher/commands_drift_test.go) launches a worker on a real, logged-in Claude in a throwaway herdr session and checks that the kickoff and slash nudges record as sent by dispatch; it spends a few short Claude turns.
+The contract scenarios run under `-tags drift` against the installed herdr and treehouse, in a throwaway `dispatch-drift-*` session and pool, and against the installed `hc` on a scratch core (own `HC_SESSION`, scratch XDG paths, a `/tmp` socket), never the user's core. It never touches a GitHub or Linear account. It also runs the drift tests that have no fake to compare: the flags dispatch passes to gh against the installed gh's `--help`, and the launcher's commands against the installed tools. Two launcher drift tests (internal/launcher/commands_drift_test.go) launch a worker on a real, logged-in Claude and check that the kickoff and slash nudges record as sent by dispatch, one in a throwaway herdr session and one with `[plugins.herdr] host = "app"` on a scratch core. The app run also checks that the Worker label `dispatch.session` is the session id in Claude's transcript and that the worker's Stop reached its Stop record; a hook that cannot find its terminal through `HC_TERMINAL_ID` shows up as a timeout waiting for the worker's first turn. It also checks that the hooks' environment names the scratch core. Each spends a few short Claude turns.
 _Avoid_: integration test, live test
 
 **Stand-in claude**:
@@ -145,7 +145,7 @@ A `[harness.<name>]` table in `config.toml`, named everywhere as `harness.<name>
 _Avoid_: profile, role (a role is only which of `worker` / `design` a ticket's launch reads)
 
 **Program** (herdr):
-What herdr runs in a worker's new tab, as a harness describes it: a name for messages, the herdr agent kind, arguments, directories put ahead of PATH, tab environment, and the startup screens (dialogs to answer, the unrun launch command, the ready input box) and the session id the launch chose, which each adapter passes with the harness's session flag (Claude: `--session-id`).
+What herdr runs in a worker's new tab, as a harness describes it: a name for messages, the herdr agent kind, arguments, directories put ahead of PATH, tab environment, and the startup screens (dialogs to answer, the unrun launch command, the ready input box) and the session id the launch chose, which each adapter passes with the harness's session flag (Claude: `--session-id`), and the flag that resumes an earlier session (Claude: `--resume`), which Core uses after a herdr-core restart.
 _Avoid_: command line, launch spec
 
 **Launch**:

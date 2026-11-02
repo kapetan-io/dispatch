@@ -93,6 +93,14 @@ func (s *CoreSession) Run(t testing.TB, args ...string) string {
 	return string(out)
 }
 
+// Restart stops the scratch core and starts it again, which ends every terminal in it with
+// reason server_stop. It never touches any other core.
+func (s *CoreSession) Restart(t testing.TB) {
+	t.Helper()
+	s.Run(t, "server", "stop")
+	s.Run(t, "server", "start")
+}
+
 // Core is the real app adapter pointed at the scratch core. Its app command is true, so no
 // test names or closes a space in the maintainer's app window.
 func (s *CoreSession) Core() *herdr.Core {

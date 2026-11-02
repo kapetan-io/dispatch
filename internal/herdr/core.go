@@ -100,6 +100,7 @@ type terminal struct {
 	Name       string            `json:"name"`
 	State      string            `json:"state"`
 	Reason     string            `json:"reason"`
+	FinishedMS uint64            `json:"finished_ms"`
 	Labels     map[string]string `json:"labels"`
 	Status     *terminalStatus   `json:"status"`
 	Foreground *struct {
@@ -111,6 +112,10 @@ type terminalStatus struct {
 	State string `json:"state"`
 	Kind  string `json:"kind"`
 }
+
+// resumable lists the reasons herdr-core gives a finished terminal that lost its program to
+// the core or the machine going away. An exited, killed or signaled Claude crashed or was quit.
+var resumable = []string{"server_stop", "stopped_by_restart", "holder_lost", "host_shutdown"}
 
 func (t terminal) live() bool { return t.State == "live" }
 
@@ -360,14 +365,40 @@ func (c *Core) StartWorker(ctx context.Context, w Worker) (Started, error) {
 	if err != nil {
 		return Started{}, err
 	}
+	var held *TerminalWithoutAgent
 	for _, t := range existing {
 		if !t.live() {
 			continue
 		}
-		// A live terminal that carries the tree is nearly always a worker whose Claude is
-		// still loading, and killing it would let a racing launch kill the first one's.
-		if _, running := c.runs(t); running || t.startedByDispatch() {
+		if _, running := c.runs(t); running {
 			return Started{}, ErrSessionRunning
+		}
+		// Dispatch never kills a live worker terminal, because a racing launch's Claude may
+		// still be loading in it. A person clears the one that never loads. A Claude anywhere
+		// in the space still wins over a held terminal, so this only records the first one.
+		if t.startedByDispatch() && held == nil {
+			held = &TerminalWithoutAgent{Address: t.Address}
+		}
+	}
+	if held != nil {
+		return Started{}, held
+	}
+	program := w.Program
+	exe, err := c.find(program)
+	if err != nil {
+		return Started{}, err
+	}
+	// Only a Claude lost to the core or the machine resumes, and only for the ticket that
+	// owned the tree: a launch that took the lease fresh never resumes an earlier ticket's
+	// session. terminal.list promises no order, so the terminal that finished last decides.
+	var previous string
+	var latest uint64
+	for _, t := range existing {
+		if t.startedByDispatch() && !t.live() && t.FinishedMS >= latest {
+			latest, previous = t.FinishedMS, ""
+			if slices.Contains(resumable, t.Reason) && !w.FreshLease {
+				previous = t.Labels[LabelSession]
+			}
 		}
 	}
 	for _, t := range existing {
@@ -378,11 +409,6 @@ func (c *Core) StartWorker(ctx context.Context, w Worker) (Started, error) {
 		}
 	}
 
-	program := w.Program
-	exe, err := c.find(program)
-	if err != nil {
-		return Started{}, err
-	}
 	env := map[string]string{
 		"PATH":                 strings.Join(append(slices.Clone(program.PathFirst), c.env.Get("PATH")), ":"),
 		"AUTONOMOUS_WORKER":    "1",
@@ -397,13 +423,17 @@ func (c *Core) StartWorker(ctx context.Context, w Worker) (Started, error) {
 		labelSpace: space,
 		labelTab:   "tb" + treekey.Digest("dispatch-tab", w.Dir, 32),
 	}
-	if program.Session != "" {
-		labels[LabelSession] = program.Session
+	argv, session := program.StartArgv(), program.Session
+	if resume, ok := program.ResumeArgv(previous); ok {
+		argv, session = resume, previous
+	}
+	if session != "" {
+		labels[LabelSession] = session
 	}
 	name := "dw-" + treekey.Digest("dispatch-terminal", w.Dir, 24)
 	var run terminal
 	err = c.call(ctx, "terminal.run", map[string]any{
-		"argv":      append([]string{exe}, program.StartArgv()...),
+		"argv":      append([]string{exe}, argv...),
 		"cwd":       w.Dir,
 		"env":       env,
 		"name":      name,
