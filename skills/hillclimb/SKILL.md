@@ -24,7 +24,7 @@ Run evals with the real `claude` ahead of dispatch's `scripts/shims/claude` on P
 ## Each attempt
 
 1. Name the one idea and the failure it targets.
-2. Start three fresh sub-agents with different angles, such as the failing visible transcripts, an outside source such as published prompting guidance, and skill-creator guidance. Give them the arms, scores and answer keys for visible cases only, and reject any wording that quotes a case's content.
+2. Start three fresh sub-agents with different angles, such as the failing visible transcripts, an outside source such as published prompting guidance, and skill-creator guidance. Give them the arms, scores and answer keys for visible cases only, and reject any wording that quotes a case's content. Tell every proposer and picker to use the nearest `docs/CONTEXT.md` terms and the words the code already uses, coin no labels such as step codes, define any term in neither, and follow `dispatch:principle-verify-dont-assume` (check the claims they rely on, quote file:line, label what they didn't read as a guess).
 3. Start a fourth fresh sub-agent to pick one proposal or graft them under a word cap you set before proposing.
 4. Run the suite on the new arm at the bar's run count, and write the result JSON to `results/` before you log anything.
 5. Append to `log.md`, in the commit with the result file: the idea, the scores, the cost, kept or reverted. Keep the change only if the bar's numbers move the right way and no case falls below the bar's per-case floor. Otherwise revert the wording in full, keep the result file, and log it anyway.
