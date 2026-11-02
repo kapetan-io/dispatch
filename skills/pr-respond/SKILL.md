@@ -29,7 +29,11 @@ gh api graphql -F id=THREAD_ID -f query='mutation($id:ID!){resolveReviewThread(i
 
 ## A review comment
 
-Treat every review comment as a claim to check with evidence: a failing test or a trace through the code. Fix and reply to a confirmed claim, resolve it, and record the fix as a divergence when it changes something the design describes. Reply to an unconfirmed claim from a bot with your evidence and resolve it. Reply to an unconfirmed claim from a person with your evidence, ask the user in chat whether to hold your ground, and move the ticket to Needs Human.
+Treat every review comment as a claim to check with evidence: a failing test or a trace through the code. List each claim the finding rests on, including the claims behind your proposed fix, and mark each confirmed, not confirmed or not checked. A page summarizer's output (such as WebFetch) is not opening the source, so a claim checked only through one is not checked.
+
+A finding is confirmed only when every claim on its list is confirmed. Until then, don't tell the user it is real, change the PR body, or move the ticket because of it (an escalation to Needs Human below is not that). Check the not-checked claims first, and leave one not checked only after you tried and couldn't.
+
+Fix and reply to a confirmed finding, resolve it, and record the fix as a divergence when it changes something the design describes. Reply to an unconfirmed finding from a bot with your evidence, saying which claims you couldn't check, and resolve it. Reply to an unconfirmed finding from a person with your evidence, ask the user in chat whether to hold your ground, and move the ticket to Needs Human.
 
 ## A question
 
