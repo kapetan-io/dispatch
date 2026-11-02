@@ -103,12 +103,12 @@ type Ticket struct {
 	Finished         Fact[bool]              `js:"finished" doc:"True when the ticket's status does the finished job, such as Done or Canceled."`
 	Paused           Fact[bool]              `js:"paused" doc:"True when the ticket's status does the paused job, such as Backlog or Todo."`
 	CreatedAt        Fact[*string]           `js:"createdAt" doc:"When the ticket was created, RFC 3339, undefined when its system gave none. Among actions that take a worker slot, the oldest ticket starts first, and a ticket with no createdAt goes last."`
-	LastHumanComment Fact[*Seen]             `js:"lastHumanComment" doc:"The newest comment on the ticket, whoever wrote it, dispatch's own included, undefined when it has none. It carries only the comment's times, not its text or author. The name predates the comment filter, so don't treat it as a person's."`
+	LastHumanComment Fact[*Seen]             `js:"lastHumanComment" doc:"The newest comment on the ticket, whoever wrote it, dispatch's own included, undefined when it has none. It carries only the comment's times, not its text or author. Despite the name, it is not limited to people's comments."`
 }
 
 // Worker is a ticket's place on a tree it holds, and the Claude session there, if any.
 type Worker struct {
-	State        Fact[string]  `js:"state" ts:"\"none\" | \"working\" | \"idle\" | \"blocked\"" doc:"none when the ticket has no Claude session in a workspace, working when it is running a turn, when dispatch typed into it since the last full read, or when herdr can't tell its status (a worker with no status whose launch is unconfirmed reads idle instead), idle when it is waiting at its prompt, blocked when it waits on a question popup. A worker the ticket never had also reads none."`
+	State        Fact[string]  `js:"state" ts:"\"none\" | \"working\" | \"idle\" | \"blocked\"" doc:"none when the ticket has no Claude session in a workspace, working when it is running a turn, when dispatch typed into it since the last resync, or when herdr can't tell its status (a worker with no status whose launch is unconfirmed reads idle instead), idle when it is waiting at its prompt, blocked when it waits on a question popup. A worker the ticket never had also reads none."`
 	Ticket       Fact[Ref]     `js:"ticket" ref:"ticket" doc:"The ticket the worker serves."`
 	Tree         Fact[*string] `js:"tree" doc:"The path of the treehouse tree the worker runs in, undefined when it has none."`
 	Workspace    Fact[*string] `js:"workspace" doc:"The id of the herdr workspace the worker runs in, undefined when it has none."`
@@ -169,8 +169,8 @@ type Tree struct {
 type Escalation struct {
 	Ticket    Fact[Ref]    `js:"ticket" ref:"ticket" doc:"The ticket that was escalated."`
 	Reason    Fact[string] `js:"reason" doc:"The reason given to escalate. When the move failed, it is the error text instead."`
-	Moved     Fact[string] `js:"moved" ts:"\"done\" | \"failed\" | \"refused\" | \"attempted\" | \"pending\"" doc:"How the move to Needs Human went: done, failed, refused, attempted when dispatch started it and didn't record the outcome, or pending when the receipt has no move step."`
-	Commented Fact[string] `js:"commented" ts:"\"done\" | \"failed\" | \"refused\" | \"attempted\" | \"pending\"" doc:"How the explaining comment went: done, failed, refused, attempted when the step has no recorded outcome, including when the move failed and no comment was tried, or pending when the receipt has no comment step."`
+	Moved     Fact[string] `js:"moved" ts:"\"done\" | \"failed\" | \"pending\"" doc:"How the move to Needs Human went: done or failed, or pending while the escalation is still running or was cut short before it recorded its steps."`
+	Commented Fact[string] `js:"commented" ts:"\"done\" | \"failed\" | \"refused\" | \"attempted\" | \"pending\"" doc:"How the explaining comment went: done or failed, attempted when the move failed so no comment was tried, or pending while the escalation is still running or was cut short before it recorded its steps."`
 	Started   Fact[int64]  `js:"started" doc:"When the escalation began, in milliseconds since the epoch."`
 }
 
@@ -183,7 +183,7 @@ type Dispatch struct {
 }
 
 // InboxItem is one entry in the dispatch owner's GitHub notifications inbox, as GitHub listed it at
-// the last good read. Dispatch copies the fields and corrects none of them.
+// the last good read. Dispatch reports GitHub's values as GitHub gave them.
 type InboxItem struct {
 	ID          Fact[string]  `js:"id" doc:"GitHub's thread id. It stays the same as notifications arrive on the thread."`
 	Reason      Fact[string]  `js:"reason" doc:"GitHub's current reason: review_requested, mention, author, ... GitHub replaces it with the newest one, so a reason it has replaced is gone."`
@@ -198,7 +198,7 @@ type InboxItem struct {
 
 // Comment is a ticket comment, the payload of comment.posted.
 type Comment struct {
-	ID         string `js:"id" doc:"The comment's id in its ticket system. Only a rule scenario (dispatch rules test) raises comment.posted today."`
+	ID         string `js:"id" doc:"The comment's id in its ticket system."`
 	Body       string `js:"body" doc:"The comment's text, as written."`
 	Author     string `js:"author" doc:"The author's name as the ticket system gives it."`
 	At         string `js:"at" doc:"When the comment was posted, as the ticket system wrote it."`
@@ -208,7 +208,7 @@ type Comment struct {
 
 // CheckRun is a finished check on a pull request, the payload of check.completed.
 type CheckRun struct {
-	ID         string `js:"id" doc:"The check run's id on GitHub. Only a rule scenario (dispatch rules test) raises check.completed today."`
+	ID         string `js:"id" doc:"The check run's id on GitHub."`
 	Name       string `js:"name" doc:"The check's name."`
 	Conclusion string `js:"conclusion" doc:"How the check ended, such as success or failure, as GitHub spells it."`
 	URL        string `js:"url" doc:"The check's address on GitHub."`

@@ -23,6 +23,8 @@ type ActionSpec struct {
 	// unless its options say uncapped: true. A move takes one only when it
 	// moves a ticket into In Progress, because that is what starts a worker.
 	Capped bool
+	// Doc is the description of the method in dispatch.d.ts.
+	Doc string
 }
 
 // takesSlot reports whether the queued action counts against max_in_progress.
@@ -37,27 +39,27 @@ func (q *queued) takesSlot() bool {
 // kind in queueFn (call.go), unless its subject is a name and not a record, as a post's and a create's are, and, for a new plugin, a case in ctxPlugins (declarations.go)
 // and in ctx (call.go); the generated declarations then follow from this table.
 var Actions = []ActionSpec{
-	{Plugin: "ticket", Method: "queueMove", Receipt: "move", Subject: Param{"t", "Ticket"},
+	{Plugin: "ticket", Method: "queueMove", Doc: "Queues moving t to the status that does the job key status, with why as the reason. Takes a worker slot under max_in_progress when it moves a ticket into in_progress, unless uncapped is true.", Receipt: "move", Subject: Param{"t", "Ticket"},
 		Params: []Param{{"status", "string"}, {"why", "string"}}, Options: "uncapped?: boolean", Capped: true},
-	{Plugin: "ticket", Method: "queueComment", Receipt: "comment", Subject: Param{"t", "Ticket"},
+	{Plugin: "ticket", Method: "queueComment", Doc: "Queues a comment on t.", Receipt: "comment", Subject: Param{"t", "Ticket"},
 		Params: []Param{{"text", "string"}}},
-	{Plugin: "ticket", Method: "queueEscalate", Receipt: "escalate", Subject: Param{"t", "Ticket"},
+	{Plugin: "ticket", Method: "queueEscalate", Doc: "Queues moving t to Needs Human and commenting why.", Receipt: "escalate", Subject: Param{"t", "Ticket"},
 		Params: []Param{{"why", "string"}}},
 	// The subject of a create is the ticket system it files in, a name and not a record.
-	{Plugin: "ticket", Method: "queueCreate", Receipt: "create", Subject: Param{"system", `"local"`},
+	{Plugin: "ticket", Method: "queueCreate", Doc: "Queues filing a local ticket from draft.", Receipt: "create", Subject: Param{"system", `"local"`},
 		Params: []Param{{"draft", "TicketDraft"}}},
-	{Plugin: "ticket", Method: "queueEdit", Receipt: "edit", Subject: Param{"t", "Ticket"},
+	{Plugin: "ticket", Method: "queueEdit", Doc: "Queues changes to t.", Receipt: "edit", Subject: Param{"t", "Ticket"},
 		Params: []Param{{"changes", "TicketChanges"}}},
-	{Plugin: "worker", Method: "queueLaunch", Receipt: "launch", Subject: Param{"t", "Ticket"},
+	{Plugin: "worker", Method: "queueLaunch", Doc: "Queues starting a worker for t, taking a worker slot under max_in_progress unless uncapped is true. harness names a [harness.<name>] table, model a Claude Code model, kickoff the first command typed into the worker, and stackOn starts t's branch at that PR's head.", Receipt: "launch", Subject: Param{"t", "Ticket"},
 		Options: "harness?: string; model?: string; kickoff?: string; uncapped?: boolean; stackOn?: PR", Capped: true},
-	{Plugin: "worker", Method: "queueNudge", Receipt: "nudge", Subject: Param{"t", "Ticket"},
+	{Plugin: "worker", Method: "queueNudge", Doc: "Queues typing text into t's worker.", Receipt: "nudge", Subject: Param{"t", "Ticket"},
 		Params: []Param{{"text", "string"}}},
-	{Plugin: "worker", Method: "queueClose", Receipt: "close", Subject: Param{"w", "Worker"}},
-	{Plugin: "tree", Method: "queueReturn", Receipt: "return", Subject: Param{"tree", "Tree"}},
-	{Plugin: "pr", Method: "queueMerge", Receipt: "merge", Subject: Param{"pr", "PR"}},
-	{Plugin: "notify", Method: "queueSend", Receipt: "notify", Subject: Param{"subject", "Ticket"},
+	{Plugin: "worker", Method: "queueClose", Doc: "Queues closing the worker's workspace.", Receipt: "close", Subject: Param{"w", "Worker"}},
+	{Plugin: "tree", Method: "queueReturn", Doc: "Queues returning the tree to its repo's pool. Dispatch refuses it while the tree holds work it would destroy.", Receipt: "return", Subject: Param{"tree", "Tree"}},
+	{Plugin: "pr", Method: "queueMerge", Doc: "Queues merging the PR, only if its head hasn't moved.", Receipt: "merge", Subject: Param{"pr", "PR"}},
+	{Plugin: "notify", Method: "queueSend", Doc: "Queues a notification about subject. reason names the kind of notice and defaults to the first element of the once key. followersAlways tells followers even when the alert doesn't show.", Receipt: "notify", Subject: Param{"subject", "Ticket"},
 		Params: []Param{{"text", "string"}}, Options: "followersAlways?: boolean; reason?: string"},
 	// The subject of a post is the service it goes to, a name from [http.<name>].
-	{Plugin: "http", Method: "queuePost", Receipt: "post", Subject: Param{"service", "string"},
+	{Plugin: "http", Method: "queuePost", Doc: "Queues a POST of body as JSON to path on the service named in [http.<name>].", Receipt: "post", Subject: Param{"service", "string"},
 		Params: []Param{{"path", "string"}, {"body", "unknown"}}},
 }

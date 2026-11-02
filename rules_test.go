@@ -452,7 +452,7 @@ func TestRulesInitDescribesTurnsAndCommandsInTheTypes(t *testing.T) {
 	assert.Regexp(t, `/\*\* Every turn the worker's current Claude session has ended[^\n]*\*/\n    readonly turns: Turn\[\];`, string(types))
 }
 
-func TestRulesInitDescribesEveryFactHelperTypeAndCtxRead(t *testing.T) {
+func TestRulesInitDescribesEveryDeclaration(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	dir := filepath.Join(t.TempDir(), "rules")
@@ -460,22 +460,23 @@ func TestRulesInitDescribesEveryFactHelperTypeAndCtxRead(t *testing.T) {
 	types, err := os.ReadFile(filepath.Join(dir, "types", "dispatch.d.ts"))
 	require.NoError(t, err)
 
-	records, ctx, found := strings.Cut(string(types), "  export interface Ctx {")
-	require.True(t, found)
-	records, _, found = strings.Cut(records, "  export type RecordKind")
-	require.True(t, found)
-
-	member := regexp.MustCompile(`^ +(export interface \w+ \{|(readonly )?\w+\??[:(][^{]*$)`)
+	// The members of a rule function's argument (name, each, if, then) are the rule's shape, not facts.
+	declaration := regexp.MustCompile(`^ +(export (interface|type|function) |(readonly )?\w+\??[:(])`)
 	var bare []string
-	for _, section := range []string{records, ctx} {
-		var prev string
-		for _, line := range strings.Split(section, "\n") {
-			isAction := regexp.MustCompile(`^ +queue\w+\(`).MatchString(line)
-			if member.MatchString(line) && !isAction && !strings.HasSuffix(strings.TrimSpace(prev), "*/") {
-				bare = append(bare, strings.TrimSpace(line))
-			}
-			prev = line
+	var prev string
+	var inFunction bool
+	for _, line := range strings.Split(string(types), "\n") {
+		switch {
+		case strings.HasPrefix(line, "  export function ") && strings.HasSuffix(line, "{"):
+			inFunction = true
+		case inFunction && strings.HasPrefix(line, "  }"):
+			inFunction = false
 		}
+		inside := inFunction && !strings.HasPrefix(line, "  export function ")
+		if declaration.MatchString(line) && !inside && !strings.HasSuffix(strings.TrimSpace(prev), "*/") {
+			bare = append(bare, strings.TrimSpace(line))
+		}
+		prev = line
 	}
 
 	assert.Empty(t, bare)

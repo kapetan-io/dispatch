@@ -95,10 +95,10 @@ declare module "dispatch" {
     readonly paused: boolean;
     /** When the ticket was created, RFC 3339, undefined when its system gave none. Among actions that take a worker slot, the oldest ticket starts first, and a ticket with no createdAt goes last. */
     readonly createdAt: string | undefined;
-    /** The newest comment on the ticket, whoever wrote it, dispatch's own included, undefined when it has none. It carries only the comment's times, not its text or author. The name predates the comment filter, so don't treat it as a person's. */
+    /** The newest comment on the ticket, whoever wrote it, dispatch's own included, undefined when it has none. It carries only the comment's times, not its text or author. Despite the name, it is not limited to people's comments. */
     readonly lastHumanComment: Seen | undefined;
     /** True when the ticket has a label of this name, ignoring case. Reads labels, so it is unknown when the label list was cut short. */
-  hasLabel(name: string): boolean;
+    hasLabel(name: string): boolean;
   }
   /** A ticket's pull request. Dispatch reads the open PR of an In Review ticket whose worker is idle or gone, when its labels were read in full, it has no children, it isn't a design ticket and its repo has a path, and the merged PR of an unfinished local ticket. A merged PR has approved, ready and needsWork false and empty activity. */
   export interface PR {
@@ -143,7 +143,7 @@ declare module "dispatch" {
   }
   /** A ticket's place on a tree it holds, and the Claude session there, if any. Every ticket has one, with state none when no session runs. */
   export interface Worker {
-    /** none when the ticket has no Claude session in a workspace, working when it is running a turn, when dispatch typed into it since the last full read, or when herdr can't tell its status (a worker with no status whose launch is unconfirmed reads idle instead), idle when it is waiting at its prompt, blocked when it waits on a question popup. A worker the ticket never had also reads none. */
+    /** none when the ticket has no Claude session in a workspace, working when it is running a turn, when dispatch typed into it since the last resync, or when herdr can't tell its status (a worker with no status whose launch is unconfirmed reads idle instead), idle when it is waiting at its prompt, blocked when it waits on a question popup. A worker the ticket never had also reads none. */
     readonly state: "none" | "working" | "idle" | "blocked";
     /** The ticket the worker serves. */
     readonly ticket: Ticket;
@@ -170,7 +170,7 @@ declare module "dispatch" {
     /** Every turn the worker's current Claude session has ended, oldest first, for a worker on an In Progress or In Review ticket. Empty for a session that has ended none, and unknown when herdr reports no session or the session's record can't be read. A worker relaunched in a new session starts over. */
     readonly turns: Turn[];
   }
-  /** A worktree in a repo's treehouse pool. */
+  /** A tree in a repo's treehouse pool. */
   export interface Tree {
     /** The tree's path on disk. */
     readonly path: string;
@@ -197,9 +197,9 @@ declare module "dispatch" {
     readonly ticket: Ticket;
     /** The reason given to escalate. When the move failed, it is the error text instead. */
     readonly reason: string;
-    /** How the move to Needs Human went: done, failed, refused, attempted when dispatch started it and didn't record the outcome, or pending when the receipt has no move step. */
-    readonly moved: "done" | "failed" | "refused" | "attempted" | "pending";
-    /** How the explaining comment went: done, failed, refused, attempted when the step has no recorded outcome, including when the move failed and no comment was tried, or pending when the receipt has no comment step. */
+    /** How the move to Needs Human went: done or failed, or pending while the escalation is still running or was cut short before it recorded its steps. */
+    readonly moved: "done" | "failed" | "pending";
+    /** How the explaining comment went: done or failed, attempted when the move failed so no comment was tried, or pending while the escalation is still running or was cut short before it recorded its steps. */
     readonly commented: "done" | "failed" | "refused" | "attempted" | "pending";
     /** When the escalation began, in milliseconds since the epoch. */
     readonly started: number;
@@ -236,7 +236,7 @@ declare module "dispatch" {
   }
   /** A comment posted on a ticket, the payload of comment.posted. Only a rule scenario (dispatch rules test) raises it today. */
   export interface Comment {
-    /** The comment's id in its ticket system. Only a rule scenario (dispatch rules test) raises comment.posted today. */
+    /** The comment's id in its ticket system. */
     id: string;
     /** The comment's text, as written. */
     body: string;
@@ -249,9 +249,9 @@ declare module "dispatch" {
     /** The ticket the comment is on. */
     ticket: Ticket;
   }
-  /** A finished check on a pull request, the payload of check.completed. Only a rule scenario (dispatch rules test) raises it today. */
+  /** A finished check on a pull request, the payload of check.completed. Nothing raises it today, so an on rule for it never fires. */
   export interface CheckRun {
-    /** The check run's id on GitHub. Only a rule scenario (dispatch rules test) raises check.completed today. */
+    /** The check run's id on GitHub. */
     id: string;
     /** The check's name. */
     name: string;
@@ -264,7 +264,9 @@ declare module "dispatch" {
     /** The PR the check ran on. */
     pr: PR;
   }
+  /** The kinds of record a whenever rule can run over, as each names them. */
   export type RecordKind = "ticket" | "pr" | "worker" | "tree" | "escalation" | "dispatch" | "inbox";
+  /** The record type of each kind. */
   export interface RecordMap {
     "ticket": Ticket;
     "pr": PR;
@@ -274,19 +276,30 @@ declare module "dispatch" {
     "dispatch": Dispatch;
     "inbox": InboxItem;
   }
+  /** The record type of kind K. */
   export type RecordOf<K extends RecordKind> = RecordMap[K];
+  /** The payload type of each event an on rule can match. */
   export interface EventMap {
     "comment.posted": Comment;
     "check.completed": CheckRun;
   }
+  /** The names of the events an on rule can match. */
   export type EventType = keyof EventMap;
+  /** The payload type of event E. */
   export type EventOf<E extends EventType> = EventMap[E];
+  /** The settings of config.toml a rule can read through ctx.config. */
   export interface Config {
+    /** The [dispatch] table. max_in_progress is the most workers running at once and resync how often every source is re-read. */
     dispatch: { rules: string; max_in_progress: number; resync: string };
+    /** The [history] table. dir is where dispatch writes its history, rotate how old a segment gets before a new one starts, and keep how long old segments last. */
     history: { dir: string; rotate: string; keep: string };
+    /** The [repos.<label>] tables by label: each repo's path, how it opens PRs, and its review and auto-merge settings. */
     repos: { [label: string]: { path: string; open_pr_as: string; ignore_comment_authors: string[]; ignore_optional_checks: boolean; approval_checks: string[]; auto_merge: boolean; github_remote: string; worker: string; design: string } };
+    /** The [plugins.*] tables: the Linear teams, ai label and status names, the herdr plugin root, and which of github, treehouse, notify and local are on. */
     plugins: { linear: { teams: string[]; ai_label: string; repo_label_group: string; statuses: { todo: string; close_parent: string; blocker_done: string; in_progress: string; in_review: string; needs_human: string; finished: string[]; paused: string[] } }; herdr: { plugin_root: string }; github: {  }; treehouse: {  }; notify: {  }; local: {  } };
+    /** The [http.<name>] tables by name, each with the base_url of a service rules call. */
     http: { [label: string]: { base_url: string } };
+    /** The [rules] table, which holds the keys the shipped rules and your own rules read. A key the file lacks throws when read. */
     rules: { "blocked_renotify_minutes": number; "design_model": string; "launch_failure_limit": number; "nudge_limit": number; "worker_model": string; [key: string]: unknown };
     /** True when config.toml has a [repos.<label>] table of this name, false for undefined. */
     hasRepo(label: string | undefined): boolean;
@@ -301,7 +314,7 @@ declare module "dispatch" {
     once: Once;
     /** The name of the rule that queued it. */
     rule: string;
-    /** How it ended, absent while it is still running or was left unfinished. */
+    /** How it ended, absent while the action is attempted. */
     outcome?: "done" | "refused" | "failed";
     /** What happened, in words. */
     detail: string;
@@ -312,60 +325,90 @@ declare module "dispatch" {
     /** True for a Done receipt written for something that was never sent. receipts and done include it, so a rule that counts sent messages must skip it. */
     reset?: boolean;
   }
-  export interface HttpResponse { status: number; body: unknown }
+  /** The answer to an http get. */
+  export interface HttpResponse {
+    /** The HTTP status code. */
+    status: number;
+    /** The response body parsed as JSON. */
+    body: unknown;
+  }
+  /** A job key a rule can move a ticket to. */
   export type MovableJob = "todo" | "in_progress" | "in_review" | "needs_human" | "close_parent" | "blocker_done";
+  /** Every job a ticket's status can do. */
   export type Job = MovableJob | "finished" | "paused";
+  /** A local ticket for queueCreate to file. */
   export interface TicketDraft {
+    /** The new ticket's title. */
     readonly title: string;
-    /** A [repos.<label>] table. */
+    /** The [repos.<label>] table the ticket belongs to. */
     readonly repo: string;
+    /** The new ticket's description. */
     readonly description?: string;
+    /** The labels the ticket starts with. */
     readonly labels?: readonly string[];
+    /** The key-value pairs the ticket starts with. */
     readonly attributes?: Readonly<Record<string, string>>;
-    /** LOC-<n> */
+    /** The id of the parent ticket, such as LOC-12. */
     readonly parent?: string;
-    /** LOC-<n> */
+    /** The ids of the tickets that block this one, such as LOC-12. */
     readonly blockedBy?: readonly string[];
-    /** A PR in repo. */
+    /** A PR number in repo. The ticket's tree starts at that PR's head. */
     readonly startPR?: number;
-    /** A job key, as queueMove takes. Default todo. */
+    /** The job the ticket starts in, as a job key queueMove takes. Defaults to todo. */
     readonly status?: MovableJob;
   }
+  /** What queueEdit changes on a local ticket. A field left out stays as it is. */
   export interface TicketChanges {
+    /** The new title. */
     readonly title?: string;
+    /** The new description. */
     readonly description?: string;
+    /** The [repos.<label>] table to move the ticket to. */
     readonly repo?: string;
+    /** Labels to add. */
     readonly addLabels?: readonly string[];
+    /** Labels to remove. */
     readonly removeLabels?: readonly string[];
+    /** Key-value pairs to set. */
     readonly setAttributes?: Readonly<Record<string, string>>;
+    /** Keys to remove. */
     readonly unsetAttributes?: readonly string[];
-    /** null clears. */
+    /** The new parent's id. null clears the parent. */
     readonly parent?: string | null;
-    /** Replaces; [] clears. */
+    /** The ids of the tickets that block this one. Replaces the list, and [] clears it. */
     readonly blockedBy?: readonly string[];
-    /** 0 clears. */
+    /** The PR number the ticket's tree starts at. 0 clears it. */
     readonly startPR?: number;
   }
+  /** What ctx.ticket.search matches. A field left out matches every ticket. */
   export interface TicketFilter {
     /** Tickets whose status does this job. */
     readonly status?: Job;
-    /** Match ignoring case. */
+    /** Tickets with these labels, matched ignoring case. */
     readonly labels?: readonly string[];
-    /** Match exactly. */
+    /** Tickets with these key-value pairs, matched exactly. */
     readonly attributes?: Readonly<Record<string, string>>;
-    /** Only tickets outside a finished status. */
+    /** True for only the tickets outside a finished status. */
     readonly open?: boolean;
   }
+  /** A local ticket ctx.ticket.search found. */
   export interface FoundTicket {
+    /** The ticket's id, such as LOC-3. */
     readonly id: string;
+    /** The ticket's title. */
     readonly title: string;
-    /** As the ticket record's status. */
+    /** The ticket's status, as the status fact spells it. */
     readonly status: string;
+    /** True when the ticket's status does the finished job. */
     readonly finished: boolean;
+    /** The names of the ticket's labels. */
     readonly labels: readonly string[];
+    /** The ticket's key-value pairs. */
     readonly attributes: Readonly<Record<string, string>>;
   }
+  /** What a queue method returns. Return it, or an array of them, from then. */
   export interface Action { readonly queued: true }
+  /** Each cycle, runs then for every record of kind each whose if is true. A once key on each action keeps it from running again. An if that reads an unknown fact holds the rule for that record. */
   export function whenever<K extends RecordKind>(rule: {
     name: string;
     each: K;
@@ -373,6 +416,7 @@ declare module "dispatch" {
     then: (record: RecordOf<K>, ctx: Ctx) => Action | Action[] | void;
     shadow?: boolean;
   }): void;
+  /** Runs then for each event of type event whose if is true. An if that reads an unknown fact drops the event. */
   export function on<E extends EventType>(rule: {
     name: string;
     event: E;
@@ -388,9 +432,13 @@ declare module "dispatch" {
     rules: string[];
     if: (record: RecordOf<K>, ctx: Ctx) => boolean;
   }): void;
+  /** True when read returns without throwing Unknown. Use it to branch on a fact that may be unknown instead of holding the rule. */
   export function known(read: () => unknown): boolean;
+  /** n minutes, in milliseconds. */
   export function minutes(n: number): number;
+  /** n hours, in milliseconds. */
   export function hours(n: number): number;
+  /** What a rule's if and then receive besides the record: the cycle's time, the settings, the ledger and a group of reads and queued actions for each plugin. */
   export interface Ctx {
     /** The one dispatch record, read-only, as `each: "dispatch"` sees it. Reads are logged like any record read. */
     dispatch: Dispatch;
@@ -400,12 +448,14 @@ declare module "dispatch" {
     every(period: number, since: number): number;
     /** The settings of config.toml, read-only. Reading a [rules] key the file lacks throws. */
     config: Config;
+    /** The ledger of actions dispatch has run. */
     ledger: {
       /** The receipts of actions queued for the subject, newest first. kind filters by action kind such as nudge, topic by the first element of the once key. */
       receipts(subject: Ticket | PR | Tree | Worker, filter?: { kind?: string | string[]; topic?: string }): Receipt[];
       /** True when an action of any kind with this once key landed for the subject, or was attempted and may have landed. A refused or failed one doesn't count. */
       done(subject: Ticket | PR | Tree | Worker, once: Once): boolean;
     };
+    /** Reads of tickets and the actions that change them. */
     ticket: {
       /** The parent of t. Parent links are read only for the children of an In Progress parent that isn't a design ticket, so it is undefined for every other ticket even when t has a parent. It never reads unknown. */
       parent(t: Ticket): Ticket | undefined;
@@ -419,41 +469,58 @@ declare module "dispatch" {
       waitingSince(t: Ticket): number;
       /** Searches every local ticket, finished ones included. Only in then. Throws when local tickets are off. */
       search(filter: TicketFilter): ReadonlyArray<FoundTicket>;
+      /** Queues moving t to the status that does the job key status, with why as the reason. Takes a worker slot under max_in_progress when it moves a ticket into in_progress, unless uncapped is true. */
       queueMove(t: Ticket, status: string, why: string, o: { once: Once; uncapped?: boolean }): Action;
+      /** Queues a comment on t. */
       queueComment(t: Ticket, text: string, o: { once: Once }): Action;
+      /** Queues moving t to Needs Human and commenting why. */
       queueEscalate(t: Ticket, why: string, o: { once: Once }): Action;
+      /** Queues filing a local ticket from draft. */
       queueCreate(system: "local", draft: TicketDraft, o: { once: Once }): Action;
+      /** Queues changes to t. */
       queueEdit(t: Ticket, changes: TicketChanges, o: { once: Once }): Action;
     };
+    /** Reads of workers and the actions that start, nudge and close them. */
     worker: {
       /** The worker on the first tree t holds. Every ticket has one, with state none when no session runs. */
       of(t: Ticket): Worker;
       /** The worker running in the tree. A tree with no worker has one with state none. */
       in(tree: Tree): Worker;
+      /** Queues starting a worker for t, taking a worker slot under max_in_progress unless uncapped is true. harness names a [harness.<name>] table, model a Claude Code model, kickoff the first command typed into the worker, and stackOn starts t's branch at that PR's head. */
       queueLaunch(t: Ticket, o: { once: Once; harness?: string; model?: string; kickoff?: string; uncapped?: boolean; stackOn?: PR }): Action;
+      /** Queues typing text into t's worker. */
       queueNudge(t: Ticket, text: string, o: { once: Once }): Action;
+      /** Queues closing the worker's workspace. */
       queueClose(w: Worker, o: { once: Once }): Action;
     };
+    /** Reads of the treehouse pools and the action that returns a tree. */
     tree: {
       /** How many trees came back to the repo's pool since dispatch first read the pool (kept across restarts), whoever returned them. Unknown when repo is undefined, has no [repos] table, or its pool wasn't read. */
       pool(repo: string | undefined): { returns: number };
       /** True when t holds a tree. Unknown when the pool of t's repo wasn't read. Not detected when t has no known repo. */
       leased(t: Ticket): boolean;
+      /** Queues returning the tree to its repo's pool. Dispatch refuses it while the tree holds work it would destroy. */
       queueReturn(tree: Tree, o: { once: Once }): Action;
     };
+    /** Reads of pull requests and the action that merges one. */
     pr: {
       /** The PR of t, undefined when dispatch read the PR and found none, unknown when it didn't read it this cycle or the read failed. */
       of(t: Ticket): PR | undefined;
+      /** Queues merging the PR, only if its head hasn't moved. */
       queueMerge(pr: PR, o: { once: Once }): Action;
     };
+    /** Notifications to you and to followers. */
     notify: {
+      /** Queues a notification about subject. reason names the kind of notice and defaults to the first element of the once key. followersAlways tells followers even when the alert doesn't show. */
       queueSend(subject: Ticket, text: string, o: { once: Once; followersAlways?: boolean; reason?: string }): Action;
     };
+    /** Calls to the services named in [http.<name>]. */
     http: {
       /** Calls GET on the service named in [http.<name>] and returns the response. Only in then. A request that fails, times out or answers outside 2xx makes the read unknown. A body that isn't JSON throws an ordinary error. */
       get(service: string, path: string): HttpResponse;
       /** The response a get kept since the last resync, without a request. Unknown when none is kept. */
       last(service: string, path: string): HttpResponse;
+      /** Queues a POST of body as JSON to path on the service named in [http.<name>]. */
       queuePost(service: string, path: string, body: unknown, o: { once: Once }): Action;
     };
   }
