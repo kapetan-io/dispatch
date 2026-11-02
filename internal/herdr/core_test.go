@@ -133,8 +133,8 @@ func fails(kind, message string) string {
 }
 
 type spec struct {
-	address, name, state, status, kind, program string
-	labels                                      map[string]string
+	address, name, state, reason, status, kind, program string
+	labels                                              map[string]string
 }
 
 // term is one terminal as hc lists it.
@@ -151,8 +151,12 @@ func term(s spec) string {
 	if s.state == "" {
 		s.state = "live"
 	}
-	return fmt.Sprintf(`{"address":%q,"name":%q,"state":%q,"reason":null,"labels":%s,"status":%s,"foreground":%s}`,
-		s.address, s.name, s.state, labels, status, foreground)
+	reason := "null"
+	if s.reason != "" {
+		reason = fmt.Sprintf("%q", s.reason)
+	}
+	return fmt.Sprintf(`{"address":%q,"name":%q,"state":%q,"reason":%s,"labels":%s,"status":%s,"foreground":%s}`,
+		s.address, s.name, s.state, reason, labels, status, foreground)
 }
 
 func list(terminals ...string) string {
@@ -468,6 +472,80 @@ func TestCoreStartWorkerRemovesOnlyTheFinishedWorkerTerminalsOfTheTree(t *testin
 	require.NoError(t, err)
 	assert.Equal(t, []map[string]any{{"terminal": "t1"}}, calls.Params(t, "terminal.rm"))
 	assert.Equal(t, []string{"terminal.list", "terminal.rm", "terminal.run"}, calls.Methods())
+}
+
+func TestCoreStartWorkerResumesTheSessionAServerStopEnded(t *testing.T) {
+	shims := t.TempDir()
+	require.NoError(t, os.WriteFile(shims+"/claude", []byte("#!/bin/sh\n"), 0o755))
+	stopped := worker("t1", "spA", "tbA", "")
+	stopped.state, stopped.program, stopped.reason = "finished", "", "server_stop"
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.list": {list(term(stopped))},
+		"terminal.rm":   {ok(`{}`)},
+		"terminal.run":  {ok(term(worker("t2", "spA", "tbA", "")))},
+	})
+
+	_, err := core.StartWorker(context.Background(), herdr.Worker{Dir: t.TempDir(), Program: herdr.Program{
+		AgentKind: "claude", Argv: []string{"--model", "sonnet"}, PathFirst: []string{shims},
+		Session: "new-session", SessionFlag: "--session-id", ResumeFlag: "--resume",
+	}})
+
+	require.NoError(t, err)
+	run := calls.Params(t, "terminal.run")[0]
+	assert.Equal(t, []any{shims + "/claude", "--model", "sonnet", "--resume", "sess-t1"}, run["argv"])
+	assert.Equal(t, "sess-t1", run["labels"].(map[string]any)["dispatch.session"])
+}
+
+func TestCoreStartWorkerStartsFreshWhenResumingIsNotPossible(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		reason string
+		resume string
+	}{
+		{name: "ProgramExited", reason: "exited", resume: "--resume"},
+		{name: "ProgramKilled", reason: "killed", resume: "--resume"},
+		{name: "NoResumeFlag", reason: "server_stop"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			shims := t.TempDir()
+			require.NoError(t, os.WriteFile(shims+"/claude", []byte("#!/bin/sh\n"), 0o755))
+			ended := worker("t1", "spA", "tbA", "")
+			ended.state, ended.program, ended.reason = "finished", "", test.reason
+			core, calls := coreStandIn(t, map[string][]string{
+				"terminal.list": {list(term(ended))},
+				"terminal.rm":   {ok(`{}`)},
+				"terminal.run":  {ok(term(worker("t2", "spA", "tbA", "")))},
+			})
+
+			_, err := core.StartWorker(context.Background(), herdr.Worker{Dir: t.TempDir(), Program: herdr.Program{
+				AgentKind: "claude", PathFirst: []string{shims},
+				Session: "new-session", SessionFlag: "--session-id", ResumeFlag: test.resume,
+			}})
+
+			require.NoError(t, err)
+			run := calls.Params(t, "terminal.run")[0]
+			assert.Equal(t, []any{shims + "/claude", "--session-id", "new-session"}, run["argv"])
+			assert.Equal(t, "new-session", run["labels"].(map[string]any)["dispatch.session"])
+		})
+	}
+}
+
+func TestCoreStartWorkerStartsFreshWhenTheStoppedTerminalHasNoSession(t *testing.T) {
+	shims := t.TempDir()
+	require.NoError(t, os.WriteFile(shims+"/claude", []byte("#!/bin/sh\n"), 0o755))
+	stopped := spec{address: "t1", state: "finished", reason: "server_stop", labels: map[string]string{"dispatch.tree": "/trees/1", "herdr.space": "spA"}}
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.list": {list(term(stopped))},
+		"terminal.rm":   {ok(`{}`)},
+		"terminal.run":  {ok(term(worker("t2", "spA", "tbA", "")))},
+	})
+
+	_, err := core.StartWorker(context.Background(), herdr.Worker{Dir: t.TempDir(), Program: herdr.Program{
+		AgentKind: "claude", PathFirst: []string{shims}, Session: "new-session", SessionFlag: "--session-id", ResumeFlag: "--resume",
+	}})
+
+	require.NoError(t, err)
+	assert.Equal(t, []any{shims + "/claude", "--session-id", "new-session"}, calls.Params(t, "terminal.run")[0]["argv"])
 }
 
 func TestCoreCloseWorkspaceEndsEveryWorkerTerminalAndLeavesTheUsersAlone(t *testing.T) {

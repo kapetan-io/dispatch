@@ -104,6 +104,9 @@ type terminalStatus struct {
 	Kind  string `json:"kind"`
 }
 
+// reasonServerStop is why herdr-core ends a terminal when the core itself stops.
+const reasonServerStop = "server_stop"
+
 func (t terminal) live() bool { return t.State == "live" }
 
 // startedByDispatch reports whether the terminal carries the tree of a worker Core started.
@@ -286,6 +289,22 @@ func (c *Core) StartWorker(ctx context.Context, w Worker) (Started, error) {
 			return Started{}, ErrSessionRunning
 		}
 	}
+	program := w.Program
+	exe, err := c.find(program)
+	if err != nil {
+		return Started{}, err
+	}
+	// Only a core restart resumes: an exited or killed Claude crashed or was quit. The
+	// newest finished terminal decides, and every one is removed before the new run.
+	var previous string
+	for _, t := range existing {
+		if t.startedByDispatch() && !t.live() {
+			previous = ""
+			if t.Reason == reasonServerStop {
+				previous = t.Labels[LabelSession]
+			}
+		}
+	}
 	for _, t := range existing {
 		if t.startedByDispatch() && !t.live() {
 			if err := c.call(ctx, "terminal.rm", map[string]any{"terminal": t.Address}, nil); err != nil && !gone(err) {
@@ -294,11 +313,6 @@ func (c *Core) StartWorker(ctx context.Context, w Worker) (Started, error) {
 		}
 	}
 
-	program := w.Program
-	exe, err := c.find(program)
-	if err != nil {
-		return Started{}, err
-	}
 	env := map[string]string{
 		"PATH":                 strings.Join(append(slices.Clone(program.PathFirst), c.env.Get("PATH")), ":"),
 		"AUTONOMOUS_WORKER":    "1",
@@ -313,13 +327,17 @@ func (c *Core) StartWorker(ctx context.Context, w Worker) (Started, error) {
 		labelSpace: space,
 		labelTab:   "tb" + treekey.Digest("dispatch-tab", w.Dir, 32),
 	}
-	if program.Session != "" {
-		labels[LabelSession] = program.Session
+	argv, session := program.StartArgv(), program.Session
+	if resume, ok := program.ResumeArgv(previous); ok {
+		argv, session = resume, previous
+	}
+	if session != "" {
+		labels[LabelSession] = session
 	}
 	name := "dw-" + treekey.Digest("dispatch-terminal", w.Dir, 24)
 	var run terminal
 	err = c.call(ctx, "terminal.run", map[string]any{
-		"argv":      append([]string{exe}, program.StartArgv()...),
+		"argv":      append([]string{exe}, argv...),
 		"cwd":       w.Dir,
 		"env":       env,
 		"name":      name,

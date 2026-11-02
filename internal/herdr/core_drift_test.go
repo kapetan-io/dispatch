@@ -490,3 +490,78 @@ func TestHcRefusesAnIdleOnlySendToATerminalThatReportsNoStatus(t *testing.T) {
 
 	assert.Equal(t, "status_mismatch", kind)
 }
+
+// recordedArgs is the argv the stand-in Claude saw when it last started in the worker's tree.
+func (r *coreRig) recordedArgs(t *testing.T) []string {
+	t.Helper()
+	var recorded struct {
+		Args []string `json:"args"`
+	}
+	b, err := os.ReadFile(filepath.Join(r.worker.Dir, "standin-claude.json"))
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(b, &recorded))
+	return recorded.Args
+}
+
+func TestCoreStartWorkerResumesAfterACoreRestart(t *testing.T) {
+	r := newCoreRig(t)
+	first := r.launched(t)
+	require.NotEmpty(t, first.Pane)
+
+	r.session.Restart(t)
+
+	require.Eventually(t, func() bool {
+		for _, term := range r.terminals(t, true).Terminals {
+			if term.State == "finished" && term.Reason == "server_stop" {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 100*time.Millisecond)
+	r.launched(t)
+	all := r.terminals(t, true)
+	require.Len(t, all.Terminals, 1)
+	assert.Equal(t, r.worker.Program.Session, all.Terminals[0].Labels["dispatch.session"])
+	args := r.recordedArgs(t)
+	assert.Contains(t, args, "--model")
+	assert.Contains(t, args, "--resume")
+	assert.Contains(t, args, r.worker.Program.Session)
+	assert.NotContains(t, args, "--session-id")
+}
+
+func TestCoreStartWorkerStartsFreshAfterACrash(t *testing.T) {
+	r := newCoreRig(t)
+	first := r.launched(t)
+	r.session.Run(t, "kill", first.Pane)
+	require.Eventually(t, func() bool { _, ok := r.agent(t); return !ok }, 10*time.Second, 100*time.Millisecond)
+	r.worker.Program.Session = "6f0c1e2a-0000-4000-8000-000000000002"
+
+	r.launched(t)
+
+	all := r.terminals(t, true)
+	require.Len(t, all.Terminals, 1)
+	assert.Equal(t, "6f0c1e2a-0000-4000-8000-000000000002", all.Terminals[0].Labels["dispatch.session"])
+	args := r.recordedArgs(t)
+	assert.Contains(t, args, "--session-id")
+	assert.NotContains(t, args, "--resume")
+}
+
+func TestCoreCloseWorkspaceRemovesFinishedWorkerTerminalsAfterACoreRestart(t *testing.T) {
+	r := newCoreRig(t)
+	r.launched(t)
+	r.session.Restart(t)
+	require.Eventually(t, func() bool {
+		snap, err := r.core.Read(context.Background())
+		return err == nil && len(snap.Workspaces) == 1 && len(snap.Agents) == 0
+	}, 10*time.Second, 100*time.Millisecond)
+
+	require.NoError(t, r.core.CloseWorkspace(context.Background(), r.space))
+
+	assert.Empty(t, r.terminals(t, true).Terminals)
+	r.worker.Program.Session = "6f0c1e2a-0000-4000-8000-000000000003"
+	r.launched(t)
+	args := r.recordedArgs(t)
+	assert.Contains(t, args, "--session-id")
+	assert.Contains(t, args, "6f0c1e2a-0000-4000-8000-000000000003")
+	assert.NotContains(t, args, "--resume")
+}

@@ -161,6 +161,10 @@ type Program struct {
 	// SessionFlag starts the program on Session (Claude: "--session-id"). An
 	// adapter appends SessionFlag and Session to Argv, which holds neither.
 	SessionFlag string
+	// ResumeFlag continues an earlier session instead (Claude: "--resume"). Core
+	// uses it through ResumeArgv after a core restart. Empty when the program
+	// can't resume.
+	ResumeFlag string
 }
 
 // StartArgv is Argv followed by the flag that starts the program on its chosen
@@ -171,6 +175,15 @@ func (p Program) StartArgv() []string {
 		argv = append(argv, p.SessionFlag, p.Session)
 	}
 	return argv
+}
+
+// ResumeArgv is Argv followed by the flag that continues session, or false when the
+// program can't resume.
+func (p Program) ResumeArgv(session string) ([]string, bool) {
+	if session == "" || p.ResumeFlag == "" {
+		return nil, false
+	}
+	return append(slices.Clone(p.Argv), p.ResumeFlag, session), true
 }
 
 // Startup describes the screens a program shows on its way to an input box.
