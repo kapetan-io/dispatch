@@ -135,6 +135,8 @@ type launch struct {
 	// markID is the id this launch holds its kickoffs record under, so it never releases
 	// the record of a launch that replaced it.
 	markID string
+	// markAt is when the launch began, which a claimed record carries.
+	markAt time.Time
 	// workspaceOpen is set when a failed kickoff could not close the workspace.
 	workspaceOpen bool
 	// fresh is set when this run took the lease, as opposed to finding one from
@@ -203,6 +205,7 @@ func (l *launch) run(ctx context.Context) Result {
 	if !ok {
 		return r
 	}
+	l.claimKickoff()
 	l.opts.Typed.Clear(l.tree)
 	l.opts.Typed.Note(l.tree, req.Kickoff)
 
@@ -235,12 +238,29 @@ func (l *launch) run(ctx context.Context) Result {
 
 // beginKickoff marks the launch unconfirmed until it returns. A launch killed
 // before then leaves the mark, which is how a later tick knows the session in
-// this tree never got its kickoff.
+// this tree never got its kickoff. A record already there is shared, not replaced,
+// so a launch that herdr refuses cannot erase the winner's.
 func (l *launch) beginKickoff() {
 	if l.opts.StateDir == "" {
 		return
 	}
-	id, err := kickoffs.Mark(l.opts.StateDir, l.tree, l.opts.Clock.Now())
+	l.markAt = l.opts.Clock.Now()
+	id, err := kickoffs.MarkUnlessHeld(l.opts.StateDir, l.tree, l.markAt)
+	if err != nil {
+		l.log("%v", err)
+		return
+	}
+	l.markID = id
+}
+
+// claimKickoff makes the record this launch's alone. Under the app host herdr starts one session
+// per tree, so a launch that got this far won and any other owner lost or died. Under the TUI two
+// racing launches both get here, and the last claim replaces the first.
+func (l *launch) claimKickoff() {
+	if l.opts.StateDir == "" {
+		return
+	}
+	id, err := kickoffs.Mark(l.opts.StateDir, l.tree, l.markAt)
 	if err != nil {
 		l.log("%v", err)
 		return
