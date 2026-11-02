@@ -2654,6 +2654,9 @@ func markLaunch(t *testing.T, state, tree string, at time.Time) {
 	require.NoError(t, err)
 }
 
+// launchRecord is when the unconfirmed launch on tree began, and whether one is on record.
+func launchRecord(state, tree string) (time.Time, bool) { return kickoffs.Since(state, tree) }
+
 // sessionSocket stands in for a Claude Code session's inbox and collects the
 // lines written to it. The path is short because macOS caps socket paths.
 func sessionSocket(t *testing.T) (string, <-chan string) {

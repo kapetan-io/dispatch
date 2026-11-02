@@ -72,6 +72,48 @@ func TestLaunchReportsAlreadyRunningWhenHerdrFindsASessionOnTheTree(t *testing.T
 	assert.Empty(t, d.fakes().Herdr.Kicked())
 }
 
+func TestARefusedLaunchLeavesTheKickoffRecordOfTheLaunchThatWon(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	started := d.Clock.Now().Add(-time.Second)
+	markLaunch(t, d.state, tree, started)
+	d.fakes().Herdr.Fail(herdrtest.OpStartTab, herdr.ErrSessionRunning)
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	require.Equal(t, "already_running", out.result["status"])
+	at, held := launchRecord(d.state, tree)
+	assert.True(t, held)
+	assert.Equal(t, started.UnixMilli(), at.UnixMilli())
+}
+
+func TestARefusedLaunchLeavesNoKickoffRecordBesideAHealthyWorker(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.fakes().Herdr.Fail(herdrtest.OpStartTab, herdr.ErrSessionRunning)
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	require.Equal(t, "already_running", out.result["status"])
+	_, held := launchRecord(d.state, tree)
+	assert.False(t, held)
+}
+
+func TestALaunchThatStartsClaudeReleasesARecordAnEarlierLaunchLeft(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	markLaunch(t, d.state, tree, d.Clock.Now().Add(-time.Second))
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	require.Equal(t, "ok", out.result["status"])
+	_, held := launchRecord(d.state, tree)
+	assert.False(t, held)
+}
+
 func TestLaunchStartsClaudeOnTheSessionItChose(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})

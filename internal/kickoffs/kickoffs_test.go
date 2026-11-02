@@ -49,3 +49,23 @@ func TestAReleaseByALaunchThatWasReplacedLeavesTheNewerMark(t *testing.T) {
 	assert.True(t, held)
 	assert.Equal(t, time.UnixMilli(2000), at)
 }
+
+// Package exception: needs two launches alive at once, which the CLI cannot arrange.
+func TestARecordTwoLaunchesShareSurvivesTheFirstToRelease(t *testing.T) {
+	state, tree := t.TempDir(), t.TempDir()
+	winner, err := kickoffs.Mark(state, tree, time.UnixMilli(1000))
+	require.NoError(t, err)
+	loser, err := kickoffs.MarkUnlessHeld(state, tree, time.UnixMilli(2000))
+	require.NoError(t, err)
+
+	kickoffs.Release(state, tree, winner)
+
+	at, held := kickoffs.Since(state, tree)
+	assert.True(t, held)
+	assert.Equal(t, time.UnixMilli(1000), at)
+
+	kickoffs.Release(state, tree, loser)
+
+	_, held = kickoffs.Since(state, tree)
+	assert.False(t, held)
+}

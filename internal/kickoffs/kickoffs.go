@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -32,6 +33,17 @@ func file(stateDir, tree string) string {
 // id that launch releases it with. A second Mark replaces the first, because a
 // relaunch starts over.
 func Mark(stateDir, tree string, at time.Time) (string, error) {
+	return mark(stateDir, tree, at, true)
+}
+
+// MarkUnlessHeld records the launch like Mark, but when a record is already there it keeps the
+// record's time and adds this launch as a further owner. A launch that may be refused uses it,
+// so its release never erases the record while another launch still holds it.
+func MarkUnlessHeld(stateDir, tree string, at time.Time) (string, error) {
+	return mark(stateDir, tree, at, false)
+}
+
+func mark(stateDir, tree string, at time.Time, replace bool) (string, error) {
 	name := file(stateDir, tree)
 	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 		return "", fmt.Errorf("while recording the launch: %w", err)
@@ -41,26 +53,34 @@ func Mark(stateDir, tree string, at time.Time) (string, error) {
 		return "", err
 	}
 	defer unlock()
-	tmp, err := os.CreateTemp(filepath.Dir(name), ".kickoff-*.tmp")
-	if err != nil {
-		return "", fmt.Errorf("while recording the launch: %w", err)
-	}
 	var raw [8]byte
 	_, _ = rand.Read(raw[:])
 	id := hex.EncodeToString(raw[:])
-	_, werr := tmp.WriteString(strconv.FormatInt(at.UnixMilli(), 10) + " " + id)
+	owners := []string{id}
+	if held, heldOwners, ok := read(stateDir, tree); ok && !replace {
+		at, owners = held, append(heldOwners, id)
+	}
+	return id, write(name, at, owners)
+}
+
+func write(name string, at time.Time, owners []string) error {
+	tmp, err := os.CreateTemp(filepath.Dir(name), ".kickoff-*.tmp")
+	if err != nil {
+		return fmt.Errorf("while recording the launch: %w", err)
+	}
+	_, werr := tmp.WriteString(strconv.FormatInt(at.UnixMilli(), 10) + " " + strings.Join(owners, " "))
 	if cerr := tmp.Close(); werr == nil {
 		werr = cerr
 	}
 	if werr != nil {
 		_ = os.Remove(tmp.Name())
-		return "", fmt.Errorf("while recording the launch: %w", werr)
+		return fmt.Errorf("while recording the launch: %w", werr)
 	}
-	return id, os.Rename(tmp.Name(), name)
+	return os.Rename(tmp.Name(), name)
 }
 
-// Release removes the record of tree if the launch with id still owns it. A
-// launch that a newer one replaced leaves the newer one's record alone.
+// Release drops the launch with id from the owners of the record of tree, and removes the record
+// once no owner is left. A launch that a newer one replaced leaves the newer one's record alone.
 func Release(stateDir, tree, id string) {
 	name := file(stateDir, tree)
 	unlock, err := lockTree(name)
@@ -68,9 +88,15 @@ func Release(stateDir, tree, id string) {
 		return
 	}
 	defer unlock()
-	if _, owner, ok := read(stateDir, tree); ok && owner == id {
-		_ = os.Remove(name)
+	at, owners, ok := read(stateDir, tree)
+	if !ok || !slices.Contains(owners, id) {
+		return
 	}
+	if owners = slices.DeleteFunc(owners, func(owner string) bool { return owner == id }); len(owners) == 0 {
+		_ = os.Remove(name)
+		return
+	}
+	_ = write(name, at, owners)
 }
 
 // lockTree holds an exclusive flock beside the record while Mark replaces it or Release
@@ -101,15 +127,15 @@ func Since(stateDir, tree string) (time.Time, bool) {
 	return at, ok
 }
 
-func read(stateDir, tree string) (at time.Time, owner string, ok bool) {
+func read(stateDir, tree string) (at time.Time, owners []string, ok bool) {
 	b, err := os.ReadFile(file(stateDir, tree))
 	if err != nil {
-		return time.Time{}, "", false
+		return time.Time{}, nil, false
 	}
-	millis, owner, _ := strings.Cut(strings.TrimSpace(string(b)), " ")
+	millis, rest, _ := strings.Cut(strings.TrimSpace(string(b)), " ")
 	ms, err := strconv.ParseInt(millis, 10, 64)
 	if err != nil {
-		return time.Time{}, "", false
+		return time.Time{}, nil, false
 	}
-	return time.UnixMilli(ms), owner, true
+	return time.UnixMilli(ms), strings.Fields(rest), true
 }
