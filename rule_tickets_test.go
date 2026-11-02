@@ -501,23 +501,81 @@ func TestReplayReportsADifferenceWhenARulesStopsSearchingBeforeItCreates(t *test
 	assert.Contains(t, res.Stdout, "difference")
 }
 
-func TestReplayMatchesASegmentWrittenBeforeRulesCouldSearch(t *testing.T) {
+// A segment written before rules could search has no searches on its cycle lines, because no rule of that
+// time searched. This rule never searches, so its cycle lines carry none either.
+func TestReplayMatchesARunWhoseRulesNeverSearched(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: localOn, Rules: rule(`whenever({ name: "file-review", each: "dispatch", if: () => true,
   then: (_, ctx) => ctx.ticket.queueCreate("local", { title: "Review", repo: "dispatch" }, { once: ["review"] }) });`)})
 	d.StartBeforeTheEvents()
 	d.Tick()
 	d.Stop()
-	// A segment of an older dispatch has no searches field on its cycle lines.
 	_, lines := d.newestSegment()
-	for i, text := range lines {
-		lines[i] = strings.Replace(text, `"searches":[]`, "", 1)
-		require.NotContains(t, lines[i], `"searches"`)
+	for _, text := range lines {
+		require.NotContains(t, text, `"searches"`)
 	}
-	d.rewriteNewestSegment(lines)
 
 	cycles, matched := replayOf(t, d)
 
 	assert.Positive(t, cycles)
 	assert.Equal(t, cycles, matched)
+}
+
+// Replay answers a search only from the recording, so a cycle whose recorded searches are cut away
+// differs from the live one. The segments that replay without searches are the ones whose rules never searched.
+func TestReplayReportsADifferenceWhenTheRecordedSearchesAreCutAway(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Config: localOn, Rules: rule(fileReview)})
+	d.StartBeforeTheEvents()
+	d.Tick()
+	d.Stop()
+	_, lines := d.newestSegment()
+	cut := 0
+	for i, text := range lines {
+		if at := strings.Index(text, `,"searches":[`); at >= 0 && strings.HasPrefix(text, `{"line":"cycle"`) {
+			lines[i] = text[:at] + "}"
+			cut++
+		}
+	}
+	require.Positive(t, cut)
+	d.rewriteNewestSegment(lines)
+
+	res := d.Run("replay")
+
+	require.ErrorContains(t, res.Err, "replay differs from the live run")
+}
+
+// The reset's cycle must see the ticket the rule filed, or it would not record the comment as sent.
+func TestStateResetQuietRecordsTheCommentASearchFindingATicketWants(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Config: localOn, Rules: rule(`whenever({ name: "note", each: "ticket", if: (t) => t.id === "ENG-1",
+  then: (t, ctx) => {
+    if (ctx.ticket.search({ attributes: { pr: "acme/api#7" } }).length === 0) return;
+    return ctx.ticket.queueComment(t, "a review ticket exists", { once: ["note", t.id] });
+  } });`)})
+	d.StartBeforeTheEvents()
+	d.ticketOut("create", "--repo", "dispatch", "--title", "Review", "--attr", "pr=acme/api#7")
+	d.Stop()
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	require.NoError(t, d.Run("state", "reset", "--quiet").Err)
+	d.Tick()
+
+	assert.Empty(t, d.Linear.Comments())
+}
+
+func TestRulesCheckAnswersASearchFromTheLocalTickets(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Config: localOn, Rules: rule(`whenever({ name: "found-one", each: "ticket", if: (t) => t.id === "ENG-1",
+  then: (t, ctx) => {
+    if (ctx.ticket.search({ attributes: { pr: "acme/api#7" } }).length > 0) throw new Error("found the review ticket");
+  } });`)})
+	d.StartBeforeTheEvents()
+	d.ticketOut("create", "--repo", "dispatch", "--title", "Review", "--attr", "pr=acme/api#7")
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	res := d.Run("rules", "check")
+
+	require.Error(t, res.Err)
+	assert.Contains(t, res.Stdout, "found the review ticket")
 }
