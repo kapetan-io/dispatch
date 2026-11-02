@@ -229,3 +229,54 @@ func TestCLIReadAsksForNoChecksWhenEveryCheckCounts(t *testing.T) {
 	assert.False(t, pr.Ready)
 	assert.Len(t, recorded(t, args), 1)
 }
+
+const mergedPage = `{"data":{"repository":{"defaultBranchRef":{"name":"main"},
+"b0":{"nodes":[
+  {"number":3,"url":"https://github.com/o/r/pull/3","headRefOid":"old","baseRefName":"main","isCrossRepository":false,"mergedAt":"2026-10-01T10:00:00Z"},
+  {"number":5,"url":"https://github.com/o/r/pull/5","headRefOid":"new","baseRefName":"main","isCrossRepository":false,"mergedAt":"2026-10-02T10:00:00Z"},
+  {"number":6,"url":"https://github.com/o/r/pull/6","headRefOid":"fork","baseRefName":"main","isCrossRepository":true,"mergedAt":"2026-10-03T10:00:00Z"},
+  {"number":8,"url":"https://github.com/o/r/pull/8","headRefOid":"stacked","baseRefName":"loc-1-parent","isCrossRepository":false,"mergedAt":"2026-10-04T10:00:00Z"}]},
+"b1":{"nodes":[
+  {"number":9,"url":"https://github.com/o/r/pull/9","headRefOid":"stacked","baseRefName":"loc-1-parent","isCrossRepository":false,"mergedAt":"2026-10-04T10:00:00Z"}]},
+"b2":{"nodes":[]}}}}`
+
+func TestCLIReadMergedAsksOneAliasedQueryForTheBranches(t *testing.T) {
+	exe, args := standIn(t, mergedPage, "", "0")
+
+	found, err := pullrequest.NewCLI(exe).ReadMerged(context.Background(), t.TempDir(), []string{"loc-1-work", "loc-2-work", "loc-3-work"})
+
+	require.NoError(t, err)
+	call := recorded(t, args)
+	require.Len(t, call, 1)
+	assert.True(t, strings.HasPrefix(call[0], "api graphql -F owner={owner} -F repo={repo} -f b0=loc-1-work -f b1=loc-2-work -f b2=loc-3-work -f query=..."), call[0])
+	// Newest merged PR from the repo itself into the default branch: not the older one, the fork's or
+	// the one merged into another branch. A branch with none is absent.
+	assert.Equal(t, map[string]pullrequest.MergedPR{
+		"loc-1-work": {Number: 5, URL: "https://github.com/o/r/pull/5", Head: "new", MergedAt: time.Date(2026, 10, 2, 10, 0, 0, 0, time.UTC)},
+	}, found)
+}
+
+func TestCLIReadMergedFailsWithoutADefaultBranch(t *testing.T) {
+	exe, _ := standIn(t, `{"data":{"repository":{"defaultBranchRef":null,"b0":{"nodes":[]}}}}`, "", "0")
+
+	_, err := pullrequest.NewCLI(exe).ReadMerged(context.Background(), t.TempDir(), []string{"b"})
+
+	require.ErrorContains(t, err, "no default branch")
+}
+
+func TestCLIReadMergedFailsWhenGHFails(t *testing.T) {
+	exe, _ := standIn(t, "", "HTTP 502", "1")
+
+	_, err := pullrequest.NewCLI(exe).ReadMerged(context.Background(), t.TempDir(), []string{"b"})
+
+	require.ErrorContains(t, err, "HTTP 502")
+}
+
+func TestCLIReadMergedRefusesMoreBranchesThanOneQueryTakes(t *testing.T) {
+	exe, args := standIn(t, mergedPage, "", "0")
+
+	_, err := pullrequest.NewCLI(exe).ReadMerged(context.Background(), t.TempDir(), make([]string, pullrequest.MergedBatch+1))
+
+	require.ErrorContains(t, err, "at most 50 branches")
+	assert.NoFileExists(t, args)
+}

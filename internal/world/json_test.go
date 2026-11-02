@@ -51,6 +51,7 @@ func full() world.World {
 		Untracked:     map[string][]string{"/trees/1": {"a.txt"}},
 		PRs:           map[string]pullrequest.PullRequest{"ENG-4": {Number: 7, Head: "abc", Problems: []string{"a failed check"}}},
 		PRReadFailed:  map[string]bool{"ENG-5": true},
+		MergedPRs:     map[string]pullrequest.MergedPR{"LOC-2": {Number: 9, URL: "https://github.com/acme/widgets/pull/9", Head: "def", MergedAt: time.UnixMilli(1760450300000).UTC()}},
 		UnreadRepos:   map[string]bool{"tiger": true},
 		Nudged:        map[string]bool{"ENG-1": true},
 		StackRecords:  map[string]stackrecord.Records{"tiger": {Whole: map[string]stackrecord.Record{"eng-1": {Parent: "ENG-2", ForkPoint: "abc"}}, Partial: map[string]bool{"eng-7": true}}},

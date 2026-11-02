@@ -1,5 +1,5 @@
-// Package pullrequest reads the state of a ticket's open PR from GitHub, in
-// the terms the dispatcher needs to decide whether the PR needs work.
+// Package pullrequest reads a ticket's PR from GitHub: the open PR, in the terms
+// the dispatcher needs to decide whether it needs work, or the merged PR of a local ticket.
 package pullrequest
 
 import (
@@ -18,12 +18,15 @@ import (
 )
 
 // Repository is the GitHub repo a clone belongs to, where a ticket's branch has
-// at most one open pull request.
+// at most one open pull request and any number of merged ones.
 type Repository interface {
 	// Read finds the open PR whose head branch is branch in the repo cloned at
 	// repoDir, as judged by rules. It returns false when the branch has no open
 	// PR from this repo.
 	Read(ctx context.Context, repoDir, branch string, rules Rules) (PullRequest, bool, error)
+	// ReadMerged finds, for each of up to MergedBatch branches, the newest PR from this repo
+	// that merged into the repo's default branch. A branch with none is left out.
+	ReadMerged(ctx context.Context, repoDir string, branches []string) (map[string]MergedPR, error)
 	// Merge merges the PR at prURL with a merge commit. It refuses, and merges
 	// nothing, when the PR's head is no longer head, so a push after the
 	// approval was read is never merged unreviewed.

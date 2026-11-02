@@ -345,3 +345,19 @@ scenario(rules, "launch-worker still starts a worker for a Linear design ticket"
   s.given(ticket("ENG-1", { ...build, labels: ["design"] }));
   s.expect([["launch-worker", "launch", "ENG-1"]]);
 });
+
+scenario(rules, "no-worker-on-merged-local-ticket holds the launch for a local ticket whose PR merged", s => {
+  s.given(ticket("LOC-1", { status: "todo", repo: "dispatch" }));
+  s.advance(1000);
+  s.see(ticket("LOC-1", { status: "in_progress" }));
+  s.advance(1000);
+  s.see(pr("LOC-1", { merged: true }));
+  s.expect([["finish-merged-local-ticket", "move", "LOC-1", "blocker_done"]]);
+});
+
+scenario(rules, "no-worker-on-merged-local-ticket lets a reopened local ticket launch", s => {
+  s.given(ticket("LOC-1", { status: "done", repo: "dispatch" }), pr("LOC-1", { merged: true }));
+  s.advance(1000);
+  s.see(ticket("LOC-1", { status: "in_progress" }));
+  s.expect([["launch-worker", "launch", "LOC-1"]]);
+});

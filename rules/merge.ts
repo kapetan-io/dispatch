@@ -22,3 +22,18 @@ whenever({
       { once: ["merged", pr.head], followersAlways: true, reason: "PR approved" }),
   ],
 });
+
+// A merge closes a Linear ticket through Linear's GitHub integration. Nothing closes a local ticket,
+// so this does, from any status outside a finished one. pr.merged is true only for a local ticket's
+// PR that merged into the default branch. A merge older than the ticket's current status belongs to
+// an earlier round of work, so a ticket moved back out of Done is not closed again. The ticket goes
+// to the status that does blocker_done, which is Done in a new database. The system test is
+// redundant with pr.merged, which is false for Linear, and keeps the rule's reach visible.
+whenever({
+  name: "finish-merged-local-ticket",
+  each: "pr",
+  if:   (pr) => pr.merged && pr.ticket.system === "local" && !pr.ticket.finished
+           && pr.mergedAt > pr.ticket.statusSince,
+  then: (pr, ctx) => ctx.ticket.queueMove(pr.ticket, "blocker_done", "its PR merged",
+                                          { once: ["merged", pr.head] }),
+});

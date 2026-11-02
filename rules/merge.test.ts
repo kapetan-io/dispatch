@@ -1,4 +1,5 @@
 import { scenario, ticket, worker, pr, comment, rulesFrom } from "dispatch/testing";
+import type { Expected } from "dispatch/testing";
 
 const rules = rulesFrom("./dispatch");
 
@@ -180,4 +181,36 @@ scenario(rules, "auto-merge is held when herdr could not be read", s => {
   s.unread("herdr");
   s.expect([]);
   s.expectHeld("auto-merge", "ENG-1", "herdr unread");
+});
+
+const local = { optedIn: true, repo: "dispatch" };
+
+for (const status of ["in_review", "in_progress", "backlog", "needs_human", "todo"]) {
+  scenario(rules, `finish-merged-local-ticket moves a ${status} local ticket whose PR merged`, s => {
+    s.given(ticket("LOC-1", { ...local, status }));
+    s.advance(1000);
+    s.see(pr("LOC-1", { merged: true }));
+    s.expect([["finish-merged-local-ticket", "move", "LOC-1", "blocker_done"], ...(status === "needs_human" ? [["notify-needs-human", "notify", "LOC-1"] as Expected] : [])]);
+  });
+}
+
+scenario(rules, "finish-merged-local-ticket leaves a finished local ticket", s => {
+  s.given(ticket("LOC-1", { ...local, status: "done" }));
+  s.advance(1000);
+  s.see(pr("LOC-1", { merged: true }));
+  s.expect([]);
+});
+
+scenario(rules, "finish-merged-local-ticket ignores a merge older than the ticket's status", s => {
+  s.given(ticket("LOC-1", { ...local, status: "done" }), pr("LOC-1", { merged: true }));
+  s.advance(1000);
+  s.see(ticket("LOC-1", { status: "in_progress" }));
+  s.expect([["launch-worker", "launch", "LOC-1"]]);
+});
+
+scenario(rules, "finish-merged-local-ticket never moves a Linear ticket", s => {
+  s.given(ticket("ENG-1", { ...local, status: "in_review" }), worker("ENG-1", "idle"));
+  s.advance(1000);
+  s.see(pr("ENG-1", { merged: true }));
+  s.expect([]);
 });

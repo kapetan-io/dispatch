@@ -76,6 +76,10 @@ declare module "dispatch" {
     readonly url: string;
     readonly head: string;
     readonly closed: boolean;
+    /** The PR merged into the repo's default branch. Dispatch reads merged PRs only for local tickets, so it is false on a Linear ticket's PR. */
+    readonly merged: boolean;
+    /** When the PR merged, in milliseconds since the epoch. 0 for a PR that has not merged. Compare it with the ticket's statusSince to count only a merge newer than the ticket's current status. */
+    readonly mergedAt: number;
     readonly draft: boolean;
     readonly approved: boolean;
     readonly ready: boolean;

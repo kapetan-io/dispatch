@@ -125,13 +125,15 @@ type Worker struct {
 	Turns            Fact[[]Turn]    `js:"turns" doc:"Every turn the worker's current Claude session has ended, oldest first, for a worker on an In Progress or In Review ticket. Empty for a session that has ended none, and unknown when herdr reports no session or the session's record can't be read. A worker relaunched in a new session starts over."`
 }
 
-// PR is the open pull request of an In Review ticket.
+// PR is a ticket's pull request: the open PR of an In Review ticket, or the merged PR of a local ticket.
 type PR struct {
 	Ticket          Fact[Ref]    `js:"ticket" ref:"ticket"`
 	Number          Fact[int64]  `js:"number"`
 	URL             Fact[string] `js:"url"`
 	Head            Fact[string] `js:"head"`
 	Closed          Fact[bool]   `js:"closed"`
+	Merged          Fact[bool]   `js:"merged" doc:"The PR merged into the repo's default branch. Dispatch reads merged PRs only for local tickets, so it is false on a Linear ticket's PR."`
+	MergedAt        Fact[int64]  `js:"mergedAt" doc:"When the PR merged, in milliseconds since the epoch. 0 for a PR that has not merged. Compare it with the ticket's statusSince to count only a merge newer than the ticket's current status."`
 	Draft           Fact[bool]   `js:"draft"`
 	Approved        Fact[bool]   `js:"approved"`
 	Ready           Fact[bool]   `js:"ready"`
