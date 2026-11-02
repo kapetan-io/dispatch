@@ -335,23 +335,9 @@ func (s *Store) Comment(id, author, body string) (err error) {
 		if err != nil {
 			return err
 		}
-		cb, err := tx.Bucket(commentBucket).CreateBucketIfNotExists(key(n))
-		if err != nil {
+		if err := s.addComment(tx, n, &t, author, body); err != nil {
 			return err
 		}
-		c, err := cb.NextSequence()
-		if err != nil {
-			return err
-		}
-		at := s.stamp()
-		raw, err := json.Marshal(storedComment{Author: author, At: at, Body: body})
-		if err != nil {
-			return err
-		}
-		if err := cb.Put(key(c), raw); err != nil {
-			return err
-		}
-		t.LastComment = at
 		return put(tb, n, t)
 	})
 }

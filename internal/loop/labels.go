@@ -9,9 +9,9 @@ import (
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/executor"
 	"github.com/kapetan-io/dispatch/internal/herdr"
-	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -33,9 +33,9 @@ func workerOf(wd world.World, ticket string) string {
 	return string(world.FindWorker(ticket, wd.Trees, wd.Snapshot).State)
 }
 
-func label(emoji string, t linear.Ticket) string { return emoji + " " + t.Identifier }
+func label(emoji string, t ticket.Ticket) string { return emoji + " " + t.Identifier }
 
-func tabLabel(t linear.Ticket) string { return herdr.TabLabel(t.Identifier, t.Title) }
+func tabLabel(t ticket.Ticket) string { return herdr.TabLabel(t.Identifier, t.Title) }
 
 // differs is true when the workspace or tab needs renaming to want. A rename sent since the
 // last resync to want needs none, whether or not it landed, and one sent to another label
@@ -52,8 +52,9 @@ func (l *Loop) differs(id, have, want string) bool {
 // A workspace or tab herdr didn't list is left alone, so a label changes only when
 // the status does.
 func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
-	wd, cfg := l.wd, l.o.Config.Plugins.Linear.Statuses
-	if wd.HerdrErr != nil || wd.LinearErr != nil {
+	wd := l.wd
+	scope := wd.Scope(l.o.Config)
+	if wd.HerdrErr != nil {
 		return nil, nil
 	}
 	current := map[string]string{}
@@ -64,7 +65,7 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 	for _, tab := range wd.Snapshot.Tabs {
 		currentTabs[tab.ID] = tab.Label
 	}
-	add := func(t linear.Ticket, w world.Worker, emoji string) {
+	add := func(t ticket.Ticket, w world.Worker, emoji string) {
 		have, ok := current[w.WorkspaceID]
 		want := label(emoji, t)
 		if w.WorkspaceID != "" && ok && l.differs(w.WorkspaceID, have, want) {
@@ -72,17 +73,17 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 		}
 	}
 	for _, t := range wd.Tickets {
-		if t.HasChildren {
+		if t.HasChildren || wd.TicketsErrOf(t.Identifier) != nil {
 			continue
 		}
 		w := wd.Workers[t.Identifier]
 		if wd.Nudged[t.Identifier] && w.State == world.Idle {
 			w.State = world.Working
 		}
-		switch t.Status {
-		case cfg.InProgress:
+		switch {
+		case scope.Is(t, ticket.InProgress):
 			add(t, w, l.workspaceEmoji(w, pullrequest.PullRequest{}, ""))
-		case cfg.InReview:
+		case scope.Is(t, ticket.InReview):
 			pr, ok := wd.PRs[t.Identifier]
 			// An unreadable PR must not change a label that came from reading it.
 			if !ok && wd.PRReadFailed[t.Identifier] && slices.ContainsFunc(prLabels, func(e string) bool {
@@ -91,18 +92,19 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 				continue
 			}
 			add(t, w, l.workspaceEmoji(w, pr, l.repoOf(t).OpenPRAs))
-		case cfg.NeedsHuman:
+		case scope.Is(t, ticket.NeedsHuman):
 			add(t, w, emojiNeedsHuman)
+		case scope.Is(t, ticket.Paused) && w.State == world.NoWorker:
+			add(t, w, emojiPaused)
 		}
-		if slices.Contains([]string{cfg.InProgress, cfg.InReview, cfg.NeedsHuman}, t.Status) {
+		if scope.Is(t, ticket.InProgress) || scope.Is(t, ticket.InReview) || scope.Is(t, ticket.NeedsHuman) {
 			if have, ok := currentTabs[w.TabID]; ok && w.TabID != "" && l.differs(w.TabID, have, tabLabel(t)) {
 				tabs = append(tabs, rename{w.TabID, tabLabel(t)})
 			}
 		}
 	}
-	paused := l.o.Config.Plugins.Linear.Statuses.Paused
 	for _, t := range wd.LeaseHolders {
-		if !slices.Contains(paused, t.Status) {
+		if !scope.Is(t, ticket.Paused) || wd.TicketsErrOf(t.Identifier) != nil {
 			continue
 		}
 		for _, w := range wd.Leases[t.Identifier] {
@@ -116,8 +118,8 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 }
 
 // repoOf is the settings table of the ticket's repo label, empty when it has none.
-func (l *Loop) repoOf(t linear.Ticket) config.Repo {
-	label, _ := t.LabelIn(l.o.Config.Plugins.Linear.RepoLabelGroup)
+func (l *Loop) repoOf(t ticket.Ticket) config.Repo {
+	label, _ := world.ScopeOf(l.o.Config).RepoOf(t)
 	_, repo, _ := l.o.Config.Repos.Find(label)
 	return repo
 }

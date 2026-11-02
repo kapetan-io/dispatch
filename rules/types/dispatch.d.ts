@@ -53,6 +53,10 @@ declare module "dispatch" {
     readonly branch: string;
     /** The stack record of the ticket's branch, undefined when the branch has none. Unknown when the clone's records could not be read or the record is partial. */
     readonly stack: Stack | undefined;
+    /** The ticket system the ticket comes from. */
+    readonly system: "linear" | "local";
+    /** A local ticket's key-value pairs; {} for a Linear ticket. */
+    readonly attributes: Readonly<Record<string, string>>;
     readonly status: string;
     readonly statusSince: number;
     readonly previousStatus: string | undefined;

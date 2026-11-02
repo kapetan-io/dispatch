@@ -11,11 +11,11 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/inbox"
-	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
@@ -44,7 +44,7 @@ type treeModel struct {
 
 // scenarioModel is the part of a scenario's world the fixtures describe.
 type scenarioModel struct {
-	tickets map[string]*linear.Ticket
+	tickets map[string]*ticket.Ticket
 	order   []string
 	parent  map[string]string
 	workers map[string]*world.Worker
@@ -63,7 +63,7 @@ type scenarioModel struct {
 
 func newModel() *scenarioModel {
 	return &scenarioModel{
-		tickets: map[string]*linear.Ticket{}, parent: map[string]string{}, workers: map[string]*world.Worker{},
+		tickets: map[string]*ticket.Ticket{}, parent: map[string]string{}, workers: map[string]*world.Worker{},
 		stops: map[string]stops.Record{}, sessions: map[string]sessionlog.Log{}, sessionUnread: map[string]string{}, prs: map[string]*pullrequest.PullRequest{}, stacks: map[string]stackrecord.Record{}, stamps: map[string]*stamp{},
 	}
 }
@@ -85,17 +85,26 @@ func boolean(m map[string]any, key string) (bool, bool) {
 	return v, ok
 }
 
-// statusName turns a scenario's status, a config key or a status name in any
-// case, into the name the workspace uses.
-func (s *scenario) statusName(status string) string {
-	st := s.cfg.Plugins.Linear.Statuses
-	if name, ok := StatusName(status, st); ok {
-		return name
+// statusesOf is the statuses of the ticket system the id belongs to: [plugins.linear.statuses], or
+// the default local statuses.
+func (s *scenario) statusesOf(id string) ticket.Statuses {
+	if ticket.SystemOf(id) == ticket.SystemLocal {
+		return ticket.DefaultStatuses()
 	}
-	for _, name := range append(slices.Clone(st.Finished), st.Paused...) {
-		if strings.EqualFold(name, status) {
+	return s.cfg.Plugins.Linear.Statuses.Table()
+}
+
+// statusName turns a scenario's status, a job key or a status name in any case, into the name the
+// ticket's own ticket system uses.
+func (s *scenario) statusName(id, status string) string {
+	table := s.statusesOf(id)
+	if slices.Contains(movableJobs, status) {
+		if name, ok := table.NameOf(ticket.Job(status)); ok {
 			return name
 		}
+	}
+	if st, ok := table.Find(status); ok {
+		return st.Name
 	}
 	return status
 }
@@ -140,18 +149,25 @@ func (s *scenario) applyTicket(id string, fields map[string]any) {
 	m := s.model()
 	t, exists := m.tickets[id]
 	if !exists {
-		t = &linear.Ticket{ID: "id-" + id, Identifier: id, Title: id, URL: "https://linear.test/" + id, Branch: strings.ToLower(id), Team: "ENG", Mine: true}
-		t.Status = s.statusName("todo")
+		t = &ticket.Ticket{ID: "id-" + id, Identifier: id, Title: id, URL: "https://linear.test/" + id, Branch: strings.ToLower(id), Team: "ENG", Mine: true}
+		if ticket.SystemOf(id) == ticket.SystemLocal {
+			t = &ticket.Ticket{Identifier: id, Title: id, Branch: strings.ToLower(id), Mine: true, StatusAt: s.now.UTC().Format(time.RFC3339Nano)}
+			if len(s.cfg.Repos) > 0 {
+				t.Repo = slices.Sorted(maps.Keys(s.cfg.Repos))[0]
+			}
+		}
+		t.Status = s.statusName(id, "todo")
 		m.tickets[id] = t
 		m.order = append(m.order, id)
 		m.stamp(id).status = s.ms()
 		m.stamp(id).gone = s.ms()
 	}
 	if status, ok := str(fields, "status"); ok {
-		name := s.statusName(status)
+		name := s.statusName(id, status)
 		if exists && name != t.Status {
 			m.stamp(id).status = s.ms()
-			m.stamp(id).previous = statusKey(t.Status, s.cfg.Plugins.Linear.Statuses)
+			m.stamp(id).previous = s.statusesOf(id).Key(t.Status)
+			t.StatusAt = s.now.UTC().Format(time.RFC3339Nano)
 		}
 		t.Status = name
 	}
@@ -194,30 +210,38 @@ func (s *scenario) applyTicket(id string, fields map[string]any) {
 			bid, _ := str(bm, "id")
 			status, _ := str(bm, "status")
 			abandoned, _ := boolean(bm, "abandoned")
-			t.Blockers = append(t.Blockers, linear.Blocker{Identifier: bid, Status: s.statusName(status), Abandoned: abandoned})
+			t.Blockers = append(t.Blockers, ticket.Blocker{Identifier: bid, Status: s.statusName(bid, status), Abandoned: abandoned})
+		}
+	}
+	if attrs, ok := fields["attributes"].(map[string]any); ok && ticket.SystemOf(id) == ticket.SystemLocal {
+		t.Attributes = map[string]string{}
+		for k, v := range attrs {
+			t.Attributes[k] = fmt.Sprint(v)
 		}
 	}
 	// Labels are rebuilt from the fields that name them.
 	labels := t.Labels
 	if optedIn, ok := boolean(fields, "optedIn"); ok {
-		labels = slices.DeleteFunc(labels, func(l linear.Label) bool { return strings.EqualFold(l.Name, s.cfg.Plugins.Linear.AILabel) })
+		labels = slices.DeleteFunc(labels, func(l ticket.Label) bool { return strings.EqualFold(l.Name, s.cfg.Plugins.Linear.AILabel) })
 		if optedIn {
-			labels = append(labels, linear.Label{Name: s.cfg.Plugins.Linear.AILabel})
+			labels = append(labels, ticket.Label{Name: s.cfg.Plugins.Linear.AILabel})
 		}
 	}
-	if repo, ok := str(fields, "repo"); ok {
-		labels = slices.DeleteFunc(labels, func(l linear.Label) bool { return strings.EqualFold(l.Group, s.cfg.Plugins.Linear.RepoLabelGroup) })
-		labels = append(labels, linear.Label{Name: repo, Group: s.cfg.Plugins.Linear.RepoLabelGroup})
+	if repo, ok := str(fields, "repo"); ok && ticket.SystemOf(id) == ticket.SystemLocal {
+		t.Repo = repo
+	} else if ok {
+		labels = slices.DeleteFunc(labels, func(l ticket.Label) bool { return strings.EqualFold(l.Group, s.cfg.Plugins.Linear.RepoLabelGroup) })
+		labels = append(labels, ticket.Label{Name: repo, Group: s.cfg.Plugins.Linear.RepoLabelGroup})
 	}
 	if names, ok := fields["labels"].([]any); ok {
 		for _, n := range names {
 			switch n := n.(type) {
 			case string:
-				labels = append(labels, linear.Label{Name: n})
+				labels = append(labels, ticket.Label{Name: n})
 			case map[string]any:
 				name, _ := str(n, "name")
 				group, _ := str(n, "group")
-				labels = append(labels, linear.Label{Name: name, Group: group})
+				labels = append(labels, ticket.Label{Name: name, Group: group})
 			}
 		}
 	}
@@ -398,16 +422,17 @@ func (s *scenario) world() world.World {
 	m := s.model()
 	cfg := s.cfg
 	scope := world.ScopeOf(cfg)
+	scope.Local = ticket.DefaultStatuses()
 	w := world.World{
-		At: s.now, Workers: map[string]world.Worker{}, Stops: map[string]stops.Record{},
+		At: s.now, LocalStatuses: scope.Local, Workers: map[string]world.Worker{}, Stops: map[string]stops.Record{},
 		Sessions: map[string]sessionlog.Log{}, SessionErrs: map[string]error{},
-		Leases: map[string][]world.Worker{}, Leased: map[string]bool{}, Children: map[string][]linear.Ticket{},
+		Leases: map[string][]world.Worker{}, Leased: map[string]bool{}, Children: map[string][]ticket.Ticket{},
 		Unfinished: map[string]string{}, Work: map[string]treehouse.Work{}, CheckErrors: map[string]error{},
 		Untracked: map[string][]string{}, PRs: map[string]pullrequest.PullRequest{}, PRReadFailed: map[string]bool{},
 		PoolErrs: map[string]error{}, UnreadRepos: map[string]bool{},
 	}
-	started := func(t *linear.Ticket) bool {
-		return slices.Contains([]string{cfg.Plugins.Linear.Statuses.InProgress, cfg.Plugins.Linear.Statuses.InReview, cfg.Plugins.Linear.Statuses.NeedsHuman}, t.Status)
+	started := func(t *ticket.Ticket) bool {
+		return scope.Is(*t, ticket.InProgress) || scope.Is(*t, ticket.InReview) || scope.Is(*t, ticket.NeedsHuman)
 	}
 	workerOf := func(id string) world.Worker {
 		if wk, ok := m.workers[id]; ok {
@@ -423,7 +448,7 @@ func (s *scenario) world() world.World {
 			if rec, ok := m.stops[id]; ok && w.Workers[id].State == world.Idle {
 				w.Stops[id] = rec
 			}
-			if w.Workers[id].State != world.NoWorker && (t.Status == cfg.Plugins.Linear.Statuses.InProgress || t.Status == cfg.Plugins.Linear.Statuses.InReview) {
+			if w.Workers[id].State != world.NoWorker && (scope.Is(*t, ticket.InProgress) || scope.Is(*t, ticket.InReview)) {
 				if reason, ok := m.sessionUnread[id]; ok {
 					w.SessionErrs[id] = errors.New(reason)
 				} else if log, ok := m.sessions[id]; ok {
@@ -467,7 +492,7 @@ func (s *scenario) world() world.World {
 		}
 	}
 	for _, parent := range scope.Parents(w.Tickets) {
-		var kids []linear.Ticket
+		var kids []ticket.Ticket
 		for _, id := range m.order {
 			if m.parent[id] == parent.Identifier {
 				kids = append(kids, *m.tickets[id])
@@ -481,7 +506,7 @@ func (s *scenario) world() world.World {
 	}
 	for id, rec := range m.stacks {
 		t := m.tickets[id]
-		label, _ := t.LabelIn(scope.RepoLabelGroup)
+		label, _ := scope.RepoOf(*t)
 		name, _, ok := cfg.Repos.Find(label)
 		if !ok {
 			continue
@@ -597,11 +622,10 @@ func (s *scenario) readRemotes() {
 // open blockers now and had none at the last cycle.
 func (s *scenario) trackWaiting() {
 	m := s.model()
-	done := s.cfg.Plugins.Linear.Statuses.BlockerDone
 	for id, t := range m.tickets {
 		open := t.BlockersTruncated
 		for _, b := range t.Blockers {
-			open = open || b.Status != done
+			open = open || !s.statusesOf(b.Identifier).Has(b.Status, ticket.BlockerDone)
 		}
 		st := m.stamp(id)
 		if open && !st.waitingNow {

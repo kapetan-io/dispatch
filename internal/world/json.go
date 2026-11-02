@@ -7,11 +7,11 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/inbox"
-	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
@@ -19,35 +19,37 @@ import (
 // all a rule can see of one, and a tree keeps the clone it came from, which treehouse's
 // own JSON leaves out.
 type worldRecord struct {
-	At           time.Time                          `json:"at"`
-	Tickets      []linear.Ticket                    `json:"tickets,omitempty"`
-	LinearErr    string                             `json:"linearErr,omitempty"`
-	Snapshot     herdr.Snapshot                     `json:"snapshot"`
-	HerdrErr     string                             `json:"herdrErr,omitempty"`
-	Trees        []treeRecord                       `json:"trees,omitempty"`
-	PoolErrs     map[string]string                  `json:"poolErrs,omitempty"`
-	Workers      map[string]Worker                  `json:"workers,omitempty"`
-	Stops        map[string]stops.Record            `json:"stops,omitempty"`
-	Sessions     map[string]sessionlog.Log          `json:"sessions,omitempty"`
-	SessionErrs  map[string]string                  `json:"sessionErrs,omitempty"`
-	LeaseHolders []linear.Ticket                    `json:"leaseHolders,omitempty"`
-	HoldersErr   string                             `json:"holdersErr,omitempty"`
-	Leases       map[string][]Worker                `json:"leases,omitempty"`
-	Leased       map[string]bool                    `json:"leased,omitempty"`
-	Children     map[string][]linear.Ticket         `json:"children,omitempty"`
-	ChildrenErr  string                             `json:"childrenErr,omitempty"`
-	Unfinished   map[string]string                  `json:"unfinished,omitempty"`
-	Work         map[string]treehouse.Work          `json:"work,omitempty"`
-	CheckErrors  map[string]string                  `json:"checkErrors,omitempty"`
-	Untracked    map[string][]string                `json:"untracked,omitempty"`
-	PRs          map[string]pullrequest.PullRequest `json:"prs,omitempty"`
-	PRReadFailed map[string]bool                    `json:"prReadFailed,omitempty"`
-	UnreadRepos  map[string]bool                    `json:"unreadRepos,omitempty"`
-	StackRecords map[string]stackrecord.Records     `json:"stackRecords,omitempty"`
-	StackErrs    map[string]string                  `json:"stackErrs,omitempty"`
-	Nudged       map[string]bool                    `json:"nudged,omitempty"`
-	Inbox        []inbox.Item                       `json:"inbox,omitempty"`
-	InboxErr     string                             `json:"inboxErr,omitempty"`
+	At            time.Time                          `json:"at"`
+	Tickets       []ticket.Ticket                    `json:"tickets,omitempty"`
+	LinearErr     string                             `json:"linearErr,omitempty"`
+	LocalErr      string                             `json:"localErr,omitempty"`
+	LocalStatuses ticket.Statuses                    `json:"localStatuses,omitempty"`
+	Snapshot      herdr.Snapshot                     `json:"snapshot"`
+	HerdrErr      string                             `json:"herdrErr,omitempty"`
+	Trees         []treeRecord                       `json:"trees,omitempty"`
+	PoolErrs      map[string]string                  `json:"poolErrs,omitempty"`
+	Workers       map[string]Worker                  `json:"workers,omitempty"`
+	Stops         map[string]stops.Record            `json:"stops,omitempty"`
+	Sessions      map[string]sessionlog.Log          `json:"sessions,omitempty"`
+	SessionErrs   map[string]string                  `json:"sessionErrs,omitempty"`
+	LeaseHolders  []ticket.Ticket                    `json:"leaseHolders,omitempty"`
+	HoldersErr    string                             `json:"holdersErr,omitempty"`
+	Leases        map[string][]Worker                `json:"leases,omitempty"`
+	Leased        map[string]bool                    `json:"leased,omitempty"`
+	Children      map[string][]ticket.Ticket         `json:"children,omitempty"`
+	ChildrenErr   string                             `json:"childrenErr,omitempty"`
+	Unfinished    map[string]string                  `json:"unfinished,omitempty"`
+	Work          map[string]treehouse.Work          `json:"work,omitempty"`
+	CheckErrors   map[string]string                  `json:"checkErrors,omitempty"`
+	Untracked     map[string][]string                `json:"untracked,omitempty"`
+	PRs           map[string]pullrequest.PullRequest `json:"prs,omitempty"`
+	PRReadFailed  map[string]bool                    `json:"prReadFailed,omitempty"`
+	UnreadRepos   map[string]bool                    `json:"unreadRepos,omitempty"`
+	StackRecords  map[string]stackrecord.Records     `json:"stackRecords,omitempty"`
+	StackErrs     map[string]string                  `json:"stackErrs,omitempty"`
+	Nudged        map[string]bool                    `json:"nudged,omitempty"`
+	Inbox         []inbox.Item                       `json:"inbox,omitempty"`
+	InboxErr      string                             `json:"inboxErr,omitempty"`
 	// omitzero, because omitempty never omits a time.Time.
 	InboxReadAt time.Time         `json:"inboxReadAt,omitzero"`
 	Remotes     map[string]string `json:"remotes,omitempty"`
@@ -63,7 +65,7 @@ type treeRecord struct {
 // MarshalJSON writes the read in the form history keeps.
 func (w World) MarshalJSON() ([]byte, error) {
 	r := worldRecord{
-		At: w.At, Tickets: w.Tickets, LinearErr: errText(w.LinearErr), Snapshot: w.Snapshot, HerdrErr: errText(w.HerdrErr),
+		At: w.At, Tickets: w.Tickets, LinearErr: errText(w.LinearErr), LocalErr: errText(w.LocalErr), LocalStatuses: w.LocalStatuses, Snapshot: w.Snapshot, HerdrErr: errText(w.HerdrErr),
 		PoolErrs: errTexts(w.PoolErrs), Workers: w.Workers, Stops: w.Stops, Sessions: w.Sessions, SessionErrs: errTexts(w.SessionErrs), LeaseHolders: w.LeaseHolders,
 		HoldersErr: errText(w.HoldersErr), Leases: w.Leases, Leased: w.Leased, Children: w.Children,
 		ChildrenErr: errText(w.ChildrenErr), Unfinished: w.Unfinished, Work: w.Work, CheckErrors: errTexts(w.CheckErrors),
@@ -85,7 +87,7 @@ func (w *World) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*w = World{
-		At: r.At, Tickets: r.Tickets, LinearErr: asError(r.LinearErr), Snapshot: r.Snapshot, HerdrErr: asError(r.HerdrErr),
+		At: r.At, Tickets: r.Tickets, LinearErr: asError(r.LinearErr), LocalErr: asError(r.LocalErr), LocalStatuses: r.LocalStatuses, Snapshot: r.Snapshot, HerdrErr: asError(r.HerdrErr),
 		PoolErrs: asErrors(r.PoolErrs), Workers: r.Workers, Stops: r.Stops, Sessions: r.Sessions, SessionErrs: asErrors(r.SessionErrs), LeaseHolders: r.LeaseHolders,
 		HoldersErr: asError(r.HoldersErr), Leases: r.Leases, Leased: r.Leased, Children: r.Children,
 		ChildrenErr: asError(r.ChildrenErr), Unfinished: r.Unfinished, Work: r.Work, CheckErrors: asErrors(r.CheckErrors),

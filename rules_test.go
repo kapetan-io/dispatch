@@ -21,7 +21,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/httpservicetest"
-	"github.com/kapetan-io/dispatch/internal/linear"
+	tkt "github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 // shippedRulesConfig is the [rules] table `rules init` asks the user to add.
@@ -776,7 +776,7 @@ func TestRulesCheckHoldsALeaseQuestionAboutAChildWhenTheRepoLabelGroupIsCustom(t
   then: (t, ctx) => ctx.ticket.queueComment(t, "free", { once: ["asks", t.id] }) });`),
 	})
 	regroup := func(tk fakeTicket) fakeTicket {
-		tk.Labels = []linear.Label{{Name: "ai"}, {Name: "dispatch", Group: "project"}}
+		tk.Labels = []tkt.Label{{Name: "ai"}, {Name: "dispatch", Group: "project"}}
 		return tk
 	}
 	d.Linear.Tickets(regroup(parent("ENG-1", "In Progress")))

@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -10,10 +11,10 @@ import (
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/ledger"
-	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -124,8 +125,12 @@ type State struct {
 	// treeRepo maps a tree path to the label of the repo whose pool holds it.
 	treeRepo    map[string]string
 	herdrUnread string
-	// linearUnread holds the reason the tickets weren't read, which makes every ticket fact unknown.
+	// scope holds both ticket systems' statuses, so every status question goes to the ticket's own system.
+	scope world.Scope
+	// linearUnread and localUnread hold the reason one ticket system's tickets weren't read, which makes
+	// every fact of that system's tickets unknown.
 	linearUnread string
+	localUnread  string
 	// stacks holds each repo label's stack records, and stacksUnread the reason a repo's
 	// could not be read.
 	stacks       map[string]stackrecord.Records
@@ -155,6 +160,7 @@ func NewState(cfg config.Config, now time.Time) *State {
 		blockers: map[string]blockers{}, waiting: map[string]int64{}, workers: map[string]*record{}, workersByTree: map[string]*record{},
 		pools: map[string]pool{}, leased: map[string]bool{}, leasedUnread: map[string]string{}, treeRepo: map[string]string{}, reserved: map[string]bool{}, prRead: map[string]bool{},
 		maxInProgress: cfg.Dispatch.MaxInProgress, started: now, Kept: map[string]Exchange{},
+		scope: world.ScopeOf(cfg),
 	}
 }
 
@@ -178,57 +184,36 @@ func (s *State) lookup(kind, id string) (*record, bool) {
 
 func (s *State) ms() int64 { return s.Now.UnixMilli() }
 
-// statusKey names a status by its config key, so rules survive a renamed workspace status.
-func statusKey(name string, s config.Statuses) string {
-	switch name {
-	case s.InProgress:
-		return "in_progress"
-	case s.InReview:
-		return "in_review"
-	case s.NeedsHuman:
-		return "needs_human"
-	case s.Todo:
-		return "todo"
-	}
-	return name
-}
-
-// StatusName is the status a config key names.
-func StatusName(key string, s config.Statuses) (string, bool) {
-	switch key {
-	case "in_progress":
-		return s.InProgress, true
-	case "in_review":
-		return s.InReview, true
-	case "needs_human":
-		return s.NeedsHuman, true
-	case "todo":
-		return s.Todo, true
-	case "close_parent":
-		return s.CloseParent, true
-	case "blocker_done":
-		return s.BlockerDone, true
-	}
-	return "", false
-}
-
 const labelsCutShort = "the ticket has more labels than dispatch reads"
 
-// ticketRecord builds the record of one Linear ticket.
-func (s *State) ticketRecord(t linear.Ticket) *record {
+// ticketRecord builds the record of one ticket, whichever ticket system it came from.
+func (s *State) ticketRecord(t ticket.Ticket) *record {
 	cfg := s.Config.Plugins.Linear
 	at := s.ms()
+	local := ticket.SystemOf(t.Identifier) == ticket.SystemLocal
+	statuses := s.scope.StatusesOf(t)
 	rec := &Ticket{
 		ID:          Known(t.Identifier, at),
 		Title:       Known(t.Title, at),
 		URL:         Known(t.URL, at),
 		Branch:      Known(t.Branch, at),
 		Stack:       Known[*Stack](nil, at),
-		Status:      Known(statusKey(t.Status, cfg.Statuses), at),
+		System:      Known(ticket.SystemOf(t.Identifier), at),
+		Attributes:  Known(map[string]string{}, at),
+		Status:      Known(statuses.Key(t.Status), at),
 		StatusSince: Known(at, at),
 		HasChildren: Known(t.HasChildren, at),
-		Finished:    Known(slices.Contains(cfg.Statuses.Finished, t.Status), at),
-		Paused:      Known(slices.Contains(cfg.Statuses.Paused, t.Status), at),
+		Finished:    Known(statuses.Has(t.Status, ticket.Finished), at),
+		Paused:      Known(statuses.Has(t.Status, ticket.Paused), at),
+	}
+	if local {
+		rec.Attributes = Known(maps.Clone(t.Attributes), at)
+		if rec.Attributes.Value == nil {
+			rec.Attributes = Known(map[string]string{}, at)
+		}
+		if since, err := time.Parse(time.RFC3339Nano, t.StatusAt); err == nil {
+			rec.StatusSince = Known(since.UnixMilli(), at)
+		}
 	}
 	if t.CreatedAt != "" {
 		rec.CreatedAt = Known(&t.CreatedAt, at)
@@ -241,11 +226,11 @@ func (s *State) ticketRecord(t linear.Ticket) *record {
 		labels[i] = Label{Name: l.Name, Group: l.Group}
 	}
 	rec.Labels = Known(labels, at)
-	repo, hasRepo := t.LabelIn(cfg.RepoLabelGroup)
-	if name, _, ok := s.Config.Repos.Find(repo); ok {
-		repo = name
-	}
+	repo, hasRepo := s.scope.RepoOf(t)
 	switch {
+	case local:
+		rec.OptedIn = Known(true, at)
+		rec.Repo = Known(&repo, at)
 	case t.LabelsTruncated:
 		rec.Labels = Unread[[]Label](labelsCutShort)
 		rec.OptedIn = Unread[bool](labelsCutShort)
@@ -267,7 +252,7 @@ func (s *State) ticketRecord(t linear.Ticket) *record {
 	r.created = t.CreatedAt
 	list := make([]Blocker, len(t.Blockers))
 	for i, b := range t.Blockers {
-		list[i] = Blocker{ID: b.Identifier, Status: b.Status, Done: b.Status == cfg.Statuses.BlockerDone, Abandoned: b.Abandoned, Ticket: Ref{Kind: "ticket", ID: b.Identifier}}
+		list[i] = Blocker{ID: b.Identifier, Status: b.Status, Done: s.scope.StatusesOfID(b.Identifier).Has(b.Status, ticket.BlockerDone), Abandoned: b.Abandoned, Ticket: Ref{Kind: "ticket", ID: b.Identifier}}
 	}
 	s.blockers[t.Identifier] = blockers{read: list, truncated: t.BlockersTruncated}
 	return s.add(r)
@@ -276,7 +261,7 @@ func (s *State) ticketRecord(t linear.Ticket) *record {
 // stackOf reads the stack record of t's branch from its repo's clone. Without a repo there is no
 // clone to read, so the ticket has no record. A cut-short label list may hide the repo label, so
 // the record is unknown.
-func (s *State) stackOf(t linear.Ticket, repo string, at int64) Fact[*Stack] {
+func (s *State) stackOf(t ticket.Ticket, repo string, at int64) Fact[*Stack] {
 	if t.LabelsTruncated {
 		return Unread[*Stack](labelsCutShort)
 	}
@@ -306,6 +291,7 @@ func (s *State) stackOf(t linear.Ticket, repo string, at int64) Fact[*Stack] {
 // world before. viewer names whose tickets are tracked.
 func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer string) *State {
 	s := NewState(cfg, w.At)
+	s.scope = w.Scope(cfg)
 	if led != nil {
 		s.Ledger = led
 	}
@@ -368,12 +354,20 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 			s.ticketRecord(t)
 		}
 	}
-	for _, parent := range world.ScopeOf(cfg).Parents(w.Tickets) {
+	if w.LocalErr != nil {
+		s.localUnread = "local tickets unread: " + w.LocalErr.Error()
+	}
+	for _, parent := range s.scope.Parents(w.Tickets) {
 		kids, ok := w.Children[parent.Identifier]
 		if !ok {
 			reason := "the children of " + parent.Identifier + " were not read"
-			if w.ChildrenErr != nil {
-				reason += ": " + w.ChildrenErr.Error()
+			switch err := w.ChildrenErr; {
+			case ticket.SystemOf(parent.Identifier) == ticket.SystemLocal:
+				if w.LocalErr != nil {
+					reason += ": " + w.LocalErr.Error()
+				}
+			case err != nil:
+				reason += ": " + err.Error()
 			}
 			s.childrenUnread[parent.Identifier] = reason
 			continue
@@ -381,7 +375,7 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 		for _, c := range kids {
 			s.parents[c.Identifier] = parent.Identifier
 			s.children[parent.Identifier] = append(s.children[parent.Identifier], c.Identifier)
-			if !(c.Mine && slices.Contains(cfg.Plugins.Linear.Teams, c.Team)) {
+			if ticket.SystemOf(c.Identifier) != ticket.SystemLocal && !(c.Mine && slices.Contains(cfg.Plugins.Linear.Teams, c.Team)) {
 				// Someone else's ticket still counts toward "every child is finished",
 				// but dispatch has nothing to do for it.
 				if _, ok := s.lookup("ticket", c.Identifier); !ok {
@@ -419,12 +413,20 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 	s.prRecords(w)
 	s.addEscalations()
 	s.addIdleWorkers(w)
-	if s.linearUnread != "" {
-		for _, r := range s.kinds["ticket"] {
-			r.unknownAll(s.linearUnread)
+	for _, r := range s.kinds["ticket"] {
+		if reason := s.unreadReason(r.id); reason != "" {
+			r.unknownAll(reason)
 		}
 	}
 	return s
+}
+
+// unreadReason is why the facts of the ticket with this id are unknown, "" when its own ticket system was read.
+func (s *State) unreadReason(id string) string {
+	if ticket.SystemOf(id) == ticket.SystemLocal {
+		return s.localUnread
+	}
+	return s.linearUnread
 }
 
 // addIdleWorkers gives every ticket and tree that has no worker record the
@@ -446,7 +448,7 @@ func (s *State) addIdleWorkers(w world.World) {
 
 // ticketRecordHidden remembers a ticket that is only a child, without making
 // it something rules run over.
-func (s *State) ticketRecordHidden(t linear.Ticket) {
+func (s *State) ticketRecordHidden(t ticket.Ticket) {
 	s.ticketRecord(t).hidden = true
 }
 
@@ -585,8 +587,8 @@ func (s *State) treeRecords(w world.World) {
 			rec.Holder = Known(Ref{}, at)
 		default:
 			if _, ok := s.lookup("ticket", holder); !ok {
-				if w.HoldersErr != nil {
-					rec.Holder = Unread[Ref]("the tickets that hold trees were not read: " + w.HoldersErr.Error())
+				if err := w.HoldersErrOf(holder); err != nil {
+					rec.Holder = Unread[Ref]("the tickets that hold trees were not read: " + err.Error())
 				} else {
 					s.foreignTicket(holder)
 				}
@@ -645,7 +647,7 @@ func (r *record) unknownExcept(reason string, keep ...string) {
 
 func (s *State) prRecords(w world.World) {
 	at := s.ms()
-	scope := world.ScopeOf(s.Config)
+	scope := s.scope
 	for _, t := range w.Tickets {
 		if _, read := scope.PRRepo(t, w.Workers[t.Identifier].State); read {
 			s.prRead[t.Identifier] = true
@@ -655,7 +657,7 @@ func (s *State) prRecords(w world.World) {
 		if !ok && !failed {
 			continue
 		}
-		repo, _ := t.LabelIn(s.Config.Plugins.Linear.RepoLabelGroup)
+		repo, _ := s.scope.RepoOf(t)
 		_, settings, _ := s.Config.Repos.Find(repo)
 		rec := &PR{
 			Ticket:          Known(Ref{Kind: "ticket", ID: t.Identifier}, at),

@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/kapetan-io/dispatch/internal/linear"
+	tkt "github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 func TestTickLaunchesOnTheTableOfTheRepoSpelledExactlyLikeTheLabel(t *testing.T) {
@@ -14,7 +14,7 @@ func TestTickLaunchesOnTheTableOfTheRepoSpelledExactlyLikeTheLabel(t *testing.T)
 	d.repoSettings("dispatch", "worker = \"harness.claude-opus\"\n")
 	d.addRepo("Dispatch", t.TempDir())
 	d.repoSettings("Dispatch", "worker = \"harness.claude-sonnet\"\n")
-	d.Linear.Tickets(labeledAs("ENG-1", linear.Label{Name: "ai"}, linear.Label{Name: "dispatch", Group: "repo"}))
+	d.Linear.Tickets(labeledAs("ENG-1", tkt.Label{Name: "ai"}, tkt.Label{Name: "dispatch", Group: "repo"}))
 
 	d.Tick()
 

@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch/internal/config"
-	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
@@ -25,7 +25,7 @@ func busyWorld(cfg config.Config, now time.Time) world.World {
 	st := cfg.Plugins.Linear.Statuses
 	w := world.World{
 		At: now, Workers: map[string]world.Worker{}, Stops: map[string]stops.Record{}, Leases: map[string][]world.Worker{},
-		Leased: map[string]bool{}, Children: map[string][]linear.Ticket{}, Unfinished: map[string]string{},
+		Leased: map[string]bool{}, Children: map[string][]ticket.Ticket{}, Unfinished: map[string]string{},
 		Work: map[string]treehouse.Work{}, CheckErrors: map[string]error{}, Untracked: map[string][]string{},
 		PRs: map[string]pullrequest.PullRequest{}, PRReadFailed: map[string]bool{},
 		PoolErrs: map[string]error{}, UnreadRepos: map[string]bool{},
@@ -34,9 +34,9 @@ func busyWorld(cfg config.Config, now time.Time) world.World {
 	states := []world.WorkerState{world.Working, world.Idle, world.Blocked, world.NoWorker}
 	for i := range 60 {
 		id := fmt.Sprintf("ENG-%d", i+1)
-		t := linear.Ticket{
+		t := ticket.Ticket{
 			ID: "id-" + id, Identifier: id, Title: "ticket " + id, Status: statuses[i%3], Team: "ENG", Mine: true,
-			Labels: []linear.Label{{Name: "ai"}, {Name: "dispatch", Group: "repo"}}, LastComment: "2026-10-14T10:00:00Z",
+			Labels: []ticket.Label{{Name: "ai"}, {Name: "dispatch", Group: "repo"}}, LastComment: "2026-10-14T10:00:00Z",
 			CreatedAt: fmt.Sprintf("2026-10-%02dT00:00:00Z", i%28+1),
 		}
 		w.Tickets = append(w.Tickets, t)

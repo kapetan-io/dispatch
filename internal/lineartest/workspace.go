@@ -12,6 +12,7 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/journal"
 	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 // Key is the API key a new Workspace accepts.
@@ -32,7 +33,7 @@ const (
 
 // Issue is one ticket in the workspace.
 type Issue struct {
-	linear.Ticket
+	ticket.Ticket
 	// Assignee is the id of the user the ticket is assigned to.
 	Assignee string
 	// Parent is the identifier of the ticket's parent, if it has one.
@@ -209,7 +210,7 @@ func (w *Workspace) stateOf(name string) *State {
 // withChildren is the ticket with HasChildren set when any ticket in the
 // workspace names it as its parent, as Linear derives it. An archived child
 // doesn't count, as in ParentChildren.
-func (w *Workspace) withChildren(issue Issue) linear.Ticket {
+func (w *Workspace) withChildren(issue Issue) ticket.Ticket {
 	if slices.ContainsFunc(w.issues, func(other Issue) bool { return !other.Archived && other.Parent == issue.Identifier }) {
 		issue.HasChildren = true
 	}
@@ -263,12 +264,12 @@ func (s *session) Viewer(context.Context) (linear.Viewer, error) {
 	return s.w.viewer, nil
 }
 
-func (s *session) ManagedTickets(_ context.Context, label string, teams []string) ([]linear.Ticket, error) {
+func (s *session) ManagedTickets(_ context.Context, label string, teams []string) ([]ticket.Ticket, error) {
 	if err := s.request(OnManaged); err != nil {
 		return nil, err
 	}
 	defer s.w.mu.Unlock()
-	var found []linear.Ticket
+	var found []ticket.Ticket
 	for _, issue := range s.w.issues {
 		state := s.w.stateOf(issue.Status)
 		if issue.Archived || issue.Assignee != s.w.viewer.ID || state.Type != "started" || !issue.HasLabel(label) || !slices.Contains(teams, issue.Team) {
@@ -286,7 +287,7 @@ func (s *session) ManagedTickets(_ context.Context, label string, teams []string
 	return found, nil
 }
 
-func (s *session) LeasedTickets(_ context.Context, label string, teams, identifiers []string) ([]linear.Ticket, error) {
+func (s *session) LeasedTickets(_ context.Context, label string, teams, identifiers []string) ([]ticket.Ticket, error) {
 	var asked []string
 	for _, id := range identifiers {
 		if team, _, ok := linear.SplitIdentifier(id); ok && slices.Contains(teams, team) {
@@ -300,7 +301,7 @@ func (s *session) LeasedTickets(_ context.Context, label string, teams, identifi
 		return nil, err
 	}
 	defer s.w.mu.Unlock()
-	var found []linear.Ticket
+	var found []ticket.Ticket
 	named := 0
 	for _, issue := range s.w.issues {
 		if !slices.Contains(asked, issue.Identifier) {
@@ -323,7 +324,7 @@ func (s *session) LeasedTickets(_ context.Context, label string, teams, identifi
 	return found, nil
 }
 
-func (s *session) ParentChildren(_ context.Context, parents []string) (map[string][]linear.Ticket, error) {
+func (s *session) ParentChildren(_ context.Context, parents []string) (map[string][]ticket.Ticket, error) {
 	if len(parents) == 0 {
 		return nil, nil
 	}
@@ -338,7 +339,7 @@ func (s *session) ParentChildren(_ context.Context, parents []string) (map[strin
 			identifiers = append(identifiers, s.w.issues[i].Identifier)
 		}
 	}
-	children := map[string][]linear.Ticket{}
+	children := map[string][]ticket.Ticket{}
 	total := 0
 	for _, issue := range s.w.issues {
 		if issue.Archived || !slices.Contains(identifiers, issue.Parent) {
@@ -353,7 +354,7 @@ func (s *session) ParentChildren(_ context.Context, parents []string) (map[strin
 	}
 	// Linear's order is undocumented, so the contract is the oldest child first.
 	for _, kids := range children {
-		slices.SortStableFunc(kids, func(a, b linear.Ticket) int { return strings.Compare(a.CreatedAt, b.CreatedAt) })
+		slices.SortStableFunc(kids, func(a, b ticket.Ticket) int { return strings.Compare(a.CreatedAt, b.CreatedAt) })
 	}
 	return children, nil
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"sync"
+
+	"github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 // RotatingKey is a Linear workspace whose API key can rotate. It connects with the key
@@ -47,7 +49,7 @@ func (k *RotatingKey) rotated(err error) {
 	k.cur = nil
 }
 
-func (k *RotatingKey) ManagedTickets(ctx context.Context, label string, teams []string) ([]Ticket, error) {
+func (k *RotatingKey) ManagedTickets(ctx context.Context, label string, teams []string) ([]ticket.Ticket, error) {
 	ws, err := k.Workspace(ctx)
 	if err != nil {
 		return nil, err
@@ -57,7 +59,7 @@ func (k *RotatingKey) ManagedTickets(ctx context.Context, label string, teams []
 	return out, err
 }
 
-func (k *RotatingKey) LeasedTickets(ctx context.Context, label string, teams, identifiers []string) ([]Ticket, error) {
+func (k *RotatingKey) LeasedTickets(ctx context.Context, label string, teams, identifiers []string) ([]ticket.Ticket, error) {
 	ws, err := k.Workspace(ctx)
 	if err != nil {
 		return nil, err
@@ -67,7 +69,7 @@ func (k *RotatingKey) LeasedTickets(ctx context.Context, label string, teams, id
 	return out, err
 }
 
-func (k *RotatingKey) ParentChildren(ctx context.Context, parents []string) (map[string][]Ticket, error) {
+func (k *RotatingKey) ParentChildren(ctx context.Context, parents []string) (map[string][]ticket.Ticket, error) {
 	ws, err := k.Workspace(ctx)
 	if err != nil {
 		return nil, err

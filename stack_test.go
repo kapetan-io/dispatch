@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kapetan-io/dispatch/internal/linear"
+	tkt "github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 // stackRule launches ENG-2 stacked on the PR of its first blocker, and says how it reads its own
@@ -38,7 +38,7 @@ whenever({ name: "report", each: "ticket", if: (t) => t.id === "ENG-2" && t.stat
 
 // stackedPair is ENG-1 In Review with a PR at a commit on its own pushed branch, and ENG-2 In Progress
 // blocked by it, in a repo with an origin. It returns the commit the PR is at.
-func stackedPair(t *testing.T, d *Dispatch, extra ...func(*linear.Ticket)) string {
+func stackedPair(t *testing.T, d *Dispatch, extra ...func(*tkt.Ticket)) string {
 	t.Helper()
 	d.Trees.Pooled()
 	remote := filepath.Join(filepath.Dir(d.Repo), "remote.git")
@@ -52,7 +52,7 @@ func stackedPair(t *testing.T, d *Dispatch, extra ...func(*linear.Ticket)) strin
 	hintGit(t, d.Repo, "switch", "-q", "main")
 
 	child := ticket("ENG-2", "In Progress", "dispatch")
-	child.Blockers = []linear.Blocker{{Identifier: "ENG-1", Status: "In Review"}}
+	child.Blockers = []tkt.Blocker{{Identifier: "ENG-1", Status: "In Review"}}
 	for _, edit := range extra {
 		edit(&child.Ticket)
 	}
@@ -225,7 +225,7 @@ func TestABlockerNobodyTracksHasNoTicket(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Rules: rule(parentRule)})
 	d.Trees.Pooled()
 	child := ticket("ENG-2", "In Progress", "dispatch")
-	child.Blockers = []linear.Blocker{{Identifier: "ENG-7", Status: "In Review"}}
+	child.Blockers = []tkt.Blocker{{Identifier: "ENG-7", Status: "In Review"}}
 	d.Linear.Tickets(child)
 
 	d.Tick()
@@ -244,7 +244,7 @@ func TestAPRIsNoneWhenDispatchReadItAndFoundNoneAndUnknownWhenItDidNotRead(t *te
 		t.Run(test.name, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{Rules: rule(parentRule)})
 			child := ticket("ENG-2", "In Progress", "dispatch")
-			child.Blockers = []linear.Blocker{{Identifier: "ENG-1", Status: "In Review"}}
+			child.Blockers = []tkt.Blocker{{Identifier: "ENG-1", Status: "In Review"}}
 			d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"), child)
 			if test.worker == "working" {
 				d.Workers.CheckedOut("ENG-1", "working")

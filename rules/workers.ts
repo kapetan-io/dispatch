@@ -1,5 +1,5 @@
-import { whenever, minutes } from "dispatch";
-import { openBlockers, abandonedBlocker, nudgeable, launchAs, heard, launchFailures, relaunches,
+import { whenever, exempt, minutes } from "dispatch";
+import { isDesign, openBlockers, abandonedBlocker, nudgeable, launchAs, heard, launchFailures, relaunches,
          launchFailureLimit, nudgeLimit, UNCONFIRMED_CLOSE } from "./shared";
 
 // A worker exists while an opted-in ticket is In Progress, unblocked, and has none.
@@ -69,4 +69,13 @@ whenever({
   if:   (w, ctx) => w.state === "idle" && w.unconfirmedSince !== undefined
            && !w.ticket.paused && ctx.now - w.unconfirmedSince >= KICKOFF_GRACE,
   then: (w, ctx) => ctx.worker.queueClose(w, { once: [UNCONFIRMED_CLOSE, w.tree, w.unconfirmedSince] }),
+});
+
+// Designs and blueprints live in Linear documents, so a design or review worker has nothing to read on
+// a local ticket. The ticket is left for its owner.
+exempt({
+  name:  "no-design-worker-on-local-ticket",
+  each:  "ticket",
+  rules: ["launch-worker"],
+  if:    (t) => t.system === "local" && isDesign(t),
 });

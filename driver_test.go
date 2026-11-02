@@ -44,6 +44,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
+	tkt "github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/tooltest"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -1184,7 +1185,7 @@ func approvedPR(head string) prState {
 func blockedBy(t fakeTicket, more bool, blockers ...[2]string) fakeTicket {
 	t.Blockers = nil
 	for _, b := range blockers {
-		t.Blockers = append(t.Blockers, linear.Blocker{Identifier: b[0], Status: b[1], Abandoned: stateType(b[1]) == "canceled"})
+		t.Blockers = append(t.Blockers, tkt.Blocker{Identifier: b[0], Status: b[1], Abandoned: stateType(b[1]) == "canceled"})
 	}
 	t.BlockersTruncated = more
 	return t
@@ -1939,12 +1940,12 @@ type fakeTicket = lineartest.Issue
 // ticket builds an ai-labeled ENG ticket in status, labeled with repo when
 // repo is not empty.
 func ticket(id, status, repo string) fakeTicket {
-	labels := []linear.Label{{Name: "ai"}}
+	labels := []tkt.Label{{Name: "ai"}}
 	if repo != "" {
-		labels = append(labels, linear.Label{Name: repo, Group: "repo"})
+		labels = append(labels, tkt.Label{Name: repo, Group: "repo"})
 	}
 	return fakeTicket{
-		Ticket: linear.Ticket{
+		Ticket: tkt.Ticket{
 			ID:         "uuid-" + id,
 			Identifier: id,
 			Title:      "ticket " + id,
@@ -1959,7 +1960,7 @@ func ticket(id, status, repo string) fakeTicket {
 }
 
 func withLabel(t fakeTicket, name string) fakeTicket {
-	t.Labels = append(slices.Clone(t.Labels), linear.Label{Name: name})
+	t.Labels = append(slices.Clone(t.Labels), tkt.Label{Name: name})
 	return t
 }
 
@@ -2104,7 +2105,7 @@ func child(id, parent, status string, blockedBy ...[2]string) fakeTicket {
 	t := ticket(id, status, "dispatch")
 	t.Parent = parent
 	for _, b := range blockedBy {
-		t.Blockers = append(t.Blockers, linear.Blocker{Identifier: b[0], Status: b[1], Abandoned: stateType(b[1]) == "canceled"})
+		t.Blockers = append(t.Blockers, tkt.Blocker{Identifier: b[0], Status: b[1], Abandoned: stateType(b[1]) == "canceled"})
 	}
 	return t
 }
@@ -2337,8 +2338,11 @@ func (d *Dispatch) respondOlder(kind, before string, items []activity, earlier s
 	d.tools.PullRequests.RespondOlder(7, kind, before, map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequest": map[string]any{kind: activityNodes(items, earlier)}}}})
 }
 
-// prBranch is the branch Linear names for a ticket.
+// prBranch is the branch Linear names for a ticket, or the one a local ticket titled "work" gets.
 func prBranch(ticket string) string {
+	if strings.HasPrefix(ticket, "LOC-") {
+		return strings.ToLower(ticket) + "-work"
+	}
 	return "thrawn01/" + strings.ToLower(ticket)
 }
 
@@ -2403,7 +2407,7 @@ func (d *Dispatch) rules(dir string, args ...string) (string, error) {
 func TestRootTestsImportNoDispatchState(t *testing.T) {
 	t.Parallel()
 	const internal = "github.com/kapetan-io/dispatch/internal/"
-	allowed := []string{"config", "environment", "herdr", "herdrtest", "httpservicetest", "linear", "lineartest", "tooltest", "treehouse"}
+	allowed := []string{"config", "environment", "herdr", "herdrtest", "httpservicetest", "linear", "lineartest", "ticket", "tooltest", "treehouse"}
 	files, err := filepath.Glob("*_test.go")
 	require.NoError(t, err)
 	require.NotEmpty(t, files)

@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kapetan-io/dispatch/internal/linear"
+	tkt "github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 func TestTickLaunchesATicketOnTheTableOfARepoWhoseLabelDiffersInCase(t *testing.T) {
@@ -15,7 +15,7 @@ func TestTickLaunchesATicketOnTheTableOfARepoWhoseLabelDiffersInCase(t *testing.
 		Config:       harnessTables + "[rules]\nworker = \"harness.claude-sonnet\"\n",
 		RepoSettings: "worker = \"harness.claude-opus\"\n",
 	})
-	d.Linear.Tickets(labeledAs("ENG-1", linear.Label{Name: "ai"}, linear.Label{Name: "Dispatch", Group: "repo"}))
+	d.Linear.Tickets(labeledAs("ENG-1", tkt.Label{Name: "ai"}, tkt.Label{Name: "Dispatch", Group: "repo"}))
 
 	d.Tick()
 

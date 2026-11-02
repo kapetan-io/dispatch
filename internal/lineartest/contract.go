@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 // missingTicket is a version 4 UUID, which is all Linear accepts as an id, that no ticket has.
@@ -234,9 +235,9 @@ var Scenarios = []Scenario{
 func owned(s Subject, n int, status string) Issue {
 	id := fmt.Sprintf("%s-%d", s.Team, n)
 	return Issue{
-		Ticket: linear.Ticket{
+		Ticket: ticket.Ticket{
 			ID: "id-" + id, Identifier: id, Status: status, Team: s.Team,
-			Labels: []linear.Label{{Name: "ai"}},
+			Labels: []ticket.Label{{Name: "ai"}},
 		},
 		Assignee: s.Viewer.ID,
 	}

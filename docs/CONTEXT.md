@@ -73,7 +73,7 @@ One value in the world, with the time it was first seen at that value (its `sinc
 _Avoid_: field, property
 
 **Unknown**:
-A fact whose read failed or came back cut short. A `whenever` rule that reads one holds for that record, and an `on` rule drops its event, so a failed read never counts as "no". A failed inbox read is the exception: it keeps the last good items known, because nothing else points at an inbox item. A failed read of a clone's remote follows it and keeps that clone's last good repo.
+A fact whose read failed or came back cut short. A `whenever` rule that reads one holds for that record, and an `on` rule drops its event, so a failed read never counts as "no". A failed inbox read is the exception: it keeps the last good items known, because nothing else points at an inbox item. A failed read of a clone's remote follows it and keeps that clone's last good repo. A failed read of local tickets makes local ticket records unknown and leaves Linear's alone, and the reverse, because worker, tree and PR records point at tickets of both systems.
 _Avoid_: missing, empty, null
 
 **Cycle**:
@@ -89,7 +89,7 @@ Anything telling dispatch something changed: a source read that differs from wha
 _Avoid_: notification (a notification tells you), trigger
 
 **Resync**:
-The 5-minute event that re-reads every source (Linear, GitHub, the GitHub inbox while a rule runs over it, herdr, treehouse and Stop records) and runs a cycle. It is the only clock rules wait on, so a wait ends up to 5 minutes after its deadline.
+The 5-minute event that re-reads every source (Linear, local tickets, GitHub, the GitHub inbox while a rule runs over it, herdr, treehouse and Stop records) and runs a cycle. It is the only clock rules wait on, so a wait ends up to 5 minutes after its deadline.
 _Avoid_: tick (`dispatch tick` forces one early), poll interval
 
 **Ledger**:

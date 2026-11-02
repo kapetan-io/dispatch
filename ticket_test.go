@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch"
-	"github.com/kapetan-io/dispatch/internal/linear"
+	tkt "github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 const localOn = "[plugins.local]\n"
@@ -357,7 +357,7 @@ func TestRunStartsOnAFileWhoseNumbersAreAheadOfHistory(t *testing.T) {
 func TestLinearReadReturningALocalIdFailsWhenLocalTicketsAreOn(t *testing.T) {
 	t.Parallel()
 	clash := ticket("ENG-1", "In Progress", "dispatch")
-	clash.Blockers = []linear.Blocker{{Identifier: "LOC-12", Status: "Todo"}}
+	clash.Blockers = []tkt.Blocker{{Identifier: "LOC-12", Status: "Todo"}}
 
 	d := newDispatch(t, dispatchOptions{Config: localOn})
 	d.Linear.Tickets(clash)
