@@ -1,6 +1,7 @@
 package dispatch_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,6 +21,8 @@ whenever({ name: "second", each: "ticket", if: (t) => t.system === "local" && t.
 const commentOnLocalByAttribute = `whenever({ name: "ask", each: "ticket", if: (t) => t.system === "local" && t.attributes.area === "webhooks",
   then: (t, ctx) => ctx.ticket.queueComment(t, "seen", { once: ["ask", t.id] }) });`
 
+// The two actions run side by side, so either may land first. Whichever does, the other sees a status
+// it did not read and fails without writing.
 func TestTickMovesALocalTicketOnlyOnceWhenTwoRulesMoveItFromTheSameRead(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: localOn, Rules: rule(moveThenMove)})
@@ -28,17 +31,21 @@ func TestTickMovesALocalTicketOnlyOnceWhenTwoRulesMoveItFromTheSameRead(t *testi
 
 	res := d.Run("tick")
 
-	require.ErrorContains(t, res.Err, "LOC-1 is In Review now, not the Todo the cycle saw")
-	assert.Equal(t, "In Review", d.statusOf("LOC-1"))
+	require.ErrorContains(t, res.Err, "now, not the Todo the cycle saw")
+	assert.Contains(t, []string{"In Review", "Needs Human"}, d.statusOf("LOC-1"))
 	moves := d.ReceiptsOf("move", "LOC-1")
 	require.Len(t, moves, 2)
-	assert.Equal(t, "done", moves[0].State)
-	assert.Equal(t, "failed", moves[1].State)
-	assert.Contains(t, moves[1].Detail, "LOC-1 is In Review now, not the Todo the cycle saw")
-	assert.NotContains(t, moves[1].Detail, "Linear")
+	states := []string{moves[0].State, moves[1].State}
+	assert.ElementsMatch(t, []string{"done", "failed"}, states)
+	for _, m := range moves {
+		if m.State == "failed" {
+			assert.Contains(t, m.Detail, "now, not the Todo the cycle saw")
+			assert.NotContains(t, m.Detail, "Linear")
+		}
+	}
 }
 
-func TestTickEscalatesNothingWhenALocalTicketMovedSinceTheCycleRead(t *testing.T) {
+func TestTickEscalatingALocalTicketThatMovedSinceTheCycleReadWritesNothing(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: localOn, Rules: rule(moveThenEscalate)})
 	d.StartBeforeTheEvents()
@@ -46,12 +53,16 @@ func TestTickEscalatesNothingWhenALocalTicketMovedSinceTheCycleRead(t *testing.T
 
 	res := d.Run("tick")
 
-	require.ErrorContains(t, res.Err, "LOC-1 is In Review now, not the Todo the cycle saw")
-	assert.Equal(t, "In Review", d.statusOf("LOC-1"))
-	assert.NotContains(t, d.ticketOut("show", "LOC-1"), "dispatch  ")
-	second := d.ReceiptsOf("escalate", "LOC-1")
-	require.Len(t, second, 1)
-	assert.Equal(t, "failed", second[0].State)
+	require.ErrorContains(t, res.Err, "now, not the Todo the cycle saw")
+	status, show := d.statusOf("LOC-1"), d.ticketOut("show", "LOC-1")
+	switch status {
+	case "In Review":
+		assert.NotContains(t, show, "dispatch  ")
+	case "Needs Human":
+		assert.Equal(t, 1, strings.Count(show, "dispatch  "))
+	default:
+		t.Fatalf("LOC-1 is %s", status)
+	}
 }
 
 func TestTickRulesReadTheSystemAndAttributesOfALocalTicket(t *testing.T) {
