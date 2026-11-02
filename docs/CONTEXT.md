@@ -60,7 +60,8 @@ _Avoid_: review claim (a claim asserts something to check)
 - The **drift check** runs the scenarios against the **real adapter** only, and does not run Linear's.
 - Every ticket belongs to exactly one **Ticket system**, and its id's prefix says which.
 - A **Local ticket** has one status, and each status carries any number of **Jobs**. `todo`, `in_progress`, `in_review`, `needs_human`, `close_parent` and `blocker_done` each belong to exactly one status, `finished` and `paused` to any number.
-- A **Local ticket** has any number of **Attributes**.
+- A **Local ticket** has any number of **Attributes** and at most one **Start PR**.
+- A **Start PR** is never its ticket's PR and writes no **Stack record**.
 - The local ticket store is not a **Port**: it has no **Tool fake**, and tests run it on a temp file.
 - A **Stacked ticket** has exactly one **Stack parent** and one **Stack record** until a **Restack** removes the record.
 
@@ -259,6 +260,10 @@ _Avoid_: internal ticket, offline ticket
 **Attribute**:
 A key-value pair on a local ticket, beside its labels, that `dispatch ticket list --attr` matches.
 _Avoid_: field, property (both name a fact), metadata, tag
+
+**Start PR**:
+A PR a local ticket names, whose head the ticket's own branch starts at.
+_Avoid_: base PR, stack parent (a ticket a branch is stacked on)
 
 **Job**:
 What dispatch does with a status: `todo`, `in_progress`, `in_review`, `needs_human`, `close_parent`, `blocker_done`, `finished` or `paused`. A local ticket database keeps each status with its jobs.

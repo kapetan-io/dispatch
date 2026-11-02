@@ -49,19 +49,21 @@ func TestTickStartsALocalTicketsBranchAtItsStartPRHead(t *testing.T) {
 	assert.Empty(t, gitConfig(t, d.Repo, "branch.loc-1-work.remote"))
 }
 
-func TestTickNeverReadsAStartPRAsTheTicketsOwnPR(t *testing.T) {
+func TestTickNeverTreatsAStartPRAsTheTicketsOwnPR(t *testing.T) {
 	t.Parallel()
-	d := startPRDispatch(t)
-	d.Trees.Pooled()
-	startPRRemote(t, d)
-	d.fileLocal("In Progress", "--start-pr", "88")
+	d := newDispatch(t, dispatchOptions{Config: localOn, RepoSettings: autoMergeSetting})
+	d.StartBeforeTheEvents()
+	d.fileLocal("In Review", "--start-pr", "88")
+	d.Workers.Running("LOC-1", "idle")
+	// An approved PR on another branch, as a start PR is. It would merge if dispatch took it for LOC-1's.
+	d.GitHub.PullRequest("LOC-2", approvedPR("a1"))
 
 	d.Tick()
 
-	for _, read := range d.prReads() {
-		assert.NotContains(t, read, "88")
-		assert.NotContains(t, read, "dispatch-start")
-	}
+	assert.Equal(t, []string{"loc-1-work"}, d.prReads())
+	assert.Empty(t, d.GitHub.Merged())
+	assert.Empty(t, d.receiptsOfKind("LOC-1", "nudge"))
+	assert.Empty(t, d.receiptsOfKind("LOC-1", "merge"))
 }
 
 func TestTickStartsALocalTicketWithoutStartPRAtTheBase(t *testing.T) {
