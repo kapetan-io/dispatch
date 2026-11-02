@@ -15,6 +15,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/localticket"
 	"github.com/kapetan-io/dispatch/internal/lock"
 	"github.com/kapetan-io/dispatch/internal/replay"
 	"github.com/kapetan-io/dispatch/internal/rules"
@@ -195,9 +196,16 @@ func resetState(ctx context.Context, opts Options, quiet bool) error {
 		mem, resync = st.Memory, st.Resync
 	}
 	header := history.Header{Why: "reset", Config: string(text), Started: at.UnixMilli(), At: at.UnixMilli()}
+	local, err := readOnlyLocal(cfg, opts)
+	if err != nil {
+		return err
+	}
+	if local != nil {
+		header.LocalHighest = local.Highest
+	}
 	var receipts []ledger.Receipt
 	if quiet {
-		if receipts, mem, err = quietReceipts(ctx, opts, cfg, mem, at, resync); err != nil {
+		if receipts, mem, err = quietReceipts(ctx, opts, cfg, mem, at, resync, local); err != nil {
 			return err
 		}
 	}
@@ -220,7 +228,7 @@ func resetState(ctx context.Context, opts Options, quiet bool) error {
 // quietReceipts runs the first cycle over an empty ledger and returns a Done receipt for each message
 // it wants, with the memory that cycle leaves, because a message's once key can hold a time that
 // memory first saw.
-func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *world.Memory, at time.Time, resync int) ([]ledger.Receipt, *world.Memory, error) {
+func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *world.Memory, at time.Time, resync int, local *localticket.Listing) ([]ledger.Receipt, *world.Memory, error) {
 	opts = withHerdr(opts, cfg, nil)
 	loaded, err := loadRules(opts, cfg)
 	if err != nil {
@@ -232,6 +240,10 @@ func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *wo
 	}
 	src := sources(opts, cfg, lin, loaded)
 	src.Tolerant, src.Resilient = true, true
+	// A nil *Listing assigned directly would make src.Local a non-nil interface.
+	if local != nil {
+		src.Local = local
+	}
 	wd, err := world.Read(ctx, src, world.ScopeOf(cfg), at)
 	if err != nil {
 		return nil, nil, err

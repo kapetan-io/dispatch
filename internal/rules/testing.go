@@ -6,6 +6,7 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/inbox"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 // testingModule is what `import ... from "dispatch/testing"` gives a scenario.
@@ -99,6 +100,23 @@ func (s *State) Summary(statuses config.Statuses) []SummaryLine {
 		strings.Join([]string{statuses.Todo, statuses.InProgress, statuses.InReview, statuses.NeedsHuman}, ", "))
 	if s.Viewer != "" {
 		scope = "assigned to " + s.Viewer + "; " + scope
+	}
+	if s.Config.Plugins.Local.On {
+		local := 0
+		for _, r := range s.kinds["ticket"] {
+			if !r.hidden && ticket.SystemOf(r.id) == ticket.SystemLocal {
+				local++
+			}
+		}
+		names := make([]string, len(s.scope.Local))
+		for i, st := range s.scope.Local {
+			names[i] = st.Name
+		}
+		noun := "local tickets"
+		if local == 1 {
+			noun = "local ticket"
+		}
+		scope += fmt.Sprintf("; includes %d %s (statuses %s)", local, noun, strings.Join(names, ", "))
 	}
 	workers, running := 0, 0
 	for _, r := range s.kinds["worker"] {

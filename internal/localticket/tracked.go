@@ -11,22 +11,40 @@ import (
 // Tracked is what one world read takes from the database.
 type Tracked struct {
 	// Tickets are the tickets outside a finished status, oldest first.
-	Tickets []ticket.Ticket
+	Tickets []ticket.Ticket `json:"tickets"`
 	// Holders are the finished tickets among the lease holders asked for.
 	Holders []ticket.Ticket
 	// Children are the children, in every status, of each parent the caller wanted them for.
 	Children map[string][]ticket.Ticket
 }
 
-// Tracked reads the tracked set in one view transaction. holders are the ids that hold a tree, and
-// wantChildren picks the tickets whose children the caller acts on.
-func (s *Store) Tracked(holders []string, wantChildren func(ticket.Ticket) bool) (out Tracked, err error) {
+// Listing is every ticket of the database at one moment, in every status. It is what `dispatch rules
+// check` and `dispatch state reset` read, because neither opens the file for writing.
+type Listing struct {
+	// Table are the database's statuses.
+	Table ticket.Statuses `json:"table"`
+	// Highest is the highest ticket number the file has issued.
+	Highest uint64 `json:"highest"`
+	// Tickets are all tickets, oldest first, with HasChildren and each blocker's status filled in.
+	Tickets []ticket.Ticket `json:"tickets"`
+	// Parents maps a child's id to its parent's id.
+	Parents map[string]string `json:"parents,omitempty"`
+}
+
+// Listing reads every ticket in one view transaction.
+func (s *Store) Listing() (out Listing, err error) {
 	defer recoverTo(&err)
+	out = Listing{Table: s.Statuses()}
 	err = s.db.View(func(tx *bolt.Tx) error {
 		all := map[uint64]ticket.Ticket{}
 		parentOf := map[uint64]uint64{}
 		var order []uint64
-		c := tx.Bucket(ticketBucket).Cursor()
+		tb := tx.Bucket(ticketBucket)
+		if tb == nil {
+			return nil
+		}
+		out.Highest = tb.Sequence()
+		c := tb.Cursor()
 		for k, v := c.First(); k != nil; k, v = c.Next() {
 			t, err := decode(k, v)
 			if err != nil {
@@ -37,9 +55,13 @@ func (s *Store) Tracked(holders []string, wantChildren func(ticket.Ticket) bool)
 			order = append(order, n)
 		}
 		hasChildren := map[uint64]bool{}
-		for _, parent := range parentOf {
+		for n, parent := range parentOf {
 			if parent != 0 {
 				hasChildren[parent] = true
+				if out.Parents == nil {
+					out.Parents = map[string]string{}
+				}
+				out.Parents[ticket.LocalID(n)] = ticket.LocalID(parent)
 			}
 		}
 		for _, n := range order {
@@ -51,36 +73,54 @@ func (s *Store) Tracked(holders []string, wantChildren func(ticket.Ticket) bool)
 					t.Blockers[i].Abandoned = st.Does(ticket.Finished) && !st.Does(ticket.BlockerDone)
 				}
 			}
-			all[n] = t
-		}
-		for _, n := range order {
-			t := all[n]
-			switch {
-			case !s.statuses.Has(t.Status, ticket.Finished):
-				out.Tickets = append(out.Tickets, t)
-			case slices.Contains(holders, t.Identifier):
-				out.Holders = append(out.Holders, t)
-			}
-		}
-		for _, parent := range out.Tickets {
-			if !wantChildren(parent) {
-				continue
-			}
-			pn, _ := ticket.LocalNumber(parent.Identifier)
-			kids := []ticket.Ticket{}
-			for _, n := range order {
-				if parentOf[n] == pn {
-					kids = append(kids, all[n])
-				}
-			}
-			if out.Children == nil {
-				out.Children = map[string][]ticket.Ticket{}
-			}
-			out.Children[parent.Identifier] = kids
+			out.Tickets = append(out.Tickets, t)
 		}
 		return nil
 	})
 	return out, err
+}
+
+// Statuses are the statuses the listing was read with.
+func (l Listing) Statuses() ticket.Statuses { return slices.Clone(l.Table) }
+
+// Tracked picks the tracked set out of the listing. It returns no error; the signature matches Store.Tracked so either serves as a world.LocalTickets. holders are the ids that hold a tree, and
+// wantChildren picks the tickets whose children the caller acts on.
+func (l Listing) Tracked(holders []string, wantChildren func(ticket.Ticket) bool) (Tracked, error) {
+	var out Tracked
+	for _, t := range l.Tickets {
+		switch {
+		case !l.Table.Has(t.Status, ticket.Finished):
+			out.Tickets = append(out.Tickets, t)
+		case slices.Contains(holders, t.Identifier):
+			out.Holders = append(out.Holders, t)
+		}
+	}
+	for _, parent := range out.Tickets {
+		if !wantChildren(parent) {
+			continue
+		}
+		kids := []ticket.Ticket{}
+		for _, t := range l.Tickets {
+			if l.Parents[t.Identifier] == parent.Identifier {
+				kids = append(kids, t)
+			}
+		}
+		if out.Children == nil {
+			out.Children = map[string][]ticket.Ticket{}
+		}
+		out.Children[parent.Identifier] = kids
+	}
+	return out, nil
+}
+
+// Tracked reads the tracked set. holders are the ids that hold a tree, and wantChildren picks the
+// tickets whose children the caller acts on.
+func (s *Store) Tracked(holders []string, wantChildren func(ticket.Ticket) bool) (Tracked, error) {
+	snap, err := s.Listing()
+	if err != nil {
+		return Tracked{}, err
+	}
+	return snap.Tracked(holders, wantChildren)
 }
 
 func blockerNumber(id string) uint64 {

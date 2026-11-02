@@ -74,6 +74,8 @@ type Response struct {
 	// Idle counts the times the loop went idle, and Busy says whether it is idle now.
 	Idle uint64 `json:"idle,omitempty"`
 	Busy bool   `json:"busy,omitempty"`
+	// Tracked answers VerbTracked, which only `dispatch rules check` sends, with every local ticket and the database's statuses.
+	Tracked *localticket.Listing `json:"tracked,omitempty"`
 }
 
 // OpTicket carries a `dispatch ticket` verb to the loop, the only opener of the local ticket database.
@@ -88,6 +90,8 @@ const (
 	VerbComment  = "comment"
 	VerbEdit     = "edit"
 	VerbStatuses = "statuses"
+	// VerbTracked is not a `dispatch ticket` verb. `dispatch rules check` sends it to read the tickets of the running dispatch.
+	VerbTracked = "tracked"
 )
 
 // TicketCall is one `dispatch ticket` verb.

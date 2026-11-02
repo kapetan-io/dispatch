@@ -24,6 +24,13 @@ func (l *Loop) onTicket(call *TicketCall) Response {
 	if call == nil {
 		return Response{Code: CodeFailed, Error: "a ticket request needs a call"}
 	}
+	if call.Verb == VerbTracked {
+		snap, err := l.local.Listing()
+		if err != nil {
+			return Response{Code: CodeFailed, Error: err.Error()}
+		}
+		return Response{Tracked: &snap}
+	}
 	lines, err := l.ticketVerb(call)
 	if err != nil {
 		return Response{Code: CodeFailed, Error: err.Error()}

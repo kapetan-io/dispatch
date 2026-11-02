@@ -24,7 +24,7 @@ blocked_renotify_minutes = 15
 
 ## Check them against the world
 
-`dispatch rules check` lints the rules, reads Linear, herdr, treehouse and GitHub once, runs one cycle, and prints what it found:
+`dispatch rules check` lints the rules, reads Linear, herdr, treehouse and GitHub once, runs one cycle, and prints what it found. With `[plugins.local]` on it reads the local tickets too, and the `ticket` line says how many of the tracked tickets are local and which statuses they use. It never changes the local ticket database or creates it: with `dispatch run` stopped it opens the file read-only, and while `dispatch run` holds the file it asks that process for the tickets.
 
 ```
 ticket             37 tracked tickets (assigned to Ada Lovelace; teams ENG; statuses Todo, In Progress, In Review, Needs Human)
@@ -32,6 +32,8 @@ ticket             37 tracked tickets (assigned to Ada Lovelace; teams ENG; stat
 launch-worker      whenever  ticket  wants launch now for ENG-12, ENG-15
 nudge-pr-activity  whenever  pr      wants nothing now
 ```
+
+With local tickets on, the `ticket` line ends `; includes 2 local tickets (statuses Backlog, Todo, In Progress, In Review, Needs Human, Done, Canceled)`, and a rule an exemption stopped for a local ticket reads `exempt for LOC-1 by no-design-worker-on-local-ticket`.
 
 A record whose rule read something that couldn't be read is listed as `held for ENG-9`. It exits 1 on any finding: a rule that fails to load, a rule that throws or runs out of time, a queued action with no once key, a rule that reads a `[rules]` key the file lacks, a rule that reads a fact the build doesn't produce (the rules may be newer than the build), and, when `tsc` is installed, a type error from `tsc --noEmit --strict`.
 
