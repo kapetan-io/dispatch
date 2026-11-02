@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
-	"github.com/kapetan-io/dispatch/internal/linear"
+	tkt "github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 // setChildren gives Linear the children a parent's child list returns.
@@ -207,7 +207,7 @@ func TestTickEscalatesOnlyChildrenOfYoursThatCarryTheAILabel(t *testing.T) {
 	someoneElses := child("ENG-2", "ENG-1", "Todo", blocker)
 	someoneElses.Assignee = "someone-else"
 	unlabeled := child("ENG-3", "ENG-1", "Todo", blocker)
-	unlabeled.Labels = []linear.Label{{Name: "dispatch", Group: "repo"}}
+	unlabeled.Labels = []tkt.Label{{Name: "dispatch", Group: "repo"}}
 	d.Workers.Running("ENG-4", "")
 	d.Linear.Finished(child("ENG-4", "ENG-1", "Todo", blocker))
 	d.setChildren(someoneElses, unlabeled, child("ENG-4", "ENG-1", "Todo", blocker))
@@ -361,7 +361,7 @@ func TestTickPromotesOnlyChildrenOfYoursThatCarryTheAILabel(t *testing.T) {
 	someoneElses := child("ENG-2", "ENG-1", "Todo")
 	someoneElses.Assignee = "someone-else"
 	unlabeled := child("ENG-3", "ENG-1", "Todo")
-	unlabeled.Labels = []linear.Label{{Name: "dispatch", Group: "repo"}}
+	unlabeled.Labels = []tkt.Label{{Name: "dispatch", Group: "repo"}}
 	d.setChildren(someoneElses, unlabeled, child("ENG-4", "ENG-1", "Backlog"), child("ENG-5", "ENG-1", "Todo"))
 
 	d.Tick()
@@ -554,7 +554,7 @@ func TestTickHoldsAChildWhoseRepoPoolCannotBeRead(t *testing.T) {
 	d.unreadRepo("tiger")
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	tiger := child("ENG-2", "ENG-1", "Todo")
-	tiger.Labels = []linear.Label{{Name: "ai"}, {Name: "tiger", Group: "repo"}}
+	tiger.Labels = []tkt.Label{{Name: "ai"}, {Name: "tiger", Group: "repo"}}
 	d.setChildren(tiger)
 
 	d.Tick()
@@ -573,7 +573,7 @@ func TestTickDoesNotEscalateAChildWhoseRepoPoolCannotBeRead(t *testing.T) {
 	d.unreadRepo("tiger")
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	tiger := child("ENG-2", "ENG-1", "Todo", [2]string{"ENG-9", "Canceled"})
-	tiger.Labels = []linear.Label{{Name: "ai"}, {Name: "tiger", Group: "repo"}}
+	tiger.Labels = []tkt.Label{{Name: "ai"}, {Name: "tiger", Group: "repo"}}
 	d.setChildren(tiger)
 
 	d.Tick()
@@ -707,7 +707,7 @@ func TestTickPromotesAChildWithNoRepoLabelAndEscalatesItOnceLinearShowsItInProgr
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(parent("ENG-1", "In Progress"))
 	lost := child("ENG-2", "ENG-1", "Todo")
-	lost.Labels = []linear.Label{{Name: "ai"}}
+	lost.Labels = []tkt.Label{{Name: "ai"}}
 	d.setChildren(lost)
 
 	d.Tick()

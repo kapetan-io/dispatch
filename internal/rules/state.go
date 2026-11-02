@@ -10,10 +10,10 @@ import (
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/ledger"
-	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -215,7 +215,7 @@ func StatusName(key string, s config.Statuses) (string, bool) {
 const labelsCutShort = "the ticket has more labels than dispatch reads"
 
 // ticketRecord builds the record of one Linear ticket.
-func (s *State) ticketRecord(t linear.Ticket) *record {
+func (s *State) ticketRecord(t ticket.Ticket) *record {
 	cfg := s.Config.Plugins.Linear
 	at := s.ms()
 	rec := &Ticket{
@@ -276,7 +276,7 @@ func (s *State) ticketRecord(t linear.Ticket) *record {
 // stackOf reads the stack record of t's branch from its repo's clone. Without a repo there is no
 // clone to read, so the ticket has no record. A cut-short label list may hide the repo label, so
 // the record is unknown.
-func (s *State) stackOf(t linear.Ticket, repo string, at int64) Fact[*Stack] {
+func (s *State) stackOf(t ticket.Ticket, repo string, at int64) Fact[*Stack] {
 	if t.LabelsTruncated {
 		return Unread[*Stack](labelsCutShort)
 	}
@@ -446,7 +446,7 @@ func (s *State) addIdleWorkers(w world.World) {
 
 // ticketRecordHidden remembers a ticket that is only a child, without making
 // it something rules run over.
-func (s *State) ticketRecordHidden(t linear.Ticket) {
+func (s *State) ticketRecordHidden(t ticket.Ticket) {
 	s.ticketRecord(t).hidden = true
 }
 

@@ -16,7 +16,7 @@ import (
 	bolt "go.etcd.io/bbolt"
 
 	"github.com/kapetan-io/dispatch"
-	"github.com/kapetan-io/dispatch/internal/linear"
+	tkt "github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 const defaultStatusLines = `Backlog      paused
@@ -222,7 +222,7 @@ func TestTicketLinearReadClashNamesTheIdOncePerFailedRead(t *testing.T) {
 	t.Parallel()
 	own := ticket("LOC-12", "In Progress", "dispatch")
 	blocked := ticket("ENG-1", "In Progress", "dispatch")
-	blocked.Blockers = []linear.Blocker{{Identifier: "LOC-12", Status: "Todo"}}
+	blocked.Blockers = []tkt.Blocker{{Identifier: "LOC-12", Status: "Todo"}}
 
 	for _, test := range []struct {
 		name    string

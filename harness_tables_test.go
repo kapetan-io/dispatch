@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kapetan-io/dispatch/internal/linear"
+	tkt "github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 const harnessTables = `
@@ -112,7 +112,7 @@ func TestTickLaunchesADifferentRepoOnTheRulesTable(t *testing.T) {
 	})
 	other := t.TempDir()
 	d.addRepo("webapp", other)
-	d.Linear.Tickets(labeledAs("ENG-1", linear.Label{Name: "ai"}, linear.Label{Name: "webapp", Group: "repo"}))
+	d.Linear.Tickets(labeledAs("ENG-1", tkt.Label{Name: "ai"}, tkt.Label{Name: "webapp", Group: "repo"}))
 
 	d.Tick()
 

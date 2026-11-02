@@ -14,6 +14,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/journal"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/lineartest"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 const viewerID = "viewer-1"
@@ -21,10 +22,10 @@ const viewerID = "viewer-1"
 func issue(n int, status string) lineartest.Issue {
 	id := fmt.Sprintf("ENG-%d", n)
 	return lineartest.Issue{
-		Ticket: linear.Ticket{
+		Ticket: ticket.Ticket{
 			ID: "id-" + id, Identifier: id, Status: status, Team: "ENG", URL: "https://x/" + id,
-			Labels: []linear.Label{{Name: "ai"}}, LastComment: "2026-10-01T00:00:00.000Z",
-			CreatedAt: "2026-10-01T00:00:00.000Z", Blockers: []linear.Blocker{{Identifier: "ENG-99"}},
+			Labels: []ticket.Label{{Name: "ai"}}, LastComment: "2026-10-01T00:00:00.000Z",
+			CreatedAt: "2026-10-01T00:00:00.000Z", Blockers: []ticket.Blocker{{Identifier: "ENG-99"}},
 			BlockersTruncated: true,
 		},
 		Assignee: viewerID,
@@ -45,7 +46,7 @@ func TestManagedTicketsDropFieldsLinearDoesNotSend(t *testing.T) {
 	assert.Equal(t, "2026-10-01T00:00:00.000Z", found[0].CreatedAt)
 	assert.Equal(t, "2026-10-01T00:00:00.000Z", found[0].LastComment)
 	assert.Equal(t, "https://x/ENG-1", found[0].URL)
-	assert.Equal(t, []linear.Blocker{{Identifier: "ENG-99"}}, found[0].Blockers)
+	assert.Equal(t, []ticket.Blocker{{Identifier: "ENG-99"}}, found[0].Blockers)
 	assert.True(t, found[0].BlockersTruncated)
 }
 

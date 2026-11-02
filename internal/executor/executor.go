@@ -32,6 +32,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/typed"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -121,7 +122,7 @@ func (e *Executor) WhyNotLaunch(w rules.Want, wd world.World) string {
 }
 
 // ticketOf finds a ticket by identifier in everything the world read.
-func ticketOf(wd world.World, id string) (linear.Ticket, bool) {
+func ticketOf(wd world.World, id string) (ticket.Ticket, bool) {
 	for _, t := range wd.Tickets {
 		if t.Identifier == id {
 			return t, true
@@ -139,7 +140,7 @@ func ticketOf(wd world.World, id string) (linear.Ticket, bool) {
 			}
 		}
 	}
-	return linear.Ticket{}, false
+	return ticket.Ticket{}, false
 }
 
 func (e *Executor) deadline(receipt string) time.Duration {
@@ -332,18 +333,18 @@ func (e *Executor) closeWorkspace(ctx context.Context, w rules.Want) Result {
 
 // fresh reads one ticket again from Linear, whatever its status, so a decision
 // made on an old read fails instead of landing.
-func (e *Executor) fresh(ctx context.Context, id string) (linear.Ticket, error) {
+func (e *Executor) fresh(ctx context.Context, id string) (ticket.Ticket, error) {
 	cfg := e.Config.Plugins.Linear
 	got, err := e.Linear().LeasedTickets(ctx, cfg.AILabel, cfg.Teams, []string{id})
 	if err != nil {
-		return linear.Ticket{}, err
+		return ticket.Ticket{}, err
 	}
 	for _, t := range got {
 		if t.Identifier == id {
 			return t, nil
 		}
 	}
-	return linear.Ticket{}, fmt.Errorf("%s was not found in Linear", id)
+	return ticket.Ticket{}, fmt.Errorf("%s was not found in Linear", id)
 }
 
 func (e *Executor) move(ctx context.Context, w rules.Want, wd world.World) Result {
@@ -364,7 +365,7 @@ func (e *Executor) move(ctx context.Context, w rules.Want, wd world.World) Resul
 }
 
 // moveTo sets a ticket's status when it still has the status the cycle saw.
-func (e *Executor) moveTo(ctx context.Context, t linear.Ticket, name string) error {
+func (e *Executor) moveTo(ctx context.Context, t ticket.Ticket, name string) error {
 	now, err := e.fresh(ctx, t.Identifier)
 	if err != nil {
 		return err
@@ -534,7 +535,7 @@ func (e *Executor) merge(ctx context.Context, w rules.Want, wd world.World) Resu
 	if err != nil {
 		return failed("%v", err)
 	}
-	unchanged := slices.ContainsFunc(tickets, func(now linear.Ticket) bool {
+	unchanged := slices.ContainsFunc(tickets, func(now ticket.Ticket) bool {
 		return now.Identifier == t.Identifier && now.LastComment == t.LastComment && now.Status == t.Status
 	})
 	if !unchanged {

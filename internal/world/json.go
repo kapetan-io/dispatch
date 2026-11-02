@@ -7,11 +7,11 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/inbox"
-	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
@@ -20,7 +20,7 @@ import (
 // own JSON leaves out.
 type worldRecord struct {
 	At           time.Time                          `json:"at"`
-	Tickets      []linear.Ticket                    `json:"tickets,omitempty"`
+	Tickets      []ticket.Ticket                    `json:"tickets,omitempty"`
 	LinearErr    string                             `json:"linearErr,omitempty"`
 	Snapshot     herdr.Snapshot                     `json:"snapshot"`
 	HerdrErr     string                             `json:"herdrErr,omitempty"`
@@ -30,11 +30,11 @@ type worldRecord struct {
 	Stops        map[string]stops.Record            `json:"stops,omitempty"`
 	Sessions     map[string]sessionlog.Log          `json:"sessions,omitempty"`
 	SessionErrs  map[string]string                  `json:"sessionErrs,omitempty"`
-	LeaseHolders []linear.Ticket                    `json:"leaseHolders,omitempty"`
+	LeaseHolders []ticket.Ticket                    `json:"leaseHolders,omitempty"`
 	HoldersErr   string                             `json:"holdersErr,omitempty"`
 	Leases       map[string][]Worker                `json:"leases,omitempty"`
 	Leased       map[string]bool                    `json:"leased,omitempty"`
-	Children     map[string][]linear.Ticket         `json:"children,omitempty"`
+	Children     map[string][]ticket.Ticket         `json:"children,omitempty"`
 	ChildrenErr  string                             `json:"childrenErr,omitempty"`
 	Unfinished   map[string]string                  `json:"unfinished,omitempty"`
 	Work         map[string]treehouse.Work          `json:"work,omitempty"`

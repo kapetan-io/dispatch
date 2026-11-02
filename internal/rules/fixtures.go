@@ -11,11 +11,11 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/inbox"
-	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
@@ -44,7 +44,7 @@ type treeModel struct {
 
 // scenarioModel is the part of a scenario's world the fixtures describe.
 type scenarioModel struct {
-	tickets map[string]*linear.Ticket
+	tickets map[string]*ticket.Ticket
 	order   []string
 	parent  map[string]string
 	workers map[string]*world.Worker
@@ -63,7 +63,7 @@ type scenarioModel struct {
 
 func newModel() *scenarioModel {
 	return &scenarioModel{
-		tickets: map[string]*linear.Ticket{}, parent: map[string]string{}, workers: map[string]*world.Worker{},
+		tickets: map[string]*ticket.Ticket{}, parent: map[string]string{}, workers: map[string]*world.Worker{},
 		stops: map[string]stops.Record{}, sessions: map[string]sessionlog.Log{}, sessionUnread: map[string]string{}, prs: map[string]*pullrequest.PullRequest{}, stacks: map[string]stackrecord.Record{}, stamps: map[string]*stamp{},
 	}
 }
@@ -140,7 +140,7 @@ func (s *scenario) applyTicket(id string, fields map[string]any) {
 	m := s.model()
 	t, exists := m.tickets[id]
 	if !exists {
-		t = &linear.Ticket{ID: "id-" + id, Identifier: id, Title: id, URL: "https://linear.test/" + id, Branch: strings.ToLower(id), Team: "ENG", Mine: true}
+		t = &ticket.Ticket{ID: "id-" + id, Identifier: id, Title: id, URL: "https://linear.test/" + id, Branch: strings.ToLower(id), Team: "ENG", Mine: true}
 		t.Status = s.statusName("todo")
 		m.tickets[id] = t
 		m.order = append(m.order, id)
@@ -194,30 +194,30 @@ func (s *scenario) applyTicket(id string, fields map[string]any) {
 			bid, _ := str(bm, "id")
 			status, _ := str(bm, "status")
 			abandoned, _ := boolean(bm, "abandoned")
-			t.Blockers = append(t.Blockers, linear.Blocker{Identifier: bid, Status: s.statusName(status), Abandoned: abandoned})
+			t.Blockers = append(t.Blockers, ticket.Blocker{Identifier: bid, Status: s.statusName(status), Abandoned: abandoned})
 		}
 	}
 	// Labels are rebuilt from the fields that name them.
 	labels := t.Labels
 	if optedIn, ok := boolean(fields, "optedIn"); ok {
-		labels = slices.DeleteFunc(labels, func(l linear.Label) bool { return strings.EqualFold(l.Name, s.cfg.Plugins.Linear.AILabel) })
+		labels = slices.DeleteFunc(labels, func(l ticket.Label) bool { return strings.EqualFold(l.Name, s.cfg.Plugins.Linear.AILabel) })
 		if optedIn {
-			labels = append(labels, linear.Label{Name: s.cfg.Plugins.Linear.AILabel})
+			labels = append(labels, ticket.Label{Name: s.cfg.Plugins.Linear.AILabel})
 		}
 	}
 	if repo, ok := str(fields, "repo"); ok {
-		labels = slices.DeleteFunc(labels, func(l linear.Label) bool { return strings.EqualFold(l.Group, s.cfg.Plugins.Linear.RepoLabelGroup) })
-		labels = append(labels, linear.Label{Name: repo, Group: s.cfg.Plugins.Linear.RepoLabelGroup})
+		labels = slices.DeleteFunc(labels, func(l ticket.Label) bool { return strings.EqualFold(l.Group, s.cfg.Plugins.Linear.RepoLabelGroup) })
+		labels = append(labels, ticket.Label{Name: repo, Group: s.cfg.Plugins.Linear.RepoLabelGroup})
 	}
 	if names, ok := fields["labels"].([]any); ok {
 		for _, n := range names {
 			switch n := n.(type) {
 			case string:
-				labels = append(labels, linear.Label{Name: n})
+				labels = append(labels, ticket.Label{Name: n})
 			case map[string]any:
 				name, _ := str(n, "name")
 				group, _ := str(n, "group")
-				labels = append(labels, linear.Label{Name: name, Group: group})
+				labels = append(labels, ticket.Label{Name: name, Group: group})
 			}
 		}
 	}
@@ -401,12 +401,12 @@ func (s *scenario) world() world.World {
 	w := world.World{
 		At: s.now, Workers: map[string]world.Worker{}, Stops: map[string]stops.Record{},
 		Sessions: map[string]sessionlog.Log{}, SessionErrs: map[string]error{},
-		Leases: map[string][]world.Worker{}, Leased: map[string]bool{}, Children: map[string][]linear.Ticket{},
+		Leases: map[string][]world.Worker{}, Leased: map[string]bool{}, Children: map[string][]ticket.Ticket{},
 		Unfinished: map[string]string{}, Work: map[string]treehouse.Work{}, CheckErrors: map[string]error{},
 		Untracked: map[string][]string{}, PRs: map[string]pullrequest.PullRequest{}, PRReadFailed: map[string]bool{},
 		PoolErrs: map[string]error{}, UnreadRepos: map[string]bool{},
 	}
-	started := func(t *linear.Ticket) bool {
+	started := func(t *ticket.Ticket) bool {
 		return slices.Contains([]string{cfg.Plugins.Linear.Statuses.InProgress, cfg.Plugins.Linear.Statuses.InReview, cfg.Plugins.Linear.Statuses.NeedsHuman}, t.Status)
 	}
 	workerOf := func(id string) world.Worker {
@@ -467,7 +467,7 @@ func (s *scenario) world() world.World {
 		}
 	}
 	for _, parent := range scope.Parents(w.Tickets) {
-		var kids []linear.Ticket
+		var kids []ticket.Ticket
 		for _, id := range m.order {
 			if m.parent[id] == parent.Identifier {
 				kids = append(kids, *m.tickets[id])

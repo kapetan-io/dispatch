@@ -6,14 +6,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/stretchr/testify/assert"
+	tkt "github.com/kapetan-io/dispatch/internal/ticket"
 
-	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/stretchr/testify/assert"
 )
 
 // labeledAs builds an In Progress ticket whose labels are spelled as given, the way a
 // workspace that had AI, Design and Repo before dispatch was set up spells them.
-func labeledAs(id string, labels ...linear.Label) fakeTicket {
+func labeledAs(id string, labels ...tkt.Label) fakeTicket {
 	t := ticket(id, "In Progress", "")
 	t.Labels = labels
 	return t
@@ -28,9 +28,9 @@ func TestTickLaunchesADesignTicketWhoseLabelsDifferInCase(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(labeledAs("ENG-1",
-		linear.Label{Name: "AI"},
-		linear.Label{Name: "Design"},
-		linear.Label{Name: "Dispatch", Group: "Repo"},
+		tkt.Label{Name: "AI"},
+		tkt.Label{Name: "Design"},
+		tkt.Label{Name: "Dispatch", Group: "Repo"},
 	))
 
 	d.Tick()
@@ -42,9 +42,9 @@ func TestTickLaunchesADesignReviewTicketLabeledDesignReview(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(labeledAs("ENG-1",
-		linear.Label{Name: "AI"},
-		linear.Label{Name: "Design-Review"},
-		linear.Label{Name: "dispatch", Group: "repo"},
+		tkt.Label{Name: "AI"},
+		tkt.Label{Name: "Design-Review"},
+		tkt.Label{Name: "dispatch", Group: "repo"},
 	))
 
 	d.Tick()
@@ -56,8 +56,8 @@ func TestTickReadsThePROfATicketWhoseRepoLabelDiffersInCase(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(withStatus(labeledAs("ENG-1",
-		linear.Label{Name: "ai"},
-		linear.Label{Name: "Dispatch", Group: "Repo"},
+		tkt.Label{Name: "ai"},
+		tkt.Label{Name: "Dispatch", Group: "Repo"},
 	), "In Review"))
 	d.Workers.Running("ENG-1", "idle")
 	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
@@ -73,8 +73,8 @@ func TestTickLaunchesInTheTableSpelledLikeTheTicketsLabel(t *testing.T) {
 	other := t.TempDir()
 	d.addRepo("Dispatch", other)
 	d.Linear.Tickets(labeledAs("ENG-1",
-		linear.Label{Name: "ai"},
-		linear.Label{Name: "Dispatch", Group: "repo"},
+		tkt.Label{Name: "ai"},
+		tkt.Label{Name: "Dispatch", Group: "repo"},
 	))
 
 	d.Tick()
@@ -86,8 +86,8 @@ func TestRulesCheckHoldsATicketWhoseRepoLabelDiffersInCaseWhileItsPoolCannotBeRe
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Linear.Tickets(labeledAs("ENG-1",
-		linear.Label{Name: "ai"},
-		linear.Label{Name: "Dispatch", Group: "repo"},
+		tkt.Label{Name: "ai"},
+		tkt.Label{Name: "Dispatch", Group: "repo"},
 	))
 	d.Tools().Treehouse.FailTrees(errors.New("exit status 1"))
 
@@ -103,8 +103,8 @@ func TestTickLaunchesInTheTableSpelledExactlyLikeTheLabelOverOneThatDiffersInCas
 	d := newDispatch(t, dispatchOptions{})
 	d.addRepo("Dispatch", t.TempDir())
 	d.Linear.Tickets(labeledAs("ENG-1",
-		linear.Label{Name: "ai"},
-		linear.Label{Name: "dispatch", Group: "repo"},
+		tkt.Label{Name: "ai"},
+		tkt.Label{Name: "dispatch", Group: "repo"},
 	))
 
 	d.Tick()

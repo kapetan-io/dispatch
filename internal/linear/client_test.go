@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 // wire is a web server that answers Linear's GraphQL operations by name with
@@ -209,12 +210,12 @@ func TestClientReadsEveryFieldOfAManagedTicket(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, found, 1)
-	assert.Equal(t, linear.Ticket{
+	assert.Equal(t, ticket.Ticket{
 		ID: "id1", Identifier: "ENG-1", Title: "t", URL: "https://x/ENG-1", Branch: "b",
 		Status: "In Progress", Team: "ENG", HasChildren: true, LabelsTruncated: true,
-		Labels:      []linear.Label{{Name: "dispatch", Group: "repo"}},
+		Labels:      []ticket.Label{{Name: "dispatch", Group: "repo"}},
 		LastComment: "2026-10-09T00:09:00.000Z", CreatedAt: "2026-10-01T00:00:00.000Z",
-		Blockers: []linear.Blocker{{Identifier: "ENG-9", Status: "Canceled", Abandoned: true}},
+		Blockers: []ticket.Blocker{{Identifier: "ENG-9", Status: "Canceled", Abandoned: true}},
 	}, found[0])
 }
 
@@ -352,7 +353,7 @@ func TestClientReadsChildrenMineParentAndBlockers(t *testing.T) {
 	assert.True(t, children["ENG-1"][1].Mine)
 	assert.False(t, children["ENG-1"][0].Mine)
 	assert.Equal(t, "2026-10-01", children["ENG-1"][1].CreatedAt)
-	assert.Equal(t, []linear.Blocker{{Identifier: "ENG-9", Status: "Todo"}}, children["ENG-1"][1].Blockers)
+	assert.Equal(t, []ticket.Blocker{{Identifier: "ENG-9", Status: "Todo"}}, children["ENG-1"][1].Blockers)
 	assert.True(t, children["ENG-1"][1].BlockersTruncated)
 }
 

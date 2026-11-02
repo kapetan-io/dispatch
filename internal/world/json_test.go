@@ -12,22 +12,22 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/inbox"
-	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
 // full sets every field of a World, so a field added later without history recording it fails the test.
 func full() world.World {
-	ticket := linear.Ticket{Identifier: "ENG-1", Blockers: []linear.Blocker{{Identifier: "ENG-2", Status: "Todo"}}, BlockersTruncated: true}
+	one := ticket.Ticket{Identifier: "ENG-1", Blockers: []ticket.Blocker{{Identifier: "ENG-2", Status: "Todo"}}, BlockersTruncated: true}
 	worker := world.Worker{State: world.Working, TreePath: "/trees/1", RepoDir: "/repo", WorkspaceID: "w1"}
 	return world.World{
 		At:           time.UnixMilli(1760450411000).UTC(),
-		Tickets:      []linear.Ticket{ticket},
+		Tickets:      []ticket.Ticket{one},
 		LinearErr:    errors.New("linear is down"),
 		Snapshot:     herdr.Snapshot{Workspaces: []herdr.Workspace{{ID: "w1", CheckoutPath: "/trees/1"}}},
 		HerdrErr:     errors.New("herdr is down"),
@@ -37,11 +37,11 @@ func full() world.World {
 		Stops:        map[string]stops.Record{"ENG-1": {At: time.UnixMilli(1760450000000).UTC(), Reported: true, Running: 2}},
 		Sessions:     map[string]sessionlog.Log{"ENG-1": {Turns: []sessionlog.Turn{{At: 1760450000000, Running: true}}}},
 		SessionErrs:  map[string]error{"ENG-6": errors.New("session unread")},
-		LeaseHolders: []linear.Ticket{{Identifier: "ENG-3"}},
+		LeaseHolders: []ticket.Ticket{{Identifier: "ENG-3"}},
 		HoldersErr:   errors.New("holders unread"),
 		Leases:       map[string][]world.Worker{"ENG-3": {worker}},
 		Leased:       map[string]bool{"ENG-3": true},
-		Children:     map[string][]linear.Ticket{"ENG-9": {{Identifier: "ENG-10"}}},
+		Children:     map[string][]ticket.Ticket{"ENG-9": {{Identifier: "ENG-10"}}},
 		ChildrenErr:  errors.New("children unread"),
 		Unfinished:   map[string]string{"/trees/1": "2 commits"},
 		Work:         map[string]treehouse.Work{"/trees/1": {Unpushed: 2, TrackedChanges: true}},

@@ -24,6 +24,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
@@ -79,7 +80,7 @@ type World struct {
 	At time.Time
 	// Tickets are the managed tickets: started, assigned to you and carrying the opt-in label.
 	// When LinearErr is set they are the last ones read, and no longer known.
-	Tickets   []linear.Ticket
+	Tickets   []ticket.Ticket
 	LinearErr error
 	// Snapshot is herdr's view. It is empty when HerdrErr is set.
 	Snapshot herdr.Snapshot
@@ -102,7 +103,7 @@ type World struct {
 	// LeaseHolders holds the tickets that hold a lease and aren't in Tickets,
 	// which is how finished and paused tickets are found. HoldersErr is set when
 	// the lookup failed, so who holds a tree is unknown.
-	LeaseHolders []linear.Ticket
+	LeaseHolders []ticket.Ticket
 	HoldersErr   error
 	// Leases maps a lease holder to a worker for each tree it holds.
 	Leases map[string][]Worker
@@ -111,7 +112,7 @@ type World struct {
 	// Children maps an In Progress parent's identifier to all its children, in
 	// every status. A parent absent from the map had its children unread, and
 	// ChildrenErr says why.
-	Children    map[string][]linear.Ticket
+	Children    map[string][]ticket.Ticket
 	ChildrenErr error
 	// Unfinished maps a tree path to what returning it would destroy, empty for
 	// a pushed tree with no tracked changes. A path in neither map was not
@@ -361,13 +362,13 @@ func (w *World) readSession(stateDir, ticket string, wk Worker) {
 
 // leaseHolders reads the tickets that hold a tree but are not among the
 // managed ones. It makes no call when every lease belongs to a managed ticket.
-func leaseHolders(ctx context.Context, lin linear.Workspace, scope Scope, trees []treehouse.Tree, managed []linear.Ticket) ([]linear.Ticket, error) {
+func leaseHolders(ctx context.Context, lin linear.Workspace, scope Scope, trees []treehouse.Tree, managed []ticket.Ticket) ([]ticket.Ticket, error) {
 	var holders []string
 	for _, tree := range trees {
 		if tree.LeaseHolder == "" || slices.Contains(holders, tree.LeaseHolder) {
 			continue
 		}
-		if !slices.ContainsFunc(managed, func(t linear.Ticket) bool { return t.Identifier == tree.LeaseHolder }) {
+		if !slices.ContainsFunc(managed, func(t ticket.Ticket) bool { return t.Identifier == tree.LeaseHolder }) {
 			holders = append(holders, tree.LeaseHolder)
 		}
 	}
@@ -452,21 +453,21 @@ var DesignLabels = []string{"design", "design-review"}
 
 // NotDesign reports whether the ticket is known not to be a design or review
 // ticket. A ticket whose labels were cut short might be one.
-func NotDesign(t linear.Ticket) bool {
+func NotDesign(t ticket.Ticket) bool {
 	return !t.LabelsTruncated && !slices.ContainsFunc(DesignLabels, t.HasLabel)
 }
 
 // Retires reports whether the dispatcher tears down this lease holder's trees:
 // its status is a finished one.
-func (s Scope) Retires(t linear.Ticket) bool {
+func (s Scope) Retires(t ticket.Ticket) bool {
 	return slices.Contains(s.Statuses.Finished, t.Status)
 }
 
 // Parents returns the tickets whose children the dispatcher acts on: In
 // Progress parents that are known not to be design tickets, since the design
 // worker and the review own the children and close of those.
-func (s Scope) Parents(tickets []linear.Ticket) []linear.Ticket {
-	var parents []linear.Ticket
+func (s Scope) Parents(tickets []ticket.Ticket) []ticket.Ticket {
+	var parents []ticket.Ticket
 	for _, t := range tickets {
 		if t.Status == s.Statuses.InProgress && t.HasChildren && NotDesign(t) {
 			parents = append(parents, t)
@@ -478,7 +479,7 @@ func (s Scope) Parents(tickets []linear.Ticket) []linear.Ticket {
 // PRRepo is the settings of the repo whose PR a read of the ticket would look in. It is false
 // when no read would happen, so a ticket without a PR record was either read and has none, or
 // was not read.
-func (s Scope) PRRepo(t linear.Ticket, state WorkerState) (config.Repo, bool) {
+func (s Scope) PRRepo(t ticket.Ticket, state WorkerState) (config.Repo, bool) {
 	if !s.ReadsPR(t, state) {
 		return config.Repo{}, false
 	}
@@ -490,7 +491,7 @@ func (s Scope) PRRepo(t linear.Ticket, state WorkerState) (config.Repo, bool) {
 // ReadsPR reports whether the dispatcher uses this In Review ticket's PR.
 // Working and blocked workers are skipped so their PRs cost no call, and so are
 // tickets whose labels or children make it unsure they are build tickets.
-func (s Scope) ReadsPR(t linear.Ticket, state WorkerState) bool {
+func (s Scope) ReadsPR(t ticket.Ticket, state WorkerState) bool {
 	if t.Status != s.Statuses.InReview || t.LabelsTruncated || t.HasChildren || !NotDesign(t) {
 		return false
 	}

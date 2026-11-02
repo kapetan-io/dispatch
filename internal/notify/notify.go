@@ -6,7 +6,7 @@ import (
 	"io"
 
 	"github.com/kapetan-io/dispatch/internal/harness"
-	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 // Post delivers notifications through Alerts and Followers. Followers lists the
@@ -22,7 +22,7 @@ type Post struct {
 
 // Notification is something the user should hear about.
 type Notification struct {
-	Ticket linear.Ticket
+	Ticket ticket.Ticket
 	Reason string
 	Text   string
 }

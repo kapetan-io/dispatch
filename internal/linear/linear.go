@@ -16,94 +16,25 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 // DefaultURL is Linear's GraphQL endpoint.
 const DefaultURL = "https://api.linear.app/graphql"
-
-// Ticket is one managed Linear issue.
-type Ticket struct {
-	// ID is Linear's internal id, used for mutations.
-	ID string
-	// Identifier is the human id, such as ENG-123. It is also the treehouse lease holder.
-	Identifier string
-	Title      string
-	URL        string
-	Branch     string
-	Status     string
-	Team       string
-	Labels     []Label
-	// HasChildren marks a parent ticket, which never gets a dispatched worker.
-	HasChildren bool
-	// LabelsTruncated means Labels is only the first page, so a repo or design
-	// label may be missing from it.
-	LabelsTruncated bool
-	// LastComment is the creation time of the ticket's newest comment, or empty
-	// when it has none. It is RFC 3339 and sorts as text. Only ManagedTickets
-	// fills it in. It feeds the rules' lastHumanComment fact.
-	LastComment string
-	// Mine means the ticket is assigned to the key's owner. Only ParentChildren
-	// sets it, because ManagedTickets returns nothing else.
-	Mine bool
-	// CreatedAt is Linear's RFC 3339 creation time, which sorts as text.
-	// ManagedTickets and ParentChildren fill it in.
-	CreatedAt string
-	// Blockers are the tickets that block this one. ManagedTickets and
-	// ParentChildren fill them in.
-	Blockers []Blocker
-	// BlockersTruncated means the ticket has more than 10 relations of any kind,
-	// so an unfinished blocker may be missing from Blockers.
-	BlockersTruncated bool
-}
-
-// Blocker is a ticket that blocks another and the status it is in.
-type Blocker struct {
-	Identifier string
-	Status     string
-	// Abandoned means the blocker's status is of Linear's canceled type, which
-	// covers Canceled and Duplicate. It never becomes Done.
-	Abandoned bool
-}
-
-// Label is a Linear label and the label group it belongs to, if any.
-type Label struct {
-	Name  string
-	Group string
-}
-
-// HasLabel reports whether the ticket carries a label with this name. Linear
-// keeps label names unique ignoring case, so AI and ai are the same label.
-func (t Ticket) HasLabel(name string) bool {
-	for _, l := range t.Labels {
-		if strings.EqualFold(l.Name, name) {
-			return true
-		}
-	}
-	return false
-}
-
-// LabelIn returns the ticket's label in the given group, such as its repo.
-func (t Ticket) LabelIn(group string) (string, bool) {
-	for _, l := range t.Labels {
-		if strings.EqualFold(l.Group, group) {
-			return l.Name, true
-		}
-	}
-	return "", false
-}
 
 // Workspace is a Linear workspace as its API key's owner sees it. Client is
 // the real one, and lineartest.Workspace is the in-memory fake.
 type Workspace interface {
 	// ManagedTickets returns the started tickets assigned to the key's owner
 	// that carry label, limited to teams.
-	ManagedTickets(ctx context.Context, label string, teams []string) ([]Ticket, error)
+	ManagedTickets(ctx context.Context, label string, teams []string) ([]ticket.Ticket, error)
 	// LeasedTickets returns the tickets named by identifiers in any status,
 	// archived ones included, limited to the key owner's own.
-	LeasedTickets(ctx context.Context, label string, teams, identifiers []string) ([]Ticket, error)
+	LeasedTickets(ctx context.Context, label string, teams, identifiers []string) ([]ticket.Ticket, error)
 	// ParentChildren returns every child, in every status, of the parents with
 	// these Linear ids, keyed by the parent's identifier.
-	ParentChildren(ctx context.Context, parents []string) (map[string][]Ticket, error)
+	ParentChildren(ctx context.Context, parents []string) (map[string][]ticket.Ticket, error)
 	// StateID returns the id of the named workflow status on a team, or NoTeam
 	// when the key matches no team.
 	StateID(ctx context.Context, team, name string) (string, error)
@@ -278,8 +209,8 @@ type issueNode struct {
 	} `json:"inverseRelations"`
 }
 
-func (n issueNode) ticket() Ticket {
-	t := Ticket{
+func (n issueNode) ticket() ticket.Ticket {
+	t := ticket.Ticket{
 		ID:                n.ID,
 		Identifier:        n.Identifier,
 		Title:             n.Title,
@@ -293,14 +224,14 @@ func (n issueNode) ticket() Ticket {
 	}
 	for _, r := range n.InverseRelations.Nodes {
 		if r.Type == "blocks" {
-			t.Blockers = append(t.Blockers, Blocker{Identifier: r.Issue.Identifier, Status: r.Issue.State.Name, Abandoned: r.Issue.State.Type == "canceled"})
+			t.Blockers = append(t.Blockers, ticket.Blocker{Identifier: r.Issue.Identifier, Status: r.Issue.State.Name, Abandoned: r.Issue.State.Type == "canceled"})
 		}
 	}
 	if len(n.Comments.Nodes) > 0 {
 		t.LastComment = n.Comments.Nodes[0].CreatedAt
 	}
 	for _, l := range n.Labels.Nodes {
-		label := Label{Name: l.Name}
+		label := ticket.Label{Name: l.Name}
 		if l.Parent != nil {
 			label.Group = l.Parent.Name
 		}
@@ -312,7 +243,7 @@ func (n issueNode) ticket() Ticket {
 // ManagedTickets returns the started tickets assigned to the key's owner that
 // carry label, limited to teams. In Progress, In Review and Needs Human are
 // all started statuses.
-func (c *Client) ManagedTickets(ctx context.Context, label string, teams []string) ([]Ticket, error) {
+func (c *Client) ManagedTickets(ctx context.Context, label string, teams []string) ([]ticket.Ticket, error) {
 	var resp struct {
 		Viewer struct {
 			AssignedIssues struct {
@@ -329,7 +260,7 @@ func (c *Client) ManagedTickets(ctx context.Context, label string, teams []strin
 	if resp.Viewer.AssignedIssues.PageInfo.HasNextPage {
 		return nil, ManagedOverflow(label)
 	}
-	var tickets []Ticket
+	var tickets []ticket.Ticket
 	for _, n := range resp.Viewer.AssignedIssues.Nodes {
 		if !contains(teams, n.Team.Key) {
 			continue
@@ -362,7 +293,7 @@ const leasedTickets = `query LeasedTickets($filter: IssueFilter!, $first: Int!) 
 // come back, and of those the ones that carry label, plus any whose labels were
 // cut short, because the caller can't tell whether they do. Identifiers outside
 // teams, or not shaped like a ticket id, are ignored.
-func (c *Client) LeasedTickets(ctx context.Context, label string, teams, identifiers []string) ([]Ticket, error) {
+func (c *Client) LeasedTickets(ctx context.Context, label string, teams, identifiers []string) ([]ticket.Ticket, error) {
 	var filters []map[string]any
 	for _, id := range identifiers {
 		team, number, ok := SplitIdentifier(id)
@@ -397,7 +328,7 @@ func (c *Client) LeasedTickets(ctx context.Context, label string, teams, identif
 	if resp.Issues.PageInfo.HasNextPage {
 		return nil, LeasedOverflow()
 	}
-	var tickets []Ticket
+	var tickets []ticket.Ticket
 	for _, n := range resp.Issues.Nodes {
 		if n.Assignee == nil || n.Assignee.ID != resp.Viewer.ID {
 			continue
@@ -431,7 +362,7 @@ const parentChildren = `query ParentChildren($parents: [ID!], $first: Int!) {
 // every status, keyed by the parent's identifier. A parent closes only when all
 // its children are finished, so the finished ones come back too. A second page
 // is an error, because a child left off it could be the unfinished one.
-func (c *Client) ParentChildren(ctx context.Context, parents []string) (map[string][]Ticket, error) {
+func (c *Client) ParentChildren(ctx context.Context, parents []string) (map[string][]ticket.Ticket, error) {
 	if len(parents) == 0 {
 		return nil, nil
 	}
@@ -452,7 +383,7 @@ func (c *Client) ParentChildren(ctx context.Context, parents []string) (map[stri
 	if resp.Issues.PageInfo.HasNextPage {
 		return nil, ChildrenOverflow()
 	}
-	children := map[string][]Ticket{}
+	children := map[string][]ticket.Ticket{}
 	for _, n := range resp.Issues.Nodes {
 		if n.Parent == nil {
 			continue
@@ -465,7 +396,7 @@ func (c *Client) ParentChildren(ctx context.Context, parents []string) (map[stri
 	// Linear's order is not documented, and promotion under a full cap goes to
 	// the oldest child first.
 	for _, kids := range children {
-		slices.SortStableFunc(kids, func(a, b Ticket) int { return strings.Compare(a.CreatedAt, b.CreatedAt) })
+		slices.SortStableFunc(kids, func(a, b ticket.Ticket) int { return strings.Compare(a.CreatedAt, b.CreatedAt) })
 	}
 	return children, nil
 }

@@ -9,9 +9,9 @@ import (
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/executor"
 	"github.com/kapetan-io/dispatch/internal/herdr"
-	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -33,9 +33,9 @@ func workerOf(wd world.World, ticket string) string {
 	return string(world.FindWorker(ticket, wd.Trees, wd.Snapshot).State)
 }
 
-func label(emoji string, t linear.Ticket) string { return emoji + " " + t.Identifier }
+func label(emoji string, t ticket.Ticket) string { return emoji + " " + t.Identifier }
 
-func tabLabel(t linear.Ticket) string { return herdr.TabLabel(t.Identifier, t.Title) }
+func tabLabel(t ticket.Ticket) string { return herdr.TabLabel(t.Identifier, t.Title) }
 
 // differs is true when the workspace or tab needs renaming to want. A rename sent since the
 // last resync to want needs none, whether or not it landed, and one sent to another label
@@ -64,7 +64,7 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 	for _, tab := range wd.Snapshot.Tabs {
 		currentTabs[tab.ID] = tab.Label
 	}
-	add := func(t linear.Ticket, w world.Worker, emoji string) {
+	add := func(t ticket.Ticket, w world.Worker, emoji string) {
 		have, ok := current[w.WorkspaceID]
 		want := label(emoji, t)
 		if w.WorkspaceID != "" && ok && l.differs(w.WorkspaceID, have, want) {
@@ -116,7 +116,7 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 }
 
 // repoOf is the settings table of the ticket's repo label, empty when it has none.
-func (l *Loop) repoOf(t linear.Ticket) config.Repo {
+func (l *Loop) repoOf(t ticket.Ticket) config.Repo {
 	label, _ := t.LabelIn(l.o.Config.Plugins.Linear.RepoLabelGroup)
 	_, repo, _ := l.o.Config.Repos.Find(label)
 	return repo
