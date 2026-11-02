@@ -81,6 +81,58 @@ const staticDeclarations = `  export type Once = [topic: string, ...values: (str
     reset?: boolean;
   }
   export interface HttpResponse { status: number; body: unknown }
+  export type MovableJob = "todo" | "in_progress" | "in_review" | "needs_human" | "close_parent" | "blocker_done";
+  export type Job = MovableJob | "finished" | "paused";
+  export interface TicketDraft {
+    readonly title: string;
+    /** A [repos.<label>] table. */
+    readonly repo: string;
+    readonly description?: string;
+    readonly labels?: readonly string[];
+    readonly attributes?: Readonly<Record<string, string>>;
+    /** LOC-<n> */
+    readonly parent?: string;
+    /** LOC-<n> */
+    readonly blockedBy?: readonly string[];
+    /** A PR in repo. */
+    readonly startPR?: number;
+    /** A job key, as queueMove takes. Default todo. */
+    readonly status?: MovableJob;
+  }
+  export interface TicketChanges {
+    readonly title?: string;
+    readonly description?: string;
+    readonly repo?: string;
+    readonly addLabels?: readonly string[];
+    readonly removeLabels?: readonly string[];
+    readonly setAttributes?: Readonly<Record<string, string>>;
+    readonly unsetAttributes?: readonly string[];
+    /** null clears. */
+    readonly parent?: string | null;
+    /** Replaces; [] clears. */
+    readonly blockedBy?: readonly string[];
+    /** 0 clears. */
+    readonly startPR?: number;
+  }
+  export interface TicketFilter {
+    /** Tickets whose status does this job. */
+    readonly status?: Job;
+    /** Match ignoring case. */
+    readonly labels?: readonly string[];
+    /** Match exactly. */
+    readonly attributes?: Readonly<Record<string, string>>;
+    /** Only tickets outside a finished status. */
+    readonly open?: boolean;
+  }
+  export interface FoundTicket {
+    readonly id: string;
+    readonly title: string;
+    /** As the ticket record's status. */
+    readonly status: string;
+    readonly finished: boolean;
+    readonly labels: readonly string[];
+    readonly attributes: Readonly<Record<string, string>>;
+  }
   export interface Action { readonly queued: true }
   export function whenever<K extends RecordKind>(rule: {
     name: string;
@@ -117,6 +169,8 @@ func ctxPlugins() string {
       blockers(t: Ticket): Blocker[];
       blockersRead(t: Ticket): Blocker[];
       waitingSince(t: Ticket): number;
+      /** Searches every local ticket, finished ones included. Only in then. Throws when local tickets are off. */
+      search(filter: TicketFilter): ReadonlyArray<FoundTicket>;
 `,
 		"worker": `      of(t: Ticket): Worker;
       in(tree: Tree): Worker;

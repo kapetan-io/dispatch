@@ -207,7 +207,7 @@ type scenario struct {
 func newScenario(h *scenarioHost, rules *Rules) *scenario {
 	cfg := config.Config{
 		Dispatch: config.Dispatch{MaxInProgress: 4, Resync: config.Duration(5 * time.Minute)},
-		Plugins: config.Plugins{Linear: config.Linear{
+		Plugins: config.Plugins{Local: config.Local{On: true}, Linear: config.Linear{
 			Teams: []string{"ENG"}, AILabel: "ai", RepoLabelGroup: "repo",
 			Statuses: config.Statuses{
 				Todo: "Todo", CloseParent: "Done", BlockerDone: "Done", InProgress: "In Progress", InReview: "In Review",
@@ -421,6 +421,7 @@ func (s *scenario) state() *State {
 	}
 	state := FromWorld(w, s.cfg, s.led, "you")
 	state.HTTP, state.Kept = s.services, s.kept
+	state.Search = s.fixtureSearch()
 	for repo, returns := range s.pools {
 		if p, ok := state.pools[repo]; ok && p.unknown == "" {
 			state.pools[repo] = pool{returns: returns}

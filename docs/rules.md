@@ -160,6 +160,42 @@ whenever({
 - A relaunched worker's new Claude session, or one after `/clear`, reads an empty list. A worker the app host resumed after a herdr-core restart keeps its session, so it keeps its list. The list survives a restart and `dispatch state reset`, but a command taken while dispatch was not running is missing from it. `dispatch explain` and `dispatch replay` show and reproduce what a decision read. In `rules test`, `worker("ENG-1", "idle", { commands: [{ name: "merge-it", args: "42", at: 1000, by: "person" }] })` sets them.
 - The plugin's `UserPromptSubmit` hook runs `dispatch wake`, which reports a command to the running dispatch without waiting for it, and never blocks, delays, adds text to or fails a prompt, whatever goes wrong. With no dispatch running, or one that is stuck, the report is dropped and the command never appears.
 
+## Creating and editing local tickets
+
+A rule that sees work arrive, such as a review request, files a local ticket for it, so a worker starts on it. Search first, so the rule files one ticket and not one per cycle:
+
+```ts
+whenever({
+  name: "review-requested",
+  each: "inbox",
+  if:   (item) => item.reason === "review_requested" && item.repo !== undefined,
+  then: (item, ctx) => {
+    const pr = ctx.http.get("github", item.apiUrl!.replace("https://api.github.com", ""));
+    const body = pr.body as { head: { sha: string }; number: number };
+    const head = body.head.sha;
+    if (ctx.ticket.search({ attributes: { pr: item.apiUrl!, commit: head } }).length > 0) return;
+    ctx.ticket.queueCreate("local", {
+      title: `Review ${item.title} at ${head.slice(0, 7)}`,
+      repo: item.repo!,
+      labels: ["review"],
+      attributes: { pr: item.apiUrl!, commit: head },
+      startPR: body.number,
+      status: "in_progress",
+    }, { once: ["review", item.apiUrl!, head] });
+  },
+});
+```
+
+- `ctx.ticket.search(filter)` works only in `then` and throws in `if`. It returns every local ticket the filter matches, finished ones included, as `{ id, title, status, finished, labels, attributes }`. Every field given must match. `status` is a job (`todo`, `in_progress`, `in_review`, `needs_human`, `close_parent`, `blocker_done`, `finished` or `paused`) and matches the tickets whose status does it. `labels` match ignoring case, `attributes` match exactly, and `open: true` leaves out the tickets in a finished status. It throws `local tickets are off` without a `[plugins.local]` table. A search the database cannot answer makes the rule's read unknown, so the rule is held and tried again.
+- A found ticket is a plain value, not a `ticket` record, so a rule cannot pass it to an action. To change one, run the rule over `each: "ticket"` and edit the record there.
+- `ctx.ticket.queueCreate("local", draft, { once })` files a ticket. `draft` takes `title` and `repo` (a `[repos.<label>]` table), and optionally `description`, `labels`, `attributes`, `parent` and `blockedBy` (`LOC-<n>` ids), `startPR` (a PR in `repo`) and `status` (a job key, as `queueMove` takes; the default is `todo`). The ticket's filed-by is the rule's name, which `dispatch ticket show` prints. The subject of a create is the system `"local"`, so the once key is what keeps it from running again. It throws for any other system, and while local tickets are off.
+- `ctx.ticket.queueEdit(t, changes, { once })` edits a local ticket and throws for a Linear one. `changes` takes `title`, `description`, `repo`, `addLabels`, `removeLabels`, `setAttributes`, `unsetAttributes`, `parent` (`null` clears), `blockedBy` (replaces; `[]` clears) and `startPR` (`0` clears). An edit changes neither status nor comments.
+- A create or edit the database refuses, such as an unknown repo, a link to a missing ticket or a parent cycle, ends its receipt Refused with the refusal as the detail, and changes nothing. Any other error ends it Failed.
+- A create is not safe to retry, because when its outcome is lost the ticket may already exist. It counts as sent and does not run again until history rotates and drops its receipt, so a rule that must survive a rotation searches first, as above. An edit is safe to retry.
+- Each search is recorded in the cycle line of the history with what it found, and `dispatch replay` answers searches from those records without opening the database. A search the live cycle didn't run, or one it ran that replay skips, is a difference.
+- `dispatch state reset --quiet` leaves a create to run in the first cycle, and answers searches from the database it reads. `rules check` answers them from the same read.
+- `rules test` always has local tickets on, and answers a search from the scenario's `LOC-` tickets, finished ones included.
+
 ## Calling a service
 
 A rule can call the services `config.toml` names under `[http.<name>]`, with dispatch adding the token:

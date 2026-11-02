@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/config"
-	"github.com/kapetan-io/dispatch/internal/executor"
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
@@ -19,6 +19,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/lock"
 	"github.com/kapetan-io/dispatch/internal/replay"
 	"github.com/kapetan-io/dispatch/internal/rules"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -225,6 +226,9 @@ func resetState(ctx context.Context, opts Options, quiet bool) error {
 	return nil
 }
 
+// quietKinds are the actions a quiet reset records as sent: the messages.
+var quietKinds = []string{"nudge", "notify", "comment", "post"}
+
 // quietReceipts runs the first cycle over an empty ledger and returns a Done receipt for each message
 // it wants, with the memory that cycle leaves, because a message's once key can hold a time that
 // memory first saw.
@@ -253,6 +257,13 @@ func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *wo
 	}
 	state := rules.FromWorld(wd, cfg, &ledger.Ledger{}, "")
 	state.HTTP = servicesFor(opts, cfg)
+	if cfg.Plugins.Local.On {
+		// With no file yet there are no tickets to find, and a create is still wanted.
+		state.Search = localticket.Listing{Table: ticket.DefaultStatuses()}
+		if local != nil {
+			state.Search = *local
+		}
+	}
 	next := state.Carry(mem, at.UnixMilli())
 	var receipts []ledger.Receipt
 	result := loaded.Cycle(state, nil)
@@ -266,9 +277,15 @@ func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *wo
 			return nil, nil, fmt.Errorf("cannot record the messages the first cycle wants while %s %s has no answer: %s", ex.Service, ex.Path, ex.Unknown)
 		}
 	}
+	for _, search := range result.Searches {
+		if search.Unknown != "" {
+			return nil, nil, fmt.Errorf("cannot record the messages the first cycle wants while a search by %s has no answer: %s", search.Rule, search.Unknown)
+		}
+	}
 	for _, want := range result.Wants {
-		// Only actions that may have gone out are recorded as sent; the rest run again.
-		if executor.SafeToRetry(want.Receipt) {
+		// Only a message that may have gone out is recorded as sent. A create runs in the first cycle, so a
+		// reset never hides it.
+		if !slices.Contains(quietKinds, want.Receipt) {
 			continue
 		}
 		receipts = append(receipts, ledger.Receipt{

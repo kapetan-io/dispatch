@@ -211,11 +211,15 @@ func (e *Executor) Run(ctx context.Context, w rules.Want, wd world.World) Result
 		res = e.notify(ctx, w, wd)
 	case "post":
 		res = e.post(ctx, w)
+	case "create":
+		res = e.create(w)
+	case "edit":
+		res = e.edit(w)
 	default:
 		res = Result{Outcome: ledger.Failed, Detail: "no executor for " + w.Receipt}
 	}
-	// A message that timed out may have landed, and a retry could say it twice.
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) && res.Outcome == ledger.Failed && !SafeToRetry(w.Receipt) && w.Receipt != "post" {
+	// A message that timed out may have landed, and a retry could say it twice. A create that failed did not commit, so its failure stands.
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) && res.Outcome == ledger.Failed && !SafeToRetry(w.Receipt) && w.Receipt != "post" && w.Receipt != "create" {
 		res.Outcome, res.Detail = ledger.Done, "timeout"
 		if w.Receipt == "nudge" {
 			res.Nudged = w.Subject
@@ -226,10 +230,11 @@ func (e *Executor) Run(ctx context.Context, w rules.Want, wd world.World) Result
 
 // SafeToRetry reports whether an action with this receipt name can run again after
 // its outcome was lost. A message whose outcome was lost may have gone out, and a
-// retry could say it twice. Post is on the list, but Run's timeout rule leaves it
+// retry could say it twice. A create whose outcome was lost may have filed its ticket,
+// and a retry would file a second. Post is on the list, but Run's timeout rule leaves it
 // out, because post decides itself whether a timeout went out.
 func SafeToRetry(receipt string) bool {
-	return !slices.Contains([]string{"nudge", "notify", "comment", "post"}, receipt)
+	return !slices.Contains([]string{"nudge", "notify", "comment", "post", "create"}, receipt)
 }
 
 func failed(format string, args ...any) Result {
@@ -593,4 +598,62 @@ func (e *Executor) post(ctx context.Context, w rules.Want) Result {
 		return failed("%v", err)
 	}
 	return Result{Outcome: ledger.Done, Detail: fmt.Sprintf("POST %s %s: %d", w.Subject, path, res.Status)}
+}
+
+// create files the ticket a rule drafted. A refusal of the store, such as an unknown repo or a link to a
+// missing ticket, ends the receipt Refused, because asking again would be refused again.
+func (e *Executor) create(w rules.Want) Result {
+	if e.Systems.Local == nil {
+		return Result{Outcome: ledger.Refused, Detail: "local tickets are off"}
+	}
+	var draft localticket.Draft
+	if err := decodeArgs(w.Args["draft"], &draft); err != nil {
+		return failed("while reading the draft: %v", err)
+	}
+	if job, ok := w.Args["draft"].(map[string]any)["status"].(string); ok {
+		name, found := e.Systems.Local.Statuses().NameOf(ticket.Job(job))
+		if !found {
+			return Result{Outcome: ledger.Refused, Detail: "no status does the job " + job}
+		}
+		draft.Status = name
+	}
+	draft.FiledBy = w.Rule
+	id, err := e.Systems.Local.Create(draft)
+	if err != nil {
+		return storeFailure(err)
+	}
+	return Result{Outcome: ledger.Done, Detail: id, Reread: world.FromLocalTickets}
+}
+
+// edit changes the local ticket a rule named.
+func (e *Executor) edit(w rules.Want) Result {
+	if e.Systems.Local == nil {
+		return Result{Outcome: ledger.Refused, Detail: "local tickets are off"}
+	}
+	var changes localticket.Edit
+	if err := decodeArgs(w.Args["changes"], &changes); err != nil {
+		return failed("while reading the changes: %v", err)
+	}
+	if err := e.Systems.Local.Edit(w.Subject, changes); err != nil {
+		return storeFailure(err)
+	}
+	return Result{Outcome: ledger.Done, Reread: world.FromLocalTickets}
+}
+
+// storeFailure ends a receipt for an error of the local store: Refused for a request that breaks an
+// invariant, and Failed for anything else.
+func storeFailure(err error) Result {
+	if errors.Is(err, localticket.ErrRefused) {
+		return Result{Outcome: ledger.Refused, Detail: err.Error()}
+	}
+	return failed("%v", err)
+}
+
+// decodeArgs turns an action's argument, plain values from a rule or from history, into the store's type.
+func decodeArgs(in any, out any) error {
+	b, err := json.Marshal(in)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(b, out)
 }

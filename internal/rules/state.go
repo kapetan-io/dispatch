@@ -99,6 +99,8 @@ type State struct {
 	// HTTP is how a then reaches the services config.toml names. With none, every
 	// ctx.http.get reads as an unknown.
 	HTTP httpservice.Services
+	// Search answers ctx.ticket.search. With none, every search reads as an unknown.
+	Search ticket.Searcher
 	// Kept holds the responses a get got since the last resync, by service and path.
 	// A get adds to it as the cycle runs, and the owner of the state clears it at a resync.
 	Kept map[string]Exchange
