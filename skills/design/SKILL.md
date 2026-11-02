@@ -85,7 +85,7 @@ Write the grounding to one file in the scratchpad, in three sections. It is what
 - **History.** Each decision quoted in the source's words, with source, date and subject. Do not widen a quote past its subject.
 - **Constraints.** Only items that end in a source: an Objective line, a dated user decision, or a History quote at its own scope.
 
-An inference, however likely, goes to the arena's premise list instead. Before Phase B, a fresh sub-agent (told to use the nearest `docs/CONTEXT.md` terms and the words the code already uses, coin no labels such as step codes, define any term in neither, and follow `dispatch:principle-verify-dont-assume` (check the claims it relies on, quote file:line, label what it didn't read as a guess)) lists every should or must sentence in the grounding with its source line. Move the unsourced ones to the premise list and report how many moved in the arena's synthesis note.
+An inference, however likely, goes to the arena's premise list instead. Before Phase B, a fresh sub-agent lists every should or must sentence in the grounding with its source line. Tell it to use the nearest `docs/CONTEXT.md` terms and the words the code already uses, coin no labels such as step codes, define any term in neither, and follow `dispatch:principle-verify-dont-assume` (check the claims it relies on, quote file:line, label what it didn't read as a guess). Move the unsourced ones to the premise list and report how many moved in the arena's synthesis note.
 
 Skip Phase A only when the work is genuinely greenfield with no surrounding system to integrate. Then write "no surrounding system" in the grounding file, so the candidates read a file that says so.
 
