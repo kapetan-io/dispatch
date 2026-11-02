@@ -314,7 +314,7 @@ func (e *Executor) closeWorkspace(ctx context.Context, w rules.Want) Result {
 		return Result{Outcome: ledger.Done, Detail: "no workspace"}
 	}
 	if err := e.Herdr.CloseWorkspace(ctx, id); err != nil {
-		return failed("while closing herdr workspace %s: %v", id, err)
+		return failed("while closing workspace %s: %v", id, err)
 	}
 	res := Result{Outcome: ledger.Done, Reread: world.FromLocal}
 	// A closed workspace ends any launch on its tree, and a mark left behind would be read
@@ -449,7 +449,7 @@ func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World)
 	res := Result{Reread: world.FromLocal}
 	if id := e.workspaceOn(path, wd); id != "" {
 		if err := e.Herdr.CloseWorkspace(ctx, id); err != nil {
-			return failed("while closing herdr workspace %s: %v", id, err)
+			return failed("while closing workspace %s: %v", id, err)
 		}
 	}
 	why, err := treehouse.Unfinished(ctx, e.Environment, path)

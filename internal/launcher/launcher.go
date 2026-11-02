@@ -1,4 +1,4 @@
-// Package launcher leases a tree, opens a herdr workspace and starts a
+// Package launcher leases a tree, opens a workspace and starts a
 // worker for one ticket.
 package launcher
 

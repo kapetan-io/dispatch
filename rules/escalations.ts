@@ -29,7 +29,7 @@ whenever({
            && ctx.worker.of(pr.ticket).state === "none"
            && relaunches(pr.ticket, pr.head, ctx) >= nudgeLimit(ctx),
   then: (pr, ctx) => escalate(pr.ticket, ctx,
-           `its worker was relaunched ${nudgeLimit(ctx)} times for ${pr.url} without pushing. Look at its herdr workspace.`,
+           `its worker was relaunched ${nudgeLimit(ctx)} times for ${pr.url} without pushing. Look at its workspace.`,
            ["relaunch-limit", pr.head, pr.ticket.statusSince]),
 });
 

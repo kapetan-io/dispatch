@@ -161,7 +161,7 @@ const usage = `usage: dispatch run
                elsewhere
   linear-viewer  print the id and name of the Linear user who owns dispatch's API key, as one JSON
                object, found the way run finds the key
-  launch       lease a tree, open a herdr workspace, start Claude there and type --kickoff, which
+  launch       lease a tree, open a workspace, start Claude there and type --kickoff, which
                defaults to "/dispatch:build <ticket>". Run it from inside the repo. Prints one
                JSON result and exits 0 only when its Claude session is running
   claude-shim  run the real claude with the plugin, the cross-session setting and, for a worker's Claude session,

@@ -36,7 +36,7 @@ whenever({
       return ctx.worker.queueNudge(pr.ticket, PR_NUDGE(pr),
         { once: ["pr", pr.head, w.idleSince!, ctx.every(minutes(5), w.idleSince!)] });
     } else {
-      return escalate(pr.ticket, ctx, `its worker stayed idle through ${sent} nudges about ${pr.url} without pushing. Look at its herdr workspace.`,
+      return escalate(pr.ticket, ctx, `its worker stayed idle through ${sent} nudges about ${pr.url} without pushing. Look at its workspace.`,
         ["pr-ignored", pr.head, pr.ticket.statusSince]);
     }
   },

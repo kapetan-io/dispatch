@@ -28,7 +28,7 @@ whenever({
     // A reminder period of 0 means a notice in every cycle, so the key changes with each one.
     const every = ctx.config.rules.blocked_renotify_minutes;
     const period = every > 0 ? ctx.every(minutes(every), w.blockedSince!) : ctx.now;
-    ctx.notify.queueSend(t, `${t.id} is waiting on your answer in its herdr workspace`,
+    ctx.notify.queueSend(t, `${t.id} is waiting on your answer in its workspace`,
       { once: ["blocked", w.blockedSince!, period], reason: "worker is blocked on a question" });
   },
 });

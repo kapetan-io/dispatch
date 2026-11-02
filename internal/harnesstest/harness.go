@@ -93,6 +93,7 @@ func (*Harness) Program(s harness.Start) herdr.Program {
 		Name:      "Fake",
 		AgentKind: Kind,
 		Argv:      []string{"--model", s.Model},
+		Session:   s.Session,
 		Startup:   herdr.Startup{Ready: regexp.MustCompile(`>`)},
 	}
 }

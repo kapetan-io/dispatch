@@ -68,7 +68,7 @@ type Agent struct {
 	TabID       string
 	WorkspaceID string
 	// Session is the id of the session in the pane, which the harness also puts
-	// in the reports its hooks send.
+	// in the reports its hooks send. For a launched worker it is the id the launch chose.
 	Session string
 }
 
@@ -142,7 +142,7 @@ type Program struct {
 	Name string
 	// AgentKind is herdr's --kind for the agent.
 	AgentKind string
-	// Argv follows the `--` of `herdr agent start`.
+	// Argv follows the `--` of `herdr agent start`, before the session flag StartArgv adds.
 	Argv []string
 	// PathFirst lists directories put before the inherited PATH.
 	PathFirst []string
@@ -151,6 +151,22 @@ type Program struct {
 	Env map[string]string
 	// Startup is every screen the program shows before it takes input.
 	Startup Startup
+	// Session is the id the program is to use for its session. Empty when the
+	// harness can't choose one.
+	Session string
+	// SessionFlag starts the program on Session (Claude: "--session-id"). An
+	// adapter appends SessionFlag and Session to Argv, which holds neither.
+	SessionFlag string
+}
+
+// StartArgv is Argv followed by the flag that starts the program on its chosen
+// session, when it has one.
+func (p Program) StartArgv() []string {
+	argv := slices.Clone(p.Argv)
+	if p.Session != "" && p.SessionFlag != "" {
+		argv = append(argv, p.SessionFlag, p.Session)
+	}
+	return argv
 }
 
 // Startup describes the screens a program shows on its way to an input box.

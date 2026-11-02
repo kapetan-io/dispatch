@@ -108,7 +108,7 @@ type Local struct {
 // New returns a Launcher over the tools in opts.
 func New(opts Options) *Local { return &Local{opts: opts.withDefaults()} }
 
-// Launch leases a treehouse tree for the ticket, opens a herdr workspace on it and
+// Launch leases a treehouse tree for the ticket, opens a workspace on it and
 // starts a worker that is typed the kickoff. The Result says what
 // happened, and progress goes to Options.Stderr.
 //

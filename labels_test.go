@@ -733,7 +733,7 @@ func TestTickRetriesARenameHerdrRefused(t *testing.T) {
 	d.Workers.FailRenames(errors.New("exit status 1"))
 
 	d.Tick()
-	assert.Contains(t, d.LoopStderr(), "while renaming herdr workspace w-ENG-1")
+	assert.Contains(t, d.LoopStderr(), "while renaming workspace w-ENG-1")
 	assert.Empty(t, d.Workers.Renames())
 
 	d.Workers.FailRenames(nil)

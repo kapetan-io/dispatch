@@ -259,7 +259,7 @@ func tellResponse(w rules.Want, rc ledger.Receipt) Response {
 	case rc.Outcome == ledger.Done:
 		return Response{Lines: []string{"told " + w.Subject}}
 	case rc.Detail == "blocked":
-		return Response{Code: CodeFailed, Error: fmt.Sprintf("%s's worker is blocked on a question; answer it in its herdr workspace", w.Subject)}
+		return Response{Code: CodeFailed, Error: fmt.Sprintf("%s's worker is blocked on a question; answer it in its workspace", w.Subject)}
 	}
 	return Response{Code: CodeFailed, Error: rc.Detail}
 }
@@ -287,7 +287,7 @@ func (l *Loop) tell(r request) error {
 		r.reply <- Response{Code: CodeFailed, Error: msg}
 		return nil
 	case "blocked":
-		r.reply <- Response{Code: CodeFailed, Error: fmt.Sprintf("%s's worker is blocked on a question; answer it in its herdr workspace", ticket)}
+		r.reply <- Response{Code: CodeFailed, Error: fmt.Sprintf("%s's worker is blocked on a question; answer it in its workspace", ticket)}
 		return nil
 	}
 	l.tells++

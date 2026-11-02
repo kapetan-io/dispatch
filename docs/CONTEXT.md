@@ -10,6 +10,10 @@ _Avoid_: shell fake, mock, stub
 An interface dispatch owns and names for a tool's role (`treehouse.Pool`, `herdr.Herdr`), implemented by a real adapter and a tool fake.
 _Avoid_: domain interface (ADR 0001 and older designs use it for the same thing), client interface
 
+**Host**:
+The Herdr product that runs the workers' terminals and shows them: the herdr TUI, or herdr-core with the Herdr app as its window. `[plugins.herdr] host` picks one, and dispatch drives only the configured one.
+_Avoid_: backend, multiplexer (only the TUI is one)
+
 **Real adapter**:
 The production implementation of a tool's port, which invokes the installed tool.
 _Avoid_: CLI wrapper, client
@@ -19,11 +23,11 @@ One situation run against both a tool fake and the real adapter, which must give
 _Avoid_: shared test, conformance test
 
 **Drift check**:
-The contract scenarios run under `-tags drift` against the installed herdr and treehouse, in a throwaway `dispatch-drift-*` session and pool. It never touches a GitHub or Linear account. It also runs the drift tests that have no fake to compare: the flags dispatch passes to gh against the installed gh's `--help`, and the launcher's commands against the installed tools. One launcher drift test (internal/launcher/commands_drift_test.go) launches a worker on a real, logged-in Claude in a throwaway herdr session and checks that the kickoff and slash nudges record as sent by dispatch; it spends a few short Claude turns.
+The contract scenarios run under `-tags drift` against the installed herdr and treehouse, in a throwaway `dispatch-drift-*` session and pool, and against the installed `hc` on a scratch core (own `HC_SESSION`, scratch XDG paths, a `/tmp` socket), never the user's core. It never touches a GitHub or Linear account. It also runs the drift tests that have no fake to compare: the flags dispatch passes to gh against the installed gh's `--help`, and the launcher's commands against the installed tools. One launcher drift test (internal/launcher/commands_drift_test.go) launches a worker on a real, logged-in Claude in a throwaway herdr session and checks that the kickoff and slash nudges record as sent by dispatch; it spends a few short Claude turns.
 _Avoid_: integration test, live test
 
 **Stand-in claude**:
-A Go program the drift check starts in place of Claude, which shows the startup prompts and reports its state to herdr.
+A Go program the drift check starts in place of Claude, which shows the startup prompts and reports its state to whichever host runs it.
 _Avoid_: fake claude (that name belongs to the `scripts/shims/claude` test)
 
 **Repo settings**:
@@ -52,7 +56,7 @@ _Avoid_: review claim (a claim asserts something to check)
 
 ## Relationships
 
-- Each port has one **real adapter** and one **tool fake**, and every **contract scenario** runs against both, except Linear's, which run against the fake only.
+- Each port has one or more **real adapters** (the herdr port has two, one per **host**) and one **tool fake**, and every **contract scenario** runs against both, except Linear's, which run against the fake only.
 - The **drift check** runs the scenarios against the **real adapter** only, and does not run Linear's.
 - A **Stacked ticket** has exactly one **Stack parent** and one **Stack record** until a **Restack** removes the record.
 
@@ -113,11 +117,19 @@ The text of a slash command dispatch is about to type into a worker's pane, kept
 _Avoid_: ledger entry, receipt (both are in history)
 
 **Workspace emoji**:
-The first word of a worker's herdr workspace label. It says who the ticket is waiting on: the worker (🟢), CI (🟡), you (👀, 💤 or 🔴), a PR's approvers (⏳), whoever merges the PR (🔀, you when `auto_merge` is off), or nobody (⏸️). In a repo with `open_pr_as = "draft"`, a ready draft is 👀, and once you open it the PR is ⏳ until its head is approved and 🔀 after. `worker-states.md` lists every state, its emoji, and what dispatch does in it.
+The first word of a worker's workspace label. It says who the ticket is waiting on: the worker (🟢), CI (🟡), you (👀, 💤 or 🔴), a PR's approvers (⏳), whoever merges the PR (🔀, you when `auto_merge` is off), or nobody (⏸️). In a repo with `open_pr_as = "draft"`, a ready draft is 👀, and once you open it the PR is ⏳ until its head is approved and 🔀 after. `worker-states.md` lists every state, its emoji, and what dispatch does in it.
 _Avoid_: status icon, status
 
+**Workspace**:
+The host's place showing a worker's tree: a herdr TUI workspace, or a Herdr app space whose id dispatch derives from the tree. The first word of its name is the workspace emoji.
+_Avoid_: space (the app's word, kept inside the app adapter), window
+
+**Worker label**:
+A `dispatch.*` key=value pair on a worker's terminal under the app host (`dispatch.tree`, `.session`). The app host's record of whose worker the terminal is. It is distinct from the workspace and tab labels the loop renames (the workspace emoji), and from **Unknown**, which is a fact whose read failed, not the agent status `unknown`.
+_Avoid_: tag, metadata
+
 **Worker**:
-The ticket's place on a tree it holds: the tree, the herdr workspace showing that tree, and the harness session running there now, if any. Only a session of a harness dispatch has an adapter for counts; an agent of another kind a person opened in the workspace, such as a Pi, is ignored. Sessions come and go inside it: a relaunch keeps the same worker with a new session, and the worker lasts as long as the ticket holds the tree. A ticket that holds trees in two repos has a worker on each. The worker's state is its session's: `working`, `idle`, `blocked`, or `none` when no session runs there. Looking up a ticket that holds no tree also answers `none`, though there is no worker. Some messages use "worker" for the session: "has no worker" and "gone" mean the state `none`, and "a worker is running" means a session runs there.
+The ticket's place on a tree it holds: the tree, the workspace showing that tree, and the harness session running there now, if any. Only a session of a harness dispatch has an adapter for counts; an agent of another kind a person opened in the workspace, such as a Pi, is ignored. Sessions come and go inside it: a relaunch keeps the same worker with a new session, and the worker lasts as long as the ticket holds the tree. A ticket that holds trees in two repos has a worker on each. The worker's state is its session's: `working`, `idle`, `blocked`, or `none` when no session runs there. Looking up a ticket that holds no tree also answers `none`, though there is no worker. Some messages use "worker" for the session: "has no worker" and "gone" mean the state `none`, and "a worker is running" means a session runs there.
 _Avoid_: agent (herdr's word for any terminal agent, kept inside the herdr adapter; dispatch's word is harness), runner, executor, session (a session is one harness run inside the worker)
 
 **Tree**:
@@ -133,11 +145,11 @@ A `[harness.<name>]` table in `config.toml`, named everywhere as `harness.<name>
 _Avoid_: profile, role (a role is only which of `worker` / `design` a ticket's launch reads)
 
 **Program** (herdr):
-What herdr runs in a worker's new tab, as a harness describes it: a name for messages, the herdr agent kind, arguments, directories put ahead of PATH, tab environment, and the startup screens (dialogs to answer, the unrun launch command, the ready input box).
+What herdr runs in a worker's new tab, as a harness describes it: a name for messages, the herdr agent kind, arguments, directories put ahead of PATH, tab environment, and the startup screens (dialogs to answer, the unrun launch command, the ready input box) and the session id the launch chose, which each adapter passes with the harness's session flag (Claude: `--session-id`).
 _Avoid_: command line, launch spec
 
 **Launch**:
-A launch leases a tree for the ticket, creates the ticket's branch (at another ticket's PR head for a stacked launch), opens a herdr workspace, starts the harness and types the kickoff. A relaunch is a launch on a tree the ticket already holds. The launcher is the code that does it, run by the executor or by `dispatch launch`.
+A launch leases a tree for the ticket, creates the ticket's branch (at another ticket's PR head for a stacked launch), opens a workspace, starts the harness and types the kickoff. A relaunch is a launch on a tree the ticket already holds. The launcher is the code that does it, run by the executor or by `dispatch launch`.
 _Avoid_: spawn, start (starting the harness is one step of a launch)
 
 **Kickoff**:
@@ -169,11 +181,11 @@ Text dispatch types into a worker's pane, such as the PR nudge or a `dispatch te
 _Avoid_: notification (that goes to you), prompt
 
 **Close**:
-Closing a worker's herdr workspace, which ends its session and keeps its tree, so a relaunch can start a new session in the same worker.
+Closing a worker's workspace, which ends its session and keeps its tree, so a relaunch can start a new session in the same worker.
 _Avoid_: kill, stop (a Stop is a turn ending)
 
 **Return**:
-Giving a tree back to its treehouse pool. dispatch closes the herdr workspace on the tree, deletes its untracked files, and returns it only when it has no uncommitted changes, no commits that no remote has, and nothing untracked left after the deletion (git clean skips a nested repository, which a return would discard). Otherwise it keeps the tree, and the refusal's detail says why. After the return it deletes the tree's Stop records (keeping the time of the return, so a Stop that ended by then is ignored even when it is reported later), session logs and kickoff record.
+Giving a tree back to its treehouse pool. dispatch closes the workspace on the tree, deletes its untracked files, and returns it only when it has no uncommitted changes, no commits that no remote has, and nothing untracked left after the deletion (git clean skips a nested repository, which a return would discard). Otherwise it keeps the tree, and the refusal's detail says why. After the return it deletes the tree's Stop records (keeping the time of the return, so a Stop that ended by then is ignored even when it is reported later), session logs and kickoff record.
 _Avoid_: free, delete (the untracked files are deleted, the tree is not)
 
 **Action**:

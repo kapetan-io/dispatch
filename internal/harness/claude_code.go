@@ -40,6 +40,9 @@ func (ClaudeCode) Program(s Start) herdr.Program {
 		AgentKind: "claude",
 		Argv:      argv,
 		PathFirst: []string{filepath.Join(s.PluginRoot, "scripts", "shims")},
+		// Not in ClaudeCodeFlags, so the restart shim never reuses an old id.
+		Session:     s.Session,
+		SessionFlag: "--session-id",
 		Startup: herdr.Startup{
 			Answers: []herdr.Answer{
 				// One-time bypass-permissions consent. Match the option text, never
@@ -177,7 +180,7 @@ func (f Flag) Has(args []string) bool {
 }
 
 // ClaudeCodeFlags are the flags dispatch gives a Claude Code session besides its
-// model. The restart shim adds the same list, since herdr restarts a worker with a
+// model and its --session-id. The restart shim adds the same list, since herdr restarts a worker with a
 // bare `claude --resume`. Never add --name: Claude draws the name below an open
 // question, and herdr then misses the question.
 func ClaudeCodeFlags(pluginRoot string) []Flag {

@@ -1,6 +1,6 @@
 # Worker states
 
-Each worker's herdr workspace is labeled `<emoji> <ticket>`, and the emoji says who the ticket is waiting on. This page is the one place that lists every state a worker can be in, the emoji it shows, and what dispatch does about it: whether it nudges the worker, notifies you or escalates the ticket. Read it when you use dispatch, and before you change a rule that nudges, notifies or escalates.
+Each worker's workspace is labeled `<emoji> <ticket>`, and the emoji says who the ticket is waiting on. This page is the one place that lists every state a worker can be in, the emoji it shows, and what dispatch does about it: whether it nudges the worker, notifies you or escalates the ticket. Read it when you use dispatch, and before you change a rule that nudges, notifies or escalates.
 
 ## The emoji
 

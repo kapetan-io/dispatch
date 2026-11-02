@@ -77,7 +77,7 @@ func (h *Herdr) StartWorker(ctx context.Context, w herdr.Worker) (herdr.Started,
 	for i := 1; slices.Contains(h.agentNames(), name); i++ {
 		name = fmt.Sprintf("%s-r%d", w.Name, i)
 	}
-	h.agents = append(h.agents, herdr.Agent{Kind: w.Program.AgentKind, Status: "idle", PaneID: pane, TabID: tab, WorkspaceID: w.Workspace})
+	h.agents = append(h.agents, herdr.Agent{Kind: w.Program.AgentKind, Status: "idle", PaneID: pane, TabID: tab, WorkspaceID: w.Workspace, Session: w.Program.Session})
 	h.names[pane] = name
 	h.workers = append(h.workers, w)
 	return herdr.Started{Pane: pane, Agent: name}, nil
