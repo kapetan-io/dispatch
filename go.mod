@@ -7,6 +7,7 @@ require (
 	github.com/evanw/esbuild v0.28.2
 	github.com/grafana/sobek v0.0.0-20261014141730-681dacdd9a92
 	github.com/stretchr/testify v1.12.1
+	go.etcd.io/bbolt v1.4.0
 )
 
 require (
@@ -14,6 +15,6 @@ require (
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8 // indirect
+	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )

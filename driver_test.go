@@ -1502,7 +1502,7 @@ func (d *Dispatch) startLoop(extra dispatch.Options) error {
 			return err
 		default:
 		}
-		if resp, err := loop.Ask(ctx, d.state, loop.Request{Op: loop.OpIdle}); err == nil && !resp.Busy {
+		if resp, err := loop.Ask(ctx, d.state, loop.Request{Op: loop.OpIdle}); err == nil && resp.Error == "" && !resp.Busy { // an error reply is a loop that failed to start
 			d.running = r
 			d.loopUp.Store(true)
 			return nil

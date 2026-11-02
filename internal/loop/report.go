@@ -70,6 +70,8 @@ func (l *Loop) onRequest(r request) error {
 		l.readAgain(world.FromLocal)
 	case OpTyped:
 		r.reply <- l.onTyped(r.Typed)
+	case OpTicket:
+		r.reply <- l.onTicket(r.Call)
 	case OpWatch, OpUnwatch:
 		r.reply <- l.onFollow(r)
 	default:

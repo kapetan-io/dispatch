@@ -67,6 +67,7 @@ type Plugins struct {
 	GitHub    GitHub    `toml:"github"`
 	Treehouse Treehouse `toml:"treehouse"`
 	Notify    Notify    `toml:"notify"`
+	Local     Local     `toml:"local"`
 }
 
 // Hosts that can run the workers.
@@ -92,6 +93,15 @@ type Treehouse struct{}
 
 // Notify is the notify plugin's table. It has no settings yet.
 type Notify struct{}
+
+// Local is the local tickets plugin's table. Writing the table turns local tickets on.
+type Local struct {
+	// On is true when config.toml has a [plugins.local] table, empty or not.
+	On bool `toml:"-" ctx:"-"`
+	// Path is the database file. Unset means tickets.db in the state directory. ctx.config leaves
+	// it out, since no rule needs to know where the file is.
+	Path string `toml:"path" ctx:"-"`
+}
 
 // HTTPService is a service named for rules to call through ctx.http.
 type HTTPService struct {
@@ -247,6 +257,8 @@ func parse(text, path string, env environment.Environment, kinds []string, check
 	if err := c.check(kinds); err != nil {
 		return Config{}, fmt.Errorf("while reading config %s: %w", path, err)
 	}
+	c.Plugins.Local.On = meta.IsDefined("plugins", "local")
+	c.Plugins.Local.Path = env.ExpandHome(c.Plugins.Local.Path)
 	c.Plugins.Herdr.PluginRoot = env.ExpandHome(c.Plugins.Herdr.PluginRoot)
 	c.Dispatch.Rules = env.ExpandHome(c.Dispatch.Rules)
 	c.History.Dir = env.ExpandHome(c.History.Dir)

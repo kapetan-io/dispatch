@@ -44,7 +44,7 @@ func schemaOf(t reflect.Type) map[string]any {
 		var required []string
 		for i := range t.NumField() {
 			name, _, _ := strings.Cut(t.Field(i).Tag.Get("toml"), ",")
-			if name == "" {
+			if name == "" || name == "-" {
 				continue
 			}
 			props[name] = schemaOf(t.Field(i).Type)

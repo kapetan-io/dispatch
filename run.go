@@ -17,6 +17,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/localticket"
 	"github.com/kapetan-io/dispatch/internal/lock"
 	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/kapetan-io/dispatch/internal/rules"
@@ -125,6 +126,13 @@ func runCommand(ctx context.Context, opts Options) error {
 	}
 	services := servicesFor(opts, cfg)
 	sent := &typed.Log{}
+	var local *localticket.Options
+	if cfg.Plugins.Local.On {
+		local = &localticket.Options{Path: cfg.Plugins.Local.Path, Repos: cfg.Repos.Labels(), LockTimeout: opts.LocalLockTimeout}
+		if local.Path == "" {
+			local.Path = filepath.Join(opts.StateDir, "tickets.db")
+		}
+	}
 	exec := executor.New(executor.Env{
 		Config: cfg, Linear: func() linear.Workspace { return lin }, Herdr: opts.Herdr, Treehouse: opts.Treehouse,
 		PullRequests: opts.PullRequests, Launcher: launcherFor(opts, cfg.Plugins.Herdr.PluginRoot, nil, sent), Harnesses: opts.Harnesses, Alerts: opts.Alerts,
@@ -133,9 +141,9 @@ func runCommand(ctx context.Context, opts Options) error {
 	})
 	return loop.New(loop.Options{
 		Config: cfg, ConfigText: string(text), StateDir: opts.StateDir, Rules: loaded, Clock: opts.Clock,
-		Sources:  sources(opts, lin, loaded),
+		Sources:  sources(opts, cfg, lin, loaded),
 		Executor: exec, Typed: sent, HTTP: services, Herdr: opts.Herdr, Alerts: opts.Alerts, Usage: lin.Usage,
-		Viewer: viewer.Name, Out: opts.Stdout, Err: opts.Stderr,
+		Viewer: viewer.Name, Out: opts.Stdout, Err: opts.Stderr, Local: local,
 	}).Run(ctx)
 }
 

@@ -376,6 +376,19 @@ func TestTicketHintNamesTheSkillInAManagedRepo(t *testing.T) {
 	assert.Contains(t, d.hintFrom(clone), ticketHint)
 }
 
+func TestTicketHintNamesLocalTicketsOnlyWhenThePluginIsOn(t *testing.T) {
+	t.Parallel()
+	clone := newHintRepo(t)
+	repo := "[repos.dispatch]\npath = \"" + clone + "\"\n"
+	linearOnly := newDispatch(t, dispatchOptions{OwnRepos: true, Config: repo})
+	withLocal := newDispatch(t, dispatchOptions{OwnRepos: true, Config: "[plugins.local]\n\n" + repo})
+
+	assert.NotContains(t, linearOnly.hintFrom(clone), "LOC-")
+	assert.NotContains(t, linearOnly.hintFrom(clone), "dispatch ticket")
+	assert.Contains(t, withLocal.hintFrom(clone), ticketHint)
+	assert.Contains(t, withLocal.hintFrom(clone), "`dispatch ticket create`")
+}
+
 func TestTicketHintNamesTheSkillInAWorktreeOfAManagedRepo(t *testing.T) {
 	t.Parallel()
 	clone := newHintRepo(t)
@@ -825,6 +838,8 @@ func TestDocConfigReferenceListsEveryKeyAtItsDefault(t *testing.T) {
 		ApprovalChecks:       []string{},
 	}, got.Repos["dispatch"])
 	got.Repos, want.Repos = nil, nil
+	// Writing [plugins.local] is what turns local tickets on, so On differs from the no-file default.
+	got.Plugins.Local.On = false
 	assert.Equal(t, want, got)
 
 	var decoded config.Config
@@ -851,6 +866,9 @@ func settingKeys(typ reflect.Type, prefix string) []string {
 	for i := range typ.NumField() {
 		field := typ.Field(i)
 		tag, _, _ := strings.Cut(field.Tag.Get("toml"), ",")
+		if tag == "-" {
+			continue
+		}
 		name := prefix + tag
 		if field.Type.Kind() == reflect.Struct {
 			keys = append(keys, settingKeys(field.Type, name+".")...)

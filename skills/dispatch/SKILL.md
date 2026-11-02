@@ -25,9 +25,10 @@ Load `dispatch:converse` with the Skill tool first.
 
 Run `dispatch watch <ticket>` only when the user asks you to follow it, or says yes when you offer. `dispatch:autobots` follows the pieces of its feature without asking. After moving a ticket to In Progress or taking over one whose worker is running, you may offer to review its PR. A yes means follow the ticket and review the PR when it is ready. Check that it printed `watching <ticket>`. The dispatcher then sends that ticket's events here as messages. If you watched a ticket, run `dispatch unwatch <ticket>` once its PR merges or the ticket closes. `dispatch:autobots` does the same for the pieces it merges. If watching fails, say so and carry on, since events then arrive only as notifications.
 
+- A ticket whose id starts with `LOC-` is a local ticket. Read and change it with `dispatch ticket show|list|move|comment|edit`, not the Linear tools. Moving one to In Progress starts no worker yet. A comment's author is the ticket whose tree the command runs in, else `you`. These commands exit 3 while `dispatch run` is stopped, and exit 1 saying local tickets are off when config.toml has no `[plugins.local]` table.
 - After a ticket moves, whether you or the user moved it, run `dispatch tick`.
 - After posting review findings on a worker's PR, run `dispatch tick` so the nudge reaches the worker now instead of at the next resync.
-- Before moving a ticket, read its status from Linear, not from memory. A merged PR has already moved its ticket to Done, so ask the user before moving a ticket out of Done.
+- Before moving a ticket, read its status from Linear (or `dispatch ticket show` for a local ticket), not from memory. A merged PR has already moved its ticket to Done, so ask the user before moving a ticket out of Done.
 - To type into a worker by hand, run `dispatch tell <ticket> "<text>"`. It fails when the worker's Claude session is blocked on a question popup or gone.
 
 ### Breaking down and starting work

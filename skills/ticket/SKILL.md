@@ -1,11 +1,22 @@
 ---
 name: ticket
-description: Use when creating or rewriting a Linear ticket in a repo dispatch manages, whether asked or filing one yourself. Sets labels, assignee, status and body so dispatch picks the ticket up, and starts the design skill instead of a build for a `design` ticket.
+description: Use when creating or rewriting a Linear ticket, or a local ticket when `[plugins.local]` is on, in a repo dispatch manages, whether asked or filing one yourself. Sets labels, assignee, status and body so dispatch picks the ticket up, and starts the design skill instead of a build for a `design` ticket.
 ---
 
 # Write a dispatch ticket
 
 The dispatcher manages only tickets assigned to the owner of its Linear API key that carry the AI label, and it starts a worker only after the user moves the ticket to In Progress. A ticket written any other way is ignored or started without approval. The body is read by a worker with no memory of this conversation, and by the user, who may not have seen the code in weeks.
+
+## Local tickets
+
+When config.toml has a `[plugins.local]` table, a ticket can be kept in dispatch's own database instead of Linear. File one only when the user asks for a local ticket. Everything else is a Linear ticket, written as below.
+
+```console
+$ dispatch ticket create --repo dispatch --title "Retry webhooks on 502" --label backend --attr area=webhooks --description "…"
+LOC-7
+```
+
+`--repo` is a `[repos.<label>]` name. A local ticket needs no AI label, assignee or paused status, so skip the Fields rules for those, `dispatch linear-viewer` and the checklist at the end. It starts in the status with the `todo` job unless `--status` names another, and dispatch starts no worker on it yet. Write the description in the body sections below. `--attr key=value` sets an attribute, a searchable pair beside the labels. `--parent` and `--blocked-by` take `LOC-` ids only. `dispatch ticket statuses` lists the statuses. `dispatch run` must be running, or the command exits 3 with `dispatch: not running`.
 
 ## Read the config first
 

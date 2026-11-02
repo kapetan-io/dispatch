@@ -99,6 +99,9 @@ type Options struct {
 	// RuleTimeout cuts off a rule call on Clock. Zero means 1 second for
 	// an if and 30 seconds for a then.
 	RuleTimeout RuleTimeout
+	// LocalLockTimeout is how long `dispatch run` waits for a local ticket database another process
+	// holds. Defaults to 5 seconds.
+	LocalLockTimeout time.Duration
 	// LaunchTimeout is how long a launch may take before it is given up on, 25 seconds by default,
 	// and ActionTimeout how long every other action may take, 1 minute by default.
 	LaunchTimeout, ActionTimeout time.Duration
@@ -117,6 +120,7 @@ const usage = `usage: dispatch run
        dispatch replay [--from TIME] [--to TIME] [--rules DIR]
        dispatch state reset [--quiet]
        dispatch tell <ticket> "<text>"
+       dispatch ticket create|show|list|move|comment|edit|statuses
        dispatch rules init|check|test [dir]
        dispatch ticket-hint
        dispatch repo-settings
@@ -152,6 +156,22 @@ const usage = `usage: dispatch run
                Exits 1 while dispatch run holds the lock
   tell         type text into the ticket's worker through the running loop; fails when the worker's Claude
                session is blocked or gone
+  ticket       file, read and change local tickets (LOC-<n>), kept in a database that only dispatch run opens
+               and that [plugins.local] turns on. Talks to the running dispatch run, and exits 3 with
+               "dispatch: not running" when none runs. It works on local tickets only; Linear tickets use
+               the Linear tools. There is no delete.
+                 create --repo LABEL --title TEXT [--description TEXT] [--label NAME]... [--attr KEY=VALUE]...
+                        [--status NAME] [--parent LOC-N] [--blocked-by LOC-N]... [--start-pr NUMBER]
+                        prints the new id. --start-pr is stored and shown, and does nothing yet
+                 show LOC-N         print the ticket's fields, description and every comment with its author and time
+                 list [--status NAME] [--label NAME]... [--attr KEY=VALUE]... [--all]
+                        one line per ticket, newest first; without --all, finished tickets are left out
+                 move LOC-N STATUS  move to the status named STATUS, ignoring case
+                 comment LOC-N TEXT add a comment; its author is the ticket whose tree the command runs in, else you
+                 edit LOC-N [--title TEXT] [--description TEXT] [--repo LABEL] [--add-label NAME]...
+                        [--remove-label NAME]... [--attr KEY=VALUE]... [--unset-attr KEY]... [--parent LOC-N|""]
+                        [--blocked-by LOC-N|""]... [--start-pr NUMBER]  changes only what it names; --start-pr 0 clears
+                 statuses           list the statuses and the jobs each does
   rules        init writes the shipped TypeScript rules, check lints them and prints what each wants
                now, and test runs their *.test.ts scenarios
   ticket-hint  print a reminder to use the dispatch:ticket skill when run in a repo listed under
@@ -218,6 +238,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 			return errors.New(`tell takes a ticket and the text to type`)
 		}
 		return tellCommand(ctx, opts, args[1], args[2])
+	case "ticket":
+		return ticketCommand(ctx, opts, args[1:])
 	case "ticket-hint":
 		return ticketHint(ctx, opts)
 	case "repo-settings":
@@ -409,11 +431,12 @@ func loadConfig(opts Options) (config.Config, error) {
 
 // sources are the tools one read goes through. The inbox is wired only while a loaded rule runs
 // over it, so an owner with no inbox rule makes no gh call for it and a failing gh login costs them nothing.
-func sources(opts Options, lin linear.Workspace, loaded *rules.Rules) world.Sources {
+func sources(opts Options, cfg config.Config, lin linear.Workspace, loaded *rules.Rules) world.Sources {
 	src := world.Sources{
 		Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
 		Env: opts.Env, StateDir: opts.StateDir, Stderr: opts.Stderr,
 	}
+	src.LocalOn = cfg.Plugins.Local.On
 	if loaded.RunsOver("inbox") {
 		src.Inbox = opts.Inbox
 	}
