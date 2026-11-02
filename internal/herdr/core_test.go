@@ -942,3 +942,57 @@ func TestCoreKickoffConfirmsAKickoffWhoseTurnWentUpEvenIfTheWorkerReadsIdle(t *t
 	assert.Empty(t, calls.Params(t, "terminal.keys"))
 	assert.Len(t, calls.Params(t, "terminal.send"), 1)
 }
+
+func TestCoreKickoffCountsAKickoffThatRanToDoneWithoutPressingEnter(t *testing.T) {
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.get": {
+			ok(term(worker("t1", "spA", "tbA", "idle"))),
+			ok(term(worker("t1", "spA", "tbA", "done"))),
+		},
+		"terminal.send": {ok(`{"turn":0,"started":null}`)},
+		"terminal.read": {ok(`{"text":"❯ /dispatch:build ENG-1","complete":true,"how":"screen"}`)},
+	})
+
+	require.NoError(t, core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup))
+
+	assert.Empty(t, calls.Params(t, "terminal.keys"))
+	assert.Len(t, calls.Params(t, "terminal.send"), 1)
+}
+
+func TestCoreKickoffLooksForTheTypedTextInHistoryAboveTheScreen(t *testing.T) {
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.get":  {ok(term(worker("t1", "spA", "tbA", "idle")))},
+		"terminal.send": {ok(`{"turn":0,"started":null}`)},
+		"terminal.read": {ok(`{"text":"nothing","complete":true,"how":"screen"}`)},
+	})
+
+	err := core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup)
+
+	require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
+	reads := calls.Params(t, "terminal.read")
+	require.NotEmpty(t, reads)
+	assert.EqualValues(t, 30, reads[0]["lines"])
+}
+
+func TestCoreKickoffConfirmsADoneWorkerWhoseTurnWentUpAfterEnter(t *testing.T) {
+	stuck := ok(term(worker("t1", "spA", "tbA", "done")))
+	ran := worker("t1", "spA", "tbA", "idle")
+	ran.turn = 2
+	gets := []string{}
+	// One read finds the input box and fifteen wait for the status to move.
+	for range 16 {
+		gets = append(gets, stuck)
+	}
+	gets = append(gets, ok(term(ran)))
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.get":  gets,
+		"terminal.send": {ok(`{"turn":1,"started":null}`)},
+		"terminal.read": {ok(`{"text":"❯ /dispatch:build ENG-1","complete":true,"how":"screen"}`)},
+		"terminal.keys": {ok(`{"turn":1}`)},
+	})
+
+	require.NoError(t, core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup))
+
+	assert.Len(t, calls.Params(t, "terminal.send"), 1)
+	assert.Len(t, calls.Params(t, "terminal.keys"), 1)
+}
