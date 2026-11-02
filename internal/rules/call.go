@@ -13,6 +13,7 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/ledger"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 // maxOnceItems bounds a once key, which is a topic and a few world values.
@@ -22,27 +23,31 @@ const maxOnceItems = 32
 type queued struct {
 	id   int
 	spec ActionSpec
-	// subject is the record the action is about. It is nil for a post, whose subject is a service.
+	// subject is the record the action is about. It is nil for a post and a create, whose subject is a name.
 	subject *record
 	args    map[string]any
 	once    ledger.Once
 	opts    map[string]any
-	// service is the [http.<name>] a post goes to.
-	service string
+	// named is the subject of an action about a name and not a record: the [http.<name>] a post goes to,
+	// or the ticket system a create files in.
+	named string
 }
 
-// subjectID is what the ledger keys the action by: the ticket, or the service of a post.
+// subjectID is what the ledger keys the action by: the ticket, the service of a post, or the system of a create.
 func (q *queued) subjectID() string {
 	if q.subject == nil {
-		return q.service
+		return q.named
 	}
 	return q.subject.subject
 }
 
 // recordName names what the action is about in dispatch cycle.
 func (q *queued) recordName() string {
+	if q.subject == nil && q.spec.Receipt == "create" {
+		return "ticket.system/" + q.named
+	}
 	if q.subject == nil {
-		return "http.service/" + q.service
+		return "http.service/" + q.named
 	}
 	return q.subject.String()
 }
@@ -63,6 +68,8 @@ type call struct {
 	reads   []string
 	// exchanges lists the responses a then waited on, and the requests that got none.
 	exchanges []Exchange
+	// searches lists the local ticket searches a then ran.
+	searches []Search
 	// deadline is when the call's time budget ends, which bounds an HTTP request.
 	deadline time.Time
 	// timeouts carries the clock the budget runs on, and rule names the rule being called.
@@ -455,19 +462,31 @@ func (c *call) queueFn(spec ActionSpec) func(sobek.FunctionCall) sobek.Value {
 		q := &queued{id: len(c.queue), spec: spec, args: map[string]any{}, opts: map[string]any{}}
 		if spec.Plugin == "http" {
 			c.checkRequest("ctx.http."+spec.Method, call.Argument(0), call.Argument(1))
-			q.service = call.Argument(0).String()
+			q.named = call.Argument(0).String()
+		} else if spec.Receipt == "create" {
+			q.named = c.localSystem(spec.Method, call.Argument(0))
 		} else {
 			subjectKinds := map[string][]string{
 				"Ticket": {"ticket"}, "Worker": {"worker"}, "PR": {"pr"}, "Tree": {"tree"},
 			}[spec.Subject.TS]
 			q.subject = c.recordArg(call.Argument(0), subjectKinds...)
+			if spec.Receipt == "edit" && q.subject.v.Interface().(*Ticket).System.Value != ticket.SystemLocal {
+				c.throwError("%s: %s is a %s ticket, and only a local ticket can be edited", spec.Method, q.subject.subject, q.subject.v.Interface().(*Ticket).System.Value)
+			}
 		}
 		for i, p := range spec.Params {
 			v := call.Argument(i + 1)
 			if sobek.IsUndefined(v) || sobek.IsNull(v) {
 				c.throwError("%s needs %s", spec.Method, p.Name)
 			}
-			q.args[p.Name] = v.Export()
+			switch p.TS {
+			case "TicketDraft":
+				q.args[p.Name] = c.ticketFields(spec.Method, p.Name, v, draftFields)
+			case "TicketChanges":
+				q.args[p.Name] = c.ticketFields(spec.Method, p.Name, v, changeFields)
+			default:
+				q.args[p.Name] = v.Export()
+			}
 		}
 		opts, ok := call.Argument(len(spec.Params) + 1).(*sobek.Object)
 		if !ok {
@@ -552,6 +571,7 @@ func (c *call) ticketAPI() *sobek.Object {
 		c.read("blockers", len(b.read))
 		return blockerList(b.read)
 	})
+	_ = o.Set("search", c.search)
 	_ = o.Set("blockersRead", func(call sobek.FunctionCall) sobek.Value {
 		return blockerList(s.blockers[ticket(call.Argument(0)).id].read)
 	})

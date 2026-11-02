@@ -194,7 +194,7 @@ Giving a tree back to its treehouse pool. dispatch closes the workspace on the t
 _Avoid_: free, delete (the untracked files are deleted, the tree is not)
 
 **Action**:
-One thing a cycle wants done, such as a launch, nudge, move or merge, named by the name its receipts carry, in rules and rule scenarios too, and carried out by the executor. A nudge, notify, comment or post is not safe to retry: when its outcome is lost it may already have gone out, so it counts as sent and never runs again.
+One thing a cycle wants done, such as a launch, nudge, move or merge, named by the name its receipts carry, in rules and rule scenarios too, and carried out by the executor. A nudge, notify, comment, post or create is not safe to retry: when its outcome is lost it may already have gone out, so it counts as sent and never runs again.
 _Avoid_: task, job, and the tool-named spelling such as `herdr.launch` (from before ADR 0003; a receipt's `kind` field holds the action's name and keeps its field name)
 
 **Notification**:

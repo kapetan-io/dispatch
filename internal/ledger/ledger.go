@@ -176,7 +176,7 @@ func (l *Ledger) Unfinished(subject string) bool {
 	})
 }
 
-// Keep drops the receipts of subjects that keep rejects.
-func (l *Ledger) Keep(keep func(subject string) bool) {
-	l.Entries = slices.DeleteFunc(l.Entries, func(r Receipt) bool { return !keep(r.Subject) })
+// Keep drops the receipts that keep rejects.
+func (l *Ledger) Keep(keep func(Receipt) bool) {
+	l.Entries = slices.DeleteFunc(l.Entries, func(r Receipt) bool { return !keep(r) })
 }

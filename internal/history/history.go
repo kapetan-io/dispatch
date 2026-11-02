@@ -162,6 +162,8 @@ type Cycle struct {
 	// Reads maps "rule/subject" or "exemption/subject" to what it read.
 	Reads map[string][]string    `json:"reads,omitempty"`
 	HTTP  []httpservice.Exchange `json:"http,omitempty"`
+	// Searches lists the local ticket searches the cycle ran and what each found, so a replay answers them without the database.
+	Searches []rules.Search `json:"searches,omitempty"`
 }
 
 // Receipt is a receipt line. An attempted action has no outcome.
@@ -550,6 +552,7 @@ func CycleLine(now int64, why string, res rules.Result) Cycle {
 		c.Reads[t.Rule+"/"+t.Subject] = res.Reads[t.Rule+"/"+t.Subject]
 	}
 	c.HTTP = res.HTTP
+	c.Searches = res.Searches
 	if len(c.Reads) == 0 {
 		c.Reads = nil
 	}

@@ -34,7 +34,7 @@ func (q *queued) takesSlot() bool {
 }
 
 // Actions lists every action a rule can queue. Adding one also takes a subject
-// kind in queueFn (call.go), unless its subject is a name and not a record, as a post's is, and, for a new plugin, a case in ctxPlugins (declarations.go)
+// kind in queueFn (call.go), unless its subject is a name and not a record, as a post's and a create's are, and, for a new plugin, a case in ctxPlugins (declarations.go)
 // and in ctx (call.go); the generated declarations then follow from this table.
 var Actions = []ActionSpec{
 	{Plugin: "ticket", Method: "queueMove", Receipt: "move", Subject: Param{"t", "Ticket"},
@@ -43,6 +43,11 @@ var Actions = []ActionSpec{
 		Params: []Param{{"text", "string"}}},
 	{Plugin: "ticket", Method: "queueEscalate", Receipt: "escalate", Subject: Param{"t", "Ticket"},
 		Params: []Param{{"why", "string"}}},
+	// The subject of a create is the ticket system it files in, a name and not a record.
+	{Plugin: "ticket", Method: "queueCreate", Receipt: "create", Subject: Param{"system", `"local"`},
+		Params: []Param{{"draft", "TicketDraft"}}},
+	{Plugin: "ticket", Method: "queueEdit", Receipt: "edit", Subject: Param{"t", "Ticket"},
+		Params: []Param{{"changes", "TicketChanges"}}},
 	{Plugin: "worker", Method: "queueLaunch", Receipt: "launch", Subject: Param{"t", "Ticket"},
 		Options: "harness?: string; model?: string; kickoff?: string; uncapped?: boolean; stackOn?: PR", Capped: true},
 	{Plugin: "worker", Method: "queueNudge", Receipt: "nudge", Subject: Param{"t", "Ticket"},

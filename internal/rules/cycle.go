@@ -100,6 +100,8 @@ type Result struct {
 	Reads map[string][]string
 	// HTTP lists the requests a then waited on and what each got, which a replay can read instead of calling the service.
 	HTTP []Exchange
+	// Searches lists the local ticket searches a then ran and what each found, which a replay can read instead of the database.
+	Searches []Search
 }
 
 // WantsFor returns the actions wanted by rule.
@@ -360,6 +362,10 @@ func (r *Rules) evaluate(res *Result, state *State, def *ruleDef, rec *record, e
 	for _, ex := range c.exchanges {
 		ex.Rule, ex.Ticket = def.name, subject
 		res.HTTP = append(res.HTTP, ex)
+	}
+	for _, search := range c.searches {
+		search.Rule, search.Subject = def.name, subject
+		res.Searches = append(res.Searches, search)
 	}
 	if out := r.verdict(res, c, def, recordName, subject, verdict, key); out != nil {
 		return nil

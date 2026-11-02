@@ -701,3 +701,31 @@ func (s *scenario) stamped(state *State) {
 		}
 	}
 }
+
+// fixtureSearch answers a search from every local ticket the scenario holds, finished ones included.
+func (s *scenario) fixtureSearch() ticket.Searcher {
+	m := s.model()
+	statuses := ticket.DefaultStatuses()
+	var tickets []ticket.Ticket
+	for _, id := range m.order {
+		if ticket.SystemOf(id) == ticket.SystemLocal {
+			tickets = append(tickets, *m.tickets[id])
+		}
+	}
+	return fixtureTickets{statuses: statuses, tickets: tickets}
+}
+
+type fixtureTickets struct {
+	statuses ticket.Statuses
+	tickets  []ticket.Ticket
+}
+
+func (f fixtureTickets) Search(q ticket.Query) ([]ticket.Found, error) {
+	out := []ticket.Found{}
+	for _, t := range f.tickets {
+		if q.Match(f.statuses, t) {
+			out = append(out, ticket.FoundFrom(f.statuses, t))
+		}
+	}
+	return out, nil
+}

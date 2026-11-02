@@ -495,10 +495,11 @@ func (l *Loop) rotate() error {
 		}
 	}
 	if l.wd.LinearErr == nil && l.wd.LocalErr == nil && l.wd.HoldersErr == nil && len(l.wd.PoolErrs) == 0 {
-		// A post's receipt is keyed by its service, which no ticket or tree makes live.
-		l.led.Keep(func(subject string) bool {
-			_, service := l.o.Config.HTTP[subject]
-			return live[subject] || service || l.flightFor(subject) || l.led.Unfinished(subject)
+		// A post's receipt is keyed by its service, which no ticket or tree makes live. A create's is keyed by
+		// "local", which is never live, so it drops and the rule's own search decides again.
+		l.led.Keep(func(rc ledger.Receipt) bool {
+			_, service := l.o.Config.HTTP[rc.Subject]
+			return live[rc.Subject] || service && rc.Kind == "post" || l.flightFor(rc.Subject) || l.led.Unfinished(rc.Subject)
 		})
 	}
 	next, err := history.Start(l.o.Config.History.Dir, at, l.header("rotate", at),
@@ -643,6 +644,10 @@ func (l *Loop) cycle(why string) error {
 	l.wd.At = time.UnixMilli(now)
 	state := rules.FromWorld(l.wd, l.o.Config, l.led, l.o.Viewer)
 	state.HTTP = l.o.HTTP
+	// A nil *Store assigned directly would make state.Search a non-nil interface.
+	if l.local != nil {
+		state.Search = l.local
+	}
 	if l.kept == nil {
 		l.kept = map[string]rules.Exchange{}
 	}

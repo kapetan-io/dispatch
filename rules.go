@@ -195,6 +195,9 @@ func rulesCheck(ctx context.Context, opts Options, arg string) error {
 	// A check acts on nothing, and a token_command can prompt to unlock a password manager,
 	// so it calls only services a caller gave it. A get otherwise reads as an unknown.
 	state.HTTP = opts.HTTP
+	if snap != nil {
+		state.Search = snap
+	}
 	result := loaded.Cycle(state, nil)
 
 	printCheck(opts, cfg, state, loaded, result)

@@ -144,3 +144,23 @@ func (s *Store) record(n uint64, t stored) ticket.Ticket {
 	}
 	return out
 }
+
+// Search returns the tickets q selects, every status included, oldest first.
+func (l Listing) Search(q ticket.Query) ([]ticket.Found, error) {
+	out := []ticket.Found{}
+	for _, t := range l.Tickets {
+		if q.Match(l.Table, t) {
+			out = append(out, ticket.FoundFrom(l.Table, t))
+		}
+	}
+	return out, nil
+}
+
+// Search returns the tickets q selects, every status included, oldest first.
+func (s *Store) Search(q ticket.Query) ([]ticket.Found, error) {
+	snap, err := s.Listing()
+	if err != nil {
+		return nil, err
+	}
+	return snap.Search(q)
+}

@@ -16,6 +16,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/rules"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -275,9 +276,12 @@ func (st *segmentReplay) run(g cycleRecord, o Options, res *Replayed, torn bool)
 		want, st.lastCycle = g.cycle, g.cycle
 	}
 	var answers *recordedServices
+	var found *recordedSearches
 	if want != nil {
 		answers = &recordedServices{recorded: want.HTTP}
 		state.HTTP = answers
+		found = &recordedSearches{recorded: want.Searches}
+		state.Search = found
 	}
 	for _, subject := range st.read.Reserved {
 		state.Reserve(subject)
@@ -302,6 +306,10 @@ func (st *segmentReplay) run(g cycleRecord, o Options, res *Replayed, torn bool)
 			return nil
 		}
 		if recorded, replayed, differs := answers.differences(*want); differs {
+			res.Difference = fmt.Sprintf("difference at %s\n  recorded: %s\n  replayed: %s", at, recorded, replayed)
+			return nil
+		}
+		if recorded, replayed, differs := found.differences(*want); differs {
 			res.Difference = fmt.Sprintf("difference at %s\n  recorded: %s\n  replayed: %s", at, recorded, replayed)
 			return nil
 		}
@@ -494,6 +502,60 @@ func (r *recordedServices) differences(live history.Cycle) (string, string, bool
 	for i, ex := range r.recorded {
 		if r.used == nil || !r.used[i] {
 			missing = append(missing, "GET "+httpservice.Key(ex.Service, ex.Path))
+		}
+	}
+	if len(missing) == 0 && len(r.extra) == 0 {
+		return "", "", false
+	}
+	return firstOr(missing, "nothing like it"), firstOr(r.extra, "nothing like it"), true
+}
+
+// recordedSearches answers a replayed cycle's local ticket searches from the answers the live cycle
+// recorded, in the order it ran them. It never opens the database, and a search the live cycle didn't run
+// gets no answer.
+type recordedSearches struct {
+	recorded []rules.Search
+	used     []bool
+	// extra lists the searches replay ran that the live cycle did not.
+	extra []string
+}
+
+func (r *recordedSearches) Search(q ticket.Query) ([]ticket.Found, error) {
+	if r.used == nil {
+		r.used = make([]bool, len(r.recorded))
+	}
+	text, _ := json.Marshal(q)
+	for i, rec := range r.recorded {
+		// The queries compare as the JSON history keeps, where an empty list and an absent one are the same.
+		recorded, _ := json.Marshal(rec.Query)
+		if !r.used[i] && string(recorded) == string(text) {
+			r.used[i] = true
+			if rec.Unknown != "" {
+				return nil, errors.New(rec.Unknown)
+			}
+			if rec.Found == nil {
+				return []ticket.Found{}, nil
+			}
+			return rec.Found, nil
+		}
+	}
+	r.extra = append(r.extra, "search "+string(text))
+	return nil, errors.New("no recorded answer for search " + string(text))
+}
+
+// differences returns the first search only the recorded cycle ran, the first only replay ran, and whether
+// they differ, as recordedServices does for gets.
+func (r *recordedSearches) differences(live history.Cycle) (string, string, bool) {
+	for _, t := range live.Throws {
+		if t.Timeout {
+			return "", "", false
+		}
+	}
+	var missing []string
+	for i, rec := range r.recorded {
+		if r.used == nil || !r.used[i] {
+			text, _ := json.Marshal(rec.Query)
+			missing = append(missing, "search "+string(text))
 		}
 	}
 	if len(missing) == 0 && len(r.extra) == 0 {

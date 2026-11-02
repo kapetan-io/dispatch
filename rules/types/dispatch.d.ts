@@ -204,6 +204,58 @@ declare module "dispatch" {
     reset?: boolean;
   }
   export interface HttpResponse { status: number; body: unknown }
+  export type MovableJob = "todo" | "in_progress" | "in_review" | "needs_human" | "close_parent" | "blocker_done";
+  export type Job = MovableJob | "finished" | "paused";
+  export interface TicketDraft {
+    readonly title: string;
+    /** A [repos.<label>] table. */
+    readonly repo: string;
+    readonly description?: string;
+    readonly labels?: readonly string[];
+    readonly attributes?: Readonly<Record<string, string>>;
+    /** LOC-<n> */
+    readonly parent?: string;
+    /** LOC-<n> */
+    readonly blockedBy?: readonly string[];
+    /** A PR in repo. */
+    readonly startPR?: number;
+    /** A job key, as queueMove takes. Default todo. */
+    readonly status?: MovableJob;
+  }
+  export interface TicketChanges {
+    readonly title?: string;
+    readonly description?: string;
+    readonly repo?: string;
+    readonly addLabels?: readonly string[];
+    readonly removeLabels?: readonly string[];
+    readonly setAttributes?: Readonly<Record<string, string>>;
+    readonly unsetAttributes?: readonly string[];
+    /** null clears. */
+    readonly parent?: string | null;
+    /** Replaces; [] clears. */
+    readonly blockedBy?: readonly string[];
+    /** 0 clears. */
+    readonly startPR?: number;
+  }
+  export interface TicketFilter {
+    /** Tickets whose status does this job. */
+    readonly status?: Job;
+    /** Match ignoring case. */
+    readonly labels?: readonly string[];
+    /** Match exactly. */
+    readonly attributes?: Readonly<Record<string, string>>;
+    /** Only tickets outside a finished status. */
+    readonly open?: boolean;
+  }
+  export interface FoundTicket {
+    readonly id: string;
+    readonly title: string;
+    /** As the ticket record's status. */
+    readonly status: string;
+    readonly finished: boolean;
+    readonly labels: readonly string[];
+    readonly attributes: Readonly<Record<string, string>>;
+  }
   export interface Action { readonly queued: true }
   export function whenever<K extends RecordKind>(rule: {
     name: string;
@@ -246,9 +298,13 @@ declare module "dispatch" {
       blockers(t: Ticket): Blocker[];
       blockersRead(t: Ticket): Blocker[];
       waitingSince(t: Ticket): number;
+      /** Searches every local ticket, finished ones included. Only in then. Throws when local tickets are off. */
+      search(filter: TicketFilter): ReadonlyArray<FoundTicket>;
       queueMove(t: Ticket, status: string, why: string, o: { once: Once; uncapped?: boolean }): Action;
       queueComment(t: Ticket, text: string, o: { once: Once }): Action;
       queueEscalate(t: Ticket, why: string, o: { once: Once }): Action;
+      queueCreate(system: "local", draft: TicketDraft, o: { once: Once }): Action;
+      queueEdit(t: Ticket, changes: TicketChanges, o: { once: Once }): Action;
     };
     worker: {
       of(t: Ticket): Worker;
