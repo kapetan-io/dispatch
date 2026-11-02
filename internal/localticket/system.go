@@ -40,7 +40,9 @@ func (y System) Move(_ context.Context, seen ticket.Ticket, job ticket.Job, note
 		if t.Status != seen.Status {
 			return fmt.Errorf("%s is %s now, not the %s the cycle saw", seen.Identifier, t.Status, seen.Status)
 		}
-		t.Status, t.StatusAt = target[0].Name, y.s.stamp()
+		if t.Status != target[0].Name {
+			t.Status, t.StatusAt = target[0].Name, y.s.stamp()
+		}
 		if note != "" {
 			if err := y.s.addComment(tx, n, &t, Author, note); err != nil {
 				return err
