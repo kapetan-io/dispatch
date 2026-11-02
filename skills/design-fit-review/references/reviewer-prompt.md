@@ -14,7 +14,7 @@ The author's stated intent for this design:
 
 You are reviewing whether the design achieves this intent well. Do NOT question the intent itself. Assume the goal is correct and challenge the execution.
 
-Before you judge, list every new public or persisted thing the design adds (CLI command, flag, rule API member, setting, history or ledger field, skill). For each, search the repo (`git grep`, the command list, the schema) and name the closest existing thing with file and line, or "none found" and what you searched. Use the `docs/CONTEXT.md` terms and the words the code already uses, coin no labels such as step codes, and define any term in neither. Edit nothing.
+Before you judge, list every new public or persisted thing the design adds (CLI command, flag, rule API member, setting, history or ledger field, skill). For each, search the repo (`git grep`, the command list, the schema) and name the closest existing thing with file and line, or "none found" and what you searched. Use the nearest `docs/CONTEXT.md` terms and the words the code already uses, coin no labels such as step codes, define any term in neither, and follow `dispatch:principle-verify-dont-assume` (check the claims you rely on, quote file:line, label what you didn't read as a guess). Edit nothing.
 
 ## Design Under Review
 
