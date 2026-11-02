@@ -10,6 +10,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/localticket"
 	"github.com/kapetan-io/dispatch/internal/ticket"
+	"github.com/kapetan-io/dispatch/internal/world"
 )
 
 // localOff is what a ticket request gets when config.toml has no [plugins.local] table.
@@ -26,6 +27,10 @@ func (l *Loop) onTicket(call *TicketCall) Response {
 	lines, err := l.ticketVerb(call)
 	if err != nil {
 		return Response{Code: CodeFailed, Error: err.Error()}
+	}
+	switch call.Verb {
+	case VerbCreate, VerbEdit, VerbMove, VerbComment:
+		l.readAgain(world.FromLocalTickets)
 	}
 	return Response{Lines: lines}
 }
@@ -129,5 +134,9 @@ func (l *Loop) openLocal(seg history.Segment, st history.State, loaded bool) err
 		return err
 	}
 	l.local = store
+	l.o.Sources.Local = store
+	if l.o.Executor != nil {
+		l.o.Executor.UseLocal(store)
+	}
 	return nil
 }

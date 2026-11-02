@@ -3,6 +3,8 @@
 package ticket
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -110,6 +112,25 @@ func (s Statuses) With(job Job) []Status {
 	return out
 }
 
+// NameOf is the name of the first status that does job, or false when none does.
+func (s Statuses) NameOf(job Job) (string, bool) {
+	if have := s.With(job); len(have) > 0 {
+		return have[0].Name, true
+	}
+	return "", false
+}
+
+// Key is the word a rule reads as a ticket's status: the job key of the status when it does one of
+// the four jobs rules compare by, otherwise the status name.
+func (s Statuses) Key(name string) string {
+	for _, job := range []Job{InProgress, InReview, NeedsHuman, Todo} {
+		if s.Has(name, job) {
+			return string(job)
+		}
+	}
+	return name
+}
+
 // Names lists the status names in order.
 func (s Statuses) Names() []string {
 	out := make([]string, len(s))
@@ -179,4 +200,24 @@ func init() {
 	if err := defaults.Check(); err != nil {
 		panic("the default local statuses are invalid: " + err.Error())
 	}
+}
+
+// ErrNoteLost marks a Move whose status change landed and whose note did not.
+var ErrNoteLost = errors.New("the move landed and its note did not")
+
+// ErrChanged marks an Unchanged check that found the ticket moved since the cycle read it.
+var ErrChanged = errors.New("the ticket changed since the cycle")
+
+// System is a ticket system dispatch writes back to.
+type System interface {
+	// Move moves seen to the status that does job. It refuses with
+	// "%s is %s now, not the %s the cycle saw" when the ticket's status is no longer seen.Status.
+	// A non-empty note is added as a comment by dispatch. errors.Is(err, ErrNoteLost) means the
+	// move landed and the note did not; the local store commits both or neither.
+	Move(ctx context.Context, seen Ticket, job Job, note string) (status string, err error)
+	// Comment adds body as a comment by dispatch. ref needs Identifier, and ID for Linear.
+	Comment(ctx context.Context, ref Ticket, body string) error
+	// Unchanged returns an error matching ErrChanged and naming the ticket when its status or
+	// newest comment moved since seen.
+	Unchanged(ctx context.Context, seen Ticket) error
 }

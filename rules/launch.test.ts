@@ -330,3 +330,23 @@ scenario(rules, "close-unconfirmed-worker leaves a paused ticket's worker to sto
   s.advance(300_000);
   s.expect([["stop-paused-worker", "close", "ENG-1"]]);
 });
+
+scenario(rules, "launch-worker starts a worker for a local ticket as for a Linear one", s => {
+  s.given(ticket("LOC-1", { status: "in_progress", repo: "dispatch" }));
+  s.expect([["launch-worker", "launch", "LOC-1"]]);
+});
+
+scenario(rules, "launch-worker holds for a local design ticket", s => {
+  s.given(ticket("LOC-1", { status: "in_progress", repo: "dispatch", labels: ["design"] }));
+  s.expect([]);
+});
+
+scenario(rules, "launch-worker still starts a worker for a Linear design ticket", s => {
+  s.given(ticket("ENG-1", { ...build, labels: ["design"] }));
+  s.expect([["launch-worker", "launch", "ENG-1"]]);
+});
+
+scenario(rules, "a rule reads system and attributes on every ticket", s => {
+  s.given(ticket("LOC-1", { status: "in_progress", repo: "dispatch", attributes: { pr: "412" } }), ticket("ENG-1", build));
+  s.expect([["launch-worker", "launch", "LOC-1"], ["launch-worker", "launch", "ENG-1"]]);
+});

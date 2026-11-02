@@ -18,6 +18,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/kapetan-io/dispatch/internal/environment"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 var lastKey = regexp.MustCompile(`\(last key "([^"]*)"\)`)
@@ -173,6 +174,39 @@ type Statuses struct {
 	// and whose tree is kept.
 	Finished []string `toml:"finished"`
 	Paused   []string `toml:"paused"`
+}
+
+// Table is the statuses [plugins.linear.statuses] names, each with the jobs it does, in the order
+// the keys are documented. A status that two keys name, such as Done, does both jobs.
+func (s Statuses) Table() ticket.Statuses {
+	var out ticket.Statuses
+	add := func(name string, job ticket.Job) {
+		if name == "" {
+			return
+		}
+		for i := range out {
+			if out[i].Name == name {
+				if !out[i].Does(job) {
+					out[i].Jobs = append(out[i].Jobs, job)
+				}
+				return
+			}
+		}
+		out = append(out, ticket.Status{Name: name, Jobs: []ticket.Job{job}})
+	}
+	add(s.Todo, ticket.Todo)
+	add(s.InProgress, ticket.InProgress)
+	add(s.InReview, ticket.InReview)
+	add(s.NeedsHuman, ticket.NeedsHuman)
+	add(s.CloseParent, ticket.CloseParent)
+	add(s.BlockerDone, ticket.BlockerDone)
+	for _, name := range s.Finished {
+		add(name, ticket.Finished)
+	}
+	for _, name := range s.Paused {
+		add(name, ticket.Paused)
+	}
+	return out
 }
 
 func defaults() Config {

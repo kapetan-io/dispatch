@@ -2,7 +2,6 @@ package rules
 
 import (
 	"encoding/json"
-	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -246,8 +245,10 @@ func (s *State) carryPools(mem, next *world.Memory) {
 // children couldn't be read keeps the list it had, and so does every parent while
 // Linear is unread, because no parent exists then to say its children were unread.
 func (s *State) carryChildren(mem, next *world.Memory) {
-	if s.linearUnread != "" {
-		maps.Copy(next.Children, mem.Children)
+	for parent, ids := range mem.Children {
+		if s.unreadReason(parent) != "" {
+			next.Children[parent] = ids
+		}
 	}
 	for parent, ids := range s.children {
 		next.Children[parent] = ids
@@ -271,7 +272,7 @@ func (s *State) keepWhileUnread(mem, next *world.Memory) {
 	for _, p := range s.pools {
 		poolUnread = poolUnread || p.unknown != ""
 	}
-	if s.linearUnread == "" && !poolUnread && len(s.childrenUnread) == 0 {
+	if s.linearUnread == "" && s.localUnread == "" && !poolUnread && len(s.childrenUnread) == 0 {
 		return
 	}
 	kept := map[string]bool{}
@@ -289,7 +290,7 @@ func (s *State) keepWhileUnread(mem, next *world.Memory) {
 		}
 	}
 	keep := func(key string) bool {
-		if s.linearUnread != "" || (poolUnread && strings.HasPrefix(key, "tree/")) {
+		if s.unreadKey(key) || (poolUnread && strings.HasPrefix(key, "tree/")) {
 			return true
 		}
 		for id := range kept {
@@ -305,13 +306,25 @@ func (s *State) keepWhileUnread(mem, next *world.Memory) {
 		}
 	}
 	for id, v := range mem.PreviousStatus {
-		if _, ok := next.PreviousStatus[id]; !ok && (s.linearUnread != "" || kept[id]) {
+		if _, ok := next.PreviousStatus[id]; !ok && (s.unreadReason(id) != "" || kept[id]) {
 			next.PreviousStatus[id] = v
 		}
 	}
 	for id, v := range mem.Waiting {
-		if _, ok := next.Waiting[id]; !ok && (s.linearUnread != "" || kept[id]) {
+		if _, ok := next.Waiting[id]; !ok && (s.unreadReason(id) != "" || kept[id]) {
 			next.Waiting[id] = v
 		}
 	}
+}
+
+// unreadKey is true when a remembered fact belongs to a ticket of a ticket system that could not be
+// read. Facts of anything else are kept while Linear is unread, as before local tickets existed.
+func (s *State) unreadKey(key string) bool {
+	switch kind, rest, _ := strings.Cut(key, "/"); kind {
+	case "ticket", "worker", "pr", "escalation":
+		id, _, _ := strings.Cut(rest, "/")
+		id, _, _ = strings.Cut(id, "@")
+		return s.unreadReason(id) != ""
+	}
+	return s.linearUnread != ""
 }

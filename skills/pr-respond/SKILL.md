@@ -5,6 +5,8 @@ description: Respond to what a build worker's PR raised (review comments, questi
 
 # Respond to the PR
 
+A ticket whose id starts with `LOC-` is a local ticket. Wherever this skill says to comment on or move the ticket, use `dispatch ticket comment` and `dispatch ticket move LOC-<n> "<status>"` instead of the Linear tools.
+
 Each time you start, run `"${DISPATCH_BIN:-dispatch}" repo-settings` and read `ignore_comment_authors`, `ignore_optional_checks` and `approval_checks`. Act on nothing by a listed login, matched ignoring case: no fix, reply or resolve.
 
 Name the repo on every `gh` command (`--repo owner/name`, or a `repos/owner/name/...` path for `gh api`; the queries below pass `owner` and `name` themselves), because in a clone with two remotes `gh` picks the wrong one. Take `owner/name` from the PR's own URL.

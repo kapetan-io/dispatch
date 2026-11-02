@@ -485,7 +485,7 @@ func (c *call) queueFn(spec ActionSpec) func(sobek.FunctionCall) sobek.Value {
 		}
 		if spec.Receipt == "move" {
 			status, _ := q.args["status"].(string)
-			if _, ok := StatusName(status, c.state.Config.Plugins.Linear.Statuses); !ok {
+			if !slices.Contains(movableJobs, status) {
 				c.throwError("queueMove: %q is not a status key. Use todo, in_progress, in_review, needs_human, close_parent or blocker_done", status)
 			}
 		}
@@ -774,3 +774,6 @@ func toTree(v reflect.Value) any {
 	}
 	return v.Interface()
 }
+
+// movableJobs are the job keys queueMove takes, for a ticket of either ticket system.
+var movableJobs = []string{"todo", "in_progress", "in_review", "needs_human", "close_parent", "blocker_done"}

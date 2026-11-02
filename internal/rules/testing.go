@@ -38,6 +38,7 @@ func TestingDeclarations() string {
     blockers?: { id: string; status: string; abandoned?: boolean }[];
     labelsTruncated?: boolean; blockersTruncated?: boolean;
     branch?: string; stack?: { parent?: string; forkPoint?: string };
+    attributes?: Record<string, string>;
   }): Fixture;
   export function worker(ticket: string, state: "none" | "working" | "idle" | "blocked", fields?: {
     lastStop?: number; busy?: boolean; unconfirmed?: number;

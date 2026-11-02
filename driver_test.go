@@ -2338,8 +2338,11 @@ func (d *Dispatch) respondOlder(kind, before string, items []activity, earlier s
 	d.tools.PullRequests.RespondOlder(7, kind, before, map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequest": map[string]any{kind: activityNodes(items, earlier)}}}})
 }
 
-// prBranch is the branch Linear names for a ticket.
+// prBranch is the branch Linear names for a ticket, or the one a local ticket titled "work" gets.
 func prBranch(ticket string) string {
+	if strings.HasPrefix(ticket, "LOC-") {
+		return strings.ToLower(ticket) + "-work"
+	}
 	return "thrawn01/" + strings.ToLower(ticket)
 }
 

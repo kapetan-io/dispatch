@@ -181,7 +181,7 @@ Local tickets are tickets kept in dispatch's own database, beside Linear's. Writ
 - Only the `dispatch run` that holds `dispatch.lock` opens the file, and a second `dispatch run` that points `path` at the same file stops after 5 seconds. Every other session reaches it through `dispatch ticket`. Stop `dispatch run` before copying the file.
 - `dispatch run` also stops at start when the file's next ticket number is at or below a `LOC-<n>` that history or a tree's lease names, or when the file holds a ticket in a status it lacks, a link to a missing ticket or a parent loop.
 - Linear ids that start with `LOC-` fail a Linear read while this table is on, so no Linear team may use the key `LOC`.
-- Nothing launches a worker on a local ticket yet, and `--start-pr` is stored and shown but does nothing.
+- A local ticket moved to In Progress gets a worker as a Linear ticket does, under the same `max_in_progress`, and the shipped rules nudge, escalate, promote, merge and tear down its worker the same way. The shipped rules launch no worker on a local ticket labeled `design` or `design-review`. An In Review local ticket whose PR merged stays In Review, and `--start-pr` is stored and shown but does nothing, until later changes land.
 
 ## `[plugins.linear]`
 

@@ -26,7 +26,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/launcher"
 	"github.com/kapetan-io/dispatch/internal/ledger"
-	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/localticket"
 	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
@@ -48,7 +48,7 @@ const (
 // Env is the tools an action drives.
 type Env struct {
 	Config       config.Config
-	Linear       func() linear.Workspace
+	Systems      Systems
 	Herdr        herdr.Herdr
 	Treehouse    treehouse.Pool
 	PullRequests pullrequest.Repository
@@ -68,6 +68,35 @@ type Env struct {
 	Deadline       time.Duration
 	// Clock runs the deadlines. Defaults to the wall clock.
 	Clock clock.Clock
+}
+
+// Systems are the ticket systems the executor writes to. A nil Local means local tickets are off.
+type Systems struct {
+	Linear ticket.System
+	Local  *localticket.Store
+}
+
+// Of returns the system the id belongs to. It checks the nil store itself, because a nil *Store in a
+// ticket.System is not a nil interface.
+func (y Systems) Of(id string) (ticket.System, error) {
+	if ticket.SystemOf(id) != ticket.SystemLocal {
+		return y.Linear, nil
+	}
+	if y.Local == nil {
+		return nil, fmt.Errorf("%s is a local ticket, and local tickets are off", id)
+	}
+	return y.Local.System(), nil
+}
+
+// UseLocal gives the executor the local ticket database once the loop has opened it, before any action runs.
+func (e *Executor) UseLocal(store *localticket.Store) { e.Systems.Local = store }
+
+// rereadOf is the part of the world to read again after a write to the ticket's own system.
+func rereadOf(id string) world.Part {
+	if ticket.SystemOf(id) == ticket.SystemLocal {
+		return world.FromLocalTickets
+	}
+	return world.FromLinear
 }
 
 // Result is how an action ended.
@@ -113,7 +142,7 @@ func (e *Executor) WhyNotLaunch(w rules.Want, wd world.World) string {
 		return "a worker is running"
 	}
 	if t, ok := ticketOf(wd, w.Subject); ok {
-		label, _ := t.LabelIn(e.Config.Plugins.Linear.RepoLabelGroup)
+		label, _ := world.ScopeOf(e.Config).RepoOf(t)
 		if repo, _, _ := e.Config.Repos.Find(label); wd.UnreadRepos[repo] {
 			return "the pool of " + repo + " was not read"
 		}
@@ -213,7 +242,7 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World) Res
 		return failed("%s was not read", w.Subject)
 	}
 	cfg := e.Config
-	label, labeled := t.LabelIn(cfg.Plugins.Linear.RepoLabelGroup)
+	label, labeled := world.ScopeOf(cfg).RepoOf(t)
 	_, repo, _ := cfg.Repos.Find(label)
 	// A rule that skips hasRepo would otherwise launch in dispatch's own directory.
 	if !labeled || repo.Path == "" {
@@ -331,83 +360,49 @@ func (e *Executor) closeWorkspace(ctx context.Context, w rules.Want) Result {
 	return res
 }
 
-// fresh reads one ticket again from Linear, whatever its status, so a decision
-// made on an old read fails instead of landing.
-func (e *Executor) fresh(ctx context.Context, id string) (ticket.Ticket, error) {
-	cfg := e.Config.Plugins.Linear
-	got, err := e.Linear().LeasedTickets(ctx, cfg.AILabel, cfg.Teams, []string{id})
-	if err != nil {
-		return ticket.Ticket{}, err
-	}
-	for _, t := range got {
-		if t.Identifier == id {
-			return t, nil
-		}
-	}
-	return ticket.Ticket{}, fmt.Errorf("%s was not found in Linear", id)
-}
-
 func (e *Executor) move(ctx context.Context, w rules.Want, wd world.World) Result {
 	t, ok := ticketOf(wd, w.Subject)
 	if !ok {
 		return failed("%s was not read", w.Subject)
 	}
 	key, _ := w.Args["status"].(string)
-	name, ok := rules.StatusName(key, e.Config.Plugins.Linear.Statuses)
-	if !ok {
-		return failed("%q is not a status key", key)
+	sys, err := e.Systems.Of(t.Identifier)
+	if err != nil {
+		return failed("%v", err)
 	}
-	if err := e.moveTo(ctx, t, name); err != nil {
+	name, err := sys.Move(ctx, t, ticket.Job(key), "")
+	if err != nil {
 		return failed("%v", err)
 	}
 	why, _ := w.Args["why"].(string)
-	return Result{Outcome: ledger.Done, Detail: name + ": " + why, Reread: world.FromLinear}
-}
-
-// moveTo sets a ticket's status when it still has the status the cycle saw.
-func (e *Executor) moveTo(ctx context.Context, t ticket.Ticket, name string) error {
-	now, err := e.fresh(ctx, t.Identifier)
-	if err != nil {
-		return err
-	}
-	if now.Status != t.Status {
-		return fmt.Errorf("%s is %s now, not the %s the cycle saw", t.Identifier, now.Status, t.Status)
-	}
-	lin := e.Linear()
-	state, err := lin.StateID(ctx, t.Team, name)
-	if err != nil {
-		return err
-	}
-	return lin.Move(ctx, t.ID, state)
+	return Result{Outcome: ledger.Done, Detail: name + ": " + why, Reread: rereadOf(t.Identifier)}
 }
 
 func (e *Executor) comment(ctx context.Context, w rules.Want, wd world.World) Result {
 	text, _ := w.Args["text"].(string)
-	id := e.linearID(w.Subject, wd)
-	if id == "" {
-		id = w.Target["linearID"]
+	sys, err := e.Systems.Of(w.Subject)
+	if err != nil {
+		return failed("%v", err)
 	}
-	if id == "" {
+	ref, ok := ticketOf(wd, w.Subject)
+	if !ok {
+		ref = ticket.Ticket{Identifier: w.Subject, ID: w.Target["linearID"]}
+	}
+	if ref.ID == "" && ticket.SystemOf(w.Subject) != ticket.SystemLocal {
 		return failed("%s was not read", w.Subject)
 	}
-	if err := e.Linear().Comment(ctx, id, text); err != nil {
+	if err := sys.Comment(ctx, ref, text); err != nil {
 		return failed("while commenting on %s: %v", w.Subject, err)
 	}
-	return Result{Outcome: ledger.Done}
-}
-
-// linearID is Linear's id for a ticket identifier, from anything the world read.
-func (e *Executor) linearID(identifier string, wd world.World) string {
-	if t, ok := ticketOf(wd, identifier); ok {
-		return t.ID
+	res := Result{Outcome: ledger.Done}
+	if ticket.SystemOf(w.Subject) == ticket.SystemLocal {
+		res.Reread = world.FromLocalTickets
 	}
-	return ""
+	return res
 }
 
-// escalate moves a ticket to Needs Human, then comments why. Move first: a move
-// that fails leaves the ticket where it was, and a comment sent first would be
-// posted again by every retry. The receipt keeps the two steps apart so a lost
-// comment can be finished later.
+// escalate moves a ticket to Needs Human and comments why. A system that cannot do both at once
+// reports the lost comment, and the receipt keeps the two steps apart so it can be finished later.
 func (e *Executor) escalate(ctx context.Context, w rules.Want, wd world.World) Result {
 	t, ok := ticketOf(wd, w.Subject)
 	if !ok {
@@ -415,22 +410,22 @@ func (e *Executor) escalate(ctx context.Context, w rules.Want, wd world.World) R
 	}
 	why, _ := w.Args["why"].(string)
 	res := Result{Detail: why, TicketID: t.ID, Steps: []ledger.Step{{Name: "move"}, {Name: "comment"}}}
-	if err := e.moveTo(ctx, t, e.Config.Plugins.Linear.Statuses.NeedsHuman); err != nil {
+	sys, err := e.Systems.Of(t.Identifier)
+	if err == nil {
+		_, err = sys.Move(ctx, t, ticket.NeedsHuman, "The dispatcher moved this ticket to Needs Human because "+why)
+	}
+	switch {
+	case errors.Is(err, ticket.ErrNoteLost):
+		res.Steps[0].Outcome, res.Steps[1].Outcome, res.Reread, res.Outcome = ledger.Done, ledger.Failed, rereadOf(t.Identifier), ledger.Done
+		if e.Stderr != nil {
+			_, _ = fmt.Fprintf(e.Stderr, "dispatch: %v\n", err)
+		}
+	case err != nil:
 		res.Outcome, res.Detail = ledger.Failed, err.Error()
 		res.Steps[0].Outcome = ledger.Failed
-		return res
+	default:
+		res.Steps[0].Outcome, res.Steps[1].Outcome, res.Reread, res.Outcome = ledger.Done, ledger.Done, rereadOf(t.Identifier), ledger.Done
 	}
-	res.Steps[0].Outcome, res.Reread = ledger.Done, world.FromLinear
-	res.Outcome = ledger.Done
-	body := "The dispatcher moved this ticket to Needs Human because " + why
-	if err := e.Linear().Comment(ctx, t.ID, body); err != nil {
-		res.Steps[1].Outcome = ledger.Failed
-		if e.Stderr != nil {
-			_, _ = fmt.Fprintf(e.Stderr, "dispatch: while commenting on %s: %v\n", t.Identifier, err)
-		}
-		return res
-	}
-	res.Steps[1].Outcome = ledger.Done
 	return res
 }
 
@@ -530,17 +525,16 @@ func (e *Executor) merge(ctx context.Context, w rules.Want, wd world.World) Resu
 	if !ok {
 		return failed("%s was not read", w.Subject)
 	}
-	cfg := e.Config.Plugins.Linear
-	tickets, err := e.Linear().ManagedTickets(ctx, cfg.AILabel, cfg.Teams)
+	sys, err := e.Systems.Of(t.Identifier)
 	if err != nil {
 		return failed("%v", err)
 	}
-	unchanged := slices.ContainsFunc(tickets, func(now ticket.Ticket) bool {
-		return now.Identifier == t.Identifier && now.LastComment == t.LastComment && now.Status == t.Status
-	})
-	if !unchanged {
-		res := failed("%s changed in Linear since the cycle, so the merge waits for a new decision", t.Identifier)
-		res.Reread = world.FromLinear
+	if err := sys.Unchanged(ctx, t); err != nil {
+		if !errors.Is(err, ticket.ErrChanged) {
+			return failed("%v", err)
+		}
+		res := failed("%s changed since the cycle, so the merge waits for a new decision", t.Identifier)
+		res.Reread = rereadOf(t.Identifier)
 		return res
 	}
 	if err := e.PullRequests.Merge(ctx, url, head); err != nil {

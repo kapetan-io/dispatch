@@ -84,24 +84,26 @@ type Stack struct {
 	ForkPoint string `js:"forkPoint" doc:"The full sha of the commit the branch started at."`
 }
 
-// Ticket is a Linear ticket dispatch tracks.
+// Ticket is a ticket dispatch tracks, from Linear or from the local ticket database.
 type Ticket struct {
-	ID               Fact[string]  `js:"id"`
-	Title            Fact[string]  `js:"title"`
-	URL              Fact[string]  `js:"url"`
-	Branch           Fact[string]  `js:"branch" doc:"The branch dispatch launches the ticket's worker on and reads its PR by."`
-	Stack            Fact[*Stack]  `js:"stack" doc:"The stack record of the ticket's branch, undefined when the branch has none. Unknown when the clone's records could not be read or the record is partial."`
-	Status           Fact[string]  `js:"status" ts:"string"`
-	StatusSince      Fact[int64]   `js:"statusSince"`
-	PreviousStatus   Fact[*string] `js:"previousStatus" ts:"string | undefined"`
-	OptedIn          Fact[bool]    `js:"optedIn"`
-	Repo             Fact[*string] `js:"repo"`
-	Labels           Fact[[]Label] `js:"labels"`
-	HasChildren      Fact[bool]    `js:"hasChildren"`
-	Finished         Fact[bool]    `js:"finished"`
-	Paused           Fact[bool]    `js:"paused"`
-	CreatedAt        Fact[*string] `js:"createdAt"`
-	LastHumanComment Fact[*Seen]   `js:"lastHumanComment"`
+	ID               Fact[string]            `js:"id"`
+	Title            Fact[string]            `js:"title"`
+	URL              Fact[string]            `js:"url"`
+	Branch           Fact[string]            `js:"branch" doc:"The branch dispatch launches the ticket's worker on and reads its PR by."`
+	Stack            Fact[*Stack]            `js:"stack" doc:"The stack record of the ticket's branch, undefined when the branch has none. Unknown when the clone's records could not be read or the record is partial."`
+	System           Fact[string]            `js:"system" ts:"\"linear\" | \"local\"" doc:"The ticket system the ticket comes from."`
+	Attributes       Fact[map[string]string] `js:"attributes" ts:"Readonly<Record<string, string>>" doc:"A local ticket's key-value pairs; {} for a Linear ticket."`
+	Status           Fact[string]            `js:"status" ts:"string"`
+	StatusSince      Fact[int64]             `js:"statusSince"`
+	PreviousStatus   Fact[*string]           `js:"previousStatus" ts:"string | undefined"`
+	OptedIn          Fact[bool]              `js:"optedIn"`
+	Repo             Fact[*string]           `js:"repo"`
+	Labels           Fact[[]Label]           `js:"labels"`
+	HasChildren      Fact[bool]              `js:"hasChildren"`
+	Finished         Fact[bool]              `js:"finished"`
+	Paused           Fact[bool]              `js:"paused"`
+	CreatedAt        Fact[*string]           `js:"createdAt"`
+	LastHumanComment Fact[*Seen]             `js:"lastHumanComment"`
 }
 
 // Worker is a ticket's place on a tree it holds, and the Claude session there, if any.

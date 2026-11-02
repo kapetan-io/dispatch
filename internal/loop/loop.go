@@ -487,23 +487,14 @@ func (l *Loop) rotate() error {
 		return nil
 	}
 	at := l.stamp()
-	live := map[string]bool{}
-	for _, t := range l.wd.Tickets {
-		live[t.Identifier] = true
-	}
-	for id := range l.wd.Leased {
-		live[id] = true
-	}
-	for _, tree := range l.wd.Trees {
-		live[tree.Path] = true
-	}
+	live := l.wd.TrackedSubjects()
 	// Memory keeps a parent's children while their read fails, and the world's Children does not.
 	for _, ids := range l.mem.Children {
 		for _, id := range ids {
 			live[id] = true
 		}
 	}
-	if l.wd.LinearErr == nil && l.wd.HoldersErr == nil && len(l.wd.PoolErrs) == 0 {
+	if l.wd.LinearErr == nil && l.wd.LocalErr == nil && l.wd.HoldersErr == nil && len(l.wd.PoolErrs) == 0 {
 		// A post's receipt is keyed by its service, which no ticket or tree makes live.
 		l.led.Keep(func(subject string) bool {
 			_, service := l.o.Config.HTTP[subject]

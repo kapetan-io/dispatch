@@ -20,6 +20,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/inbox"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/localticket"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
@@ -50,11 +51,15 @@ type Sources struct {
 	Resilient bool
 	// LocalOn is true when local tickets are on, so a Linear read that returns a LOC- id fails.
 	LocalOn bool
+	// Local is the local ticket database, nil when it is not open.
+	Local *localticket.Store
 }
 
 // Scope is the part of the config a read depends on.
 type Scope struct {
-	Statuses       config.Statuses
+	// Linear and Local are the statuses of each ticket system. Local is empty while local tickets are off.
+	Linear         ticket.Statuses
+	Local          ticket.Statuses
 	AILabel        string
 	Teams          []string
 	RepoLabelGroup string
@@ -64,12 +69,50 @@ type Scope struct {
 // ScopeOf is the scope a config sets.
 func ScopeOf(cfg config.Config) Scope {
 	return Scope{
-		Statuses:       cfg.Plugins.Linear.Statuses,
+		Linear:         cfg.Plugins.Linear.Statuses.Table(),
 		AILabel:        cfg.Plugins.Linear.AILabel,
 		Teams:          cfg.Plugins.Linear.Teams,
 		RepoLabelGroup: cfg.Plugins.Linear.RepoLabelGroup,
 		Repos:          cfg.Repos,
 	}
+}
+
+// Scope is the scope a config sets, with the local statuses this read found.
+func (w World) Scope(cfg config.Config) Scope {
+	s := ScopeOf(cfg)
+	s.Local = w.LocalStatuses
+	return s
+}
+
+// StatusesOf is the statuses of the ticket system t belongs to.
+func (s Scope) StatusesOf(t ticket.Ticket) ticket.Statuses {
+	return s.StatusesOfID(t.Identifier)
+}
+
+// StatusesOfID is the statuses of the ticket system the id belongs to.
+func (s Scope) StatusesOfID(id string) ticket.Statuses {
+	if ticket.SystemOf(id) == ticket.SystemLocal {
+		return s.Local
+	}
+	return s.Linear
+}
+
+// Is is true when t's status does job in t's own ticket system.
+func (s Scope) Is(t ticket.Ticket, job ticket.Job) bool {
+	return s.StatusesOf(t).Has(t.Status, job)
+}
+
+// RepoOf is the repo label of t: a local ticket's own repo, and for a Linear ticket the label in the
+// repo label group, resolved to the spelling of its [repos.<label>] table when it has one.
+func (s Scope) RepoOf(t ticket.Ticket) (string, bool) {
+	label, ok := t.Repo, t.Repo != ""
+	if ticket.SystemOf(t.Identifier) != ticket.SystemLocal {
+		label, ok = t.LabelIn(s.RepoLabelGroup)
+	}
+	if name, _, found := s.Repos.Find(label); found {
+		label = name
+	}
+	return label, ok
 }
 
 // World is one read of everything, joined. Every field that can fail to be read
@@ -82,6 +125,10 @@ type World struct {
 	// When LinearErr is set they are the last ones read, and no longer known.
 	Tickets   []ticket.Ticket
 	LinearErr error
+	// LocalStatuses are the statuses of the local ticket database, empty while local tickets are off.
+	// LocalErr is set when the last read of the local tickets failed, so those records are unknown.
+	LocalStatuses ticket.Statuses
+	LocalErr      error
 	// Snapshot is herdr's view. It is empty when HerdrErr is set.
 	Snapshot herdr.Snapshot
 	HerdrErr error
@@ -162,11 +209,14 @@ const (
 	FromLocal
 	// FromGitHub reads the PR of each ticket that has one to read.
 	FromGitHub
+	// FromLocalTickets reads the local tickets, who holds the trees among them and the children of open
+	// local parents. It runs whenever FromLocal does, because the lease holders come from the trees.
+	FromLocalTickets
 	// FromInbox reads the owner's GitHub inbox. It is its own part so the Refresh after a worker goes
 	// idle or an action finishes makes no gh call. Only Everything, which start and resync read, includes it.
 	FromInbox
 	// Everything reads every source.
-	Everything = FromLinear | FromLocal | FromGitHub | FromInbox
+	Everything = FromLinear | FromLocal | FromLocalTickets | FromGitHub | FromInbox
 )
 
 // Read takes one reading of the world. The failures that leave nothing to
@@ -193,8 +243,12 @@ func bound(ctx context.Context) (context.Context, context.CancelFunc) {
 func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Part, now time.Time) (World, error) {
 	w := prev
 	w.At = now
+	if src.Local != nil {
+		scope.Local = src.Local.Statuses()
+		w.LocalStatuses = scope.Local
+	}
 	if parts&FromLocal != 0 || prev.At.IsZero() {
-		parts |= FromLocal
+		parts |= FromLocal | FromLocalTickets
 		w.HerdrErr, w.PoolErrs, w.UnreadRepos, w.Trees = nil, map[string]error{}, map[string]bool{}, nil
 		w.StackRecords, w.StackErrs = map[string]stackrecord.Records{}, map[string]error{}
 		readCtx, done := bound(ctx)
@@ -251,7 +305,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		}
 		switch {
 		case err == nil:
-			w.Tickets, w.LinearErr = tickets, nil
+			w.Tickets, w.LinearErr = withSystem(w.Tickets, ticket.SystemLinear, tickets), nil
 		case src.Resilient:
 			w.LinearErr = err
 			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the tickets: %v\n", err)
@@ -259,14 +313,22 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 			return w, err
 		}
 	}
-	if parts&(FromLinear|FromLocal) != 0 {
+	if parts&FromLocalTickets != 0 || prev.At.IsZero() {
+		parts |= FromLocalTickets
+		w.readLocal(src, scope)
+	}
+	if parts&(FromLinear|FromLocal|FromLocalTickets) != 0 {
 		// A failed lease lookup skips teardown only; launches and nudges still run.
 		if parts&FromLinear != 0 && w.LinearErr == nil {
 			readCtx, done := bound(ctx)
-			w.LeaseHolders, w.HoldersErr = leaseHolders(readCtx, src.Linear, scope, w.Trees, w.Tickets)
+			var holders []ticket.Ticket
+			holders, w.HoldersErr = leaseHolders(readCtx, src.Linear, scope, w.Trees, w.Tickets)
 			done()
 			if w.HoldersErr == nil && src.LocalOn {
-				w.HoldersErr = clash(w.LeaseHolders...)
+				w.HoldersErr = clash(holders...)
+			}
+			if w.HoldersErr == nil {
+				w.LeaseHolders = withSystem(w.LeaseHolders, ticket.SystemLinear, holders)
 			}
 			if w.HoldersErr != nil {
 				_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the tickets that hold trees: %v\n", w.HoldersErr)
@@ -294,12 +356,12 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 				}
 			}
 			w.Workers[t.Identifier] = wk
-			if wk.State == Idle && t.Status == scope.Statuses.InProgress {
+			if wk.State == Idle && scope.Is(t, ticket.InProgress) {
 				if rec, ok := stops.Read(src.StateDir, wk.TreePath, wk.Session); ok {
 					w.Stops[t.Identifier] = rec
 				}
 			}
-			if wk.State != NoWorker && (t.Status == scope.Statuses.InProgress || t.Status == scope.Statuses.InReview) {
+			if wk.State != NoWorker && (scope.Is(t, ticket.InProgress) || scope.Is(t, ticket.InReview)) {
 				w.readSession(src.StateDir, t.Identifier, wk)
 			}
 		}
@@ -311,28 +373,35 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 	if parts&FromLinear != 0 && w.LinearErr == nil {
 		// Only promotion and closing wait on the children, so a failed read holds
 		// back those two and nothing else.
-		w.Children, w.ChildrenErr = nil, nil
-		if parents := scope.Parents(w.Tickets); len(parents) > 0 {
+		w.Children, w.ChildrenErr = localChildren(w.Children), nil
+		if parents := scope.Parents(linearOnly(w.Tickets)); len(parents) > 0 {
 			ids := make([]string, len(parents))
 			for i, parent := range parents {
 				ids[i] = parent.ID
 			}
 			readCtx, done := bound(ctx)
-			w.Children, w.ChildrenErr = src.Linear.ParentChildren(readCtx, ids)
+			var kids map[string][]ticket.Ticket
+			kids, w.ChildrenErr = src.Linear.ParentChildren(readCtx, ids)
 			done()
 			if w.ChildrenErr == nil && src.LocalOn {
-				for _, kids := range w.Children {
-					if w.ChildrenErr = clash(kids...); w.ChildrenErr != nil {
+				for _, list := range kids {
+					if w.ChildrenErr = clash(list...); w.ChildrenErr != nil {
 						break
 					}
 				}
+			}
+			if w.ChildrenErr == nil {
+				if w.Children == nil {
+					w.Children = map[string][]ticket.Ticket{}
+				}
+				maps.Copy(w.Children, kids)
 			}
 			if w.ChildrenErr != nil {
 				_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the children of open parents: %v\n", w.ChildrenErr)
 			}
 		}
 	}
-	if parts&(FromLinear|FromLocal) != 0 {
+	if parts&(FromLinear|FromLocal|FromLocalTickets) != 0 {
 		w.inspectTrees(ctx, src.Env, scope)
 	}
 	if parts&FromGitHub != 0 || prev.At.IsZero() {
@@ -365,7 +434,7 @@ func (w *World) readSession(stateDir, ticket string, wk Worker) {
 func leaseHolders(ctx context.Context, lin linear.Workspace, scope Scope, trees []treehouse.Tree, managed []ticket.Ticket) ([]ticket.Ticket, error) {
 	var holders []string
 	for _, tree := range trees {
-		if tree.LeaseHolder == "" || slices.Contains(holders, tree.LeaseHolder) {
+		if tree.LeaseHolder == "" || slices.Contains(holders, tree.LeaseHolder) || ticket.SystemOf(tree.LeaseHolder) == ticket.SystemLocal {
 			continue
 		}
 		if !slices.ContainsFunc(managed, func(t ticket.Ticket) bool { return t.Identifier == tree.LeaseHolder }) {
@@ -460,7 +529,7 @@ func NotDesign(t ticket.Ticket) bool {
 // Retires reports whether the dispatcher tears down this lease holder's trees:
 // its status is a finished one.
 func (s Scope) Retires(t ticket.Ticket) bool {
-	return slices.Contains(s.Statuses.Finished, t.Status)
+	return s.Is(t, ticket.Finished)
 }
 
 // Parents returns the tickets whose children the dispatcher acts on: In
@@ -469,7 +538,7 @@ func (s Scope) Retires(t ticket.Ticket) bool {
 func (s Scope) Parents(tickets []ticket.Ticket) []ticket.Ticket {
 	var parents []ticket.Ticket
 	for _, t := range tickets {
-		if t.Status == s.Statuses.InProgress && t.HasChildren && NotDesign(t) {
+		if s.Is(t, ticket.InProgress) && t.HasChildren && NotDesign(t) {
 			parents = append(parents, t)
 		}
 	}
@@ -483,7 +552,7 @@ func (s Scope) PRRepo(t ticket.Ticket, state WorkerState) (config.Repo, bool) {
 	if !s.ReadsPR(t, state) {
 		return config.Repo{}, false
 	}
-	label, ok := t.LabelIn(s.RepoLabelGroup)
+	label, ok := s.RepoOf(t)
 	_, settings, _ := s.Repos.Find(label)
 	return settings, ok && settings.Path != ""
 }
@@ -492,7 +561,7 @@ func (s Scope) PRRepo(t ticket.Ticket, state WorkerState) (config.Repo, bool) {
 // Working and blocked workers are skipped so their PRs cost no call, and so are
 // tickets whose labels or children make it unsure they are build tickets.
 func (s Scope) ReadsPR(t ticket.Ticket, state WorkerState) bool {
-	if t.Status != s.Statuses.InReview || t.LabelsTruncated || t.HasChildren || !NotDesign(t) {
+	if !s.Is(t, ticket.InReview) || t.LabelsTruncated || t.HasChildren || !NotDesign(t) {
 		return false
 	}
 	return state == NoWorker || state == Idle
