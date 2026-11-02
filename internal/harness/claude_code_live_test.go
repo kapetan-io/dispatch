@@ -7,6 +7,8 @@ package harness_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,12 +19,23 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
+	"github.com/kapetan-io/dispatch/internal/journal"
+	"github.com/kapetan-io/dispatch/internal/lineartest"
+	"github.com/kapetan-io/dispatch/internal/loop"
+	"github.com/kapetan-io/dispatch/internal/notifytest"
+	"github.com/kapetan-io/dispatch/internal/pullrequesttest"
+	"github.com/kapetan-io/dispatch/internal/sessionlog"
+	"github.com/kapetan-io/dispatch/internal/stops"
 )
 
 const turnTimeout = 3 * time.Minute
+
+// backgroundTask is the sleep the Stop scenario starts in the background.
+const backgroundTask = "sleep 601"
 
 // liveWorker is a real Claude Code started the way dispatch starts a worker on the Herdr app host,
 // in a first-run folder. The app host runs the program directly, so no shell command line sits above
@@ -36,6 +49,7 @@ type liveWorker struct {
 	log     string
 	trace   string
 	socket  string
+	state   string
 	program herdr.Program
 }
 
@@ -55,7 +69,9 @@ func (h hookCall) field(name string) string {
 }
 
 // startLiveWorker starts the worker and returns once Claude took the kickoff, which asks it to write
-// its messaging socket to a file.
+// its messaging socket to a file. A real dispatch loop runs over a scratch state directory, and the
+// plugin's hooks reach it through the logging program, so a test sees both what Claude Code sent and
+// what dispatch did with it.
 func startLiveWorker(t *testing.T) *liveWorker {
 	t.Helper()
 	w := &liveWorker{}
@@ -65,47 +81,80 @@ func startLiveWorker(t *testing.T) *liveWorker {
 		require.NoError(t, err)
 		assert.Empty(t, left)
 		if w.id != "" {
-			assert.Error(t, exec.Command("pgrep", "-f", w.id).Run())
+			// The session id is on Claude's command line, and the Stop scenario's sleep runs a number of seconds nothing else does.
+			assert.True(t, gone(w.id))
+			assert.True(t, gone(backgroundTask))
+			// The scratch core's session name is in the path of the holder process it starts.
+			assert.True(t, gone(w.session.Env.Get("HC_SESSION")))
 		}
 	})
 	ctx := context.Background()
-	// Backstop for DISABLE_AUTOUPDATER below. Under the scratch core's XDG directories the updater once
-	// repointed the maintainer's ~/.local/bin/claude at a directory the test then deleted.
+	// Backstop for the updater, which once repointed the maintainer's ~/.local/bin/claude at a
+	// directory under the scratch core's XDG directories that the test then deleted.
 	launcher := filepath.Join(os.Getenv("HOME"), ".local", "bin", "claude")
-	before, _ := os.Readlink(launcher)
-	t.Cleanup(func() {
-		after, _ := os.Readlink(launcher)
-		if before != "" && after != before {
-			_ = os.Remove(launcher)
-			_ = os.Symlink(before, launcher)
-		}
-		assert.Equal(t, before, after)
-	})
+	before := launcherState(launcher)
+	t.Cleanup(func() { assert.Equal(t, before, launcherState(launcher)) })
 	w.session = herdrtest.StartCoreSession(t)
 
-	_, w.cwd = herdrtest.NewCheckout(t)
+	repo, tree := herdrtest.NewCheckout(t)
+	w.cwd = tree
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	w.log = filepath.Join(root, "hooks.log")
 	w.trace = filepath.Join(root, "kickoff.trace")
-	build := func(pkg, dir string) string {
+	// macOS caps a socket path at about 100 bytes, which the test's temp dir can pass.
+	w.state, err = os.MkdirTemp("/tmp", "dsp")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(w.state) })
+	config := filepath.Join(root, "config.toml")
+	require.NoError(t, os.WriteFile(config, []byte(fmt.Sprintf("[repos.live]\npath = %q\n\n[history]\ndir = %q\n\n[plugins.herdr]\nhost = \"app\"\n", repo, filepath.Join(w.state, "events"))), 0o644))
+
+	build := func(pkg, dir, name string) string {
 		require.NoError(t, os.Mkdir(filepath.Join(root, dir), 0o755))
-		bin := filepath.Join(root, dir, "dispatch")
+		bin := filepath.Join(root, dir, name)
 		out, err := exec.Command("go", "build", "-o", bin, pkg).CombinedOutput()
-		require.NoError(t, err, string(out))
+		t.Log(string(out))
+		require.NoError(t, err)
 		return bin
 	}
-	// The plugin's claude shim runs the real dispatch, while its hooks find the logging one first on PATH.
-	bin := build("github.com/kapetan-io/dispatch/cmd/dispatch", "real")
-	stub := filepath.Dir(build("github.com/kapetan-io/dispatch/internal/herdrtest/hooklog", "stub"))
+	// The claude shim and the hooks run the real dispatch over the scratch state, the hooks through the logging
+	// program. The real one is not named dispatch, because it puts its own directory first on the worker's PATH.
+	bin := build("github.com/kapetan-io/dispatch/internal/herdrtest/driftdispatch", "real", "driftdispatch")
+	stub := filepath.Dir(build("github.com/kapetan-io/dispatch/internal/herdrtest/hooklog", "stub", "dispatch"))
 	plugin, err := filepath.Abs("../..")
 	require.NoError(t, err)
 
 	w.id = newSessionID(t)
 	w.program = harness.ClaudeCode{}.Program(harness.Start{Model: "haiku", PluginRoot: plugin, Session: w.id})
 	w.program.PathFirst = append([]string{stub}, w.program.PathFirst...)
-	w.program.Env = map[string]string{"HOOKLOG": w.log, "DISABLE_AUTOUPDATER": "1"}
+	w.program.Env = map[string]string{
+		"HOOKLOG": w.log, "HOOKLOG_REAL": bin, "DISABLE_AUTOUPDATER": "1",
+		"DISPATCH_DRIFT_CONFIG": config, "DISPATCH_DRIFT_STATE": w.state, "DISPATCH_DRIFT_RESTORE_XDG": "1",
+	}
+	// The scratch core hands its terminals scratch XDG directories, which the claude shim puts back.
+	for _, name := range []string{"XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"} {
+		if value, ok := os.LookupEnv(name); ok {
+			w.program.Env["DISPATCH_DRIFT_REAL_"+name] = value
+		}
+	}
 	w.core = w.session.Core().WithKinds("claude").WithTrace(w.trace).WithDispatchBin(bin)
+
+	loopCtx, stop := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() {
+		done <- dispatch.Run(loopCtx, []string{"run"}, dispatch.Options{
+			ConfigPath: config, StateDir: w.state, Herdr: w.core, LinearKey: lineartest.Key, Linear: lineartest.New(nil).Connect,
+			PullRequests: pullrequesttest.New(&journal.Journal{}), Alerts: notifytest.New(&journal.Journal{}), Stdout: os.Stderr, Stderr: os.Stderr,
+		})
+	}()
+	t.Cleanup(func() {
+		stop()
+		<-done
+	})
+	require.Eventually(t, func() bool {
+		resp, err := loop.Ask(ctx, w.state, loop.Request{Op: loop.OpIdle})
+		return err == nil && !resp.Busy
+	}, 30*time.Second, 50*time.Millisecond)
 
 	space, err := w.core.OpenWorkspace(ctx, herdr.NewWorkspace{Path: w.cwd})
 	require.NoError(t, err)
@@ -114,9 +163,11 @@ func startLiveWorker(t *testing.T) *liveWorker {
 	w.pane = started.Pane
 
 	socketFile := filepath.Join(root, "socket")
-	if err := w.core.Kickoff(ctx, w.pane, "Run this shell command, then reply with the word done: printenv CLAUDE_CODE_MESSAGING_SOCKET > "+socketFile, w.program.Startup); err != nil {
-		t.Fatalf("%v\nterminal:\n%s\nscreen:\n%s", err, w.session.Run(t, "get", w.pane), w.screen(t))
+	err = w.core.Kickoff(ctx, w.pane, "Run this shell command, then reply with the word done: printenv CLAUDE_CODE_MESSAGING_SOCKET > "+socketFile, w.program.Startup)
+	if err != nil {
+		t.Logf("terminal:\n%s\nscreen:\n%s", w.session.Run(t, "get", w.pane), w.screen(t))
 	}
+	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		b, err := os.ReadFile(socketFile)
 		w.socket = strings.TrimSpace(string(b))
@@ -151,14 +202,14 @@ func (w *liveWorker) hooks(t *testing.T) []hookCall {
 	return calls
 }
 
-// await returns the skip-th call (from 0) of hook whose hook_event_name is event, once it arrives.
-func (w *liveWorker) await(t *testing.T, hook, event string, skip int, within time.Duration) hookCall {
+// await returns the skip-th call (from 0) of hook whose hook_event_name is event and that where accepts, once it arrives.
+func (w *liveWorker) await(t *testing.T, hook, event string, skip int, within time.Duration, where ...func(hookCall) bool) hookCall {
 	t.Helper()
 	var found hookCall
 	require.True(t, poll(within, func() bool {
 		n := 0
 		for _, call := range w.hooks(t) {
-			if call.Hook == hook && call.field("hook_event_name") == event {
+			if call.Hook == hook && call.field("hook_event_name") == event && (len(where) == 0 || where[0](call)) {
 				if n == skip {
 					found = call
 					return true
@@ -203,13 +254,15 @@ func (w *liveWorker) agent(t *testing.T) herdr.Agent {
 func (w *liveWorker) status(t *testing.T, want string, within time.Duration) {
 	t.Helper()
 	var last herdr.Agent
-	if !poll(within, func() bool {
+	reached := poll(within, func() bool {
 		agent, found, err := w.core.AgentAt(context.Background(), w.pane)
 		last = agent
 		return err == nil && found && agent.Status == want
-	}) {
-		t.Fatalf("herdr never showed %q, last saw %q\nscreen:\n%s", want, last.Status, w.screen(t))
+	})
+	if !reached {
+		t.Logf("last status %q\nscreen:\n%s", last.Status, w.screen(t))
 	}
+	require.True(t, reached)
 }
 
 // typeLine sends text through hc, not Prompt, so herdr gets no say in whether the worker is ready for it.
@@ -267,21 +320,36 @@ func TestClaudeCodeStopHookCarriesTheSessionTheTreeAndTheBackgroundTasks(t *test
 	assert.True(t, stop.Reported)
 	assert.Equal(t, 0, stop.Running)
 
-	w.typeLine(t, "Start `sleep 600` as a background task with the Bash tool's run_in_background option, then reply with the word started.")
+	// dispatch's own record of that Stop is what the worker's label reads.
+	var record stops.Record
+	require.True(t, poll(10*time.Second, func() bool {
+		var found bool
+		record, found = stops.Read(w.state, w.cwd, w.id)
+		return found
+	}))
+	assert.True(t, record.Reported)
+	assert.False(t, record.Busy(time.Now()))
+
+	w.typeLine(t, "Start `"+backgroundTask+"` as a background task with the Bash tool's run_in_background option, then reply with the word started.")
 	busy := w.await(t, "record-stop", "Stop", 1, turnTimeout)
 	stop, _, ok = harness.ClaudeCode{}.Stop(busy.Input)
 	require.True(t, ok)
 	assert.Equal(t, 1, stop.Running)
+	require.True(t, poll(10*time.Second, func() bool {
+		var found bool
+		record, found = stops.Read(w.state, w.cwd, w.id)
+		return found && record.Running == 1
+	}))
+	assert.True(t, record.Busy(time.Now()))
 }
 
 // TestClaudeCodeFiresNotificationWhenIdleAndUserPromptSubmitWhenTextIsTyped fails when the hooks
-// that wake a worker's loop stop firing, or stop carrying the typed prompt.
+// that wake a worker's loop stop firing, or stop carrying the typed prompt that dispatch logs.
 func TestClaudeCodeFiresNotificationWhenIdleAndUserPromptSubmitWhenTextIsTyped(t *testing.T) {
 	w := startLiveWorker(t)
 
 	// idle_prompt fires about 60 seconds after a turn ends with nobody typing.
-	idle := w.await(t, "wake", "Notification", 0, turnTimeout)
-	assert.Equal(t, "idle_prompt", idle.field("notification_type"))
+	idle := w.await(t, "wake", "Notification", 0, turnTimeout, func(call hookCall) bool { return call.field("notification_type") == "idle_prompt" })
 	assert.Equal(t, w.id, idle.field("session_id"))
 	assert.Equal(t, w.cwd, idle.field("cwd"))
 
@@ -293,6 +361,14 @@ func TestClaudeCodeFiresNotificationWhenIdleAndUserPromptSubmitWhenTextIsTyped(t
 	assert.Equal(t, w.id, prompt.Session)
 	assert.Equal(t, w.cwd, cwd)
 	assert.Equal(t, "Reply with the word typed.", prompt.Text)
+
+	// A slash command reaches the running dispatch through the same hook, which logs it as typed by a person.
+	w.status(t, "done", turnTimeout)
+	w.typeLine(t, "/dispatch:principles")
+	require.True(t, poll(time.Minute, func() bool {
+		log, err := sessionlog.Read(w.state, w.cwd, w.id)
+		return err == nil && len(log.Commands) == 1 && log.Commands[0].Name == "dispatch:principles" && log.Commands[0].By == sessionlog.ByPerson
+	}))
 }
 
 // TestHerdrReadsARealWorkersStatusAndSession fails when herdr stops reading a real Claude's
@@ -317,10 +393,11 @@ func TestHerdrReadsARealWorkersStatusAndSession(t *testing.T) {
 	assert.ErrorIs(t, w.core.Prompt(context.Background(), w.pane, "dispatch nudge"), herdr.ErrAgentBlocked)
 }
 
-// TestClaudeCodeTakesAMessageDeliveredToItsSession fails when the frame Deliver writes stops
-// reaching the session as a prompt. The sender gets no receipt, so arrival is seen in the
-// prompt the session's hook receives.
-func TestClaudeCodeTakesAMessageDeliveredToItsSession(t *testing.T) {
+// TestClaudeCodeTakesAMessageWrittenToItsMessagingSocket fails when the frame Deliver writes stops
+// reaching the session as a prompt. It checks the frame, not `dispatch watch`, which forwards what
+// it is told to the same socket. The sender gets no receipt, so arrival is seen in the prompt the
+// session's hook receives.
+func TestClaudeCodeTakesAMessageWrittenToItsMessagingSocket(t *testing.T) {
 	w := startLiveWorker(t)
 	w.status(t, "done", turnTimeout)
 	before := w.count(t, "wake", "UserPromptSubmit")
@@ -329,4 +406,26 @@ func TestClaudeCodeTakesAMessageDeliveredToItsSession(t *testing.T) {
 
 	got := w.await(t, "wake", "UserPromptSubmit", before, time.Minute)
 	assert.Contains(t, got.field("prompt"), "dispatch event: reply with the word received.")
+}
+
+// launcherState names what the maintainer's claude launcher points at, or its size and time when it is a file.
+func launcherState(path string) string {
+	if target, err := os.Readlink(path); err == nil {
+		return target
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err.Error()
+	}
+	return fmt.Sprint(info.Size(), info.ModTime())
+}
+
+// gone reports whether no process has pattern on its command line within ten seconds. A pgrep that fails
+// for any reason but finding nothing counts as not gone.
+func gone(pattern string) bool {
+	return poll(10*time.Second, func() bool {
+		var exit *exec.ExitError
+		err := exec.Command("pgrep", "-f", pattern).Run()
+		return errors.As(err, &exit) && exit.ExitCode() == 1
+	})
 }
