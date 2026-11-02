@@ -38,7 +38,7 @@ func (s Snapshot) SessionIn(workspace string) (Agent, bool) {
 	return Agent{}, false
 }
 
-// Tab is a herdr tab and the label it shows.
+// Tab is a herdr tab and the label it shows. Under the Herdr app the label is empty.
 type Tab struct {
 	ID          string
 	Label       string
@@ -52,7 +52,7 @@ type Pane struct {
 	WorkspaceID string
 }
 
-// Workspace is a herdr workspace and the checkout it shows.
+// Workspace is a herdr workspace and the checkout it shows. Under the Herdr app the label is empty.
 type Workspace struct {
 	ID           string
 	Label        string
@@ -78,15 +78,17 @@ type Herdr interface {
 	Read(ctx context.Context) (Snapshot, error)
 	// Prompt types text into the agent in pane and submits it. herdr refuses a
 	// blocked agent before sending any input, so a question on screen is never
-	// answered by accident. The refusal satisfies errors.Is(err, ErrAgentBlocked).
+	// answered by accident. The refusal satisfies errors.Is(err, ErrAgentBlocked). Core also
+	// refuses a worker that reports no status with ErrStatusUnknown.
 	Prompt(ctx context.Context, pane, text string) error
 	// AgentAt returns the agent in pane, asking herdr about that pane alone. A pane
-	// with no agent is not an error, because hooks run in panes that hold none. It is
-	// not filtered by WithKinds; the caller decides whether it runs the agent's kind.
+	// with no agent is not an error, because hooks run in panes that hold none. The CLI
+	// adapter does not filter it by WithKinds, and the caller decides whether it runs the
+	// agent's kind. Core returns only a worker it started that runs one of its kinds.
 	AgentAt(ctx context.Context, pane string) (Agent, bool, error)
-	// RenameWorkspace sets a workspace's label.
+	// RenameWorkspace sets a workspace's label. Core leaves the name to the Herdr app.
 	RenameWorkspace(ctx context.Context, id, label string) error
-	// RenameTab sets a tab's label.
+	// RenameTab sets a tab's label. Core leaves the name to the Herdr app.
 	RenameTab(ctx context.Context, id, label string) error
 	// CloseWorkspace closes a workspace and removes its tabs, panes and agents,
 	// which ends any worker running there.
@@ -94,12 +96,14 @@ type Herdr interface {
 	// CloseTab closes a tab and removes its panes and agents.
 	CloseTab(ctx context.Context, id string) error
 	// OpenWorkspace returns the workspace showing the checkout, opening one
-	// nested under the repo when none shows it yet.
+	// nested under the repo when none shows it yet. Core opens nothing: it derives the id,
+	// and the workspace shows once a worker starts in it.
 	OpenWorkspace(ctx context.Context, w NewWorkspace) (workspaceID string, err error)
 	// StartWorker gives the workspace a new tab holding a running agent of the
 	// worker's program, answering nothing yet. The workspace's agent-less tabs are
 	// closed. A failure after the tab came up still returns its pane, so the
-	// caller can tell a missing tab from a program that would not start.
+	// caller can tell a missing tab from a program that would not start. It fails with
+	// ErrSessionRunning, starting nothing, when a session already runs on the tree.
 	StartWorker(ctx context.Context, w Worker) (Started, error)
 	// Kickoff types text into the program in pane once its input box is ready,
 	// answering the startup dialogs the Startup lists first, and returns once herdr
@@ -189,6 +193,21 @@ type Answer struct {
 	Tries []Try
 }
 
+// Answer returns the next way to answer the dialog the screen shows, or false when the
+// screen shows none. sightings counts, per Answer, how often it was seen and is updated
+// here, so a dialog seen again gets its next Try.
+func (s Startup) Answer(screen string, sightings []int) (Try, bool) {
+	for i, answer := range s.Answers {
+		if !answer.shows(screen) {
+			continue
+		}
+		try := answer.Tries[sightings[i]%len(answer.Tries)]
+		sightings[i]++
+		return try, true
+	}
+	return nil, false
+}
+
 // Try is one way to answer a dialog, a list of `pane send-keys` calls that each
 // send a list of keys together. {{"Down","Enter"}} is one call and
 // {{"2"},{"Enter"}} is two.
@@ -199,6 +218,26 @@ type Started struct {
 	Pane  string
 	Agent string
 }
+
+// How long Kickoff tries: it looks at the worker up to kickoffChecks times for its input box,
+// then types the kickoff up to kickoffTries times.
+const (
+	kickoffChecks = 30
+	kickoffTries  = 3
+	// kickoffWaits is how many reads Core gives a typed kickoff to move the status.
+	kickoffWaits = 15
+)
+
+// probeOf is the start of text, enough to find the typed kickoff on a screen that wraps it.
+func probeOf(text string) string {
+	if r := []rune(text); len(r) > 24 {
+		return string(r[:24])
+	}
+	return text
+}
+
+// oneLine joins the lines of a screen so a pattern can match across them.
+func oneLine(screen string) string { return strings.ReplaceAll(screen, "\n", " ") }
 
 // Reasons Kickoff gives up.
 var (
@@ -213,6 +252,31 @@ var (
 // ErrAgentBlocked is the refusal of a prompt to an agent that waits on a
 // question.
 var ErrAgentBlocked = errors.New("agent is blocked on a question")
+
+var (
+	// ErrStatusUnknown means Prompt refused to type because the worker reports no status,
+	// as Claude does at a startup dialog. Nothing was typed.
+	ErrStatusUnknown = errors.New("the worker reports no status, so nothing was typed")
+	// ErrSessionRunning means StartWorker found a session on the tree and started nothing.
+	ErrSessionRunning = errors.New("a session already runs on the tree")
+)
+
+// NothingTyped reports whether an error from Prompt proves the text never reached the
+// program, so the caller may withdraw its record of having sent it. Any other failure, a
+// timeout included, may have typed the text.
+func NothingTyped(err error) bool {
+	if errors.Is(err, ErrAgentBlocked) || errors.Is(err, ErrStatusUnknown) {
+		return true
+	}
+	var refusal *Refusal
+	if errors.As(err, &refusal) {
+		switch refusal.Code {
+		case "agent_not_found", "finished", "status_mismatch":
+			return true
+		}
+	}
+	return false
+}
 
 // Refusal is herdr declining a request. Error renders herdr's JSON error body,
 // so a reported refusal reads as herdr printed it.
@@ -250,11 +314,9 @@ func (r *Refusal) Is(target error) bool {
 
 // CLI is the Herdr that runs the installed herdr command.
 type CLI struct {
+	workLog
 	bin         string
 	global      []string
-	pace        time.Duration
-	trace       string
-	progress    io.Writer
 	env         environment.Environment
 	dispatchBin string
 	kinds       []string
@@ -263,7 +325,7 @@ type CLI struct {
 // NewCLI returns a Herdr that runs bin. Arguments in global come before every
 // subcommand, such as "--session", "name" to act on a named session.
 func NewCLI(bin string, global ...string) *CLI {
-	return &CLI{bin: bin, global: global, pace: time.Second, progress: io.Discard}
+	return &CLI{bin: bin, global: global, workLog: newWorkLog()}
 }
 
 // WithEnv runs herdr, and finds it, with env instead of the process's environment. Workers it
@@ -283,7 +345,8 @@ func (c *CLI) WithDispatchBin(bin string) *CLI {
 }
 
 // WithKinds makes Read leave out agents of every other kind, so a session dispatch
-// has no harness for is never a worker's session. Unset, Read keeps every kind.
+// has no harness for is never a worker's session. Unset, Read keeps every kind. Core,
+// unset, finds none.
 func (c *CLI) WithKinds(kinds ...string) *CLI {
 	c.kinds = kinds
 	return c

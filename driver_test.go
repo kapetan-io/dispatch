@@ -91,6 +91,9 @@ type dispatchOptions struct {
 	// FakeHarness registers the fake harness under its own kind, which a [harness.<name>] table
 	// can then name.
 	FakeHarness bool
+	// RealHerdr leaves the herdr to dispatch, which builds the adapter for the config's host
+	// from the environment's PATH. A test that sets it points PATH at a directory it controls.
+	RealHerdr bool
 	// RepoSettings is TOML lines added to the dispatch repo's [repos.dispatch] table.
 	RepoSettings string
 	// ExactRules keeps the [rules] table as Config wrote it, without the shipped keys filled in.
@@ -133,6 +136,7 @@ type Dispatch struct {
 	// with the launcher built into dispatch, over tools.Herdr and tools.Treehouse.
 	builtinLauncher bool
 	fakeHarness     bool
+	realHerdr       bool
 	// builtinAlerts leaves Options.Alerts empty, so alerts go through the
 	// notifier dispatch picks for the operating system.
 	builtinAlerts bool
@@ -248,6 +252,7 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 	}
 	d.builtinLauncher = opts.Launcher == builtinLauncher
 	d.fakeHarness = opts.FakeHarness
+	d.realHerdr = opts.RealHerdr
 	if opts.Rules != nil {
 		d.rulesDir = rulesDir(t, opts.Rules)
 	}
@@ -1300,7 +1305,9 @@ func (d *Dispatch) options(extra dispatch.Options) dispatch.Options {
 	if !d.configuredKey {
 		extra.LinearKey = lineartest.Key
 	}
-	extra.Herdr = d.tools.Herdr
+	if !d.realHerdr {
+		extra.Herdr = d.tools.Herdr
+	}
 	extra.Treehouse = d.tools.Treehouse
 	extra.PullRequests = d.tools.PullRequests
 	extra.Inbox = d.tools.Inbox
@@ -2718,6 +2725,14 @@ func modelOf(program herdr.Program) string {
 func (d *Dispatch) FromPane(pane string) (restore func()) {
 	was := d.env
 	d.env = d.env.With("HERDR_PANE_ID", pane)
+	return func() { d.env = was }
+}
+
+// FromTerminal makes the hooks that run next run in the herdr-core terminal given, as HC_TERMINAL_ID
+// tells them, with no herdr pane, until the returned function is called.
+func (d *Dispatch) FromTerminal(terminal string) (restore func()) {
+	was := d.env
+	d.env = d.env.With("HC_TERMINAL_ID", terminal).With("HERDR_PANE_ID", "")
 	return func() { d.env = was }
 }
 

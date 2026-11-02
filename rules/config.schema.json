@@ -86,6 +86,9 @@
         "herdr": {
           "additionalProperties": false,
           "properties": {
+            "host": {
+              "type": "string"
+            },
             "plugin_root": {
               "type": "string"
             }

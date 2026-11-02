@@ -69,10 +69,19 @@ type Plugins struct {
 	Notify    Notify    `toml:"notify"`
 }
 
+// Hosts that can run the workers.
+const (
+	HostTUI = "tui"
+	HostApp = "app"
+)
+
 // Herdr is the herdr plugin's table.
 type Herdr struct {
 	// PluginRoot is the checkout of this repo that workers load their plugin from.
 	PluginRoot string `toml:"plugin_root"`
+	// Host is the herdr product that runs the workers, "tui" or "app". ctx.config leaves it
+	// out, so a rule never sees which host runs a worker.
+	Host string `toml:"host" ctx:"-"`
 }
 
 // GitHub is the GitHub plugin's table. It has no settings yet.
@@ -169,7 +178,7 @@ func defaults() Config {
 			Keep:   Duration(24 * time.Hour),
 		},
 		Plugins: Plugins{
-			Herdr: Herdr{PluginRoot: "~/Development/dispatch"},
+			Herdr: Herdr{PluginRoot: "~/Development/dispatch", Host: HostTUI},
 			Linear: Linear{
 				APIKeyKeychain: "dispatch-linear-api-key",
 				Teams:          []string{"ENG"},
@@ -267,6 +276,9 @@ func (c Config) check(kinds []string) error {
 			u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(service.BaseURL, "#") {
 			return fmt.Errorf("http.%s base_url must be an http or https URL with a host, no user, no query and no fragment, got %q", name, service.BaseURL)
 		}
+	}
+	if h := c.Plugins.Herdr.Host; h != HostTUI && h != HostApp {
+		return fmt.Errorf("plugins.herdr.host must be %q or %q, not %q", HostTUI, HostApp, h)
 	}
 	if err := c.Rules.check(); err != nil {
 		return err

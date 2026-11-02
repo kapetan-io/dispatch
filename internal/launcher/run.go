@@ -48,7 +48,7 @@ type Options struct {
 	// PluginRoot is the plugin checkout, stamped on the worker as
 	// DISPATCH_PLUGIN_ROOT. It has no default.
 	PluginRoot string
-	// Herdr hosts the worker. Defaults to the installed herdr.
+	// Herdr hosts the worker. Required: the caller builds it for the config's host.
 	Herdr herdr.Herdr
 	// Treehouse is the pool to lease from. Defaults to the installed treehouse.
 	Treehouse treehouse.Pool
@@ -68,15 +68,12 @@ type Options struct {
 	// Pace is the unit of waiting between polls for the herdr server, which waits 5 units.
 	// Defaults to 1s.
 	Pace time.Duration
-	// Env is what the launcher's git commands and the default herdr and treehouse run with.
+	// Env is what the launcher's git commands and the default treehouse run with.
 	// Defaults to the process's environment.
 	Env environment.Environment
 }
 
 func (o Options) withDefaults() Options {
-	if o.Herdr == nil {
-		o.Herdr = herdr.NewCLI("herdr").WithEnv(o.Env)
-	}
 	if o.Treehouse == nil {
 		o.Treehouse = treehouse.NewCLI("treehouse").WithEnv(o.Env)
 	}
@@ -120,7 +117,9 @@ func New(opts Options) *Local { return &Local{opts: opts.withDefaults()} }
 // The herdr handling depends on nested worktree workspaces, an env-stamped tab,
 // waiting for the shell before starting the agent, answering the consent and
 // folder-trust dialogs, and confirming the kickoff landed. The herdr adapter
-// does all of it behind OpenWorkspace, StartWorker and Kickoff.
+// does all of it behind OpenWorkspace, StartWorker and Kickoff. A StartWorker that finds a
+// session already running on the tree ends the launch as already_running, closing and
+// returning nothing.
 func (r *Local) Launch(ctx context.Context, req Request) Result {
 	l := &launch{req: req, opts: r.opts}
 	return l.run(ctx)
@@ -258,17 +257,21 @@ func (l *launch) clearKickoff() {
 func (l *launch) preflight(ctx context.Context) (Result, bool) {
 	waitCtx, cancel := clock.WithTimeout(ctx, l.opts.Clock, "launch preflight", l.opts.PreflightTimeout)
 	defer cancel()
+	unanswered := func(readErr error) Result {
+		return Result{Status: StatusHerdrUnavailable, Detail: fmt.Sprintf("herdr server not answering: %v", readErr)}
+	}
 	for {
-		if _, err := l.opts.Herdr.Read(ctx); err == nil {
+		_, err := l.opts.Herdr.Read(ctx)
+		if err == nil {
 			return Result{}, true
 		}
 		if waitCtx.Err() != nil && ctx.Err() == nil {
-			return Result{Status: StatusHerdrUnavailable, Detail: "herdr server not answering"}, false
+			return unanswered(err), false
 		}
 		l.log("waiting for herdr server...")
 		if !l.sleep(waitCtx, 5*l.opts.Pace) {
 			if ctx.Err() == nil {
-				return Result{Status: StatusHerdrUnavailable, Detail: "herdr server not answering"}, false
+				return unanswered(err), false
 			}
 			return Result{Status: StatusHerdrUnavailable, Detail: "interrupted while waiting for the herdr server"}, false
 		}
@@ -558,6 +561,10 @@ func (l *launch) startWorker(ctx context.Context, name string) (herdr.Started, R
 	})
 	if err == nil {
 		return started, Result{}, true
+	}
+	// Whoever owns the session owns the workspace too, so this launch closes and returns nothing.
+	if errors.Is(err, herdr.ErrSessionRunning) {
+		return started, Result{Status: StatusAlreadyRunning, Detail: fmt.Sprintf("workspace %s already has a session; not typing a second kickoff", l.workspace), Workspace: l.workspace, Worktree: l.tree}, false
 	}
 	l.giveBack(ctx)
 	if started.Pane == "" {

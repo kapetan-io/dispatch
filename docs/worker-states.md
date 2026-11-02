@@ -36,6 +36,8 @@ A PR that dispatch could not read leaves a 🟢, 👀, ⏳, 🔀, 🟡 or 💤 l
 
 The Stop record comes from the plugin's Stop hook (`dispatch record-stop`). The plugin's Notification and UserPromptSubmit hooks run `dispatch wake`, which asks the running loop to read herdr and the pools again and run a cycle. That is not a resync, so nothing that failed is retried and no PR is read again unless a worker just went idle. Claude Code raises an `idle_prompt` Notification about 60 seconds after a turn ends with nobody typing, so 💤 shows within about a minute of the worker going idle. Without a running loop the label moves at the next resync. A worker dispatch just typed into shows 🟢 until the next resync, even if it has already gone idle again.
 
+A worker can report no status, as Claude does under the Herdr app host (`host = "app"`) while it shows a startup dialog. It reads working, and dispatch types nothing into it. A nudge to it fails with "status unknown" and the send record is withdrawn. If the launch that started it died before its kickoff was confirmed, the worker reads idle instead, so `close-unconfirmed-worker` closes it after its grace period.
+
 ## Every combination
 
 "Gone" means the workspace exists and the worker's Claude session is gone (the state `none`). "Unconfirmed" means the launch's first instruction hasn't run yet. A ticket with no workspace has nothing to label. The tests in `labels_test.go` cover each row.

@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"maps"
 	"math/rand/v2"
-	"os"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
-	"time"
 )
 
 func (c *CLI) OpenWorkspace(ctx context.Context, w NewWorkspace) (string, error) {
@@ -201,13 +199,10 @@ func (c *CLI) paneHasAgent(ctx context.Context, pane, kind string) bool {
 // is still idle with the text gone from its input box.
 func (c *CLI) Kickoff(ctx context.Context, pane, text string, startup Startup) error {
 	// A prefix is enough to find the typed kickoff, which the program may wrap.
-	probe := text
-	if r := []rune(text); len(r) > 24 {
-		probe = string(r[:24])
-	}
+	probe := probeOf(text)
 	visible := func() string {
 		out, _ := c.output(ctx, "agent", "read", pane, "--source", "visible", "--lines", "30")
-		return strings.ReplaceAll(out, "\n", " ")
+		return oneLine(out)
 	}
 	_ = c.run(ctx, "agent", "wait", pane, "--until", "idle", "--timeout", "15000")
 	ready := false
@@ -215,15 +210,10 @@ func (c *CLI) Kickoff(ctx context.Context, pane, text string, startup Startup) e
 	entered := 0   // Enters herdr accepted while the launch command showed at the shell prompt
 	sightings := make([]int, len(startup.Answers))
 screens:
-	for range 30 {
+	for range kickoffChecks {
 		screen := visible()
 		c.record("dialogs", screen)
-		for i, answer := range startup.Answers {
-			if !answer.shows(screen) {
-				continue
-			}
-			try := answer.Tries[sightings[i]%len(answer.Tries)]
-			sightings[i]++
+		if try, ok := startup.Answer(screen, sightings); ok {
 			for _, keys := range try {
 				_ = c.run(ctx, append([]string{"pane", "send-keys", pane}, keys...)...)
 			}
@@ -257,7 +247,7 @@ screens:
 	wait := func() bool {
 		return c.run(ctx, "agent", "wait", pane, "--until", "working", "--until", "blocked", "--timeout", "15000") == nil
 	}
-	for try := 1; try <= 3; try++ {
+	for try := 1; try <= kickoffTries; try++ {
 		c.record("typing", fmt.Sprintf("%s (try %d)", text, try))
 		_ = c.run(ctx, "pane", "run", pane, text)
 		_ = c.run(ctx, "pane", "send-keys", pane, "Enter")
@@ -308,29 +298,6 @@ func (c *CLI) unconfirmed(unrun bool, entered int) error {
 // shows reports whether every pattern of the dialog matches the screen.
 func (a Answer) shows(screen string) bool {
 	return len(a.Shows) > 0 && len(a.Tries) > 0 && !slices.ContainsFunc(a.Shows, func(re *regexp.Regexp) bool { return !re.MatchString(screen) })
-}
-
-func (c *CLI) record(label, body string) {
-	if c.trace == "" {
-		return
-	}
-	f, err := os.OpenFile(c.trace, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	defer func() { _ = f.Close() }()
-	_, _ = fmt.Fprintf(f, "=== %s %s\n%s\n", time.Now().Format("15:04:05"), label, body)
-}
-
-func (c *CLI) log(format string, args ...any) {
-	_, _ = fmt.Fprintf(c.progress, "dispatch launch: "+format+"\n", args...)
-}
-
-func (c *CLI) sleep(ctx context.Context, d time.Duration) {
-	select {
-	case <-time.After(d):
-	case <-ctx.Done():
-	}
 }
 
 func (c *CLI) run(ctx context.Context, args ...string) error {

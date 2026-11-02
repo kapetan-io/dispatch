@@ -35,6 +35,8 @@ type Worker struct {
 	// UnconfirmedSince is when the latest launch on this tree began, in
 	// milliseconds, while its kickoff is unconfirmed, read from the kickoffs record. Zero means the launch returned.
 	UnconfirmedSince int64
+	// noStatus is set while the session reports no status, as Claude does at a startup dialog.
+	noStatus bool
 }
 
 // FindWorker looks up the worker on the ticket's first tree. FindWorkers returns one for
@@ -74,6 +76,7 @@ func onTree(t treehouse.Tree, snap herdr.Snapshot) Worker {
 		w.TabID = a.TabID
 		w.Session = a.Session
 		w.State = stateOf(a.Status)
+		w.noStatus = a.Status == "unknown"
 	}
 	return w
 }

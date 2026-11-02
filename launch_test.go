@@ -177,7 +177,7 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 			setup:  func(d *Dispatch) { d.fakes().Herdr.Fail(herdrtest.OpRead, errors.New("server not running")) },
 			args:   []string{"ENG-1", "b"},
 			status: "herdr_unavailable",
-			detail: "herdr server not answering",
+			detail: "herdr server not answering: server not running",
 			expire: "launch preflight",
 		},
 		{
