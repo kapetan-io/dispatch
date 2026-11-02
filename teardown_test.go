@@ -1210,3 +1210,23 @@ func (l *Linear) AllowLookups() { l.d.linear.allowLookups() }
 
 // Lookups counts the times dispatch asked Linear which tickets hold trees.
 func (l *Linear) Lookups() int { return l.d.linear.lookups() }
+
+func TestTickKeepsATreeUnreadWhenTheLeaseLookupFailsAfterTheTicketReopened(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	path := d.Trees.Clean("ENG-1")
+	d.Trees.Commit(path)
+	d.Workers.Running("ENG-1", "idle")
+	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
+	d.Tick()
+	require.Empty(t, d.Trees.Returned())
+	d.Trees.Push(path)
+
+	// The ticket reopened, but the lookup that would say so failed. The Done holder from the last
+	// good lookup must not decide for a ticket that may have moved.
+	d.Linear.Finished(ticket("ENG-1", "Todo", "dispatch"))
+	d.Linear.FailLookups()
+	d.Tick()
+
+	assert.Empty(t, d.Trees.Returned())
+}

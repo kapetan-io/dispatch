@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -105,7 +106,8 @@ func (s *State) deriveTimes(r *record, mem, next *world.Memory, started int64) {
 	}
 	switch rec := r.v.Interface().(type) {
 	case *Ticket:
-		if rec.Status.Unknown == "" {
+		// A local ticket's statusSince is when the database recorded the status, not when dispatch first saw it.
+		if rec.Status.Unknown == "" && ticket.SystemOf(r.id) != ticket.SystemLocal {
 			set("statusSince", rec.Status.Since, rec.Status.Since)
 		}
 	case *Worker:

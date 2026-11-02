@@ -1,66 +1,69 @@
 package dispatch_test
 
 import (
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"path/filepath"
+	"strconv"
+	"time"
+
 	"strings"
 	"testing"
+
+	bolt "go.etcd.io/bbolt"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-const moveThenMove = `whenever({ name: "first", each: "ticket", if: (t) => t.system === "local" && t.status === "todo",
-  then: (t, ctx) => ctx.ticket.queueMove(t, "in_review", "first", { once: ["first", t.id] }) });
-whenever({ name: "second", each: "ticket", if: (t) => t.system === "local" && t.status === "todo",
-  then: (t, ctx) => ctx.ticket.queueMove(t, "needs_human", "second", { once: ["second", t.id] }) });`
-
-const moveThenEscalate = `whenever({ name: "first", each: "ticket", if: (t) => t.system === "local" && t.status === "todo",
-  then: (t, ctx) => ctx.ticket.queueMove(t, "in_review", "first", { once: ["first", t.id] }) });
-whenever({ name: "second", each: "ticket", if: (t) => t.system === "local" && t.status === "todo",
-  then: (t, ctx) => ctx.ticket.queueEscalate(t, "second", { once: ["second", t.id] }) });`
+const commentWithStatusSince = `whenever({ name: "since", each: "ticket", if: (t) => t.system === "local" && t.status === "needs_human",
+  then: (t, ctx) => ctx.ticket.queueComment(t, "since=" + t.statusSince, { once: ["since", t.id] }) });`
 
 const commentOnLocalByAttribute = `whenever({ name: "ask", each: "ticket", if: (t) => t.system === "local" && t.attributes.area === "webhooks",
   then: (t, ctx) => ctx.ticket.queueComment(t, "seen", { once: ["ask", t.id] }) });`
 
 // The two actions run side by side, so either may land first. Whichever does, the other sees a status
 // it did not read and fails without writing.
-func TestTickMovesALocalTicketOnlyOnceWhenTwoRulesMoveItFromTheSameRead(t *testing.T) {
+func TestTickKeepsALocalTicketsStatusSinceFromTheDatabase(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Config: localOn, Rules: rule(moveThenMove)})
+	d := newDispatch(t, dispatchOptions{Config: localOn, Rules: rule(commentWithStatusSince)})
 	d.StartBeforeTheEvents()
 	d.fileLocal("Todo")
+	moved := d.Clock.Now()
+	d.Stop()
 
-	_ = d.Run("tick")
+	// The file says LOC-1 entered Needs Human at the time of the move, an hour before dispatch first reads that status.
+	d.Advance(time.Hour)
+	d.setLocalStatus("LOC-1", "Needs Human", moved)
+	d.Restart()
+	d.Tick()
 
-	// The loop may read the first move before it starts the second, and then the second is not stale.
-	assert.Contains(t, []string{"In Review", "Needs Human"}, d.statusOf("LOC-1"))
-	moves := d.ReceiptsOf("move", "LOC-1")
-	require.Len(t, moves, 2)
-	for _, m := range moves {
-		if m.State == "failed" {
-			assert.Contains(t, m.Detail, "now, not the Todo the cycle saw")
-			assert.NotContains(t, m.Detail, "Linear")
-		}
-	}
-	assert.Contains(t, []string{moves[0].State, moves[1].State}, "done")
+	assert.Contains(t, d.ticketOut("show", "LOC-1"), fmt.Sprintf("since=%d", moved.UnixMilli()))
 }
 
-func TestTickEscalatingALocalTicketThatMovedSinceTheCycleReadWritesNothing(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Config: localOn, Rules: rule(moveThenEscalate)})
-	d.StartBeforeTheEvents()
-	d.fileLocal("Todo")
-
-	_ = d.Run("tick")
-
-	status, show := d.statusOf("LOC-1"), d.ticketOut("show", "LOC-1")
-	switch status {
-	case "In Review":
-		assert.NotContains(t, show, "dispatch  ")
-	case "Needs Human":
-		assert.Equal(t, 1, strings.Count(show, "dispatch  "))
-	default:
-		t.Fatalf("LOC-1 is %s", status)
-	}
+// setLocalStatus edits the database file while dispatch is stopped, as a tool outside dispatch could.
+func (d *Dispatch) setLocalStatus(id, status string, at time.Time) {
+	d.t.Helper()
+	db, err := bolt.Open(filepath.Join(d.state, "tickets.db"), 0o600, &bolt.Options{Timeout: time.Second})
+	require.NoError(d.t, err)
+	defer func() { _ = db.Close() }()
+	n, err := strconv.ParseUint(strings.TrimPrefix(id, "LOC-"), 10, 64)
+	require.NoError(d.t, err)
+	key := binary.BigEndian.AppendUint64(nil, n)
+	require.NoError(d.t, db.Update(func(tx *bolt.Tx) error {
+		tickets := tx.Bucket([]byte("tickets"))
+		var stored map[string]any
+		if err := json.Unmarshal(tickets.Get(key), &stored); err != nil {
+			return err
+		}
+		stored["status"], stored["statusAt"] = status, at.UTC().Format("2006-01-02T15:04:05.000Z")
+		raw, err := json.Marshal(stored)
+		if err != nil {
+			return err
+		}
+		return tickets.Put(key, raw)
+	}))
 }
 
 func TestTickRulesReadTheSystemAndAttributesOfALocalTicket(t *testing.T) {

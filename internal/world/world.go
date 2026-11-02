@@ -308,7 +308,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		}
 		switch {
 		case err == nil:
-			w.Tickets, w.LinearErr = withSystem(w.Tickets, ticket.SystemLinear, tickets), nil
+			w.Tickets, w.LinearErr = replaceLinear(src, w.Tickets, tickets), nil
 		case src.Resilient:
 			w.LinearErr = err
 			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the tickets: %v\n", err)
@@ -330,9 +330,9 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 			if w.HoldersErr == nil && src.LocalOn {
 				w.HoldersErr = clash(holders...)
 			}
-			if w.HoldersErr == nil {
-				w.LeaseHolders = withSystem(w.LeaseHolders, ticket.SystemLinear, holders)
-			}
+			// A failed lookup leaves no Linear holders, so a tree reads unread rather than deciding
+			// from holders an earlier lookup found. Local holders come from the local read.
+			w.LeaseHolders = replaceLinear(src, w.LeaseHolders, holders)
 			if w.HoldersErr != nil {
 				_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the tickets that hold trees: %v\n", w.HoldersErr)
 			}

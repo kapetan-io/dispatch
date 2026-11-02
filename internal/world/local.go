@@ -62,6 +62,15 @@ func withSystem(list []ticket.Ticket, system string, fresh []ticket.Ticket) []ti
 	return out
 }
 
+// replaceLinear replaces the Linear tickets in list with fresh. With no local store every ticket is
+// Linear's, even one whose id starts with LOC-, so fresh replaces the list outright.
+func replaceLinear(src Sources, list, fresh []ticket.Ticket) []ticket.Ticket {
+	if src.Local == nil {
+		return fresh
+	}
+	return withSystem(list, ticket.SystemLinear, fresh)
+}
+
 // linearOnly are the tickets of list that came from Linear.
 func linearOnly(list []ticket.Ticket) []ticket.Ticket {
 	return slices.DeleteFunc(slices.Clone(list), func(t ticket.Ticket) bool {
