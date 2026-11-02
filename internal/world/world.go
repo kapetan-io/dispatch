@@ -278,6 +278,11 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 			wk := FindWorker(t.Identifier, w.Trees, snap)
 			if at, ok := kickoffs.Since(src.StateDir, wk.TreePath); ok && wk.State != NoWorker && !kickoffRan(src.StateDir, wk, at) {
 				wk.UnconfirmedSince = at.UnixMilli()
+				// A Claude stuck at a startup dialog after its launcher died reports no status.
+				// Reading it idle lets close-unconfirmed-worker recover it.
+				if wk.noStatus {
+					wk.State = Idle
+				}
 			}
 			w.Workers[t.Identifier] = wk
 			if wk.State == Idle && t.Status == scope.Statuses.InProgress {

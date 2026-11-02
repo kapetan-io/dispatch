@@ -3,6 +3,7 @@ package herdrtest
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,7 +37,10 @@ type Subject struct {
 // must give.
 type Scenario struct {
 	Name string
-	Run  func(t *testing.T, s Subject)
+	// TUIOnly marks a scenario about the herdr TUI's own ids, labels or wording, which the
+	// Herdr app adapter has no equivalent of. Core's drift run leaves it out.
+	TUIOnly bool
+	Run     func(t *testing.T, s Subject)
 }
 
 // Scenarios is the contract for herdr.Herdr. The fake runs it in every test
@@ -52,7 +56,7 @@ var Scenarios = []Scenario{
 		assert.Empty(t, snap.Panes)
 		assert.Empty(t, snap.Agents)
 	}},
-	{Name: "ReadShowsWhatTheWorkspaceHolds", Run: func(t *testing.T, s Subject) {
+	{Name: "ReadShowsWhatTheWorkspaceHolds", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		first := s.Workspace("alpha")
 		second := s.Tab(first.Workspace, "beta")
 		s.Agent(second.Pane, "idle")
@@ -119,7 +123,7 @@ var Scenarios = []Scenario{
 
 		require.NoError(t, s.Herdr.Prompt(context.Background(), layout.Pane, "keep going"))
 	}},
-	{Name: "PromptRefusesABlockedAgent", Run: func(t *testing.T, s Subject) {
+	{Name: "PromptRefusesABlockedAgent", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
 		s.Agent(layout.Pane, "blocked")
 
@@ -137,7 +141,7 @@ var Scenarios = []Scenario{
 		require.ErrorContains(t, err, "agent_not_found")
 		assert.NotErrorIs(t, err, herdr.ErrAgentBlocked)
 	}},
-	{Name: "RenameWorkspaceChangesItsLabel", Run: func(t *testing.T, s Subject) {
+	{Name: "RenameWorkspaceChangesItsLabel", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
 
 		require.NoError(t, s.Herdr.RenameWorkspace(context.Background(), layout.Workspace, "🟢 ENG-1"))
@@ -147,13 +151,13 @@ var Scenarios = []Scenario{
 		require.Len(t, snap.Workspaces, 1)
 		assert.Equal(t, "🟢 ENG-1", snap.Workspaces[0].Label)
 	}},
-	{Name: "RenameWorkspaceRefusesAnUnknownWorkspace", Run: func(t *testing.T, s Subject) {
+	{Name: "RenameWorkspaceRefusesAnUnknownWorkspace", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		err := s.Herdr.RenameWorkspace(context.Background(), "w999", "x")
 
 		require.ErrorContains(t, err, "workspace_not_found")
 		assert.ErrorContains(t, err, "workspace w999 not found")
 	}},
-	{Name: "RenameTabChangesItsLabel", Run: func(t *testing.T, s Subject) {
+	{Name: "RenameTabChangesItsLabel", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
 
 		require.NoError(t, s.Herdr.RenameTab(context.Background(), layout.Tab, "ENG-1 title"))
@@ -163,7 +167,7 @@ var Scenarios = []Scenario{
 		require.Len(t, snap.Tabs, 1)
 		assert.Equal(t, "ENG-1 title", snap.Tabs[0].Label)
 	}},
-	{Name: "RenameTabRefusesAnUnknownTab", Run: func(t *testing.T, s Subject) {
+	{Name: "RenameTabRefusesAnUnknownTab", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
 
 		err := s.Herdr.RenameTab(context.Background(), layout.Workspace+":t999", "x")
@@ -189,12 +193,12 @@ var Scenarios = []Scenario{
 		assert.Equal(t, staying.Pane, snap.Panes[0].ID)
 		assert.Empty(t, snap.Agents)
 	}},
-	{Name: "CloseWorkspaceRefusesAnUnknownWorkspace", Run: func(t *testing.T, s Subject) {
+	{Name: "CloseWorkspaceRefusesAnUnknownWorkspace", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		err := s.Herdr.CloseWorkspace(context.Background(), "w999")
 
 		require.ErrorContains(t, err, "workspace_not_found")
 	}},
-	{Name: "CloseWorkspaceRefusesAWorkspaceAlreadyClosed", Run: func(t *testing.T, s Subject) {
+	{Name: "CloseWorkspaceRefusesAWorkspaceAlreadyClosed", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
 		require.NoError(t, s.Herdr.CloseWorkspace(context.Background(), layout.Workspace))
 
@@ -220,14 +224,14 @@ var Scenarios = []Scenario{
 		require.Len(t, snap.Agents, 1)
 		assert.Equal(t, first.Pane, snap.Agents[0].PaneID)
 	}},
-	{Name: "CloseTabRefusesAnUnknownTab", Run: func(t *testing.T, s Subject) {
+	{Name: "CloseTabRefusesAnUnknownTab", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
 
 		err := s.Herdr.CloseTab(context.Background(), layout.Workspace+":t999")
 
 		require.ErrorContains(t, err, "tab_not_found")
 	}},
-	{Name: "OpenWorkspaceShowsTheCheckout", Run: func(t *testing.T, s Subject) {
+	{Name: "OpenWorkspaceShowsTheCheckout", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		repo, tree := s.Checkout()
 
 		id, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
@@ -239,7 +243,7 @@ var Scenarios = []Scenario{
 		assert.Contains(t, snap.Workspaces, herdr.Workspace{ID: id, Label: "ENG-1", CheckoutPath: tree})
 		assert.Len(t, snap.Workspaces, 2)
 	}},
-	{Name: "OpenWorkspaceReturnsTheWorkspaceAlreadyShowingTheCheckout", Run: func(t *testing.T, s Subject) {
+	{Name: "OpenWorkspaceReturnsTheWorkspaceAlreadyShowingTheCheckout", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		repo, tree := s.Checkout()
 		first, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
 		require.NoError(t, err)
@@ -252,7 +256,7 @@ var Scenarios = []Scenario{
 		require.NoError(t, err)
 		assert.Len(t, snap.Workspaces, 2)
 	}},
-	{Name: "StartWorkerRunsTheProgramInANewTab", Run: func(t *testing.T, s Subject) {
+	{Name: "StartWorkerRunsTheProgramInANewTab", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		repo, tree := s.Checkout()
 		id, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
 		require.NoError(t, err)
@@ -278,7 +282,7 @@ var Scenarios = []Scenario{
 		assert.Equal(t, started.Pane, snap.Agents[0].PaneID)
 		assert.Equal(t, "idle", snap.Agents[0].Status)
 	}},
-	{Name: "StartWorkerNamesASecondWorkerApartFromTheFirst", Run: func(t *testing.T, s Subject) {
+	{Name: "StartWorkerNamesASecondWorkerApartFromTheFirst", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		repo, tree := s.Checkout()
 		id, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
 		require.NoError(t, err)
@@ -293,13 +297,87 @@ var Scenarios = []Scenario{
 		assert.Regexp(t, `^eng-1-r\d+$`, second.Agent)
 		assert.NotEqual(t, first.Pane, second.Pane)
 	}},
-	{Name: "StartWorkerRefusesAnUnknownWorkspace", Run: func(t *testing.T, s Subject) {
+	{Name: "StartWorkerRefusesAnUnknownWorkspace", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		_, tree := s.Checkout()
 
 		started, err := s.Herdr.StartWorker(context.Background(), herdr.Worker{Workspace: "w999", Dir: tree, Label: "ENG-1", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
 
 		require.ErrorContains(t, err, "workspace_not_found")
 		assert.Empty(t, started.Pane)
+	}},
+	{Name: "ReadShowsTheTabsPanesAndAgentsOfAWorkspace", Run: func(t *testing.T, s Subject) {
+		first := s.Workspace("alpha")
+		second := s.Tab(first.Workspace, "beta")
+		s.Agent(second.Pane, "idle")
+
+		snap, err := s.Herdr.Read(context.Background())
+
+		require.NoError(t, err)
+		require.Len(t, snap.Workspaces, 1)
+		assert.Equal(t, first.Workspace, snap.Workspaces[0].ID)
+		assert.Len(t, snap.Tabs, 2)
+		assert.Contains(t, snap.Tabs, herdr.Tab{ID: second.Tab, Label: snapshotTabLabel(snap, second.Tab), WorkspaceID: first.Workspace})
+		assert.Len(t, snap.Panes, 2)
+		assert.Contains(t, snap.Panes, herdr.Pane{ID: second.Pane, TabID: second.Tab, WorkspaceID: first.Workspace})
+		require.Len(t, snap.Agents, 1)
+		assert.Equal(t, herdr.Agent{Kind: "claude", Status: "idle", PaneID: second.Pane, TabID: second.Tab, WorkspaceID: first.Workspace}, snap.Agents[0])
+	}},
+	{Name: "PromptRefusesABlockedAgentAndTypesNothing", Run: func(t *testing.T, s Subject) {
+		layout := s.Workspace("alpha")
+		s.Agent(layout.Pane, "blocked")
+
+		err := s.Herdr.Prompt(context.Background(), layout.Pane, "keep going")
+
+		require.ErrorIs(t, err, herdr.ErrAgentBlocked)
+		assert.True(t, herdr.NothingTyped(err))
+	}},
+	{Name: "ReadShowsTheCheckoutOnceAWorkerStartsInIt", Run: func(t *testing.T, s Subject) {
+		repo, tree := s.Checkout()
+		id, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
+		require.NoError(t, err)
+		again, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
+		require.NoError(t, err)
+		assert.Equal(t, id, again)
+
+		_, err = s.Herdr.StartWorker(context.Background(), herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
+
+		require.NoError(t, err)
+		snap, err := s.Herdr.Read(context.Background())
+		require.NoError(t, err)
+		var shown []herdr.Workspace
+		for _, w := range snap.Workspaces {
+			if w.CheckoutPath == tree {
+				shown = append(shown, w)
+			}
+		}
+		require.Len(t, shown, 1)
+		assert.Equal(t, id, shown[0].ID)
+	}},
+	{Name: "StartWorkerRunsTheProgramOnTheTree", Run: func(t *testing.T, s Subject) {
+		repo, tree := s.Checkout()
+		id, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
+		require.NoError(t, err)
+
+		started, err := s.Herdr.StartWorker(context.Background(), herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1 title", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
+
+		require.NoError(t, err)
+		assert.NotEmpty(t, started.Agent)
+		// The program may still be loading, so the agent shows once herdr sees it run.
+		require.Eventually(t, func() bool {
+			snap, err := s.Herdr.Read(context.Background())
+			if err != nil {
+				return false
+			}
+			for _, a := range snap.Agents {
+				if a.WorkspaceID == id && a.PaneID == started.Pane && a.Kind == s.Program.AgentKind {
+					return true
+				}
+			}
+			return false
+		}, 20*time.Second, 100*time.Millisecond)
+		snap, err := s.Herdr.Read(context.Background())
+		require.NoError(t, err)
+		assert.Len(t, snap.Agents, 1)
 	}},
 	{Name: "KickoffMakesTheWorkerRun", Run: func(t *testing.T, s Subject) {
 		repo, tree := s.Checkout()
@@ -324,4 +402,14 @@ var Scenarios = []Scenario{
 		// about 30s against real herdr.
 		require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
 	}},
+}
+
+// snapshotTabLabel is the label the snapshot shows for a tab, which the Herdr app adapter leaves empty.
+func snapshotTabLabel(snap herdr.Snapshot, id string) string {
+	for _, tab := range snap.Tabs {
+		if tab.ID == id {
+			return tab.Label
+		}
+	}
+	return ""
 }

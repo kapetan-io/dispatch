@@ -31,6 +31,9 @@ const (
 	// after the tab came up, with the program not running in it.
 	OpStartTab   = "start-tab"
 	OpStartAgent = "start-agent"
+	// OpPrompt fails Prompt with the error given, such as herdr.ErrStatusUnknown, before
+	// anything is typed.
+	OpPrompt = "prompt"
 	// OpKickoff fails Kickoff with the error given, such as
 	// herdr.ErrKickoffUnconfirmed.
 	OpKickoff = "kickoff"
@@ -305,6 +308,9 @@ func (h *Herdr) Prompt(ctx context.Context, pane, text string) error {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if err := h.failures[OpPrompt]; err != nil {
+		return err
+	}
 	const command = "cli:agent:prompt"
 	i := slices.IndexFunc(h.agents, func(a herdr.Agent) bool { return a.PaneID == pane })
 	switch {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -118,4 +119,74 @@ func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
 	require.NoError(t, err, string(out))
+}
+
+// TestShippedWrapperLaunchesAWorkerInHerdrCoreUnderTheAppHost is the same launch with
+// host = "app", over a scratch herdr-core, so the workers are terminals the Herdr app shows.
+func TestShippedWrapperLaunchesAWorkerInHerdrCoreUnderTheAppHost(t *testing.T) {
+	t.Cleanup(func() {
+		left, err := herdrtest.CoreLeftovers(os.Getpid())
+		require.NoError(t, err)
+		assert.Empty(t, left)
+	})
+	core := herdrtest.StartCoreSession(t)
+	_, err := exec.LookPath("treehouse")
+	require.NoError(t, err)
+
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	repo := filepath.Join(root, "repo")
+	require.NoError(t, os.Mkdir(repo, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "treehouse.toml"), []byte("max_trees = 1\n"), 0o644))
+	runGit(t, repo, "init", "-q", "-b", "main")
+	runGit(t, repo, "-c", "user.name=drift", "-c", "user.email=drift@example.com", "commit", "-q", "--allow-empty", "-m", "init")
+
+	home := filepath.Join(root, "home")
+	require.NoError(t, os.MkdirAll(filepath.Join(home, ".config", "dispatch"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(home, ".config", "dispatch", "config.toml"), []byte("[plugins.herdr]\nhost = \"app\"\n"), 0o644))
+	bin, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "dispatch"), "github.com/kapetan-io/dispatch/cmd/dispatch").CombinedOutput()
+	require.NoError(t, err, string(out))
+	plugin, err := filepath.Abs("../..")
+	require.NoError(t, err)
+
+	cmd := exec.Command(filepath.Join(plugin, "bin", "dispatch-launch"), "ENG-1", "drift/eng-1", "--kickoff", "/dispatch:design ENG-1")
+	cmd.Dir = repo
+	cmd.Env = append(append([]string{}, core.Env...),
+		"HOME="+home,
+		"PATH="+bin+string(os.PathListSeparator)+herdrtest.StandInClaude(t)+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"TREEHOUSE_ROOT="+filepath.Join(root, "pool"),
+		"DISPATCH_PLUGIN_ROOT=",
+	)
+	stdout, err := cmd.Output()
+	require.NoError(t, err, string(stdout))
+
+	var result struct {
+		Status    string `json:"status"`
+		Worktree  string `json:"worktree"`
+		Workspace string `json:"workspace"`
+		Pane      string `json:"pane"`
+	}
+	require.NoError(t, json.Unmarshal(stdout, &result))
+	assert.Equal(t, "ok", result.Status)
+
+	snap, err := core.Core().WithKinds("claude").Read(context.Background())
+	require.NoError(t, err)
+	require.Len(t, snap.Workspaces, 1)
+	assert.Equal(t, result.Worktree, snap.Workspaces[0].CheckoutPath)
+	assert.Equal(t, result.Workspace, snap.Workspaces[0].ID)
+	require.Len(t, snap.Agents, 1)
+	assert.Equal(t, result.Pane, snap.Agents[0].PaneID)
+	assert.Equal(t, "working", snap.Agents[0].Status)
+	raw, err := os.ReadFile(filepath.Join(result.Worktree, "standin-claude.json"))
+	require.NoError(t, err)
+	var started struct {
+		Args       []string `json:"args"`
+		TerminalID string   `json:"hc_terminal_id"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &started))
+	assert.Equal(t, result.Pane, started.TerminalID)
+	assert.Contains(t, started.Args, "--session-id")
+	assert.Equal(t, snap.Agents[0].Session, started.Args[slices.Index(started.Args, "--session-id")+1])
 }

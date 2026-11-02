@@ -60,7 +60,8 @@ type Options struct {
 	// KeyCommandTimeout cuts off, on Clock, an api_key_command that never returns, such as a
 	// password manager waiting on an unlock prompt. Defaults to 1 minute.
 	KeyCommandTimeout time.Duration
-	// Herdr is the workspace manager that hosts the workers. Defaults to the installed herdr.
+	// Herdr is the workspace manager that hosts the workers. Defaults to the real adapter for the
+	// config's [plugins.herdr] host: the installed herdr, or hc for the Herdr app.
 	Herdr herdr.Herdr
 	// Treehouse is the pool of trees. Defaults to the installed treehouse.
 	Treehouse treehouse.Pool
@@ -288,14 +289,6 @@ func withDefaults(o Options) Options {
 	}
 	if o.Stderr == nil {
 		o.Stderr = os.Stderr
-	}
-	if o.Herdr == nil {
-		// DISPATCH_LAUNCH_TRACE=<file> records every screen the kickoff step reads.
-		cli := herdr.NewCLI("herdr").WithKinds(o.Harnesses.AgentKinds()...).WithEnv(o.Env).WithPace(o.LaunchPace).WithTrace(o.Env.Get("DISPATCH_LAUNCH_TRACE"))
-		if exe, err := os.Executable(); err == nil {
-			cli = cli.WithDispatchBin(exe)
-		}
-		o.Herdr = cli
 	}
 	return o
 }

@@ -221,6 +221,7 @@ func resetState(ctx context.Context, opts Options, quiet bool) error {
 // it wants, with the memory that cycle leaves, because a message's once key can hold a time that
 // memory first saw.
 func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *world.Memory, at time.Time, resync int) ([]ledger.Receipt, *world.Memory, error) {
+	opts = withHerdr(opts, cfg, nil)
 	loaded, err := loadRules(opts, cfg)
 	if err != nil {
 		return nil, nil, err

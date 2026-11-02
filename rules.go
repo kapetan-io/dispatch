@@ -144,6 +144,7 @@ func rulesCheck(ctx context.Context, opts Options, arg string) error {
 	if err != nil {
 		return err
 	}
+	opts = withHerdr(opts, cfg, nil)
 	dir, err := rulesDir(opts, arg, &cfg)
 	if err != nil {
 		return err

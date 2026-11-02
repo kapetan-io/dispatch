@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"strconv"
 	"time"
 
@@ -67,10 +68,13 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 		if rootErr != nil && opts.Launcher == nil {
 			res = launcher.Result{Status: launcher.StatusUsageError, Detail: rootErr.Error()}
 		} else {
-			// A launch run by hand shows its progress. Launches the loop starts stay quiet.
-			if cli, ok := opts.Herdr.(*herdr.CLI); ok {
-				cli.WithProgress(opts.Stderr)
+			host, err := launchHost(opts)
+			if err != nil {
+				res = launcher.Result{Status: launcher.StatusUsageError, Detail: err.Error()}
+				break
 			}
+			// A launch run by hand shows its progress. Launches the loop starts stay quiet.
+			opts.Herdr = herdrFor(opts, host, opts.Stderr)
 			res = launcherFor(opts, root, opts.Stderr, loop.Typing(opts.StateDir)).Launch(ctx, req)
 		}
 	}
@@ -83,6 +87,19 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 		return errors.New("launch " + res.Status)
 	}
 	return nil
+}
+
+// launchHost is the host the config names. A launch needs no config of its own, so a missing
+// file means the default host, but a file that doesn't load is the user's to fix.
+func launchHost(opts Options) (string, error) {
+	cfg, err := loadConfig(opts)
+	if errors.Is(err, fs.ErrNotExist) {
+		return config.HostTUI, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return cfg.Plugins.Herdr.Host, nil
 }
 
 // launchProgram is what herdr runs for a launch by hand: the harness table ref, spelled

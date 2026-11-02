@@ -76,6 +76,7 @@ func runCommand(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	opts = withHerdr(opts, cfg, nil)
 	if cfg.Dispatch.Resync <= 0 {
 		return fmt.Errorf("[dispatch].resync must be positive, got %s", time.Duration(cfg.Dispatch.Resync))
 	}

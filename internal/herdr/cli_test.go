@@ -33,6 +33,9 @@ func TestMain(m *testing.M) {
 	if dir, ok := os.LookupEnv(envState); ok {
 		os.Exit(runStatefulStandIn(dir, os.Args[1:]))
 	}
+	if _, ok := os.LookupEnv(envCoreReplies); ok {
+		os.Exit(runCoreStandIn(os.Args[1:]))
+	}
 	if raw, ok := os.LookupEnv(envReplies); ok {
 		var replies map[string]reply
 		if err := json.Unmarshal([]byte(raw), &replies); err != nil {

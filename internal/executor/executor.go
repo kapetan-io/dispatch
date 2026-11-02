@@ -295,13 +295,14 @@ func (e *Executor) nudge(ctx context.Context, w rules.Want, wd world.World) Resu
 	}
 	e.Typed.Note(wk.TreePath, text)
 	if err := e.Herdr.Prompt(ctx, wk.PaneID, text); err != nil {
-		// Only a refusal proves the text was not typed. Any other failure, a timeout included, may have typed it.
-		var refusal *herdr.Refusal
-		if errors.Is(err, herdr.ErrAgentBlocked) || errors.As(err, &refusal) && refusal.Code == "agent_not_found" {
+		if herdr.NothingTyped(err) {
 			e.Typed.Withdraw(wk.TreePath, text)
 		}
 		if errors.Is(err, herdr.ErrAgentBlocked) {
 			return failed("blocked")
+		}
+		if errors.Is(err, herdr.ErrStatusUnknown) {
+			return failed("status unknown, nothing typed")
 		}
 		return failed("while prompting herdr pane %s: %v", wk.PaneID, err)
 	}

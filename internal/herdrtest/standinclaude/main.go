@@ -5,6 +5,11 @@
 // directory, recording the arguments and environment it was started with. A kickoff that arrives makes it report working, and
 // a dialog answered the wrong way makes it exit, as Claude does when "No, exit"
 // is chosen.
+//
+// Run by herdr-core (HC_TERMINAL_ID set), it reports through the OSC 7501 escape sequence Claude prints
+// instead of a herdr command, says nothing at the dialogs (as Claude does), and reports idle at its input
+// box. After the kickoff it reports working, and a later line of "!idle", "!done" or "!blocked" makes it
+// report that state, so a test can move the worker without a paid session.
 package main
 
 import (
@@ -21,29 +26,38 @@ const down = "\x1b[B"
 
 func main() {
 	record()
-	report("idle")
+	app := os.Getenv("HC_TERMINAL_ID") != ""
+	if !app {
+		report("idle")
+	}
 	// Claude draws on a cleared screen, which also hides the shell command that
 	// started it.
 	fmt.Print("\x1b[2J\x1b[H")
 	in := bufio.NewReader(os.Stdin)
 
-	fmt.Println("Bypass Permissions mode")
-	fmt.Println("  1. No, exit")
-	fmt.Println("  2. Yes, I accept")
-	if !chose(in, func(line string) bool { return strings.Contains(line, "2") || line == down }) {
-		os.Exit(1)
-	}
+	// STANDIN_NO_DIALOGS=1 goes straight to the input box, for a test that is not about the dialogs.
+	if os.Getenv("STANDIN_NO_DIALOGS") != "1" {
+		fmt.Println("Bypass Permissions mode")
+		fmt.Println("  1. No, exit")
+		fmt.Println("  2. Yes, I accept")
+		if !chose(in, func(line string) bool { return strings.Contains(line, "2") || line == down }) {
+			os.Exit(1)
+		}
 
-	fmt.Print("\x1b[2J\x1b[H")
-	fmt.Println("Do you trust this folder?")
-	fmt.Println("  ❯ No, exit")
-	fmt.Println("    Yes, proceed")
-	if !chose(in, func(line string) bool { return line == down }) {
-		os.Exit(1)
+		fmt.Print("\x1b[2J\x1b[H")
+		fmt.Println("Do you trust this folder?")
+		fmt.Println("  ❯ No, exit")
+		fmt.Println("    Yes, proceed")
+		if !chose(in, func(line string) bool { return line == down }) {
+			os.Exit(1)
+		}
 	}
 
 	fmt.Print("\x1b[2J\x1b[H")
 	fmt.Print("❯ ")
+	if app {
+		report("idle")
+	}
 	for {
 		line, err := in.ReadString('\n')
 		if err != nil {
@@ -54,7 +68,20 @@ func main() {
 			break
 		}
 	}
-	time.Sleep(time.Hour)
+	if !app {
+		time.Sleep(time.Hour)
+	}
+	for {
+		line, err := in.ReadString('\n')
+		if err != nil {
+			return
+		}
+		if state, ok := strings.CutPrefix(strings.TrimSpace(line), "!"); ok {
+			report(state)
+		} else {
+			report("working")
+		}
+	}
 }
 
 // chose reads lines until one is an answer, and reports whether it was the
@@ -83,11 +110,16 @@ func record() {
 		"plugin_root":       os.Getenv("DISPATCH_PLUGIN_ROOT"),
 		"autonomous_worker": os.Getenv("AUTONOMOUS_WORKER"),
 		"dispatch_bin":      os.Getenv("DISPATCH_BIN"),
+		"hc_terminal_id":    os.Getenv("HC_TERMINAL_ID"),
 	})
 	_ = os.WriteFile("standin-claude.json", b, 0o644)
 }
 
 func report(state string) {
+	if os.Getenv("HC_TERMINAL_ID") != "" {
+		fmt.Printf("\x1b]7501;state=%s\a", state)
+		return
+	}
 	bin := os.Getenv("HERDR_BIN_PATH")
 	if bin == "" {
 		bin = "herdr"

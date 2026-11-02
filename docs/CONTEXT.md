@@ -241,5 +241,5 @@ A case in a `*.test.ts` file that `dispatch rules test` runs. It sets up a world
 _Avoid_: contract scenario (a tool fake against its adapter), unit test
 
 **Stop record**:
-The latest turn end of each worker session, from the harness's report through `dispatch record-stop`, which finds the harness from the herdr pane the hook runs in (`HERDR_PANE_ID`), saying whether background tasks were still running. A turn end at or before its tree's last return is ignored.
+The latest turn end of each worker session, from the harness's report through `dispatch record-stop`, which finds the harness from the terminal the hook runs in (`HC_TERMINAL_ID` under the Herdr app, `HERDR_PANE_ID` under the herdr TUI), saying whether background tasks were still running. A turn end at or before its tree's last return is ignored.
 _Avoid_: stop file, turn (the session log keeps every turn)
