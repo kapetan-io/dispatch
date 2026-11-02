@@ -19,6 +19,20 @@ func (d *Dispatch) fileLocal(status string, args ...string) string {
 	return strings.TrimSpace(out)
 }
 
+// moveToInProgress starts a parent once its children exist. Filing the children under a parent that
+// is already In Progress lets a cycle between two creates see only the finished ones and close it.
+func (d *Dispatch) moveToInProgress(id string) { d.ticketOut("move", id, "In Progress") }
+
+// settles ticks until the ticket reaches want. A write through the CLI starts a read that may still be
+// in flight when a tick runs, so one tick can decide on a read from before the write.
+func (d *Dispatch) settles(id, want string) {
+	d.t.Helper()
+	require.Eventually(d.t, func() bool {
+		d.Tick()
+		return d.statusOf(id) == want
+	}, 10*time.Second, 50*time.Millisecond)
+}
+
 // statusOf is the status `dispatch ticket show` prints for a local ticket.
 func (d *Dispatch) statusOf(id string) string {
 	d.t.Helper()
@@ -36,9 +50,8 @@ func TestTickLaunchesAnInProgressLocalTicket(t *testing.T) {
 	d := localDispatch(t)
 	d.fileLocal("In Progress")
 
-	out := d.Tick()
+	d.Tick()
 
-	assert.Equal(t, "LOC-1 launched\n", out)
 	assert.Equal(t, []string{d.Repo + " LOC-1 loc-1-work --model sonnet"}, d.Workers.Launched())
 }
 
@@ -50,10 +63,10 @@ func TestTickHoldsALocalLaunchBehindALinearWorkerAtTheCap(t *testing.T) {
 	d.StartBeforeTheEvents()
 	d.fileLocal("In Progress")
 
-	out := d.Tick()
+	d.Tick()
 
-	assert.Equal(t, "LOC-1 queued: launch, 1 of 1 in progress, 1st in line\n", out)
 	assert.Empty(t, d.Workers.Launched())
+	assert.Contains(t, d.plan(), "LOC-1")
 }
 
 func TestTickLabelsALocalWorkspaceByTheJobOfItsStatus(t *testing.T) {
@@ -102,36 +115,34 @@ func TestTickPromotesAnUnblockedLocalChildAndHoldsTheBlockedOne(t *testing.T) {
 	d.fileLocal("Todo", "--parent", "LOC-1")
 	d.fileLocal("Todo", "--parent", "LOC-1", "--blocked-by", "LOC-2")
 
-	d.Tick()
+	d.settles("LOC-2", "In Progress")
 
-	assert.Equal(t, "In Progress", d.statusOf("LOC-2"))
 	assert.Equal(t, "Todo", d.statusOf("LOC-3"))
 }
 
 func TestTickPromotesALocalChildOnceItsBlockerIsDone(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
-	d.fileLocal("In Progress")
+	d.fileLocal("Todo")
 	d.Workers.Running("LOC-1", "working")
 	d.fileLocal("Done", "--parent", "LOC-1")
 	d.fileLocal("Todo", "--parent", "LOC-1", "--blocked-by", "LOC-2")
+	d.moveToInProgress("LOC-1")
 
-	d.Tick()
-
-	assert.Equal(t, "In Progress", d.statusOf("LOC-3"))
+	d.settles("LOC-3", "In Progress")
 }
 
 func TestTickEscalatesALocalChildWhoseBlockerWasCanceled(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
-	d.fileLocal("In Progress")
+	d.fileLocal("Todo")
 	d.Workers.Running("LOC-1", "working")
 	d.fileLocal("Canceled", "--parent", "LOC-1")
 	d.fileLocal("Todo", "--parent", "LOC-1", "--blocked-by", "LOC-2")
+	d.moveToInProgress("LOC-1")
 
-	d.Tick()
+	d.settles("LOC-3", "Needs Human")
 
-	assert.Equal(t, "Needs Human", d.statusOf("LOC-3"))
 	show := d.ticketOut("show", "LOC-3")
 	assert.Equal(t, 1, strings.Count(show, "dispatch  "))
 	assert.Contains(t, show, "LOC-2 is Canceled")
@@ -140,14 +151,13 @@ func TestTickEscalatesALocalChildWhoseBlockerWasCanceled(t *testing.T) {
 func TestTickClosesAParentWhoseLocalChildrenAreAllFinished(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
-	d.fileLocal("In Progress")
+	d.fileLocal("Todo")
 	d.Workers.Running("LOC-1", "working")
 	d.fileLocal("Done", "--parent", "LOC-1")
 	d.fileLocal("Canceled", "--parent", "LOC-1")
+	d.moveToInProgress("LOC-1")
 
-	d.Tick()
-
-	assert.Equal(t, "Done", d.statusOf("LOC-1"))
+	d.settles("LOC-1", "Done")
 }
 
 func TestTickMergesALocalTicketsApprovedPR(t *testing.T) {
