@@ -104,8 +104,9 @@ type terminalStatus struct {
 	Kind  string `json:"kind"`
 }
 
-// reasonServerStop is why herdr-core ends a terminal when the core itself stops.
-const reasonServerStop = "server_stop"
+// resumable lists the reasons herdr-core gives a finished terminal that lost its program to
+// the core or the machine going away. An exited, killed or signaled Claude crashed or was quit.
+var resumable = []string{"server_stop", "stopped_by_restart", "holder_lost", "host_shutdown"}
 
 func (t terminal) live() bool { return t.State == "live" }
 
@@ -294,13 +295,13 @@ func (c *Core) StartWorker(ctx context.Context, w Worker) (Started, error) {
 	if err != nil {
 		return Started{}, err
 	}
-	// Only a core restart resumes: an exited or killed Claude crashed or was quit. The
-	// newest finished terminal decides, and every one is removed before the new run.
+	// Only a Claude lost to the core or the machine resumes. The newest finished terminal
+	// decides, and every one is removed before the new run.
 	var previous string
 	for _, t := range existing {
 		if t.startedByDispatch() && !t.live() {
 			previous = ""
-			if t.Reason == reasonServerStop {
+			if slices.Contains(resumable, t.Reason) {
 				previous = t.Labels[LabelSession]
 			}
 		}

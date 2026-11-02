@@ -565,3 +565,48 @@ func TestCoreCloseWorkspaceRemovesFinishedWorkerTerminalsAfterACoreRestart(t *te
 	assert.Contains(t, args, "6f0c1e2a-0000-4000-8000-000000000003")
 	assert.NotContains(t, args, "--resume")
 }
+
+// killHolder kills the scratch core's holder process of the worker's terminal, which leaves
+// the terminal finished with reason holder_lost, and removes the socket the holder leaves behind.
+func (r *coreRig) killHolder(t *testing.T) {
+	t.Helper()
+	prefix := strings.TrimSuffix(r.session.Socket, ".sock") + ".holder."
+	out, err := exec.Command("ps", "-axo", "pid,command").Output()
+	require.NoError(t, err)
+	killed := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		_, command, found := strings.Cut(strings.TrimSpace(line), " ")
+		if !found || !strings.Contains(command, "hold --socket "+prefix) {
+			continue
+		}
+		require.NoError(t, exec.Command("kill", "-9", strings.Fields(line)[0]).Run())
+		_, socket, _ := strings.Cut(command, "--socket ")
+		require.NoError(t, os.Remove(strings.TrimSpace(socket)))
+		killed++
+	}
+	require.Equal(t, 1, killed)
+}
+
+func TestCoreStartWorkerResumesAfterItsHolderWasLost(t *testing.T) {
+	r := newCoreRig(t)
+	r.launched(t)
+
+	r.killHolder(t)
+
+	require.Eventually(t, func() bool {
+		for _, term := range r.terminals(t, true).Terminals {
+			if term.State == "finished" && term.Reason == "holder_lost" {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 100*time.Millisecond)
+	r.launched(t)
+	all := r.terminals(t, true)
+	require.Len(t, all.Terminals, 1)
+	assert.Equal(t, r.worker.Program.Session, all.Terminals[0].Labels["dispatch.session"])
+	args := r.recordedArgs(t)
+	assert.Contains(t, args, "--resume")
+	assert.Contains(t, args, r.worker.Program.Session)
+	assert.NotContains(t, args, "--session-id")
+}

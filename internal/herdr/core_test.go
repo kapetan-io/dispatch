@@ -474,26 +474,31 @@ func TestCoreStartWorkerRemovesOnlyTheFinishedWorkerTerminalsOfTheTree(t *testin
 	assert.Equal(t, []string{"terminal.list", "terminal.rm", "terminal.run"}, calls.Methods())
 }
 
-func TestCoreStartWorkerResumesTheSessionAServerStopEnded(t *testing.T) {
-	shims := t.TempDir()
-	require.NoError(t, os.WriteFile(shims+"/claude", []byte("#!/bin/sh\n"), 0o755))
-	stopped := worker("t1", "spA", "tbA", "")
-	stopped.state, stopped.program, stopped.reason = "finished", "", "server_stop"
-	core, calls := coreStandIn(t, map[string][]string{
-		"terminal.list": {list(term(stopped))},
-		"terminal.rm":   {ok(`{}`)},
-		"terminal.run":  {ok(term(worker("t2", "spA", "tbA", "")))},
-	})
+func TestCoreStartWorkerResumesTheSessionOfAWorkerTheCoreOrMachineLost(t *testing.T) {
+	for _, reason := range []string{"server_stop", "stopped_by_restart", "holder_lost", "host_shutdown"} {
+		t.Run(reason, func(t *testing.T) {
+			shims := t.TempDir()
+			require.NoError(t, os.WriteFile(shims+"/claude", []byte("#!/bin/sh\n"), 0o755))
+			lost := worker("t1", "spA", "tbA", "")
+			lost.state, lost.program, lost.reason = "finished", "", reason
+			core, calls := coreStandIn(t, map[string][]string{
+				"terminal.list": {list(term(lost))},
+				"terminal.rm":   {ok(`{}`)},
+				"terminal.run":  {ok(term(worker("t2", "spA", "tbA", "")))},
+			})
 
-	_, err := core.StartWorker(context.Background(), herdr.Worker{Dir: t.TempDir(), Program: herdr.Program{
-		AgentKind: "claude", Argv: []string{"--model", "sonnet"}, PathFirst: []string{shims},
-		Session: "new-session", SessionFlag: "--session-id", ResumeFlag: "--resume",
-	}})
+			_, err := core.StartWorker(context.Background(), herdr.Worker{Dir: t.TempDir(), Program: herdr.Program{
+				AgentKind: "claude", Argv: []string{"--model", "sonnet"}, PathFirst: []string{shims},
+				Session: "new-session", SessionFlag: "--session-id", ResumeFlag: "--resume",
+			}})
 
-	require.NoError(t, err)
-	run := calls.Params(t, "terminal.run")[0]
-	assert.Equal(t, []any{shims + "/claude", "--model", "sonnet", "--resume", "sess-t1"}, run["argv"])
-	assert.Equal(t, "sess-t1", run["labels"].(map[string]any)["dispatch.session"])
+			require.NoError(t, err)
+			run := calls.Params(t, "terminal.run")[0]
+			// worker() labels terminal tN with session sess-tN.
+			assert.Equal(t, []any{shims + "/claude", "--model", "sonnet", "--resume", "sess-t1"}, run["argv"])
+			assert.Equal(t, "sess-t1", run["labels"].(map[string]any)["dispatch.session"])
+		})
+	}
 }
 
 func TestCoreStartWorkerStartsFreshWhenResumingIsNotPossible(t *testing.T) {
@@ -504,6 +509,7 @@ func TestCoreStartWorkerStartsFreshWhenResumingIsNotPossible(t *testing.T) {
 	}{
 		{name: "ProgramExited", reason: "exited", resume: "--resume"},
 		{name: "ProgramKilled", reason: "killed", resume: "--resume"},
+		{name: "ProgramSignaled", reason: "signaled", resume: "--resume"},
 		{name: "NoResumeFlag", reason: "server_stop"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
