@@ -23,19 +23,28 @@ func main() {
 		if exe, err := os.Executable(); err == nil {
 			_ = os.Setenv("PATH", filepath.Dir(exe)+string(os.PathListSeparator)+os.Getenv("PATH"))
 		}
+		// A test run from inside a Claude session passes down its child-session marker, which turns
+		// the worker's transcript off.
+		_ = os.Unsetenv("CLAUDE_CODE_CHILD_SESSION")
 		// A scratch herdr-core hands its terminals scratch XDG directories, and Claude's installer
-		// would re-point the maintainer's ~/.local/bin/claude into them. A test run from inside a
-		// Claude session also passes down its child-session marker, which turns the worker's
-		// transcript off.
+		// would re-point the maintainer's ~/.local/bin/claude into the data one. The runtime and
+		// config directories stay scratch, because hc finds its core through them.
 		if os.Getenv("DISPATCH_DRIFT_RESTORE_XDG") == "1" {
-			_ = os.Unsetenv("CLAUDE_CODE_CHILD_SESSION")
-			for _, name := range []string{"XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR"} {
+			for _, name := range []string{"XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"} {
 				if value, ok := os.LookupEnv("DISPATCH_DRIFT_REAL_" + name); ok {
 					_ = os.Setenv(name, value)
 				} else {
 					_ = os.Unsetenv(name)
 				}
 			}
+		}
+		// The hooks inherit this environment, so it shows which core they reach.
+		if trace := os.Getenv("DISPATCH_DRIFT_SHIM_TRACE"); trace != "" {
+			var lines string
+			for _, name := range []string{"HC_SOCKET", "HC_SESSION", "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME"} {
+				lines += name + "=" + os.Getenv(name) + "\n"
+			}
+			_ = os.WriteFile(trace, []byte(lines), 0o644)
 		}
 	}
 	opts := dispatch.Options{ConfigPath: os.Getenv("DISPATCH_DRIFT_CONFIG"), StateDir: os.Getenv("DISPATCH_DRIFT_STATE")}

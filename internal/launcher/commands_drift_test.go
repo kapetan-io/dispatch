@@ -99,12 +99,18 @@ func realClaudeTakesDispatchsCommands(t *testing.T, app bool) {
 	t.Setenv("TREEHOUSE_ROOT", filepath.Join(root, "pool"))
 	var cli herdr.Herdr
 	var env []string
+	var shimEnv string
+	var core *herdrtest.CoreSession
 	var screen func(pane string) string
 	if app {
-		// The scratch core's XDG directories would reach Claude and make its installer re-point
-		// ~/.local/bin/claude into them, so driftdispatch's claude shim restores the DISPATCH_DRIFT_REAL_* values.
+		// The scratch core's XDG data, state and cache directories would reach Claude and make its
+		// installer re-point ~/.local/bin/claude into them, so driftdispatch's claude shim restores
+		// the DISPATCH_DRIFT_REAL_* values. The runtime and config directories stay scratch, because
+		// the hooks' hc finds its core through them.
+		shimEnv = filepath.Join(root, "shim.env")
+		t.Setenv("DISPATCH_DRIFT_SHIM_TRACE", shimEnv)
 		t.Setenv("DISPATCH_DRIFT_RESTORE_XDG", "1")
-		for _, name := range []string{"XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR"} {
+		for _, name := range []string{"XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"} {
 			if value, ok := os.LookupEnv(name); ok {
 				t.Setenv("DISPATCH_DRIFT_REAL_"+name, value)
 			}
@@ -113,7 +119,7 @@ func realClaudeTakesDispatchsCommands(t *testing.T, app bool) {
 		// HERDR_PANE_ID and pass without HC_TERMINAL_ID.
 		t.Setenv("HERDR_PANE_ID", "")
 		t.Setenv("HERDR_SOCKET_PATH", "")
-		core := herdrtest.StartCoreSession(t)
+		core = herdrtest.StartCoreSession(t)
 		cli, env = core.Core().WithKinds("claude"), core.Env
 		screen = func(pane string) string { return core.Run(t, "read", pane) }
 	} else {
@@ -237,11 +243,17 @@ func realClaudeTakesDispatchsCommands(t *testing.T, app bool) {
 		id := worker().Session
 		require.NotEmpty(t, id)
 		assert.Equal(t, []string{id}, transcriptSessions(t, launched.Worktree))
-		// The Stop hook finds the terminal only through HC_TERMINAL_ID, so a record proves it did.
+		// settled already needed the hook's Stop report to reach a turn, so a hook that missed the
+		// terminal through HC_TERMINAL_ID times out there. This reads the Stop record the same report wrote.
 		assert.Eventually(t, func() bool {
 			_, found := stops.Read(state, launched.Worktree, id)
 			return found
 		}, 10*time.Second, 100*time.Millisecond)
+		// The hooks run in the shim's environment, so they reach the scratch core and not the maintainer's.
+		raw, err := os.ReadFile(shimEnv)
+		require.NoError(t, err)
+		assert.Contains(t, string(raw), "HC_SOCKET="+core.Socket+"\n")
+		assert.Contains(t, string(raw), "HC_SESSION="+core.Env.Get("HC_SESSION")+"\n")
 	}
 
 	// The run's history belongs in the temp state, not the folder a real restart resumes from.
