@@ -4,6 +4,7 @@ package launcher
 
 import (
 	"context"
+	"time"
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
 )
@@ -40,10 +41,14 @@ type Request struct {
 	// Kickoff is the first command typed into the worker. Defaults to
 	// "/dispatch:build <Ticket>".
 	Kickoff string
-	// WhileQueued is called before the launch waits for its turn at the clone, and the func it
-	// returns when the turn comes. The caller stops its launch deadline in between, so time spent
-	// behind other launches does not count against this one. Optional.
+	// WhileQueued is called before the launch queues behind other launches into the same clone,
+	// and the func it returns once the launch holds the clone. The caller stops its launch
+	// deadline in between, so time spent in the queue does not count against this one. Optional.
 	WhileQueued func() (resume func())
+	// QueueLimit is how long the launch waits in that queue before it fails, so a launch that
+	// holds the clone and hangs does not strand the ones behind it. Zero waits as long as the
+	// launch's context lasts.
+	QueueLimit time.Duration
 }
 
 // Stack is the PR a stacked ticket's branch starts at.

@@ -256,6 +256,11 @@ func (p *Pool) Lease(ctx context.Context, repoDir, ticket string) (treehouse.Tre
 	if gate != nil {
 		select {
 		case <-gate:
+		case <-ctx.Done():
+			p.mu.Lock()
+			p.leasing[key]--
+			p.mu.Unlock()
+			return treehouse.Tree{}, ctx.Err()
 		case <-time.After(20 * time.Second):
 		}
 	}

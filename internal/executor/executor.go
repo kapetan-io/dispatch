@@ -40,8 +40,11 @@ import (
 
 // Deadlines. A launch takes 8 to 13 seconds when it works. One that lands after its
 // deadline shows up as a worker on the next read, which makes the launch rule false.
-// A launch's deadline stops while it waits behind another launch into the same repo.
+// A launch's deadline stops while it waits behind another launch into the same repo, and the
+// wait has its own limit of QueueDeadlines launch deadlines, so a launch that hangs while it
+// holds the repo fails the ones behind it instead of stalling them.
 const (
+	QueueDeadlines  = 4
 	LaunchDeadline  = 25 * time.Second
 	DefaultDeadline = time.Minute
 )
@@ -276,7 +279,7 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World, que
 	}
 	kickoff, _ := w.Options["kickoff"].(string)
 	req := launcher.Request{
-		RepoDir: repo.Path, Ticket: t.Identifier, Title: t.Title, Branch: t.Branch, StartPR: t.StartPR, Program: program, Kickoff: kickoff, WhileQueued: queued,
+		RepoDir: repo.Path, Ticket: t.Identifier, Title: t.Title, Branch: t.Branch, StartPR: t.StartPR, Program: program, Kickoff: kickoff, WhileQueued: queued, QueueLimit: QueueDeadlines * e.deadline(w.Receipt),
 	}
 	if on, ok := w.Options["stackOn"].(map[string]any); ok {
 		ticket, _ := on["ticket"].(string)

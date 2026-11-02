@@ -16,8 +16,8 @@ type Clock interface {
 	// NewDeadline is NewTimer for a timeout. what names it so a fake clock can expire this
 	// one and no other. Names in use are "<receipt kind> <subject>" ("launch ENG-1"),
 	// "rule <name> <if|then>", "rule <name> http.get", "rules load", "launch preflight",
-	// "alert", "record-stop" and "api_key_command". Several live deadlines may share a name,
-	// such as one "rule loops if" per ticket.
+	// "queue <ticket>", "alert", "record-stop" and "api_key_command". Several live deadlines
+	// may share a name, such as one "rule loops if" per ticket.
 	NewDeadline(what string, d time.Duration) Timer
 }
 
