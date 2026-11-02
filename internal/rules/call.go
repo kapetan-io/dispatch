@@ -246,6 +246,12 @@ func (c *call) toJS(v reflect.Value, ref string) sobek.Value {
 			items[i] = c.toJS(v.Index(i), ref)
 		}
 		return c.rt.NewArray(items...)
+	case reflect.Map:
+		obj := c.rt.NewObject()
+		for _, key := range v.MapKeys() {
+			_ = obj.Set(key.String(), c.toJS(v.MapIndex(key), ref))
+		}
+		return obj
 	case reflect.Struct:
 		if v.Type() == reflect.TypeFor[Ref]() {
 			target, ok := c.state.lookup(v.FieldByName("Kind").String(), v.FieldByName("ID").String())

@@ -213,7 +213,7 @@ type System interface {
 	// Move moves seen to the status that does job. It refuses with
 	// "%s is %s now, not the %s the cycle saw" when the ticket's status is no longer seen.Status.
 	// A non-empty note is added as a comment by dispatch. errors.Is(err, ErrNoteLost) means the
-	// move landed and the note did not; the local store commits both or neither.
+	// move landed and the note did not. A system that can commit both at once never returns it.
 	Move(ctx context.Context, seen Ticket, job Job, note string) (status string, err error)
 	// Comment adds body as a comment by dispatch. ref needs Identifier, and ID for Linear.
 	Comment(ctx context.Context, ref Ticket, body string) error

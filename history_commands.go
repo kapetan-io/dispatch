@@ -273,7 +273,7 @@ func firstUnread(w world.World) error {
 	for label, err := range w.PoolErrs {
 		return fmt.Errorf("the %s pool: %w", label, err)
 	}
-	for _, err := range []error{w.LinearErr, w.HerdrErr, w.HoldersErr, w.ChildrenErr, w.InboxErr} {
+	for _, err := range []error{w.LinearErr, w.LocalErr, w.HerdrErr, w.HoldersErr, w.ChildrenErr, w.InboxErr} {
 		if err != nil {
 			return err
 		}

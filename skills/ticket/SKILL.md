@@ -16,7 +16,7 @@ $ dispatch ticket create --repo dispatch --title "Retry webhooks on 502" --label
 LOC-7
 ```
 
-`--repo` is a `[repos.<label>]` name. A local ticket needs no AI label, assignee or paused status, so skip the Fields rules for those, `dispatch linear-viewer` and the checklist at the end. It starts in the status with the `todo` job unless `--status` names another, and moving it to In Progress starts a worker. Write the description in the body sections below. `--attr key=value` sets an attribute, a searchable pair beside the labels. `--parent` and `--blocked-by` take `LOC-` ids only. `dispatch ticket statuses` lists the statuses. `dispatch run` must be running, or the command exits 3 with `dispatch: not running`.
+`--repo` is a `[repos.<label>]` name. A local ticket needs no AI label, assignee or paused status, so skip the Fields rules for those, `dispatch linear-viewer` and the checklist at the end. It starts in the status with the `todo` job unless `--status` names another, and moving it to In Progress starts a worker, except on one labeled `design` or `design-review`. Write the description in the body sections below. `--attr key=value` sets an attribute, a searchable pair beside the labels. `--parent` and `--blocked-by` take `LOC-` ids only. `dispatch ticket statuses` lists the statuses. `dispatch run` must be running, or the command exits 3 with `dispatch: not running`.
 
 ## Read the config first
 

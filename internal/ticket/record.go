@@ -20,17 +20,14 @@ type Ticket struct {
 	// label may be missing from it.
 	LabelsTruncated bool
 	// LastComment is the creation time of the ticket's newest comment, or empty
-	// when it has none. It is RFC 3339 and sorts as text. Only ManagedTickets
-	// fills it in. It feeds the rules' lastHumanComment fact.
+	// when it has none. It is RFC 3339 and sorts as text. It feeds the rules'
+	// lastHumanComment fact.
 	LastComment string
-	// Mine means the ticket is assigned to the key's owner. Only ParentChildren
-	// sets it, because ManagedTickets returns nothing else.
+	// Mine means the ticket is the owner's: assigned to the Linear key's owner, or any local ticket.
 	Mine bool
-	// CreatedAt is Linear's RFC 3339 creation time, which sorts as text.
-	// ManagedTickets and ParentChildren fill it in.
+	// CreatedAt is the RFC 3339 creation time, which sorts as text.
 	CreatedAt string
-	// Blockers are the tickets that block this one. ManagedTickets and
-	// ParentChildren fill them in.
+	// Blockers are the tickets that block this one.
 	Blockers []Blocker
 	// BlockersTruncated means the ticket has more than 10 relations of any kind,
 	// so an unfinished blocker may be missing from Blockers.
@@ -52,7 +49,7 @@ type Blocker struct {
 	Abandoned bool
 }
 
-// Label is a Linear label and the label group it belongs to, if any.
+// Label is a ticket label and the label group it belongs to, if any.
 type Label struct {
 	Name  string
 	Group string

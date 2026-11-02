@@ -388,13 +388,11 @@ func (e *Executor) comment(ctx context.Context, w rules.Want, wd world.World) Re
 	if !ok {
 		ref = ticket.Ticket{Identifier: w.Subject, ID: w.Target["linearID"]}
 	}
-	if ref.ID == "" && ticket.SystemOf(w.Subject) != ticket.SystemLocal {
-		return failed("%s was not read", w.Subject)
-	}
 	if err := sys.Comment(ctx, ref, text); err != nil {
 		return failed("while commenting on %s: %v", w.Subject, err)
 	}
 	res := Result{Outcome: ledger.Done}
+	// A Linear comment waits for the next resync, as it always has. A local one is a cheap read, and the merge check compares comments.
 	if ticket.SystemOf(w.Subject) == ticket.SystemLocal {
 		res.Reread = world.FromLocalTickets
 	}

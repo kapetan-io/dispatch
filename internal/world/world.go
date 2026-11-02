@@ -66,7 +66,8 @@ type Scope struct {
 	Repos          config.Repos
 }
 
-// ScopeOf is the scope a config sets.
+// ScopeOf is the scope a config sets. Its Local statuses are empty, so ask World.Scope for any
+// question about a ticket's status.
 func ScopeOf(cfg config.Config) Scope {
 	return Scope{
 		Linear:         cfg.Plugins.Linear.Statuses.Table(),
@@ -121,8 +122,10 @@ func (s Scope) RepoOf(t ticket.Ticket) (string, bool) {
 type World struct {
 	// At is when the read started.
 	At time.Time
-	// Tickets are the managed tickets: started, assigned to you and carrying the opt-in label.
-	// When LinearErr is set they are the last ones read, and no longer known.
+	// Tickets are the tracked tickets of both ticket systems: Linear tickets that are started,
+	// assigned to you and carrying the opt-in label, and every local ticket outside a finished
+	// status. When a system's own error (LinearErr or LocalErr) is set, its tickets are the last
+	// ones read, and no longer known.
 	Tickets   []ticket.Ticket
 	LinearErr error
 	// LocalStatuses are the statuses of the local ticket database, empty while local tickets are off.

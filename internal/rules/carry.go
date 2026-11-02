@@ -242,8 +242,8 @@ func (s *State) carryPools(mem, next *world.Memory) {
 }
 
 // carryChildren remembers which children each parent listed. A parent whose
-// children couldn't be read keeps the list it had, and so does every parent while
-// Linear is unread, because no parent exists then to say its children were unread.
+// children couldn't be read keeps the list it had, and so does every parent whose ticket
+// system is unread, because no parent exists then to say its children were unread.
 func (s *State) carryChildren(mem, next *world.Memory) {
 	for parent, ids := range mem.Children {
 		if s.unreadReason(parent) != "" {
@@ -318,7 +318,7 @@ func (s *State) keepWhileUnread(mem, next *world.Memory) {
 }
 
 // unreadKey is true when a remembered fact belongs to a ticket of a ticket system that could not be
-// read. Facts of anything else are kept while Linear is unread, as before local tickets existed.
+// read. Facts of anything else are kept while Linear is unread.
 func (s *State) unreadKey(key string) bool {
 	switch kind, rest, _ := strings.Cut(key, "/"); kind {
 	case "ticket", "worker", "pr", "escalation":

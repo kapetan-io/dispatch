@@ -64,6 +64,9 @@ func (s System) Move(ctx context.Context, seen ticket.Ticket, job ticket.Job, no
 
 // Comment adds a comment to the ticket.
 func (s System) Comment(ctx context.Context, ref ticket.Ticket, body string) error {
+	if ref.ID == "" {
+		return fmt.Errorf("%s was not read", ref.Identifier)
+	}
 	return s.Workspace().Comment(ctx, ref.ID, body)
 }
 

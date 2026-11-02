@@ -14,7 +14,8 @@ import (
 const Author = "dispatch"
 
 // System is the store as the executor writes through it. It is a separate type because the store's
-// own Move and Comment serve the CLI, which names a status and an author and expects no status.
+// own Move takes a status name, with no expected status, and its Comment takes an author, where this
+// one takes a job and writes as dispatch.
 type System struct{ s *Store }
 
 var _ ticket.System = System{}

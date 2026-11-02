@@ -414,9 +414,7 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 	s.addEscalations()
 	s.addIdleWorkers(w)
 	for _, r := range s.kinds["ticket"] {
-		switch reason := s.unreadReason(r.id); reason {
-		case "":
-		default:
+		if reason := s.unreadReason(r.id); reason != "" {
 			r.unknownAll(reason)
 		}
 	}

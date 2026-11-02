@@ -5,7 +5,7 @@ description: Respond to what a build worker's PR raised (review comments, questi
 
 # Respond to the PR
 
-A ticket whose id starts with `LOC-` is a local ticket. Wherever this skill says to comment on or move the ticket, use `dispatch ticket comment` and `dispatch ticket move LOC-<n> "<status>"` instead of the Linear tools.
+A ticket whose id starts with `LOC-` is a local ticket. Wherever this skill says to comment on or move the ticket, run `"${DISPATCH_BIN:-dispatch}" ticket comment LOC-<n> "<text>"` or `"${DISPATCH_BIN:-dispatch}" ticket move LOC-<n> "<status>"` instead of using the Linear tools. A flaky check's Backlog ticket is a Linear ticket, even when this one is local.
 
 Each time you start, run `"${DISPATCH_BIN:-dispatch}" repo-settings` and read `ignore_comment_authors`, `ignore_optional_checks` and `approval_checks`. Act on nothing by a listed login, matched ignoring case: no fix, reply or resolve.
 
