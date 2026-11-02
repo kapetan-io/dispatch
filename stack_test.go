@@ -143,11 +143,11 @@ func TestAStackedLaunchWhoseHeadIsMissingFailsAndLeavesNoRecord(t *testing.T) {
 
 	res := d.Run("tick")
 
-	require.ErrorContains(t, res.Err, "checkout_failed")
+	require.ErrorContains(t, res.Err, "switch_failed")
 	launches := d.receiptsOfKind("ENG-2", "launch")
 	require.Len(t, launches, 1)
 	assert.Equal(t, "failed", launches[0].State)
-	assert.Contains(t, launches[0].Detail, "checkout_failed")
+	assert.Contains(t, launches[0].Detail, "switch_failed")
 	assert.Empty(t, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
 	assert.Empty(t, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))
 }
@@ -187,7 +187,7 @@ func TestAStackedLaunchWhoseRecordCannotBeWrittenFailsAndCreatesNoBranch(t *test
 
 	res := d.Run("tick")
 
-	require.ErrorContains(t, res.Err, "checkout_failed")
+	require.ErrorContains(t, res.Err, "stack_record_failed")
 	assert.Len(t, d.Trees.Returned(), 1)
 	assert.Equal(t, "failed", d.receiptsOfKind("ENG-2", "launch")[0].State)
 	assert.Empty(t, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
@@ -316,7 +316,7 @@ func TestAStackedLaunchWhoseSwitchFailsAfterCreatingTheBranchKeepsTheRecord(t *t
 
 	res := d.Run("tick")
 
-	require.ErrorContains(t, res.Err, "checkout_failed")
+	require.ErrorContains(t, res.Err, "switch_failed")
 	assert.Equal(t, head, revParse(t, d.Repo, "thrawn01/eng-2"))
 	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
 	assert.Equal(t, head, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))

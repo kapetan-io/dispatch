@@ -130,7 +130,7 @@ func TestLaunchReusesTheLeaseOfAnEarlierRun(t *testing.T) {
 	assert.False(t, d.fakes().Herdr.Started()[0].FreshLease)
 }
 
-func TestLaunchReusesTheLeaseOfAnEarlierRunWhenTheFirstPoolReadFails(t *testing.T) {
+func TestLaunchReportsAPoolReadThatFailsAndTheNextLaunchReusesTheLease(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
@@ -138,6 +138,11 @@ func TestLaunchReusesTheLeaseOfAnEarlierRunWhenTheFirstPoolReadFails(t *testing.
 	d.fakes().Treehouse.FailTrees(errors.New("exit status 1"))
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "pool_error", out.result["status"])
+	assert.Empty(t, d.fakes().Calls("treehouse", "lease"))
+
+	out = d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, tree, out.result["worktree"])
@@ -214,18 +219,18 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 			detail: "all 4/4 pool trees are taken: ENG-7 (leased), ENG-8 (leased), ENG-9 (leased), ? (leased)",
 		},
 		{
-			name: "PoolErrorWhenATreeIsFree",
+			name: "LeaseFailedWhenATreeIsFree",
 			setup: func(d *Dispatch) {
 				d.fakes().Treehouse.FailLease(errors.New("no tree for you"))
 			},
 			args:   []string{"ENG-1", "b"},
-			status: "pool_error",
+			status: "lease_failed",
 			detail: "treehouse lease failed but the pool is not exhausted (1 of 1 available, max_trees=4; holders: ). treehouse stderr: no tree for you",
 		},
 		{
-			// A pool that can still grow is not exhausted, so the ticket must
-			// escalate instead of waiting for a slot.
-			name: "PoolErrorWhenEveryTreeIsTakenBelowMaxTrees",
+			// A pool that can still grow is not exhausted, so this is a failure to print,
+			// not a wait for a slot.
+			name: "LeaseFailedWhenEveryTreeIsTakenBelowMaxTrees",
 			setup: func(d *Dispatch) {
 				d.fakes().Treehouse.Clear(d.Repo)
 				d.fakes().Treehouse.Seed(d.Repo,
@@ -236,7 +241,7 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 				d.fakes().Treehouse.FailLease(errors.New("cannot create a worktree"))
 			},
 			args:   []string{"ENG-1", "b"},
-			status: "pool_error",
+			status: "lease_failed",
 			detail: "the pool is not exhausted (0 of 3 available, max_trees=4",
 		},
 		{
@@ -249,14 +254,14 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 			detail: "lease succeeded but treehouse JSON had no path",
 		},
 		{
-			name: "PoolErrorWhenMaxTreesIsUnknown",
+			name: "LeaseFailedWhenMaxTreesIsUnknown",
 			setup: func(d *Dispatch) {
 				require.NoError(t, os.WriteFile(filepath.Join(d.Repo, "treehouse.toml"), nil, 0o644))
 				d.fakes().Treehouse.Clear(d.Repo)
 				d.fakes().Treehouse.Seed(d.Repo, treehouse.Tree{Path: "/t/1", Status: "leased", LeaseHolder: "ENG-7"})
 			},
 			args:   []string{"ENG-1", "b"},
-			status: "pool_error",
+			status: "lease_failed",
 			detail: "the pool is not exhausted (0 of 1 available, max_trees=-1",
 		},
 	} {
@@ -291,7 +296,7 @@ func TestLaunchNamesTheBaseWhenANewBranchWillNotCheckOut(t *testing.T) {
 
 	out := d.launch("ENG-1", "thrawn01/eng-1", "--base", "nosuch")
 
-	assert.Equal(t, "checkout_failed", out.result["status"])
+	assert.Equal(t, "switch_failed", out.result["status"])
 	assert.Contains(t, out.result["detail"], "from nosuch")
 }
 
@@ -304,7 +309,7 @@ func TestLaunchReturnsALeaseWhenTheBranchWillNotCheckOut(t *testing.T) {
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
-	assert.Equal(t, "checkout_failed", out.result["status"])
+	assert.Equal(t, "switch_failed", out.result["status"])
 	assert.Contains(t, out.result["detail"], "(lease returned)")
 	assert.Equal(t, []string{d.Repo + "|" + tree + "|ENG-1"}, d.Trees.Returned())
 }
@@ -1198,7 +1203,7 @@ func (d *Dispatch) calls(tool, name string) int {
 	return n
 }
 
-func TestLaunchLeasesAgainWhenTreehouseFailsOnce(t *testing.T) {
+func TestLaunchLeasesOnceAndTheNextLaunchSucceedsWhenTreehouseFailsOnce(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
@@ -1206,28 +1211,22 @@ func TestLaunchLeasesAgainWhenTreehouseFailsOnce(t *testing.T) {
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
+	assert.Equal(t, "lease_failed", out.result["status"])
+	assert.Contains(t, out.result["detail"], "treehouse lease failed")
+	assert.Equal(t, 1, d.calls("treehouse", "lease"))
+
+	out = d.launch("ENG-1", "thrawn01/eng-1")
+
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, tree, out.result["worktree"])
 	assert.Equal(t, 2, d.calls("treehouse", "lease"))
-}
-
-func TestLaunchReadsThePoolAgainWhenTreehouseStatusFailsOnce(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
-	d.Trees.Pooled()
-	d.fakes().Treehouse.FailTrees(errors.New("exit status 1"))
-
-	out := d.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, 1, d.calls("treehouse", "lease"))
 }
 
 func TestLaunchReportsAPoolItCannotRead(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
-	d.fakes().Treehouse.FailTrees(errors.New("exit status 1 (db locked)"), errors.New("exit status 1 (db locked)"), errors.New("exit status 1 (db locked)"))
+	d.fakes().Treehouse.FailTrees(errors.New("exit status 1 (db locked)"))
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
@@ -1237,7 +1236,7 @@ func TestLaunchReportsAPoolItCannotRead(t *testing.T) {
 	assert.Equal(t, 0, d.calls("treehouse", "lease"))
 }
 
-func TestLaunchSwitchesAgainWhenGitRefusesTheBranchOnce(t *testing.T) {
+func TestLaunchSwitchesOnceAndTheNextLaunchSucceedsWhenGitRefusesTheBranchOnce(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
@@ -1249,9 +1248,13 @@ func TestLaunchSwitchesAgainWhenGitRefusesTheBranchOnce(t *testing.T) {
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
+	assert.Equal(t, "switch_failed", out.result["status"])
+	assert.Equal(t, []string{d.Repo + "|" + tree + "|ENG-1"}, d.Trees.Returned())
+
+	out = d.launch("ENG-1", "thrawn01/eng-1")
+
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, tree, out.result["worktree"])
-	assert.Empty(t, d.Trees.Returned())
 	assert.Equal(t, "thrawn01/eng-1", strings.TrimSpace(revParseName(t, tree)))
 }
 
@@ -1262,7 +1265,7 @@ func TestLaunchCarriesGitsMessageWhenTheCheckoutFails(t *testing.T) {
 
 	out := d.launch("ENG-1", "thrawn01/eng-1", "--base", "nosuch")
 
-	assert.Equal(t, "checkout_failed", out.result["status"])
+	assert.Equal(t, "switch_failed", out.result["status"])
 	assert.Contains(t, out.result["detail"], "(lease returned): fatal: invalid reference: origin/nosuch")
 	assert.Contains(t, out.result["detail"], "invalid reference: nosuch")
 }
@@ -1274,30 +1277,22 @@ func revParseName(t *testing.T, dir string) string {
 	return string(out)
 }
 
-func TestLaunchChecksOutTheBranchInATreeTreehouseLeasedBeforeItFailed(t *testing.T) {
+func TestLaunchReturnsATreeTreehouseLeasedBeforeItFailedAndTheNextLaunchChecksOutTheBranch(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	d.fakes().Treehouse.FailLeasesAfterTaking(errors.New("exit status 1"))
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "lease_failed", out.result["status"])
+	assert.Equal(t, []string{d.Repo + "|" + tree + "|ENG-1"}, d.Trees.Returned())
+
+	out = d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, tree, out.result["worktree"])
 	assert.Equal(t, "thrawn01/eng-1", strings.TrimSpace(revParseName(t, tree)))
-}
-
-func TestLaunchReturnsATreeTreehouseLeasedBeforeItFailedWhenTheWorkspaceFails(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
-	tree := d.Trees.Pooled()
-	d.fakes().Treehouse.FailLeasesAfterTaking(errors.New("exit status 1"))
-	d.fakes().Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
-
-	out := d.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "workspace_failed", out.result["status"])
-	assert.Equal(t, []string{d.Repo + "|" + tree + "|ENG-1"}, d.Trees.Returned())
 }
 
 func TestLaunchStartsClaudeOnASessionIdDispatchChose(t *testing.T) {
@@ -1359,4 +1354,41 @@ func TestRecordStopFromAnotherClaudeSessionInAWorkersTreeDoesNotCountAsTheWorker
 			assert.Equal(t, test.turns, d.Linear.Comments())
 		})
 	}
+}
+
+func TestTickPrintsEveryFailedLeaseAndNeverEscalatesTheTicket(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Trees.Pooled()
+	d.fakes().Treehouse.FailLease(errors.New("exit status 1: no worktree"))
+
+	for range 3 {
+		res := d.Run("tick")
+
+		require.ErrorContains(t, res.Err, "ENG-1 launch failed: lease_failed: treehouse lease failed")
+		assert.Contains(t, res.Stdout, "no worktree")
+		// Two failures at the same millisecond are one receipt, so the clock moves between ticks.
+		d.Advance(time.Second)
+	}
+
+	assert.Empty(t, d.Linear.Changes())
+	assert.Equal(t, 3, d.calls("treehouse", "lease"))
+}
+
+func TestLaunchReturnsATreeTreehouseLeasedBeforeReportingNoPathAndTheNextLaunchChecksOutTheBranch(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.fakes().Treehouse.FailLeasesAfterTaking(fmt.Errorf("%w: {}", treehouse.ErrNoPath))
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "pool_error", out.result["status"])
+	assert.Equal(t, []string{d.Repo + "|" + tree + "|ENG-1"}, d.Trees.Returned())
+
+	out = d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "ok", out.result["status"])
+	assert.Equal(t, "thrawn01/eng-1", strings.TrimSpace(revParseName(t, tree)))
 }

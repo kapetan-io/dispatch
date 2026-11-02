@@ -28,7 +28,9 @@ const (
 	StatusUsageError           = "usage_error"
 	StatusNotARepo             = "not_a_repo"
 	StatusNotPooled            = "not_pooled"
-	StatusCheckoutFailed       = "checkout_failed"
+	StatusLeaseFailed          = "lease_failed"
+	StatusSwitchFailed         = "switch_failed"
+	StatusStackRecordFailed    = "stack_record_failed"
 	StatusWorkspaceFailed      = "workspace_failed"
 	StatusAgentStartFailed     = "agent_start_failed"
 	StatusInjectionUnconfirmed = "injection_unconfirmed"
@@ -111,8 +113,9 @@ func New(opts Options) *Local { return &Local{opts: opts.withDefaults()} }
 //
 // pool_exhausted is proven, never assumed. After a lease failure the pool is
 // read again and exhaustion is reported only when no tree is available and the
-// pool is at max_trees. Every other lease failure is pool_error, a fault to
-// diagnose rather than a queue to wait in.
+// pool is at max_trees. Every other lease failure is lease_failed, which counts
+// for nothing because the next resync launches again. pool_error is an unreadable
+// pool or a lease returned without a path, and counts toward launch_failure_limit.
 //
 // The herdr handling depends on nested worktree workspaces, an env-stamped tab,
 // waiting for the shell before starting the agent, answering the consent and
@@ -142,9 +145,6 @@ type launch struct {
 	// fresh is set when this run took the lease, as opposed to finding one from
 	// an earlier run.
 	fresh bool
-	// leaseAsked is set once this run has asked treehouse for a lease, so a lease a later
-	// attempt finds may be one that call took.
-	leaseAsked bool
 	// stacked is what Result.Stacked reports.
 	stacked bool
 }
@@ -331,79 +331,53 @@ func (l *launch) trackBranch(ctx context.Context) bool {
 	return false
 }
 
-// launchAttempts is how many times a launch tries a lease or a checkout that may have failed only
-// for the moment, such as another process holding a lock in the clone. A failure that lasts
-// all of them is reported, and counts against the ticket.
-const launchAttempts = 3
-
 // leaseTree reuses the tree already holding this ticket's lease, so a relaunch
 // resumes in place. A tree is never adopted just for having the branch checked
 // out, since it could be the user's own clone or a pool tree treehouse may hand
 // to someone else. If the branch is checked out elsewhere, the switch fails
-// loudly.
+// loudly. A failure is reported as it is. The next resync launches again.
 func (l *launch) leaseTree(ctx context.Context, existed bool) (Result, bool) {
-	var res Result
-	for attempt := 1; attempt <= launchAttempts; attempt++ {
-		if attempt > 1 {
-			l.log("retrying (attempt %d of %d): %s", attempt, launchAttempts, res.Detail)
-			if !l.sleep(ctx, 2*l.opts.Pace) {
-				return res, false
-			}
-		}
-		var again bool
-		if res, again = l.leaseOnce(ctx); res.Status == "" {
-			break
-		} else if !again {
-			return res, false
-		}
-	}
-	if res.Status != "" {
+	if res := l.lease(ctx); res.Status != "" {
 		return res, false
 	}
 	return l.checkout(ctx, existed)
 }
 
-// leaseOnce takes the lease, or says in again whether the failure it reports could be gone on
-// the next try. A lease it finds after an earlier attempt asked for one is that attempt's own,
-// taken before treehouse failed, so it counts as this launch's and gets its checkout. One found
-// after only failed pool reads is an earlier run's.
-func (l *launch) leaseOnce(ctx context.Context) (res Result, again bool) {
+func (l *launch) lease(ctx context.Context) Result {
 	req := l.req
 	trees, err := l.opts.Treehouse.Trees(ctx, l.repo)
 	if err != nil {
 		// An unread pool may hold this ticket's lease already, and leasing again would
 		// take a second tree for it.
-		return Result{Status: StatusPoolError, Detail: treehouse.StatusError(l.repo, err).Error()}, true
+		return Result{Status: StatusPoolError, Detail: treehouse.StatusError(l.repo, err).Error()}
 	}
 	for _, t := range trees {
 		if t.LeaseHolder == req.Ticket {
 			l.tree = t.Path
-			l.fresh = l.leaseAsked
-			return Result{}, false
+			return Result{}
 		}
 	}
 
 	l.log("leasing a treehouse tree for %s", req.Ticket)
-	l.leaseAsked = true
 	leased, err := l.opts.Treehouse.Lease(ctx, l.repo, req.Ticket)
 	if err != nil {
 		if errors.Is(err, treehouse.ErrNoPath) {
-			return Result{Status: StatusPoolError, Detail: err.Error()}, false
+			l.returnLeaseTaken(ctx)
+			return Result{Status: StatusPoolError, Detail: err.Error()}
 		}
 		if err.Error() != "" {
 			l.log("treehouse get: %v", err)
 		}
-		res = l.leaseFailure(ctx, err.Error())
-		return res, res.Status == StatusPoolError
+		return l.leaseFailure(ctx, err.Error())
 	}
 	l.tree = leased.Path
 	l.log("leased %s", l.tree)
 	l.fresh = true
-	return Result{}, false
+	return Result{}
 }
 
 // checkout puts the leased tree on the ticket's branch. The lease goes back to the pool when
-// that fails for good.
+// that fails.
 func (l *launch) checkout(ctx context.Context, existed bool) (Result, bool) {
 	// A lease from an earlier run is already on its branch.
 	if !l.fresh {
@@ -421,37 +395,28 @@ func (l *launch) checkout(ctx context.Context, existed bool) (Result, bool) {
 			return res, false
 		}
 	}
-	// A switch that fails after creating the branch leaves it behind, and creating it again fails.
+	// A switch that fails after creating the branch leaves it behind, so its stack record stays with it.
 	created := func() bool {
 		_, err := l.git(ctx, l.repo, "show-ref", "--verify", "--quiet", "refs/heads/"+req.Branch)
 		return err == nil
 	}
-	var said string
-	for attempt := 1; attempt <= launchAttempts; attempt++ {
-		if attempt > 1 {
-			l.log("retrying checkout of %s (attempt %d of %d): %s", req.Branch, attempt, launchAttempts, said)
-			if !l.sleep(ctx, 2*l.opts.Pace) {
-				break
-			}
+	var out strings.Builder
+	var err error
+	if existed {
+		err = l.gitToStderr(ctx, &out, l.tree, "switch", req.Branch)
+	} else {
+		_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", req.Base)
+		err = l.gitToStderr(ctx, &out, l.tree, "switch", "--no-track", "-c", req.Branch, "origin/"+req.Base)
+		if err != nil {
+			err = l.gitToStderr(ctx, &out, l.tree, "switch", "-c", req.Branch, req.Base)
 		}
-		var out strings.Builder
-		var err error
-		if existed || (attempt > 1 && created()) {
-			err = l.gitToStderr(ctx, &out, l.tree, "switch", req.Branch)
-		} else {
-			_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", req.Base)
-			err = l.gitToStderr(ctx, &out, l.tree, "switch", "--no-track", "-c", req.Branch, "origin/"+req.Base)
-			if err != nil {
-				err = l.gitToStderr(ctx, &out, l.tree, "switch", "-c", req.Branch, req.Base)
-			}
-		}
-		if err == nil {
-			return Result{}, true
-		}
-		said = strings.Join(strings.Fields(out.String()), " ")
-		if said == "" {
-			said = err.Error()
-		}
+	}
+	if err == nil {
+		return Result{}, true
+	}
+	said := strings.Join(strings.Fields(out.String()), " ")
+	if said == "" {
+		said = err.Error()
 	}
 	l.log("checkout of %s failed in leased tree, returning the lease", req.Branch)
 	if !existed && req.Stack != nil && !created() {
@@ -459,7 +424,7 @@ func (l *launch) checkout(ctx context.Context, existed bool) (Result, bool) {
 		_ = stackrecord.Clear(context.WithoutCancel(ctx), l.opts.Env, l.repo, req.Branch)
 	}
 	l.returnLease(ctx)
-	return Result{Status: StatusCheckoutFailed, Detail: fmt.Sprintf("git switch to %s%s failed in leased tree %s (lease returned): %s", req.Branch, from, l.tree, said)}, false
+	return Result{Status: StatusSwitchFailed, Detail: fmt.Sprintf("git switch to %s%s failed in leased tree %s (lease returned): %s", req.Branch, from, l.tree, said)}, false
 }
 
 // writeStackRecord fetches the stack parent's branch so the fork point is present locally, then
@@ -473,13 +438,28 @@ func (l *launch) writeStackRecord(ctx context.Context) (Result, bool) {
 	if err := stackrecord.Write(ctx, l.opts.Env, l.repo, req.Branch, rec); err != nil {
 		l.log("%v", err)
 		l.returnLease(ctx)
-		return Result{Status: StatusCheckoutFailed, Detail: fmt.Sprintf("stack record for %s failed in %s (lease returned): %v", req.Branch, l.repo, err)}, false
+		return Result{Status: StatusStackRecordFailed, Detail: fmt.Sprintf("stack record for %s failed in %s (lease returned): %v", req.Branch, l.repo, err)}, false
 	}
 	l.stacked = true
 	return Result{}, true
 }
 
 var maxTrees = regexp.MustCompile(`(?m)^max_trees *= *([0-9]+)`)
+
+// returnLeaseTaken gives back a lease treehouse recorded for this ticket before it reported
+// failure, since the next launch would take it for one already on the branch.
+func (l *launch) returnLeaseTaken(ctx context.Context) {
+	trees, err := l.opts.Treehouse.Trees(ctx, l.repo)
+	if err != nil {
+		return
+	}
+	for _, t := range trees {
+		if t.LeaseHolder == l.req.Ticket {
+			l.tree = t.Path
+			l.returnLease(ctx)
+		}
+	}
+}
 
 func (l *launch) leaseFailure(ctx context.Context, leaseErr string) Result {
 	trees, err := l.opts.Treehouse.Trees(ctx, l.repo)
@@ -495,6 +475,14 @@ func (l *launch) leaseFailure(ctx context.Context, leaseErr string) Result {
 	var avail int
 	var holders []string
 	for _, t := range trees {
+		// Treehouse recorded the lease and then failed. The next launch would find it and take it
+		// for a lease already on the branch, so it goes back to the pool.
+		if t.LeaseHolder == l.req.Ticket {
+			l.tree = t.Path
+			l.returnLease(ctx)
+			avail++
+			continue
+		}
 		if t.Status == "available" {
 			avail++
 			continue
@@ -509,7 +497,7 @@ func (l *launch) leaseFailure(ctx context.Context, leaseErr string) Result {
 	if limit >= 0 && len(trees) > 0 && avail == 0 && len(trees) >= limit {
 		return Result{Status: StatusPoolExhausted, Detail: fmt.Sprintf("all %d/%d pool trees are taken: %s", len(trees), limit, list)}
 	}
-	return Result{Status: StatusPoolError, Detail: fmt.Sprintf("treehouse lease failed but the pool is not exhausted (%d of %d available, max_trees=%d; holders: %s). treehouse stderr: %s", avail, len(trees), limit, list, leaseErr)}
+	return Result{Status: StatusLeaseFailed, Detail: fmt.Sprintf("treehouse lease failed but the pool is not exhausted (%d of %d available, max_trees=%d; holders: %s). treehouse stderr: %s", avail, len(trees), limit, list, leaseErr)}
 }
 
 // giveBack closes the workspace and returns the lease when this run took the

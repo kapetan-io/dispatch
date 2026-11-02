@@ -77,7 +77,8 @@ func (r Result) Succeeded() bool {
 }
 
 // Failed reports whether the launch counts toward the escalation limit. A
-// full pool is waiting, not failing, and an existing worker is success.
+// full pool is waiting, not failing, and an existing worker is success. A failed
+// lease or git switch is left to the next resync, which launches again.
 func (r Result) Failed() bool {
-	return !r.Succeeded() && r.Status != StatusPoolExhausted
+	return !r.Succeeded() && r.Status != StatusPoolExhausted && r.Status != StatusLeaseFailed && r.Status != StatusSwitchFailed
 }

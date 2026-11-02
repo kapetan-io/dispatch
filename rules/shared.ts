@@ -1,9 +1,9 @@
 import { known, minutes } from "dispatch";
 import type { Ticket, PR, Ctx, Receipt, Seen, Once } from "dispatch";
 
-// A worker gets launch_failure_limit launch attempts in a row, and nudge_limit nudges or
-// relaunches per PR head, before the ticket goes to Needs Human. Both are [rules] keys in
-// config.toml, so they change without a PR.
+// A worker gets launch_failure_limit failed launches in a row (a failed lease or git switch
+// doesn't count), and nudge_limit nudges or relaunches per PR head,
+// before the ticket goes to Needs Human. Both are [rules] keys in config.toml, so they change without a PR.
 export const launchFailureLimit = (ctx: Ctx): number => ctx.config.rules.launch_failure_limit;
 export const nudgeLimit = (ctx: Ctx): number => ctx.config.rules.nudge_limit;
 
@@ -99,16 +99,18 @@ export const UNCONFIRMED_CLOSE = "close-unconfirmed";
 
 // The launch failures since the last launch that worked or found the pool full, or since
 // the escalation they caused, newest first, so fixing the problem and moving the ticket
-// back starts over. Launches and In Review relaunches count alike. Closing a Claude whose
-// launch died before its kickoff counts too, because the launch that started it never
-// reported.
+// back starts over. A failed treehouse lease or git switch never counts. The resync launches
+// again and dispatch run prints each failure, so a person sees it without the ticket stopping.
+// Launches and In Review relaunches count alike. Closing a Claude whose launch died before
+// its kickoff counts too, because the launch that started it never reported.
 export const launchFailureList = (t: Ticket, ctx: Ctx) => {
   const r = ctx.ledger.receipts(t, { kind: ["launch", "escalate", "close"] })   // newest first
     .filter(x => x.kind !== "close" || x.once[0] === UNCONFIRMED_CLOSE);
   const reset = r.findIndex(x => x.kind === "escalate" || x.outcome === "done" && x.kind === "launch"
                                  || ["already_running", "pool_exhausted"].includes(x.detail));
   return r.slice(0, reset < 0 ? r.length : reset)
-    .filter(x => x.kind === "close" ? x.outcome === "done" : x.outcome === "failed" && x.detail !== "crashed");
+    .filter(x => x.kind === "close" ? x.outcome === "done"
+      : x.outcome === "failed" && x.detail !== "crashed" && !/^(lease_failed|switch_failed)\b/.test(x.detail));
 };
 export const launchFailures = (t: Ticket, ctx: Ctx) => launchFailureList(t, ctx).length;
 

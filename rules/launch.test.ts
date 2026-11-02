@@ -101,6 +101,16 @@ scenario(rules, "launches a crash closed don't count toward the failure limit", 
   s.expect([["launch-worker", "launch", "ENG-1"]]);
 });
 
+scenario(rules, "a failed lease or git switch never counts toward the failure limit", s => {
+  s.given(ticket("ENG-1", build));
+  s.land("launch", "ENG-1", { outcome: "failed", detail: "lease_failed: treehouse lease failed but the pool is not exhausted" });
+  s.land("launch", "ENG-1", { outcome: "failed", detail: "switch_failed: git switch to b failed" });
+  s.land("launch", "ENG-1", { outcome: "failed", detail: "pool_error: treehouse status failed" });
+  s.expect([["launch-worker", "launch", "ENG-1"]]);
+  s.land("launch", "ENG-1", { outcome: "failed", detail: "stack_record_failed: stack record for b failed" });
+  s.expect([["escalate-launch-failures", "escalate", "ENG-1"]]);
+});
+
 scenario(rules, "launch_failure_limit comes from the config", s => {
   s.config({ rules: { launch_failure_limit: 3 } });
   s.given(ticket("ENG-1", build));

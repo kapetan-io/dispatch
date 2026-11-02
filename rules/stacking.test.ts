@@ -52,9 +52,9 @@ scenario(rules, "a blocker whose PR was not read this cycle holds the stacked la
 
 scenario(rules, "a stacked launch stops at the launch failure limit and escalates", s => {
   s.given(ticket("ENG-3", { ...build, ...blockedBy("ENG-2") }), ...parentReady);
-  s.land("launch", "ENG-3", { outcome: "failed", detail: "checkout_failed" });
+  s.land("launch", "ENG-3", { outcome: "failed", detail: "stack_record_failed" });
   s.expect([["launch-stacked-worker", "launch", "ENG-3"], ["notify-ready-for-review", "notify", "ENG-2"]]);
-  s.land("launch", "ENG-3", { outcome: "failed", detail: "checkout_failed" });
+  s.land("launch", "ENG-3", { outcome: "failed", detail: "stack_record_failed" });
   s.expect([["escalate-launch-failures", "escalate", "ENG-3"], ["notify-ready-for-review", "notify", "ENG-2"]]);
 });
 
