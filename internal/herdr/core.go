@@ -276,15 +276,23 @@ func (c *Core) StartWorker(ctx context.Context, w Worker) (Started, error) {
 	if err != nil {
 		return Started{}, err
 	}
+	var held *TerminalWithoutAgent
 	for _, t := range existing {
 		if !t.live() {
 			continue
 		}
-		// A live terminal that carries the tree is nearly always a worker whose Claude is
-		// still loading, and killing it would let a racing launch kill the first one's.
-		if _, running := c.runs(t); running || t.startedByDispatch() {
+		if _, running := c.runs(t); running {
 			return Started{}, ErrSessionRunning
 		}
+		// Dispatch never kills a live worker terminal, because a racing launch's Claude may
+		// still be loading in it. A person clears the one that never loads. A Claude anywhere
+		// in the space still wins over a held terminal, so this only records the first one.
+		if t.startedByDispatch() && held == nil {
+			held = &TerminalWithoutAgent{Address: t.Address}
+		}
+	}
+	if held != nil {
+		return Started{}, held
 	}
 	for _, t := range existing {
 		if t.startedByDispatch() && !t.live() {
