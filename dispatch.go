@@ -1,5 +1,5 @@
 // Package dispatch is the dispatcher. `dispatch run` starts a reconcile loop in
-// the foreground, in a herdr window the user watches. Events wake it, and each
+// the foreground, in a terminal the user watches. Events wake it, and each
 // cycle runs the TypeScript rules over what Linear, herdr, treehouse and GitHub
 // say right now and over what dispatch has already done. A resync every few
 // minutes re-reads everything as a backstop, so a failure or a missed event is

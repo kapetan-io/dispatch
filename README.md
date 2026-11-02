@@ -2,7 +2,7 @@
 
 An autonomous build workflow for Claude Code, packaged as a Claude Code plugin.
 
-You design a feature with Claude in an interactive session. An autonomous review then checks the design and splits it into small Linear build tickets. Once you approve, a dispatcher, running in a herdr window you keep open and re-reading its sources every 5 minutes, leases a tree for each ticket and starts Claude in it, and each worker carries its ticket to a merged pull request.
+You design a feature with Claude in an interactive session. An autonomous review then checks the design and splits it into small Linear build tickets. Once you approve, a dispatcher, running in a terminal you keep open and re-reading its sources every 5 minutes, leases a tree for each ticket and starts Claude in it, and each worker carries its ticket to a merged pull request.
 
 ## Status
 
@@ -40,5 +40,13 @@ claude --plugin-dir ~/Development/dispatch --settings '{"crossSessionInbound":"a
 ```sh
 cd ~/Development/dispatch && make install
 dispatch run
+```
+
+Workers run in the herdr terminal UI by default. To run them in the Herdr app instead, set `host = "app"` under `[plugins.herdr]`. The [`host` row](docs/config.md#pluginsherdr) says what that needs (`hc` and `herdr-app` on PATH).
+
+Where `dispatch run` itself runs is a separate choice from `host`. To start it in its own Herdr app space:
+
+```sh
+herdr-app do space.new --name Dispatch --folder ~/Development/dispatch --tab dispatch --argv '["dispatch","run"]'
 ```
 
