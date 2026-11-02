@@ -230,7 +230,7 @@ func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *wo
 	if _, err := lin.Workspace(ctx); err != nil {
 		return nil, nil, err
 	}
-	src := sources(opts, lin, loaded)
+	src := sources(opts, cfg, lin, loaded)
 	src.Tolerant, src.Resilient = true, true
 	wd, err := world.Read(ctx, src, world.ScopeOf(cfg), at)
 	if err != nil {

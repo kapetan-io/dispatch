@@ -9,6 +9,8 @@ Run one continuous back-and-forth design discussion, product definition and tech
 
 The blueprint fixes contracts, not content. How each function is written is the build's job, proved by tests.
 
+Designs and blueprints live in Linear. If you were started on a local ticket (id `LOC-<n>`), stop and tell the user: design workers don't run on local tickets, so the design needs a Linear ticket.
+
 The ticket you were started on is the feature ticket. The session that created it filed it with the `design`, `ai` and repo labels, and the dispatcher launches a design worker when it moves to In Progress. It stays In Progress for the whole design. A design is a long conversation in a window the user can see. The dispatcher never nudges it, and you hold the tree for the whole session because prototypes run there.
 
 ## Start

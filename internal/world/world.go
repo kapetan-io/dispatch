@@ -47,6 +47,8 @@ type Sources struct {
 	// Resilient records a failed Linear read in World.LinearErr and goes on,
 	// where without it Read returns that failure.
 	Resilient bool
+	// LocalOn is true when local tickets are on, so a Linear read that returns a LOC- id fails.
+	LocalOn bool
 }
 
 // Scope is the part of the config a read depends on.
@@ -243,6 +245,9 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		readCtx, done := bound(ctx)
 		tickets, err := src.Linear.ManagedTickets(readCtx, scope.AILabel, scope.Teams)
 		done()
+		if err == nil && src.LocalOn {
+			err = clash(tickets...)
+		}
 		switch {
 		case err == nil:
 			w.Tickets, w.LinearErr = tickets, nil
@@ -259,6 +264,9 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 			readCtx, done := bound(ctx)
 			w.LeaseHolders, w.HoldersErr = leaseHolders(readCtx, src.Linear, scope, w.Trees, w.Tickets)
 			done()
+			if w.HoldersErr == nil && src.LocalOn {
+				w.HoldersErr = clash(w.LeaseHolders...)
+			}
 			if w.HoldersErr != nil {
 				_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the tickets that hold trees: %v\n", w.HoldersErr)
 			}
@@ -311,6 +319,13 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 			readCtx, done := bound(ctx)
 			w.Children, w.ChildrenErr = src.Linear.ParentChildren(readCtx, ids)
 			done()
+			if w.ChildrenErr == nil && src.LocalOn {
+				for _, kids := range w.Children {
+					if w.ChildrenErr = clash(kids...); w.ChildrenErr != nil {
+						break
+					}
+				}
+			}
 			if w.ChildrenErr != nil {
 				_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the children of open parents: %v\n", w.ChildrenErr)
 			}

@@ -55,6 +55,9 @@ type Header struct {
 	// `dispatch state reset` writes has no run, so it holds the reset time.
 	Started int64 `json:"started,omitempty"`
 	At      int64 `json:"at"`
+	// LocalHighest is the highest local ticket number the database had issued when the segment began, so
+	// a restored copy missing tickets that no history line names is still refused at start.
+	LocalHighest uint64 `json:"localHighest,omitempty"`
 }
 
 // Snapshot is the second line: everything a restart needs from before the segment began.

@@ -57,6 +57,10 @@ host = "tui"
 [plugins.treehouse]
 [plugins.notify]
 
+# Writing this table turns local tickets on. Leave it out to keep them off.
+[plugins.local]
+path = ""
+
 [repos.dispatch]
 path = "~/Development/dispatch"
 open_pr_as = "open"
@@ -69,7 +73,7 @@ worker = ""
 design = ""
 ```
 
-Repos have no default, so the block shows one repo with every setting at its default, and `path` is required. Without any `[repos.<label>]` table, every In Progress ticket escalates to Needs Human because its repo isn't configured. A leading `~` in `dispatch.rules`, `history.dir`, `plugins.herdr.plugin_root` and in every repo's `path` expands to your home directory.
+Repos have no default, so the block shows one repo with every setting at its default, and `path` is required. Without any `[repos.<label>]` table, every In Progress ticket escalates to Needs Human because its repo isn't configured. A leading `~` in `dispatch.rules`, `history.dir`, `plugins.herdr.plugin_root`, `plugins.local.path` and in every repo's `path` expands to your home directory.
 
 ## `[dispatch]`
 
@@ -159,6 +163,25 @@ A rule names the service and a path, and dispatch sends `Authorization: Bearer <
 | `host` | `tui` | The herdr product that runs your workers. `tui` runs them in the herdr terminal UI. `app` runs each worker as a herdr-core terminal that the Herdr app shows, and keeps workers running when the terminal dispatch runs in closes. It needs `hc` on PATH. It also needs `herdr-app` on PATH and the app window open to name each worker's space `<emoji> <ticket>` and its tab `<ticket> <title>`, and to close a space left empty. With no window open, workers still run, the naming and closing are skipped without an error, and names catch up at the first resync after the window opens. A space left empty while the window was closed stays until you close it. Any other value stops dispatch at config load. Rules never see this setting in `ctx.config`. Before changing `host`, let running workers finish or close their windows. Dispatch drives only the configured host: a worker left running on the old host is invisible to dispatch, which launches a second one on the same tree. |
 
 `[plugins.github]`, `[plugins.treehouse]` and `[plugins.notify]` take no settings yet. Write the empty table to say the plugin is on.
+
+## `[plugins.local]`
+
+Local tickets are tickets kept in dispatch's own database, beside Linear's. Writing the table, even empty, turns them on. Without it dispatch creates and opens no database, and `dispatch ticket` exits 1 saying local tickets are off.
+
+```toml
+[plugins.local]
+# path = "~/.local/state/dispatch/tickets.db"
+```
+
+| Setting | Default | What it does |
+|---|---|---|
+| `path` | `tickets.db` in the state directory | The database file. A leading `~` is expanded. The first `dispatch run` creates it with mode 0600. Rules never see this setting in `ctx.config`. |
+
+- There is no status setting. A new database is seeded once with Backlog, Todo, In Progress, In Review, Needs Human, Done and Canceled, each with the jobs `dispatch ticket statuses` lists, and dispatch never changes them afterwards. Each of the jobs `todo`, `in_progress`, `in_review`, `needs_human`, `close_parent` and `blocker_done` must belong to exactly one status, or `dispatch run` stops at start.
+- Only the `dispatch run` that holds `dispatch.lock` opens the file, and a second `dispatch run` that points `path` at the same file stops after 5 seconds. Every other session reaches it through `dispatch ticket`. Stop `dispatch run` before copying the file.
+- `dispatch run` also stops at start when the file's next ticket number is at or below a `LOC-<n>` that history or a tree's lease names, or when the file holds a ticket in a status it lacks, a link to a missing ticket or a parent loop.
+- Linear ids that start with `LOC-` fail a Linear read while this table is on, so no Linear team may use the key `LOC`.
+- Nothing launches a worker on a local ticket yet, and `--start-pr` is stored and shown but does nothing.
 
 ## `[plugins.linear]`
 

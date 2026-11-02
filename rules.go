@@ -176,7 +176,7 @@ func rulesCheck(ctx context.Context, opts Options, arg string) error {
 	if err != nil {
 		return err
 	}
-	src := sources(opts, lin, loaded)
+	src := sources(opts, cfg, lin, loaded)
 	src.Tolerant = true
 	w, err := world.Read(ctx, src, world.ScopeOf(cfg), opts.Clock.Now())
 	if err != nil {

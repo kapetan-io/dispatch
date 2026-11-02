@@ -58,6 +58,10 @@ _Avoid_: review claim (a claim asserts something to check)
 
 - Each port has one or more **real adapters** (the herdr port has two, one per **host**) and one **tool fake**, and every **contract scenario** runs against both, except Linear's, which run against the fake only.
 - The **drift check** runs the scenarios against the **real adapter** only, and does not run Linear's.
+- Every ticket belongs to exactly one **Ticket system**, and its id's prefix says which.
+- A **Local ticket** has one status, and each status carries any number of **Jobs**. `todo`, `in_progress`, `in_review`, `needs_human`, `close_parent` and `blocker_done` each belong to exactly one status, `finished` and `paused` to any number.
+- A **Local ticket** has any number of **Attributes**.
+- The local ticket store is not a **Port**: it has no **Tool fake**, and tests run it on a temp file.
 - A **Stacked ticket** has exactly one **Stack parent** and one **Stack record** until a **Restack** removes the record.
 
 **World**:
@@ -243,3 +247,19 @@ _Avoid_: contract scenario (a tool fake against its adapter), unit test
 **Stop record**:
 The latest turn end of each worker session, from the harness's report through `dispatch record-stop`, which finds the harness from the terminal the hook runs in (`HC_TERMINAL_ID` under the Herdr app, `HERDR_PANE_ID` under the herdr TUI), saying whether background tasks were still running. A turn end at or before its tree's last return is ignored.
 _Avoid_: stop file, turn (the session log keeps every turn)
+
+**Ticket system**:
+Where tickets come from and are written back: Linear, or dispatch's own local tickets. A ticket's id says which: `LOC-` starts a local ticket's.
+_Avoid_: source (what the world reads), tracker
+
+**Local ticket**:
+A ticket in dispatch's own database, id `LOC-<n>`, which only the holder of `dispatch.lock` opens. `dispatch ticket` reaches it through the running `dispatch run`. Numbers count up and are never reused, and nothing deletes a ticket.
+_Avoid_: internal ticket, offline ticket
+
+**Attribute**:
+A key-value pair on a local ticket, beside its labels, that `dispatch ticket list --attr` matches.
+_Avoid_: field, property (both name a fact), metadata, tag
+
+**Job**:
+What dispatch does with a status: `todo`, `in_progress`, `in_review`, `needs_human`, `close_parent`, `blocker_done`, `finished` or `paused`. A local ticket database keeps each status with its jobs.
+_Avoid_: status key (the rules' `status` value), role, and "job" for an action (an action is what a cycle wants done)

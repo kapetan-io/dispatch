@@ -23,6 +23,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/localticket"
 	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/typed"
@@ -50,8 +51,11 @@ type Options struct {
 	Usage func() linear.Stats
 	// Viewer names the Linear user whose tickets are tracked.
 	Viewer string
-	Out    io.Writer
-	Err    io.Writer
+	// Local is how to open the local ticket database, nil when [plugins.local] is off. The loop
+	// adds the clock and the highest id history names.
+	Local *localticket.Options
+	Out   io.Writer
+	Err   io.Writer
 }
 
 // Loop is the running reconcile loop.
@@ -64,6 +68,8 @@ type Loop struct {
 	hist   *history.Writer
 	// segStart is when the segment being written began.
 	segStart time.Time
+	// local is the local ticket database, nil when [plugins.local] is off.
+	local *localticket.Store
 
 	wd     world.World
 	mem    *world.Memory
@@ -215,6 +221,11 @@ func (l *Loop) Run(ctx context.Context) (err error) {
 		close(l.stopped)
 		ln.close()
 	}()
+	defer func() {
+		if l.local != nil {
+			_ = l.local.Close()
+		}
+	}()
 	if err := l.start(ctx); err != nil {
 		if l.hist != nil {
 			_ = l.hist.Close(false)
@@ -319,16 +330,21 @@ func (l *Loop) start(ctx context.Context) error {
 	at := l.stamp()
 	l.mem, l.led = world.NewMemory(), &ledger.Ledger{}
 	loaded := "no earlier history"
-	if seg, ok, err := history.Latest(l.o.Config.History.Dir); err != nil {
+	seg, found, err := history.Latest(l.o.Config.History.Dir)
+	if err != nil {
 		return fmt.Errorf("while reading history: %w", err)
-	} else if ok {
-		st, err := seg.Load()
-		if err != nil {
+	}
+	var st history.State
+	if found {
+		if st, err = seg.Load(); err != nil {
 			return fmt.Errorf("while loading %s: %w", seg.Path, err)
 		}
 		l.mem, l.led, l.resync = st.Memory.Ready(), st.Ledger, st.Resync
 		l.closeCrashed(at)
 		loaded = baseName(seg.Path)
+	}
+	if err := l.openLocal(seg, st, found); err != nil {
+		return err
 	}
 	l.resync++
 	hist, err := history.Start(l.o.Config.History.Dir, at, l.header("start", at),
@@ -377,7 +393,12 @@ func (l *Loop) closeCrashed(at time.Time) {
 }
 
 func (l *Loop) header(why string, at time.Time) history.Header {
-	return history.Header{Why: why, Config: l.o.ConfigText, Rules: l.o.Rules.Source(), Started: l.started, At: at.UnixMilli()}
+	h := history.Header{Why: why, Config: l.o.ConfigText, Rules: l.o.Rules.Source(), Started: l.started, At: at.UnixMilli()}
+	if l.local != nil {
+		// A failed read leaves LocalHighest unset; the next segment header records it.
+		h.LocalHighest, _ = l.local.Highest()
+	}
+	return h
 }
 
 func (l *Loop) pruneHistory(at time.Time) error {

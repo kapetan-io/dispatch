@@ -155,6 +155,15 @@
           },
           "type": "object"
         },
+        "local": {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
         "notify": {
           "additionalProperties": false,
           "properties": {},

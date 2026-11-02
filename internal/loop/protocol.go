@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"github.com/kapetan-io/dispatch/internal/localticket"
 	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 )
@@ -51,6 +52,8 @@ type Request struct {
 	Prompt *sessionlog.Prompt `json:"prompt,omitempty"`
 	// Typed is what a launch typed.
 	Typed *Typed `json:"typed,omitempty"`
+	// Call is the verb of a ticket request.
+	Call *TicketCall `json:"call,omitempty"`
 }
 
 // Typed is a launch's note that it typed Text into the session in Tree, or with Clear set that
@@ -71,4 +74,31 @@ type Response struct {
 	// Idle counts the times the loop went idle, and Busy says whether it is idle now.
 	Idle uint64 `json:"idle,omitempty"`
 	Busy bool   `json:"busy,omitempty"`
+}
+
+// OpTicket carries a `dispatch ticket` verb to the loop, the only opener of the local ticket database.
+const OpTicket = "ticket"
+
+// Verbs of a TicketCall.
+const (
+	VerbCreate   = "create"
+	VerbShow     = "show"
+	VerbList     = "list"
+	VerbMove     = "move"
+	VerbComment  = "comment"
+	VerbEdit     = "edit"
+	VerbStatuses = "statuses"
+)
+
+// TicketCall is one `dispatch ticket` verb.
+type TicketCall struct {
+	Verb   string              `json:"verb"`
+	ID     string              `json:"id,omitempty"`
+	Draft  *localticket.Draft  `json:"draft,omitempty"`
+	Edit   *localticket.Edit   `json:"edit,omitempty"`
+	Status string              `json:"status,omitempty"` // move's status name
+	Body   string              `json:"body,omitempty"`   // comment's body
+	Filter *localticket.Filter `json:"filter,omitempty"`
+	// Tree is the worker tree the CLI ran in, "" elsewhere. It decides a comment's author.
+	Tree string `json:"tree,omitempty"`
 }
