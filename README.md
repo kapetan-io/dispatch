@@ -42,7 +42,7 @@ cd ~/Development/dispatch && make install
 dispatch run
 ```
 
-Workers run in the herdr terminal UI by default. To run them in the Herdr app instead, set `host = "app"` under `[plugins.herdr]`. The [`host` row](docs/config.md#pluginsherdr) says what that needs (`hc` and `herdr-app` on PATH).
+Workers run in the herdr terminal UI by default. To run them in the Herdr app instead, set `host = "app"` under `[plugins.herdr]`. The [`host` row](docs/config.md#pluginsherdr) says what that needs (`hc` on PATH, and `herdr-app` to name each worker's space).
 
 Where `dispatch run` itself runs is a separate choice from `host`. To start it in its own Herdr app space:
 
