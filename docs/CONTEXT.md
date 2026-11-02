@@ -153,7 +153,7 @@ What herdr runs in a worker's new tab, as a harness describes it: a name for mes
 _Avoid_: command line, launch spec
 
 **Launch**:
-A launch leases a tree for the ticket, creates the ticket's branch (at another ticket's PR head for a stacked launch), opens a workspace, starts the harness and types the kickoff. A relaunch is a launch on a tree the ticket already holds. The launcher is the code that does it, run by the executor or by `dispatch launch`.
+A launch leases a tree for the ticket, creates the ticket's branch (at another ticket's PR head for a stacked launch, or at a local ticket's start PR head), opens a workspace, starts the harness and types the kickoff. A relaunch is a launch on a tree the ticket already holds. The launcher is the code that does it, run by the executor or by `dispatch launch`.
 _Avoid_: spawn, start (starting the harness is one step of a launch)
 
 **Kickoff**:

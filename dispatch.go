@@ -162,7 +162,7 @@ const usage = `usage: dispatch run
                the Linear tools. There is no delete.
                  create --repo LABEL --title TEXT [--description TEXT] [--label NAME]... [--attr KEY=VALUE]...
                         [--status NAME] [--parent LOC-N] [--blocked-by LOC-N]... [--start-pr NUMBER]
-                        prints the new id. --start-pr is stored and shown, and does nothing yet
+                        prints the new id. --start-pr starts the ticket's branch at that PR's head
                  show LOC-N         print the ticket's fields, description and every comment with its author and time
                  list [--status NAME] [--label NAME]... [--attr KEY=VALUE]... [--all]
                         one line per ticket, newest first; without --all, finished tickets are left out

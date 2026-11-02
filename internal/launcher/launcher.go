@@ -31,6 +31,9 @@ type Request struct {
 	// Stack starts a new branch at Stack.Head and records the stack parent and fork point. It
 	// overrides Base. An existing branch gets neither the start point nor the record.
 	Stack *Stack
+	// StartPR starts a new branch at the head of this PR in the repo, a fork's PR included, and
+	// writes no stack record and sets no upstream. A stacked launch and an existing branch ignore it.
+	StartPR int
 	// Program is what herdr runs for the worker, as a harness describes it. It
 	// has no default.
 	Program herdr.Program

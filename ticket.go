@@ -72,7 +72,7 @@ func ticketCommand(ctx context.Context, opts Options, args []string) error {
 		fs.Var(&labels, "label", "a label; repeatable")
 		fs.Var(&attrs, "attr", "KEY=VALUE; repeatable")
 		fs.Var(&blockers, "blocked-by", "a ticket that blocks this one, LOC-<n>; repeatable")
-		startPR = fs.Int("start-pr", 0, "a PR in the ticket's repo; stored and shown, and does nothing yet")
+		startPR = fs.Int("start-pr", 0, "a PR in the ticket's repo whose head the ticket's branch starts at")
 	case loop.VerbList:
 		status = fs.String("status", "", "only tickets in this status")
 		fs.Var(&labels, "label", "only tickets with this label; repeatable")

@@ -270,7 +270,7 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World) Res
 	}
 	kickoff, _ := w.Options["kickoff"].(string)
 	req := launcher.Request{
-		RepoDir: repo.Path, Ticket: t.Identifier, Title: t.Title, Branch: t.Branch, Program: program, Kickoff: kickoff,
+		RepoDir: repo.Path, Ticket: t.Identifier, Title: t.Title, Branch: t.Branch, StartPR: t.StartPR, Program: program, Kickoff: kickoff,
 	}
 	if on, ok := w.Options["stackOn"].(map[string]any); ok {
 		ticket, _ := on["ticket"].(string)
