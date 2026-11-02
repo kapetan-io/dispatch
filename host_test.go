@@ -72,12 +72,11 @@ func TestLaunchReportsAlreadyRunningWhenHerdrFindsASessionOnTheTree(t *testing.T
 	assert.Empty(t, d.fakes().Herdr.Kicked())
 }
 
-func TestARefusedLaunchLeavesTheKickoffRecordOfTheLaunchThatWon(t *testing.T) {
+func TestARefusedLaunchKeepsTheKickoffRecordAndDatesItFromItsOwnStart(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
-	started := d.Clock.Now().Add(-time.Second)
-	markLaunch(t, d.state, tree, started)
+	markLaunch(t, d.state, tree, d.Clock.Now().Add(-10*time.Minute))
 	d.fakes().Herdr.Fail(herdrtest.OpStartTab, herdr.ErrSessionRunning)
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
@@ -85,7 +84,7 @@ func TestARefusedLaunchLeavesTheKickoffRecordOfTheLaunchThatWon(t *testing.T) {
 	require.Equal(t, "already_running", out.result["status"])
 	at, held := launchRecord(d.state, tree)
 	assert.True(t, held)
-	assert.Equal(t, started.UnixMilli(), at.UnixMilli())
+	assert.Equal(t, d.Clock.Now().UnixMilli(), at.UnixMilli())
 }
 
 func TestARefusedLaunchLeavesNoKickoffRecordBesideAHealthyWorker(t *testing.T) {

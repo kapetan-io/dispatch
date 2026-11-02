@@ -250,8 +250,9 @@ func (l *launch) beginKickoff() {
 	l.markID = id
 }
 
-// claimKickoff makes the record this launch's alone. Herdr starts one session per tree, so a
-// launch that got this far is the winner, and any other owner is a launch that lost or died.
+// claimKickoff makes the record this launch's alone. Under the app host herdr starts one session
+// per tree, so a launch that got this far won and any other owner lost or died. Under the TUI two
+// racing launches both get here, and the last claim replaces the first.
 func (l *launch) claimKickoff() {
 	if l.opts.StateDir == "" {
 		return

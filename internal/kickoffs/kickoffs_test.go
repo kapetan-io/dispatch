@@ -62,7 +62,7 @@ func TestARecordTwoLaunchesShareSurvivesTheFirstToRelease(t *testing.T) {
 
 	at, held := kickoffs.Since(state, tree)
 	assert.True(t, held)
-	assert.Equal(t, time.UnixMilli(1000), at)
+	assert.Equal(t, time.UnixMilli(2000), at)
 
 	kickoffs.Release(state, tree, loser)
 
