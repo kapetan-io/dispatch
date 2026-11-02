@@ -148,6 +148,9 @@ func TestShippedWrapperLaunchesAWorkerInHerdrCoreUnderTheAppHost(t *testing.T) {
 	require.NoError(t, err)
 	out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "dispatch"), "github.com/kapetan-io/dispatch/cmd/dispatch").CombinedOutput()
 	require.NoError(t, err, string(out))
+	// The launcher closes the workspace when a launch fails, and that must not reach the
+	// maintainer's app window.
+	require.NoError(t, os.Symlink("/usr/bin/true", filepath.Join(bin, "herdr-app")))
 	plugin, err := filepath.Abs("../..")
 	require.NoError(t, err)
 

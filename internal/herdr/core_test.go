@@ -22,11 +22,16 @@ import (
 const (
 	envCoreReplies = "HC_TEST_REPLIES"
 	envCoreLog     = "HC_TEST_LOG"
+	envAppLog      = "HERDR_APP_TEST_LOG"
+	envAppFails    = "HERDR_APP_TEST_FAILS"
 )
 
 // runCoreStandIn plays `hc connect`. It reads one request, appends it to the log, and prints the
 // next canned reply for the request's method, repeating the last one when they run out.
 func runCoreStandIn(args []string) int {
+	if len(args) > 0 && args[0] == "do" {
+		return runAppStandIn(args)
+	}
 	if len(args) != 1 || args[0] != "connect" {
 		fmt.Fprintln(os.Stderr, "unexpected command line:", args)
 		return 2
@@ -68,6 +73,23 @@ func runCoreStandIn(args []string) int {
 	return 0
 }
 
+// runAppStandIn plays `herdr-app do`: it appends its command line to the app log and, when
+// the test says so, fails.
+func runAppStandIn(args []string) int {
+	f, err := os.OpenFile(os.Getenv(envAppLog), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	_, _ = fmt.Fprintln(f, strings.Join(args[1:], " "))
+	_ = f.Close()
+	if os.Getenv(envAppFails) != "" {
+		fmt.Fprintln(os.Stderr, "no window is open")
+		return 1
+	}
+	return 0
+}
+
 func countLines(path, method string) int {
 	b, _ := os.ReadFile(path)
 	n := 0
@@ -99,6 +121,15 @@ func (c hcCalls) Params(t *testing.T, method string) []map[string]any {
 	return found
 }
 
+// AppLines lists every herdr-app command as one line each.
+func (c hcCalls) AppLines() []string {
+	b, _ := os.ReadFile(c.path + ".app")
+	if len(b) == 0 {
+		return nil
+	}
+	return strings.Split(strings.TrimSpace(string(b)), "\n")
+}
+
 // Methods lists the method of every request, in order.
 func (c hcCalls) Methods() []string {
 	b, _ := os.ReadFile(c.path)
@@ -121,8 +152,9 @@ func coreStandIn(t *testing.T, replies map[string][]string) (*herdr.Core, hcCall
 	log := t.TempDir() + "/calls"
 	t.Setenv(envCoreReplies, string(raw))
 	t.Setenv(envCoreLog, log)
+	t.Setenv(envAppLog, log+".app")
 	env := environment.Process()
-	core := herdr.NewCore(exe).WithKinds("claude").WithEnv(env).WithPace(1)
+	core := herdr.NewCore(exe).WithApp(exe).WithKinds("claude").WithEnv(env).WithPace(1)
 	return core, hcCalls{path: log}
 }
 
@@ -496,13 +528,156 @@ func TestCoreCloseWorkspaceWithNoWorkerTerminalClosesNothing(t *testing.T) {
 	assert.Equal(t, []string{"terminal.list"}, calls.Methods())
 }
 
-func TestCoreRenamesAreNoOps(t *testing.T) {
+func TestCoreRenamesNameTheSpaceAndTabInTheAppWindow(t *testing.T) {
 	core, calls := coreStandIn(t, map[string][]string{})
 
 	require.NoError(t, core.RenameWorkspace(context.Background(), "spA", "🟢 ENG-1"))
-	require.NoError(t, core.RenameTab(context.Background(), "tbA", "ENG-1 title"))
+	require.NoError(t, core.RenameTab(context.Background(), "tbA", "ENG-1 the title"))
 
+	assert.Equal(t, []string{
+		"space.rename --id spA --name 🟢 ENG-1",
+		"tab.rename --id tbA --name ENG-1 the title",
+	}, calls.AppLines())
 	assert.Empty(t, calls.Methods())
+}
+
+func TestCoreRenamesSucceedWhenNoWindowIsOpen(t *testing.T) {
+	trace := t.TempDir() + "/trace"
+	t.Setenv(envAppFails, "1")
+	core, calls := coreStandIn(t, map[string][]string{})
+	core.WithTrace(trace)
+
+	require.NoError(t, core.RenameWorkspace(context.Background(), "spA", "🟢 ENG-1"))
+	require.NoError(t, core.RenameTab(context.Background(), "tbA", "ENG-1 the title"))
+
+	assert.Len(t, calls.AppLines(), 2)
+	written, err := os.ReadFile(trace)
+	require.NoError(t, err)
+	assert.Contains(t, string(written), "no window is open")
+}
+
+func TestCoreRenamesSucceedWhenHerdrAppIsNotInstalled(t *testing.T) {
+	core := herdr.NewCore("hc").WithApp("herdr-app-that-is-not-installed").WithEnv(environment.Environment{"PATH=" + t.TempDir()})
+
+	require.NoError(t, core.RenameWorkspace(context.Background(), "spA", "🟢 ENG-1"))
+	require.NoError(t, core.RenameTab(context.Background(), "tbA", "ENG-1 the title"))
+}
+
+// appDocument is the herdr-app document as hc returns it, on one line like every reply.
+const appDocument = `{"value":{"spaces":[{"id":"spA","name":"🟢 ENG-1","folder":"/trees/1","tabs":[{"id":"tbA","name":"ENG-1 the title"}]},{"id":"spB","name":"","folder":"/trees/2","tabs":[{"id":"tbB","name":""}]},{"id":"spUser","name":"mine","tabs":[{"id":"tbUser","name":"shell"}]}]},"version":20}`
+
+func TestCoreReadShowsTheNamesTheAppWindowHolds(t *testing.T) {
+	other := worker("t2", "spB", "tbB", "idle")
+	other.labels["dispatch.tree"] = "/trees/2"
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.list": {list(term(worker("t1", "spA", "tbA", "idle")), term(other))},
+		"doc.get":       {ok(appDocument)},
+	})
+
+	snap, err := core.Read(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, []herdr.Workspace{{ID: "spA", Label: "🟢 ENG-1", CheckoutPath: "/trees/1"}, {ID: "spB", CheckoutPath: "/trees/2"}}, snap.Workspaces)
+	assert.Equal(t, []herdr.Tab{{ID: "tbA", Label: "ENG-1 the title", WorkspaceID: "spA"}, {ID: "tbB", WorkspaceID: "spB"}}, snap.Tabs)
+	assert.Equal(t, []map[string]any{{"name": "herdr-app"}}, calls.Params(t, "doc.get"))
+}
+
+func TestCoreReadShowsNoNamesWhenTheAppDocumentIsEmptyOrUnreadable(t *testing.T) {
+	for name, reply := range map[string]string{
+		"neverWritten": ok(`{"value":null,"version":0}`),
+		"refused":      fails("internal", "no document"),
+		"otherShape":   ok(`{"value":{"spaces":"none"},"version":3}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			core, _ := coreStandIn(t, map[string][]string{
+				"terminal.list": {list(term(worker("t1", "spA", "tbA", "idle")))},
+				"doc.get":       {reply},
+			})
+
+			snap, err := core.Read(context.Background())
+
+			require.NoError(t, err)
+			assert.Equal(t, []herdr.Workspace{{ID: "spA", CheckoutPath: "/trees/1"}}, snap.Workspaces)
+			assert.Equal(t, []herdr.Tab{{ID: "tbA", WorkspaceID: "spA"}}, snap.Tabs)
+		})
+	}
+}
+
+func TestCoreCloseWorkspaceClosesTheSpaceWhenNoOtherTerminalIsLeft(t *testing.T) {
+	live := worker("t1", "spA", "tbA", "idle")
+	gone := worker("t2", "spA", "tbA", "")
+	gone.state, gone.program = "finished", ""
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.list": {list(term(live), term(gone))},
+		"terminal.kill": {ok(`{}`)},
+		"terminal.rm":   {ok(`{}`)},
+	})
+
+	require.NoError(t, core.CloseWorkspace(context.Background(), "spA"))
+
+	assert.Equal(t, []string{"space.close --id spA --confirmed true"}, calls.AppLines())
+}
+
+func TestCoreCloseWorkspaceKeepsTheSpaceWhileTheUsersTerminalIsInIt(t *testing.T) {
+	users := spec{address: "t3", program: "/bin/zsh", labels: map[string]string{"herdr.space": "spA"}}
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.list": {list(term(worker("t1", "spA", "tbA", "idle")), term(users))},
+		"terminal.kill": {ok(`{}`)},
+		"terminal.rm":   {ok(`{}`)},
+	})
+
+	require.NoError(t, core.CloseWorkspace(context.Background(), "spA"))
+
+	assert.Empty(t, calls.AppLines())
+}
+
+func TestCoreCloseWorkspaceLeavesTheSpaceWhenAWorkerCouldNotBeRemoved(t *testing.T) {
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.list": {list(term(worker("t1", "spA", "tbA", "idle")))},
+		"terminal.kill": {fails("internal", "cannot kill")},
+	})
+
+	require.ErrorContains(t, core.CloseWorkspace(context.Background(), "spA"), "cannot kill")
+
+	assert.Empty(t, calls.AppLines())
+}
+
+func TestCoreCloseWorkspaceWithNoWorkerClosesNoSpace(t *testing.T) {
+	core, calls := coreStandIn(t, map[string][]string{"terminal.list": {list()}})
+
+	require.NoError(t, core.CloseWorkspace(context.Background(), "spA"))
+
+	assert.Empty(t, calls.AppLines())
+}
+
+func TestCoreCloseWorkspaceSucceedsWhenNoWindowIsOpenToCloseTheSpace(t *testing.T) {
+	trace := t.TempDir() + "/trace"
+	t.Setenv(envAppFails, "1")
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.list": {list(term(worker("t1", "spA", "tbA", "idle")))},
+		"terminal.kill": {ok(`{}`)},
+		"terminal.rm":   {ok(`{}`)},
+	})
+	core.WithTrace(trace)
+
+	require.NoError(t, core.CloseWorkspace(context.Background(), "spA"))
+
+	assert.Equal(t, []string{"space.close --id spA --confirmed true"}, calls.AppLines())
+	written, err := os.ReadFile(trace)
+	require.NoError(t, err)
+	assert.Contains(t, string(written), "no window is open")
+}
+
+func TestCoreCloseTabNeverClosesASpace(t *testing.T) {
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.list": {list(term(worker("t1", "spA", "tbA", "idle")))},
+		"terminal.kill": {ok(`{}`)},
+		"terminal.rm":   {ok(`{}`)},
+	})
+
+	require.NoError(t, core.CloseTab(context.Background(), "tbA"))
+
+	assert.Empty(t, calls.AppLines())
 }
 
 var startup = herdr.Startup{Answers: []herdr.Answer{

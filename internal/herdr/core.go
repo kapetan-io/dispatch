@@ -32,6 +32,7 @@ const (
 type Core struct {
 	workLog
 	hc          string
+	app         string
 	env         environment.Environment
 	dispatchBin string
 	kinds       []string
@@ -39,7 +40,14 @@ type Core struct {
 
 // NewCore returns a Herdr that runs hc.
 func NewCore(hc string) *Core {
-	return &Core{hc: hc, workLog: newWorkLog()}
+	return &Core{hc: hc, app: appCommand, workLog: newWorkLog()}
+}
+
+// WithApp runs the command at path to name and close spaces in the Herdr app window, instead
+// of herdr-app.
+func (c *Core) WithApp(path string) *Core {
+	c.app = path
+	return c
 }
 
 // WithEnv runs hc, and finds it, with env instead of the process's environment. Workers it
@@ -145,6 +153,7 @@ func (c *Core) Read(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	var s Snapshot
+	names := c.names(ctx)
 	spaces, tabs := map[string]bool{}, map[string]bool{}
 	for _, t := range terminals {
 		if !t.startedByDispatch() {
@@ -153,11 +162,11 @@ func (c *Core) Read(ctx context.Context) (Snapshot, error) {
 		space, tab := t.Labels[labelSpace], t.Labels[labelTab]
 		if !spaces[space] {
 			spaces[space] = true
-			s.Workspaces = append(s.Workspaces, Workspace{ID: space, CheckoutPath: t.Labels[LabelTree]})
+			s.Workspaces = append(s.Workspaces, Workspace{ID: space, Label: names[space], CheckoutPath: t.Labels[LabelTree]})
 		}
 		if !tabs[tab] {
 			tabs[tab] = true
-			s.Tabs = append(s.Tabs, Tab{ID: tab, WorkspaceID: space})
+			s.Tabs = append(s.Tabs, Tab{ID: tab, Label: names[tab], WorkspaceID: space})
 		}
 		if !t.live() {
 			continue
@@ -218,30 +227,103 @@ func (c *Core) send(ctx context.Context, pane, text, status string) (sendReply, 
 	return out, c.call(ctx, "terminal.send", params, &out)
 }
 
-// RenameWorkspace and RenameTab leave the names of workspaces and tabs to the Herdr app.
-func (c *Core) RenameWorkspace(ctx context.Context, id, label string) error { return nil }
+const (
+	appCommand = "herdr-app"
+	// appDocument is the hc document in which the Herdr app keeps its spaces and tabs. Space
+	// is the app's word for a workspace.
+	appDocument = "herdr-app"
+)
 
-func (c *Core) RenameTab(ctx context.Context, id, label string) error { return nil }
+// appTimeout bounds one herdr-app command, so a window that hangs cannot stall the dispatcher.
+const appTimeout = 10 * time.Second
 
+// names returns the name the Herdr app window holds for every space and tab, by id. A window
+// that is closed, or a document that is empty or unreadable, gives none, so every label reads "".
+func (c *Core) names(ctx context.Context) map[string]string {
+	var doc struct {
+		Value *struct {
+			Spaces []struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+				Tabs []struct {
+					ID   string `json:"id"`
+					Name string `json:"name"`
+				} `json:"tabs"`
+			} `json:"spaces"`
+		} `json:"value"`
+	}
+	if err := c.call(ctx, "doc.get", map[string]any{"name": appDocument}, &doc); err != nil {
+		c.record("doc.get", err.Error())
+		return nil
+	}
+	names := map[string]string{}
+	if doc.Value == nil {
+		return names
+	}
+	for _, space := range doc.Value.Spaces {
+		names[space.ID] = space.Name
+		for _, tab := range space.Tabs {
+			names[tab.ID] = tab.Name
+		}
+	}
+	return names
+}
+
+// RenameWorkspace and RenameTab name a space and a tab in the Herdr app window. They never
+// fail, because with the window closed there is nothing to name: the next Read still shows
+// the old name, and the loop asks again.
+func (c *Core) RenameWorkspace(ctx context.Context, id, label string) error {
+	c.runApp(ctx, "space.rename", id, "--name", label)
+	return nil
+}
+
+func (c *Core) RenameTab(ctx context.Context, id, label string) error {
+	c.runApp(ctx, "tab.rename", id, "--name", label)
+	return nil
+}
+
+// runApp runs one herdr-app command, best effort. A failure goes to the trace.
+func (c *Core) runApp(ctx context.Context, command, id string, args ...string) {
+	ctx, cancel := context.WithTimeout(ctx, appTimeout)
+	defer cancel()
+	argv := append([]string{"do", command, "--id", id}, args...)
+	cmd := c.env.Command(ctx, c.app, argv...)
+	cmd.WaitDelay = time.Second // kills a child that outlives the timeout holding the output pipe
+	if out, err := cmd.CombinedOutput(); err != nil {
+		c.record(c.app+" "+strings.Join(argv, " "), fmt.Sprintf("%v: %s", err, bytes.TrimSpace(out)))
+	}
+}
+
+// CloseWorkspace removes the space's workers. It also closes the space in the app window when
+// no terminal is left in it, so a space the user is working in stays open.
 func (c *Core) CloseWorkspace(ctx context.Context, id string) error {
-	return c.closeWorkers(ctx, map[string]string{labelSpace: id})
+	emptied, err := c.closeWorkers(ctx, map[string]string{labelSpace: id})
+	if err == nil && emptied {
+		// Without --confirmed the app asks first.
+		c.runApp(ctx, "space.close", id, "--confirmed", "true")
+	}
+	return err
 }
 
 func (c *Core) CloseTab(ctx context.Context, id string) error {
-	return c.closeWorkers(ctx, map[string]string{labelTab: id})
+	_, err := c.closeWorkers(ctx, map[string]string{labelTab: id})
+	return err
 }
 
 // closeWorkers kills and removes every worker terminal with labels. A space or tab holding
 // none has nothing to close, which is not an error: the ids are derived, so one can be
 // asked for before its first terminal starts. Terminals the user opened there are left alone.
-func (c *Core) closeWorkers(ctx context.Context, labels map[string]string) error {
+// It reports whether it removed a worker and left no terminal at all behind.
+func (c *Core) closeWorkers(ctx context.Context, labels map[string]string) (emptied bool, err error) {
 	terminals, err := c.list(ctx, labels)
 	if err != nil {
-		return err
+		return false, err
 	}
 	var errs []error
+	var removed, others int
 	for _, t := range terminals {
 		if !t.startedByDispatch() {
+			others++
 			continue
 		}
 		if t.live() {
@@ -252,9 +334,11 @@ func (c *Core) closeWorkers(ctx context.Context, labels map[string]string) error
 		}
 		if err := c.call(ctx, "terminal.rm", map[string]any{"terminal": t.Address}, nil); err != nil && !gone(err) {
 			errs = append(errs, err)
+			continue
 		}
+		removed++
 	}
-	return errors.Join(errs...)
+	return removed > 0 && others == 0, errors.Join(errs...)
 }
 
 // gone reports whether err says the terminal is no longer there.
