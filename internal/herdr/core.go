@@ -95,6 +95,7 @@ type terminal struct {
 	FinishedMS uint64            `json:"finished_ms"`
 	Labels     map[string]string `json:"labels"`
 	Status     *terminalStatus   `json:"status"`
+	Turn       uint64            `json:"turn"`
 	Foreground *struct {
 		Argv []string `json:"argv"`
 	} `json:"foreground"`
@@ -209,7 +210,8 @@ func (c *Core) Prompt(ctx context.Context, pane, text string) error {
 
 // sendReply is what hc says of a send.
 type sendReply struct {
-	Started *bool `json:"started"`
+	Started *bool  `json:"started"`
+	Turn    uint64 `json:"turn"`
 }
 
 // send types text and presses Enter. A worker that is idle is sent to only if it is still
@@ -446,17 +448,22 @@ func (c *Core) Kickoff(ctx context.Context, pane, text string, startup Startup) 
 		if err != nil || !t.live() {
 			return ErrKickoffUnconfirmed
 		}
-		switch now := t.status(); {
-		case now == "working" || now == "blocked" || now == "done":
+		now := t.status()
+		// A turn count past the send's own means the text ran, whatever the status reads now.
+		ran := t.Turn > res.Turn
+		// Done before the text went in and still done is no sign it ran, so treat it like an idle prompt.
+		switch {
+		case ran || now == "working" || now == "blocked" || (now == "done" && status == "idle"):
 			return nil
-		case now == "idle":
+		case now == "idle" || now == "done":
 			// Still at the prompt: press Enter if the text sits in the input box, else retype.
-			if strings.Contains(c.screen(ctx, pane), probeOf(text)) {
+			if strings.Contains(c.screen(ctx, pane, 30), probeOf(text)) {
 				_ = c.call(ctx, "terminal.keys", map[string]any{"terminal": pane, "keys": []string{"enter"}}, nil)
-				if t, err = c.awaitLeft(ctx, pane, "idle"); err != nil || !t.live() {
+				if t, err = c.awaitLeft(ctx, pane, now); err != nil || !t.live() {
 					return ErrKickoffUnconfirmed
 				}
-				if now := t.status(); now == "working" || now == "blocked" || now == "done" {
+				after := t.status()
+				if t.Turn > res.Turn || after == "working" || after == "blocked" || (after == "done" && now == "idle") {
 					return nil
 				}
 				return ErrKickoffUnconfirmed
@@ -485,7 +492,7 @@ func (c *Core) awaitLeft(ctx context.Context, pane, from string) (terminal, erro
 // answer sends the next try for the startup dialog the screen shows, and nothing when it
 // shows none.
 func (c *Core) answer(ctx context.Context, pane string, startup Startup, sightings []int) {
-	screen := c.screen(ctx, pane)
+	screen := c.screen(ctx, pane, 0)
 	c.record("dialogs", screen)
 	try, ok := startup.Answer(screen, sightings)
 	if !ok {
@@ -500,12 +507,18 @@ func (c *Core) answer(ctx context.Context, pane string, startup Startup, sightin
 	}
 }
 
-// screen is the last 30 lines of the terminal, joined on one line, or "" when it can't be read.
-func (c *Core) screen(ctx context.Context, pane string) string {
+// screen is the visible screen plus lines of history above it, joined on one line, or ""
+// when it can't be read. A startup dialog is read with no history, so one already answered
+// and scrolled off is never answered again.
+func (c *Core) screen(ctx context.Context, pane string, history int) string {
 	var read struct {
 		Text string `json:"text"`
 	}
-	if err := c.call(ctx, "terminal.read", map[string]any{"terminal": pane, "lines": 30}, &read); err != nil {
+	params := map[string]any{"terminal": pane}
+	if history > 0 {
+		params["lines"] = history
+	}
+	if err := c.call(ctx, "terminal.read", params, &read); err != nil {
 		return ""
 	}
 	return oneLine(read.Text)

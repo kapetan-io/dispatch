@@ -135,6 +135,7 @@ func fails(kind, message string) string {
 type spec struct {
 	address, name, state, reason, status, kind, program string
 	finishedMS                                          uint64
+	turn                                                int
 	labels                                              map[string]string
 }
 
@@ -156,8 +157,8 @@ func term(s spec) string {
 	if s.reason != "" {
 		reason = fmt.Sprintf("%q", s.reason)
 	}
-	return fmt.Sprintf(`{"address":%q,"name":%q,"state":%q,"reason":%s,"finished_ms":%d,"labels":%s,"status":%s,"foreground":%s}`,
-		s.address, s.name, s.state, reason, s.finishedMS, labels, status, foreground)
+	return fmt.Sprintf(`{"address":%q,"name":%q,"state":%q,"reason":%s,"finished_ms":%d,"labels":%s,"status":%s,"turn":%d,"foreground":%s}`,
+		s.address, s.name, s.state, reason, s.finishedMS, labels, status, s.turn, foreground)
 }
 
 func list(terminals ...string) string {
@@ -871,6 +872,121 @@ func TestCoreKickoffCountsAKickoffThatRanToDoneAfterEnterAsConfirmed(t *testing.
 	core, calls := coreStandIn(t, map[string][]string{
 		"terminal.get":  gets,
 		"terminal.send": {ok(`{"turn":1,"started":false}`)},
+		"terminal.read": {ok(`{"text":"❯ /dispatch:build ENG-1","complete":true,"how":"screen"}`)},
+		"terminal.keys": {ok(`{"turn":1}`)},
+	})
+
+	require.NoError(t, core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup))
+
+	assert.Len(t, calls.Params(t, "terminal.send"), 1)
+	assert.Len(t, calls.Params(t, "terminal.keys"), 1)
+}
+
+func TestCoreKickoffDoesNotConfirmAKickoffTypedIntoADoneWorkerThatNeverMoved(t *testing.T) {
+	done := ok(term(worker("t1", "spA", "tbA", "done")))
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.get":  {done},
+		"terminal.send": {ok(`{"turn":0,"started":null}`)},
+		"terminal.read": {ok(`{"text":"❯ /dispatch:build ENG-1","complete":true,"how":"screen"}`)},
+		"terminal.keys": {ok(`{"turn":0}`)},
+	})
+
+	err := core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup)
+
+	require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
+	assert.Len(t, calls.Params(t, "terminal.keys"), 1)
+}
+
+func TestCoreKickoffConfirmsAKickoffTypedIntoADoneWorkerWhoseTurnWentUp(t *testing.T) {
+	ran := worker("t1", "spA", "tbA", "done")
+	ran.turn = 2
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.get":  {ok(term(worker("t1", "spA", "tbA", "done"))), ok(term(ran))},
+		"terminal.send": {ok(`{"turn":1,"started":null}`)},
+	})
+
+	require.NoError(t, core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup))
+
+	assert.Empty(t, calls.Params(t, "terminal.keys"))
+	assert.Len(t, calls.Params(t, "terminal.send"), 1)
+}
+
+func TestCoreKickoffReadsAStartupDialogFromTheVisibleScreenOnly(t *testing.T) {
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.get": {
+			ok(term(worker("t1", "spA", "tbA", ""))),
+			ok(term(worker("t1", "spA", "tbA", "idle"))),
+		},
+		"terminal.read": {ok(`{"text":"loading","complete":true,"how":"screen"}`)},
+		"terminal.send": {ok(`{"turn":1,"started":true}`)},
+	})
+
+	require.NoError(t, core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup))
+
+	reads := calls.Params(t, "terminal.read")
+	require.Len(t, reads, 1)
+	assert.NotContains(t, reads[0], "lines")
+}
+
+func TestCoreKickoffConfirmsAKickoffWhoseTurnWentUpEvenIfTheWorkerReadsIdle(t *testing.T) {
+	ran := worker("t1", "spA", "tbA", "idle")
+	ran.turn = 2
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.get":  {ok(term(worker("t1", "spA", "tbA", "done"))), ok(term(ran))},
+		"terminal.send": {ok(`{"turn":1,"started":null}`)},
+		"terminal.read": {ok(`{"text":"❯ /dispatch:build ENG-1","complete":true,"how":"screen"}`)},
+	})
+
+	require.NoError(t, core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup))
+
+	assert.Empty(t, calls.Params(t, "terminal.keys"))
+	assert.Len(t, calls.Params(t, "terminal.send"), 1)
+}
+
+func TestCoreKickoffCountsAKickoffThatRanToDoneWithoutPressingEnter(t *testing.T) {
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.get": {
+			ok(term(worker("t1", "spA", "tbA", "idle"))),
+			ok(term(worker("t1", "spA", "tbA", "done"))),
+		},
+		"terminal.send": {ok(`{"turn":0,"started":null}`)},
+		"terminal.read": {ok(`{"text":"❯ /dispatch:build ENG-1","complete":true,"how":"screen"}`)},
+	})
+
+	require.NoError(t, core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup))
+
+	assert.Empty(t, calls.Params(t, "terminal.keys"))
+	assert.Len(t, calls.Params(t, "terminal.send"), 1)
+}
+
+func TestCoreKickoffLooksForTheTypedTextInHistoryAboveTheScreen(t *testing.T) {
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.get":  {ok(term(worker("t1", "spA", "tbA", "idle")))},
+		"terminal.send": {ok(`{"turn":0,"started":null}`)},
+		"terminal.read": {ok(`{"text":"nothing","complete":true,"how":"screen"}`)},
+	})
+
+	err := core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup)
+
+	require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
+	reads := calls.Params(t, "terminal.read")
+	require.NotEmpty(t, reads)
+	assert.EqualValues(t, 30, reads[0]["lines"])
+}
+
+func TestCoreKickoffConfirmsADoneWorkerWhoseTurnWentUpAfterEnter(t *testing.T) {
+	stuck := ok(term(worker("t1", "spA", "tbA", "done")))
+	ran := worker("t1", "spA", "tbA", "idle")
+	ran.turn = 2
+	gets := []string{}
+	// One read finds the input box and fifteen wait for the status to move.
+	for range 16 {
+		gets = append(gets, stuck)
+	}
+	gets = append(gets, ok(term(ran)))
+	core, calls := coreStandIn(t, map[string][]string{
+		"terminal.get":  gets,
+		"terminal.send": {ok(`{"turn":1,"started":null}`)},
 		"terminal.read": {ok(`{"text":"❯ /dispatch:build ENG-1","complete":true,"how":"screen"}`)},
 		"terminal.keys": {ok(`{"turn":1}`)},
 	})
