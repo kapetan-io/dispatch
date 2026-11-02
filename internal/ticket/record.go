@@ -38,6 +38,8 @@ type Ticket struct {
 	Attributes map[string]string `json:",omitempty"`
 	// StatusAt is when a local ticket entered its current status, in CreatedAt's form.
 	StatusAt string `json:",omitempty"`
+	// StartPR is the PR a local ticket's branch starts at, or 0. It is never the ticket's own PR.
+	StartPR int `json:",omitempty"`
 }
 
 // Blocker is a ticket that blocks another and the status it is in.

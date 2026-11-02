@@ -402,9 +402,18 @@ func (l *launch) checkout(ctx context.Context, existed bool) (Result, bool) {
 	}
 	var out strings.Builder
 	var err error
-	if existed {
+	switch {
+	case existed:
 		err = l.gitToStderr(ctx, &out, l.tree, "switch", req.Branch)
-	} else {
+	case req.Stack == nil && req.StartPR > 0:
+		from = fmt.Sprintf(" from PR %d", req.StartPR)
+		// A private ref, so the fetch never collides with a real branch, and + follows a force-pushed PR.
+		ref := fmt.Sprintf("origin/dispatch-start/%d", req.StartPR)
+		err = l.gitToStderr(ctx, &out, l.repo, "fetch", "--no-tags", "origin", fmt.Sprintf("+refs/pull/%d/head:refs/remotes/%s", req.StartPR, ref))
+		if err == nil {
+			err = l.gitToStderr(ctx, &out, l.tree, "switch", "--no-track", "-c", req.Branch, ref)
+		}
+	default:
 		_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", req.Base)
 		err = l.gitToStderr(ctx, &out, l.tree, "switch", "--no-track", "-c", req.Branch, "origin/"+req.Base)
 		if err != nil {

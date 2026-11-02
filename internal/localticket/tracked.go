@@ -94,7 +94,7 @@ func (s *Store) record(n uint64, t stored) ticket.Ticket {
 	out := ticket.Ticket{
 		Identifier: ticket.LocalID(n), Title: t.Title, Branch: t.Branch, Status: t.Status,
 		Mine: true, CreatedAt: t.CreatedAt, LastComment: t.LastComment, Repo: t.Repo,
-		Attributes: t.Attributes, StatusAt: t.StatusAt,
+		Attributes: t.Attributes, StatusAt: t.StatusAt, StartPR: t.StartPR,
 	}
 	for _, l := range t.Labels {
 		out.Labels = append(out.Labels, ticket.Label{Name: l})
