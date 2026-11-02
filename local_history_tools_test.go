@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kapetan-io/dispatch"
 )
 
 const localShipped = shippedRulesConfig + localOn
@@ -157,4 +159,38 @@ func TestExplainAndWatchAcceptALocalTicketID(t *testing.T) {
 	assert.Contains(t, watch.Stdout, "watching LOC-1")
 	require.NoError(t, explain.Err)
 	assert.Contains(t, explain.Stdout, "LOC-1")
+}
+
+func TestStateResetKeepsTheHighestIssuedNumberSoARestoredOlderFileIsRefused(t *testing.T) {
+	t.Parallel()
+	d := localDispatch(t)
+	d.fileLocal("Todo")
+	d.Stop()
+	older, err := os.ReadFile(d.databasePath())
+	require.NoError(t, err)
+	d.Restart()
+	d.fileLocal("Done")
+	d.fileLocal("Done")
+	d.Tick()
+	d.Stop()
+
+	require.NoError(t, d.Run("state", "reset").Err)
+	require.NoError(t, os.WriteFile(d.databasePath(), older, 0o600))
+	err = d.startLoop(dispatch.Options{})
+
+	require.ErrorContains(t, err, "LOC-3")
+	require.ErrorContains(t, err, d.databasePath())
+}
+
+func TestRulesCheckSaysTheRunningDispatchStartedWithLocalTicketsOff(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.StartBeforeTheEvents()
+	d.config(localOn)
+
+	res := d.Run("rules", "check")
+
+	require.ErrorContains(t, res.Err, "started with local tickets off")
+	require.ErrorContains(t, res.Err, "restart it")
+	assert.NotContains(t, res.Err.Error(), "no [plugins.local] table")
 }

@@ -68,6 +68,10 @@ func trackedLocal(ctx context.Context, opts Options, cfg config.Config) (*localt
 		if err != nil {
 			return nil, err
 		}
+		// The loop reads config.toml only at start, so its message may name a table the file now has.
+		if resp.Error == loop.LocalOff {
+			return nil, errors.New("the running dispatch started with local tickets off; restart it to read local tickets")
+		}
 		if resp.Error != "" {
 			return nil, errors.New(resp.Error)
 		}

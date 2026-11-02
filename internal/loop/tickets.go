@@ -13,13 +13,13 @@ import (
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
-// localOff is what a ticket request gets when config.toml has no [plugins.local] table.
-const localOff = "local tickets are off: config.toml has no [plugins.local] table"
+// LocalOff is what a ticket request gets from a dispatch that started without a [plugins.local] table.
+const LocalOff = "local tickets are off: config.toml has no [plugins.local] table"
 
 // onTicket answers a `dispatch ticket` verb on the loop goroutine.
 func (l *Loop) onTicket(call *TicketCall) Response {
 	if l.local == nil {
-		return Response{Code: CodeFailed, Error: localOff}
+		return Response{Code: CodeFailed, Error: LocalOff}
 	}
 	if call == nil {
 		return Response{Code: CodeFailed, Error: "a ticket request needs a call"}
