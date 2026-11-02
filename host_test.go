@@ -72,6 +72,21 @@ func TestLaunchReportsAlreadyRunningWhenHerdrFindsASessionOnTheTree(t *testing.T
 	assert.Empty(t, d.fakes().Herdr.Kicked())
 }
 
+func TestLaunchFailsNamingTheTerminalThatHoldsTheTreeWithNoClaude(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	d.fakes().Herdr.Fail(herdrtest.OpStartTab, &herdr.TerminalWithoutAgent{Address: "t7"})
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "terminal_without_agent", out.result["status"])
+	assert.Contains(t, out.result["detail"], "t7")
+	assert.Empty(t, d.fakes().Herdr.ClosedWorkspaces())
+	assert.Empty(t, d.fakes().Calls("treehouse", "return"))
+	assert.Empty(t, d.fakes().Herdr.Kicked())
+}
+
 func TestLaunchStartsClaudeOnTheSessionItChose(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})

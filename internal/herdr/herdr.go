@@ -103,7 +103,8 @@ type Herdr interface {
 	// worker's program, answering nothing yet. The workspace's agent-less tabs are
 	// closed. A failure after the tab came up still returns its pane, so the
 	// caller can tell a missing tab from a program that would not start. It fails with
-	// ErrSessionRunning, starting nothing, when a session already runs on the tree.
+	// ErrSessionRunning, starting nothing, when a session already runs on the tree, and with
+	// *TerminalWithoutAgent when a terminal dispatch started for the tree runs no Claude.
 	StartWorker(ctx context.Context, w Worker) (Started, error)
 	// Kickoff types text into the program in pane once its input box is ready,
 	// answering the startup dialogs the Startup lists first, and returns once herdr
@@ -260,6 +261,16 @@ var (
 	// ErrSessionRunning means StartWorker found a session on the tree and started nothing.
 	ErrSessionRunning = errors.New("a session already runs on the tree")
 )
+
+// TerminalWithoutAgent means StartWorker found a live terminal started by dispatch for the
+// tree, with no Claude running in the tree's space, and started nothing. The terminal may be
+// stuck or may belong to a racing launch whose Claude is still loading, so dispatch leaves it
+// for a person to remove.
+type TerminalWithoutAgent struct{ Address string }
+
+func (e *TerminalWithoutAgent) Error() string {
+	return "terminal " + e.Address + " holds the tree but runs no Claude"
+}
 
 // NothingTyped reports whether an error from Prompt proves the text never reached the
 // program, so the caller may withdraw its record of having sent it. Any other failure, a
