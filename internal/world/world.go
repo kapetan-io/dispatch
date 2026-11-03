@@ -183,9 +183,15 @@ type World struct {
 	// whose read errored, as opposed to finding no open PR.
 	PRs          map[string]pullrequest.PullRequest
 	PRReadFailed map[string]bool
+	// PRRateLimited holds the tickets in PRReadFailed whose read GitHub refused because the
+	// account's budget is spent, with the time GitHub says it refills, zero when it gives none.
+	PRRateLimited map[string]time.Time
+	// PRReadsAnswered counts the PR reads GitHub answered, so a read that asked it nothing is not
+	// taken for proof the budget is back.
+	PRReadsAnswered int
 	// MergedPRs maps a local ticket's identifier to the newest PR from its repo that merged
 	// into the default branch from its branch. A ticket the merged read covers with no such
-	// PR is absent. A failed merged read puts the tickets it covered in PRReadFailed.
+	// PR is absent. A failed merged read puts the tickets it covered in PRReadFailed, and in PRRateLimited when GitHub refused it for a spent budget.
 	MergedPRs map[string]pullrequest.MergedPR
 	// UnreadRepos are the repo labels whose pool could not be read.
 	UnreadRepos map[string]bool
@@ -493,7 +499,8 @@ func (w *World) inspectTrees(ctx context.Context, env environment.Environment, s
 // readPRs reads the open PR of each ticket for which ReadsPR is true. A PR that
 // can't be read is reported and left out, so it holds back only its own ticket.
 func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
-	w.PRs, w.PRReadFailed = map[string]pullrequest.PullRequest{}, map[string]bool{}
+	w.PRReadsAnswered = 0
+	w.PRs, w.PRReadFailed, w.PRRateLimited = map[string]pullrequest.PullRequest{}, map[string]bool{}, map[string]time.Time{}
 	for _, t := range w.Tickets {
 		settings, ok := scope.PRRepo(t, w.Workers[t.Identifier].State)
 		if !ok {
@@ -504,13 +511,35 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 		done()
 		if err != nil {
 			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, err)
-			w.PRReadFailed[t.Identifier] = true
+			w.failPRRead(t.Identifier, err)
 			continue
 		}
+		w.PRReadsAnswered++
 		if found {
 			w.PRs[t.Identifier] = pr
 		}
 	}
+}
+
+// failPRRead holds the ticket's PR as unreadable, and as rate-limited when GitHub said why.
+func (w *World) failPRRead(id string, err error) {
+	w.PRReadFailed[id] = true
+	var limit *pullrequest.RateLimitError
+	if errors.As(err, &limit) {
+		w.PRRateLimited[id] = limit.Reset
+	}
+}
+
+// RateLimit reports whether GitHub refused a PR read for a spent budget, and when it says the
+// budget refills, zero when no refused read carried a time.
+func (w World) RateLimit() (reset time.Time, limited bool) {
+	for _, at := range w.PRRateLimited {
+		limited = true
+		if at.After(reset) {
+			reset = at
+		}
+	}
+	return reset, limited
 }
 
 // readMergedPRs reads the merged PR of each local ticket for which MergedRepo is true, one query
@@ -547,10 +576,11 @@ func (w *World) readMergedPRs(ctx context.Context, src Sources, scope Scope) {
 			if err != nil {
 				_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the merged PRs of the %s repo: %v\n", repo.label, err)
 				for _, t := range batch {
-					w.PRReadFailed[t.Identifier] = true
+					w.failPRRead(t.Identifier, err)
 				}
 				continue
 			}
+			w.PRReadsAnswered++
 			for _, t := range batch {
 				if pr, ok := found[t.Branch]; ok {
 					w.MergedPRs[t.Identifier] = pr

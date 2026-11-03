@@ -680,8 +680,8 @@ func (c *CLI) Checks(ctx context.Context, repoDir string, number int) ([]byte, e
 		"-f", "query=" + checksQuery})
 }
 
-func (c *CLI) graphql(ctx context.Context, dir string, args []string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+func (c *CLI) graphql(parent context.Context, dir string, args []string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(parent, c.timeout)
 	defer cancel()
 	cmd := c.env.Command(ctx, c.bin, args...)
 	cmd.Dir = dir
@@ -691,7 +691,11 @@ func (c *CLI) graphql(ctx context.Context, dir string, args []string) ([]byte, e
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
-			return nil, fmt.Errorf("while running gh in %s: %w: %s", dir, err, strings.TrimSpace(string(exit.Stderr)))
+			wrapped := fmt.Errorf("while running gh in %s: %w: %s", dir, err, strings.TrimSpace(string(exit.Stderr)))
+			if stderr := string(exit.Stderr); rateLimited(string(b), stderr) {
+				return nil, &RateLimitError{Reset: c.resetOf(parent, dir, stderr), Err: wrapped}
+			}
+			return nil, wrapped
 		}
 		return nil, fmt.Errorf("while running gh in %s: %w", dir, err)
 	}

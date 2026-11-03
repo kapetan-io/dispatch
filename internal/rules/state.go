@@ -692,7 +692,14 @@ func (s *State) prRecords(w world.World) {
 		}
 		r := newRecord("pr", t.Identifier, t.Identifier, rec)
 		if failed {
-			r.unknownExcept("the PR for "+t.Identifier+" could not be read", "ticket")
+			reason := "the PR for " + t.Identifier + " could not be read"
+			if reset, limited := w.PRRateLimited[t.Identifier]; limited {
+				reason = "GitHub rate-limited the read of the PR for " + t.Identifier
+				if !reset.IsZero() {
+					reason += ", its limit resets at " + pullrequest.ResetText(reset)
+				}
+			}
+			r.unknownExcept(reason, "ticket")
 		}
 		s.add(r)
 	}
