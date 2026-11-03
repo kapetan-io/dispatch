@@ -150,7 +150,7 @@ A `[harness.<name>]` table in `config.toml`, named everywhere as `harness.<name>
 _Avoid_: profile, role (a role is only which of `worker` / `design` a ticket's launch reads)
 
 **Program** (herdr):
-What herdr runs in a worker's new tab, as a harness describes it: a name for messages, the herdr agent kind, arguments, directories put ahead of PATH, tab environment, and the startup screens (dialogs to answer, the unrun launch command, the ready input box) and the session id the launch chose, which each adapter passes with the harness's session flag (Claude: `--session-id`), and the flag that resumes an earlier session (Claude: `--resume`), which Core uses after a herdr-core restart.
+What herdr runs in a worker's new tab, as a harness describes it: a name for messages, the herdr agent kind, arguments, directories put ahead of PATH, tab environment, and the startup screens (dialogs to answer, the unrun launch command, the output that shows it ran, the ready input box) and the session id the launch chose, which each adapter passes with the harness's session flag (Claude: `--session-id`), and the flag that resumes an earlier session (Claude: `--resume`), which Core uses after a herdr-core restart.
 _Avoid_: command line, launch spec
 
 **Launch**:

@@ -193,14 +193,53 @@ func (p Program) ResumeArgv(session string) ([]string, bool) {
 
 // Startup describes the screens a program shows on its way to an input box.
 // Kickoff checks each screen against Answers (the first that fully matches, so
-// put the more specific Answer first), then Unrun, then Ready, and types the
+// put the more specific Answer first), then Unrun (unless Started follows it),
+// then Ready, and types the
 // kickoff only after Ready matches.
 type Startup struct {
 	Answers []Answer
 	// Unrun matches the launch command still sitting at the shell prompt.
 	Unrun *regexp.Regexp
+	// Started matches output only a running program prints. Some versions leave the
+	// launch command on screen above it, so Unrun alone would misread them.
+	Started *regexp.Regexp
 	// Ready matches the screen once the program takes input.
 	Ready *regexp.Regexp
+}
+
+// afterCommand returns the screen below the last launch command on it, which is
+// the whole screen when none shows. A reused pane can hold an earlier run's
+// command above the current one.
+func (s Startup) afterCommand(screen string) (rest string, shown bool) {
+	if s.Unrun == nil {
+		return screen, false
+	}
+	locs := s.Unrun.FindAllStringIndex(screen, -1)
+	if len(locs) == 0 {
+		return screen, false
+	}
+	return screen[locs[len(locs)-1][1]:], true
+}
+
+// commandUnrun reports whether screen shows the launch command with no Started
+// output after it.
+func (s Startup) commandUnrun(screen string) bool {
+	rest, shown := s.afterCommand(screen)
+	return shown && (s.Started == nil || !s.Started.MatchString(rest))
+}
+
+// ready reports whether screen shows the program's input box. The launch
+// command's own prompt is not one, so with Started the box must follow it.
+func (s Startup) ready(screen string) bool {
+	if s.Ready == nil {
+		return false
+	}
+	rest, shown := s.afterCommand(screen)
+	if !shown || s.Started == nil {
+		return s.Ready.MatchString(screen)
+	}
+	loc := s.Started.FindStringIndex(rest)
+	return loc != nil && s.Ready.MatchString(rest[loc[1]:])
 }
 
 // Answer is one startup dialog. Every pattern in Shows must match the screen.
