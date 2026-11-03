@@ -26,7 +26,7 @@ type Followers struct {
 	byTicket map[string][]Follower
 }
 
-// Follow records that a session follows a ticket, so Notify sends that ticket's
+// Follow records that a session follows a ticket, so Tell sends that ticket's
 // notifications to the session through its harness.
 func (f *Followers) Follow(ticket string, who Follower) error {
 	if ticket == "" {
@@ -64,6 +64,22 @@ func (f *Followers) Of(ticket string) []Follower {
 	return slices.Clone(f.byTicket[ticket])
 }
 
+// Sessions lists each session following at least one ticket, once.
+func (f *Followers) Sessions() []Follower {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []Follower
+	for _, followers := range f.byTicket {
+		for _, who := range followers {
+			if !slices.Contains(out, who) {
+				out = append(out, who)
+			}
+		}
+	}
+	slices.SortFunc(out, func(a, b Follower) int { return strings.Compare(a.Kind+" "+a.Address, b.Kind+" "+b.Address) })
+	return out
+}
+
 // drop forgets sessions that have exited, for every ticket they followed.
 func (f *Followers) drop(gone []Follower) {
 	f.mu.Lock()
@@ -73,15 +89,12 @@ func (f *Followers) drop(gone []Follower) {
 	}
 }
 
-// tellFollowers sends n to every session following its ticket, through that session's
-// harness. A session that has exited is dropped from every ticket it followed. Any
-// other failure keeps the follower, because the session may be only briefly busy.
-func (p Post) tellFollowers(ctx context.Context, n Notification) {
-	if p.Followers == nil {
-		return
-	}
+// deliver sends n to each of followers through that session's harness. A session that
+// has exited is dropped from every ticket it followed. Any other failure keeps the
+// follower, because the session may be only briefly busy.
+func (p Post) deliver(ctx context.Context, followers []Follower, n Notification) {
 	var gone []Follower
-	for _, who := range p.Followers.Of(n.Ticket.Identifier) {
+	for _, who := range followers {
 		h, ok := p.Harnesses[who.Kind]
 		if !ok {
 			p.warn("while messaging watcher %s: no harness adapter for kind %q", who.Address, who.Kind)

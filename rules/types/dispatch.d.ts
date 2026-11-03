@@ -509,10 +509,10 @@ declare module "dispatch" {
       /** Queues merging the PR, only if its head hasn't moved. */
       queueMerge(pr: PR, o: { once: Once }): Action;
     };
-    /** Notifications to you and to followers. */
+    /** Notifications to the sessions following a ticket. */
     notify: {
-      /** Queues a notification about subject. reason names the kind of notice and defaults to the first element of the once key. followersAlways tells followers even when the alert doesn't show. */
-      queueSend(subject: Ticket, text: string, o: { once: Once; followersAlways?: boolean; reason?: string }): Action;
+      /** Queues a notification about subject. reason names the kind of notice and defaults to the first element of the once key. */
+      queueSend(subject: Ticket, text: string, o: { once: Once; reason?: string }): Action;
     };
     /** Calls to the services named in [http.<name>]. */
     http: {

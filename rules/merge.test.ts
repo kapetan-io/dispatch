@@ -32,14 +32,6 @@ scenario(rules, "auto-merge does not tell the followers of a merge that failed t
   s.expect([["auto-merge", "merge", "ENG-1"]]);
 });
 
-scenario(rules, "auto-merge sends a notice again that failed, without merging twice", s => {
-  s.config({ repos: { dispatch: { autoMerge: true } } });
-  s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", approved));
-  s.land("merge", "ENG-1");
-  s.land("notify", "ENG-1", { outcome: "failed", detail: "osascript" });
-  s.expect([["auto-merge", "notify", "ENG-1"]]);
-});
-
 scenario(rules, "auto-merge merges once per head", s => {
   s.config({ repos: { dispatch: { autoMerge: true } } });
   s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1", approved));

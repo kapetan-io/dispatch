@@ -26,10 +26,10 @@ func TestARestartFinishesAnOrderedListThatACrashCutShort(t *testing.T) {
 	}
 	require.Len(t, notify, 1)
 	assert.Equal(t, "done", notify[0].State)
-	assert.Equal(t, []string{mergedText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{mergedText1}, d.Followed.Told())
 
 	d.Restart()
 	d.Tick()
 
-	assert.Equal(t, []string{mergedText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{mergedText1}, d.Followed.Told())
 }

@@ -23,7 +23,7 @@ You report through the ticket's status and comments, using the Linear tools in y
 - **Write for readers who saw none of this session.** Everything you publish (PR body, PR reply, ticket comment, handoff) uses only terms the repo, the ticket, its design or the language's standard vocabulary define. For a word from your own reasoning or a sub-agent's report, use the plain word or define it on first use: a report's "leaves" meant subtests, so write "subtests".
 - **Read the comments.** Read the ticket's comments before verifying and before creating the PR.
 - **Write every message that needs the user with `dispatch:bro`.** The user didn't watch the work you did on your own, so give the context they need, show an example of the input in a code block, and give your recommendation. Leave out the evidence; the user asks for it when they want it.
-- **Ask in chat and move the ticket to Needs Human, so dispatch notifies the user. Never use the AskUserQuestion tool.** A popup squeezes out the context and recommendation the user needs after stepping away. Write the user's answer on the ticket, move the ticket back to In Progress, then resume the steps.
+- **Ask in chat and move the ticket to Needs Human, so dispatch notifies the sessions following the ticket. Never use the AskUserQuestion tool.** A popup squeezes out the context and recommendation the user needs after stepping away. Write the user's answer on the ticket, move the ticket back to In Progress, then resume the steps.
 - **Principles are on request.** Design principles are skills indexed by `dispatch:principles`. Load one when a design question touches it or a nudge names it.
 
 ## Steps

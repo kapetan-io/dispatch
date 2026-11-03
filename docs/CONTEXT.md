@@ -3,7 +3,7 @@
 Terms dispatch's tests and docs use for the tools it drives. herdr is the terminal workspace manager whose workspaces show each worker's tree, and treehouse keeps the pools of trees that tickets lease.
 
 **Tool fake**:
-An in-process Go state model of herdr, treehouse, gh, Linear or osascript that refuses what the real tool refuses.
+An in-process Go state model of herdr, treehouse, gh or Linear that refuses what the real tool refuses.
 _Avoid_: shell fake, mock, stub
 
 **Port**:
@@ -87,7 +87,7 @@ _Avoid_: dedupe key, idempotency key
 
 **Event**:
 Anything telling dispatch something changed: a source read that differs from what it knew, an action's result, the resync, `dispatch tick`. Each event runs a cycle.
-_Avoid_: notification (a notification tells you), trigger
+_Avoid_: notification (a notification tells a follower), trigger
 
 **Resync**:
 The 5-minute event that re-reads every source (Linear, local tickets, GitHub, the GitHub inbox while a rule runs over it, herdr, treehouse and Stop records) and runs a cycle. It is the only clock rules wait on, so a wait ends up to 5 minutes after its deadline.
@@ -198,16 +198,12 @@ One thing a cycle wants done, such as a launch, nudge, move or merge, named by t
 _Avoid_: task, job, and the tool-named spelling such as `herdr.launch` (from before ADR 0003; a receipt's `kind` field holds the action's name and keeps its field name)
 
 **Notification**:
-Telling you, and the sessions following the ticket, that something happened on it, such as Needs Human or a ready PR. It shows as an alert, then goes to each follower.
+Telling the sessions following a ticket that something happened on it, such as Needs Human or a ready PR. It goes to each follower as a message. A ticket nobody follows gets no notification, only its Linear status. A message about dispatch itself (Linear has more tickets than one page, a rule threw or ran out of time, dispatch stopped) goes to every following session, once each.
 _Avoid_: notice, event (an event tells dispatch; a follower's message still starts with `dispatch event`, which sessions act on), nudge (a nudge goes to the worker)
 
 **Inbox item**:
 One entry in the dispatch owner's GitHub notifications inbox, as GitHub lists it: why GitHub sent it (`review_requested`, `mention`, ...), the repo, and the PR or issue it's about. While a loaded rule runs over them, the world holds the newest 50, read on every resync. Not the loop's `inbox` channel or a session's inbox socket.
-_Avoid_: notification, alert (both mean dispatch telling you)
-
-**Alert**:
-The pop-up that shows you a notification, through osascript on macOS or through herdr elsewhere.
-_Avoid_: toast, banner
+_Avoid_: notification (that means dispatch telling a follower)
 
 **Follower**:
 A session of a harness dispatch can deliver to that ran `dispatch watch` on a ticket and gets its notifications as messages through that harness. Followers live in the running dispatch process and end at a restart. The loop's stderr calls a follower's address a watcher socket.
@@ -239,7 +235,7 @@ _Avoid_: trace (it follows nothing live), log
 
 **Escalation**:
 A ticket dispatch moved to Needs Human, with the reason and how the move and its comment came out, read from the ledger's escalate receipts.
-_Avoid_: Needs Human (that is the status an escalation moves the ticket to), alert
+_Avoid_: Needs Human (that is the status an escalation moves the ticket to)
 
 **Rule scenario**:
 A case in a `*.test.ts` file that `dispatch rules test` runs. It sets up a world, changes it step by step, and says what the cycle after each step wants.

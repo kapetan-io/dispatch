@@ -14,12 +14,11 @@ whenever({
            && ctx.worker.of(pr.ticket).state === "idle" && heard(pr.ticket, "activity", pr.lastActivity, ctx)
            && !mergeRetryPaused(pr, ctx),
   // An ordered list. The notice runs once the merge is done, though the merge closed
-  // the PR. It reaches followers even if the macOS alert fails, and is done once they
-  // are told.
+  // the PR.
   then: (pr, ctx) => [
     ctx.pr.queueMerge(pr, { once: mergeOnce(pr, ctx) }),   // only if the head hasn't moved, once per retry
     ctx.notify.queueSend(pr.ticket, `${pr.ticket.id} was approved and merged: ${pr.url}`,
-      { once: ["merged", pr.head], followersAlways: true, reason: "PR approved" }),
+      { once: ["merged", pr.head], reason: "PR approved" }),
   ],
 });
 

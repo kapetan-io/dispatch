@@ -74,7 +74,7 @@ func TestRulesCheckActsOnNothing(t *testing.T) {
 	assert.Empty(t, d.Workers.Launched())
 	assert.Empty(t, d.Linear.Moves())
 	assert.Empty(t, d.Linear.Comments())
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 	assert.Empty(t, d.Workers.Prompts())
 }
 
@@ -1354,7 +1354,7 @@ whenever({ name: "hook", each: "ticket", if: () => true,
 	// The token must not reach any file dispatch keeps, and no command prints them whole.
 	seen := d.StateFiles()
 	require.NotEmpty(t, seen)
-	for _, body := range append(seen, first.Stdout, second.Stdout, first.Err.Error(), second.Err.Error(), check.Stdout, trace.Stdout, d.loopOut(), d.loopErr(), strings.Join(d.Alerts.Shown(), "\n"), strings.Join(comments, "\n")) {
+	for _, body := range append(seen, first.Stdout, second.Stdout, first.Err.Error(), second.Err.Error(), check.Stdout, trace.Stdout, d.loopOut(), d.loopErr(), strings.Join(d.Followed.Told(), "\n"), strings.Join(comments, "\n")) {
 		assert.NotContains(t, body, sentryToken)
 	}
 }

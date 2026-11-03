@@ -27,7 +27,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/journal"
 	"github.com/kapetan-io/dispatch/internal/lineartest"
 	"github.com/kapetan-io/dispatch/internal/loop"
-	"github.com/kapetan-io/dispatch/internal/notifytest"
 	"github.com/kapetan-io/dispatch/internal/pullrequesttest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
@@ -145,7 +144,7 @@ func startLiveWorker(t *testing.T) *liveWorker {
 	go func() {
 		done <- dispatch.Run(loopCtx, []string{"run"}, dispatch.Options{
 			ConfigPath: config, StateDir: w.state, Herdr: w.core, LinearKey: lineartest.Key, Linear: lineartest.New(nil).Connect,
-			PullRequests: pullrequesttest.New(&journal.Journal{}), Alerts: notifytest.New(&journal.Journal{}), Stdout: os.Stderr, Stderr: os.Stderr,
+			PullRequests: pullrequesttest.New(&journal.Journal{}), Stdout: os.Stderr, Stderr: os.Stderr,
 		})
 	}()
 	t.Cleanup(func() {

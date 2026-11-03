@@ -30,12 +30,6 @@ scenario(rules, "notify-needs-human still notifies when the labels were cut shor
   s.expect([["notify-needs-human", "notify", "ENG-1"]]);
 });
 
-scenario(rules, "notify-needs-human sends again after a failed notification", s => {
-  s.given(ticket("ENG-1", { status: "needs_human" }));
-  s.land("notify", "ENG-1", { outcome: "failed", detail: "osascript" });
-  s.expect([["notify-needs-human", "notify", "ENG-1"]]);
-});
-
 scenario(rules, "notify-needs-human does not send again after a refused notification", s => {
   s.given(ticket("ENG-1", { status: "needs_human" }));
   s.land("notify", "ENG-1", { outcome: "refused", detail: "muted" });

@@ -23,19 +23,19 @@ func TestTickNotifiesOnceWhenAnInReviewPRIsReady(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 	assert.Empty(t, d.Workers.Prompts())
 	noLinearChanges(t, d)
 
 	// No later tick repeats it.
 	d.Tick()
 	d.Tick()
-	assert.Len(t, d.Alerts.Shown(), 1)
+	assert.Len(t, d.Followed.Told(), 1)
 
 	// A push that leaves the PR ready again notifies again.
 	d.GitHub.PullRequest("ENG-1", cleanPR("a2"))
 	d.Tick()
-	assert.Len(t, d.Alerts.Shown(), 2)
+	assert.Len(t, d.Followed.Told(), 2)
 }
 
 func TestTickDoesNotNotifyWhenAPRIsNotReady(t *testing.T) {
@@ -65,7 +65,7 @@ func TestTickDoesNotNotifyWhenAPRIsNotReady(t *testing.T) {
 
 			d.Tick()
 
-			for _, n := range d.Alerts.Shown() {
+			for _, n := range d.Followed.Told() {
 				assert.NotContains(t, n, "ready for review")
 			}
 		})
@@ -80,29 +80,12 @@ func TestTickNotifiesWhenAPRMidReviewFinishesItsChecks(t *testing.T) {
 	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "PENDING", mergeable: "MERGEABLE"})
 
 	d.Tick()
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 
 	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
 	d.Tick()
 
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
-}
-
-func TestTickRetriesAReadyNotificationThatFailed(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
-	d.Workers.Running("ENG-1", "idle")
-	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
-	d.Alerts.Fail(errors.New("exit status 1"))
-
-	require.ErrorContains(t, d.Run("tick").Err, "ENG-1")
-	assert.Empty(t, d.Alerts.Shown())
-
-	d.Alerts.Fail(nil)
-	d.Tick()
-
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 }
 
 func TestTickNotifiesWhenAReadyPRHasNoChecks(t *testing.T) {
@@ -114,7 +97,7 @@ func TestTickNotifiesWhenAReadyPRHasNoChecks(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 }
 
 func TestTickNotifiesForPRsThatAreStillReady(t *testing.T) {
@@ -135,7 +118,7 @@ func TestTickNotifiesForPRsThatAreStillReady(t *testing.T) {
 
 			d.Tick()
 
-			assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+			assert.Equal(t, []string{readyText1}, d.Followed.Told())
 		})
 	}
 }
@@ -159,7 +142,7 @@ func TestTickDoesNotNotifyForMoreNotReadyPRs(t *testing.T) {
 
 			d.Tick()
 
-			assert.Empty(t, d.Alerts.Shown())
+			assert.Empty(t, d.Followed.Told())
 		})
 	}
 }
@@ -175,7 +158,7 @@ func TestTickNotifiesOnlyForIdleWorkersOfInReviewTickets(t *testing.T) {
 
 			d.Tick()
 
-			for _, n := range d.Alerts.Shown() {
+			for _, n := range d.Followed.Told() {
 				assert.NotContains(t, n, "ready for review")
 			}
 		})
@@ -189,12 +172,12 @@ func TestTickNotifiesWhenAWorkingWorkerGoesIdleOnAReadyPR(t *testing.T) {
 	d.Workers.Running("ENG-1", "working")
 	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
 	d.Tick()
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 
 	d.Workers.SetStatus("ENG-1", "idle")
 	d.Tick()
 
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 }
 
 func TestTickDoesNotRepeatTheNotificationWhenTheSameHeadIsReadyAgain(t *testing.T) {
@@ -211,7 +194,7 @@ func TestTickDoesNotRepeatTheNotificationWhenTheSameHeadIsReadyAgain(t *testing.
 	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
 	d.Tick()
 
-	assert.Len(t, d.Alerts.Shown(), 1)
+	assert.Len(t, d.Followed.Told(), 1)
 }
 
 func TestTickDoesNotRepeatTheNotificationWhenThePRIsUnreadableForATick(t *testing.T) {
@@ -227,25 +210,7 @@ func TestTickDoesNotRepeatTheNotificationWhenThePRIsUnreadableForATick(t *testin
 	d.GitHub.FailRead(nil)
 	d.Tick()
 
-	assert.Len(t, d.Alerts.Shown(), 1)
-}
-
-func TestTickNotifiesForTheNewHeadWhenAFailedNotificationIsFollowedByAPush(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
-	d.Workers.Running("ENG-1", "idle")
-	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
-	d.Alerts.Fail(errors.New("exit status 1"))
-	require.ErrorContains(t, d.Run("tick").Err, "ENG-1")
-
-	d.Alerts.Fail(nil)
-	d.Advance(time.Second)
-	d.GitHub.PullRequest("ENG-1", cleanPR("a2"))
-	d.Tick()
-	d.Tick()
-
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Len(t, d.Followed.Told(), 1)
 }
 
 func TestTickNotifiesOncePerReadyTicket(t *testing.T) {
@@ -259,7 +224,7 @@ func TestTickNotifiesOncePerReadyTicket(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 }
 
 func TestTickDoesNotNotifyForAReadyPRWhileTheTicketIsNotInReview(t *testing.T) {
@@ -274,7 +239,7 @@ func TestTickDoesNotNotifyForAReadyPRWhileTheTicketIsNotInReview(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
 
-	assert.Len(t, d.Alerts.Shown(), 1)
+	assert.Len(t, d.Followed.Told(), 1)
 }
 
 func TestTickDoesNotRepeatTheReadyNotificationAfterTheTicketLeavesAndReturnsToInReview(t *testing.T) {
@@ -293,7 +258,7 @@ func TestTickDoesNotRepeatTheReadyNotificationAfterTheTicketLeavesAndReturnsToIn
 			d.Tick()
 
 			var ready int
-			for _, n := range d.Alerts.Shown() {
+			for _, n := range d.Followed.Told() {
 				if strings.Contains(n, "ready for review") {
 					ready++
 				}
@@ -323,7 +288,7 @@ func TestTickDoesNotRepeatTheReadyNotificationAfterTheTicketDropsOutOfTheManaged
 			d.Tick()
 
 			var ready int
-			for _, n := range d.Alerts.Shown() {
+			for _, n := range d.Followed.Told() {
 				if strings.Contains(n, "ready for review") {
 					ready++
 				}
@@ -342,7 +307,7 @@ func TestTickNotifiesWhenTheOnlyChangesRequestedIsOnAnOlderCommit(t *testing.T) 
 
 	d.Tick()
 
-	assert.Len(t, d.Alerts.Shown(), 1)
+	assert.Len(t, d.Followed.Told(), 1)
 	assert.Empty(t, d.Workers.Prompts())
 }
 
@@ -356,13 +321,13 @@ func TestTickMergesAnApprovedReadyPRInAListedRepo(t *testing.T) {
 	d.Tick()
 
 	assert.Equal(t, []string{mergeCall1}, d.GitHub.Merged())
-	assert.Equal(t, []string{mergedText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{mergedText1}, d.Followed.Told())
 	assert.Empty(t, d.Workers.Prompts())
 
 	// The merged PR is no longer open, so later ticks do nothing.
 	d.Tick()
 	assert.Len(t, d.GitHub.Merged(), 1)
-	assert.Len(t, d.Alerts.Shown(), 1)
+	assert.Len(t, d.Followed.Told(), 1)
 }
 
 func TestTickDoesNotMergeInARepoWithoutAutoMerge(t *testing.T) {
@@ -384,7 +349,7 @@ func TestTickDoesNotMergeInARepoWithoutAutoMerge(t *testing.T) {
 
 			d.Tick()
 
-			assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+			assert.Equal(t, []string{readyText1}, d.Followed.Told())
 			assert.Empty(t, d.GitHub.Merged())
 		})
 	}
@@ -407,7 +372,7 @@ func TestTickDoesNotMergeAPRWithoutAnApprovalOnItsHead(t *testing.T) {
 
 			d.Tick()
 
-			assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+			assert.Equal(t, []string{readyText1}, d.Followed.Told())
 			assert.Empty(t, d.GitHub.Merged())
 		})
 	}
@@ -445,63 +410,13 @@ func TestTickMergesAfterAnApprovalArrivesOnAnAlreadyAnnouncedHead(t *testing.T) 
 	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "SUCCESS", mergeable: "MERGEABLE"})
 
 	d.Tick()
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 
 	d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
 	d.Tick()
 
 	assert.Equal(t, []string{mergeCall1}, d.GitHub.Merged())
-	assert.Equal(t, []string{readyText1, mergedText1}, d.Alerts.Shown())
-}
-
-func TestTickTellsFollowersAboutAMergeNoticeWhenTheAlertFails(t *testing.T) {
-	t.Parallel()
-	for _, test := range []struct {
-		name    string
-		refused bool
-		want    string
-	}{
-		{name: "Merged", want: "ENG-1 was approved and merged"},
-		{name: "MergeFailed", refused: true, want: "merging " + prURL1 + " failed"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			socket, lines := sessionSocket(t)
-			d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting, Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
-			d.StartBeforeTheEvents()
-			d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
-			d.Workers.Running("ENG-1", "idle")
-			d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
-			require.NoError(t, d.Run("watch", "ENG-1").Err)
-			d.Alerts.Fail(errors.New("exit status 1"))
-			if test.refused {
-				d.GitHub.FailMerge(errors.New("while running gh pr merge " + prURL1 + ": exit status 1: " + mergeRefused))
-			}
-
-			res := d.Run("tick")
-			if test.refused {
-				require.ErrorContains(t, res.Err, "merge refused")
-			} else {
-				require.NoError(t, res.Err)
-			}
-
-			// The alert failed, yet the followers heard and the notice is Done, not retried.
-			assert.Contains(t, next(t, lines), test.want)
-			assert.Empty(t, d.Alerts.Shown())
-			notices := d.receiptsOfKind("ENG-1", "notify")
-			require.Len(t, notices, 1)
-			assert.Equal(t, "done", notices[0].State)
-			assert.Contains(t, notices[0].Detail, "alert failed")
-
-			d.Alerts.Fail(nil)
-			d.GitHub.FailMerge(nil)
-			d.Advance(5 * time.Minute)
-			d.Advance(time.Second)
-			d.Tick()
-			assert.Empty(t, lines)
-			assert.Empty(t, d.Alerts.Shown())
-			assert.Len(t, d.receiptsOfKind("ENG-1", "notify"), 1)
-		})
-	}
+	assert.Equal(t, []string{readyText1, mergedText1}, d.Followed.Told())
 }
 
 func TestTickWaitsForANewApprovalAfterAPush(t *testing.T) {
@@ -530,16 +445,16 @@ func TestTickReportsAFailedMergeOnceAndRetriesOnlyAfterAPush(t *testing.T) {
 
 	require.ErrorContains(t, d.Run("tick").Err, "the base branch policy prohibits the merge")
 
-	require.Len(t, d.Alerts.Shown(), 1)
-	assert.Contains(t, d.Alerts.Shown()[0], "ENG-1: merging "+prURL1+" failed")
-	assert.Contains(t, d.Alerts.Shown()[0], "the base branch policy prohibits the merge")
+	require.Len(t, d.Followed.Told(), 1)
+	assert.Contains(t, d.Followed.Told()[0], "ENG-1: merging "+prURL1+" failed")
+	assert.Contains(t, d.Followed.Told()[0], "the base branch policy prohibits the merge")
 	attempts := d.receiptsOfKind("ENG-1", "merge")
 	require.Len(t, attempts, 1)
 	assert.Equal(t, "refused", attempts[0].State)
 	assert.Equal(t, "[merge a1]", attempts[0].Once)
 
 	// A refused merge never runs again for its head, not at a tick and not at a resync,
-	// and the user hears nothing more.
+	// and followers hear nothing more.
 	d.GitHub.FailMerge(nil)
 	d.Advance(time.Second)
 	d.Tick()
@@ -547,7 +462,7 @@ func TestTickReportsAFailedMergeOnceAndRetriesOnlyAfterAPush(t *testing.T) {
 	d.Advance(time.Second)
 	d.Tick()
 	assert.Empty(t, d.GitHub.Merged())
-	assert.Len(t, d.Alerts.Shown(), 1)
+	assert.Len(t, d.Followed.Told(), 1)
 	assert.Len(t, d.receiptsOfKind("ENG-1", "merge"), 1)
 
 	// A push that gets approved is a new head, so it merges.
@@ -570,7 +485,7 @@ func TestTickMergesAgainAtALaterResyncWhenGitHubSaidTheBaseBranchMoved(t *testin
 	d.GitHub.FailMerge(errors.New("while running gh pr merge " + prURL1 + ": exit status 1: " + baseMoved))
 
 	require.ErrorContains(t, d.Run("tick").Err, "Base branch was modified")
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 
 	d.GitHub.FailMerge(nil)
 	d.Advance(5*time.Minute + time.Second)
@@ -596,19 +511,19 @@ func TestTickReportsABaseMovedRefusalOnceItsRetriesRunOut(t *testing.T) {
 
 	d.Run("tick")
 	for range 5 {
-		assert.Empty(t, d.Alerts.Shown())
+		assert.Empty(t, d.Followed.Told())
 		d.Advance(5*time.Minute + time.Second)
 		d.Tick()
 	}
 
-	require.Len(t, d.Alerts.Shown(), 1)
-	assert.Contains(t, d.Alerts.Shown()[0], "Base branch was modified")
+	require.Len(t, d.Followed.Told(), 1)
+	assert.Contains(t, d.Followed.Told()[0], "Base branch was modified")
 	assert.Len(t, d.receiptsOfKind("ENG-1", "merge"), 6)
 
 	d.Advance(5*time.Minute + time.Second)
 	d.Tick()
 	assert.Len(t, d.receiptsOfKind("ENG-1", "merge"), 6)
-	assert.Len(t, d.Alerts.Shown(), 1)
+	assert.Len(t, d.Followed.Told(), 1)
 }
 
 func TestTickMergesNothingWhenThePRHeadMovesAfterTheApprovalWasRead(t *testing.T) {
@@ -624,15 +539,15 @@ func TestTickMergesNothingWhenThePRHeadMovesAfterTheApprovalWasRead(t *testing.T
 
 	assert.Empty(t, d.GitHub.Merged())
 	assert.Equal(t, "a2", d.GitHub.Head("ENG-1"))
-	require.Len(t, d.Alerts.Shown(), 1)
-	assert.Contains(t, d.Alerts.Shown()[0], "ENG-1: merging "+prURL1+" failed")
+	require.Len(t, d.Followed.Told(), 1)
+	assert.Contains(t, d.Followed.Told()[0], "ENG-1: merging "+prURL1+" failed")
 
 	// The refused merge is the only attempt for a1, and the new head has no approval, so it
 	// is announced as ready for review and not merged.
 	d.Advance(time.Second)
 	d.Tick()
 	assert.Empty(t, d.GitHub.Merged())
-	assert.Contains(t, d.Alerts.Shown()[len(d.Alerts.Shown())-1], "ready for review")
+	assert.Contains(t, d.Followed.Told()[len(d.Followed.Told())-1], "ready for review")
 	attempts := d.receiptsOfKind("ENG-1", "merge")
 	require.Len(t, attempts, 1)
 	assert.Equal(t, "refused", attempts[0].State)
@@ -697,7 +612,7 @@ func TestTickDoesNotRetryAFailedMergeOnAHeadAnnouncedAsReady(t *testing.T) {
 	d.Tick()
 
 	assert.Empty(t, d.GitHub.Merged())
-	assert.Len(t, d.Alerts.Shown(), 2)
+	assert.Len(t, d.Followed.Told(), 2)
 }
 
 func TestTickDoesNotRetryAFailedMergeAfterTheTicketLeavesTheReadAndReturns(t *testing.T) {
@@ -708,7 +623,7 @@ func TestTickDoesNotRetryAFailedMergeAfterTheTicketLeavesTheReadAndReturns(t *te
 	d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
 	d.GitHub.FailMerge(errors.New("while running gh pr merge " + prURL1 + ": exit status 1: " + mergeRefused))
 	require.ErrorContains(t, d.Run("tick").Err, "merge refused")
-	require.Len(t, d.Alerts.Shown(), 1)
+	require.Len(t, d.Followed.Told(), 1)
 
 	// One tick where the ticket is missing from Linear's read, with its tree still leased.
 	d.Linear.Tickets()
@@ -719,7 +634,7 @@ func TestTickDoesNotRetryAFailedMergeAfterTheTicketLeavesTheReadAndReturns(t *te
 	d.Advance(time.Second)
 	d.Tick()
 
-	assert.Len(t, d.Alerts.Shown(), 1)
+	assert.Len(t, d.Followed.Told(), 1)
 	assert.Empty(t, d.GitHub.Merged())
 }
 
@@ -751,7 +666,7 @@ func TestTickDoesNotMergeAForkPRThatSharesTheWorkersBranchName(t *testing.T) {
 	d.Tick()
 
 	assert.Empty(t, d.GitHub.Merged())
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 	assert.Empty(t, d.receiptsOfKind("ENG-1", "merge"))
 }
 

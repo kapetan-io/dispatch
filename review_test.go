@@ -144,7 +144,7 @@ func TestTickOnlyNotifiesForABlockedInReviewWorker(t *testing.T) {
 
 	d.Tick()
 
-	assert.Len(t, d.Alerts.Shown(), 1)
+	assert.Len(t, d.Followed.Told(), 1)
 	assert.Empty(t, d.Workers.Prompts())
 	assert.Empty(t, d.GitHub.Reads())
 }
@@ -398,7 +398,7 @@ func TestTickNotifiesOnceWhenAPRNudgeEscalationReachesNeedsHuman(t *testing.T) {
 		require.NoError(t, d.TickAfterASecond())
 	}
 
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())
 }
 
 func TestTickReportsAPRWithMoreReviewThreadsThanItReads(t *testing.T) {
@@ -579,7 +579,7 @@ func TestTickIgnoresAnOptionalCheckThatFails(t *testing.T) {
 
 			d.Tick()
 
-			assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+			assert.Equal(t, []string{readyText1}, d.Followed.Told())
 			assert.Empty(t, d.Workers.Prompts())
 		})
 	}
@@ -623,7 +623,7 @@ func TestTickWaitsOnARequiredCheckThatHasNotFinished(t *testing.T) {
 
 			d.Tick()
 
-			assert.Empty(t, d.Alerts.Shown())
+			assert.Empty(t, d.Followed.Told())
 			assert.Empty(t, d.Workers.Prompts())
 		})
 	}
@@ -635,7 +635,7 @@ func TestTickLeavesAnExpectedRollupNotReadyWithoutAskingForChecks(t *testing.T) 
 
 	d.Tick()
 
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 	assert.Empty(t, d.Workers.Prompts())
 	assert.Empty(t, d.GitHub.CheckReads())
 }
@@ -692,7 +692,7 @@ func TestTickDoesNotAskForChecksWhenTheRollupPassed(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 	assert.Empty(t, d.GitHub.CheckReads())
 }
 
@@ -703,7 +703,7 @@ func TestTickWaitsWhenAPushLandsBetweenReadingThePRAndItsChecks(t *testing.T) {
 
 	d.Tick()
 
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 	assert.Empty(t, d.Workers.Prompts())
 }
 
@@ -713,7 +713,7 @@ func TestTickIgnoresAFailedRollupThatListsNoChecks(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 	assert.Empty(t, d.Workers.Prompts())
 }
 
@@ -736,11 +736,11 @@ func TestTickReadsStatusContextsByWhetherTheyAreRequired(t *testing.T) {
 			if test.nudged {
 				require.Len(t, d.Workers.Prompts(), 1)
 				assert.Contains(t, d.Workers.Prompts()[0], "has a failed check")
-				assert.Empty(t, d.Alerts.Shown())
+				assert.Empty(t, d.Followed.Told())
 				return
 			}
 			assert.Empty(t, d.Workers.Prompts())
-			assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+			assert.Equal(t, []string{readyText1}, d.Followed.Told())
 		})
 	}
 }
@@ -788,7 +788,7 @@ func TestTickIgnoresAnApprovalCheckThatHasNotPassed(t *testing.T) {
 
 			d.Tick()
 
-			assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+			assert.Equal(t, []string{readyText1}, d.Followed.Told())
 			assert.Empty(t, d.Workers.Prompts())
 		})
 	}
@@ -811,7 +811,7 @@ func TestTickCountsABuildCheckThatFailsBesideAnApprovalCheck(t *testing.T) {
 
 			require.Len(t, d.Workers.Prompts(), 1)
 			assert.Contains(t, d.Workers.Prompts()[0], "has a failed check")
-			assert.Empty(t, d.Alerts.Shown())
+			assert.Empty(t, d.Followed.Told())
 		})
 	}
 }
@@ -823,7 +823,7 @@ func TestTickWaitsOnABuildCheckThatRunsBesideAnApprovalCheck(t *testing.T) {
 
 	d.Tick()
 
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 	assert.Empty(t, d.Workers.Prompts())
 }
 
@@ -891,15 +891,15 @@ func TestTickNotifiesOncePerHeadWhenADraftIsReady(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{draftReadyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{draftReadyText1}, d.Followed.Told())
 
 	d.Tick()
 	d.Tick()
-	assert.Len(t, d.Alerts.Shown(), 1)
+	assert.Len(t, d.Followed.Told(), 1)
 
 	d.GitHub.PullRequest("ENG-1", draftPR("a2"))
 	d.Tick()
-	assert.Equal(t, []string{draftReadyText1, draftReadyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{draftReadyText1, draftReadyText1}, d.Followed.Told())
 }
 
 func TestTickStaysSilentWhenTheUserOpensAReadyDraft(t *testing.T) {
@@ -913,12 +913,12 @@ func TestTickStaysSilentWhenTheUserOpensAReadyDraft(t *testing.T) {
 	d.Tick()
 	d.Tick()
 
-	assert.Equal(t, []string{draftReadyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{draftReadyText1}, d.Followed.Told())
 
 	// Moving the PR back to draft at the same head says nothing more.
 	d.GitHub.PullRequest("ENG-1", draftPR("a1"))
 	d.Tick()
-	assert.Len(t, d.Alerts.Shown(), 1)
+	assert.Len(t, d.Followed.Told(), 1)
 }
 
 func TestTickStaysSilentForADraftThatIsNotReady(t *testing.T) {
@@ -930,7 +930,7 @@ func TestTickStaysSilentForADraftThatIsNotReady(t *testing.T) {
 
 	d.Tick()
 
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 }
 
 func TestTickKeepsTheDraftNotificationAcrossALeasedTicketsAbsence(t *testing.T) {
@@ -938,7 +938,7 @@ func TestTickKeepsTheDraftNotificationAcrossALeasedTicketsAbsence(t *testing.T) 
 	d := draftDispatch(t)
 	d.GitHub.PullRequest("ENG-1", draftPR("a1"))
 	d.Tick()
-	require.Len(t, d.Alerts.Shown(), 1)
+	require.Len(t, d.Followed.Told(), 1)
 
 	// Out of the Linear read while its worker tree is leased.
 	d.Linear.Tickets()
@@ -946,7 +946,7 @@ func TestTickKeepsTheDraftNotificationAcrossALeasedTicketsAbsence(t *testing.T) 
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Tick()
 
-	assert.Len(t, d.Alerts.Shown(), 1)
+	assert.Len(t, d.Followed.Told(), 1)
 }
 
 func TestTickNeverMergesADraft(t *testing.T) {
@@ -972,7 +972,7 @@ func TestTickNeverMergesADraft(t *testing.T) {
 			d.Tick()
 
 			assert.Empty(t, d.GitHub.Merged())
-			assert.Equal(t, []string{test.text}, d.Alerts.Shown())
+			assert.Equal(t, []string{test.text}, d.Followed.Told())
 			for _, receipt := range d.Receipts("ENG-1") {
 				assert.NotEqual(t, "merge", receipt.Kind)
 			}
@@ -991,7 +991,7 @@ func TestTickKeepsTodaysNotificationInAnOpenRepoForADraft(t *testing.T) {
 	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
 	d.Tick()
 
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 }
 
 func TestTickMergesAnApprovedOpenPRInADraftRepoWithAutoMerge(t *testing.T) {
@@ -1014,7 +1014,7 @@ func TestTickStaysSilentForAnOpenedPRInADraftRepoUntilItIsApproved(t *testing.T)
 	d.Tick()
 	d.Tick()
 
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 }
 
 func TestTickNotifiesOncePerHeadThatAnApprovedPRInADraftRepoIsReadyToMerge(t *testing.T) {
@@ -1024,14 +1024,14 @@ func TestTickNotifiesOncePerHeadThatAnApprovedPRInADraftRepoIsReadyToMerge(t *te
 
 	d.Tick()
 
-	assert.Equal(t, []string{approvedReady1}, d.Alerts.Shown())
+	assert.Equal(t, []string{approvedReady1}, d.Followed.Told())
 
 	d.Tick()
-	assert.Len(t, d.Alerts.Shown(), 1)
+	assert.Len(t, d.Followed.Told(), 1)
 
 	d.GitHub.PullRequest("ENG-1", approvedPR("a2"))
 	d.Tick()
-	assert.Equal(t, []string{approvedReady1, approvedReady1}, d.Alerts.Shown())
+	assert.Equal(t, []string{approvedReady1, approvedReady1}, d.Followed.Told())
 }
 
 func TestTickDoesNotNotifyThatAnApprovedPRIsReadyToMergeWhenAutoMergeWillMergeIt(t *testing.T) {
@@ -1044,7 +1044,7 @@ func TestTickDoesNotNotifyThatAnApprovedPRIsReadyToMergeWhenAutoMergeWillMergeIt
 	d.Tick()
 
 	assert.Equal(t, []string{mergeCall1}, d.GitHub.Merged())
-	assert.NotContains(t, d.Alerts.Shown(), approvedReady1)
+	assert.NotContains(t, d.Followed.Told(), approvedReady1)
 }
 
 func TestTickMergesADraftOnceTheUserOpensItAtTheSameHead(t *testing.T) {
@@ -1064,21 +1064,6 @@ func TestTickMergesADraftOnceTheUserOpensItAtTheSameHead(t *testing.T) {
 	assert.Equal(t, []string{mergeCall1}, d.GitHub.Merged())
 }
 
-func TestTickRetriesADraftNotificationThatFailed(t *testing.T) {
-	t.Parallel()
-	d := draftDispatch(t)
-	d.GitHub.PullRequest("ENG-1", draftPR("a1"))
-	d.Alerts.Fail(errors.New("exit status 1"))
-
-	require.ErrorContains(t, d.Run("tick").Err, "ENG-1")
-	assert.Empty(t, d.Alerts.Shown())
-
-	d.Alerts.Fail(nil)
-	d.Tick()
-
-	assert.Equal(t, []string{draftReadyText1}, d.Alerts.Shown())
-}
-
 func TestTickAppliesOpenPRAsOnlyToItsOwnRepo(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: tigerRepo(t, draftSetting)})
@@ -1088,7 +1073,7 @@ func TestTickAppliesOpenPRAsOnlyToItsOwnRepo(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 }
 
 func TestTickNotifiesThatAnApprovedPRIsReadyToMergeOnlyOnceTheWorkerIsIdle(t *testing.T) {
@@ -1098,11 +1083,11 @@ func TestTickNotifiesThatAnApprovedPRIsReadyToMergeOnlyOnceTheWorkerIsIdle(t *te
 	d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
 
 	d.Tick()
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 
 	d.Workers.SetStatus("ENG-1", "idle")
 	d.Tick()
-	assert.Equal(t, []string{approvedReady1}, d.Alerts.Shown())
+	assert.Equal(t, []string{approvedReady1}, d.Followed.Told())
 }
 
 func TestTickNotifiesReadyForReviewNotApprovedReadyForAnApprovedPRInAnOpenRepo(t *testing.T) {
@@ -1114,7 +1099,7 @@ func TestTickNotifiesReadyForReviewNotApprovedReadyForAnApprovedPRInAnOpenRepo(t
 
 	d.Tick()
 
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 }
 
 func TestTickStillNudgesAnOpenedPRInADraftRepoForWhatNeedsWork(t *testing.T) {

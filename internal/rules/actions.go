@@ -57,8 +57,8 @@ var Actions = []ActionSpec{
 	{Plugin: "worker", Method: "queueClose", Doc: "Queues closing the worker's workspace.", Receipt: "close", Subject: Param{"w", "Worker"}},
 	{Plugin: "tree", Method: "queueReturn", Doc: "Queues returning the tree to its repo's pool. Dispatch refuses it while the tree holds work it would destroy.", Receipt: "return", Subject: Param{"tree", "Tree"}},
 	{Plugin: "pr", Method: "queueMerge", Doc: "Queues merging the PR, only if its head hasn't moved.", Receipt: "merge", Subject: Param{"pr", "PR"}},
-	{Plugin: "notify", Method: "queueSend", Doc: "Queues a notification about subject. reason names the kind of notice and defaults to the first element of the once key. followersAlways tells followers even when the alert doesn't show.", Receipt: "notify", Subject: Param{"subject", "Ticket"},
-		Params: []Param{{"text", "string"}}, Options: "followersAlways?: boolean; reason?: string"},
+	{Plugin: "notify", Method: "queueSend", Doc: "Queues a notification about subject. reason names the kind of notice and defaults to the first element of the once key.", Receipt: "notify", Subject: Param{"subject", "Ticket"},
+		Params: []Param{{"text", "string"}}, Options: "reason?: string"},
 	// The subject of a post is the service it goes to, a name from [http.<name>].
 	{Plugin: "http", Method: "queuePost", Doc: "Queues a POST of body as JSON to path on the service named in [http.<name>].", Receipt: "post", Subject: Param{"service", "string"},
 		Params: []Param{{"path", "string"}, {"body", "unknown"}}},

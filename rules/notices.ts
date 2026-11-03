@@ -53,12 +53,11 @@ whenever({
 });
 
 // Once per head: the merge's receipt says it was refused, and a push moves the head.
-// A base-moved refusal is reported only after its retries run out. Followers hear it
-// even when the macOS alert fails.
+// A base-moved refusal is reported only after its retries run out.
 whenever({
   name: "notify-merge-failed",
   each: "pr",
   if:   (pr, ctx) => !pr.closed && finalMergeRefusal(pr, ctx) !== undefined,
   then: (pr, ctx) => ctx.notify.queueSend(pr.ticket, `${pr.ticket.id}: merging ${pr.url} failed: ${finalMergeRefusal(pr, ctx)!.detail}`,
-           { once: ["merge-failed", pr.head], followersAlways: true, reason: "PR approved" }),
+           { once: ["merge-failed", pr.head], reason: "PR approved" }),
 });

@@ -583,7 +583,7 @@ func TestRulesCannotReadTheLinearKeySettings(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{"undefined undefined"}, d.Alerts.Shown())
+	assert.Equal(t, []string{"undefined undefined"}, d.Followed.Told())
 }
 
 func TestApiKeyCommandWinsOverTheKeychain(t *testing.T) {

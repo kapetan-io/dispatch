@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -17,9 +16,6 @@ import (
 )
 
 const needsHuman = "ENG-1 -> Needs Human"
-
-// OSAlerts shows alerts through the notifier dispatch picks for the operating system.
-func (d *Dispatch) OSAlerts() { d.builtinAlerts = true }
 
 // ExactRules keeps the [rules] table as the test wrote it, without the keys the shipped rules read.
 func (d *Dispatch) ExactRules() { d.exactRules = true }
@@ -91,7 +87,7 @@ func TestTickLaunchesNothingForTicketsThatAreNotInProgress(t *testing.T) {
 	out := d.Tick()
 
 	assert.Equal(t, "ENG-2 notified\n", out)
-	assert.Equal(t, []string{"ENG-2 is in Needs Human: ticket ENG-2"}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-2 is in Needs Human: ticket ENG-2"}, d.Followed.Told())
 	assert.Empty(t, d.Workers.Launched())
 }
 
@@ -166,7 +162,7 @@ func TestTickNeverEscalatesForAFullPool(t *testing.T) {
 	assert.Empty(t, d.Linear.Changes())
 }
 
-func TestTickAlertsWhenItEscalatesADesignTicket(t *testing.T) {
+func TestTickTellsFollowersWhenItEscalatesADesignTicket(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(withLabel(ticket("ENG-1", "In Progress", ""), "design"))
@@ -174,30 +170,10 @@ func TestTickAlertsWhenItEscalatesADesignTicket(t *testing.T) {
 	d.Tick()
 
 	assert.Len(t, d.Linear.Changes(), 2)
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())
 }
 
-func TestTickShowsHerdrNotificationsOffMacOS(t *testing.T) {
-	t.Parallel()
-	if runtime.GOOS == "darwin" {
-		t.Skip("macOS shows alerts through osascript")
-	}
-	bin := t.TempDir()
-	argv := filepath.Join(bin, "argv")
-	require.NoError(t, os.WriteFile(filepath.Join(bin, "herdr"),
-		[]byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > "+argv+"\n"), 0o755))
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"PATH": bin}})
-	d.OSAlerts()
-	d.Linear.Tickets(withLabel(ticket("ENG-1", "In Progress", ""), "design"))
-
-	d.Tick()
-
-	got, err := os.ReadFile(argv)
-	require.NoError(t, err)
-	assert.Equal(t, "notification\nshow\ndispatch\n--body\nENG-1 is in Needs Human: ticket ENG-1\n--sound\nrequest\n", string(got))
-}
-
-func TestTickAlertsOnceWhenItEscalatesADesignReviewTicket(t *testing.T) {
+func TestTickTellsFollowersOnceWhenItEscalatesADesignReviewTicket(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(withLabel(ticket("ENG-1", "In Progress", ""), "design-review"))
@@ -205,7 +181,7 @@ func TestTickAlertsOnceWhenItEscalatesADesignReviewTicket(t *testing.T) {
 	d.Tick()
 
 	assert.Len(t, d.Linear.Changes(), 2)
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())
 }
 
 func TestTickEscalatesTicketItCannotPlaceInARepo(t *testing.T) {
@@ -291,8 +267,8 @@ func TestTickReadsNothingWhenManagedTicketsSpanMoreThanOnePage(t *testing.T) {
 	// The user hears of it once, however many resyncs find the same overflow.
 	d.Advance(time.Hour)
 	d.Advance(time.Hour)
-	require.Len(t, d.Alerts.Shown(), 1)
-	assert.Contains(t, d.Alerts.Shown()[0], "more than 100 started \"ai\" tickets are assigned to you")
+	require.Len(t, d.Followed.Told(), 1)
+	assert.Contains(t, d.Followed.Told()[0], "more than 100 started \"ai\" tickets are assigned to you")
 }
 
 func TestTickHoldsBackOnlyTheRepoWhosePoolCannotBeRead(t *testing.T) {
@@ -387,7 +363,7 @@ func TestTickEscalatesATicketWhoseLabelsDidNotFitOnePage(t *testing.T) {
 	out := d.Tick()
 
 	assert.Contains(t, out, "ENG-1 escalated: it has more labels than the dispatcher reads")
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())
 	assert.Empty(t, d.Workers.Launched())
 	changes := d.Linear.Changes()
 	require.Len(t, changes, 2)
@@ -619,7 +595,7 @@ func TestTickNeverNudgesOrEscalatesADesignWorker(t *testing.T) {
 	}
 
 	assert.Empty(t, d.Workers.Prompts())
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 	assert.Empty(t, d.Linear.Changes())
 	assert.Empty(t, d.Workers.Launched())
 	assert.Empty(t, d.Workers.Closed())
@@ -638,7 +614,7 @@ func TestTickKeepsTheDesignWorkerOnceItHasChildren(t *testing.T) {
 	}
 
 	assert.Empty(t, d.Workers.Prompts())
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 	assert.Empty(t, d.Linear.Changes())
 	assert.Empty(t, d.Workers.Launched())
 	assert.Empty(t, d.Workers.Closed())
@@ -925,7 +901,7 @@ func TestALaunchThatKeepsDyingBeforeItsKickoffReachesNeedsHuman(t *testing.T) {
 	d.Tick()
 
 	assert.Equal(t, []string{"w-ENG-1"}, d.Workers.Closed())
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())
 	assert.Empty(t, d.Workers.Launched())
 }
 
