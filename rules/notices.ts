@@ -33,6 +33,17 @@ whenever({
   },
 });
 
+// Once per stretch of idling, when the worker's workspace turns 💤. waiting follows the label's
+// own Stop-record test, for In Progress tickets, so the message and the label agree there. It tells followers and never types into the worker.
+whenever({
+  name: "notify-idle",
+  each: "ticket",
+  if:   (t, ctx) => t.status === "in_progress" && !t.hasChildren
+           && !(known(() => t.labels) && skill(t) === "design") && ctx.worker.of(t).waiting,
+  then: (t, ctx) => ctx.notify.queueSend(t, `${t.id}'s worker is idle with nothing running: ${t.title}`,
+           { once: ["idle", ctx.worker.of(t).idleSince!], reason: "worker is idle" }),
+});
+
 // A ready PR notifies the user only while it needs them. In a repo whose workers open PRs
 // as drafts, that is the ready draft, and then the approved PR when dispatch won't merge it.
 // Between the two, an opened PR waits on its approvers and says nothing.

@@ -15,7 +15,7 @@ Each worker's workspace is labeled `<emoji> <ticket>`, and the emoji says who th
 | 🔴 | You | Needs Human, or the worker is blocked on a question popup |
 | ⏸️ | Nobody | Paused (Backlog or Todo) with the tree kept and a workspace still open |
 
-💤 changes the label and nothing else. It sends no notification and no reminder, and it goes back to 🟢 within seconds of you typing into the window. That depends on herdr already reporting the worker as working when the hook fires. Otherwise 💤 stays until the next Notification or resync.
+💤 changes the label and tells the sessions following the ticket once each time it appears (the `notify-idle` rule, In Progress tickets only, `design` tickets send nothing). It types nothing into the worker and sends no reminder, and it goes back to 🟢 within seconds of you typing into the window. That depends on herdr already reporting the worker as working when the hook fires. Otherwise 💤 stays until the next Notification or resync.
 
 ## How the label is chosen
 
@@ -48,8 +48,8 @@ A worker can report no status, as Claude does under the Herdr app host (`host = 
 |---|---|---|---|
 | Working | any | 🟢 | Nothing |
 | Idle | none, or without the task list | 🟢 | Nothing |
-| Idle | a task still running, under 60 minutes old | 🟢 | Nothing. After 60 minutes it counts as stopped, so 💤 |
-| Idle | stopped, nothing running | 💤 | Nothing. No nudge and no notification |
+| Idle | a task still running, under 60 minutes old | 🟢 | Nothing. After 60 minutes it counts as stopped, so the next row applies |
+| Idle | stopped, nothing running | 💤 | Tells the sessions following the ticket once, unless it is a `design` ticket. No nudge, nothing typed into the worker |
 | Idle, unconfirmed | any | 🟢 | After 5 minutes, closes the workspace and relaunches the worker. The closes count toward `launch_failure_limit` |
 | Blocked on a popup | any | 🔴 | Notifies on the first cycle and every `blocked_renotify_minutes`. Never nudges, never moves the ticket |
 | Gone | n/a | 🟢 | Relaunches the worker. A launch a rule asked to stack on another ticket's PR starts a new branch at that PR's head and records it, and its receipt says `stacked on <ticket> at <short head> (<branch>)`. A relaunch never changes the record |
@@ -94,10 +94,10 @@ An idle In Review worker whose PR gains a review or comment gets the activity nu
 | Paused (Backlog or Todo) | gone, tree kept | ⏸️ | Nothing |
 | Paused | live | unchanged | Closes the workspace, then ⏸️ |
 
-A `design` or `design-review` worker is never nudged, and a `design` ticket sends no notification for a blocked popup or for Needs Human. Its label follows the same lines as a build worker's, and 💤 is how you see that a design is waiting on you.
+A `design` or `design-review` worker is never nudged, and a `design` ticket sends no notification for a blocked popup, for Needs Human or for going idle. Its label follows the same lines as a build worker's, and 💤 is how you see that a design is waiting on you.
 
 ## What dispatch no longer does
 
-Dispatch used to type a stall nudge into an idle In Progress worker, and to notify you on every 6th stall nudge and once when a nudge went unanswered for an hour. Both are gone. The stall nudge could land on top of a question the worker had just asked and read as the answer. Without it, nothing prompts a worker that stopped In Progress without moving its ticket, and 💤 is how you see it.
+Dispatch used to type a stall nudge into an idle In Progress worker, and to notify you on every 6th stall nudge and once when a nudge went unanswered for an hour. Both are gone. The stall nudge could land on top of a question the worker had just asked and read as the answer. Without it, nothing prompts a worker that stopped In Progress without moving its ticket, and 💤 is how you see it. Going 💤 sends one message to the sessions following the ticket, which only tells them and never types into the worker.
 
 A build worker asks you its questions in chat, not through the question popup. A popup it still opens is handled as before: herdr reports the worker blocked, the sessions following the ticket get the notification, and the label is 🔴.

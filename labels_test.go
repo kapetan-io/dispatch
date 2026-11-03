@@ -141,10 +141,16 @@ func TestTickLabelsEveryStateAWorkerCanBeIn(t *testing.T) {
 
 func TestTickShowsAnIdleWorkerAsSoonAsItsTurnEnds(t *testing.T) {
 	t.Parallel()
-	for _, label := range []string{"design", "design-review"} {
-		t.Run(label, func(t *testing.T) {
+	for _, test := range []struct {
+		label string
+		told  []string
+	}{
+		{label: "design"},
+		{label: "design-review", told: []string{"ENG-1's worker is idle with nothing running: ticket ENG-1"}},
+	} {
+		t.Run(test.label, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
-			d.Linear.Tickets(withLabel(ticket("ENG-1", "In Progress", "dispatch"), label))
+			d.Linear.Tickets(withLabel(ticket("ENG-1", "In Progress", "dispatch"), test.label))
 			d.Workers.Running("ENG-1", "working")
 			d.Tick()
 
@@ -154,7 +160,7 @@ func TestTickShowsAnIdleWorkerAsSoonAsItsTurnEnds(t *testing.T) {
 
 			assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1", "w-ENG-1|💤 ENG-1"}, d.Workers.Renames())
 			assert.Empty(t, d.Workers.Prompts())
-			assert.Empty(t, d.Followed.Told())
+			assert.Equal(t, test.told, d.Followed.Told())
 		})
 	}
 }
@@ -173,7 +179,7 @@ func TestTickShowsAnIdleBuildWorkerAsWaitingOnTheUserWithoutNudgingIt(t *testing
 
 	assert.Equal(t, []string{"w-ENG-1|💤 ENG-1"}, d.Workers.Renames())
 	assert.Empty(t, d.Workers.Prompts())
-	assert.Empty(t, d.Followed.Told())
+	assert.Equal(t, []string{"ENG-1's worker is idle with nothing running: ticket ENG-1"}, d.Followed.Told())
 }
 
 func TestTickShowsGreenAgainWhenTheUserTypesIntoAnIdleWorker(t *testing.T) {
