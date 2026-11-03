@@ -45,5 +45,5 @@ A message starting `dispatch event` comes from the dispatcher. Act on it once, t
 - **approved, ready to merge**: the user opened this PR, it is approved, and dispatch won't merge it. It is not a review request. Tell the user it waits on their merge. Never merge it, except the pieces of a feature `dispatch:autobots` covers, on that skill's terms.
 - **Needs Human**: tell the user which ticket is waiting on them in its workspace, where the worker asked its question.
 - **Worker blocked on a question popup**: tell the user which ticket is waiting in its workspace. Never answer for them.
-- **Workspace shows 💤**: the worker is waiting on the user or stopped early. Tell the user which window to open.
+- **Worker is idle**: the message reads `dispatch event (worker is idle): ENG-1's worker is idle with nothing running: <title> Ticket: <url>`. The worker went 💤 on an In Progress ticket, so it is waiting on the user or stopped early. Tell the user which window to open. Never type into the worker. A `design` ticket sends none.
 - **Anything else**: tell the user the event and its link.

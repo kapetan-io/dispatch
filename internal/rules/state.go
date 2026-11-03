@@ -516,6 +516,7 @@ func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop sto
 		State:     Known(string(wk.State), at),
 		Ticket:    Known(Ref{Kind: "ticket", ID: subject}, at),
 		Busy:      Known(false, at),
+		Waiting:   Known(false, at),
 		Commands:  session.commands,
 		Turns:     session.turns,
 		SeenAt:    Known(at, at),
@@ -543,6 +544,7 @@ func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop sto
 		if stop.Reported && !stop.At.IsZero() {
 			lastStop.At = stop.At.UnixMilli()
 			rec.Busy = Known(stop.Busy(s.Now), at)
+			rec.Waiting = Known(wk.UnconfirmedSince == 0 && !stop.Busy(s.Now), at)
 		} else {
 			fallback = true
 		}

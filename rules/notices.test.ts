@@ -228,3 +228,43 @@ scenario(rules, "notify-blocked with blocked_renotify_minutes = 0 notifies in ev
   s.resync();
   s.expect([["notify-blocked", "notify", "ENG-1"]]);
 });
+
+scenario(rules, "notify-idle tells followers once per stretch of idling", s => {
+  s.given(ticket("ENG-1", build), worker("ENG-1", "idle", { lastStop: 0 }));
+  s.expect([["notify-idle", "notify", "ENG-1"]]);
+  s.land("notify", "ENG-1");
+  s.expect([]);
+  s.see(worker("ENG-1", "working"));
+  s.see(worker("ENG-1", "idle", { lastStop: 0 }));
+  s.expect([["notify-idle", "notify", "ENG-1"]]);
+});
+
+scenario(rules, "notify-idle is silent while a background task runs", s => {
+  s.given(ticket("ENG-1", build), worker("ENG-1", "idle", { lastStop: 0, busy: true }));
+  s.expect([]);
+});
+
+scenario(rules, "notify-idle is silent for a worker with no Stop record", s => {
+  s.given(ticket("ENG-1", build), worker("ENG-1", "idle"));
+  s.expect([]);
+});
+
+scenario(rules, "notify-idle is silent for a worker whose kickoff is unconfirmed", s => {
+  s.given(ticket("ENG-1", build), worker("ENG-1", "idle", { lastStop: 0, unconfirmed: 0 }));
+  s.expect([]);
+});
+
+scenario(rules, "notify-idle is silent for a design ticket", s => {
+  s.given(ticket("ENG-1", { ...build, labels: ["design"] }), worker("ENG-1", "idle", { lastStop: 0 }));
+  s.expect([]);
+});
+
+scenario(rules, "notify-idle still notifies when the labels were cut short", s => {
+  s.given(ticket("ENG-1", { ...build, labelsTruncated: true }), worker("ENG-1", "idle", { lastStop: 0 }));
+  s.expect([["notify-idle", "notify", "ENG-1"]]);
+});
+
+scenario(rules, "notify-idle is silent for a working worker", s => {
+  s.given(ticket("ENG-1", build), worker("ENG-1", "working"));
+  s.expect([]);
+});
