@@ -452,6 +452,27 @@ func TestKickoffReportsClaudeNeverStartedWhenAnEarlierRunsBannerSitsAboveAStrand
 	assert.Empty(t, s.callsStarting("pane run"))
 }
 
+func TestKickoffReportsClaudeNeverStartedWhenAnEarlierRunsCommandAndBannerSitAboveAStrandedCommand(t *testing.T) {
+	s := newStatefulHerdr(t)
+	s.screens("❯ claude --model opus --plugin-dir /plugin\n ▐▛███▛█   Claude Code v2.1.316\n❯ claude --model opus --plugin-dir /plugin")
+
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
+
+	require.ErrorIs(t, err, herdr.ErrNeverStarted)
+	assert.Empty(t, s.callsStarting("pane run"))
+}
+
+func TestKickoffTypesNothingWhenOnlyTheLaunchCommandsPromptShowsBesideTheBanner(t *testing.T) {
+	s := newStatefulHerdr(t)
+	s.screens("❯ claude --model opus --plugin-dir /plugin\n ▐▛███▛█   Claude Code v2.1.316")
+
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
+
+	// The ❯ of the launch command is not Claude's input box.
+	require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
+	assert.Empty(t, s.callsStarting("pane run"))
+}
+
 func TestKickoffReportsClaudeNeverStartedWhenItsCommandStaysAtTheShellPrompt(t *testing.T) {
 	s := newStatefulHerdr(t)
 	s.screens("❯ claude --model opus --plugin-dir /plugin")

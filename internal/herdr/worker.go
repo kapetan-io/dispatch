@@ -241,7 +241,7 @@ screens:
 			c.sleep(ctx, c.pace)
 			continue
 		}
-		if startup.Ready != nil && startup.Ready.MatchString(screen) {
+		if startup.ready(screen) {
 			unrun = false
 			ready = true
 			break
