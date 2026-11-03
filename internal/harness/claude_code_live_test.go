@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -94,9 +95,9 @@ func startLiveWorker(t *testing.T) *liveWorker {
 	launcher := filepath.Join(os.Getenv("HOME"), ".local", "bin", "claude")
 	before := launcherState(launcher)
 	t.Cleanup(func() { assert.Equal(t, before, launcherState(launcher)) })
+	// Cleanups run last in first out, so the transcript removal registered here runs after the core stops Claude.
+	repo, tree := fixedCheckout(t)
 	w.session = herdrtest.StartCoreSession(t)
-
-	repo, tree := herdrtest.NewCheckout(t)
 	w.cwd = tree
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
@@ -276,15 +277,14 @@ func (w *liveWorker) screen(t *testing.T) string {
 	return w.session.Run(t, "read", w.pane)
 }
 
-// TestClaudeCodeLaunchesAWorkerAndTakesTheKickoff fails when a worker's flags, its first-run
-// folder dialog or the kickoff typed into the input box stop working on the installed Claude Code.
+// TestClaudeCodeLaunchesAWorkerAndTakesTheKickoff fails when a worker's flags or the kickoff typed
+// into the input box stop working on the installed Claude Code. The trust and bypass-permissions
+// dialogs are not checked, because the real Claude config has accepted them already.
 func TestClaudeCodeLaunchesAWorkerAndTakesTheKickoff(t *testing.T) {
 	w := startLiveWorker(t)
 
 	trace, err := os.ReadFile(w.trace)
 	require.NoError(t, err)
-	// The folder is new to Claude, so it asks to trust it before it takes the kickoff.
-	assert.Regexp(t, `(?i)trust this folder`, string(trace))
 	assert.Contains(t, string(trace), "typing")
 	assert.Equal(t, "claude", w.agent(t).Kind)
 }
@@ -428,4 +428,33 @@ func gone(pattern string) bool {
 		err := exec.Command("pgrep", "-f", pattern).Run()
 		return errors.As(err, &exit) && exit.ExitCode() == 1
 	})
+}
+
+// fixedCheckout returns the same repo and linked tree on every run. Claude records trust per folder
+// in the real ~/.claude.json, so a fresh folder per run would add an entry each time. The run's
+// transcripts go when the test ends.
+func fixedCheckout(t *testing.T) (repo, tree string) {
+	t.Helper()
+	base, err := filepath.EvalSymlinks(os.TempDir())
+	require.NoError(t, err)
+	root := filepath.Join(base, "dispatch-claude-live")
+	repo, tree = filepath.Join(root, "repo"), filepath.Join(root, "tree")
+	if _, err := os.Stat(tree); err != nil {
+		require.NoError(t, os.RemoveAll(root))
+		for _, args := range [][]string{
+			{"init", "-q", "-b", "main", repo},
+			{"-C", repo, "-c", "user.name=drift", "-c", "user.email=drift@example.com", "commit", "-q", "--allow-empty", "-m", "init"},
+			{"-C", repo, "worktree", "add", "-q", "--detach", tree},
+		} {
+			out, err := exec.Command("git", args...).CombinedOutput()
+			t.Log(string(out))
+			require.NoError(t, err)
+		}
+	}
+	home, err := os.UserHomeDir()
+	require.NoError(t, err)
+	// Claude names a folder's transcript directory by turning every character but letters and digits into a dash.
+	projects := filepath.Join(home, ".claude", "projects", regexp.MustCompile(`[^A-Za-z0-9]`).ReplaceAllString(tree, "-"))
+	t.Cleanup(func() { _ = os.RemoveAll(projects) })
+	return repo, tree
 }
