@@ -25,7 +25,7 @@ func TestInstalledGHStillHasTheFlagsDispatchUses(t *testing.T) {
 		flags   []string
 	}{
 		{command: []string{"pr", "merge"}, flags: []string{"--merge", "--match-head-commit"}},
-		{command: []string{"api"}, flags: []string{"--field", "--raw-field"}},
+		{command: []string{"api"}, flags: []string{"--field", "--raw-field", "--jq"}},
 		{command: []string{"repo", "view"}, flags: []string{"--json", "--jq"}},
 	} {
 		t.Run(test.command[0], func(t *testing.T) {

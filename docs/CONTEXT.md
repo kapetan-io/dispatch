@@ -198,7 +198,7 @@ One thing a cycle wants done, such as a launch, nudge, move or merge, named by t
 _Avoid_: task, job, and the tool-named spelling such as `herdr.launch` (from before ADR 0003; a receipt's `kind` field holds the action's name and keeps its field name)
 
 **Notification**:
-Telling the sessions following a ticket that something happened on it, such as Needs Human, a ready PR or a worker going idle (💤). It goes to each follower as a message. A ticket nobody follows gets no notification, only its Linear status. A message about dispatch itself (Linear has more tickets than one page, a rule threw or ran out of time, dispatch stopped) goes to every following session, once each.
+Telling the sessions following a ticket that something happened on it, such as Needs Human, a ready PR or a worker going idle (💤). It goes to each follower as a message. A ticket nobody follows gets no notification, only its Linear status. A message about dispatch itself (Linear has more tickets than one page, GitHub rate-limits the PR reads, a rule threw or ran out of time, dispatch stopped) goes to every following session, once each.
 _Avoid_: notice, event (an event tells dispatch; a follower's message still starts with `dispatch event`, which sessions act on), nudge (a nudge goes to the worker)
 
 **Inbox item**:

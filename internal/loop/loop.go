@@ -24,6 +24,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/localticket"
+	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/typed"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -130,6 +131,10 @@ type Loop struct {
 	ended []logged
 	// overflowTold is true while Linear has more tickets than one page and the followers know.
 	overflowTold bool
+	// rateLimitTold is true while GitHub refuses PR reads for a spent budget and the followers know.
+	rateLimitTold bool
+	// rateLimitPrinted is true once the stretch's line is on stderr, which needs no follower to hear it.
+	rateLimitPrinted bool
 	// telling counts the messages to followers being delivered off the loop.
 	telling int
 	// endedBefore counts the actions dropped from ended, so a tick's seen stays a position in the whole run.
@@ -602,6 +607,7 @@ func (l *Loop) onRead(m readDone) error {
 		l.readAgain(world.FromGitHub)
 	}
 	l.tellOverflow(m)
+	l.tellRateLimit(m)
 	callbacks := l.afterRead
 	l.afterRead = nil
 	l.cycleDue = true
@@ -743,6 +749,29 @@ func (l *Loop) tellOverflow(m readDone) {
 		l.overflowTold = l.tellFollowers("dispatch: "+m.w.LinearErr.Error(), func() { l.overflowTold = false })
 	case m.w.LinearErr == nil && m.parts&world.FromLinear != 0:
 		l.overflowTold = false
+	}
+}
+
+// tellRateLimit tells the followers once per stretch of reads that GitHub refuses PR reads
+// because the account's budget is spent, since every rule that needs a PR is held then. The
+// stretch ends when a GitHub read completes with no refusal.
+func (l *Loop) tellRateLimit(m readDone) {
+	reset, limited := m.w.RateLimit()
+	switch {
+	case limited:
+		text := "dispatch: GitHub rate-limited the PR reads, so rules that need a PR are held"
+		if !reset.IsZero() {
+			text += " until the limit resets at " + pullrequest.ResetText(reset)
+		}
+		if !l.rateLimitPrinted {
+			l.rateLimitPrinted = true
+			_, _ = fmt.Fprintf(l.o.Err, "%s %s\n", l.clock.Now().Format(time.TimeOnly), text)
+		}
+		if !l.rateLimitTold {
+			l.rateLimitTold = l.tellFollowers(text, func() { l.rateLimitTold = false })
+		}
+	case m.parts&world.FromGitHub != 0 && m.w.PRReadsAnswered > 0:
+		l.rateLimitTold, l.rateLimitPrinted = false, false
 	}
 }
 
