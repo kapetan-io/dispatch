@@ -206,14 +206,16 @@ func (c *CLI) Kickoff(ctx context.Context, pane, text string, startup Startup) e
 	}
 	_ = c.run(ctx, "agent", "wait", pane, "--until", "idle", "--timeout", "15000")
 	ready := false
-	unrun := false // the launch command was last seen unexecuted at the shell prompt
-	entered := 0   // Enters herdr accepted while the launch command showed at the shell prompt
+	unrun := false    // the launch command was last seen unexecuted at the shell prompt
+	entered := 0      // Enters herdr accepted while the launch command showed at the shell prompt
+	answered := false // a dialog came from the running program, so a later bare command line is a redraw
 	sightings := make([]int, len(startup.Answers))
 screens:
 	for range kickoffChecks {
 		screen := visible()
 		c.record("dialogs", screen)
 		if try, ok := startup.Answer(screen, sightings); ok {
+			answered = true
 			for _, keys := range try {
 				_ = c.run(ctx, append([]string{"pane", "send-keys", pane}, keys...)...)
 			}
@@ -223,7 +225,12 @@ screens:
 		// A shell prompt can match Ready too. When Unrun matches, the launch command is
 		// still on the line and Enter was lost, so press it rather than type the
 		// kickoff onto that line.
-		if startup.Unrun != nil && startup.Unrun.MatchString(screen) {
+		if startup.commandUnrun(screen) {
+			// Mid-redraw only the old command line shows, and Enter would hit the input box.
+			if answered {
+				c.sleep(ctx, c.pace)
+				continue
+			}
 			unrun = true
 			if err := c.run(ctx, "pane", "send-keys", pane, "Enter"); err != nil {
 				c.record("enter-failed", err.Error())

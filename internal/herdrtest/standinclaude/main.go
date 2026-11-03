@@ -30,8 +30,7 @@ func main() {
 	if !app {
 		report("idle")
 	}
-	// Claude draws on a cleared screen, which also hides the shell command that
-	// started it.
+	// Dialogs draw on a cleared screen, which hides the shell command that started Claude.
 	fmt.Print("\x1b[2J\x1b[H")
 	in := bufio.NewReader(os.Stdin)
 
@@ -54,6 +53,9 @@ func main() {
 	}
 
 	fmt.Print("\x1b[2J\x1b[H")
+	// Like Claude Code 2.1.316, leave a command line the harness's Unrun pattern matches above the banner.
+	fmt.Println("❯ claude --stand-in")
+	fmt.Println(" ▐▛███▛█   Claude Code v2.1.316")
 	fmt.Print("❯ ")
 	if app {
 		report("idle")

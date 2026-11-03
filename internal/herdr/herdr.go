@@ -193,14 +193,31 @@ func (p Program) ResumeArgv(session string) ([]string, bool) {
 
 // Startup describes the screens a program shows on its way to an input box.
 // Kickoff checks each screen against Answers (the first that fully matches, so
-// put the more specific Answer first), then Unrun, then Ready, and types the
+// put the more specific Answer first), then Unrun (unless Started follows it),
+// then Ready, and types the
 // kickoff only after Ready matches.
 type Startup struct {
 	Answers []Answer
 	// Unrun matches the launch command still sitting at the shell prompt.
 	Unrun *regexp.Regexp
+	// Started matches output only a running program prints. Some versions leave the
+	// launch command on screen above it, so Unrun alone would misread them.
+	Started *regexp.Regexp
 	// Ready matches the screen once the program takes input.
 	Ready *regexp.Regexp
+}
+
+// commandUnrun reports whether screen shows the launch command with no Started
+// output after it.
+func (s Startup) commandUnrun(screen string) bool {
+	if s.Unrun == nil {
+		return false
+	}
+	loc := s.Unrun.FindStringIndex(screen)
+	if loc == nil {
+		return false
+	}
+	return s.Started == nil || !s.Started.MatchString(screen[loc[1]:])
 }
 
 // Answer is one startup dialog. Every pattern in Shows must match the screen.

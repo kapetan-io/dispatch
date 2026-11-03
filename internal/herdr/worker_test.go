@@ -417,6 +417,41 @@ func TestKickoffPressesEnterOnAClaudeCommandLeftUnrunAtTheShellPrompt(t *testing
 	assert.Equal(t, []string{"pane run w9:p1 /dispatch:build ENG-1"}, s.callsStarting("pane run"))
 }
 
+func TestKickoffTypesTheKickoffWhenClaudeLeavesItsLaunchCommandOnScreen(t *testing.T) {
+	s := newStatefulHerdr(t)
+	s.screens("~/gubernator\n❯ claude --model opus --plugin-dir /plugin --session-id abc\n ▐▛███▛█   Claude Code v2.1.316\n❯ Try \"fix lint errors\"")
+
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
+
+	require.NoError(t, err)
+	// The only Enter submits the kickoff, because Claude's banner below the command shows it ran.
+	assert.Equal(t, []string{"pane send-keys w9:p1 Enter"}, s.callsStarting("pane send-keys"))
+	assert.Equal(t, []string{"pane run w9:p1 /dispatch:build ENG-1"}, s.callsStarting("pane run"))
+}
+
+func TestKickoffPressesNoEnterWhileClaudeRedrawsAfterADialog(t *testing.T) {
+	s := newStatefulHerdr(t)
+	s.screens("Do you trust this folder?  No, exit  ❯ Yes, proceed",
+		"❯ claude --model opus --plugin-dir /plugin",
+		"❯ claude --model opus --plugin-dir /plugin\n ▐▛███▛█   Claude Code v2.1.316\n❯ Try \"fix lint errors\"")
+
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
+
+	require.NoError(t, err)
+	// One Enter answers the dialog and one submits the kickoff, none lands in between.
+	assert.Equal(t, []string{"pane send-keys w9:p1 Enter", "pane send-keys w9:p1 Enter"}, s.callsStarting("pane send-keys"))
+}
+
+func TestKickoffReportsClaudeNeverStartedWhenAnEarlierRunsBannerSitsAboveAStrandedCommand(t *testing.T) {
+	s := newStatefulHerdr(t)
+	s.screens(" ▐▛███▛█   Claude Code v2.1.316\n❯ claude --model opus --plugin-dir /plugin")
+
+	err := s.cli.Kickoff(context.Background(), "w9:p1", "/dispatch:build ENG-1", claude.Startup)
+
+	require.ErrorIs(t, err, herdr.ErrNeverStarted)
+	assert.Empty(t, s.callsStarting("pane run"))
+}
+
 func TestKickoffReportsClaudeNeverStartedWhenItsCommandStaysAtTheShellPrompt(t *testing.T) {
 	s := newStatefulHerdr(t)
 	s.screens("❯ claude --model opus --plugin-dir /plugin")

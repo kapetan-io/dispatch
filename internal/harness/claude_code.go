@@ -65,7 +65,9 @@ func (ClaudeCode) Program(s Start) herdr.Program {
 				},
 			},
 			Unrun: regexp.MustCompile(`❯ *claude +--`),
-			Ready: regexp.MustCompile(`❯`),
+			// Claude Code 2.1.316 and later leave the launch command on screen above the banner.
+			Started: regexp.MustCompile(`Claude Code v\d`),
+			Ready:   regexp.MustCompile(`❯`),
 		},
 	}
 }
