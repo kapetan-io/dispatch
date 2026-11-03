@@ -89,28 +89,45 @@ func (f *Followers) drop(gone []Follower) {
 	}
 }
 
-// deliver sends n to each of followers through that session's harness. A session that
-// has exited is dropped from every ticket it followed. Any other failure keeps the
-// follower, because the session may be only briefly busy.
-func (p Post) deliver(ctx context.Context, followers []Follower, n Notification) {
-	var gone []Follower
+// deliver sends n to each of followers at once through that session's harness, so a hung
+// session costs only its own wait, and returns how many sessions took the message. A
+// session that has exited is dropped from every ticket it followed. Any other failure keeps
+// the follower, because the session may be only briefly busy.
+func (p Post) deliver(ctx context.Context, followers []Follower, n Notification) int {
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		gone    []Follower
+		reached int
+	)
 	for _, who := range followers {
-		h, ok := p.Harnesses[who.Kind]
-		if !ok {
-			p.warn("while messaging watcher %s: no harness adapter for kind %q", who.Address, who.Kind)
-			continue
-		}
-		err := h.Deliver(ctx, who.Address, message(n))
-		switch {
-		case err == nil:
-		case errors.Is(err, harness.ErrGone):
-			gone = append(gone, who)
-			p.warn("dropped watcher socket %s, which no longer accepts connections or is gone", who.Address)
-		default:
-			p.warn("while messaging watcher %s: %v", who.Address, err)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h, ok := p.Harnesses[who.Kind]
+			if !ok {
+				mu.Lock()
+				defer mu.Unlock()
+				p.warn("while messaging watcher %s: no harness adapter for kind %q", who.Address, who.Kind)
+				return
+			}
+			err := h.Deliver(ctx, who.Address, message(n))
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil:
+				reached++
+			case errors.Is(err, harness.ErrGone):
+				gone = append(gone, who)
+				p.warn("dropped watcher socket %s, which no longer accepts connections or is gone", who.Address)
+			default:
+				p.warn("while messaging watcher %s: %v", who.Address, err)
+			}
+		}()
 	}
+	wg.Wait()
 	p.Followers.drop(gone)
+	return reached
 }
 
 // warn reports a follower failure without failing the action.

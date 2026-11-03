@@ -569,9 +569,9 @@ func (e *Executor) notify(ctx context.Context, w rules.Want, wd world.World) Res
 }
 
 // TellAll sends text, which is about dispatch rather than a ticket, to every session
-// following a ticket.
-func (e *Executor) TellAll(ctx context.Context, text string) {
-	notify.Post{Followers: e.Followers, Harnesses: e.Harnesses, Stderr: e.Stderr}.TellAll(ctx, text)
+// following a ticket, and returns how many sessions took it.
+func (e *Executor) TellAll(ctx context.Context, text string) int {
+	return notify.Post{Followers: e.Followers, Harnesses: e.Harnesses, Stderr: e.Stderr}.TellAll(ctx, text)
 }
 
 // post sends a rule's body to its service. A POST that timed out may have landed, so it counts as sent.

@@ -35,10 +35,11 @@ func (p Post) Tell(ctx context.Context, n Notification) {
 }
 
 // TellAll sends text, which is about dispatch rather than a ticket, to every session
-// following at least one ticket, once each however many it follows.
-func (p Post) TellAll(ctx context.Context, text string) {
+// following at least one ticket, once each however many it follows. It returns how many
+// sessions took the message.
+func (p Post) TellAll(ctx context.Context, text string) int {
 	if p.Followers == nil {
-		return
+		return 0
 	}
-	p.deliver(ctx, p.Followers.Sessions(), Notification{Text: text})
+	return p.deliver(ctx, p.Followers.Sessions(), Notification{Text: text})
 }

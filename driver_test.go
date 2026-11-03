@@ -1140,6 +1140,15 @@ func (g *GitHub) FailMergedReads(err error) { g.d.tools.PullRequests.FailReadMer
 // Followed is what dispatch told the recorder session, which follows every ticket the test seeds.
 type Followed struct{ d *Dispatch }
 
+// Leave makes the recorder follow nothing, in the running dispatch and in any started later, so a
+// test hears only the sessions it registered itself.
+func (f *Followed) Leave() {
+	for _, ticket := range f.d.seeded {
+		f.d.followers.Unfollow(ticket, f.d.recorder.follower)
+	}
+	f.d.seeded = nil
+}
+
 // Told lists the texts of the messages the recorder received, without the framing a follower's
 // model reads.
 func (f *Followed) Told() []string { return f.d.notifications() }

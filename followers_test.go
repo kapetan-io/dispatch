@@ -634,3 +634,25 @@ whenever({ name: "throws", each: "dispatch", if: () => true, then: () => { throw
 	assert.Empty(t, lines)
 	assert.Equal(t, 1, strings.Count(d.LoopStderr(), "rule throws threw in its then"))
 }
+
+func TestTickTellsAgainWhenTheOnlyFollowerWasGone(t *testing.T) {
+	t.Parallel()
+	live, lines := sessionSocket(t)
+	d := newDispatch(t, dispatchOptions{Rules: rule(`
+whenever({ name: "throws", each: "dispatch", if: () => true, then: () => { throw new Error("boom"); } });`)})
+	d.StartBeforeTheEvents()
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Followed.Leave()
+	d.Session(deadSocket(t, live))
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+
+	// The only follower is dead, so nobody heard the message.
+	d.Tick()
+	assert.Contains(t, d.LoopStderr(), "dropped watcher socket")
+
+	d.Session(live)
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+	d.Tick()
+
+	assert.Contains(t, next(t, lines), "rule throws threw in its then")
+}

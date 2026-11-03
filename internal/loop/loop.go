@@ -162,8 +162,12 @@ type actionDone struct {
 
 type renameDone struct{}
 
-// toldDone reports a message to the followers that finished.
-type toldDone struct{}
+// toldDone reports a message to the followers that finished. again runs when no session took
+// it, so the message is said once a session is there to hear it.
+type toldDone struct {
+	reached int
+	again   func()
+}
 
 // tellDeadline bounds one message to the followers, because a stalled session must not hold the loop.
 const tellDeadline = 10 * time.Second
@@ -422,6 +426,9 @@ func (l *Loop) handle(m any) error {
 		return nil
 	case toldDone:
 		l.telling--
+		if m.reached == 0 && m.again != nil {
+			m.again()
+		}
 		return nil
 	case request:
 		return l.onRequest(m)
@@ -733,7 +740,7 @@ func (l *Loop) tellOverflow(m readDone) {
 		if l.overflowTold {
 			return
 		}
-		l.overflowTold = l.tellFollowers("dispatch: " + m.w.LinearErr.Error())
+		l.overflowTold = l.tellFollowers("dispatch: "+m.w.LinearErr.Error(), func() { l.overflowTold = false })
 	case m.w.LinearErr == nil && m.parts&world.FromLinear != 0:
 		l.overflowTold = false
 	}
@@ -753,14 +760,15 @@ func (l *Loop) tellThrows(res rules.Result) {
 			l.threw[t.Rule] = true
 			_, _ = fmt.Fprintf(l.o.Err, "%s dispatch: %s\n", l.clock.Now().Format(time.TimeOnly), text)
 		}
-		l.threwTold[t.Rule] = l.tellFollowers("dispatch: " + text)
+		l.threwTold[t.Rule] = l.tellFollowers("dispatch: "+text, func() { delete(l.threwTold, t.Rule) })
 	}
 }
 
 // tellFollowers sends text to every session following a ticket, off the loop under a deadline.
-// It reports false when no session follows, so the caller says it again once one does, because
-// followers start empty and a message told to nobody has reached nobody.
-func (l *Loop) tellFollowers(text string) bool {
+// It reports false when no session follows. again runs when sessions followed but none took the
+// message. Either way the caller says it again once a session can hear it, because followers
+// start empty at every restart and a message nobody received has reached nobody.
+func (l *Loop) tellFollowers(text string, again func()) bool {
 	if l.o.Executor == nil || len(l.o.Executor.Followers.Sessions()) == 0 {
 		return false
 	}
@@ -768,9 +776,9 @@ func (l *Loop) tellFollowers(text string) bool {
 	go func() {
 		ctx, cancel := clock.WithTimeout(l.runCtx, l.clock, "tell followers", tellDeadline)
 		defer cancel()
-		l.o.Executor.TellAll(ctx, text)
+		reached := l.o.Executor.TellAll(ctx, text)
 		select {
-		case l.inbox <- toldDone{}:
+		case l.inbox <- toldDone{reached: reached, again: again}:
 		case <-l.stopped:
 		}
 	}()
