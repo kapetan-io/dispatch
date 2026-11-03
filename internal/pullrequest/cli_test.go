@@ -4,6 +4,7 @@ package pullrequest_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -22,6 +23,7 @@ const (
 	envExit   = "GH_TEST_EXIT"
 	envArgs   = "GH_TEST_ARGS"
 	envSleep  = "GH_TEST_SLEEP"
+	envReset  = "GH_TEST_RESET"
 )
 
 const onePage = `{"data":{"repository":{"pullRequests":{"nodes":[{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"a1","mergeable":"MERGEABLE","reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}]}}}}`
@@ -33,6 +35,10 @@ func TestMain(m *testing.M) {
 	// The race detector sleeps 1s at exit by default. The stand-in processes this binary re-execs inherit this setting.
 	_ = os.Setenv("GORACE", strings.TrimSpace(os.Getenv("GORACE")+" atexit_sleep_ms=0"))
 	if code, ok := os.LookupEnv(envExit); ok {
+		if len(os.Args) > 2 && os.Args[2] == "rate_limit" {
+			_, _ = fmt.Fprint(os.Stdout, os.Getenv(envReset))
+			os.Exit(0)
+		}
 		if path := os.Getenv(envArgs); path != "" {
 			f, _ := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 			args := os.Args[1:]
@@ -279,4 +285,57 @@ func TestCLIReadMergedRefusesMoreBranchesThanOneQueryTakes(t *testing.T) {
 
 	require.ErrorContains(t, err, "at most 50 branches")
 	assert.NoFileExists(t, args)
+}
+
+func TestCLIReadReportsTheResetTimeWhenGitHubRateLimitsTheAccount(t *testing.T) {
+	exe, _ := standIn(t, `{"errors":[{"type":"RATE_LIMIT","message":"API rate limit already exceeded for user ID 1."}]}`, "gh: API rate limit already exceeded for user ID 1.", "1")
+	t.Setenv(envReset, "1793657626\n")
+
+	_, _, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b", pullrequest.Rules{})
+
+	var limit *pullrequest.RateLimitError
+	require.ErrorAs(t, err, &limit)
+	assert.Equal(t, time.Unix(1793657626, 0).UTC(), limit.Reset)
+	require.ErrorContains(t, err, "API rate limit already exceeded")
+}
+
+func TestCLIReadReportsNoResetTimeForASecondaryLimit(t *testing.T) {
+	exe, _ := standIn(t, "", "gh: You have exceeded a secondary rate limit. Please wait a few minutes", "1")
+	t.Setenv(envReset, "1793657626\n")
+
+	_, _, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b", pullrequest.Rules{})
+
+	var limit *pullrequest.RateLimitError
+	require.ErrorAs(t, err, &limit)
+	assert.True(t, limit.Reset.IsZero())
+}
+
+func TestCLIReadMergedReportsARateLimit(t *testing.T) {
+	exe, _ := standIn(t, "", "gh: API rate limit already exceeded for user ID 1.", "1")
+
+	_, err := pullrequest.NewCLI(exe).ReadMerged(context.Background(), t.TempDir(), []string{"b"})
+
+	var limit *pullrequest.RateLimitError
+	require.ErrorAs(t, err, &limit)
+	assert.True(t, limit.Reset.IsZero())
+}
+
+func TestCLIReadDoesNotCallAFailureARateLimit(t *testing.T) {
+	exe, _ := standIn(t, "", "HTTP 502", "1")
+
+	_, _, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b", pullrequest.Rules{})
+
+	require.Error(t, err)
+	var limit *pullrequest.RateLimitError
+	assert.False(t, errors.As(err, &limit))
+}
+
+func TestCLIReadDoesNotCallPRTextAboutRateLimitsARateLimit(t *testing.T) {
+	exe, _ := standIn(t, `{"data":{"body":"we should back off on rate limit"},"errors":[{"type":"FORBIDDEN"}]}`, "gh: Resource not accessible", "1")
+
+	_, _, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b", pullrequest.Rules{})
+
+	require.Error(t, err)
+	var limit *pullrequest.RateLimitError
+	assert.False(t, errors.As(err, &limit))
 }

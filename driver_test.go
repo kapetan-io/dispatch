@@ -43,6 +43,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/lineartest"
 	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/kapetan-io/dispatch/internal/notify"
+	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/pullrequesttest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
@@ -1136,6 +1137,24 @@ func (g *GitHub) PullRequestMerged(ticket string, pr mergedPR) {
 
 // FailMergedReads makes the read of merged pull requests fail with err, and nil restores it.
 func (g *GitHub) FailMergedReads(err error) { g.d.tools.PullRequests.FailReadMerged(err) }
+
+// FailReads makes the read of open pull requests fail with err, and nil restores it.
+func (g *GitHub) FailReads(err error) { g.d.tools.PullRequests.FailRead(err) }
+
+// RateLimitReads makes GitHub refuse every read of open pull requests for a spent budget that
+// refills at reset, a zero time when GitHub gives none.
+func (g *GitHub) RateLimitReads(reset time.Time) {
+	g.d.tools.PullRequests.FailRead(rateLimitRefusal(reset))
+}
+
+// RateLimitMergedReads is RateLimitReads for the reads of merged pull requests.
+func (g *GitHub) RateLimitMergedReads(reset time.Time) {
+	g.d.tools.PullRequests.FailReadMerged(rateLimitRefusal(reset))
+}
+
+func rateLimitRefusal(reset time.Time) error {
+	return &pullrequest.RateLimitError{Reset: reset, Err: errors.New("gh: API rate limit already exceeded for user ID 1")}
+}
 
 // Followed is what dispatch told the recorder session, which follows every ticket the test seeds.
 type Followed struct{ d *Dispatch }
