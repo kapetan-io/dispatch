@@ -59,8 +59,9 @@ type Env struct {
 	Launcher     launcher.Launcher
 	// Harnesses holds the adapter for each kind a harness table can name.
 	Harnesses harness.Registry
-	Alerts    notify.Alerts
 	HTTP      httpservice.Services
+	// Followers is the sessions following each ticket, which a notification is sent to. Nil starts with none.
+	Followers *notify.Followers
 	// Environment is what the git commands that return a tree run with.
 	Environment environment.Environment
 	StateDir    string
@@ -120,8 +121,6 @@ type Result struct {
 // Executor runs actions.
 type Executor struct {
 	Env
-	// Followers is the sessions following each ticket, which a notify messages.
-	Followers *notify.Followers
 }
 
 // New returns an executor over env.
@@ -129,7 +128,10 @@ func New(env Env) *Executor {
 	if env.Clock == nil {
 		env.Clock = clock.Wall{}
 	}
-	return &Executor{Env: env, Followers: &notify.Followers{}}
+	if env.Followers == nil {
+		env.Followers = &notify.Followers{}
+	}
+	return &Executor{Env: env}
 }
 
 // WhyNotLaunch says why a launch must not start whatever the rule asked, or "" when it
@@ -558,24 +560,18 @@ func (e *Executor) notify(ctx context.Context, w rules.Want, wd world.World) Res
 	if t.Identifier == "" {
 		t.Identifier = w.Subject
 	}
-	post := notify.Post{Alerts: e.Alerts, Followers: e.Followers, Harnesses: e.Harnesses, Stderr: e.Stderr}
 	reason, ok := w.Options["reason"].(string)
 	if !ok && len(w.Once) > 0 {
 		reason, _ = w.Once[0].(string)
 	}
-	n := notify.Notification{Ticket: t, Reason: reason, Text: text}
-	if always, _ := w.Options["followersAlways"].(bool); always {
-		// Nothing retries a merge notice, so followers hear it whether or not the alert showed.
-		res := Result{Outcome: ledger.Done}
-		if err := post.NotifyOnce(ctx, n); err != nil {
-			res.Detail = "alert failed: " + err.Error()
-		}
-		return res
-	}
-	if err := post.Notify(ctx, n); err != nil {
-		return failed("%v", err)
-	}
+	notify.Post{Followers: e.Followers, Harnesses: e.Harnesses, Stderr: e.Stderr}.Tell(ctx, notify.Notification{Ticket: t, Reason: reason, Text: text})
 	return Result{Outcome: ledger.Done}
+}
+
+// TellAll sends text, which is about dispatch rather than a ticket, to every session
+// following a ticket, and returns how many sessions took it.
+func (e *Executor) TellAll(ctx context.Context, text string) int {
+	return notify.Post{Followers: e.Followers, Harnesses: e.Harnesses, Stderr: e.Stderr}.TellAll(ctx, text)
 }
 
 // post sends a rule's body to its service. A POST that timed out may have landed, so it counts as sent.

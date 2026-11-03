@@ -64,7 +64,7 @@ func TestTickReadsThePROfATicketWhoseRepoLabelDiffersInCase(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 }
 
 func TestTickLaunchesInTheTableSpelledLikeTheTicketsLabel(t *testing.T) {
@@ -122,5 +122,5 @@ func TestRulesFindTheRepoTableOfALabelThatDiffersInCase(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{"true true"}, d.Alerts.Shown())
+	assert.Equal(t, []string{"true true"}, d.Followed.Told())
 }

@@ -42,6 +42,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/lineartest"
 	"github.com/kapetan-io/dispatch/internal/loop"
+	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/pullrequesttest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
@@ -106,14 +107,14 @@ type dispatchOptions struct {
 }
 
 // Dispatch is dispatch running on a machine of fakes: Linear, herdr, treehouse, GitHub and the
-// notifier. Tests drive it through the command line and read back what the fakes saw.
+// sessions that follow tickets. Tests drive it through the command line and read back what the fakes saw.
 type Dispatch struct {
 	Clock    *fakeClock
 	Linear   *Linear
 	Workers  *Workers
 	Trees    *Trees
 	GitHub   *GitHub
-	Alerts   *Alerts
+	Followed *Followed
 	Services *Services
 	// Repo is the dispatch repo, a directory the config lists under [repos.dispatch].
 	Repo string
@@ -139,9 +140,11 @@ type Dispatch struct {
 	builtinLauncher bool
 	fakeHarness     bool
 	realHerdr       bool
-	// builtinAlerts leaves Options.Alerts empty, so alerts go through the
-	// notifier dispatch picks for the operating system.
-	builtinAlerts bool
+	// followers is who follows what in the running dispatch. The recorder session follows every
+	// ticket the test seeds, so a test reads back what dispatch told followers.
+	followers *notify.Followers
+	recorder  *recorder
+	seeded    []string
 	// running is the loop started by the first command that needs one, and started every loop
 	// this test started, so a failing test can show what they printed.
 	running *runningLoop
@@ -236,12 +239,14 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 			_ = d.earlier.Close()
 		}
 	})
-	d.linear = &linearHarness{Workspace: d.tools.Linear}
+	d.recorder = newRecorder()
+	d.followers = d.freshFollowers()
+	d.linear = &linearHarness{Workspace: d.tools.Linear, follow: d.followRecorder}
 	d.tools.Linear.Now = d.Clock.Now
 	require.NoError(t, os.MkdirAll(d.Repo, 0o755))
 	d.addRepo("dispatch", d.Repo)
 	d.Linear, d.Workers, d.Trees = &Linear{d: d}, &Workers{d: d}, &Trees{d: d}
-	d.GitHub, d.Alerts, d.Services = &GitHub{d: d}, &Alerts{d: d}, &Services{d: d}
+	d.GitHub, d.Followed, d.Services = &GitHub{d: d}, &Followed{d: d}, &Services{d: d}
 	if opts.Config != "" {
 		d.config(opts.Config)
 	}
@@ -1132,11 +1137,21 @@ func (g *GitHub) PullRequestMerged(ticket string, pr mergedPR) {
 // FailMergedReads makes the read of merged pull requests fail with err, and nil restores it.
 func (g *GitHub) FailMergedReads(err error) { g.d.tools.PullRequests.FailReadMerged(err) }
 
-// Alerts is the notifications dispatch shows.
-type Alerts struct{ d *Dispatch }
+// Followed is what dispatch told the recorder session, which follows every ticket the test seeds.
+type Followed struct{ d *Dispatch }
 
-// Shown lists the notification texts shown.
-func (a *Alerts) Shown() []string { return a.d.notifications() }
+// Leave makes the recorder follow nothing, in the running dispatch and in any started later, so a
+// test hears only the sessions it registered itself.
+func (f *Followed) Leave() {
+	for _, ticket := range f.d.seeded {
+		f.d.followers.Unfollow(ticket, f.d.recorder.follower)
+	}
+	f.d.seeded = nil
+}
+
+// Told lists the texts of the messages the recorder received, without the framing a follower's
+// model reads.
+func (f *Followed) Told() []string { return f.d.notifications() }
 
 // Services is the HTTP services a rule's ctx.http reaches.
 type Services struct{ d *Dispatch }
@@ -1341,20 +1356,18 @@ func (d *Dispatch) options(extra dispatch.Options) dispatch.Options {
 	if d.http != nil {
 		extra.HTTP = d.http
 	}
-	if !d.builtinAlerts {
-		extra.Alerts = d.tools.Alerts
-	}
+	extra.Followers = d.followers
 	if !d.builtinLauncher {
 		extra.Launcher = d.tools.Launcher
 	}
+	claude := recordingClaude{rec: d.recorder}
 	if d.fakeHarness {
-		extra.Harnesses = harness.Registry{config.KindClaudeCode: harness.ClaudeCode{}, harnesstest.Kind: d.tools.Harness}
+		extra.Harnesses = harness.Registry{config.KindClaudeCode: claude, harnesstest.Kind: d.tools.Harness}
 	}
-	// Run fills in Claude Code when the test registers nothing else.
+	if extra.Harnesses == nil {
+		extra.Harnesses = harness.Registry{config.KindClaudeCode: claude}
+	}
 	registered := extra.Harnesses
-	if registered == nil {
-		registered = harness.Registry{config.KindClaudeCode: harness.ClaudeCode{}}
-	}
 	d.tools.Herdr.AcceptKinds(registered.AgentKinds()...)
 	if extra.RulesDir == "" && !strings.Contains(d.extra, "\nrules = ") {
 		extra.RulesDir = d.rulesDir
@@ -1518,6 +1531,7 @@ func (d *Dispatch) startLoop(extra dispatch.Options) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &runningLoop{cancel: cancel, done: make(chan error, 1), out: &syncBuffer{}, err: &syncBuffer{}}
 	d.started = append(d.started, r)
+	d.followers = d.freshFollowers()
 	opts := d.options(extra)
 	opts.Stdout, opts.Stderr = r.out, r.err
 	go func() { r.done <- dispatch.Run(ctx, []string{"run"}, opts) }()
@@ -1878,9 +1892,69 @@ func (d *Dispatch) prompts() []string {
 	return d.tools.Herdr.Prompted()
 }
 
-// notifications lists the macOS notification texts shown.
-func (d *Dispatch) notifications() []string {
-	return d.tools.Alerts.Shown()
+// notifications lists the texts of the messages the recorder received.
+func (d *Dispatch) notifications() []string { return d.recorder.texts() }
+
+// followRecorder makes the recorder session follow ticket, in the running dispatch and in any started later.
+func (d *Dispatch) followRecorder(ticket string) {
+	d.seeded = append(d.seeded, ticket)
+	require.NoError(d.t, d.followers.Follow(ticket, d.recorder.follower))
+}
+
+// freshFollowers is the followers of a dispatch that just started: only the recorder, on every seeded ticket.
+func (d *Dispatch) freshFollowers() *notify.Followers {
+	f := &notify.Followers{}
+	for _, ticket := range d.seeded {
+		require.NoError(d.t, f.Follow(ticket, d.recorder.follower))
+	}
+	return f
+}
+
+// recorder is a session that follows every seeded ticket and keeps each message delivered to it.
+type recorder struct {
+	follower notify.Follower
+	mu       sync.Mutex
+	messages []string
+}
+
+func newRecorder() *recorder {
+	return &recorder{follower: notify.Follower{Kind: config.KindClaudeCode, Address: "recorder"}}
+}
+
+// recordingClaude is Claude Code, except that a message for the recorder is kept instead of sent.
+type recordingClaude struct {
+	harness.ClaudeCode
+	rec *recorder
+}
+
+func (c recordingClaude) Deliver(ctx context.Context, address, text string) error {
+	if address != c.rec.follower.Address {
+		return c.ClaudeCode.Deliver(ctx, address, text)
+	}
+	c.rec.mu.Lock()
+	defer c.rec.mu.Unlock()
+	c.rec.messages = append(c.rec.messages, text)
+	return nil
+}
+
+// texts lists what was delivered without the "dispatch event (reason): " prefix and " Ticket: <url>" suffix that notify.message adds.
+func (r *recorder) texts() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var texts []string
+	for _, m := range r.messages {
+		_, text, _ := strings.Cut(m, "dispatch event")
+		if _, after, ok := strings.Cut(text, "): "); ok && strings.HasPrefix(text, " (") {
+			text = after
+		} else {
+			text = strings.TrimPrefix(text, ": ")
+		}
+		if i := strings.LastIndex(text, " Ticket: http"); i >= 0 {
+			text = text[:i]
+		}
+		texts = append(texts, text)
+	}
+	return texts
 }
 
 func (d *Dispatch) lines(name string) []string {
@@ -2011,6 +2085,7 @@ func withLabel(t fakeTicket, name string) fakeTicket {
 type linearHarness struct {
 	*lineartest.Workspace
 	managed, elsewhere, children []fakeTicket
+	follow                       func(ticket string)
 }
 
 func (l *linearHarness) seed() {
@@ -2025,6 +2100,9 @@ func (l *linearHarness) seed() {
 		}
 	}
 	l.Seed(all...)
+	for _, t := range all {
+		l.follow(t.Identifier)
+	}
 }
 
 // setTickets sets the tickets that are started and assigned to the key's owner.

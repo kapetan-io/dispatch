@@ -1,7 +1,6 @@
 package dispatch_test
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -315,7 +314,7 @@ func TestLoopRestartAfterALaunchLaunchesNoSecondWorker(t *testing.T) {
 	assert.NotContains(t, out, "launched")
 }
 
-func TestARuleThatThrowsStopsOnlyItsOwnActionsAndRaisesOneAlert(t *testing.T) {
+func TestARuleThatThrowsStopsOnlyItsOwnActionsAndTellsFollowersOnce(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, `
 whenever({ name: "always-throws", each: "ticket", if: () => { throw new Error("boom"); }, then: () => {} });
@@ -328,16 +327,16 @@ whenever({ name: "always-throws", each: "ticket", if: () => { throw new Error("b
 
 	assert.Len(t, d.Workers.Launched(), 1)
 	assert.Contains(t, d.LoopErr(), "always-throws threw in its if for ENG-1")
-	var alerts []string
-	for _, shown := range d.Alerts.Shown() {
+	var told []string
+	for _, shown := range d.Followed.Told() {
 		if strings.Contains(shown, "always-throws") {
-			alerts = append(alerts, shown)
+			told = append(told, shown)
 		}
 	}
-	assert.Len(t, alerts, 1)
+	assert.Len(t, told, 1)
 }
 
-func TestARuleReadingAFactTheBuildLacksRaisesAnAlertAndLetsOtherRulesRun(t *testing.T) {
+func TestARuleReadingAFactTheBuildLacksTellsFollowersAndLetsOtherRulesRun(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, `
 whenever({ name: "newer-than-build", each: "ticket", if: (t: any) => t.somethingNew === "x", then: () => {} });
@@ -348,17 +347,17 @@ whenever({ name: "newer-than-build", each: "ticket", if: (t: any) => t.something
 
 	assert.Len(t, d.Workers.Launched(), 1)
 	assert.Contains(t, d.LoopErr(), `newer-than-build threw in its if for ENG-1: Error: this build has no "somethingNew" fact on a ticket. The rules may be newer than the dispatch build`)
-	var alerts []string
-	for _, shown := range d.Alerts.Shown() {
+	var told []string
+	for _, shown := range d.Followed.Told() {
 		if strings.Contains(shown, "newer-than-build") {
-			alerts = append(alerts, shown)
+			told = append(told, shown)
 		}
 	}
-	assert.Len(t, alerts, 1)
+	assert.Len(t, told, 1)
 }
 
 // Unreachable from the CLI: a history directory that stops taking files is a disk fault the product can't inject.
-func TestAHistoryWriteFailureStopsTheLoopAndAlerts(t *testing.T) {
+func TestAHistoryWriteFailureStopsTheLoopAndTellsFollowers(t *testing.T) {
 	t.Parallel()
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores directory permissions, so the write cannot be made to fail")
@@ -376,7 +375,7 @@ func TestAHistoryWriteFailureStopsTheLoopAndAlerts(t *testing.T) {
 	stderr, err := d.LoopStops()
 	require.ErrorContains(t, err, "permission denied")
 	require.Eventually(t, func() bool {
-		for _, shown := range d.Alerts.Shown() {
+		for _, shown := range d.Followed.Told() {
 			if strings.HasPrefix(shown, "dispatch stopped: ") {
 				return true
 			}
@@ -581,68 +580,6 @@ func TestAWorkerThatGoesIdleHasItsPRReadWithoutWaitingForTheResync(t *testing.T)
 
 	// The tell is answered once herdr is read. The PR read follows it.
 	require.Eventually(t, func() bool { return len(d.prReads()) > 0 }, 20*time.Second, 5*time.Millisecond)
-}
-
-func TestAnAlertThatHangsDoesNotStopTheLoopAnswering(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Linear.Overflow()
-	d.tools.Alerts.Stall(true)
-	opts := d.options(dispatch.Options{})
-	opts.Stdout, opts.Stderr = &syncBuffer{}, &syncBuffer{}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- dispatch.Run(ctx, []string{"run"}, opts) }()
-	t.Cleanup(func() { cancel(); <-done })
-
-	// The overflow alert hangs for 10 seconds at most, and the loop answers well inside that.
-	require.Eventually(t, func() bool {
-		res := d.RunWithoutLoop("tick", "--timeout", "100ms")
-		return res.Err != nil && strings.Contains(res.Err.Error(), "timed out after 100ms")
-	}, 5*time.Second, 20*time.Millisecond)
-}
-
-func TestAnAlertThatHangsIsCutOffWhenTheClockPassesItsDeadlineAndShownAgainLater(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Linear.Overflow()
-	d.tools.Alerts.Stall(true)
-	opts := d.options(dispatch.Options{})
-	opts.Stdout, opts.Stderr = &syncBuffer{}, &syncBuffer{}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- dispatch.Run(ctx, []string{"run"}, opts) }()
-	t.Cleanup(func() { cancel(); <-done })
-
-	// The alert in flight stays stalled until its deadline, and the one at the next resync is shown.
-	d.Deadline("alert")
-	d.tools.Alerts.Stall(false)
-	d.Expire("alert")
-	// A tick returns once the loop has taken the cut-off alert out of what it waits on.
-	require.NoError(t, d.RunWithoutLoop("tick").Err)
-	d.Clock.Advance(time.Hour)
-
-	require.Eventually(t, func() bool { return len(d.Alerts.Shown()) == 1 }, 5*time.Second, 5*time.Millisecond)
-	assert.Contains(t, d.Alerts.Shown()[0], "more than 100 started")
-}
-
-func TestTheOverflowAlertIsShownAgainAfterItFailed(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Linear.Overflow()
-	d.tools.Alerts.Fail(errors.New("notifications are denied"))
-	d.StartBeforeTheEvents()
-	require.Eventually(t, func() bool { return len(d.tools.Calls("alerts", "show")) == 1 }, 5*time.Second, 5*time.Millisecond)
-	require.Empty(t, d.Alerts.Shown())
-
-	d.tools.Alerts.Fail(nil)
-	d.Advance(time.Hour)
-
-	require.Len(t, d.Alerts.Shown(), 1)
-	assert.Contains(t, d.Alerts.Shown()[0], "more than 100 started")
 }
 
 func TestRotatingHistoryKeepsTheReceiptsOfChildrenReadThroughTheirParent(t *testing.T) {
@@ -937,7 +874,7 @@ func TestAMissedResyncReadsLinearAgainBeforeActing(t *testing.T) {
 	assert.Empty(t, d.Workers.Launched())
 }
 
-func TestARuleThatRunsOutOfTimeStopsOnlyItsOwnActionsAndRaisesOneAlert(t *testing.T) {
+func TestARuleThatRunsOutOfTimeStopsOnlyItsOwnActionsAndTellsFollowersOnce(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name     string
@@ -967,13 +904,13 @@ func TestARuleThatRunsOutOfTimeStopsOnlyItsOwnActionsAndRaisesOneAlert(t *testin
 			expiring(d, test.deadline, func() bool { d.Advance(time.Second); d.Tick(); return true })
 
 			assert.Len(t, d.Workers.Launched(), 1)
-			var alerts []string
-			for _, shown := range d.Alerts.Shown() {
+			var told []string
+			for _, shown := range d.Followed.Told() {
 				if strings.Contains(shown, "spins-in") {
-					alerts = append(alerts, shown)
+					told = append(told, shown)
 				}
 			}
-			assert.Len(t, alerts, 1)
+			assert.Len(t, told, 1)
 		})
 	}
 }
@@ -1063,7 +1000,7 @@ func TestARestartDuringALinearOutageKeepsEveryWait(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
 	d.Tick()
-	require.Len(t, d.Alerts.Shown(), 1)
+	require.Len(t, d.Followed.Told(), 1)
 	d.Advance(time.Hour)
 	d.Linear.FailManaged(true)
 	d.Restart()
@@ -1072,7 +1009,7 @@ func TestARestartDuringALinearOutageKeepsEveryWait(t *testing.T) {
 	d.Advance(5 * time.Minute)
 	d.Tick()
 
-	assert.Len(t, d.Alerts.Shown(), 1)
+	assert.Len(t, d.Followed.Told(), 1)
 }
 
 // A first run that crashed before its segment had a header leaves a file with nothing in it.

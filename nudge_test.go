@@ -3,7 +3,6 @@ package dispatch_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -154,9 +153,6 @@ func (w *Workers) LaunchResult(result string) { w.d.launchResult(result) }
 // tree's path.
 func (t *Trees) Pool() string { return t.d.pool() }
 
-// Fail makes the notifier fail with err until it is called with nil.
-func (a *Alerts) Fail(err error) { a.d.tools.Alerts.Fail(err) }
-
 // FailMoves makes Linear refuse every status change.
 func (l *Linear) FailMoves() { l.d.linear.failMoves() }
 
@@ -230,7 +226,7 @@ func TestTickLeavesWorkingAndDesignWorkersAlone(t *testing.T) {
 			require.NoError(t, res.Err)
 			assert.Empty(t, res.Stdout)
 			assert.Empty(t, d.Workers.Prompts())
-			assert.Empty(t, d.Alerts.Shown())
+			assert.Empty(t, d.Followed.Told())
 			noLinearChanges(t, d)
 		})
 	}
@@ -270,14 +266,14 @@ func TestTickNotifiesOnceWhenATicketEntersNeedsHuman(t *testing.T) {
 	d.Workers.Running("ENG-1", "working")
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 
 	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
 	for range 3 {
 		d.Tick()
 	}
 
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())
 	assert.Empty(t, d.Workers.Prompts())
 	noLinearChanges(t, d)
 }
@@ -291,24 +287,7 @@ func TestTickNotifiesWhenADispatcherEscalationMovesATicket(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "Needs Human", ""))
 	d.Tick()
 
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Alerts.Shown())
-}
-
-func TestTickRetriesANeedsHumanNotificationThatFailed(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Workers.Running("ENG-1", "working")
-	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
-	d.Alerts.Fail(errors.New("exit status 1"))
-
-	require.ErrorContains(t, d.Run("tick").Err, "ENG-1 notify failed")
-	assert.Empty(t, d.Alerts.Shown())
-
-	d.Alerts.Fail(nil)
-	d.Tick()
-	d.Tick()
-
-	assert.Len(t, d.Alerts.Shown(), 1)
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())
 }
 
 func TestTickNotifiesAgainWhileAWorkerStaysBlocked(t *testing.T) {
@@ -326,12 +305,12 @@ func TestTickNotifiesAgainWhileAWorkerStaysBlocked(t *testing.T) {
 					d.Advance(5 * time.Minute)
 				}
 				d.Tick()
-				counts = append(counts, len(d.Alerts.Shown()))
+				counts = append(counts, len(d.Followed.Told()))
 			}
 
 			// The first notice, then one every 15 minutes.
 			assert.Equal(t, []int{1, 1, 1, 2, 2, 2, 3}, counts)
-			assert.Equal(t, want, d.Alerts.Shown()[0])
+			assert.Equal(t, want, d.Followed.Told()[0])
 			assert.Empty(t, d.Workers.Prompts())
 			noLinearChanges(t, d)
 		})
@@ -352,7 +331,7 @@ func TestTickNotifiesImmediatelyWhenAWorkerBlocksAgain(t *testing.T) {
 	d.Advance(time.Minute)
 	d.Tick()
 
-	assert.Len(t, d.Alerts.Shown(), 2)
+	assert.Len(t, d.Followed.Told(), 2)
 }
 
 func TestTellTypesTextIntoAWorker(t *testing.T) {
@@ -459,7 +438,7 @@ func TestTickNotifiesForNeedsHumanWhateverTheWorkerIs(t *testing.T) {
 				d.Tick()
 			}
 
-			assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Alerts.Shown())
+			assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())
 			assert.Empty(t, d.Workers.Prompts())
 			assert.Empty(t, d.Workers.Launched())
 			noLinearChanges(t, d)
@@ -478,37 +457,7 @@ func TestTickNotifiesEachTimeATicketReentersNeedsHuman(t *testing.T) {
 		d.Advance(time.Minute)
 	}
 
-	assert.Len(t, d.Alerts.Shown(), 2)
-}
-
-func TestTickNotifiesAfterAnEscalationWhoseAlertFailed(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
-	d.Workers.Running("ENG-1", "working")
-	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
-	d.Tick()
-	// Nudges count from the ticket entering In Review, so the worker idles a moment after it.
-	d.Advance(time.Second)
-	d.Workers.SetStatus("ENG-1", "idle")
-	d.Tick()
-	d.Advance(5 * time.Minute)
-	d.Alerts.Fail(errors.New("exit status 1"))
-
-	// Two nudges went out, and the next pass finds the worker still ignoring them.
-	d.Advance(5 * time.Minute)
-	require.ErrorContains(t, d.Run("tick").Err, "notify failed")
-	assert.Empty(t, d.Alerts.Shown())
-	assert.Len(t, d.Linear.Comments(), 1)
-	assert.Len(t, d.Linear.Moves(), 1)
-
-	d.Alerts.Fail(nil)
-	d.Tick()
-	d.Tick()
-
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Alerts.Shown())
-	assert.Len(t, d.Linear.Comments(), 1)
-	assert.Len(t, d.Linear.Moves(), 1)
+	assert.Len(t, d.Followed.Told(), 2)
 }
 
 func TestTickDoesNotNotifyForAnEscalationLinearRefused(t *testing.T) {
@@ -526,24 +475,8 @@ func TestTickDoesNotNotifyForAnEscalationLinearRefused(t *testing.T) {
 	d.Advance(5 * time.Minute)
 
 	require.ErrorContains(t, d.Run("tick").Err, "ENG-1 escalate failed")
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 	noLinearChanges(t, d)
-}
-
-func TestTickRetriesABlockedNotificationThatFailed(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Workers.Running("ENG-1", "blocked")
-	d.Alerts.Fail(errors.New("exit status 1"))
-
-	require.ErrorContains(t, d.Run("tick").Err, "ENG-1 notify failed")
-	assert.Empty(t, d.Alerts.Shown())
-
-	d.Alerts.Fail(nil)
-	d.Tick()
-
-	assert.Len(t, d.Alerts.Shown(), 1)
 }
 
 func TestTickTracksBlockedTicksPerTicket(t *testing.T) {
@@ -565,7 +498,7 @@ func TestTickTracksBlockedTicksPerTicket(t *testing.T) {
 	}
 
 	// ENG-1 at minutes 0 and 15, ENG-2 at minutes 5 and 20.
-	assert.Equal(t, []string{first, second, first, second}, d.Alerts.Shown())
+	assert.Equal(t, []string{first, second, first, second}, d.Followed.Told())
 }
 
 func TestTickNudgesAfterABlockedWorkerGoesIdle(t *testing.T) {
@@ -652,7 +585,7 @@ func TestTickNotifiesWhenAReviewWorkerIsBlockedOnAQuestion(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its workspace"}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its workspace"}, d.Followed.Told())
 }
 
 func TestTickNotifiesWhenAReviewTicketThatAlsoCarriesDesignIsBlocked(t *testing.T) {
@@ -663,7 +596,7 @@ func TestTickNotifiesWhenAReviewTicketThatAlsoCarriesDesignIsBlocked(t *testing.
 
 	d.Tick()
 
-	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its workspace"}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-1 is waiting on your answer in its workspace"}, d.Followed.Told())
 }
 
 func TestTickNotifiesWhenAReviewTicketEntersNeedsHuman(t *testing.T) {
@@ -678,7 +611,7 @@ func TestTickNotifiesWhenAReviewTicketEntersNeedsHuman(t *testing.T) {
 		d.Tick()
 	}
 
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())
 }
 
 func TestTickStartsFreshWhenAPausedTicketReturns(t *testing.T) {
@@ -743,7 +676,7 @@ func TestTickRenotifyIntervalIsTheConfiguredMinutes(t *testing.T) {
 			d.Advance(30 * time.Second)
 		}
 		d.Tick()
-		counts = append(counts, len(d.Alerts.Shown()))
+		counts = append(counts, len(d.Followed.Told()))
 	}
 
 	// A minute is two 30-second resyncs: the first notice, then one every minute.
@@ -786,7 +719,7 @@ func TestTickWorkerWithNoStopRecordIsNudgedAgainOnlyAtAResync(t *testing.T) {
 		d.Tick()
 
 		assert.Len(t, d.Workers.Prompts(), 1)
-		assert.Empty(t, d.Alerts.Shown())
+		assert.Empty(t, d.Followed.Told())
 	})
 
 	t.Run("ResyncPasses", func(t *testing.T) {
@@ -802,7 +735,7 @@ func TestTickWorkerWithNoStopRecordIsNudgedAgainOnlyAtAResync(t *testing.T) {
 		assert.Len(t, d.Workers.Prompts(), 2)
 		d.Advance(5 * time.Minute)
 		assert.Len(t, d.Workers.Prompts(), 3)
-		assert.Empty(t, d.Alerts.Shown())
+		assert.Empty(t, d.Followed.Told())
 	})
 }
 
@@ -813,7 +746,7 @@ func TestTickReadyNoticeAndMergeWaitWhileANudgedWorkerShowsAsWorking(t *testing.
 		settings string
 		done     func(d *Dispatch) int
 	}{
-		{name: "ReadyNotice", done: func(d *Dispatch) int { return len(d.Alerts.Shown()) }},
+		{name: "ReadyNotice", done: func(d *Dispatch) int { return len(d.Followed.Told()) }},
 		{name: "Merge", settings: autoMergeSetting, done: func(d *Dispatch) int { return len(d.GitHub.Merged()) }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -971,7 +904,7 @@ func TestTickNudgesAnIdleWorkerOnceForNewPRActivity(t *testing.T) {
 			test.add(&before)
 			d.GitHub.PullRequest("ENG-1", before)
 
-			notified := len(d.Alerts.Shown())
+			notified := len(d.Followed.Told())
 
 			d.Tick()
 
@@ -982,7 +915,7 @@ func TestTickNudgesAnIdleWorkerOnceForNewPRActivity(t *testing.T) {
 			d.Advance(time.Second)
 			d.Tick()
 			assert.Len(t, d.Workers.Prompts(), 1)
-			assert.Len(t, d.Alerts.Shown(), notified)
+			assert.Len(t, d.Followed.Told(), notified)
 		})
 	}
 }
@@ -1266,7 +1199,7 @@ func TestTickHoldsTheReadyNoticeWhileAThreadStaysOpenAfterItsNudge(t *testing.T)
 	t.Parallel()
 	before := cleanPR("a1")
 	d := watched(t, before)
-	notified := len(d.Alerts.Shown())
+	notified := len(d.Followed.Told())
 	before.threads = []activity{{"", time2, "alice", "", ""}}
 	d.GitHub.PullRequest("ENG-1", before)
 	d.Tick()
@@ -1276,7 +1209,7 @@ func TestTickHoldsTheReadyNoticeWhileAThreadStaysOpenAfterItsNudge(t *testing.T)
 		d.Advance(time.Second)
 		d.Tick()
 	}
-	assert.Len(t, d.Alerts.Shown(), notified)
+	assert.Len(t, d.Followed.Told(), notified)
 
 	// The reviewer resolves the thread and the worker pushes, so the new head is ready.
 	before.threads = nil
@@ -1285,7 +1218,7 @@ func TestTickHoldsTheReadyNoticeWhileAThreadStaysOpenAfterItsNudge(t *testing.T)
 	d.GitHub.PullRequest("ENG-1", before)
 	d.Advance(time.Second)
 	d.Tick()
-	assert.Len(t, d.Alerts.Shown(), notified+1)
+	assert.Len(t, d.Followed.Told(), notified+1)
 }
 
 func TestTickDoesNotAutoMergeWhileAThreadStaysOpenAfterItsNudge(t *testing.T) {
@@ -1430,7 +1363,7 @@ func TestTickIgnoresPRActivityByAListedAuthor(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			before := cleanPR("a1")
 			d := watched(t, before, ignoreSetting)
-			notified := d.Alerts.Shown()
+			notified := d.Followed.Told()
 			test.add(&before)
 			d.GitHub.PullRequest("ENG-1", before)
 
@@ -1438,7 +1371,7 @@ func TestTickIgnoresPRActivityByAListedAuthor(t *testing.T) {
 
 			assert.Empty(t, d.Workers.Prompts())
 			assert.Empty(t, d.Workers.Launched())
-			assert.Equal(t, notified, d.Alerts.Shown())
+			assert.Equal(t, notified, d.Followed.Told())
 		})
 	}
 }
@@ -1492,7 +1425,7 @@ func TestTickReadyIgnoresThreadsThatOnlyListedAuthorsTouched(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{"ENG-1 is ready for review: " + prURL1}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-1 is ready for review: " + prURL1}, d.Followed.Told())
 }
 
 func TestTickReadyWaitsOnAThreadWithAnyUnlistedComment(t *testing.T) {
@@ -1506,7 +1439,7 @@ func TestTickReadyWaitsOnAThreadWithAnyUnlistedComment(t *testing.T) {
 
 	d.Tick()
 
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 }
 
 func TestTickIgnoresAListedAuthorsApprovalAndChangeRequest(t *testing.T) {
@@ -1520,7 +1453,7 @@ func TestTickIgnoresAListedAuthorsApprovalAndChangeRequest(t *testing.T) {
 
 	// A listed author's approval is not an approval.
 	d.Tick()
-	assert.Equal(t, []string{"ENG-1 is ready for review: " + prURL1}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-1 is ready for review: " + prURL1}, d.Followed.Told())
 	assert.Empty(t, d.GitHub.Merged())
 
 	// Nor is its change request a veto on a person's approval.
@@ -1652,7 +1585,7 @@ func TestTickReadyIgnoresListedCommentsReviewsAndThreads(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{"ENG-1 is ready for review: " + prURL1}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-1 is ready for review: " + prURL1}, d.Followed.Told())
 }
 
 func TestTickReadsPastUnlistedReviewsThatAskForNothing(t *testing.T) {

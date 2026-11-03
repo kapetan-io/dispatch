@@ -154,7 +154,7 @@ func TestTickShowsAnIdleWorkerAsSoonAsItsTurnEnds(t *testing.T) {
 
 			assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1", "w-ENG-1|💤 ENG-1"}, d.Workers.Renames())
 			assert.Empty(t, d.Workers.Prompts())
-			assert.Empty(t, d.Alerts.Shown())
+			assert.Empty(t, d.Followed.Told())
 		})
 	}
 }
@@ -173,7 +173,7 @@ func TestTickShowsAnIdleBuildWorkerAsWaitingOnTheUserWithoutNudgingIt(t *testing
 
 	assert.Equal(t, []string{"w-ENG-1|💤 ENG-1"}, d.Workers.Renames())
 	assert.Empty(t, d.Workers.Prompts())
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 }
 
 func TestTickShowsGreenAgainWhenTheUserTypesIntoAnIdleWorker(t *testing.T) {
@@ -281,7 +281,7 @@ func TestTickShowsAnIdleStoppedInReviewWorkerAsWaitingOnTheUserWhenItsPRHasNothi
 
 			assert.Equal(t, []string{"w-ENG-1|💤 ENG-1"}, d.Workers.Renames())
 			assert.Empty(t, d.Workers.Prompts())
-			assert.Empty(t, d.Alerts.Shown())
+			assert.Empty(t, d.Followed.Told())
 		})
 	}
 }
@@ -433,7 +433,7 @@ func TestTickNeverNudgesAnIdleInReviewWorkerWhosePRNeedsNothingFromIt(t *testing
 	}
 
 	assert.Empty(t, d.Workers.Prompts())
-	assert.Empty(t, d.Alerts.Shown())
+	assert.Empty(t, d.Followed.Told())
 	noLinearChanges(t, d)
 }
 
@@ -1081,5 +1081,5 @@ func TestTickReadsOpenPRAsPerRepo(t *testing.T) {
 	d.Tick()
 
 	assert.ElementsMatch(t, []string{"w-ENG-1|⏳ ENG-1", "w-ENG-2|👀 ENG-2"}, d.Workers.Renames())
-	assert.Equal(t, []string{"ENG-2 is ready for review: " + prURL1}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-2 is ready for review: " + prURL1}, d.Followed.Told())
 }

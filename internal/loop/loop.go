@@ -24,7 +24,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/localticket"
-	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/typed"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -44,9 +43,8 @@ type Options struct {
 	// Typed is what dispatch typed into workers, which the loop compares with the commands the hooks report.
 	Typed *typed.Log
 	// HTTP is how a rule's then reaches the services config.toml names.
-	HTTP   httpservice.Services
-	Herdr  herdr.Herdr
-	Alerts notify.Alerts
+	HTTP  httpservice.Services
+	Herdr herdr.Herdr
 	// Usage reports the Linear calls made so far.
 	Usage func() linear.Stats
 	// Viewer names the Linear user whose tickets are tracked.
@@ -105,7 +103,9 @@ type Loop struct {
 	idle      uint64
 	wasBusy   bool
 	waiters   []*waiter
+	// threw is the rules whose throw reached stderr, and threwTold those whose throw reached followers.
 	threw     map[string]bool
+	threwTold map[string]bool
 
 	renaming map[string]string
 	renames  int
@@ -128,10 +128,10 @@ type Loop struct {
 	tells       int
 	// log lists the actions that ended, in order, so a tick reports only its own.
 	ended []logged
-	// overflowAlerted is true while Linear has more tickets than one page and the user knows.
-	overflowAlerted bool
-	// alerts counts the alerts being shown off the loop.
-	alerts int
+	// overflowTold is true while Linear has more tickets than one page and the followers know.
+	overflowTold bool
+	// telling counts the messages to followers being delivered off the loop.
+	telling int
 	// endedBefore counts the actions dropped from ended, so a tick's seen stays a position in the whole run.
 	endedBefore int
 }
@@ -162,15 +162,15 @@ type actionDone struct {
 
 type renameDone struct{}
 
-// alertDone reports an alert that finished. The overflow one is shown again after a failure,
-// because the user still has not heard.
-type alertDone struct {
-	overflow bool
-	err      error
+// toldDone reports a message to the followers that finished. again runs when no session took
+// it, so the message is said once a session is there to hear it.
+type toldDone struct {
+	reached int
+	again   func()
 }
 
-// alertDeadline bounds one alert, because osascript can stall and the loop must not wait on it.
-const alertDeadline = 10 * time.Second
+// tellDeadline bounds one message to the followers, because a stalled session must not hold the loop.
+const tellDeadline = 10 * time.Second
 
 type request struct {
 	Request
@@ -188,7 +188,7 @@ func New(o Options) *Loop {
 	}
 	return &Loop{
 		o: o, clock: o.Clock, scope: world.ScopeOf(o.Config),
-		inbox: make(chan any, 256), stopped: make(chan struct{}), flights: map[string]*flight{}, launching: map[string]bool{}, threw: map[string]bool{},
+		inbox: make(chan any, 256), stopped: make(chan struct{}), flights: map[string]*flight{}, launching: map[string]bool{}, threw: map[string]bool{}, threwTold: map[string]bool{},
 		renaming: map[string]string{},
 	}
 }
@@ -291,10 +291,10 @@ func (l *Loop) wakeIfLate() error {
 
 func (l *Loop) fatal(err error) {
 	_, _ = fmt.Fprintf(l.o.Err, "%s dispatch: stopping: %v\n", l.clock.Now().Format(time.TimeOnly), err)
-	if l.o.Alerts != nil {
-		ctx, cancel := clock.WithTimeout(context.Background(), l.clock, "alert", alertDeadline)
+	if l.o.Executor != nil {
+		ctx, cancel := clock.WithTimeout(context.Background(), l.clock, "tell followers", tellDeadline)
 		defer cancel()
-		_ = l.o.Alerts.Show(ctx, "dispatch stopped: "+err.Error())
+		l.o.Executor.TellAll(ctx, "dispatch stopped: "+err.Error())
 	}
 }
 
@@ -365,7 +365,7 @@ func (l *Loop) start(ctx context.Context) error {
 		return err
 	}
 	l.wd = wd
-	l.alertOverflow(readDone{parts: world.Everything, w: wd})
+	l.tellOverflow(readDone{parts: world.Everything, w: wd})
 	_, _ = fmt.Fprintf(l.o.Out, "%s start: %s, %s, ledger %s from %s\n", at.Format(time.TimeOnly), count(len(l.wd.Tickets), "tracked ticket"),
 		count(len(l.o.Rules.Defs()), "rule"), count(len(l.led.Entries), "receipt"), loaded)
 	if err := l.cycle("start"); err != nil {
@@ -424,10 +424,10 @@ func (l *Loop) handle(m any) error {
 		l.renames--
 		l.renameWorkspaces()
 		return nil
-	case alertDone:
-		l.alerts--
-		if m.overflow && m.err != nil {
-			l.overflowAlerted = false
+	case toldDone:
+		l.telling--
+		if m.reached == 0 && m.again != nil {
+			m.again()
 		}
 		return nil
 	case request:
@@ -601,7 +601,7 @@ func (l *Loop) onRead(m readDone) error {
 	if freed && m.parts&world.FromGitHub == 0 {
 		l.readAgain(world.FromGitHub)
 	}
-	l.alertOverflow(m)
+	l.tellOverflow(m)
 	callbacks := l.afterRead
 	l.afterRead = nil
 	l.cycleDue = true
@@ -634,7 +634,7 @@ func (l *Loop) settle() error {
 
 // busy is true while anything is queued, pending or in flight.
 func (l *Loop) busy() bool {
-	return len(l.inbox) > 0 || l.reading || l.pending != 0 || l.cycleDue || len(l.flights) > 0 || l.renames > 0 || l.alerts > 0
+	return len(l.inbox) > 0 || l.reading || l.pending != 0 || l.cycleDue || len(l.flights) > 0 || l.renames > 0 || l.telling > 0
 }
 
 // cycle runs every rule over the world and the ledger, writes what changed, and
@@ -685,7 +685,7 @@ func (l *Loop) cycle(why string) error {
 		}
 		l.lastCycle = &entry
 	}
-	l.alertThrows(res)
+	l.tellThrows(res)
 	return l.act(res)
 }
 
@@ -715,8 +715,6 @@ func (l *Loop) writeRead(now int64, reserved []string) error {
 	return nil
 }
 
-// alertOverflow tells the user once per stretch of reads that Linear has more tickets than
-// one page, because every ticket is unknown then and dispatch does nothing.
 // workersGoneIdle is true when a worker that was working, blocked or not yet seen is idle or
 // gone in the new read, for a ticket whose PR is read in that state.
 func (l *Loop) workersGoneIdle(old, now world.World) bool {
@@ -734,50 +732,57 @@ func (l *Loop) workersGoneIdle(old, now world.World) bool {
 	return false
 }
 
-func (l *Loop) alertOverflow(m readDone) {
+// tellOverflow tells the followers once per stretch of reads that Linear has more tickets than
+// one page, because every ticket is unknown then and dispatch does nothing.
+func (l *Loop) tellOverflow(m readDone) {
 	switch {
 	case errors.Is(m.w.LinearErr, linear.ErrOverflow):
-		if l.overflowAlerted {
+		if l.overflowTold {
 			return
 		}
-		l.overflowAlerted = true
-		l.alert("dispatch: "+m.w.LinearErr.Error(), true)
+		l.overflowTold = l.tellFollowers("dispatch: "+m.w.LinearErr.Error(), func() { l.overflowTold = false })
 	case m.w.LinearErr == nil && m.parts&world.FromLinear != 0:
-		l.overflowAlerted = false
+		l.overflowTold = false
 	}
 }
 
-func (l *Loop) alertThrows(res rules.Result) {
+func (l *Loop) tellThrows(res rules.Result) {
 	for _, t := range res.Throws {
-		if l.threw[t.Rule] {
+		if l.threwTold[t.Rule] {
 			continue
 		}
-		l.threw[t.Rule] = true
 		how := "threw"
 		if t.Timeout {
 			how = "ran out of time"
 		}
 		text := fmt.Sprintf("rule %s %s in its %s for %s: %s", t.Rule, how, t.Phase, t.Subject, t.Error)
-		_, _ = fmt.Fprintf(l.o.Err, "%s dispatch: %s\n", l.clock.Now().Format(time.TimeOnly), text)
-		l.alert("dispatch: "+text, false)
+		if !l.threw[t.Rule] {
+			l.threw[t.Rule] = true
+			_, _ = fmt.Fprintf(l.o.Err, "%s dispatch: %s\n", l.clock.Now().Format(time.TimeOnly), text)
+		}
+		l.threwTold[t.Rule] = l.tellFollowers("dispatch: "+text, func() { delete(l.threwTold, t.Rule) })
 	}
 }
 
-// alert shows text off the loop under a deadline.
-func (l *Loop) alert(text string, overflow bool) {
-	if l.o.Alerts == nil {
-		return
+// tellFollowers sends text to every session following a ticket, off the loop under a deadline.
+// It reports false when no session follows. again runs when sessions followed but none took the
+// message. Either way the caller says it again once a session can hear it, because followers
+// start empty at every restart and a message nobody received has reached nobody.
+func (l *Loop) tellFollowers(text string, again func()) bool {
+	if l.o.Executor == nil || len(l.o.Executor.Followers.Sessions()) == 0 {
+		return false
 	}
-	l.alerts++
+	l.telling++
 	go func() {
-		ctx, cancel := clock.WithTimeout(l.runCtx, l.clock, "alert", alertDeadline)
+		ctx, cancel := clock.WithTimeout(l.runCtx, l.clock, "tell followers", tellDeadline)
 		defer cancel()
-		err := l.o.Alerts.Show(ctx, text)
+		reached := l.o.Executor.TellAll(ctx, text)
 		select {
-		case l.inbox <- alertDone{overflow: overflow, err: err}:
+		case l.inbox <- toldDone{reached: reached, again: again}:
 		case <-l.stopped:
 		}
 	}()
+	return true
 }
 
 // act starts each wanted action the ledger doesn't cover and nothing is already doing.

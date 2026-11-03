@@ -130,14 +130,14 @@ func runCommand(ctx context.Context, opts Options) error {
 		Config: cfg, Systems: executor.Systems{Linear: linear.System{
 			Workspace: func() linear.Workspace { return lin }, AILabel: cfg.Plugins.Linear.AILabel, Teams: cfg.Plugins.Linear.Teams, Statuses: cfg.Plugins.Linear.Statuses.Table(),
 		}}, Herdr: opts.Herdr, Treehouse: opts.Treehouse,
-		PullRequests: opts.PullRequests, Launcher: launcherFor(opts, cfg.Plugins.Herdr.PluginRoot, nil, sent), Harnesses: opts.Harnesses, Alerts: opts.Alerts,
+		PullRequests: opts.PullRequests, Launcher: launcherFor(opts, cfg.Plugins.Herdr.PluginRoot, nil, sent), Harnesses: opts.Harnesses, Followers: opts.Followers,
 		Environment: opts.Env, StateDir: opts.StateDir, Stderr: opts.Stderr, LaunchDeadline: opts.LaunchTimeout, Deadline: opts.ActionTimeout,
 		HTTP: services, Typed: sent, Clock: opts.Clock,
 	})
 	return loop.New(loop.Options{
 		Config: cfg, ConfigText: string(text), StateDir: opts.StateDir, Rules: loaded, Clock: opts.Clock,
 		Sources:  sources(opts, cfg, lin, loaded),
-		Executor: exec, Typed: sent, HTTP: services, Herdr: opts.Herdr, Alerts: opts.Alerts, Usage: lin.Usage,
+		Executor: exec, Typed: sent, HTTP: services, Herdr: opts.Herdr, Usage: lin.Usage,
 		Viewer: viewer.Name, Out: opts.Stdout, Err: opts.Stderr, Local: local,
 	}).Run(ctx)
 }

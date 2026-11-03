@@ -233,7 +233,7 @@ var pluginDocs = map[string]string{
 	"worker": "Reads of workers and the actions that start, nudge and close them.",
 	"tree":   "Reads of the treehouse pools and the action that returns a tree.",
 	"pr":     "Reads of pull requests and the action that merges one.",
-	"notify": "Notifications to you and to followers.",
+	"notify": "Notifications to the sessions following a ticket.",
 	"http":   "Calls to the services named in [http.<name>].",
 }
 

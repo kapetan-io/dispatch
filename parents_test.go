@@ -481,7 +481,7 @@ func TestTickNotifiesOnceWhenAParentEntersNeedsHuman(t *testing.T) {
 	d.Tick()
 	d.Tick()
 
-	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Alerts.Shown())
+	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())
 	// Surface exception: the child-list reads are Linear traffic that no command prints.
 	assert.Empty(t, d.childReads())
 }
@@ -712,7 +712,7 @@ func TestTickPromotesAChildWithNoRepoLabelAndEscalatesItOnceLinearShowsItInProgr
 
 	d.Tick()
 
-	// The promotion holds its slot until Linear shows the child In Progress, then the user hears why it can't start.
+	// The promotion holds its slot until Linear shows the child In Progress, then followers hear why it can't start.
 	assert.Equal(t, []string{"ENG-2 -> In Progress", "ENG-2 -> Needs Human"}, d.Linear.Moves())
 	require.Len(t, d.Linear.Comments(), 1)
 	assert.Contains(t, d.Linear.Comments()[0], "it has no repo label")

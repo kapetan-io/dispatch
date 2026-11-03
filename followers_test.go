@@ -1,7 +1,6 @@
 package dispatch_test
 
 import (
-	"errors"
 	"net"
 	"path/filepath"
 	"strings"
@@ -67,7 +66,7 @@ func TestFollowersAreForgottenWhenDispatchRestarts(t *testing.T) {
 	d.Tick()
 
 	assert.Empty(t, lines)
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 }
 
 func TestWatchFailsOutsideAClaudeSession(t *testing.T) {
@@ -120,7 +119,7 @@ func TestTickMessagesFollowersAboutAReadyPR(t *testing.T) {
 	assert.Contains(t, got, "dispatch event (PR ready for review): ENG-1 is ready for review")
 	assert.Contains(t, got, prURL1)
 	assert.Contains(t, got, "https://linear.app/team/issue/ENG-1")
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 
 	// The next tick has nothing new to say.
 	d.Tick()
@@ -190,7 +189,7 @@ func TestTickDropsAFollowerWhoseSessionExited(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 	assert.Contains(t, d.LoopStderr(), "dropped watcher socket "+dead)
 	assert.Contains(t, next(t, lines), "ENG-1 is ready for review")
 }
@@ -210,7 +209,7 @@ func TestTickDropsAFollowerWhoseSocketFileIsGone(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 	assert.Contains(t, d.LoopStderr(), "dropped watcher socket "+missing)
 	assert.Contains(t, next(t, lines), "ENG-1 is ready for review")
 
@@ -219,31 +218,6 @@ func TestTickDropsAFollowerWhoseSocketFileIsGone(t *testing.T) {
 	d.GitHub.PullRequest("ENG-1", cleanPR("b1"))
 	d.Tick()
 	assert.Equal(t, 1, strings.Count(d.LoopStderr(), "dropped watcher socket "+missing))
-}
-
-func TestTickMessagesNoFollowerWhileTheAlertKeepsFailing(t *testing.T) {
-	t.Parallel()
-	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
-	d.StartBeforeTheEvents()
-	d.Workers.Running("ENG-1", "working")
-	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
-	require.NoError(t, d.Run("watch", "ENG-1").Err)
-	d.Alerts.Fail(errors.New("exit status 1: denied"))
-
-	for range 3 {
-		res := d.Run("tick")
-		require.ErrorContains(t, res.Err, "ENG-1 notify failed")
-		assert.ErrorContains(t, res.Err, "denied")
-	}
-
-	assert.Empty(t, lines)
-	assert.Empty(t, d.Alerts.Shown())
-
-	d.Alerts.Fail(nil)
-	d.Tick()
-
-	assert.Contains(t, next(t, lines), "ENG-1 is in Needs Human")
 }
 
 func TestTickMessagesEveryFollowerOfATicket(t *testing.T) {
@@ -281,7 +255,7 @@ func TestTickMessagesFollowersAboutAMerge(t *testing.T) {
 	got := next(t, lines)
 	assert.Contains(t, got, mergedText1)
 	assert.Contains(t, got, "https://linear.app/team/issue/ENG-1")
-	assert.Equal(t, []string{mergedText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{mergedText1}, d.Followed.Told())
 }
 
 func TestTickMessagesFollowersAboutAnEscalation(t *testing.T) {
@@ -305,43 +279,7 @@ func TestTickMessagesFollowersAboutAnEscalation(t *testing.T) {
 	got := next(t, lines)
 	assert.Contains(t, got, "ENG-1 is in Needs Human")
 	assert.Contains(t, got, "https://linear.app/team/issue/ENG-1")
-	assert.Len(t, d.Alerts.Shown(), 1)
-}
-
-func TestTickTellsFollowersAboutAMergeWhenTheAlertFails(t *testing.T) {
-	t.Parallel()
-	for _, test := range []struct {
-		name  string
-		fails bool
-		want  string
-	}{
-		{name: "Merged", want: "ENG-1 was approved and merged"},
-		{name: "MergeFailed", fails: true, want: "merging"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			socket, lines := sessionSocket(t)
-			d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting, Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
-			d.StartBeforeTheEvents()
-			d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
-			d.Workers.Running("ENG-1", "idle")
-			d.GitHub.PullRequest("ENG-1", approvedPR("a1"))
-			require.NoError(t, d.Run("watch", "ENG-1").Err)
-			d.Alerts.Fail(errors.New("exit status 1"))
-			if test.fails {
-				d.GitHub.FailMerge(errors.New("while running gh pr merge " + prURL1 + ": exit status 1: " + mergeRefused))
-			}
-
-			res := d.Run("tick")
-			if test.fails {
-				require.ErrorContains(t, res.Err, "merge refused")
-			} else {
-				require.NoError(t, res.Err)
-			}
-
-			// No later tick sends it again, so this tick's message is the only one.
-			assert.Contains(t, next(t, lines), test.want)
-		})
-	}
+	assert.Len(t, d.Followed.Told(), 1)
 }
 
 func TestWatchRefusesAMissingTicket(t *testing.T) {
@@ -383,7 +321,7 @@ func TestTickMessagesOnlyTheSessionFollowingTheTicket(t *testing.T) {
 	assert.Contains(t, next(t, lines2), "ENG-2 is ready for review")
 	assert.Empty(t, lines1)
 	assert.Empty(t, lines2)
-	assert.Len(t, d.Alerts.Shown(), 2)
+	assert.Len(t, d.Followed.Told(), 2)
 }
 
 func TestTickMessagesASessionFollowingSeveralTickets(t *testing.T) {
@@ -405,21 +343,6 @@ func TestTickMessagesASessionFollowingSeveralTickets(t *testing.T) {
 	got := next(t, lines) + next(t, lines)
 	assert.Contains(t, got, "ENG-1 is ready for review")
 	assert.Contains(t, got, "ENG-2 is ready for review")
-}
-
-func TestTickRaisesTheAlertForATicketNobodyFollows(t *testing.T) {
-	t.Parallel()
-	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
-	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
-	d.Workers.Running("ENG-1", "idle")
-	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
-	require.NoError(t, d.Run("watch", "ENG-2").Err)
-
-	d.Tick()
-
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
-	assert.Empty(t, lines)
 }
 
 func TestUnwatchStopsMessagesForThatTicketOnly(t *testing.T) {
@@ -504,7 +427,7 @@ func TestUnwatchAcceptsALowercaseTicket(t *testing.T) {
 	require.NoError(t, d.Run("unwatch", "eng-1").Err)
 	d.Tick()
 
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
+	assert.Equal(t, []string{readyText1}, d.Followed.Told())
 	assert.Empty(t, lines)
 }
 
@@ -532,38 +455,6 @@ func TestSubscribeIsGone(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/cc-socks/42.sock"}})
 
 	require.Error(t, d.Run("subscribe").Err)
-}
-
-func TestTickKeepsAReadyNoticeFromFollowersWhenTheAlertFailsAndRunsItAgain(t *testing.T) {
-	t.Parallel()
-	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
-	d.StartBeforeTheEvents()
-	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
-	d.Workers.Running("ENG-1", "idle")
-	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
-	require.NoError(t, d.Run("watch", "ENG-1").Err)
-	d.Alerts.Fail(errors.New("exit status 1"))
-
-	// A notice that did not reach the alert has not reached a follower either.
-	require.ErrorContains(t, d.Run("tick").Err, "ENG-1 notify failed")
-	assert.Empty(t, d.Alerts.Shown())
-	assert.Empty(t, lines)
-	assert.Equal(t, []string{"attempted", "failed"}, states(d.attemptsOf("ENG-1", "notify")))
-
-	// The next tick runs it again, and the followers hear it once the alert shows.
-	d.Alerts.Fail(nil)
-	d.Advance(time.Second)
-	d.Tick()
-
-	assert.Contains(t, next(t, lines), "ENG-1 is ready for review")
-	assert.Equal(t, []string{readyText1}, d.Alerts.Shown())
-	assert.Equal(t, []string{"attempted", "failed", "attempted", "done"}, states(d.attemptsOf("ENG-1", "notify")))
-
-	d.Advance(time.Second)
-	d.Tick()
-	assert.Empty(t, lines)
-	assert.Len(t, d.attemptsOf("ENG-1", "notify"), 4)
 }
 
 func TestTickMessagesFollowersWithTheReasonARulePasses(t *testing.T) {
@@ -686,4 +577,82 @@ func TestUnwatchStopsMessagesToAFollowerOfAnotherHarness(t *testing.T) {
 	d.Tick()
 
 	assert.Empty(t, d.Tools().Harness.Delivered(inbox))
+}
+
+func TestTickTellsEachFollowingSessionOnceAboutARuleThatThrew(t *testing.T) {
+	t.Parallel()
+	socket1, lines1 := sessionSocket(t)
+	socket2, lines2 := sessionSocket(t)
+	d := newDispatch(t, dispatchOptions{Rules: rule(`
+whenever({ name: "throws", each: "ticket", if: () => true, then: () => { throw new Error("boom"); } });`)})
+	d.StartBeforeTheEvents()
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
+	d.Session(socket1)
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+	require.NoError(t, d.Run("watch", "ENG-2").Err)
+	d.Session(socket2)
+	require.NoError(t, d.Run("watch", "ENG-2").Err)
+
+	d.Tick()
+	d.Tick()
+
+	// Session 1 follows two tickets and the rule threw for both, yet it hears once.
+	assert.Contains(t, next(t, lines1), "rule throws threw in its then")
+	assert.Contains(t, next(t, lines2), "rule throws threw in its then")
+	assert.Empty(t, lines1)
+	assert.Empty(t, lines2)
+}
+
+func TestTickSendsNothingToASessionThatDoesNotFollowTheTicket(t *testing.T) {
+	t.Parallel()
+	socket, lines := sessionSocket(t)
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d.StartBeforeTheEvents()
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "Needs Human", "dispatch"))
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+
+	d.Tick()
+
+	assert.Contains(t, d.Followed.Told(), "ENG-2 is in Needs Human: ticket ENG-2")
+	assert.Empty(t, lines)
+}
+
+func TestTickTellsASessionThatFollowsAfterARuleThrewOnce(t *testing.T) {
+	t.Parallel()
+	socket, lines := sessionSocket(t)
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}, Rules: rule(`
+whenever({ name: "throws", each: "dispatch", if: () => true, then: () => { throw new Error("boom"); } });`)})
+	d.StartBeforeTheEvents()
+	d.Tick()
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+
+	d.Tick()
+	d.Tick()
+
+	assert.Contains(t, next(t, lines), "rule throws threw in its then")
+	assert.Empty(t, lines)
+	assert.Equal(t, 1, strings.Count(d.LoopStderr(), "rule throws threw in its then"))
+}
+
+func TestTickTellsAgainWhenTheOnlyFollowerWasGone(t *testing.T) {
+	t.Parallel()
+	live, lines := sessionSocket(t)
+	d := newDispatch(t, dispatchOptions{Rules: rule(`
+whenever({ name: "throws", each: "dispatch", if: () => true, then: () => { throw new Error("boom"); } });`)})
+	d.StartBeforeTheEvents()
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Followed.Leave()
+	d.Session(deadSocket(t, live))
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+
+	// The only follower is dead, so nobody heard the message.
+	d.Tick()
+	assert.Contains(t, d.LoopStderr(), "dropped watcher socket")
+
+	d.Session(live)
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+	d.Tick()
+
+	assert.Contains(t, next(t, lines), "rule throws threw in its then")
 }

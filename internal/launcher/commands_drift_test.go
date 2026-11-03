@@ -25,7 +25,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/journal"
 	"github.com/kapetan-io/dispatch/internal/lineartest"
 	"github.com/kapetan-io/dispatch/internal/loop"
-	"github.com/kapetan-io/dispatch/internal/notifytest"
 	"github.com/kapetan-io/dispatch/internal/pullrequesttest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
@@ -141,7 +140,7 @@ func realClaudeTakesDispatchsCommands(t *testing.T, app bool) {
 	go func() {
 		done <- dispatch.Run(ctx, []string{"run"}, dispatch.Options{
 			ConfigPath: config, StateDir: state, Herdr: cli, LinearKey: lineartest.Key,
-			Linear: lineartest.New(nil).Connect, PullRequests: pullrequesttest.New(calls), Alerts: notifytest.New(calls), Stdout: os.Stderr, Stderr: os.Stderr,
+			Linear: lineartest.New(nil).Connect, PullRequests: pullrequesttest.New(calls), Stdout: os.Stderr, Stderr: os.Stderr,
 		})
 	}()
 	t.Cleanup(func() {

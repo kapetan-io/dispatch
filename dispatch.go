@@ -74,11 +74,11 @@ type Options struct {
 	// HTTP reaches the services config.toml names under [http.<name>]. Defaults to
 	// calling them over HTTP with the token each token_command prints.
 	HTTP httpservice.Services
-	// Alerts shows notifications. Defaults to macOS notifications through osascript on macOS and herdr notifications elsewhere.
-	Alerts notify.Alerts
 	// Harnesses are the programs workers can run, by the kind a [harness.<name>] table
 	// names. Defaults to Claude Code.
 	Harnesses harness.Registry
+	// Followers is the sessions following each ticket. Defaults to none, and `dispatch watch` adds to it.
+	Followers *notify.Followers
 	// Launcher starts the workers. Defaults to leasing a tree from Treehouse and
 	// starting the worker in Herdr.
 	Launcher launcher.Launcher
@@ -297,9 +297,6 @@ func withDefaults(o Options) Options {
 	}
 	if o.Inbox == nil {
 		o.Inbox = inbox.NewCLI("gh", inbox.WithEnv(o.Env))
-	}
-	if o.Alerts == nil {
-		o.Alerts = notify.NewAlerts(runtime.GOOS, o.Env)
 	}
 	if o.Clock == nil {
 		o.Clock = clock.Wall{}
