@@ -162,7 +162,7 @@ func (r *Rex) command(w Worker, exe string) []string {
 }
 
 func (r *Rex) Prompt(ctx context.Context, pane, text string) error {
-	_, err := r.submit(ctx, pane, text)
+	_, err := r.submit(ctx, pane, text, "")
 	return err
 }
 
@@ -170,8 +170,9 @@ func (r *Rex) Prompt(ctx context.Context, pane, text string) error {
 // and after typing says idle, done or working. A worker showing a question is refused before
 // anything is typed, and a status that moved clears the box with Ctrl-U and returns
 // status_mismatch, because Escape at a question would cancel it. It returns when the worker last
-// reported before the text went in.
-func (r *Rex) submit(ctx context.Context, pane, text string) (uint64, error) {
+// reported before the text went in. A non-empty want is the status the caller read before, and
+// any other read is a status_mismatch, as herdr answers when the status moved under a send.
+func (r *Rex) submit(ctx context.Context, pane, text, want string) (uint64, error) {
 	session, block, _ := splitRexPane(pane)
 	agent, at, found, err := r.observe(ctx, pane)
 	if err != nil {
@@ -186,12 +187,15 @@ func (r *Rex) submit(ctx context.Context, pane, text string) (uint64, error) {
 	case "blocked":
 		return 0, &Refusal{Code: "agent_blocked", Message: "block " + pane + " is blocked and requires interactive input", Command: "rex:prompt"}
 	}
+	if want != "" && agent.Status != want {
+		return 0, &Refusal{Code: "status_mismatch", Message: "the status of block " + pane + " is not " + want, Command: "rex:prompt"}
+	}
 	if err := r.blockCall(ctx, session, block, "write", map[string]any{"data": text}, nil); err != nil {
 		r.clear(ctx, session, block, text)
 		return 0, err
 	}
 	after, _, found, err := r.observe(ctx, pane)
-	if err != nil || !found || !slices.Contains([]string{"idle", "done", "working"}, after.Status) {
+	if err != nil || !found || !slices.Contains([]string{"idle", "done", "working"}, after.Status) || (want != "" && after.Status != want) {
 		r.clear(ctx, session, block, text)
 		return 0, &Refusal{Code: "status_mismatch", Message: "the status of block " + pane + " moved while the text was typed", Command: "rex:prompt"}
 	}
@@ -285,8 +289,8 @@ func (k rexKickoff) press(ctx context.Context, keys []string) {
 	_ = k.r.blockCall(ctx, k.session, k.block, "write", map[string]any{"data": data.String()}, nil)
 }
 
-func (k rexKickoff) send(ctx context.Context, text, _ string) (sent, error) {
-	at, err := k.r.submit(ctx, k.pane, text)
+func (k rexKickoff) send(ctx context.Context, text, status string) (sent, error) {
+	at, err := k.r.submit(ctx, k.pane, text, status)
 	var refusal *Refusal
 	if errors.As(err, &refusal) && refusal.Code == "status_mismatch" {
 		return sent{Outcome: sendNotStarted}, nil

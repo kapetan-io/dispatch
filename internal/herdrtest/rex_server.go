@@ -129,13 +129,13 @@ func (s *RexServer) Rex(stateDir string) *herdr.Rex {
 	return herdr.NewRex(stateDir).WithSocket(s.Socket).WithEnv(s.Env)
 }
 
-// CleanEnv is the process's environment without the Herdr and Claude variables a scratch server
-// must not hand its blocks.
+// CleanEnv is the process's environment without the Herdr, Rex and Claude variables a scratch
+// server must not hand its blocks, so a run does not depend on the terminal that launched it.
 func CleanEnv() environment.Environment {
 	var kept environment.Environment
 	for _, kv := range environment.Process() {
 		name, _, _ := strings.Cut(kv, "=")
-		if !strings.HasPrefix(name, "HC_") && !strings.HasPrefix(name, "HERDR_") && !strings.HasPrefix(name, "CLAUDE_CODE_") && !slices.Contains([]string{"CLAUDECODE", "CLAUDE_EFFORT", "CLAUDE_PID"}, name) {
+		if !strings.HasPrefix(name, "HC_") && !strings.HasPrefix(name, "HERDR_") && !strings.HasPrefix(name, "REX_") && !strings.HasPrefix(name, "CLAUDE_CODE_") && !slices.Contains([]string{"CLAUDECODE", "CLAUDE_EFFORT", "CLAUDE_PID"}, name) {
 			kept = append(kept, kv)
 		}
 	}

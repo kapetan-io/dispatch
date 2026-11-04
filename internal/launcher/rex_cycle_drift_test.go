@@ -156,7 +156,7 @@ func TestRexRunReportsAStoppedRexAndLaunchesNothing(t *testing.T) {
 	c.tick(t)
 
 	var out bytes.Buffer
-	err := dispatch.Run(c.ctx, []string{"explain", "ENG-1"}, dispatch.Options{ConfigPath: c.config, StateDir: c.state, Stdout: &out})
+	err := dispatch.Run(c.ctx, []string{"explain", "ENG-1"}, dispatch.Options{ConfigPath: c.config, StateDir: c.state, RexSocket: c.server.Socket, Stdout: &out})
 
 	require.NoError(t, err)
 	assert.Contains(t, out.String(), "launch-worker")
