@@ -172,6 +172,9 @@
         "rex": {
           "additionalProperties": false,
           "properties": {
+            "delete_empty_sessions": {
+              "type": "boolean"
+            },
             "plugin_root": {
               "type": "string"
             }

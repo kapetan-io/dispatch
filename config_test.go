@@ -975,6 +975,25 @@ func TestConfigRunsWorkersInRexWhenThePluginsRexTableIsWritten(t *testing.T) {
 	}
 }
 
+func TestConfigDeletesEmptyRexSessionsOnlyWhenAsked(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, body string
+		want       bool
+	}{
+		{"Unset", "[plugins.rex]\n", false},
+		{"True", "[plugins.rex]\ndelete_empty_sessions = true\n", true},
+		{"False", "[plugins.rex]\ndelete_empty_sessions = false\n", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg, err := loadExample(t, test.body)
+
+			require.NoError(t, err)
+			assert.Equal(t, test.want, cfg.Plugins.Rex.DeleteEmptySessions)
+		})
+	}
+}
+
 func TestConfigRejectsRexAndHerdrTogether(t *testing.T) {
 	t.Parallel()
 
