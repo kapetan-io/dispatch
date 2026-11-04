@@ -68,13 +68,14 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 		if rootErr != nil && opts.Launcher == nil {
 			res = launcher.Result{Status: launcher.StatusUsageError, Detail: rootErr.Error()}
 		} else {
-			host, err := launchHost(opts)
+			host, rex, err := launchHost(opts)
 			if err != nil {
 				res = launcher.Result{Status: launcher.StatusUsageError, Detail: err.Error()}
 				break
 			}
 			// A launch run by hand shows its progress. Launches the loop starts stay quiet.
 			opts.Herdr = herdrFor(opts, host, opts.Stderr)
+			withRexSettings(opts.Herdr, rex)
 			res = launcherFor(opts, root, opts.Stderr, loop.Typing(opts.StateDir)).Launch(ctx, req)
 		}
 	}
@@ -89,17 +90,18 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 	return nil
 }
 
-// launchHost is the host the config names. A launch needs no config of its own, so a missing
-// file means the default host, but a file that doesn't load is the user's to fix.
-func launchHost(opts Options) (string, error) {
+// launchHost is the host the config names, with the [plugins.rex] table for a close the launch makes
+// on a failed kickoff or a give-back. A launch needs no config of its own, so a missing file means
+// the default host, but a file that doesn't load is the user's to fix.
+func launchHost(opts Options) (string, config.Rex, error) {
 	cfg, err := loadConfig(opts)
 	if errors.Is(err, fs.ErrNotExist) {
-		return config.HostTUI, nil
+		return config.HostTUI, config.Rex{}, nil
 	}
 	if err != nil {
-		return "", err
+		return "", config.Rex{}, err
 	}
-	return cfg.Plugins.Host(), nil
+	return cfg.Plugins.Host(), cfg.Plugins.Rex, nil
 }
 
 // launchProgram is what herdr runs for a launch by hand: the harness table ref, spelled

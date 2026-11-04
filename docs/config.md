@@ -171,13 +171,15 @@ Writing the table, even empty, runs your workers in Rex instead of herdr. It can
 ```toml
 [plugins.rex]
 plugin_root = "~/Development/dispatch"
+delete_empty_sessions = false
 ```
 
 | Setting | Default | What it does |
 |---|---|---|
 | `plugin_root` | `~/Development/dispatch` | Your checkout of this repo, used as `[plugins.herdr]`'s `plugin_root` is. |
+| `delete_empty_sessions` | `false` | When a worker's close leaves its repo session with no tab or block at all, delete the session. Off, the emptied session stays. A session that still holds a block of yours or another worker's, including one outside every window, is never deleted, and neither is one this close removed nothing from. Leave it off if your Rex server runs with `--exit-empty` and you don't keep the Rex app open: deleting the last session stops that server, and dispatch never starts it again. |
 
-Rex has to be open. Dispatch never starts it, and a command that needs it exits saying "Rex is not running". It finds `rex` on PATH, then in `/Applications/Rex Beta.app`. Each repo gets a Rex session named for the folder of its main checkout, and each worker is a block in a window of that session. A close ends the worker and leaves the session.
+Rex has to be open. Dispatch never starts it, and a command that needs it exits saying "Rex is not running". It finds `rex` on PATH, then in `/Applications/Rex Beta.app`. Each repo gets a Rex session named for the folder of its main checkout, and each worker is a block in a window of that session. A close ends the worker and, unless `delete_empty_sessions` is on, leaves the session.
 
 ## `[plugins.local]`
 

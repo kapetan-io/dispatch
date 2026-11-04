@@ -134,7 +134,7 @@ The host's record of whose worker a terminal is. Under the app host it is `dispa
 _Avoid_: tag, metadata
 
 **Repo session**:
-The Rex session dispatch runs a repo's workers in, labeled with the folder name of the repo's main checkout. A launch creates it when no session has that label, and a close always leaves it.
+The Rex session dispatch runs a repo's workers in, labeled with the folder name of the repo's main checkout. A launch creates it when no session has that label. A close leaves it, unless `[plugins.rex] delete_empty_sessions` is on and the close removed a worker and left nothing else in it (no block of the user's or another worker's, and none outside every window), which deletes it.
 _Avoid_: workspace, project, Rex session (any session, the user's included). Elsewhere session means one harness run inside a worker, so say repo session in full for the Rex object.
 
 **Structure lock**:

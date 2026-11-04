@@ -67,7 +67,7 @@ func (r *Rex) StartWorker(ctx context.Context, w Worker) (Started, error) {
 			return err
 		}
 		for _, b := range stale {
-			if err := r.closeBlock(ctx, b.session, b.block); err != nil {
+			if _, err := r.closeBlock(ctx, b.session, b.block); err != nil {
 				r.record("stale-close-failed", err.Error())
 			}
 		}
