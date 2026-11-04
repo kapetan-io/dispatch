@@ -39,7 +39,7 @@ import (
 // login fails the test. It spends a few short Claude turns.
 // Run with: go test -tags drift ./internal/launcher/
 func TestRealClaudeTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t *testing.T) {
-	realClaudeTakesDispatchsCommands(t, false)
+	realClaudeTakesDispatchsCommands(t, "tui")
 }
 
 // TestRealClaudeUnderTheAppHostTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch is the
@@ -47,10 +47,19 @@ func TestRealClaudeTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t
 // on the terminal is the session id in Claude's transcript, and that the worker's Stop reached its
 // Stop record, which only happens when the hook found the terminal through HC_TERMINAL_ID.
 func TestRealClaudeUnderTheAppHostTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t *testing.T) {
-	realClaudeTakesDispatchsCommands(t, true)
+	realClaudeTakesDispatchsCommands(t, "app")
 }
 
-func realClaudeTakesDispatchsCommands(t *testing.T, app bool) {
+// TestRealClaudeUnderRexTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch is the same
+// run with [plugins.rex], over a scratch Rex server. It also checks that the session id in the
+// worker's label is the one in Claude's transcript, and that the worker's Stop reached its Stop
+// record, which only happens when the hook found the block through REX_SESSION and REX_BLOCK.
+func TestRealClaudeUnderRexTakesDispatchsKickoffAndSlashNudgesAsCommandsSentByDispatch(t *testing.T) {
+	realClaudeTakesDispatchsCommands(t, "rex")
+}
+
+func realClaudeTakesDispatchsCommands(t *testing.T, host string) {
+	app, rex := host == "app", host == "rex"
 	t.Cleanup(func() {
 		left, err := herdrtest.Leftovers(os.Getpid())
 		require.NoError(t, err)
@@ -67,7 +76,14 @@ func realClaudeTakesDispatchsCommands(t *testing.T, app bool) {
 	require.NoError(t, err)
 
 	// herdr reports paths with symlinks resolved, and macOS temp dirs are links.
-	root, err := filepath.EvalSymlinks(t.TempDir())
+	base := t.TempDir()
+	if rex {
+		// The pool lives under root, and Rex's worker label holds a tree of at most 73 characters.
+		base, err = os.MkdirTemp("/tmp", "rl")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = os.RemoveAll(base) })
+	}
+	root, err := filepath.EvalSymlinks(base)
 	require.NoError(t, err)
 	repo := filepath.Join(root, "repo")
 	require.NoError(t, os.Mkdir(repo, 0o755))
@@ -82,6 +98,9 @@ func realClaudeTakesDispatchsCommands(t *testing.T, app bool) {
 	settings := fmt.Sprintf("[repos.drift]\npath = %q\n\n[history]\ndir = %q\n", repo, filepath.Join(state, "events"))
 	if app {
 		settings += "\n[plugins.herdr]\nhost = \"app\"\n"
+	}
+	if rex {
+		settings += "\n[plugins.rex]\n"
 	}
 	require.NoError(t, os.WriteFile(config, []byte(settings), 0o644))
 
@@ -124,6 +143,17 @@ func realClaudeTakesDispatchsCommands(t *testing.T, app bool) {
 		core = herdrtest.StartCoreSession(t)
 		cli, env = core.Core().WithKinds("claude"), core.Env
 		screen = func(pane string) string { return core.Run(t, "read", pane) }
+	} else if rex {
+		// The hooks' dispatch and the real claude come from this server's PATH, and a worker's blocks inherit it.
+		server := herdrtest.StartRexServer(t, herdrtest.CleanEnv())
+		t.Setenv("DISPATCH_DRIFT_REX_SOCKET", server.Socket)
+		cli, env = server.Rex(state).WithKinds("claude"), os.Environ()
+		screen = func(pane string) string {
+			session, block, _ := strings.Cut(pane, "/")
+			args, _ := json.Marshal(map[string]any{"session_id": session, "block_id": block, "method": "format", "args": map[string]any{"format": "text", "trim": true}})
+			out, _ := server.Output("api", "call", "-s", session, "block.method", string(args))
+			return out
+		}
 	} else {
 		session := herdrtest.StartSession(t)
 		cli, env = session.CLI(), session.Env(t)
@@ -182,7 +212,7 @@ func realClaudeTakesDispatchsCommands(t *testing.T, app bool) {
 		return world.Worker{}
 	}
 	// The id herdr learns from Claude is the one dispatch chose and passed on the command line.
-	if !app {
+	if !app && !rex {
 		require.Eventually(t, func() bool {
 			id := worker().Session
 			out, err := exec.Command("ps", "-axo", "args").Output()
@@ -239,6 +269,15 @@ func realClaudeTakesDispatchsCommands(t *testing.T, app bool) {
 	}
 	assert.Equal(t, "and then reply with the word done", log.Commands[2].Args)
 
+	if rex {
+		id := worker().Session
+		require.NotEmpty(t, id)
+		assert.Equal(t, []string{id}, transcriptSessions(t, launched.Worktree))
+		assert.Eventually(t, func() bool {
+			_, found := stops.Read(state, launched.Worktree, id)
+			return found
+		}, 10*time.Second, 100*time.Millisecond)
+	}
 	if app {
 		// ps shows no --session-id for a core terminal, so the Worker label is compared with the
 		// session id in the transcript Claude wrote for the worker's tree.

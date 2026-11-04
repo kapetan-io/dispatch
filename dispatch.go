@@ -61,7 +61,7 @@ type Options struct {
 	// password manager waiting on an unlock prompt. Defaults to 1 minute.
 	KeyCommandTimeout time.Duration
 	// Herdr is the workspace manager that hosts the workers. Defaults to the real adapter for the
-	// config's [plugins.herdr] host: the installed herdr, or hc for the Herdr app.
+	// configured host: the installed herdr, hc for the Herdr app, or rex when [plugins.rex] is written.
 	Herdr herdr.Herdr
 	// Treehouse is the pool of trees. Defaults to the installed treehouse.
 	Treehouse treehouse.Pool
@@ -94,6 +94,9 @@ type Options struct {
 	Env environment.Environment
 	// LaunchPace is the pause between launcher polls of herdr. Defaults to 1 second.
 	LaunchPace time.Duration
+	// RexSocket names the Rex server's socket, for tests that must stay off the user's own Rex
+	// server. Unset, rex picks its server as it always does.
+	RexSocket string
 	// RulesDir overrides [dispatch].rules, so tests run the repo's rules/ directory.
 	RulesDir string
 	// RuleTimeout cuts off a rule call on Clock. Zero means 1 second for
@@ -191,15 +194,18 @@ const usage = `usage: dispatch run
                shim in scripts/shims runs it
   record-stop  read a Stop hook's JSON on stdin and report to the running dispatch when the session in
                this tree last ended a turn and whether it still has background tasks running.
-               Finds the session's harness from the herdr pane in HERDR_PANE_ID. Drops the report
-               when no dispatch runs, when the pane is unset, unlisted or runs no harness dispatch
-               has an adapter for, and outside a worktree of a repo listed under [repos]. The
+               Finds the session's harness from the terminal the hook runs in: HC_TERMINAL_ID (Herdr app),
+               HERDR_PANE_ID (herdr TUI) or REX_SESSION with REX_BLOCK (Rex). Drops the report
+               when no dispatch runs, when none of them is set or the terminal is unlisted or runs
+               no harness dispatch has an adapter for, and outside a worktree of a repo listed under [repos]. The
                plugin's Stop hook runs it
   wake         read a Notification or UserPromptSubmit hook's JSON on stdin and ask the running loop
                to read herdr again and run a cycle without waiting for it, so the worker's workspace
-               label follows within seconds. Finds the session's harness from the herdr pane in HERDR_PANE_ID.
-               Does nothing when the pane is unset, unlisted or runs no harness dispatch has an adapter
-               for, outside a worktree of a repo listed under [repos], or when no loop runs. The plugin's Notification and UserPromptSubmit hooks run it
+               label follows within seconds. Finds the session's harness from the terminal the hook
+               runs in: HC_TERMINAL_ID (Herdr app), HERDR_PANE_ID (herdr TUI) or REX_SESSION with
+               REX_BLOCK (Rex). Does nothing when none of them is set or the terminal is unlisted or
+               runs no harness dispatch has an adapter for, outside a worktree of a repo listed under
+               [repos], or when no loop runs. The plugin's Notification and UserPromptSubmit hooks run it
   watch        make this session follow the ticket, so each notification dispatch sends about
                it is also sent to this session as a message through its harness. A session can follow
                several tickets, and a ticket can have several followers. Fails outside a session of a

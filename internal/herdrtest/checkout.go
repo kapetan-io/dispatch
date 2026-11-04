@@ -1,6 +1,7 @@
 package herdrtest
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -12,7 +13,21 @@ import (
 // returns both paths. herdr opens a workspace on a worktree of a repo.
 func NewCheckout(t testing.TB) (repo, tree string) {
 	t.Helper()
-	root := t.TempDir()
+	return checkoutIn(t, t.TempDir())
+}
+
+// NewShortCheckout is NewCheckout under a short path, because Rex labels hold a tree of at most
+// 73 characters and a test's own temp directory is longer.
+func NewShortCheckout(t testing.TB) (repo, tree string) {
+	t.Helper()
+	root, err := os.MkdirTemp("/tmp", "co")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	return checkoutIn(t, root)
+}
+
+func checkoutIn(t testing.TB, root string) (repo, tree string) {
+	t.Helper()
 	repo, tree = filepath.Join(root, "repo"), filepath.Join(root, "tree")
 	for _, args := range [][]string{
 		{"init", "-q", "-b", "main", repo},

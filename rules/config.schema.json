@@ -169,6 +169,15 @@
           "properties": {},
           "type": "object"
         },
+        "rex": {
+          "additionalProperties": false,
+          "properties": {
+            "plugin_root": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
         "treehouse": {
           "additionalProperties": false,
           "properties": {},

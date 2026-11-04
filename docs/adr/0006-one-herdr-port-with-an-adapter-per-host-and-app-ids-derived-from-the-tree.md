@@ -4,7 +4,7 @@ Date: 2026-11-01
 
 ## Status
 
-Accepted
+Accepted, amended
 
 ## Context
 
@@ -25,3 +25,24 @@ We will keep `herdr.Herdr` and add `herdr.Core` as a second real adapter behind 
 - The ids look random in `hc get` output. They are the lock.
 - The label format and the derived ids live in the user's herdr-core, so changing either needs a migration of running and finished worker terminals.
 - Contract scenarios split into host-neutral, TUI-only and Core-only sets.
+
+## Amendment
+
+Date: 2026-11-04
+
+### Context
+
+- Rex, a third host, has no key-value labels, no unique names and no conditional create, so no Rex name can refuse a second worker the way hc's `name_taken` does.
+- Rex never returns a program's arguments, and a Rex restart brings blocks back as shells. The only place that lives as long as a worker is its block's label, which survives a restart and which the Rex app never shows.
+
+### Decision
+
+We will add `herdr.Rex` as a third real adapter behind `herdr.Herdr`. Its worker identity is the block label `dispatch <claude session id> <instance> <tree>`, where the instance is the first 8 characters of the server's instance id, so a block a Rex restart brought back is told from one still loading. The workspace id is `<session label>|<tree>`, the tab id is `<session id>/<window id>` and the pane id is `<session id>/<block id>`. One worker per tree is held by a file lock in dispatch's state dir (`rex.lock`, the structure lock) that every change to Rex sessions, windows or worker blocks takes. Rex is chosen by writing `[plugins.rex]`, never through `[plugins.herdr] host`, and a config with both tables fails to load. A restored block is closed and a fresh worker starts. A close ends the worker and always leaves the repo session.
+
+### Consequences
+
+- For Rex the host is not the lock. Dropping the structure lock lets two launches on one tree leave two workers.
+- Dispatch still keeps no id record; the identity lives in Rex.
+- Two dispatch runs with different state dirs don't share the lock.
+- The worker label is positional under Rex, so changing its format needs a migration of running worker blocks.
+- The Rex adapter runs the host-neutral contract scenarios; Rex-only behavior is tested in the adapter's own tests, with no new scenario set.

@@ -47,7 +47,8 @@ func main() {
 			_ = os.WriteFile(trace, []byte(lines), 0o644)
 		}
 	}
-	opts := dispatch.Options{ConfigPath: os.Getenv("DISPATCH_DRIFT_CONFIG"), StateDir: os.Getenv("DISPATCH_DRIFT_STATE")}
+	// A drift test with a scratch Rex server names its socket here, so the launch never reaches the maintainer's Rex.
+	opts := dispatch.Options{ConfigPath: os.Getenv("DISPATCH_DRIFT_CONFIG"), StateDir: os.Getenv("DISPATCH_DRIFT_STATE"), RexSocket: os.Getenv("DISPATCH_DRIFT_REX_SOCKET")}
 	if err := dispatch.Run(ctx, os.Args[1:], opts); err != nil {
 		fmt.Fprintln(os.Stderr, "dispatch:", err)
 		os.Exit(dispatch.ExitCode(err))

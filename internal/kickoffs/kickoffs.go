@@ -5,6 +5,7 @@
 package kickoffs
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -13,9 +14,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
+	"github.com/kapetan-io/dispatch/internal/lock"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treekey"
 )
@@ -112,15 +113,11 @@ func Release(stateDir, tree, id string) {
 // the newer launch's record. Both hold it for microseconds, so waiting is fine, and the OS
 // drops it if the holder dies.
 func lockTree(name string) (func(), error) {
-	f, err := os.OpenFile(name+".lock", os.O_RDWR|os.O_CREATE, 0o644)
+	l, err := lock.Wait(context.Background(), name+".lock")
 	if err != nil {
 		return nil, fmt.Errorf("while recording the launch: %w", err)
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		_ = f.Close()
-		return nil, fmt.Errorf("while recording the launch: %w", err)
-	}
-	return func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); _ = f.Close() }, nil
+	return func() { _ = l.Release() }, nil
 }
 
 // Clear removes the record of tree whoever owns it, because its worker is gone.

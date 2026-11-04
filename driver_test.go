@@ -2882,6 +2882,14 @@ func (d *Dispatch) FromTerminal(terminal string) (restore func()) {
 	return func() { d.env = was }
 }
 
+// FromRexBlock makes the hooks that run next run in the Rex block given, as REX_SESSION and REX_BLOCK
+// tell them, with no herdr terminal or pane, until the returned function is called.
+func (d *Dispatch) FromRexBlock(session, block string) (restore func()) {
+	was := d.env
+	d.env = d.env.With("REX_SESSION", session).With("REX_BLOCK", block).With("HC_TERMINAL_ID", "").With("HERDR_PANE_ID", "")
+	return func() { d.env = was }
+}
+
 // SessionOf puts a session of the herdr agent kind in ticket's workspace, in its own pane, and
 // returns the pane. The workspace holds no other agent.
 func (d *Dispatch) SessionOf(ticket, kind, status string) string {

@@ -33,7 +33,7 @@ func workerOf(wd world.World, ticket string) string {
 	return string(world.FindWorker(ticket, wd.Trees, wd.Snapshot).State)
 }
 
-func label(emoji string, t ticket.Ticket) string { return emoji + " " + t.Identifier }
+func label(emoji string, t ticket.Ticket) string { return herdr.WorkspaceLabel(emoji, t.Identifier) }
 
 func tabLabel(t ticket.Ticket) string { return herdr.TabLabel(t.Identifier, t.Title) }
 
