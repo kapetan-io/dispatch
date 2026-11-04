@@ -27,7 +27,6 @@ func (r *Rex) StartWorker(ctx context.Context, w Worker) (Started, error) {
 	if err != nil {
 		return Started{}, err
 	}
-	command := r.command(w, exe)
 	var started Started
 	err = r.withStructure(ctx, func() error {
 		var status struct {
@@ -43,25 +42,36 @@ func (r *Rex) StartWorker(ctx context.Context, w Worker) (Started, error) {
 		if len(instance) > instanceLen {
 			instance = instance[:instanceLen]
 		}
-		label := workerLabel{Session: program.Session, Instance: instance, Tree: w.Dir}
-		if err := checkLabel(label); err != nil {
-			return err
-		}
 		sessions, err := r.sessions(ctx)
 		if err != nil {
 			return err
 		}
-		stale, err := r.clearTree(ctx, sessions, w.Dir, instance)
+		stale, previous, err := r.clearTree(ctx, sessions, w.Dir, instance)
+		if err != nil {
+			return err
+		}
+		argv, session := program.StartArgv(), program.Session
+		if resume, ok := program.ResumeArgv(previous); ok && !w.FreshLease {
+			argv, session = resume, previous
+		}
+		label := workerLabel{Session: session, Instance: instance, Tree: w.Dir}
+		if err := checkLabel(label); err != nil {
+			return err
+		}
+		command := r.command(w, exe, argv)
+		// The restored block's label is the only copy of the conversation to resume, so it
+		// closes only once the new worker exists. A close that fails then leaves a shell for
+		// Return to remove, and the launch has still started its worker.
+		started, err = r.createWorker(ctx, sessions, repo, w, label, command)
 		if err != nil {
 			return err
 		}
 		for _, b := range stale {
 			if _, err := r.closeBlock(ctx, b.session, b.block); err != nil {
-				return err
+				r.record("stale-close-failed", err.Error())
 			}
 		}
-		started, err = r.createWorker(ctx, sessions, repo, w, label, command)
-		return err
+		return nil
 	})
 	return started, err
 }
@@ -70,9 +80,12 @@ func (r *Rex) StartWorker(ctx context.Context, w Worker) (Started, error) {
 // when a Claude runs there, and with *TerminalWithoutAgent when a block of this Rex server
 // runs none, because that block may be a racing launch still loading. It returns the blocks
 // StartWorker closes before it starts a fresh worker: an exited program's block, and a block a
-// Rex restart brought back as a shell.
-func (r *Rex) clearTree(ctx context.Context, sessions []rexSession, tree, instance string) ([]heldBlock, error) {
+// Rex restart brought back as a shell. It also returns the harness session the restored block
+// was running, which the caller resumes unless this launch took the lease fresh. An exited
+// program's block never counts, because a Claude that exited was closed by the user or ended.
+func (r *Rex) clearTree(ctx context.Context, sessions []rexSession, tree, instance string) ([]heldBlock, string, error) {
 	var stale []heldBlock
+	var previous string
 	var loading *TerminalWithoutAgent
 	for _, s := range sessions {
 		for _, w := range s.Windows {
@@ -86,15 +99,20 @@ func (r *Rex) clearTree(ctx context.Context, sessions []rexSession, tree, instan
 					continue
 				}
 				if err != nil {
-					return nil, err
+					return nil, "", err
 				}
 				held := heldBlock{session: s.ID, block: b.ID}
 				if _, running := r.kind(proc); running {
-					return nil, ErrSessionRunning
+					return nil, "", ErrSessionRunning
 				}
 				switch {
-				case proc.LastExit != nil, labels[i].Instance != instance:
+				case proc.LastExit != nil:
 					stale = append(stale, held)
+				case labels[i].Instance != instance:
+					stale = append(stale, held)
+					if previous == "" {
+						previous = labels[i].Session
+					}
 				case loading == nil:
 					loading = &TerminalWithoutAgent{Address: rexPane(s.ID, b.ID)}
 				}
@@ -102,9 +120,9 @@ func (r *Rex) clearTree(ctx context.Context, sessions []rexSession, tree, instan
 		}
 	}
 	if loading != nil {
-		return nil, loading
+		return nil, "", loading
 	}
-	return stale, nil
+	return stale, previous, nil
 }
 
 // createWorker puts the worker's block in a new window of the repo session, creating the session
@@ -147,7 +165,7 @@ func (r *Rex) createWorker(ctx context.Context, sessions []rexSession, repo stri
 }
 
 // command is the block's command. Rex has no env option, so env sets dispatch's stamps.
-func (r *Rex) command(w Worker, exe string) []string {
+func (r *Rex) command(w Worker, exe string, argv []string) []string {
 	stamps := map[string]string{"AUTONOMOUS_WORKER": "1", "DISPATCH_PLUGIN_ROOT": w.PluginRoot}
 	if r.dispatchBin != "" {
 		stamps["DISPATCH_BIN"] = r.dispatchBin
@@ -158,7 +176,7 @@ func (r *Rex) command(w Worker, exe string) []string {
 		command = append(command, key+"="+stamps[key])
 	}
 	command = append(command, exe)
-	return append(command, w.Program.StartArgv()...)
+	return append(command, argv...)
 }
 
 func (r *Rex) Prompt(ctx context.Context, pane, text string) error {
