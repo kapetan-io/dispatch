@@ -55,7 +55,9 @@ type standInWindow struct {
 type standInBlock struct {
 	ID, Label string
 	// Argv0 is the foreground program, "" when the block has none.
-	Argv0    string
+	Argv0 string
+	// Args is what followed the program in the block's command.
+	Args     []string
 	LastExit bool
 	Records  []standInRecord
 	Writes   []string
@@ -200,9 +202,10 @@ type standInLayout struct {
 func (l standInLayout) newBlock() standInBlock {
 	b := standInBlock{Label: l.Block.Label}
 	// The command is env, then K=V stamps, then the program.
-	for _, arg := range l.Block.Options.Command[1:] {
+	for i, arg := range l.Block.Options.Command[1:] {
 		if !strings.Contains(arg, "=") {
 			b.Argv0 = arg
+			b.Args = l.Block.Options.Command[i+2:]
 			break
 		}
 	}
@@ -563,6 +566,57 @@ func TestRexStartWorkerStartsFreshOverABlockThatCannotHoldTheTree(t *testing.T) 
 			require.Len(t, workers, 1)
 			assert.Equal(t, workerLabelOf("01234567", tree), workers[0].Label)
 			assert.Len(t, r.held(t).Sessions, 1)
+		})
+	}
+}
+
+func TestRexStartWorkerResumesTheConversationOfABlockARexRestartBroughtBack(t *testing.T) {
+	r := newStandInRig(t)
+	tree := shortTree(t)
+	const earlier = "11111111-2222-4333-8444-555555555555"
+	r.edit(t, func(s *standInRex) {
+		s.block("repo", "ENG-1 old", standInBlock{Label: "dispatch " + earlier + " " + staleInstance + " " + tree, Argv0: "zsh"})
+	})
+
+	_, err := r.rex.StartWorker(context.Background(), r.worker("repo", tree))
+
+	require.NoError(t, err)
+	workers := r.workers(t)
+	require.Len(t, workers, 1)
+	assert.Equal(t, "dispatch "+earlier+" 01234567 "+tree, workers[0].Label)
+	assert.Equal(t, []string{"--resume", earlier}, workers[0].Args[len(workers[0].Args)-2:])
+	assert.NotContains(t, workers[0].Args, "--session-id")
+}
+
+func TestRexStartWorkerStartsAConversationInsteadOfResumingOne(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		instance string
+		exited   bool
+		fresh    bool
+	}{
+		{"FreshLease", staleInstance, false, true},
+		{"ClaudeExited", "01234567", true, false},
+		{"ClaudeExitedBeforeARexRestart", staleInstance, true, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			r := newStandInRig(t)
+			tree := shortTree(t)
+			const earlier = "11111111-2222-4333-8444-555555555555"
+			r.edit(t, func(s *standInRex) {
+				s.block("repo", "ENG-1 old", standInBlock{Label: "dispatch " + earlier + " " + test.instance + " " + tree, Argv0: map[bool]string{true: "claude", false: "zsh"}[test.exited], LastExit: test.exited})
+			})
+			w := r.worker("repo", tree)
+			w.FreshLease = test.fresh
+
+			_, err := r.rex.StartWorker(context.Background(), w)
+
+			require.NoError(t, err)
+			workers := r.workers(t)
+			require.Len(t, workers, 1)
+			assert.Equal(t, workerLabelOf("01234567", tree), workers[0].Label)
+			assert.Equal(t, []string{"--session-id", rexSession}, workers[0].Args[len(workers[0].Args)-2:])
+			assert.NotContains(t, workers[0].Args, "--resume")
 		})
 	}
 }

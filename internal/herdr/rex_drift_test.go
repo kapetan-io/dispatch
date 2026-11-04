@@ -260,7 +260,7 @@ func TestRexLeavesTheRepoSessionAfterTheLastWorkerCloses(t *testing.T) {
 	assert.Contains(t, out, `"label":"`+filepath.Base(r.repo)+`"`)
 }
 
-func TestRexStartsAFreshWorkerAfterAServerRestart(t *testing.T) {
+func TestRexResumesTheWorkersConversationAfterAServerRestart(t *testing.T) {
 	r := newRexRig(t)
 	first := r.launched(t)
 
@@ -271,13 +271,45 @@ func TestRexStartsAFreshWorkerAfterAServerRestart(t *testing.T) {
 	require.Len(t, snap.Workspaces, 1)
 	assert.Equal(t, r.worker.Dir, snap.Workspaces[0].CheckoutPath)
 	assert.Empty(t, snap.Agents)
-	second, err := r.rex.StartWorker(context.Background(), r.worker)
+	resumed := r.worker
+	resumed.Program = harness.ClaudeCode{}.Program(harness.Start{Model: "sonnet", PluginRoot: r.worker.PluginRoot, Session: "99999999-0000-4000-8000-000000000001"})
+	second, err := r.rex.StartWorker(context.Background(), resumed)
 	require.NoError(t, err)
 	assert.NotEqual(t, first.Pane, second.Pane)
 	snap, err = r.rex.Read(context.Background())
 	require.NoError(t, err)
 	assert.Len(t, snap.Panes, 1)
 	assert.Equal(t, second.Pane, snap.Panes[0].ID)
+	require.Eventually(t, func() bool {
+		b, err := os.ReadFile(filepath.Join(r.worker.Dir, "standin-claude.json"))
+		if err != nil {
+			return false
+		}
+		var recorded struct {
+			Args []string `json:"args"`
+		}
+		return json.Unmarshal(b, &recorded) == nil && strings.Contains(strings.Join(recorded.Args, " "), "--resume "+rexSessionID)
+	}, 20*time.Second, 100*time.Millisecond)
+	agent, ok := r.agent(t)
+	require.True(t, ok)
+	assert.Equal(t, rexSessionID, agent.Session)
+}
+
+func TestRexStartsAFreshConversationAfterAServerRestartWhenTheLeaseIsFresh(t *testing.T) {
+	r := newRexRig(t)
+	r.launched(t)
+	r.server.Restart(t)
+	fresh := r.worker
+	fresh.FreshLease = true
+	fresh.Program = harness.ClaudeCode{}.Program(harness.Start{Model: "sonnet", PluginRoot: r.worker.PluginRoot, Session: "99999999-0000-4000-8000-000000000001"})
+
+	_, err := r.rex.StartWorker(context.Background(), fresh)
+
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		agent, ok := r.agent(t)
+		return ok && agent.Session == "99999999-0000-4000-8000-000000000001"
+	}, 20*time.Second, 100*time.Millisecond)
 }
 
 func TestRexReportsAStoppedServerAsNotRunningAndStartsNone(t *testing.T) {
