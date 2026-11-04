@@ -588,6 +588,27 @@ func TestRexStartWorkerResumesTheConversationOfABlockARexRestartBroughtBack(t *t
 	assert.NotContains(t, workers[0].Args, "--session-id")
 }
 
+func TestRexStartWorkerKeepsTheConversationWhenTheNewBlockFailsToStart(t *testing.T) {
+	r := newStandInRig(t)
+	tree := shortTree(t)
+	const earlier = "11111111-2222-4333-8444-555555555555"
+	r.edit(t, func(s *standInRex) {
+		s.block("repo", "ENG-1 old", standInBlock{Label: "dispatch " + earlier + " " + staleInstance + " " + tree, Argv0: "zsh"})
+		s.Fail = map[string]string{"session.new_window": "Error: busy (status=409 code=busy)"}
+	})
+
+	_, err := r.rex.StartWorker(context.Background(), r.worker("repo", tree))
+	require.Error(t, err)
+	r.edit(t, func(s *standInRex) { s.Fail = nil })
+	_, err = r.rex.StartWorker(context.Background(), r.worker("repo", tree))
+
+	require.NoError(t, err)
+	workers := r.workers(t)
+	require.Len(t, workers, 1)
+	assert.Equal(t, "dispatch "+earlier+" 01234567 "+tree, workers[0].Label)
+	assert.Equal(t, []string{"--resume", earlier}, workers[0].Args[len(workers[0].Args)-2:])
+}
+
 func TestRexStartWorkerStartsAConversationInsteadOfResumingOne(t *testing.T) {
 	for _, test := range []struct {
 		name     string

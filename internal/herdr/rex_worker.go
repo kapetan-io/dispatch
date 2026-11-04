@@ -59,13 +59,19 @@ func (r *Rex) StartWorker(ctx context.Context, w Worker) (Started, error) {
 			return err
 		}
 		command := r.command(w, exe, argv)
+		// The restored block's label is the only copy of the conversation to resume, so it
+		// closes only once the new worker exists. A close that fails then leaves a shell for
+		// Return to remove, and the launch has still started its worker.
+		started, err = r.createWorker(ctx, sessions, repo, w, label, command)
+		if err != nil {
+			return err
+		}
 		for _, b := range stale {
 			if err := r.closeBlock(ctx, b.session, b.block); err != nil {
-				return err
+				r.record("stale-close-failed", err.Error())
 			}
 		}
-		started, err = r.createWorker(ctx, sessions, repo, w, label, command)
-		return err
+		return nil
 	})
 	return started, err
 }
