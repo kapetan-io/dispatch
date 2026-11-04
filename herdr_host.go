@@ -36,7 +36,15 @@ func herdrFor(opts Options, host string, progress io.Writer) herdr.Herdr {
 // withHerdr is opts with the herdr of the host cfg names, for the commands that drive or read workers.
 func withHerdr(opts Options, cfg config.Config, progress io.Writer) Options {
 	opts.Herdr = herdrFor(opts, cfg.Plugins.Host(), progress)
+	withRexSettings(opts.Herdr, cfg.Plugins.Rex)
 	return opts
+}
+
+// withRexSettings passes the [plugins.rex] settings that only a close needs to h when h is the Rex adapter.
+func withRexSettings(h herdr.Herdr, table config.Rex) {
+	if rex, ok := h.(*herdr.Rex); ok {
+		rex.WithDeleteEmptySessions(table.DeleteEmptySessions)
+	}
 }
 
 // reportingHarness finds the harness of the session whose hook is running, from the session's

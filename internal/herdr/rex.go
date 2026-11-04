@@ -30,6 +30,7 @@ type Rex struct {
 	env         environment.Environment
 	dispatchBin string
 	kinds       []string
+	deleteEmpty bool
 
 	mu  sync.Mutex
 	bin string
@@ -62,6 +63,12 @@ func (r *Rex) WithDispatchBin(bin string) *Rex {
 // program is never an agent, so unset, Rex finds none.
 func (r *Rex) WithKinds(kinds ...string) *Rex {
 	r.kinds = kinds
+	return r
+}
+
+// WithDeleteEmptySessions makes a close delete the repo session it just emptied. Unset, the emptied session stays.
+func (r *Rex) WithDeleteEmptySessions(on bool) *Rex {
+	r.deleteEmpty = on
 	return r
 }
 
@@ -494,26 +501,56 @@ func (r *Rex) CloseTab(ctx context.Context, id string) error {
 
 // closeWorkers closes the session's worker blocks that match. A window left empty closes with
 // its last block, and a block already gone counts as closed. Blocks the user opened are left alone.
+// With delete_empty_sessions on, a close that removed a block destroys the session when no block is left.
 func (r *Rex) closeWorkers(ctx context.Context, s rexSession, match func(rexWindow, workerLabel) bool) error {
 	var errs []error
+	closed := 0
 	for _, w := range s.Windows {
 		blocks, labels := w.workers()
 		for i, b := range blocks {
 			if !match(w, labels[i]) {
 				continue
 			}
-			if err := r.closeBlock(ctx, s.ID, b.ID); err != nil {
+			removed, err := r.closeBlock(ctx, s.ID, b.ID)
+			if err != nil {
 				errs = append(errs, err)
+			}
+			if removed {
+				closed++
 			}
 		}
 	}
-	return errors.Join(errs...)
+	if len(errs) > 0 || closed == 0 || !r.deleteEmpty {
+		return errors.Join(errs...)
+	}
+	return r.destroyIfEmpty(ctx, s.ID)
 }
 
-func (r *Rex) closeBlock(ctx context.Context, session, block string) error {
-	err := r.api(ctx, session, "block.close", map[string]any{"session_id": session, "block_id": block}, nil)
+// destroyIfEmpty destroys the session when it holds no block, detached ones included. A tab the
+// user adds between the read and the destroy is lost, because session.destroy cannot be made conditional.
+func (r *Rex) destroyIfEmpty(ctx context.Context, session string) error {
+	var listed struct {
+		Blocks []struct{} `json:"blocks"`
+	}
+	err := r.api(ctx, session, "session.list_blocks", map[string]any{"session_id": session}, &listed)
+	if rexGone(err) {
+		return nil
+	}
+	if err != nil || len(listed.Blocks) > 0 {
+		return err
+	}
+	err = r.api(ctx, session, "session.destroy", map[string]any{"session_id": session}, nil)
 	if rexGone(err) {
 		return nil
 	}
 	return err
+}
+
+// closeBlock closes one block and reports whether this call removed it, which a block already gone does not.
+func (r *Rex) closeBlock(ctx context.Context, session, block string) (bool, error) {
+	err := r.api(ctx, session, "block.close", map[string]any{"session_id": session, "block_id": block}, nil)
+	if rexGone(err) {
+		return false, nil
+	}
+	return err == nil, err
 }

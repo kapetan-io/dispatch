@@ -45,6 +45,8 @@ type standInRex struct {
 type standInSession struct {
 	ID, Label string
 	Windows   []standInWindow
+	// Detached holds blocks in no window, which session.list_blocks lists and session.view does not.
+	Detached []standInBlock
 }
 
 type standInWindow struct {
@@ -317,6 +319,43 @@ func (s *standInRex) call(session, method string, raw []byte) (any, error) {
 			}
 		}
 		return nil, standInRefusal(404, "not_found", "block "+args.Block+" not found")
+	case "session.list_blocks":
+		var args struct {
+			Session string `json:"session_id"`
+		}
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return nil, err
+		}
+		for _, ss := range s.Sessions {
+			if ss.ID != args.Session {
+				continue
+			}
+			blocks := []map[string]string{}
+			for _, w := range ss.Windows {
+				for _, b := range w.Blocks {
+					blocks = append(blocks, map[string]string{"block_id": b.ID})
+				}
+			}
+			for _, b := range ss.Detached {
+				blocks = append(blocks, map[string]string{"block_id": b.ID})
+			}
+			return map[string]any{"blocks": blocks}, nil
+		}
+		return nil, standInSessionGone(args.Session)
+	case "session.destroy":
+		var args struct {
+			Session string `json:"session_id"`
+		}
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return nil, err
+		}
+		for i := range s.Sessions {
+			if s.Sessions[i].ID == args.Session {
+				s.Sessions = append(s.Sessions[:i], s.Sessions[i+1:]...)
+				return map[string]any{}, nil
+			}
+		}
+		return nil, standInSessionGone(args.Session)
 	case "block.method":
 		return s.blockMethod(raw)
 	}
@@ -662,6 +701,71 @@ func TestRexCloseWorkspaceLeavesTheRepoSessionWhenItsLastWorkerCloses(t *testing
 	assert.Equal(t, "repo", held.Sessions[0].Label)
 	assert.Empty(t, held.Sessions[0].Windows)
 	require.NoError(t, r.rex.CloseWorkspace(context.Background(), "repo|"+tree))
+}
+
+func TestRexCloseWorkspaceDeletesTheRepoSessionItEmptiedWhenAsked(t *testing.T) {
+	r := newStandInRig(t)
+	r.rex.WithDeleteEmptySessions(true)
+	tree := shortTree(t)
+	_, err := r.rex.StartWorker(context.Background(), r.worker("repo", tree))
+	require.NoError(t, err)
+
+	require.NoError(t, r.rex.CloseWorkspace(context.Background(), "repo|"+tree))
+
+	assert.Empty(t, r.held(t).Sessions)
+	require.NoError(t, r.rex.CloseWorkspace(context.Background(), "repo|"+tree))
+}
+
+func TestRexCloseTabDeletesTheRepoSessionItEmptiedWhenAsked(t *testing.T) {
+	r := newStandInRig(t)
+	r.rex.WithDeleteEmptySessions(true)
+	_, err := r.rex.StartWorker(context.Background(), r.worker("repo", shortTree(t)))
+	require.NoError(t, err)
+	snap, err := r.rex.Read(context.Background())
+	require.NoError(t, err)
+	require.Len(t, snap.Tabs, 1)
+
+	require.NoError(t, r.rex.CloseTab(context.Background(), snap.Tabs[0].ID))
+
+	assert.Empty(t, r.held(t).Sessions)
+}
+
+func TestRexCloseWorkspaceKeepsTheRepoSessionWhenSomethingElseIsInIt(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		extra func(s *standInRex)
+	}{
+		{"UsersTab", func(s *standInRex) { s.block("repo", "mine", standInBlock{Label: "my shell", Argv0: "zsh"}) }},
+		{"AnotherTreesWorker", func(s *standInRex) {
+			s.block("repo", "ENG-2 other", standInBlock{Label: workerLabelOf("01234567", "/other"), Argv0: "claude"})
+		}},
+		{"DetachedBlock", func(s *standInRex) { s.Sessions[0].Detached = []standInBlock{{ID: "detached"}} }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			r := newStandInRig(t)
+			r.rex.WithDeleteEmptySessions(true)
+			tree := shortTree(t)
+			_, err := r.rex.StartWorker(context.Background(), r.worker("repo", tree))
+			require.NoError(t, err)
+			r.edit(t, test.extra)
+
+			require.NoError(t, r.rex.CloseWorkspace(context.Background(), "repo|"+tree))
+
+			held := r.held(t)
+			require.Len(t, held.Sessions, 1)
+			assert.Equal(t, "repo", held.Sessions[0].Label)
+		})
+	}
+}
+
+func TestRexCloseWorkspaceNeverDeletesASessionTheUserEmptied(t *testing.T) {
+	r := newStandInRig(t)
+	r.rex.WithDeleteEmptySessions(true)
+	r.edit(t, func(s *standInRex) { s.Sessions = []standInSession{{ID: "s1", Label: "repo"}} })
+
+	require.NoError(t, r.rex.CloseWorkspace(context.Background(), "repo|"+shortTree(t)))
+
+	assert.Len(t, r.held(t).Sessions, 1)
 }
 
 func TestRexTreatsASessionDestroyedUnderItAsGone(t *testing.T) {

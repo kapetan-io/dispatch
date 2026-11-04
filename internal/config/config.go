@@ -111,6 +111,9 @@ type Rex struct {
 	On bool `toml:"-" ctx:"-"`
 	// PluginRoot is the checkout of this repo that workers load their plugin from, as under [plugins.herdr].
 	PluginRoot string `toml:"plugin_root" ctx:"-"`
+	// DeleteEmptySessions deletes a repo's Rex session when its last worker closes and nothing
+	// else is in it. Unset, the emptied session stays.
+	DeleteEmptySessions bool `toml:"delete_empty_sessions" ctx:"-"`
 }
 
 // GitHub is the GitHub plugin's table. It has no settings yet.

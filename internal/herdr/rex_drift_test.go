@@ -300,3 +300,16 @@ func TestRexRefusesATreeTooLongForTheWorkerLabel(t *testing.T) {
 
 	require.ErrorContains(t, err, "at most 73")
 }
+
+func TestRexDeletesTheRepoSessionAfterTheLastWorkerClosesWhenAsked(t *testing.T) {
+	r := newRexRig(t)
+	r.rex.WithDeleteEmptySessions(true)
+	r.launched(t)
+
+	require.NoError(t, r.rex.CloseWorkspace(context.Background(), r.worker.Workspace))
+
+	out, err := r.server.Output("api", "call", "session.list")
+	require.NoError(t, err)
+	assert.NotContains(t, out, `"label":"`+filepath.Base(r.repo)+`"`)
+	require.NoError(t, r.rex.CloseWorkspace(context.Background(), r.worker.Workspace))
+}
