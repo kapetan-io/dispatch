@@ -65,6 +65,7 @@ type History struct {
 type Plugins struct {
 	Linear    Linear    `toml:"linear"`
 	Herdr     Herdr     `toml:"herdr"`
+	Rex       Rex       `toml:"rex" ctx:"-"`
 	GitHub    GitHub    `toml:"github"`
 	Treehouse Treehouse `toml:"treehouse"`
 	Notify    Notify    `toml:"notify"`
@@ -75,7 +76,25 @@ type Plugins struct {
 const (
 	HostTUI = "tui"
 	HostApp = "app"
+	HostRex = "rex"
 )
+
+// Host is the host that runs the workers: Rex when [plugins.rex] is written, and otherwise the
+// herdr product [plugins.herdr] names.
+func (p Plugins) Host() string {
+	if p.Rex.On {
+		return HostRex
+	}
+	return p.Herdr.Host
+}
+
+// PluginRoot is the checkout workers load their plugin from, taken from the table of the host in use.
+func (p Plugins) PluginRoot() string {
+	if p.Rex.On {
+		return p.Rex.PluginRoot
+	}
+	return p.Herdr.PluginRoot
+}
 
 // Herdr is the herdr plugin's table.
 type Herdr struct {
@@ -84,6 +103,14 @@ type Herdr struct {
 	// Host is the herdr product that runs the workers, "tui" or "app". ctx.config leaves it
 	// out, so a rule never sees which host runs a worker.
 	Host string `toml:"host" ctx:"-"`
+}
+
+// Rex is the Rex plugin's table. Writing the table runs the workers in Rex.
+type Rex struct {
+	// On is true when config.toml has a [plugins.rex] table, empty or not.
+	On bool `toml:"-" ctx:"-"`
+	// PluginRoot is the checkout of this repo that workers load their plugin from, as under [plugins.herdr].
+	PluginRoot string `toml:"plugin_root" ctx:"-"`
 }
 
 // GitHub is the GitHub plugin's table. It has no settings yet.
@@ -223,6 +250,7 @@ func defaults() Config {
 		},
 		Plugins: Plugins{
 			Herdr: Herdr{PluginRoot: "~/Development/dispatch", Host: HostTUI},
+			Rex:   Rex{PluginRoot: "~/Development/dispatch"},
 			Linear: Linear{
 				APIKeyKeychain: "dispatch-linear-api-key",
 				Teams:          []string{"ENG"},
@@ -292,8 +320,13 @@ func parse(text, path string, env environment.Environment, kinds []string, check
 		return Config{}, fmt.Errorf("while reading config %s: %w", path, err)
 	}
 	c.Plugins.Local.On = meta.IsDefined("plugins", "local")
+	c.Plugins.Rex.On = meta.IsDefined("plugins", "rex")
+	if c.Plugins.Rex.On && meta.IsDefined("plugins", "herdr") {
+		return Config{}, fmt.Errorf("while reading config %s: plugins.rex and plugins.herdr are both set, and dispatch runs its workers in one host: remove one of them", path)
+	}
 	c.Plugins.Local.Path = env.ExpandHome(c.Plugins.Local.Path)
 	c.Plugins.Herdr.PluginRoot = env.ExpandHome(c.Plugins.Herdr.PluginRoot)
+	c.Plugins.Rex.PluginRoot = env.ExpandHome(c.Plugins.Rex.PluginRoot)
 	c.Dispatch.Rules = env.ExpandHome(c.Dispatch.Rules)
 	c.History.Dir = env.ExpandHome(c.History.Dir)
 	for _, label := range c.Repos.Labels() {

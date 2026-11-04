@@ -99,7 +99,7 @@ func launchHost(opts Options) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return cfg.Plugins.Herdr.Host, nil
+	return cfg.Plugins.Host(), nil
 }
 
 // launchProgram is what herdr runs for a launch by hand: the harness table ref, spelled
@@ -135,10 +135,10 @@ func pluginRoot(opts Options) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("no plugin root: set DISPATCH_PLUGIN_ROOT or plugin_root in the config: %w", err)
 	}
-	if cfg.Plugins.Herdr.PluginRoot == "" {
+	if cfg.Plugins.PluginRoot() == "" {
 		return "", errors.New("no plugin root: set DISPATCH_PLUGIN_ROOT or plugin_root in the config")
 	}
-	return cfg.Plugins.Herdr.PluginRoot, nil
+	return cfg.Plugins.PluginRoot(), nil
 }
 
 // launcherFor is the launcher a launch goes through, which is Options.Launcher

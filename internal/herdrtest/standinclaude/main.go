@@ -6,7 +6,7 @@
 // a dialog answered the wrong way makes it exit, as Claude does when "No, exit"
 // is chosen.
 //
-// Run by herdr-core (HC_TERMINAL_ID set), it reports through the OSC 7501 escape sequence Claude prints
+// Run by herdr-core (HC_TERMINAL_ID set) or in a Rex block (REX_BLOCK set), it reports through the OSC 7501 escape sequence Claude prints
 // instead of a herdr command, says nothing at the dialogs (as Claude does), and reports idle at its input
 // box. After the kickoff it reports working, and a later line of "!idle", "!done" or "!blocked" makes it
 // report that state, so a test can move the worker without a paid session.
@@ -26,7 +26,7 @@ const down = "\x1b[B"
 
 func main() {
 	record()
-	app := os.Getenv("HC_TERMINAL_ID") != ""
+	app := osc()
 	if !app {
 		report("idle")
 	}
@@ -117,8 +117,12 @@ func record() {
 	_ = os.WriteFile("standin-claude.json", b, 0o644)
 }
 
+// osc reports whether the program runs where status travels by OSC 7501: herdr-core and Rex.
+// A Rex worker has no HC_TERMINAL_ID, so REX_BLOCK stands in for it there.
+func osc() bool { return os.Getenv("HC_TERMINAL_ID") != "" || os.Getenv("REX_BLOCK") != "" }
+
 func report(state string) {
-	if os.Getenv("HC_TERMINAL_ID") != "" {
+	if osc() {
 		fmt.Printf("\x1b]7501;state=%s\a", state)
 		return
 	}

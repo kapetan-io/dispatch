@@ -615,3 +615,6 @@ func TabLabel(ticket, title string) string {
 	}
 	return ticket + " " + title
 }
+
+// WorkspaceLabel is the label of a worker's workspace, `<emoji> <ticket>`.
+func WorkspaceLabel(emoji, ticket string) string { return emoji + " " + ticket }

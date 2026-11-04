@@ -275,7 +275,7 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World, que
 	case model == "":
 		model = cfg.WorkerModel()
 	}
-	program, err := e.Harnesses.Program(kind, model, cfg.Plugins.Herdr.PluginRoot)
+	program, err := e.Harnesses.Program(kind, model, cfg.Plugins.PluginRoot())
 	if err != nil {
 		return Result{Outcome: ledger.Refused, Detail: fmt.Sprintf("launch of %s: %v", t.Identifier, err)}
 	}

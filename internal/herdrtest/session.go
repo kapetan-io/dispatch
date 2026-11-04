@@ -44,6 +44,7 @@ func StartSession(t testing.TB) *Session {
 
 	s := &Session{Name: fmt.Sprintf("%s%d-%d", sessionPrefix, os.Getpid(), time.Now().UnixNano()), bin: bin}
 	server := exec.Command(bin, "--session", s.Name, "server")
+	server.Env = CleanEnv()
 	require.NoError(t, server.Start())
 	t.Cleanup(func() {
 		_ = exec.Command(bin, "session", "stop", s.Name).Run()

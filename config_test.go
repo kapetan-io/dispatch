@@ -849,11 +849,16 @@ func TestDocConfigReferenceListsEveryKeyAtItsDefault(t *testing.T) {
 	for _, key := range meta.Keys() {
 		documented[key.String()] = true
 	}
-	for _, key := range settingKeys(reflect.TypeOf(config.Config{}), "") {
-		assert.Contains(t, documented, key)
-	}
 	body, err := os.ReadFile("docs/config.md")
 	require.NoError(t, err)
+	for _, key := range settingKeys(reflect.TypeOf(config.Config{}), "") {
+		// Rex excludes herdr, so its table cannot sit in the reference block and has its own section.
+		if name, ok := strings.CutPrefix(key, "plugins.rex."); ok {
+			assert.Contains(t, string(body), "| `"+name+"` |")
+			continue
+		}
+		assert.Contains(t, documented, key)
+	}
 	for _, key := range settingKeys(reflect.TypeOf(config.Repo{}), "repos.dispatch.") {
 		assert.Contains(t, documented, key)
 		assert.Contains(t, string(body), "| `"+strings.TrimPrefix(key, "repos.dispatch.")+"` |")
@@ -948,4 +953,32 @@ func TestApiKeyCommandRunsInTheWorkingDirectoryWithTheEnvironmentItWasGiven(t *t
 	got, err := os.ReadFile(seen)
 	require.NoError(t, err)
 	assert.Equal(t, work+"\nfrom-options\n", string(got))
+}
+
+func TestConfigRunsWorkersInRexWhenThePluginsRexTableIsWritten(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, body string
+		want       bool
+	}{
+		{"EmptyTable", "[plugins.rex]\n", true},
+		{"WithPluginRoot", "[plugins.rex]\nplugin_root = \"/plugin\"\n", true},
+		{"NoTable", "", false},
+		{"HerdrTable", "[plugins.herdr]\n", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg, err := loadExample(t, test.body)
+
+			require.NoError(t, err)
+			assert.Equal(t, test.want, cfg.Plugins.Rex.On)
+		})
+	}
+}
+
+func TestConfigRejectsRexAndHerdrTogether(t *testing.T) {
+	t.Parallel()
+
+	_, err := loadExample(t, "[plugins.rex]\n\n[plugins.herdr]\n")
+
+	require.ErrorContains(t, err, "plugins.rex and plugins.herdr are both set")
 }

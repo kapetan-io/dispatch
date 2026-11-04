@@ -455,8 +455,12 @@ func (c *Core) StartWorker(ctx context.Context, w Worker) (Started, error) {
 
 // find is the absolute path of the program's executable, looked up in its shim directories
 // and then on PATH, because terminal.run takes no command that is not a path.
-func (c *Core) find(p Program) (string, error) {
-	dirs := append(slices.Clone(p.PathFirst), filepath.SplitList(c.env.Get("PATH"))...)
+func (c *Core) find(p Program) (string, error) { return findExecutable(c.env, p) }
+
+// findExecutable is the absolute path of the program's agent executable, looked up in its shim
+// directories and then on PATH.
+func findExecutable(env environment.Environment, p Program) (string, error) {
+	dirs := append(slices.Clone(p.PathFirst), filepath.SplitList(env.Get("PATH"))...)
 	for _, dir := range dirs {
 		path := filepath.Join(dir, p.AgentKind)
 		if info, err := os.Stat(path); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 && filepath.IsAbs(path) {
@@ -467,128 +471,51 @@ func (c *Core) find(p Program) (string, error) {
 }
 
 func (c *Core) Kickoff(ctx context.Context, pane, text string, startup Startup) error {
-	sightings := make([]int, len(startup.Answers))
-	var t terminal
-	ready := false
-	for range kickoffChecks {
-		if ctx.Err() != nil {
-			return ErrKickoffUnconfirmed
-		}
-		var err error
-		t, err = c.get(ctx, pane)
-		if gone(err) {
-			return ErrKickoffUnconfirmed
-		}
-		if err == nil && !t.live() {
-			return ErrKickoffUnconfirmed
-		}
-		if err == nil && t.live() {
-			if _, ok := c.runs(t); ok {
-				switch t.status() {
-				case "working":
-					return nil
-				case "blocked":
-					return ErrKickoffUnconfirmed
-				case "idle", "done":
-					ready = true
-				default:
-					c.answer(ctx, pane, startup, sightings)
-				}
-			}
-		}
-		if ready {
-			break
-		}
-		c.sleep(ctx, c.pace)
-	}
-	if !ready {
-		return ErrKickoffUnconfirmed
-	}
-	for try := 1; try <= kickoffTries; try++ {
-		c.record("typing", fmt.Sprintf("%s (try %d)", text, try))
-		status := t.status()
-		res, err := c.send(ctx, pane, text, status)
-		if err != nil {
-			var refusal *Refusal
-			if !errors.As(err, &refusal) || refusal.Code != "status_mismatch" {
-				return ErrKickoffUnconfirmed
-			}
-			// The refusal proves nothing was typed, so the worker leaving idle is no confirmation.
-			// Another try is safe unless the worker now needs a person or says nothing.
-			t, err = c.get(ctx, pane)
-			if err != nil || !t.live() {
-				return ErrKickoffUnconfirmed
-			}
-			if now := t.status(); now == "blocked" || now == "unknown" {
-				return ErrKickoffUnconfirmed
-			}
-			continue
-		}
-		if res.Started != nil && *res.Started {
-			return nil
-		}
-		// hc could not tell whether the text started a turn, so give the status time to move before judging.
-		t, err = c.awaitLeft(ctx, pane, status)
-		if err != nil || !t.live() {
-			return ErrKickoffUnconfirmed
-		}
-		now := t.status()
-		// A turn count past the send's own means the text ran, whatever the status reads now.
-		ran := t.Turn > res.Turn
-		// Done before the text went in and still done is no sign it ran, so treat it like an idle prompt.
-		switch {
-		case ran || now == "working" || now == "blocked" || (now == "done" && status == "idle"):
-			return nil
-		case now == "idle" || now == "done":
-			// Still at the prompt: press Enter if the text sits in the input box, else retype.
-			if strings.Contains(c.screen(ctx, pane, 30), probeOf(text)) {
-				_ = c.call(ctx, "terminal.keys", map[string]any{"terminal": pane, "keys": []string{"enter"}}, nil)
-				if t, err = c.awaitLeft(ctx, pane, now); err != nil || !t.live() {
-					return ErrKickoffUnconfirmed
-				}
-				after := t.status()
-				if t.Turn > res.Turn || after == "working" || after == "blocked" || (after == "done" && now == "idle") {
-					return nil
-				}
-				return ErrKickoffUnconfirmed
-			}
-		default:
-			return ErrKickoffUnconfirmed
-		}
-	}
-	return ErrKickoffUnconfirmed
+	return c.workLog.kickoff(ctx, coreKickoff{c: c, pane: pane}, text, startup)
 }
 
-// awaitLeft reads the terminal until its status is no longer from, for up to kickoffWaits reads,
-// and returns the last read.
-func (c *Core) awaitLeft(ctx context.Context, pane, from string) (terminal, error) {
-	var t terminal
-	var err error
-	for range kickoffWaits {
-		if t, err = c.get(ctx, pane); err != nil || !t.live() || t.status() != from {
-			return t, err
-		}
-		c.sleep(ctx, c.pace)
-	}
-	return t, err
+// coreKickoff gives the kickoff driver Core's four operations on one terminal.
+type coreKickoff struct {
+	c    *Core
+	pane string
 }
 
-// answer sends the next try for the startup dialog the screen shows, and nothing when it
-// shows none.
-func (c *Core) answer(ctx context.Context, pane string, startup Startup, sightings []int) {
-	screen := c.screen(ctx, pane, 0)
-	c.record("dialogs", screen)
-	try, ok := startup.Answer(screen, sightings)
-	if !ok {
-		return
+func (k coreKickoff) read(ctx context.Context) (observed, error) {
+	t, err := k.c.get(ctx, k.pane)
+	if gone(err) {
+		return observed{}, nil
 	}
-	for _, keys := range try {
-		names := make([]string, len(keys))
-		for i, key := range keys {
-			names[i] = strings.ToLower(key)
-		}
-		_ = c.call(ctx, "terminal.keys", map[string]any{"terminal": pane, "keys": names}, nil)
+	if err != nil {
+		return observed{}, err
 	}
+	_, agent := k.c.runs(t)
+	return observed{Alive: t.live(), Agent: agent, Status: t.status(), Turn: t.Turn}, nil
+}
+
+func (k coreKickoff) screen(ctx context.Context, history int) string {
+	return k.c.screen(ctx, k.pane, history)
+}
+
+func (k coreKickoff) press(ctx context.Context, keys []string) {
+	names := make([]string, len(keys))
+	for i, key := range keys {
+		names[i] = strings.ToLower(key)
+	}
+	_ = k.c.call(ctx, "terminal.keys", map[string]any{"terminal": k.pane, "keys": names}, nil)
+}
+
+func (k coreKickoff) send(ctx context.Context, text, status string) (sent, error) {
+	res, err := k.c.send(ctx, k.pane, text, status)
+	var refusal *Refusal
+	switch {
+	case errors.As(err, &refusal) && refusal.Code == "status_mismatch":
+		return sent{Outcome: sendNotStarted}, nil
+	case err != nil:
+		return sent{}, err
+	case res.Started != nil && *res.Started:
+		return sent{Outcome: sendStarted}, nil
+	}
+	return sent{Outcome: sendUnknown, Turn: res.Turn}, nil
 }
 
 // screen is the visible screen plus lines of history above it, joined on one line, or ""

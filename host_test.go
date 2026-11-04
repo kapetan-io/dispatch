@@ -173,6 +173,24 @@ func TestRecordStopLandsTheTurnEndOfASessionInAnAppTerminal(t *testing.T) {
 	assert.Equal(t, []string{terminal}, d.fakes().Calls("herdr", "agent-at"))
 }
 
+func TestRecordStopLandsTheTurnEndOfASessionInARexBlock(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule), FakeHarness: true})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "")
+	d.tools.Herdr.AddTab(herdr.Tab{ID: "s1/w1", Label: "ENG-1", WorkspaceID: "w-ENG-1"})
+	d.tools.Herdr.AddPane(herdr.Pane{ID: "s1/b1", TabID: "s1/w1", WorkspaceID: "w-ENG-1"})
+	d.tools.Herdr.AddAgent(herdr.Agent{Kind: "fake", Status: "idle", Session: "worker", PaneID: "s1/b1", TabID: "s1/w1", WorkspaceID: "w-ENG-1"})
+	d.StartBeforeTheEvents()
+
+	defer d.FromRexBlock("s1", "b1")()
+	require.NoError(t, d.Hook("record-stop", fakeStop(d.worktreeOf("ENG-1"), 1)).Err)
+
+	d.Tick()
+	assert.Equal(t, []string{"ENG-1: turns  of 0", "ENG-1: turns running of 1"}, d.Linear.Comments())
+	assert.Equal(t, []string{"s1/b1"}, d.fakes().Calls("herdr", "agent-at"))
+}
+
 func TestRecordStopAsksTheAppFirstAndThePaneWhenTheAppDoesNotKnowTheTerminal(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule), FakeHarness: true})

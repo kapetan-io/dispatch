@@ -11,8 +11,8 @@ An interface dispatch owns and names for a tool's role (`treehouse.Pool`, `herdr
 _Avoid_: domain interface (ADR 0001 and older designs use it for the same thing), client interface
 
 **Host**:
-The Herdr product that runs the workers' terminals and shows them: the herdr TUI, or herdr-core with the Herdr app as its window. `[plugins.herdr] host` picks one, and dispatch drives only the configured one.
-_Avoid_: backend, multiplexer (only the TUI is one)
+The product that runs the workers' terminals and shows them: the herdr TUI, herdr-core with the Herdr app as its window, or Rex. `[plugins.herdr] host` picks one of the first two, writing `[plugins.rex]` picks Rex, and dispatch drives only one.
+_Avoid_: backend, multiplexer
 
 **Real adapter**:
 The production implementation of a tool's port, which invokes the installed tool.
@@ -122,16 +122,24 @@ The text of a slash command dispatch is about to type into a worker's pane, kept
 _Avoid_: ledger entry, receipt (both are in history)
 
 **Workspace emoji**:
-The first word of a worker's workspace label. It says who the ticket is waiting on: the worker (🟢), CI (🟡), you (👀, 💤 or 🔴), a PR's approvers (⏳), whoever merges the PR (🔀, you when `auto_merge` is off), or nobody (⏸️). In a repo with `open_pr_as = "draft"`, a ready draft is 👀, and once you open it the PR is ⏳ until its head is approved and 🔀 after. `worker-states.md` lists every state, its emoji, and what dispatch does in it.
+The first word of a worker's workspace label (under Rex, of its window label, which reads `<emoji> <ticket> <title>`). It says who the ticket is waiting on: the worker (🟢), CI (🟡), you (👀, 💤 or 🔴), a PR's approvers (⏳), whoever merges the PR (🔀, you when `auto_merge` is off), or nobody (⏸️). In a repo with `open_pr_as = "draft"`, a ready draft is 👀, and once you open it the PR is ⏳ until its head is approved and 🔀 after. `worker-states.md` lists every state, its emoji, and what dispatch does in it.
 _Avoid_: status icon, status
 
 **Workspace**:
-The host's place showing a worker's tree: a herdr TUI workspace, or a Herdr app space whose id dispatch derives from the tree. The first word of its name is the workspace emoji.
+The host's place showing a worker's tree: a herdr TUI workspace, a Herdr app space whose id dispatch derives from the tree, or under Rex the window showing the tree in its repo session, with an id built from the repo session's label and the tree. Code and docs say workspace, and the word window stays inside the Rex adapter, as the app's word space stays inside the app adapter. The first word of its name is the workspace emoji.
 _Avoid_: space (the app's word, kept inside the app adapter), window
 
 **Worker label**:
-A `dispatch.*` key=value pair on a worker's terminal under the app host (`dispatch.tree`, `.session`). The app host's record of whose worker the terminal is. It is distinct from the workspace and tab labels the loop renames (the workspace emoji), and from **Unknown**, which is a fact whose read failed, not the agent status `unknown`.
+The host's record of whose worker a terminal is. Under the app host it is `dispatch.*` key=value pairs on the terminal (`dispatch.tree`, `.session`). Rex has no key-value labels, so the block's label holds `dispatch <claude session id or -> <first 8 characters of the server's instance id> <tree>`, at most 128 characters, which limits a tree to 73. It is distinct from the workspace and tab labels the loop renames (the workspace emoji), and from **Unknown**, which is a fact whose read failed, not the agent status `unknown`.
 _Avoid_: tag, metadata
+
+**Repo session**:
+The Rex session dispatch runs a repo's workers in, labeled with the folder name of the repo's main checkout. A launch creates it when no session has that label, and a close always leaves it.
+_Avoid_: workspace, project, Rex session (any session, the user's included). Elsewhere session means one harness run inside a worker, so say repo session in full for the Rex object.
+
+**Structure lock**:
+The file lock `rex.lock` in dispatch's state directory, held while dispatch changes Rex sessions, windows or worker blocks, so two launches on one tree leave one worker.
+_Avoid_: start lock, mutex
 
 **Worker**:
 The ticket's place on a tree it holds: the tree, the workspace showing that tree, and the harness session running there now, if any. Only a session of a harness dispatch has an adapter for counts; an agent of another kind a person opened in the workspace, such as a Pi, is ignored. Sessions come and go inside it: a relaunch keeps the same worker with a new session, and the worker lasts as long as the ticket holds the tree. A ticket that holds trees in two repos has a worker on each. The worker's state is its session's: `working`, `idle`, `blocked`, or `none` when no session runs there. A rule that looks up a ticket that holds no tree gets a worker record with state `none`, though there is no worker. Some messages use "worker" for the session: "has no worker" and "gone" mean the state `none`, and "a worker is running" means a session runs there.
@@ -242,7 +250,7 @@ A case in a `*.test.ts` file that `dispatch rules test` runs. It sets up a world
 _Avoid_: contract scenario (a tool fake against its adapter), unit test
 
 **Stop record**:
-The latest turn end of each worker session, from the harness's report through `dispatch record-stop`, which finds the harness from the terminal the hook runs in (`HC_TERMINAL_ID` under the Herdr app, `HERDR_PANE_ID` under the herdr TUI), saying whether background tasks were still running. A turn end at or before its tree's last return is ignored.
+The latest turn end of each worker session, from the harness's report through `dispatch record-stop`, which finds the harness from the terminal the hook runs in (`HC_TERMINAL_ID` under the Herdr app, `HERDR_PANE_ID` under the herdr TUI, `REX_SESSION` with `REX_BLOCK` under Rex), saying whether background tasks were still running. A turn end at or before its tree's last return is ignored.
 _Avoid_: stop file, turn (the session log keeps every turn)
 
 **Ticket system**:

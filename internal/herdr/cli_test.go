@@ -33,6 +33,9 @@ func TestMain(m *testing.M) {
 	if dir, ok := os.LookupEnv(envState); ok {
 		os.Exit(runStatefulStandIn(dir, os.Args[1:]))
 	}
+	if path, ok := os.LookupEnv(envRexState); ok {
+		os.Exit(runRexStandIn(path, os.Args[1:]))
+	}
 	if _, ok := os.LookupEnv(envCoreReplies); ok {
 		os.Exit(runCoreStandIn(os.Args[1:]))
 	}

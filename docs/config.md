@@ -73,7 +73,7 @@ worker = ""
 design = ""
 ```
 
-Repos have no default, so the block shows one repo with every setting at its default, and `path` is required. Without any `[repos.<label>]` table, every In Progress ticket escalates to Needs Human because its repo isn't configured. A leading `~` in `dispatch.rules`, `history.dir`, `plugins.herdr.plugin_root`, `plugins.local.path` and in every repo's `path` expands to your home directory.
+Repos have no default, so the block shows one repo with every setting at its default, and `path` is required. Without any `[repos.<label>]` table, every In Progress ticket escalates to Needs Human because its repo isn't configured. A leading `~` in `dispatch.rules`, `history.dir`, `plugins.herdr.plugin_root`, `plugins.rex.plugin_root`, `plugins.local.path` and in every repo's `path` expands to your home directory.
 
 ## `[dispatch]`
 
@@ -163,6 +163,21 @@ A rule names the service and a path, and dispatch sends `Authorization: Bearer <
 | `host` | `tui` | The herdr product that runs your workers. `tui` runs them in the herdr terminal UI. `app` runs each worker as a herdr-core terminal that the Herdr app shows, and keeps workers running when the terminal dispatch runs in closes. It needs `hc` on PATH. It also needs `herdr-app` on PATH and the app window open to name each worker's space `<emoji> <ticket>` and its tab `<ticket> <title>`, and to close a space left empty. With no window open, workers still run, the naming and closing are skipped without an error, and names catch up at the first resync after the window opens. A space left empty while the window was closed stays until you close it. Any other value stops dispatch at config load. Rules never see this setting in `ctx.config`. Before changing `host`, let running workers finish or close their windows. Dispatch drives only the configured host: a worker left running on the old host is invisible to dispatch, which launches a second one on the same tree. |
 
 `[plugins.github]`, `[plugins.treehouse]` and `[plugins.notify]` take no settings yet. Write the empty table to say the plugin is on.
+
+## `[plugins.rex]`
+
+Writing the table, even empty, runs your workers in Rex instead of herdr. It cannot sit beside `[plugins.herdr]`, and a config with both stops dispatch at load, because workers run in one host.
+
+```toml
+[plugins.rex]
+plugin_root = "~/Development/dispatch"
+```
+
+| Setting | Default | What it does |
+|---|---|---|
+| `plugin_root` | `~/Development/dispatch` | Your checkout of this repo, used as `[plugins.herdr]`'s `plugin_root` is. |
+
+Rex has to be open. Dispatch never starts it, and a command that needs it exits saying "Rex is not running". It finds `rex` on PATH, then in `/Applications/Rex Beta.app`. Each repo gets a Rex session named for the folder of its main checkout, and each worker is a block in a window of that session. A close ends the worker and leaves the session.
 
 ## `[plugins.local]`
 
