@@ -16,7 +16,6 @@ import (
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
-	"github.com/kapetan-io/dispatch/internal/loop"
 )
 
 // noLinearChanges requires that dispatch moved no ticket and posted no comment.
@@ -2282,15 +2281,6 @@ func TestCommandsAreUnknownForAWorkerOfATicketThatIsNotInProgressOrInReview(t *t
 	assert.Equal(t, "unknown", lastReading(t, d))
 }
 
-// settleLoop returns once the loop has landed every read it was asked for and run the cycle after
-// it, which the herdr fake's read count cannot show because it counts a read when it starts.
-func (d *Dispatch) settleLoop() {
-	d.t.Helper()
-	resp, err := loop.Ask(d.t.Context(), d.state, loop.Request{Op: loop.OpSettle})
-	require.NoError(d.t, err)
-	require.Equal(d.t, loop.CodeSettled, resp.Code)
-}
-
 func TestWakeShowsANudgedWorkerIdleOnceAReadSawItBusy(t *testing.T) {
 	t.Parallel()
 	for _, busy := range []string{"working", "blocked"} {
@@ -2312,8 +2302,10 @@ func TestWakeShowsANudgedWorkerIdleOnceAReadSawItBusy(t *testing.T) {
 			assert.Never(t, func() bool { return len(d.Workers.Renames()) > 2 }, 300*time.Millisecond, 10*time.Millisecond)
 
 			// A read that sees the worker busy proves the nudge landed, so the next idle shows at once.
+			reads := len(d.tools.Calls("herdr", "read"))
 			d.Workers.SetStatus("ENG-1", busy)
 			require.NoError(t, d.Wake(d.Workers.Tree("ENG-1")).Err)
+			require.Eventually(t, func() bool { return len(d.tools.Calls("herdr", "read")) > reads }, 5*time.Second, 5*time.Millisecond)
 			d.settleLoop()
 			d.Workers.SetStatus("ENG-1", "idle")
 			require.NoError(t, d.Wake(d.Workers.Tree("ENG-1")).Err)

@@ -404,6 +404,16 @@ func (d *Dispatch) Tick() string {
 	return res.Stdout
 }
 
+// settleLoop returns once the loop has landed the read in flight and run the cycle after it. The
+// herdr fake's read count cannot show that, because it counts a read when it starts, and a wake
+// hook returns before the loop has seen it, so a caller waits for the count first.
+func (d *Dispatch) settleLoop() {
+	d.t.Helper()
+	resp, err := loop.Ask(d.t.Context(), d.state, loop.Request{Op: loop.OpSettle})
+	require.NoError(d.t, err)
+	require.Equal(d.t, loop.CodeSettled, resp.Code)
+}
+
 // Receipt is one action dispatch took, as `dispatch trace --json` reports it.
 type Receipt struct {
 	Kind    string
