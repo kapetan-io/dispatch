@@ -3,6 +3,7 @@ package herdr_test
 // Package exception: this package wraps the rex tool, so every test here is an adapter test of it.
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -148,6 +150,9 @@ func standInSessionGone(session string) error {
 
 // runRexStandIn answers `rex [-S sock] --autostart=false api call [-s session] METHOD [json]`.
 func runRexStandIn(path string, args []string) int {
+	if slices.Contains(args, "events") {
+		return runRexEvents(path)
+	}
 	var stdout bytes.Buffer
 	err := withStandInState(path, func(state *standInRex) error { return state.serve(args, &stdout) })
 	var exit standInExit
@@ -160,7 +165,60 @@ func runRexStandIn(path string, args []string) int {
 		return 2
 	}
 	_, _ = os.Stdout.Write(stdout.Bytes())
+	// Rex tells an events listener started with --all about every other client's call.
+	appendEvent(path, `{"type":"client_joined"}`)
 	return 0
+}
+
+// appendEvent adds a line to what a running `rex events` prints next.
+func appendEvent(path, line string) {
+	file, err := os.OpenFile(path+".events", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	_, _ = fmt.Fprintln(file, line)
+}
+
+// standInExitEvent makes a running `rex events` exit with code, as the server going away does.
+func standInExitEvent(code int) string { return fmt.Sprintf(`{"type":"__exit","code":%d}`, code) }
+
+// runRexEvents answers `rex events --all --json`: it prints the lines tests append after it started,
+// and prints nothing on subscribing, as Rex does.
+func runRexEvents(path string) int {
+	var down bool
+	_ = withStandInState(path, func(s *standInRex) error { down = s.Down; return nil })
+	if down {
+		fmt.Fprintln(os.Stderr, "Error: no Rex server is running")
+		return 4
+	}
+	file, err := os.OpenFile(path+".events", os.O_RDONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	defer file.Close()
+	if _, err := file.Seek(0, io.SeekEnd); err != nil {
+		return 2
+	}
+	reader, partial := bufio.NewReader(file), ""
+	for {
+		line, err := reader.ReadString('\n')
+		partial += line
+		if err != nil {
+			time.Sleep(5 * time.Millisecond)
+			continue
+		}
+		var exit struct {
+			Type string
+			Code int
+		}
+		if json.Unmarshal([]byte(partial), &exit) == nil && exit.Type == "__exit" {
+			return exit.Code
+		}
+		_, _ = os.Stdout.WriteString(partial)
+		partial = ""
+	}
 }
 
 func (s *standInRex) serve(args []string, out io.Writer) error {

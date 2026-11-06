@@ -98,6 +98,8 @@ type dispatchOptions struct {
 	// RealHerdr leaves the herdr to dispatch, which builds the adapter for the config's host
 	// from the environment's PATH. A test that sets it points PATH at a directory it controls.
 	RealHerdr bool
+	// Streaming makes the herdr fake report its changes, as the Rex adapter does.
+	Streaming bool
 	// RepoSettings is TOML lines added to the dispatch repo's [repos.dispatch] table.
 	RepoSettings string
 	// ExactRules keeps the [rules] table as Config wrote it, without the shipped keys filled in.
@@ -141,6 +143,7 @@ type Dispatch struct {
 	builtinLauncher bool
 	fakeHarness     bool
 	realHerdr       bool
+	streaming       bool
 	// followers is who follows what in the running dispatch. The recorder session follows every
 	// ticket the test seeds, so a test reads back what dispatch told followers.
 	followers *notify.Followers
@@ -261,6 +264,7 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 	d.builtinLauncher = opts.Launcher == builtinLauncher
 	d.fakeHarness = opts.FakeHarness
 	d.realHerdr = opts.RealHerdr
+	d.streaming = opts.Streaming
 	if opts.Rules != nil {
 		d.rulesDir = rulesDir(t, opts.Rules)
 	}
@@ -1378,6 +1382,9 @@ func (d *Dispatch) options(extra dispatch.Options) dispatch.Options {
 	}
 	if !d.realHerdr {
 		extra.Herdr = d.tools.Herdr
+		if d.streaming {
+			extra.Herdr = d.tools.Herdr.Streaming()
+		}
 	}
 	extra.Treehouse = d.tools.Treehouse
 	extra.PullRequests = d.tools.PullRequests

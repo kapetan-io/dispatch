@@ -114,6 +114,18 @@ type Herdr interface {
 	Kickoff(ctx context.Context, pane, text string, startup Startup) error
 }
 
+// Stream is a multiplexer that reports, as it happens, each pane whose agent may have changed:
+// its status moved, its program exited, or its tab closed.
+type Stream interface {
+	// Changes calls changed with the pane of each change, in the order the multiplexer made them,
+	// until ctx ends or the stream drops. It returns nil only when ctx ended; any other return is a
+	// drop and says why. It never starts the multiplexer. Once it is live it has named each pane of a
+	// worker, so a change made before it went live is not lost. When listing those panes fails it names
+	// none, and the next full read covers them. changed may block, which
+	// holds the stream. A pane may hold no worker, and a pane may be named twice.
+	Changes(ctx context.Context, changed func(pane string)) error
+}
+
 // NewWorkspace is a checkout to show in a workspace.
 type NewWorkspace struct {
 	// Repo is the repo's main checkout, which herdr nests the workspace under.

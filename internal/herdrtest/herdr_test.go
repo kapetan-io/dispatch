@@ -21,46 +21,59 @@ func TestHerdrKeepsTheHerdrContract(t *testing.T) {
 	for _, scenario := range herdrtest.Scenarios {
 		t.Run(scenario.Name, func(t *testing.T) {
 			fake := herdrtest.New(&journal.Journal{})
-			var workspaces int
-			layout := func(workspace string, tab int, label string) herdrtest.Layout {
-				l := herdrtest.Layout{Workspace: workspace, Tab: fmt.Sprintf("%s:t%d", workspace, tab), Pane: fmt.Sprintf("%s:p%d", workspace, tab)}
-				fake.AddTab(herdr.Tab{ID: l.Tab, Label: label, WorkspaceID: workspace})
-				fake.AddPane(herdr.Pane{ID: l.Pane, TabID: l.Tab, WorkspaceID: workspace})
-				return l
-			}
-			tabs, started := map[string]int{}, map[string]bool{}
-			scenario.Run(t, herdrtest.Subject{
-				Herdr:      fake,
-				PluginRoot: "/plugin",
-				Program:    harness.ClaudeCode{}.Program(harness.Start{Model: "sonnet", PluginRoot: "/plugin"}),
-				Checkout:   func() (string, string) { return herdrtest.NewCheckout(t) },
-				Workspace: func(label string) herdrtest.Layout {
-					workspaces++
-					id := fmt.Sprintf("w%d", workspaces)
-					fake.AddWorkspace(herdr.Workspace{ID: id, Label: label})
-					tabs[id] = 1
-					return layout(id, 1, "1")
-				},
-				Tab: func(workspace, label string) herdrtest.Layout {
-					tabs[workspace]++
-					return layout(workspace, tabs[workspace], label)
-				},
-				Agent: func(pane, status string) {
-					if started[pane] {
-						fake.SetStatus(pane, status)
-						return
-					}
-					started[pane] = true
-					snap, err := fake.Read(context.Background())
-					require.NoError(t, err)
-					for _, p := range snap.Panes {
-						if p.ID == pane {
-							fake.AddAgent(herdr.Agent{Kind: "claude", Status: status, PaneID: p.ID, TabID: p.TabID, WorkspaceID: p.WorkspaceID})
-						}
-					}
-				},
-			})
+			scenario.Run(t, subjectOf(t, fake))
 		})
+	}
+}
+
+func TestStreamKeepsTheStreamContract(t *testing.T) {
+	for _, scenario := range herdrtest.StreamScenarios {
+		t.Run(scenario.Name, func(t *testing.T) {
+			fake := herdrtest.New(&journal.Journal{})
+			scenario.Run(t, herdrtest.StreamSubject{Subject: subjectOf(t, fake), Stream: fake.Streaming(), Exit: fake.ExitAgent})
+		})
+	}
+}
+
+func subjectOf(t *testing.T, fake *herdrtest.Herdr) herdrtest.Subject {
+	var workspaces int
+	layout := func(workspace string, tab int, label string) herdrtest.Layout {
+		l := herdrtest.Layout{Workspace: workspace, Tab: fmt.Sprintf("%s:t%d", workspace, tab), Pane: fmt.Sprintf("%s:p%d", workspace, tab)}
+		fake.AddTab(herdr.Tab{ID: l.Tab, Label: label, WorkspaceID: workspace})
+		fake.AddPane(herdr.Pane{ID: l.Pane, TabID: l.Tab, WorkspaceID: workspace})
+		return l
+	}
+	tabs, started := map[string]int{}, map[string]bool{}
+	return herdrtest.Subject{
+		Herdr:      fake,
+		PluginRoot: "/plugin",
+		Program:    harness.ClaudeCode{}.Program(harness.Start{Model: "sonnet", PluginRoot: "/plugin"}),
+		Checkout:   func() (string, string) { return herdrtest.NewCheckout(t) },
+		Workspace: func(label string) herdrtest.Layout {
+			workspaces++
+			id := fmt.Sprintf("w%d", workspaces)
+			fake.AddWorkspace(herdr.Workspace{ID: id, Label: label})
+			tabs[id] = 1
+			return layout(id, 1, "1")
+		},
+		Tab: func(workspace, label string) herdrtest.Layout {
+			tabs[workspace]++
+			return layout(workspace, tabs[workspace], label)
+		},
+		Agent: func(pane, status string) {
+			if started[pane] {
+				fake.SetStatus(pane, status)
+				return
+			}
+			started[pane] = true
+			snap, err := fake.Read(context.Background())
+			require.NoError(t, err)
+			for _, p := range snap.Panes {
+				if p.ID == pane {
+					fake.AddAgent(herdr.Agent{Kind: "claude", Status: status, PaneID: p.ID, TabID: p.TabID, WorkspaceID: p.WorkspaceID})
+				}
+			}
+		},
 	}
 }
 

@@ -361,33 +361,12 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 				w.Leased[tree.LeaseHolder] = true
 			}
 		}
-		snap := w.Snapshot
 		w.Workers, w.Stops = map[string]Worker{}, map[string]stops.Record{}
 		w.Sessions, w.SessionErrs = map[string]sessionlog.Log{}, map[string]error{}
 		for _, t := range w.Tickets {
-			wk := FindWorker(t.Identifier, w.Trees, snap)
-			if at, ok := kickoffs.Since(src.StateDir, wk.TreePath); ok && wk.State != NoWorker && !kickoffRan(src.StateDir, wk, at) {
-				wk.UnconfirmedSince = at.UnixMilli()
-				// A Claude stuck at a startup dialog after its launcher died reports no status.
-				// Reading it idle lets close-unconfirmed-worker recover it.
-				if wk.noStatus {
-					wk.State = Idle
-				}
-			}
-			w.Workers[t.Identifier] = wk
-			if wk.State == Idle && scope.Is(t, ticket.InProgress) {
-				if rec, ok := stops.Read(src.StateDir, wk.TreePath, wk.Session); ok {
-					w.Stops[t.Identifier] = rec
-				}
-			}
-			if wk.State != NoWorker && (scope.Is(t, ticket.InProgress) || scope.Is(t, ticket.InReview)) {
-				w.readSession(src.StateDir, t.Identifier, wk)
-			}
+			w.joinWorker(src, scope, t)
 		}
-		w.Leases = map[string][]Worker{}
-		for _, t := range w.LeaseHolders {
-			w.Leases[t.Identifier] = FindWorkers(t.Identifier, w.Trees, snap)
-		}
+		w.joinLeases()
 	}
 	if parts&FromLinear != 0 && w.LinearErr == nil {
 		// Only promotion and closing wait on the children, so a failed read holds
@@ -431,6 +410,95 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		w.readInbox(ctx, src, scope, now)
 	}
 	return w, nil
+}
+
+// joinWorker builds the ticket's worker from the trees and the snapshot, with its Stop record and
+// session log, so a full read and a pane read build a worker one way.
+func (w *World) joinWorker(src Sources, scope Scope, t ticket.Ticket) {
+	wk := FindWorker(t.Identifier, w.Trees, w.Snapshot)
+	if at, ok := kickoffs.Since(src.StateDir, wk.TreePath); ok && wk.State != NoWorker && !kickoffRan(src.StateDir, wk, at) {
+		wk.UnconfirmedSince = at.UnixMilli()
+		// A Claude stuck at a startup dialog after its launcher died reports no status.
+		// Reading it idle lets close-unconfirmed-worker recover it.
+		if wk.noStatus {
+			wk.State = Idle
+		}
+	}
+	w.Workers[t.Identifier] = wk
+	if wk.State == Idle && scope.Is(t, ticket.InProgress) {
+		if rec, ok := stops.Read(src.StateDir, wk.TreePath, wk.Session); ok {
+			w.Stops[t.Identifier] = rec
+		}
+	}
+	if wk.State != NoWorker && (scope.Is(t, ticket.InProgress) || scope.Is(t, ticket.InReview)) {
+		w.readSession(src.StateDir, t.Identifier, wk)
+	}
+}
+
+// copied is a new map holding m's entries, empty and not nil for a nil m, as a full read leaves them.
+func copied[K comparable, V any](m map[K]V) map[K]V {
+	out := make(map[K]V, len(m))
+	maps.Copy(out, m)
+	return out
+}
+
+// joinLeases builds the workers of every lease holder that is not tracked.
+func (w *World) joinLeases() {
+	w.Leases = map[string][]Worker{}
+	for _, t := range w.LeaseHolders {
+		w.Leases[t.Identifier] = FindWorkers(t.Identifier, w.Trees, w.Snapshot)
+	}
+}
+
+// ReadPanes reads the agents in the named panes alone and rebuilds only the workers on them. It
+// reports false when it can't, which is any pane whose answer is not the same agent it held before:
+// the agent came or went, changed kind or session, or the multiplexer failed. It then changes
+// nothing, and the caller reads the multiplexer in full, which settles what happened.
+func ReadPanes(ctx context.Context, src Sources, scope Scope, prev World, panes []string, at time.Time) (World, bool) {
+	held := map[string]herdr.Agent{}
+	for _, a := range prev.Snapshot.Agents {
+		held[a.PaneID] = a
+	}
+	status := map[string]string{}
+	for _, pane := range panes {
+		was, ok := held[pane]
+		if !ok {
+			return prev, false
+		}
+		readCtx, done := bound(ctx)
+		agent, found, err := src.Herdr.AgentAt(readCtx, pane)
+		done()
+		if err != nil || !found || agent.Kind != was.Kind || agent.Session != was.Session {
+			return prev, false
+		}
+		status[pane] = agent.Status
+	}
+	w := prev
+	w.At = at
+	// The previous world may still be in use, so nothing it holds is written to.
+	w.Snapshot.Agents = slices.Clone(prev.Snapshot.Agents)
+	for i, a := range w.Snapshot.Agents {
+		if s, ok := status[a.PaneID]; ok {
+			w.Snapshot.Agents[i].Status = s
+		}
+	}
+	w.Workers, w.Stops = copied(prev.Workers), copied(prev.Stops)
+	w.Sessions, w.SessionErrs = copied(prev.Sessions), copied(prev.SessionErrs)
+	for _, t := range w.Tickets {
+		onPanes := slices.ContainsFunc(FindWorkers(t.Identifier, w.Trees, prev.Snapshot), func(wk Worker) bool {
+			_, named := status[wk.PaneID]
+			return named
+		})
+		if !onPanes {
+			continue
+		}
+		delete(w.Stops, t.Identifier)
+		delete(w.Sessions, t.Identifier)
+		delete(w.SessionErrs, t.Identifier)
+		w.joinWorker(src, scope, t)
+	}
+	w.joinLeases()
+	return w, true
 }
 
 // readSession reads the log of the worker's current session. With no session from herdr

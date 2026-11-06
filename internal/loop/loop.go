@@ -123,6 +123,13 @@ type Loop struct {
 	nudgeEpoch int
 	// nudgedDuring holds the tickets nudged while a read was in flight.
 	nudgedDuring map[string]bool
+	// stream is the multiplexer's stream of changes, nil when it has none. streaming is true while
+	// Changes runs, and stopStream ends it.
+	stream     herdr.Stream
+	streaming  bool
+	stopStream context.CancelFunc
+	// named holds the panes the stream named that no pane read has taken yet.
+	named map[string]bool
 	// actions counts the actions started since the last resync line.
 	actions     int
 	linearCalls int
@@ -158,7 +165,17 @@ type readDone struct {
 	parts world.Part
 	w     world.World
 	err   error
+	// panes are the panes a pane read asked about, none for any other read. unsettled is true when
+	// that read could not tell what changed, so the multiplexer is read in full.
+	panes     []string
+	unsettled bool
 }
+
+// paneChanged is a pane the stream named.
+type paneChanged struct{ pane string }
+
+// streamEnded reports that Changes returned. err is nil when the stream was stopped.
+type streamEnded struct{ err error }
 
 type actionDone struct {
 	f   *flight
@@ -191,7 +208,9 @@ func New(o Options) *Loop {
 	if o.Sources.Stderr == nil {
 		o.Sources.Stderr = o.Err
 	}
+	stream, _ := o.Sources.Herdr.(herdr.Stream)
 	return &Loop{
+		stream: stream, named: map[string]bool{},
 		o: o, clock: o.Clock, scope: world.ScopeOf(o.Config),
 		inbox: make(chan any, 256), stopped: make(chan struct{}), flights: map[string]*flight{}, launching: map[string]bool{}, threw: map[string]bool{}, threwTold: map[string]bool{},
 		renaming: map[string]string{},
@@ -231,6 +250,7 @@ func (l *Loop) Run(ctx context.Context) (err error) {
 			_ = l.local.Close()
 		}
 	}()
+	defer l.closeStream()
 	if err := l.start(ctx); err != nil {
 		if l.hist != nil {
 			_ = l.hist.Close(false)
@@ -305,6 +325,7 @@ func (l *Loop) fatal(err error) {
 
 // drain waits for the actions in flight, up to their deadlines, then stops.
 func (l *Loop) drain() error {
+	l.closeStream()
 	for _, w := range l.waiters {
 		w.reply <- Response{Code: CodeFailed, Error: "dispatch is stopping"}
 	}
@@ -364,6 +385,7 @@ func (l *Loop) start(ctx context.Context) error {
 	if err := l.write(history.Event{Line: history.LineEvent, Ingest: at.UnixMilli(), Source: "dispatch", Type: history.EventStart}); err != nil {
 		return err
 	}
+	l.openStream()
 	wd, err := world.Refresh(ctx, l.o.Sources, l.scope, world.World{}, world.Everything, at)
 	if err != nil {
 		_ = l.hist.Close(false)
@@ -423,6 +445,12 @@ func (l *Loop) handle(m any) error {
 	switch m := m.(type) {
 	case readDone:
 		return l.onRead(m)
+	case paneChanged:
+		l.named[m.pane] = true
+		return nil
+	case streamEnded:
+		l.onStreamEnded(m)
+		return nil
 	case actionDone:
 		return l.onAction(m)
 	case renameDone:
@@ -456,6 +484,7 @@ func (l *Loop) onResync(typ string) error {
 	l.kept = nil
 	l.keptCleared = true
 	l.nudgeEpoch++
+	l.openStream()
 	l.readAgain(world.Everything)
 	// A step that failed after the one before it landed is not wanted again by its rule,
 	// because the first step made the rule's condition false.
@@ -542,16 +571,85 @@ func (l *Loop) readAgain(parts world.Part) {
 }
 
 func (l *Loop) startRead() {
-	if l.reading || l.pending == 0 {
+	if l.reading {
+		return
+	}
+	if l.pending == 0 {
+		l.startPaneRead()
 		return
 	}
 	parts, prev, epoch := l.pending, l.wd, l.nudgeEpoch
 	l.pending, l.reading, l.nudgedDuring = 0, true, nil
+	if parts&world.FromLocal != 0 {
+		// This read starts after the changes the stream named and reads every pane they could mean.
+		clear(l.named)
+	}
 	at := l.stamp()
 	go func() {
 		w, err := world.Refresh(l.runCtx, l.o.Sources, l.scope, prev, parts, at)
 		l.inbox <- readDone{parts: parts, w: w, err: err, epoch: epoch}
 	}()
+}
+
+// startPaneRead reads the panes the stream named when no other read is waiting. Only a pane the last
+// read of the multiplexer listed can hold a worker, so a name for any other costs no call, and after a
+// failed read none is listed, so every name is dropped and the next full read finds the change.
+func (l *Loop) startPaneRead() {
+	var panes []string
+	for _, p := range l.wd.Snapshot.Panes {
+		if l.named[p.ID] {
+			panes = append(panes, p.ID)
+		}
+	}
+	clear(l.named)
+	if len(panes) == 0 {
+		return
+	}
+	prev, epoch, at := l.wd, l.nudgeEpoch, l.stamp()
+	l.reading, l.nudgedDuring = true, nil
+	go func() {
+		w, ok := world.ReadPanes(l.runCtx, l.o.Sources, l.scope, prev, panes, at)
+		l.inbox <- readDone{w: w, epoch: epoch, panes: panes, unsettled: !ok}
+	}()
+}
+
+// openStream starts listening for changes unless it already does. A resync opens it again after it
+// dropped, and nothing tries again in between.
+func (l *Loop) openStream() {
+	if l.stream == nil || l.streaming {
+		return
+	}
+	ctx, cancel := context.WithCancel(l.runCtx)
+	l.streaming, l.stopStream = true, cancel
+	go func() {
+		err := l.stream.Changes(ctx, func(pane string) {
+			select {
+			case l.inbox <- paneChanged{pane}:
+			case <-ctx.Done():
+			case <-l.stopped:
+			}
+		})
+		select {
+		case l.inbox <- streamEnded{err: err}:
+		case <-l.stopped:
+		}
+	}()
+}
+
+func (l *Loop) closeStream() {
+	if l.stopStream != nil {
+		l.stopStream()
+	}
+}
+
+// onStreamEnded says the stream is down, so the person running dispatch knows workers update at each
+// resync, unless the loop is the one that stopped it.
+func (l *Loop) onStreamEnded(m streamEnded) {
+	l.streaming = false
+	if m.err == nil || l.runCtx.Err() != nil {
+		return
+	}
+	_, _ = fmt.Fprintf(l.o.Err, "%s dispatch: the worker stream ended: %v; workers update at each resync until it reopens\n", l.clock.Now().Format(time.TimeOnly), m.err)
 }
 
 func (l *Loop) onRead(m readDone) error {
@@ -590,10 +688,13 @@ func (l *Loop) onRead(m readDone) error {
 	// A read of herdr that sees a nudged worker working or blocked proves the nudge landed, so
 	// its mark ends. One that sees it idle keeps the mark, since Claude may not have taken the
 	// nudge yet. A nudge sent while the read was out is newer than what it saw.
-	if m.parts&world.FromLocal != 0 && (nudged != nil || len(l.nudgedDuring) > 0) {
+	// A pane read speaks only for the workers on the panes it read.
+	brought := m.parts&world.FromLocal != 0 || len(m.panes) > 0 && !m.unsettled
+	if brought && (nudged != nil || len(l.nudgedDuring) > 0) {
 		kept := map[string]bool{}
 		for id := range nudged {
-			if state := m.w.Workers[id].State; state != world.Working && state != world.Blocked {
+			read := m.parts&world.FromLocal != 0 || slices.Contains(m.panes, m.w.Workers[id].PaneID)
+			if state := m.w.Workers[id].State; !read || state != world.Working && state != world.Blocked {
 				kept[id] = true
 			}
 		}
@@ -618,9 +719,17 @@ func (l *Loop) onRead(m readDone) error {
 	}
 	l.tellOverflow(m)
 	l.tellRateLimit(m)
+	if m.unsettled {
+		// Whatever happened to the pane, a read of the multiplexer in full settles it before any cycle.
+		l.readAgain(world.FromLocal)
+	}
+	l.cycleDue = true
+	// A read that is asked for after a callback was queued is the one the callback waits for.
+	if len(m.panes) > 0 && l.pending != 0 {
+		return nil
+	}
 	callbacks := l.afterRead
 	l.afterRead = nil
-	l.cycleDue = true
 	for _, f := range callbacks {
 		if err := f(); err != nil {
 			return err
@@ -650,7 +759,7 @@ func (l *Loop) settle() error {
 
 // busy is true while anything is queued, pending or in flight.
 func (l *Loop) busy() bool {
-	return len(l.inbox) > 0 || l.reading || l.pending != 0 || l.cycleDue || len(l.flights) > 0 || l.renames > 0 || l.telling > 0
+	return len(l.inbox) > 0 || l.reading || l.pending != 0 || len(l.named) > 0 || l.cycleDue || len(l.flights) > 0 || l.renames > 0 || l.telling > 0
 }
 
 // cycle runs every rule over the world and the ledger, writes what changed, and
