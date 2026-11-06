@@ -622,6 +622,7 @@ func (l *Loop) openStream() {
 	ctx, cancel := context.WithCancel(l.runCtx)
 	l.streaming, l.stopStream = true, cancel
 	go func() {
+		defer cancel()
 		err := l.stream.Changes(ctx, func(pane string) {
 			select {
 			case l.inbox <- paneChanged{pane}:
@@ -741,13 +742,15 @@ func (l *Loop) onRead(m readDone) error {
 // settle starts the reads asked for, runs a cycle once every read has landed, and
 // reports idleness.
 func (l *Loop) settle() error {
-	l.startRead()
+	// A cycle that is due runs before the next pane read starts, so names arriving faster than a pane
+	// read takes cannot hold it back. A queued full read still goes first.
 	if l.cycleDue && !l.reading && l.pending == 0 {
 		l.cycleDue = false
 		if err := l.cycle("event"); err != nil {
 			return err
 		}
 	}
+	l.startRead()
 	busy := l.busy()
 	if l.wasBusy && !busy {
 		l.idle++

@@ -385,3 +385,29 @@ func TestStreamNamesMadeDuringAFailedReadAreLeftToTheNextFullRead(t *testing.T) 
 
 	assert.Contains(t, d.Followed.Told(), "ENG-1 is waiting on your answer in its workspace")
 }
+
+func TestStreamRunsACycleWhileChangesKeepArriving(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Streaming: true, Rules: rule(stateRule)})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+	d.startStreaming()
+	require.Equal(t, "state working", lastReading(t, d))
+	flooding, stop := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(flooding)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				d.tools.Herdr.Changed("w-ENG-1:p1")
+			}
+		}
+	}()
+	defer func() { close(stop); <-flooding }()
+
+	d.Workers.SetStatus("ENG-1", "blocked")
+
+	require.Eventually(t, func() bool { return lastReadingOf(d, "ENG-1") == "state blocked" }, 5*time.Second, 5*time.Millisecond)
+}

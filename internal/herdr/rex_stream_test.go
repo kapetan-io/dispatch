@@ -148,11 +148,12 @@ func TestRexStreamSkipsALineOverTheCapAndNamesTheNext(t *testing.T) {
 	session, block, _ := strings.Cut(pane, "/")
 	before := len(l.named())
 
-	appendStreamLines(t, r, strings.Repeat("x", 2<<20), sessionEvent(session, "block_event", "program_status_changed", block))
+	overCap := strings.Replace(sessionEvent(session, "block_event", "child_exited", "over-cap"), `"name"`, `"text":"`+strings.Repeat("x", 2<<20)+`","name"`, 1)
+
+	appendStreamLines(t, r, overCap, sessionEvent(session, "block_event", "program_status_changed", block))
 
 	require.Eventually(t, func() bool { return len(l.named()) > before }, 10*time.Second, 5*time.Millisecond)
-	l.stop()
-	assert.NoError(t, l.ended(t))
+	assert.Equal(t, []string{pane}, l.named()[before:])
 }
 
 func TestRexStreamReturnsNilWhenItsContextEnds(t *testing.T) {
