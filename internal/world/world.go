@@ -200,9 +200,9 @@ type World struct {
 	// the local read keeps the earlier ones.
 	StackRecords map[string]stackrecord.Records
 	StackErrs    map[string]error
-	// Nudged holds the tickets whose worker was typed into since the last full
-	// read. They show as working until the next one, so nothing that waits for an
-	// idle worker acts on a worker that is already busy with the nudge.
+	// Nudged holds the tickets whose worker was typed into. They show as working until a read
+	// sees the worker working or blocked, or the next resync, so nothing that waits for an idle
+	// worker acts on a worker that is already busy with the nudge.
 	Nudged map[string]bool
 	// Inbox holds the items of the last good read of the owner's GitHub inbox, newest 50 by
 	// UpdatedAt. When InboxErr is set the read failed and these are still the last good ones,

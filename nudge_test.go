@@ -2280,3 +2280,39 @@ func TestCommandsAreUnknownForAWorkerOfATicketThatIsNotInProgressOrInReview(t *t
 
 	assert.Equal(t, "unknown", lastReading(t, d))
 }
+
+func TestWakeShowsANudgedWorkerIdleOnceAReadSawItBusy(t *testing.T) {
+	t.Parallel()
+	for _, busy := range []string{"working", "blocked"} {
+		t.Run(busy, func(t *testing.T) {
+			t.Parallel()
+			d := newDispatch(t, dispatchOptions{})
+			d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+			d.Workers.Running("ENG-1", "idle")
+			d.Workers.Stop("ENG-1", stopTasks{})
+			d.Restart()
+			require.Equal(t, []string{"w-ENG-1|💤 ENG-1"}, d.Workers.Renames())
+			d.Advance(time.Second)
+			require.NoError(t, d.Run("tell", "ENG-1", "carry on").Err)
+			require.Eventually(t, func() bool { return len(d.Workers.Renames()) == 2 }, 5*time.Second, 5*time.Millisecond)
+			require.Equal(t, "w-ENG-1|🟢 ENG-1", d.Workers.Renames()[1])
+
+			// herdr still reports the worker idle before Claude takes the nudge.
+			require.NoError(t, d.Wake(d.Workers.Tree("ENG-1")).Err)
+			assert.Never(t, func() bool { return len(d.Workers.Renames()) > 2 }, 300*time.Millisecond, 10*time.Millisecond)
+
+			// A read that sees the worker busy proves the nudge landed, so the next idle shows at once.
+			reads := len(d.tools.Calls("herdr", "read"))
+			d.Workers.SetStatus("ENG-1", busy)
+			require.NoError(t, d.Wake(d.Workers.Tree("ENG-1")).Err)
+			require.Eventually(t, func() bool { return len(d.tools.Calls("herdr", "read")) > reads }, 5*time.Second, 5*time.Millisecond)
+			d.settleLoop()
+			d.Workers.SetStatus("ENG-1", "idle")
+			require.NoError(t, d.Wake(d.Workers.Tree("ENG-1")).Err)
+			require.Eventually(t, func() bool {
+				renames := d.Workers.Renames()
+				return len(renames) > 2 && renames[len(renames)-1] == "w-ENG-1|💤 ENG-1"
+			}, 5*time.Second, 5*time.Millisecond)
+		})
+	}
+}

@@ -10,9 +10,17 @@ _Avoid_: shell fake, mock, stub
 An interface dispatch owns and names for a tool's role (`treehouse.Pool`, `herdr.Herdr`), implemented by a real adapter and a tool fake.
 _Avoid_: domain interface (ADR 0001 and older designs use it for the same thing), client interface
 
-**Host**:
+**Multiplexer**:
 The product that runs the workers' terminals and shows them: the herdr TUI, herdr-core with the Herdr app as its window, or Rex. `[plugins.herdr] host` picks one of the first two, writing `[plugins.rex]` picks Rex, and dispatch drives only one.
-_Avoid_: backend, multiplexer
+_Avoid_: host (reads as a machine), backend
+
+**Stream**:
+A multiplexer's report, as it happens, of each pane whose agent may have changed. Dispatch reads the pane again to learn what changed. A change on the stream only asks for a pane read, and that read is the source read an Event names. A change about a pane that holds no worker reads nothing. Only Rex has one.
+_Avoid_: event stream, watcher, subscription
+
+**Pane read**:
+A read of the panes a stream named, one `AgentAt` each, that rebuilds only the workers on them and lands like any other read.
+_Avoid_: partial refresh, event apply
 
 **Real adapter**:
 The production implementation of a tool's port, which invokes the installed tool.
@@ -27,7 +35,7 @@ The contract scenarios run under `-tags drift` against the installed herdr and t
 _Avoid_: integration test, live test
 
 **Stand-in claude**:
-A Go program the drift check starts in place of Claude, which shows the startup prompts and reports its state to whichever host runs it.
+A Go program the drift check starts in place of Claude, which shows the startup prompts and reports its state to whichever multiplexer runs it.
 _Avoid_: fake claude (that name belongs to the `scripts/shims/claude` test)
 
 **Repo settings**:
@@ -56,7 +64,7 @@ _Avoid_: review claim (a claim asserts something to check)
 
 ## Relationships
 
-- Each port has one or more **real adapters** (the herdr port has two, one per **host**) and one **tool fake**, and every **contract scenario** runs against both, except Linear's, which run against the fake only.
+- Each port has one or more **real adapters** (the herdr port has two, one per **multiplexer**) and one **tool fake**, and every **contract scenario** runs against both, except Linear's, which run against the fake only.
 - The **drift check** runs the scenarios against the **real adapter** only, and does not run Linear's.
 - Every ticket belongs to exactly one **Ticket system**, and its id's prefix says which.
 - A **Local ticket** has one status, and each status carries any number of **Jobs**. `todo`, `in_progress`, `in_review`, `needs_human`, `close_parent` and `blocker_done` each belong to exactly one status, `finished` and `paused` to any number.
@@ -126,11 +134,11 @@ The first word of a worker's workspace label (under Rex, of its window label, wh
 _Avoid_: status icon, status
 
 **Workspace**:
-The host's place showing a worker's tree: a herdr TUI workspace, a Herdr app space whose id dispatch derives from the tree, or under Rex the window showing the tree in its repo session, with an id built from the repo session's label and the tree. Code and docs say workspace, and the word window stays inside the Rex adapter, as the app's word space stays inside the app adapter. The first word of its name is the workspace emoji.
+The multiplexer's place showing a worker's tree: a herdr TUI workspace, a Herdr app space whose id dispatch derives from the tree, or under Rex the window showing the tree in its repo session, with an id built from the repo session's label and the tree. Code and docs say workspace, and the word window stays inside the Rex adapter, as the app's word space stays inside the app adapter. The first word of its name is the workspace emoji.
 _Avoid_: space (the app's word, kept inside the app adapter), window
 
 **Worker label**:
-The host's record of whose worker a terminal is. Under the app host it is `dispatch.*` key=value pairs on the terminal (`dispatch.tree`, `.session`). Rex has no key-value labels, so the block's label holds `dispatch <claude session id or -> <first 8 characters of the server's instance id> <tree>`, at most 128 characters, which limits a tree to 73. It is distinct from the workspace and tab labels the loop renames (the workspace emoji), and from **Unknown**, which is a fact whose read failed, not the agent status `unknown`.
+The multiplexer's record of whose worker a terminal is. Under the app host it is `dispatch.*` key=value pairs on the terminal (`dispatch.tree`, `.session`). Rex has no key-value labels, so the block's label holds `dispatch <claude session id or -> <first 8 characters of the server's instance id> <tree>`, at most 128 characters, which limits a tree to 73. It is distinct from the workspace and tab labels the loop renames (the workspace emoji), and from **Unknown**, which is a fact whose read failed, not the agent status `unknown`.
 _Avoid_: tag, metadata
 
 **Repo session**:

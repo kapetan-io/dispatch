@@ -108,7 +108,7 @@ type Ticket struct {
 
 // Worker is a ticket's place on a tree it holds, and the Claude session there, if any.
 type Worker struct {
-	State        Fact[string]  `js:"state" ts:"\"none\" | \"working\" | \"idle\" | \"blocked\"" doc:"none when the ticket has no Claude session in a workspace, working when it is running a turn, when dispatch typed into it since the last resync, or when herdr can't tell its status (a worker with no status whose launch is unconfirmed reads idle instead), idle when it is waiting at its prompt, blocked when it waits on a question popup. A worker the ticket never had also reads none."`
+	State        Fact[string]  `js:"state" ts:"\"none\" | \"working\" | \"idle\" | \"blocked\"" doc:"none when the ticket has no Claude session in a workspace, working when it is running a turn, when dispatch typed into it and no read has yet seen it working or blocked, or when herdr can't tell its status (a worker with no status whose launch is unconfirmed reads idle instead), idle when it is waiting at its prompt, blocked when it waits on a question popup. A worker the ticket never had also reads none."`
 	Ticket       Fact[Ref]     `js:"ticket" ref:"ticket" doc:"The ticket the worker serves."`
 	Tree         Fact[*string] `js:"tree" doc:"The path of the treehouse tree the worker runs in, undefined when it has none."`
 	Workspace    Fact[*string] `js:"workspace" doc:"The id of the herdr workspace the worker runs in, undefined when it has none."`
