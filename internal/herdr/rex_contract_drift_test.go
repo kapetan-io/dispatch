@@ -149,3 +149,30 @@ func TestRexKeepsTheHostNeutralHerdrContract(t *testing.T) {
 		})
 	}
 }
+
+func TestRexKeepsTheStreamContract(t *testing.T) {
+	for _, scenario := range herdrtest.StreamScenarios {
+		t.Run(scenario.Name, func(t *testing.T) {
+			rig := newRexRig(t)
+			subject := &rexContract{rig: rig, started: map[string]bool{}}
+			var status struct {
+				Instance string `json:"instance_id"`
+			}
+			require.NoError(t, json.Unmarshal(subject.call(t, "", "server.status", map[string]any{}), &status))
+			subject.instance = status.Instance[:8]
+			scenario.Run(t, herdrtest.StreamSubject{
+				Stream: rig.rex,
+				Exit:   func(pane string) { subject.write(t, pane, "\x04") },
+				Subject: herdrtest.Subject{
+					Herdr:      rig.rex,
+					PluginRoot: rig.worker.PluginRoot,
+					Program:    rig.worker.Program,
+					Checkout:   func() (string, string) { return herdrtest.NewShortCheckout(t) },
+					Workspace:  func(label string) herdrtest.Layout { return subject.workspace(t, label) },
+					Tab:        func(workspace, label string) herdrtest.Layout { return subject.tab(t, workspace, label) },
+					Agent:      func(pane, status string) { subject.agent(t, pane, status) },
+				},
+			})
+		})
+	}
+}

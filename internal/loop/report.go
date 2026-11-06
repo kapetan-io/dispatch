@@ -12,6 +12,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/treekey"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -106,7 +107,22 @@ func (l *Loop) onStop(s *sessionlog.Stop) Response {
 	if err := sessionlog.AppendTurn(l.o.StateDir, s.Tree, s.Session, turn); err != nil {
 		return Response{Code: CodeFailed, Error: err.Error()}
 	}
+	l.nameStoppedPane(s.Tree)
 	return Response{}
+}
+
+// nameStoppedPane has the worker on tree read again while a stream runs, because the stream may have
+// reported it idle before this Stop record landed, and the world would hold the record before it. A
+// worker with no pane has nothing to name.
+func (l *Loop) nameStoppedPane(tree string) {
+	if !l.streaming {
+		return
+	}
+	for _, wk := range l.wd.Workers {
+		if wk.PaneID != "" && treekey.Of(wk.TreePath) == treekey.Of(tree) {
+			l.named[wk.PaneID] = true
+		}
+	}
 }
 
 // onPrompt stores a command a worker's session took, with who typed it, where the next

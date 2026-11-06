@@ -345,3 +345,40 @@ func TestRexDeletesTheRepoSessionAfterTheLastWorkerClosesWhenAsked(t *testing.T)
 	assert.NotContains(t, out, `"label":"`+filepath.Base(r.repo)+`"`)
 	require.NoError(t, r.rex.CloseWorkspace(context.Background(), r.worker.Workspace))
 }
+
+func TestRexStreamReportsAStoppedServerAsNotRunningAndStartsNone(t *testing.T) {
+	r := newRexRig(t)
+	r.server.Stop(t)
+
+	err := r.rex.Changes(context.Background(), func(string) {})
+
+	require.ErrorIs(t, err, herdr.ErrRexNotRunning)
+	_, statErr := os.Stat(r.server.Socket)
+	assert.True(t, os.IsNotExist(statErr))
+}
+
+func TestRexStreamNamesTheWorkerPaneWhenItsWorkspaceCloses(t *testing.T) {
+	r := newRexRig(t)
+	started := r.launched(t)
+	var mu sync.Mutex
+	var named []string
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		_ = r.rex.Changes(ctx, func(pane string) {
+			mu.Lock()
+			defer mu.Unlock()
+			named = append(named, pane)
+		})
+	}()
+	count := func() int { mu.Lock(); defer mu.Unlock(); return len(named) }
+	require.Eventually(t, func() bool { return count() > 0 }, 20*time.Second, 50*time.Millisecond)
+	live := count()
+
+	require.NoError(t, r.rex.CloseWorkspace(context.Background(), r.worker.Workspace))
+
+	require.Eventually(t, func() bool { return count() > live }, 20*time.Second, 50*time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, started.Pane, named[len(named)-1])
+}
