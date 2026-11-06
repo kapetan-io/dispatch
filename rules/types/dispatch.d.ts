@@ -143,7 +143,7 @@ declare module "dispatch" {
   }
   /** A ticket's place on a tree it holds, and the Claude session there, if any. Every ticket has one, with state none when no session runs. */
   export interface Worker {
-    /** none when the ticket has no Claude session in a workspace, working when it is running a turn, when dispatch typed into it since the last resync, or when herdr can't tell its status (a worker with no status whose launch is unconfirmed reads idle instead), idle when it is waiting at its prompt, blocked when it waits on a question popup. A worker the ticket never had also reads none. */
+    /** none when the ticket has no Claude session in a workspace, working when it is running a turn, when dispatch typed into it and no read has yet seen it working or blocked, or when herdr can't tell its status (a worker with no status whose launch is unconfirmed reads idle instead), idle when it is waiting at its prompt, blocked when it waits on a question popup. A worker the ticket never had also reads none. */
     readonly state: "none" | "working" | "idle" | "blocked";
     /** The ticket the worker serves. */
     readonly ticket: Ticket;

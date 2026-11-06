@@ -587,12 +587,22 @@ func (l *Loop) onRead(m readDone) error {
 		}
 		l.wd.Nudged = late
 	}
-	// A read of herdr that came back after a nudge is the next resync's job to
-	// believe, so the nudge overlay stays until then.
-	if m.parts&world.FromLocal != 0 && nudged != nil && m.parts != world.Everything {
-		l.wd.Nudged = maps.Clone(nudged)
+	// A read of herdr that sees a nudged worker working or blocked proves the nudge landed, so
+	// its mark ends. One that sees it idle keeps the mark, since Claude may not have taken the
+	// nudge yet. A nudge sent while the read was out is newer than what it saw.
+	if m.parts&world.FromLocal != 0 && (nudged != nil || len(l.nudgedDuring) > 0) {
+		kept := map[string]bool{}
+		for id := range nudged {
+			if state := m.w.Workers[id].State; state != world.Working && state != world.Blocked {
+				kept[id] = true
+			}
+		}
 		for id := range l.nudgedDuring {
-			l.wd.Nudged[id] = true
+			kept[id] = true
+		}
+		l.wd.Nudged = kept
+		if len(kept) == 0 {
+			l.wd.Nudged = nil
 		}
 	}
 	l.nudgedDuring = nil

@@ -24,7 +24,7 @@ The first line that fits wins.
 1. The ticket is Needs Human: 🔴.
 2. The ticket is paused and its worker's Claude session is gone: ⏸️.
 3. The worker is blocked on a question popup: 🔴.
-4. The worker is working, or dispatch typed into it since the last resync: 🟢.
+4. The worker is working, or dispatch typed into it and no read has yet seen it working or blocked: 🟢.
 5. The PR is ready and the worker is idle or gone: ⏳ if the repo opens drafts, the PR has left draft and its head isn't approved, 🔀 if the same PR is approved, otherwise 👀. "Approved" is what `auto_merge` counts, so a repo's `approval_checks` that haven't passed keep the PR at ⏳.
 6. The worker's Claude session is gone, or its launch isn't confirmed: 🟡 if the PR's checks are running, otherwise 🟢.
 7. The worker is idle and its last Stop (the Claude Code hook that records when a turn ended) lists a background task still running, and that Stop is under 60 minutes old: 🟢.
@@ -34,7 +34,7 @@ The first line that fits wins.
 
 A PR that dispatch could not read leaves a 🟢, 👀, ⏳, 🔀, 🟡 or 💤 label as it is until the next read.
 
-The Stop record comes from the plugin's Stop hook (`dispatch record-stop`). The plugin's Notification and UserPromptSubmit hooks run `dispatch wake`, which asks the running loop to read herdr and the pools again and run a cycle. That is not a resync, so nothing that failed is retried and no PR is read again unless a worker just went idle. Claude Code raises an `idle_prompt` Notification about 60 seconds after a turn ends with nobody typing, so 💤 shows within about a minute of the worker going idle. Without a running loop the label moves at the next resync. A worker dispatch just typed into shows 🟢 until the next resync, even if it has already gone idle again.
+The Stop record comes from the plugin's Stop hook (`dispatch record-stop`). The plugin's Notification and UserPromptSubmit hooks run `dispatch wake`, which asks the running loop to read herdr and the pools again and run a cycle. That is not a resync, so nothing that failed is retried and no PR is read again unless a worker just went idle. Claude Code raises an `idle_prompt` Notification about 60 seconds after a turn ends with nobody typing, so 💤 shows within about a minute of the worker going idle. Without a running loop the label moves at the next resync. A worker dispatch just typed into shows 🟢 until a read sees it working or blocked, or the next resync. A read that still sees it idle keeps the 🟢, so a second nudge cannot type before Claude takes the first.
 
 A worker can report no status, as Claude does under the Herdr app host (`host = "app"`) while it shows a startup dialog. It reads working, and dispatch types nothing into it. A nudge to it fails with "status unknown" and the send record is withdrawn. If the launch that started it died before its kickoff was confirmed, the worker reads idle instead, so `close-unconfirmed-worker` closes it after its grace period.
 

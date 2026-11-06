@@ -634,7 +634,7 @@ func TestTickNudgesAgainAtTheNextResyncWhenTheWorkerLeftNoStopRecord(t *testing.
 			d.Tick()
 			assert.Len(t, d.Workers.Prompts(), 1)
 
-			// A nudged worker shows as working until the next resync, so a resync that
+			// A nudged worker no read has seen busy shows as working until the next resync, so a resync that
 			// finds it idle again starts a new stretch of idling, and a new nudge.
 			d.Advance(5 * time.Minute)
 			assert.Len(t, d.Workers.Prompts(), 2)

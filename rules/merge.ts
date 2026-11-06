@@ -5,7 +5,7 @@ import { nudgeable, heard, mergeOnce, mergeRetryPaused } from "./shared";
 // A draft is never merged. Once per head, so a merge GitHub refuses isn't tried again
 // until a push, except a base-moved refusal, which shared.ts retries.
 // The merge waits until the worker has been told about the latest review, however it
-// arrives. A worker nudged since the last resync shows as working, so the merge waits for it.
+// arrives. A nudged worker no read has seen busy shows as working, so the merge waits for it.
 whenever({
   name: "auto-merge",
   each: "pr",
