@@ -7,6 +7,7 @@ package herdr_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,7 +160,9 @@ func TestRexLeavesOneWorkerWhenTwoStartsRace(t *testing.T) {
 			succeeded++
 			continue
 		}
-		assert.ErrorIs(t, err, herdr.ErrSessionRunning)
+		// Which refusal the loser gets depends on whether the winner's Claude is up when it reads the tree.
+		var loading *herdr.TerminalWithoutAgent
+		assert.True(t, errors.Is(err, herdr.ErrSessionRunning) || errors.As(err, &loading))
 	}
 	assert.Equal(t, 1, succeeded)
 }
