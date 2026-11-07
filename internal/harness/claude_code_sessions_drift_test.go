@@ -140,3 +140,33 @@ func TestRealClaudeKeepsADraftInItsInputBoxWhenAMessageArrives(t *testing.T) {
 	require.Eventually(t, func() bool { _, err := os.Stat(marker); return err == nil }, 2*time.Minute, 500*time.Millisecond)
 	assert.Contains(t, claude.screen(t), draft)
 }
+
+// TestRealClaudeListsAResumedSessionUnderTheSameIDWithANewerStart fails when a resume stops
+// keeping the session id or stops writing a newer startedAt, which Deliver relies on to pick the
+// live entry. A message sent after the resume must reach the new process.
+// Run with: go test -tags drift ./internal/harness/
+func TestRealClaudeListsAResumedSessionUnderTheSameIDWithANewerStart(t *testing.T) {
+	claude := startedClaude(t)
+	before := listedFor(t, claude.id)
+	require.Len(t, before, 1)
+	claude.session.Type(t, claude.pane, "/exit")
+	require.Eventually(t, func() bool { return len(listedFor(t, claude.id)) == 0 }, time.Minute, 200*time.Millisecond)
+
+	// A command typed before the shell shows its prompt again is lost.
+	require.Eventually(t, func() bool { return strings.Contains(claude.screen(t), "Resume this session with") }, time.Minute, 200*time.Millisecond)
+	time.Sleep(time.Second)
+	require.NoError(t, claude.session.Run("pane", "run", claude.pane, "claude --resume "+claude.id+" --model haiku --dangerously-skip-permissions"))
+
+	if !assert.Eventually(t, func() bool { return len(listedFor(t, claude.id)) == 1 }, time.Minute, 200*time.Millisecond) {
+		out, _ := claude.session.Output(context.Background(), "pane", "read", claude.pane)
+		t.Log(string(out))
+		t.FailNow()
+	}
+	after := listedFor(t, claude.id)
+	assert.Greater(t, after[0].StartedAt, before[0].StartedAt)
+	assert.NotEqual(t, before[0].Socket, after[0].Socket)
+	marker := filepath.Join(t.TempDir(), "marker")
+	require.NoError(t, realSessions.Deliver(context.Background(), claude.id,
+		"dispatch event: run this shell command, then reply with the word done: touch "+marker))
+	require.Eventually(t, func() bool { _, err := os.Stat(marker); return err == nil }, 2*time.Minute, 500*time.Millisecond)
+}

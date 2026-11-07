@@ -114,10 +114,10 @@ func (w *Workers) Prompt(tree, session, prompt string) {
 	require.NoError(w.d.t, w.d.HookAndWaitForCommand("wake", string(input), tree, session, prompt).Err)
 }
 
-// Type has the person of the ticket's worker type a prompt into the "worker" session.
+// Type has the person of the ticket's worker type a prompt into the worker's session.
 func (w *Workers) Type(ticket, prompt string) {
 	w.d.t.Helper()
-	w.Prompt(w.d.worktreeOf(ticket), "worker", prompt)
+	w.Prompt(w.d.worktreeOf(ticket), workerSession(ticket), prompt)
 }
 
 // Kicked lists the kickoffs typed into new workers, as "<pane>|<text>".
@@ -541,7 +541,8 @@ func TestTickNudgesEachIdleTicketIndependently(t *testing.T) {
 
 	require.NoError(t, d.TickAfterASecond())
 
-	assert.Equal(t, []string{prPrompt("a failed check"), strings.ReplaceAll(prPrompt("a failed check"), "ENG-1", "ENG-2")}, d.Workers.Received("ENG-1"))
+	assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
+	assert.Equal(t, []string{strings.ReplaceAll(prPrompt("a failed check"), "ENG-1", "ENG-2")}, d.Workers.Received("ENG-2"))
 	noLinearChanges(t, d)
 }
 

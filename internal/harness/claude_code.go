@@ -141,25 +141,32 @@ func (ClaudeCode) Follower(env environment.Environment) (string, error) {
 
 // socketOf finds the messaging socket of the running session with this id in Claude Code's
 // session list. A restart or resume keeps the id and moves the socket, and a crash can leave a
-// dead process's file behind, so the newest entry wins.
-func (c ClaudeCode) socketOf(session string) (string, error) {
+// dead process's file behind, so the newest entry wins. doubt is true when a list file could not
+// be read or parsed, because Claude rewrites its file as the session's status changes and one
+// caught half written may be the session's own.
+func (c ClaudeCode) socketOf(session string) (socket string, doubt bool, err error) {
 	if c.Sessions == "" {
-		return "", errors.New("the Claude Code session list directory is not set")
+		return "", false, errors.New("the Claude Code session list directory is not set")
 	}
 	if session == "" {
-		return "", errors.New("no session id to deliver to")
+		return "", false, errors.New("no session id to deliver to")
 	}
-	files, err := filepath.Glob(filepath.Join(c.Sessions, "*.json"))
+	// A directory that can't be listed says nothing about the session, so it is not ErrGone.
+	entries, err := os.ReadDir(c.Sessions)
 	if err != nil {
-		return "", err
+		return "", false, fmt.Errorf("while reading the Claude Code session list: %w", err)
 	}
-	var socket string
-	var newest float64 = -1
-	unreadable := 0
-	for _, file := range files {
-		raw, err := os.ReadFile(file)
+	newest := float64(-1)
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(c.Sessions, e.Name()))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
 		if err != nil {
-			unreadable++
+			doubt = true
 			continue
 		}
 		var entry struct {
@@ -168,7 +175,7 @@ func (c ClaudeCode) socketOf(session string) (string, error) {
 			StartedAt float64 `json:"startedAt"`
 		}
 		if json.Unmarshal(raw, &entry) != nil {
-			unreadable++
+			doubt = true
 			continue
 		}
 		if entry.SessionID != session || entry.Socket == "" {
@@ -178,15 +185,13 @@ func (c ClaudeCode) socketOf(session string) (string, error) {
 			socket, newest = entry.Socket, entry.StartedAt
 		}
 	}
-	// Claude rewrites its file as the session's status changes, so one caught half written may
-	// be the session's own. Dropping a follower for that would be permanent.
-	if socket == "" && unreadable > 0 {
-		return "", fmt.Errorf("no Claude Code session %s was found, and %d session list files could not be read", session, unreadable)
+	if socket == "" && doubt {
+		return "", true, fmt.Errorf("no Claude Code session %s was found, and a session list file could not be read", session)
 	}
 	if socket == "" {
-		return "", fmt.Errorf("%w: no Claude Code session %s is open", ErrGone, session)
+		return "", false, fmt.Errorf("%w: no Claude Code session %s is open", ErrGone, session)
 	}
-	return socket, nil
+	return socket, doubt, nil
 }
 
 // Deliver writes one message into a Claude Code session's inbox socket, found in the session
@@ -197,7 +202,7 @@ func (c ClaudeCode) socketOf(session string) (string, error) {
 // refuses the connection or is gone, has exited. Claude drops a frame cut off before its
 // newline, so a failed write left nothing in the session.
 func (c ClaudeCode) Deliver(ctx context.Context, session, text string) error {
-	address, err := c.socketOf(session)
+	address, doubt, err := c.socketOf(session)
 	if err != nil {
 		return err
 	}
@@ -211,6 +216,10 @@ func (c ClaudeCode) Deliver(ctx context.Context, session, text string) error {
 	dialer := net.Dialer{Timeout: sendTimeout}
 	conn, err := dialer.DialContext(ctx, "unix", address)
 	if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, fs.ErrNotExist) {
+		if doubt {
+			// The entry that held the live socket may be the unreadable one.
+			return fmt.Errorf("the chosen socket is dead and a session list file could not be read: %w", err)
+		}
 		return fmt.Errorf("%w: %w", ErrGone, err)
 	}
 	if err != nil {

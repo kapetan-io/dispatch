@@ -233,3 +233,21 @@ func TestClaudeCodeDeliverWithOnlyAnUnreadableListEntryIsNotGone(t *testing.T) {
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, harness.ErrGone)
 }
+
+func TestClaudeCodeDeliverWithAMissingSessionListDirectoryIsNotGone(t *testing.T) {
+	err := harness.ClaudeCode{Sessions: filepath.Join(t.TempDir(), "nope")}.Deliver(context.Background(), "s1", "hello")
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, harness.ErrGone)
+}
+
+func TestClaudeCodeDeliverToADeadSocketWithAnUnreadableEntryBesideItIsNotGone(t *testing.T) {
+	sessions := t.TempDir()
+	listEntry(t, sessions, "s1", "/tmp/dead-socket-that-does-not-exist.sock", 1)
+	require.NoError(t, os.WriteFile(filepath.Join(sessions, "9.json"), []byte(`{"sessionId":"s1","messagingSo`), 0o600))
+
+	err := harness.ClaudeCode{Sessions: sessions}.Deliver(context.Background(), "s1", "hello")
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, harness.ErrGone)
+}

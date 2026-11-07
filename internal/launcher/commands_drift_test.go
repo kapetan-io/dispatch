@@ -20,6 +20,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch"
+	"github.com/kapetan-io/dispatch/internal/environment"
+	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/journal"
@@ -123,7 +125,6 @@ func realClaudeTakesDispatchsCommands(t *testing.T, host string) {
 	var shimEnv string
 	var core *herdrtest.CoreSession
 	var screen func(pane string) string
-	var typeLine func(pane, text string)
 	if app {
 		// The scratch core's XDG data, state and cache directories would reach Claude and make its
 		// installer re-point ~/.local/bin/claude into them, so driftdispatch's claude shim restores
@@ -144,13 +145,11 @@ func realClaudeTakesDispatchsCommands(t *testing.T, host string) {
 		core = herdrtest.StartCoreSession(t)
 		cli, env = core.Core().WithKinds("claude"), core.Env
 		screen = func(pane string) string { return core.Run(t, "read", pane) }
-		typeLine = func(pane, text string) { core.Type(t, pane, text) }
 	} else if rex {
 		// The hooks' dispatch and the real claude come from this server's PATH, and a worker's blocks inherit it.
 		server := herdrtest.StartRexServer(t, herdrtest.CleanEnv())
 		t.Setenv("DISPATCH_DRIFT_REX_SOCKET", server.Socket)
 		cli, env = server.Rex(state).WithKinds("claude"), os.Environ()
-		typeLine = func(pane, text string) { server.Type(t, pane, text) }
 		screen = func(pane string) string {
 			session, block, _ := strings.Cut(pane, "/")
 			args, _ := json.Marshal(map[string]any{"session_id": session, "block_id": block, "method": "format", "args": map[string]any{"format": "text", "trim": true}})
@@ -160,7 +159,6 @@ func realClaudeTakesDispatchsCommands(t *testing.T, host string) {
 	} else {
 		session := herdrtest.StartSession(t)
 		cli, env = session.CLI(), session.Env(t)
-		typeLine = func(pane, text string) { session.Type(t, pane, text) }
 		screen = func(pane string) string {
 			out, _ := session.Output(context.Background(), "pane", "read", pane)
 			return string(out)
@@ -255,9 +253,28 @@ func realClaudeTakesDispatchsCommands(t *testing.T, host string) {
 	}
 	settled(1)
 
+	// Deliver finds the worker in Claude's session list by the id herdr reports, on every host.
+	listed, err := filepath.Glob(filepath.Join(harness.SessionsDir(environment.Process()), "*.json"))
+	require.NoError(t, err)
+	var ids []string
+	for _, file := range listed {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		var entry struct {
+			SessionID string `json:"sessionId"`
+		}
+		if json.Unmarshal(raw, &entry) == nil {
+			ids = append(ids, entry.SessionID)
+		}
+	}
+	assert.Contains(t, ids, worker().Session)
+
 	nudge := func(text string) {
 		loop.Typing(state).Note(launched.Worktree, text)
-		typeLine(launched.Pane, text)
+		// Delivered the way production sends a nudge, so a real Claude's hook reports the raw text.
+		require.NoError(t, harness.ClaudeCode{Sessions: harness.SessionsDir(environment.Process())}.Deliver(context.Background(), worker().Session, text))
 	}
 	nudge("/dispatch:principles")
 	settled(2)

@@ -1068,7 +1068,7 @@ type stopTasks struct {
 // StopInput is what Claude Code hands the Stop hook for the worker session of ticket.
 func (w *Workers) StopInput(ticket string, tasks stopTasks) string {
 	w.d.t.Helper()
-	return w.StopInputFrom("worker", ticket, tasks)
+	return w.StopInputFrom(workerSession(ticket), ticket, tasks)
 }
 
 // StopInputFrom is StopInput for the Claude session with the given id.
@@ -1108,7 +1108,7 @@ func (w *Workers) LateStop(ticket string, tasks stopTasks, late time.Duration) {
 // and requires it to succeed.
 func (w *Workers) Stop(ticket string, tasks stopTasks) {
 	w.d.t.Helper()
-	w.StopFrom("worker", ticket, tasks)
+	w.StopFrom(workerSession(ticket), ticket, tasks)
 }
 
 // StopFrom is Stop for the Claude session with the given id.
@@ -1922,8 +1922,18 @@ func (d *Dispatch) workerOn(ticket, tree, id, status string) {
 	}
 	d.tools.Herdr.AddTab(herdr.Tab{ID: id + ":t1", Label: ticket, WorkspaceID: id})
 	d.tools.Herdr.AddPane(herdr.Pane{ID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
-	d.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: status, Session: "worker", PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
-	d.openWorkerSession(ticket, "worker")
+	d.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: status, Session: workerSession(ticket), PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
+	d.openWorkerSession(ticket, workerSession(ticket))
+}
+
+// workerSession is the session id herdr reports for ticket's worker. ENG-1 keeps the plain id
+// the hook tests write, and every other ticket gets its own, so a nudge delivered to the wrong
+// ticket's worker shows up in Received.
+func workerSession(ticket string) string {
+	if ticket == "ENG-1" {
+		return "worker"
+	}
+	return "worker-" + ticket
 }
 
 // openWorkerSession opens a Claude session for the ticket's worker in the delivery record.
@@ -3106,7 +3116,7 @@ func (d *Dispatch) SessionOf(ticket, kind, status string) string {
 	id := "w-" + ticket
 	d.tools.Herdr.AddTab(herdr.Tab{ID: id + ":t1", Label: ticket, WorkspaceID: id})
 	d.tools.Herdr.AddPane(herdr.Pane{ID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
-	d.tools.Herdr.AddAgent(herdr.Agent{Kind: kind, Status: status, Session: "worker", PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
-	d.openWorkerSession(ticket, "worker")
+	d.tools.Herdr.AddAgent(herdr.Agent{Kind: kind, Status: status, Session: workerSession(ticket), PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
+	d.openWorkerSession(ticket, workerSession(ticket))
 	return id + ":p1"
 }
