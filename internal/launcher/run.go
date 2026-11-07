@@ -462,8 +462,11 @@ func (l *launch) clearIndexLock(ctx context.Context) {
 		return
 	}
 	lock := filepath.Join(strings.TrimSpace(dir), "index.lock")
-	if err := os.Remove(lock); err == nil {
+	switch err := os.Remove(lock); {
+	case err == nil:
 		l.log("removed %s left by the cut-off switch", lock)
+	case !os.IsNotExist(err):
+		l.log("could not remove %s, the next worker in this tree cannot commit: %v", lock, err)
 	}
 }
 
