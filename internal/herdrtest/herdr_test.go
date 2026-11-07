@@ -86,28 +86,6 @@ func seeded() *herdrtest.Herdr {
 	return fake
 }
 
-func TestHerdrRefusesAPromptToAnAgentThatBlockedAfterTheSnapshot(t *testing.T) {
-	ctx := context.Background()
-	fake := seeded()
-	fake.BlockAfterSnapshot("w1:p1")
-
-	snap, err := fake.Read(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, "idle", snap.Agents[0].Status)
-	err = fake.Prompt(ctx, "w1:p1", "hi")
-
-	require.ErrorIs(t, err, herdr.ErrAgentBlocked)
-	assert.Empty(t, fake.Prompted())
-
-	fake.Unblock("w1:p1")
-	require.NoError(t, fake.Prompt(ctx, "w1:p1", "hi"))
-	assert.Equal(t, []string{"w1:p1|hi"}, fake.Prompted())
-
-	snap, err = fake.Read(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, "idle", snap.Agents[0].Status)
-}
-
 func TestHerdrInjectedFailuresDoNotChangeWhatItAccepts(t *testing.T) {
 	ctx := context.Background()
 	fake := seeded()
@@ -147,21 +125,6 @@ func TestHerdrRecordsItsCallsInOrder(t *testing.T) {
 		{Tool: "herdr", Name: "rename-workspace", Args: []string{"w1", "x"}},
 		{Tool: "herdr", Name: "close-workspace", Args: []string{"w1"}},
 	}, calls.Calls())
-}
-
-func TestHerdrRefusesAPromptToAWorkingAgentThatBlockedAfterTheSnapshot(t *testing.T) {
-	ctx := context.Background()
-	fake := seeded()
-	fake.SetStatus("w1:p1", "working")
-	fake.BlockAfterSnapshot("w1:p1")
-
-	snap, err := fake.Read(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, "working", snap.Agents[0].Status)
-	err = fake.Prompt(ctx, "w1:p1", "hi")
-
-	require.ErrorIs(t, err, herdr.ErrAgentBlocked)
-	assert.Empty(t, fake.Prompted())
 }
 
 func TestHerdrFailedRenameLeavesTheLabelAndStillRefusesUnknownTargets(t *testing.T) {

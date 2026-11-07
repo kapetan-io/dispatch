@@ -141,7 +141,7 @@ func TestRexRunLaunchesAnInProgressTicketIntoATabAndFollowsItsState(t *testing.T
 	assert.Contains(t, string(recorded), "--session-id")
 
 	// A worker that blocks on a question changes the window's emoji and leaves its title.
-	require.NoError(t, c.rex.Prompt(context.Background(), snap.Agents[0].PaneID, "!blocked"))
+	c.server.Type(t, snap.Agents[0].PaneID, "!blocked")
 	snap = c.await(t, func(snap herdr.Snapshot) bool {
 		return len(snap.Workspaces) == 1 && snap.Workspaces[0].Label == "🔴 ENG-1"
 	})

@@ -41,7 +41,7 @@ type Options struct {
 	// Sources are the tools one read goes through. The loop sets Tolerant and Resilient.
 	Sources  world.Sources
 	Executor *executor.Executor
-	// Typed is what dispatch typed into workers, which the loop compares with the commands the hooks report.
+	// Typed is what dispatch sent or typed into workers, which the loop compares with the commands the hooks report.
 	Typed *typed.Log
 	// HTTP is how a rule's then reaches the services config.toml names.
 	HTTP  httpservice.Services

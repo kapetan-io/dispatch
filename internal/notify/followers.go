@@ -108,7 +108,7 @@ func (p Post) deliver(ctx context.Context, followers []Follower, n Notification)
 			if !ok {
 				mu.Lock()
 				defer mu.Unlock()
-				p.warn("while messaging watcher %s: no harness adapter for kind %q", who.Address, who.Kind)
+				p.warn("while messaging session %s: no harness adapter for kind %q", who.Address, who.Kind)
 				return
 			}
 			err := h.Deliver(ctx, who.Address, message(n))
@@ -119,9 +119,9 @@ func (p Post) deliver(ctx context.Context, followers []Follower, n Notification)
 				reached++
 			case errors.Is(err, harness.ErrGone):
 				gone = append(gone, who)
-				p.warn("dropped watcher socket %s, which no longer accepts connections or is gone", who.Address)
+				p.warn("dropped session %s, which is not open", who.Address)
 			default:
-				p.warn("while messaging watcher %s: %v", who.Address, err)
+				p.warn("while messaging session %s: %v", who.Address, err)
 			}
 		}()
 	}

@@ -111,36 +111,6 @@ var Scenarios = []Scenario{
 		require.Len(t, snap.Agents, 1)
 		assert.Equal(t, "blocked", snap.Agents[0].Status)
 	}},
-	{Name: "PromptTypesIntoAnIdleAgent", Run: func(t *testing.T, s Subject) {
-		layout := s.Workspace("alpha")
-		s.Agent(layout.Pane, "idle")
-
-		require.NoError(t, s.Herdr.Prompt(context.Background(), layout.Pane, "keep going"))
-	}},
-	{Name: "PromptTypesIntoAWorkingAgent", Run: func(t *testing.T, s Subject) {
-		layout := s.Workspace("alpha")
-		s.Agent(layout.Pane, "working")
-
-		require.NoError(t, s.Herdr.Prompt(context.Background(), layout.Pane, "keep going"))
-	}},
-	{Name: "PromptRefusesABlockedAgent", TUIOnly: true, Run: func(t *testing.T, s Subject) {
-		layout := s.Workspace("alpha")
-		s.Agent(layout.Pane, "blocked")
-
-		err := s.Herdr.Prompt(context.Background(), layout.Pane, "keep going")
-
-		require.ErrorIs(t, err, herdr.ErrAgentBlocked)
-		require.ErrorContains(t, err, "agent_blocked")
-		assert.ErrorContains(t, err, "agent "+layout.Pane+" is blocked and requires interactive input")
-	}},
-	{Name: "PromptRefusesAPaneWithNoAgent", Run: func(t *testing.T, s Subject) {
-		layout := s.Workspace("alpha")
-
-		err := s.Herdr.Prompt(context.Background(), layout.Pane, "keep going")
-
-		require.ErrorContains(t, err, "agent_not_found")
-		assert.NotErrorIs(t, err, herdr.ErrAgentBlocked)
-	}},
 	{Name: "RenameWorkspaceChangesItsLabel", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
 
@@ -321,15 +291,6 @@ var Scenarios = []Scenario{
 		assert.Contains(t, snap.Panes, herdr.Pane{ID: second.Pane, TabID: second.Tab, WorkspaceID: first.Workspace})
 		require.Len(t, snap.Agents, 1)
 		assert.Equal(t, herdr.Agent{Kind: "claude", Status: "idle", PaneID: second.Pane, TabID: second.Tab, WorkspaceID: first.Workspace}, snap.Agents[0])
-	}},
-	{Name: "PromptRefusesABlockedAgentAndTypesNothing", Run: func(t *testing.T, s Subject) {
-		layout := s.Workspace("alpha")
-		s.Agent(layout.Pane, "blocked")
-
-		err := s.Herdr.Prompt(context.Background(), layout.Pane, "keep going")
-
-		require.ErrorIs(t, err, herdr.ErrAgentBlocked)
-		assert.True(t, herdr.NothingTyped(err))
 	}},
 	{Name: "ReadShowsTheCheckoutOnceAWorkerStartsInIt", Run: func(t *testing.T, s Subject) {
 		repo, tree := s.Checkout()

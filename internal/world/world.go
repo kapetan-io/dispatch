@@ -200,7 +200,7 @@ type World struct {
 	// the local read keeps the earlier ones.
 	StackRecords map[string]stackrecord.Records
 	StackErrs    map[string]error
-	// Nudged holds the tickets whose worker was typed into. They show as working until a read
+	// Nudged holds the tickets whose worker was sent a nudge. They show as working until a read
 	// sees the worker working or blocked, or the next resync, so nothing that waits for an idle
 	// worker acts on a worker that is already busy with the nudge.
 	Nudged map[string]bool

@@ -279,7 +279,7 @@ func TestAConflictingPRStillNudgesItsWorkerWithoutAnExemption(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{prPrompt("a merge conflict")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("a merge conflict")}, d.Workers.Received("ENG-1"))
 }
 
 func TestAnExemptionOnConflictKeepsTheShippedNudgeOffAConflictingPR(t *testing.T) {
@@ -293,7 +293,7 @@ exempt({ name: "conflict-is-not-work", each: "pr", rules: ["nudge-pr-needs-work"
 
 	d.Tick()
 
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestExplainShowsWhatTheExemptionReadForTheRecordItStopped(t *testing.T) {

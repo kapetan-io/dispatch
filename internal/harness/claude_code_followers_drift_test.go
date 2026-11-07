@@ -17,16 +17,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
 )
 
+// realSessions delivers by the session list of the machine's own Claude Code, where the real Claude registers.
+var realSessions = harness.ClaudeCode{Sessions: harness.SessionsDir(environment.Process())}
+
 // realClaude is an interactive Claude Code session in a herdr pane, started the way a worker
-// is, whose inbox socket it reported by running a command.
+// is, whose session id it reported by running a command.
 type realClaude struct {
 	session *herdrtest.Session
 	pane    string
-	socket  string
+	id      string
 }
 
 func startRealClaude(t *testing.T, session *herdrtest.Session) realClaude {
@@ -52,8 +56,8 @@ func startRealClaude(t *testing.T, session *herdrtest.Session) realClaude {
 	program := harness.ClaudeCode{}.Program(harness.Start{Model: "haiku"})
 	require.NoError(t, session.Run("pane", "run", pane, "claude "+strings.Join(shellQuote(program.Argv), " ")))
 
-	seen := filepath.Join(t.TempDir(), "socket")
-	kickoff := fmt.Sprintf("Run this shell command, then reply with the word done: printenv CLAUDE_CODE_MESSAGING_SOCKET > %s", seen)
+	seen := filepath.Join(t.TempDir(), "session")
+	kickoff := fmt.Sprintf("Run this shell command, then reply with the word done: printenv CLAUDE_CODE_SESSION_ID > %s", seen)
 	require.NoError(t, session.CLI().Kickoff(ctx, pane, kickoff, program.Startup))
 	require.Eventually(t, func() bool {
 		b, err := os.ReadFile(seen)
@@ -61,7 +65,7 @@ func startRealClaude(t *testing.T, session *herdrtest.Session) realClaude {
 	}, 2*time.Minute, 500*time.Millisecond)
 	b, err := os.ReadFile(seen)
 	require.NoError(t, err)
-	return realClaude{session: session, pane: pane, socket: strings.TrimSpace(string(b))}
+	return realClaude{session: session, pane: pane, id: strings.TrimSpace(string(b))}
 }
 
 func shellQuote(args []string) []string {
@@ -91,7 +95,7 @@ func TestRealClaudeReadsAMessageDeliveredToItsInbox(t *testing.T) {
 	claude := startRealClaude(t, herdrtest.StartSession(t))
 	marker := filepath.Join(t.TempDir(), "marker")
 
-	require.NoError(t, harness.ClaudeCode{}.Deliver(context.Background(), claude.socket,
+	require.NoError(t, realSessions.Deliver(context.Background(), claude.id,
 		"dispatch event: run this shell command, then reply with the word done: touch "+marker))
 
 	require.Eventually(t, func() bool { _, err := os.Stat(marker); return err == nil }, 2*time.Minute, 500*time.Millisecond)
@@ -111,11 +115,11 @@ func TestRealClaudeKeepsAMessageOutOfAnOpenQuestion(t *testing.T) {
 	claude := startRealClaude(t, herdrtest.StartSession(t))
 	marker := filepath.Join(t.TempDir(), "marker")
 	const question = "Use the AskUserQuestion tool to ask me one question, which color I want, with the options Crimson and Cobalt. Do nothing else until I answer."
-	require.NoError(t, claude.session.CLI().Prompt(ctx, claude.pane, question))
+	claude.session.Type(t, claude.pane, question)
 	require.NoError(t, claude.session.Run("agent", "wait", claude.pane, "--until", "blocked", "--timeout", "120000"))
 	require.Contains(t, claude.screen(t), "Cobalt")
 
-	require.NoError(t, harness.ClaudeCode{}.Deliver(ctx, claude.socket,
+	require.NoError(t, realSessions.Deliver(ctx, claude.id,
 		"dispatch event: run this shell command, then reply with the word done: touch "+marker))
 	// Proving a negative takes a wait. Claude takes a queued message within seconds once it is free.
 	time.Sleep(15 * time.Second)

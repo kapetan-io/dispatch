@@ -2,6 +2,7 @@ package herdrtest
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -122,6 +123,18 @@ func (s *RexServer) Output(args ...string) (string, error) {
 	cmd.Env = append([]string{}, s.Env...)
 	out, err := cmd.Output()
 	return strings.TrimSpace(string(out)), err
+}
+
+// Type types text into the block at pane ("<session>/<block>") and presses Enter, as a person
+// does. Production never types a nudge, so only a test that has to put a worker in a state does.
+func (s *RexServer) Type(t testing.TB, pane, text string) {
+	t.Helper()
+	session, block, _ := strings.Cut(pane, "/")
+	for _, data := range []string{text, "\r"} {
+		body, err := json.Marshal(map[string]any{"session_id": session, "block_id": block, "method": "write", "args": map[string]any{"data": data}})
+		require.NoError(t, err)
+		require.NoError(t, s.Run("api", "call", "-s", session, "block.method", string(body)))
+	}
 }
 
 // Rex is the real Rex adapter pointed at the scratch server.

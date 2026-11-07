@@ -19,6 +19,7 @@ func (w *Workers) Agent(ticket, status string) {
 	id := "w-" + ticket
 	w.d.tools.Herdr.AddPane(herdr.Pane{ID: id + ":p1", WorkspaceID: id})
 	w.d.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: status, Session: "worker", PaneID: id + ":p1", WorkspaceID: id})
+	w.d.openWorkerSession(ticket, "worker")
 }
 
 // Reads lists the branches dispatch read a PR for, with ".<cursor>" after a page past the first.
@@ -84,7 +85,7 @@ func TestTickNudgesAnIdleInReviewWorkerNamingTheProblem(t *testing.T) {
 
 			d.Tick()
 
-			assert.Equal(t, []string{prPrompt(test.problem)}, d.Workers.Prompts())
+			assert.Equal(t, []string{prPrompt(test.problem)}, d.Workers.Received("ENG-1"))
 			noLinearChanges(t, d)
 			assert.Empty(t, d.Workers.Launched())
 		})
@@ -111,7 +112,7 @@ func TestTickLeavesAnInReviewTicketAloneWhenThePRNeedsNothing(t *testing.T) {
 
 			d.Tick()
 
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 			assert.Empty(t, d.Workers.Launched())
 			noLinearChanges(t, d)
 		})
@@ -129,7 +130,7 @@ func TestTickDoesNotReadThePRWhileTheInReviewWorkerIsBusy(t *testing.T) {
 
 			d.Tick()
 
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 			assert.Empty(t, d.GitHub.Reads())
 		})
 	}
@@ -145,7 +146,7 @@ func TestTickOnlyNotifiesForABlockedInReviewWorker(t *testing.T) {
 	d.Tick()
 
 	assert.Len(t, d.Followed.Told(), 1)
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	assert.Empty(t, d.GitHub.Reads())
 }
 
@@ -160,7 +161,7 @@ func TestTickNeverNudgesDesignTicketsAboutPRs(t *testing.T) {
 
 			d.Tick()
 
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 			assert.Empty(t, d.GitHub.Reads())
 		})
 	}
@@ -194,12 +195,12 @@ func TestTickEscalatesAnInReviewTicketAfterTwoPRNudgesWithNoPush(t *testing.T) {
 	for range 2 {
 		require.NoError(t, d.TickAfterASecond())
 	}
-	assert.Equal(t, []string{prPrompt("a failed check"), prPrompt("a failed check")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("a failed check"), prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
 	noLinearChanges(t, d)
 
 	require.NoError(t, d.TickAfterASecond())
 
-	assert.Len(t, d.Workers.Prompts(), 2)
+	assert.Len(t, d.Workers.Received("ENG-1"), 2)
 	escalated(t, d)
 	assert.Contains(t, d.Linear.Comments()[0], "stayed idle through 2 nudges about "+prURL1)
 
@@ -209,7 +210,7 @@ func TestTickEscalatesAnInReviewTicketAfterTwoPRNudgesWithNoPush(t *testing.T) {
 		require.NoError(t, d.TickAfterASecond())
 	}
 	escalated(t, d)
-	assert.Len(t, d.Workers.Prompts(), 2)
+	assert.Len(t, d.Workers.Received("ENG-1"), 2)
 }
 
 func TestTickResetsThePRNudgeCountWhenTheHeadMoves(t *testing.T) {
@@ -228,8 +229,8 @@ func TestTickResetsThePRNudgeCountWhenTheHeadMoves(t *testing.T) {
 		require.NoError(t, d.TickAfterASecond())
 	}
 
-	require.Len(t, d.Workers.Prompts(), 4)
-	assert.Equal(t, []string{prPrompt("changes requested"), prPrompt("changes requested")}, d.Workers.Prompts()[2:])
+	require.Len(t, d.Workers.Received("ENG-1"), 4)
+	assert.Equal(t, []string{prPrompt("changes requested"), prPrompt("changes requested")}, d.Workers.Received("ENG-1")[2:])
 	noLinearChanges(t, d)
 
 	require.NoError(t, d.TickAfterASecond())
@@ -252,7 +253,7 @@ func TestTickKeepsThePRNudgeCountAcrossTicksWhereTheWorkerWasBusy(t *testing.T) 
 	require.NoError(t, d.TickAfterASecond())
 
 	escalated(t, d)
-	assert.Len(t, d.Workers.Prompts(), 2)
+	assert.Len(t, d.Workers.Received("ENG-1"), 2)
 }
 
 func TestTickResetsThePRNudgeCountWhenAPushLandsWhileTheWorkerWasBusy(t *testing.T) {
@@ -271,7 +272,7 @@ func TestTickResetsThePRNudgeCountWhenAPushLandsWhileTheWorkerWasBusy(t *testing
 	d.Workers.SetStatus("ENG-1", "idle")
 	require.NoError(t, d.TickAfterASecond())
 
-	assert.Len(t, d.Workers.Prompts(), 3)
+	assert.Len(t, d.Workers.Received("ENG-1"), 3)
 	noLinearChanges(t, d)
 }
 
@@ -285,14 +286,14 @@ func TestTickRelaunchesAnInReviewWorkerThatIsGoneThenNudgesItOnceIdle(t *testing
 	d.Tick()
 
 	assert.Equal(t, []string{d.Repo + " ENG-1 thrawn01/eng-1 --model sonnet"}, d.Workers.Launched())
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	noLinearChanges(t, d)
 
 	// The relaunched worker is up and finishes its kickoff.
 	d.Workers.Agent("ENG-1", "idle")
 	require.NoError(t, d.TickAfterASecond())
 
-	assert.Equal(t, []string{prPrompt("changes requested")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("changes requested")}, d.Workers.Received("ENG-1"))
 	assert.Len(t, d.Workers.Launched(), 1)
 }
 
@@ -338,7 +339,7 @@ func TestTickSkipsATicketWhosePRCannotBeRead(t *testing.T) {
 
 	assert.Contains(t, d.Run("cycle").Stdout, "held")
 	assert.Contains(t, d.LoopStderr(), "while reading the PR for ENG-1")
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	noLinearChanges(t, d)
 }
 
@@ -411,7 +412,7 @@ func TestTickReportsAPRWithMoreReviewThreadsThanItReads(t *testing.T) {
 	d.Tick()
 
 	assert.Contains(t, d.LoopStderr(), "more than 100 review threads")
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestTickIgnoresInReviewParentTickets(t *testing.T) {
@@ -440,12 +441,12 @@ func TestTickGivesARelaunchedWorkerTwoPRNudgesBeforeEscalating(t *testing.T) {
 	for range 2 {
 		require.NoError(t, d.TickAfterASecond())
 	}
-	assert.Len(t, d.Workers.Prompts(), 2)
+	assert.Len(t, d.Workers.Received("ENG-1"), 2)
 	noLinearChanges(t, d)
 
 	require.NoError(t, d.TickAfterASecond())
 
-	assert.Len(t, d.Workers.Prompts(), 2)
+	assert.Len(t, d.Workers.Received("ENG-1"), 2)
 	escalated(t, d)
 	assert.Contains(t, d.Linear.Comments()[0], "stayed idle through 2 nudges")
 }
@@ -487,7 +488,7 @@ func TestTickIgnoresChangesRequestedOnACommitThatIsNoLongerTheHead(t *testing.T)
 		require.NoError(t, d.TickAfterASecond())
 	}
 
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	noLinearChanges(t, d)
 }
 
@@ -504,7 +505,7 @@ func TestTickDoesNotNudgeOverChangesRequestedWhileACheckOnTheHeadRuns(t *testing
 				require.NoError(t, d.TickAfterASecond())
 			}
 
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 			noLinearChanges(t, d)
 		})
 	}
@@ -517,12 +518,12 @@ func TestTickNudgesOverChangesRequestedOnTheHeadOnceChecksFinish(t *testing.T) {
 	d.Workers.Running("ENG-1", "idle")
 	d.GitHub.PullRequest("ENG-1", prState{head: "b2", checks: "PENDING", decision: "CHANGES_REQUESTED", mergeable: "MERGEABLE"})
 	d.Tick()
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 
 	d.GitHub.PullRequest("ENG-1", prState{head: "b2", checks: "SUCCESS", decision: "CHANGES_REQUESTED", mergeable: "MERGEABLE"})
 	require.NoError(t, d.TickAfterASecond())
 
-	assert.Equal(t, []string{prPrompt("changes requested")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("changes requested")}, d.Workers.Received("ENG-1"))
 }
 
 func TestTickStillNudgesForAFailedCheckWhileChangesRequestedIsStale(t *testing.T) {
@@ -534,7 +535,7 @@ func TestTickStillNudgesForAFailedCheckWhileChangesRequestedIsStale(t *testing.T
 
 	d.Tick()
 
-	assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
 }
 
 func TestTickNudgesWhenOneReviewerIsStaleAndAnotherRequestsChangesOnTheHead(t *testing.T) {
@@ -546,7 +547,7 @@ func TestTickNudgesWhenOneReviewerIsStaleAndAnotherRequestsChangesOnTheHead(t *t
 
 	d.Tick()
 
-	assert.Equal(t, []string{prPrompt("changes requested")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("changes requested")}, d.Workers.Received("ENG-1"))
 }
 
 // tigerRepo is a second repo the config lists, with the given settings.
@@ -580,7 +581,7 @@ func TestTickIgnoresAnOptionalCheckThatFails(t *testing.T) {
 			d.Tick()
 
 			assert.Equal(t, []string{readyText1}, d.Followed.Told())
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 		})
 	}
 }
@@ -601,8 +602,8 @@ func TestTickCountsARequiredCheckThatFails(t *testing.T) {
 
 			d.Tick()
 
-			require.Len(t, d.Workers.Prompts(), 1)
-			assert.Contains(t, d.Workers.Prompts()[0], "has a failed check")
+			require.Len(t, d.Workers.Received("ENG-1"), 1)
+			assert.Contains(t, d.Workers.Received("ENG-1")[0], "has a failed check")
 		})
 	}
 }
@@ -624,7 +625,7 @@ func TestTickWaitsOnARequiredCheckThatHasNotFinished(t *testing.T) {
 			d.Tick()
 
 			assert.Empty(t, d.Followed.Told())
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 		})
 	}
 }
@@ -636,7 +637,7 @@ func TestTickLeavesAnExpectedRollupNotReadyWithoutAskingForChecks(t *testing.T) 
 	d.Tick()
 
 	assert.Empty(t, d.Followed.Told())
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	assert.Empty(t, d.GitHub.CheckReads())
 }
 
@@ -647,8 +648,8 @@ func TestTickNudgesOverChangesRequestedWhileOnlyAnOptionalCheckRuns(t *testing.T
 
 	d.Tick()
 
-	require.Len(t, d.Workers.Prompts(), 1)
-	assert.Contains(t, d.Workers.Prompts()[0], "has changes requested")
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
+	assert.Contains(t, d.Workers.Received("ENG-1")[0], "has changes requested")
 }
 
 func TestTickMutesChangesRequestedWhileARequiredCheckRuns(t *testing.T) {
@@ -658,7 +659,7 @@ func TestTickMutesChangesRequestedWhileARequiredCheckRuns(t *testing.T) {
 
 	d.Tick()
 
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestTickErrorsWhenChecksNeedASecondPage(t *testing.T) {
@@ -669,7 +670,7 @@ func TestTickErrorsWhenChecksNeedASecondPage(t *testing.T) {
 	d.Tick()
 
 	assert.Contains(t, d.LoopStderr(), "while reading the PR for ENG-1: PR 7 has more than 100 checks")
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestTickCountsEveryCheckInARepoWithoutTheSetting(t *testing.T) {
@@ -681,8 +682,8 @@ func TestTickCountsEveryCheckInARepoWithoutTheSetting(t *testing.T) {
 
 	d.Tick()
 
-	require.Len(t, d.Workers.Prompts(), 1)
-	assert.Contains(t, d.Workers.Prompts()[0], "has a failed check")
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
+	assert.Contains(t, d.Workers.Received("ENG-1")[0], "has a failed check")
 	assert.Empty(t, d.GitHub.CheckReads())
 }
 
@@ -704,7 +705,7 @@ func TestTickWaitsWhenAPushLandsBetweenReadingThePRAndItsChecks(t *testing.T) {
 	d.Tick()
 
 	assert.Empty(t, d.Followed.Told())
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestTickIgnoresAFailedRollupThatListsNoChecks(t *testing.T) {
@@ -714,7 +715,7 @@ func TestTickIgnoresAFailedRollupThatListsNoChecks(t *testing.T) {
 	d.Tick()
 
 	assert.Equal(t, []string{readyText1}, d.Followed.Told())
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestTickReadsStatusContextsByWhetherTheyAreRequired(t *testing.T) {
@@ -734,12 +735,12 @@ func TestTickReadsStatusContextsByWhetherTheyAreRequired(t *testing.T) {
 			d.Tick()
 
 			if test.nudged {
-				require.Len(t, d.Workers.Prompts(), 1)
-				assert.Contains(t, d.Workers.Prompts()[0], "has a failed check")
+				require.Len(t, d.Workers.Received("ENG-1"), 1)
+				assert.Contains(t, d.Workers.Received("ENG-1")[0], "has a failed check")
 				assert.Empty(t, d.Followed.Told())
 				return
 			}
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 			assert.Equal(t, []string{readyText1}, d.Followed.Told())
 		})
 	}
@@ -754,8 +755,8 @@ func TestTickCountsEveryCheckWhenOnlyAnotherRepoIgnoresOptionalOnes(t *testing.T
 
 	d.Tick()
 
-	require.Len(t, d.Workers.Prompts(), 1)
-	assert.Contains(t, d.Workers.Prompts()[0], "has a failed check")
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
+	assert.Contains(t, d.Workers.Received("ENG-1")[0], "has a failed check")
 	assert.Empty(t, d.GitHub.CheckReads())
 }
 
@@ -789,7 +790,7 @@ func TestTickIgnoresAnApprovalCheckThatHasNotPassed(t *testing.T) {
 			d.Tick()
 
 			assert.Equal(t, []string{readyText1}, d.Followed.Told())
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 		})
 	}
 }
@@ -809,8 +810,8 @@ func TestTickCountsABuildCheckThatFailsBesideAnApprovalCheck(t *testing.T) {
 
 			d.Tick()
 
-			require.Len(t, d.Workers.Prompts(), 1)
-			assert.Contains(t, d.Workers.Prompts()[0], "has a failed check")
+			require.Len(t, d.Workers.Received("ENG-1"), 1)
+			assert.Contains(t, d.Workers.Received("ENG-1")[0], "has a failed check")
 			assert.Empty(t, d.Followed.Told())
 		})
 	}
@@ -824,7 +825,7 @@ func TestTickWaitsOnABuildCheckThatRunsBesideAnApprovalCheck(t *testing.T) {
 	d.Tick()
 
 	assert.Empty(t, d.Followed.Told())
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestTickCountsAnApprovalCheckInARepoThatDoesNotListIt(t *testing.T) {
@@ -834,8 +835,8 @@ func TestTickCountsAnApprovalCheckInARepoThatDoesNotListIt(t *testing.T) {
 
 	d.Tick()
 
-	require.Len(t, d.Workers.Prompts(), 1)
-	assert.Contains(t, d.Workers.Prompts()[0], "has a failed check")
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
+	assert.Contains(t, d.Workers.Received("ENG-1")[0], "has a failed check")
 }
 
 func TestTickDoesNotAutoMergeWhileAnApprovalCheckHasNotPassed(t *testing.T) {
@@ -1117,7 +1118,7 @@ func TestTickStillNudgesAnOpenedPRInADraftRepoForWhatNeedsWork(t *testing.T) {
 
 			require.NoError(t, d.TickAfterASecond())
 
-			assert.Len(t, d.Workers.Prompts(), 1)
+			assert.Len(t, d.Workers.Received("ENG-1"), 1)
 		})
 	}
 }

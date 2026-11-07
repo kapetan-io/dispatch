@@ -76,11 +76,6 @@ type Agent struct {
 type Herdr interface {
 	// Read takes a snapshot of every workspace, tab, pane and agent.
 	Read(ctx context.Context) (Snapshot, error)
-	// Prompt types text into the agent in pane and submits it. herdr refuses a
-	// blocked agent before sending any input, so a question on screen is never
-	// answered by accident. The refusal satisfies errors.Is(err, ErrAgentBlocked). Core also
-	// refuses a worker that reports no status with ErrStatusUnknown.
-	Prompt(ctx context.Context, pane, text string) error
 	// AgentAt returns the agent in pane, asking herdr about that pane alone. A pane
 	// with no agent is not an error, because hooks run in panes that hold none. The CLI
 	// adapter does not filter it by WithKinds, and the caller decides whether it runs the
@@ -318,13 +313,9 @@ var (
 	ErrEnterNotSent = errors.New("the program never started, because its launch command still showed at the shell prompt and herdr could not send Enter to it")
 )
 
-// ErrAgentBlocked is the refusal of a prompt to an agent that waits on a
-// question.
-var ErrAgentBlocked = errors.New("agent is blocked on a question")
-
 var (
-	// ErrStatusUnknown means Prompt refused to type because the worker reports no status,
-	// as Claude does at a startup dialog. Nothing was typed.
+	// ErrStatusUnknown means Kickoff found a worker that reports no status, as Claude does at
+	// a startup dialog.
 	ErrStatusUnknown = errors.New("the worker reports no status, so nothing was typed")
 	// ErrSessionRunning means StartWorker found a session on the tree and started nothing.
 	ErrSessionRunning = errors.New("a session already runs on the tree")
@@ -338,23 +329,6 @@ type TerminalWithoutAgent struct{ Address string }
 
 func (e *TerminalWithoutAgent) Error() string {
 	return "terminal " + e.Address + " holds the tree but runs no Claude"
-}
-
-// NothingTyped reports whether an error from Prompt proves the text never reached the
-// program, so the caller may withdraw its record of having sent it. Any other failure, a
-// timeout included, may have typed the text.
-func NothingTyped(err error) bool {
-	if errors.Is(err, ErrAgentBlocked) || errors.Is(err, ErrStatusUnknown) {
-		return true
-	}
-	var refusal *Refusal
-	if errors.As(err, &refusal) {
-		switch refusal.Code {
-		case "agent_not_found", "finished", "status_mismatch":
-			return true
-		}
-	}
-	return false
 }
 
 // Refusal is herdr declining a request. Error renders herdr's JSON error body,
@@ -383,12 +357,6 @@ func (r *Refusal) Error() string {
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(body)
 	return strings.TrimSpace(buf.String())
-}
-
-// Is makes a blocked-agent refusal match ErrAgentBlocked, so callers can tell
-// it from other refusals.
-func (r *Refusal) Is(target error) bool {
-	return target == ErrAgentBlocked && r.Code == "agent_blocked"
 }
 
 // CLI is the Herdr that runs the installed herdr command.
@@ -567,10 +535,6 @@ func (c *CLI) AgentAt(ctx context.Context, pane string) (Agent, bool, error) {
 	}
 	a := got.Result.Agent
 	return Agent{Kind: a.Agent, Status: a.Status, PaneID: a.PaneID, TabID: a.TabID, WorkspaceID: a.WorkspaceID, Session: a.Session.Value}, true, nil
-}
-
-func (c *CLI) Prompt(ctx context.Context, pane, text string) error {
-	return c.act(ctx, "agent", "prompt", pane, text)
 }
 
 func (c *CLI) RenameWorkspace(ctx context.Context, id, label string) error {

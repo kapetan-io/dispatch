@@ -123,6 +123,7 @@ func realClaudeTakesDispatchsCommands(t *testing.T, host string) {
 	var shimEnv string
 	var core *herdrtest.CoreSession
 	var screen func(pane string) string
+	var typeLine func(pane, text string)
 	if app {
 		// The scratch core's XDG data, state and cache directories would reach Claude and make its
 		// installer re-point ~/.local/bin/claude into them, so driftdispatch's claude shim restores
@@ -143,11 +144,13 @@ func realClaudeTakesDispatchsCommands(t *testing.T, host string) {
 		core = herdrtest.StartCoreSession(t)
 		cli, env = core.Core().WithKinds("claude"), core.Env
 		screen = func(pane string) string { return core.Run(t, "read", pane) }
+		typeLine = func(pane, text string) { core.Type(t, pane, text) }
 	} else if rex {
 		// The hooks' dispatch and the real claude come from this server's PATH, and a worker's blocks inherit it.
 		server := herdrtest.StartRexServer(t, herdrtest.CleanEnv())
 		t.Setenv("DISPATCH_DRIFT_REX_SOCKET", server.Socket)
 		cli, env = server.Rex(state).WithKinds("claude"), os.Environ()
+		typeLine = func(pane, text string) { server.Type(t, pane, text) }
 		screen = func(pane string) string {
 			session, block, _ := strings.Cut(pane, "/")
 			args, _ := json.Marshal(map[string]any{"session_id": session, "block_id": block, "method": "format", "args": map[string]any{"format": "text", "trim": true}})
@@ -157,6 +160,7 @@ func realClaudeTakesDispatchsCommands(t *testing.T, host string) {
 	} else {
 		session := herdrtest.StartSession(t)
 		cli, env = session.CLI(), session.Env(t)
+		typeLine = func(pane, text string) { session.Type(t, pane, text) }
 		screen = func(pane string) string {
 			out, _ := session.Output(context.Background(), "pane", "read", pane)
 			return string(out)
@@ -253,7 +257,7 @@ func realClaudeTakesDispatchsCommands(t *testing.T, host string) {
 
 	nudge := func(text string) {
 		loop.Typing(state).Note(launched.Worktree, text)
-		require.NoError(t, cli.Prompt(context.Background(), launched.Pane, text))
+		typeLine(launched.Pane, text)
 	}
 	nudge("/dispatch:principles")
 	settled(2)

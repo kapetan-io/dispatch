@@ -143,18 +143,15 @@ func TestLaunchStartsClaudeOnTheSessionItChose(t *testing.T) {
 	assert.NotContains(t, program.Argv, program.Session)
 }
 
-func TestTickFailsANudgeToAWorkerThatReportsNoStatus(t *testing.T) {
+func TestTellFailsForAWorkerThatReportsNoStatus(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
-	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
-	d.Workers.Running("ENG-1", "idle")
-	d.PullRequestFailsAfterEntry(prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
-	d.fakes().Herdr.Fail(herdrtest.OpPrompt, herdr.ErrStatusUnknown)
+	d.Workers.Running("ENG-1", "unknown")
 
-	err := d.TickAfterASecond()
+	res := d.Run("tell", "ENG-1", "keep going")
 
-	require.ErrorContains(t, err, "ENG-1 nudge failed: status unknown, nothing typed")
-	assert.Empty(t, d.Workers.Prompts())
+	require.ErrorContains(t, res.Err, "status unknown, nothing sent")
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestRecordStopLandsTheTurnEndOfASessionInAnAppTerminal(t *testing.T) {
@@ -222,7 +219,7 @@ func TestTickClosesAWorkerStuckAtAStartupDialogAfterItsLauncherDied(t *testing.T
 	d.Tick()
 
 	assert.Equal(t, []string{"w-ENG-1"}, d.Workers.Closed())
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestTickLeavesAWorkerThatReportsNoStatusAloneOnceItsKickoffRan(t *testing.T) {
@@ -296,10 +293,9 @@ func TestANudgeToAWorkerThatReportsNoStatusLeavesNoSendForAPersonsCommandToMatch
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(commandsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Workers.CheckedOut("ENG-1", "idle")
-	d.fakes().Herdr.Fail(herdrtest.OpPrompt, herdr.ErrStatusUnknown)
+	d.Workers.CheckedOut("ENG-1", "unknown")
 	require.Error(t, d.Run("tell", "ENG-1", "/merge-it 42").Err)
-	require.Empty(t, d.Workers.Prompts())
+	require.Empty(t, d.Workers.Received("ENG-1"))
 
 	d.Workers.Type("ENG-1", "/merge-it 42")
 	d.Tick()

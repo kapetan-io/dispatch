@@ -75,7 +75,7 @@ func TestRulesCheckActsOnNothing(t *testing.T) {
 	assert.Empty(t, d.Linear.Moves())
 	assert.Empty(t, d.Linear.Comments())
 	assert.Empty(t, d.Followed.Told())
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestRulesCheckHoldsWhatItCannotRead(t *testing.T) {

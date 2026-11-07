@@ -66,7 +66,7 @@ type Env struct {
 	Environment environment.Environment
 	StateDir    string
 	Stderr      io.Writer
-	// Typed is what dispatch typed into workers, shared with the launcher and the loop.
+	// Typed is what dispatch sent or typed into workers, shared with the launcher and the loop.
 	Typed *typed.Log
 	// LaunchDeadline and Deadline override the default budgets, which run on Clock.
 	LaunchDeadline time.Duration
@@ -114,7 +114,7 @@ type Result struct {
 	TicketID string
 	// Reread names the sources to read again before the next cycle.
 	Reread world.Part
-	// Nudged is the ticket whose worker was typed into.
+	// Nudged is the ticket whose worker was sent a nudge.
 	Nudged string
 }
 
@@ -224,12 +224,11 @@ func (e *Executor) Run(ctx context.Context, w rules.Want, wd world.World) Result
 	default:
 		res = Result{Outcome: ledger.Failed, Detail: "no executor for " + w.Receipt}
 	}
-	// A message that timed out may have landed, and a retry could say it twice. A create that failed did not commit, so its failure stands.
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) && res.Outcome == ledger.Failed && !SafeToRetry(w.Receipt) && w.Receipt != "post" && w.Receipt != "create" {
+	// A notify or comment that timed out may have landed, and a retry could say it twice.
+	// Nudge, post and create decide for themselves: a nudge that failed sent nothing, because
+	// Deliver returns nil once its write completes.
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) && res.Outcome == ledger.Failed && (w.Receipt == "notify" || w.Receipt == "comment") {
 		res.Outcome, res.Detail = ledger.Done, "timeout"
-		if w.Receipt == "nudge" {
-			res.Nudged = w.Subject
-		}
 	}
 	return res
 }
@@ -238,7 +237,7 @@ func (e *Executor) Run(ctx context.Context, w rules.Want, wd world.World) Result
 // its outcome was lost. A message whose outcome was lost may have gone out, and a
 // retry could say it twice. A create whose outcome was lost may have filed its ticket,
 // and a retry would file a second. Post is on the list, but Run's timeout rule leaves it
-// out, because post decides itself whether a timeout went out.
+// out, because post decides itself whether a timeout went out, and nudge and create fail with nothing sent.
 func SafeToRetry(receipt string) bool {
 	return !slices.Contains([]string{"nudge", "notify", "comment", "post", "create"}, receipt)
 }
@@ -326,26 +325,25 @@ func shortSHA(sha string) string {
 
 func (e *Executor) nudge(ctx context.Context, w rules.Want, wd world.World) Result {
 	wk := world.FindWorker(w.Subject, wd.Trees, wd.Snapshot)
-	if wk.State == world.NoWorker {
+	switch {
+	case wk.State == world.NoWorker:
 		return failed("%s has no worker", w.Subject)
+	case wk.State == world.Blocked:
+		return failed("blocked")
+	case !wk.StatusKnown():
+		return failed("status unknown, nothing sent")
+	case wk.Session == "":
+		return failed("nothing sent: session not known yet")
+	}
+	h, ok := e.Harnesses.ForAgent(wk.Kind)
+	if !ok {
+		return failed("no harness for agent kind %q, nothing sent", wk.Kind)
 	}
 	text, _ := w.Args["text"].(string)
-	// herdr refuses to type into a blocked pane too; checking first keeps the send record from noting text that was never typed.
-	if wk.State == world.Blocked {
-		return failed("blocked")
-	}
 	e.Typed.Note(wk.TreePath, text)
-	if err := e.Herdr.Prompt(ctx, wk.PaneID, text); err != nil {
-		if herdr.NothingTyped(err) {
-			e.Typed.Withdraw(wk.TreePath, text)
-		}
-		if errors.Is(err, herdr.ErrAgentBlocked) {
-			return failed("blocked")
-		}
-		if errors.Is(err, herdr.ErrStatusUnknown) {
-			return failed("status unknown, nothing typed")
-		}
-		return failed("while prompting herdr pane %s: %v", wk.PaneID, err)
+	if err := h.Deliver(ctx, wk.Session, text); err != nil {
+		e.Typed.Withdraw(wk.TreePath, text)
+		return failed("nothing sent: %v", err)
 	}
 	return Result{Outcome: ledger.Done, Nudged: w.Subject}
 }

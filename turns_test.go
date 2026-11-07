@@ -414,7 +414,7 @@ func TestAnIdleWorkerIsBusyWhileItsLastStopReportedBackgroundTasks(t *testing.T)
 		d.Tick()
 	}
 	assert.Equal(t, []string{"ENG-1: busy true"}, d.Linear.Comments())
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestRecordStopReportsTheTurnToTheRunningLoop(t *testing.T) {
@@ -632,23 +632,23 @@ func TestTickNudgesAgainAtTheNextResyncWhenTheWorkerLeftNoStopRecord(t *testing.
 			d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 
 			d.Tick()
-			assert.Len(t, d.Workers.Prompts(), 1)
+			assert.Len(t, d.Workers.Received("ENG-1"), 1)
 
 			// A nudged worker no read has seen busy shows as working until the next resync, so a resync that
 			// finds it idle again starts a new stretch of idling, and a new nudge.
 			d.Advance(5 * time.Minute)
-			assert.Len(t, d.Workers.Prompts(), 2)
+			assert.Len(t, d.Workers.Received("ENG-1"), 2)
 
 			// A tick on the same clock starts no new stretch.
 			d.Tick()
-			assert.Len(t, d.Workers.Prompts(), 2)
+			assert.Len(t, d.Workers.Received("ENG-1"), 2)
 
 			d.Workers.SetStatus("ENG-1", "working")
 			d.Advance(5 * time.Minute)
-			assert.Len(t, d.Workers.Prompts(), 2)
+			assert.Len(t, d.Workers.Received("ENG-1"), 2)
 			d.Workers.SetStatus("ENG-1", "idle")
 			d.Advance(5 * time.Minute)
-			assert.Len(t, d.Workers.Prompts(), 3)
+			assert.Len(t, d.Workers.Received("ENG-1"), 3)
 		})
 	}
 }
@@ -661,7 +661,7 @@ func TestTickNudgesAnIdleWorkerAfterAnotherSessionStopsBusyInItsTree(t *testing.
 	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	d.Workers.StopFrom("worker", "ENG-1", stopTasks{})
 	d.Tick()
-	assert.Len(t, d.Workers.Prompts(), 1)
+	assert.Len(t, d.Workers.Received("ENG-1"), 1)
 
 	d.Advance(time.Minute)
 	d.Workers.StopFrom("stranger", "ENG-1", stopTasks{Running: 1})
@@ -669,7 +669,7 @@ func TestTickNudgesAnIdleWorkerAfterAnotherSessionStopsBusyInItsTree(t *testing.
 	d.Workers.StopFrom("worker", "ENG-1", stopTasks{})
 	d.Tick()
 
-	assert.Len(t, d.Workers.Prompts(), 2)
+	assert.Len(t, d.Workers.Received("ENG-1"), 2)
 }
 
 func TestStopHookRunsRecordStop(t *testing.T) {

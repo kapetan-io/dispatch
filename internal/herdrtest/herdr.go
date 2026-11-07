@@ -31,9 +31,6 @@ const (
 	// after the tab came up, with the program not running in it.
 	OpStartTab   = "start-tab"
 	OpStartAgent = "start-agent"
-	// OpPrompt fails Prompt with the error given, such as herdr.ErrStatusUnknown, before
-	// anything is typed.
-	OpPrompt = "prompt"
 	// OpKickoff fails Kickoff with the error given, such as
 	// herdr.ErrKickoffUnconfirmed.
 	OpKickoff = "kickoff"
@@ -48,15 +45,11 @@ type Herdr struct {
 	journal *journal.Journal
 
 	mu          sync.Mutex
-	stalled     bool
 	workspaces  []herdr.Workspace
 	tabs        []herdr.Tab
 	panes       []herdr.Pane
 	agents      []herdr.Agent
-	shown       map[string]string // pane to the stale status Read reports while the agent is really blocked
-	vanished    map[string]bool   // panes Read still lists although herdr no longer knows them
 	failures    map[string]error
-	prompted    []string
 	renamed     []string
 	tabRenamed  []string
 	closed      []string
@@ -81,7 +74,7 @@ type sink struct {
 
 // New returns an empty Herdr that records its calls in j.
 func New(j *journal.Journal) *Herdr {
-	return &Herdr{journal: j, shown: map[string]string{}, vanished: map[string]bool{}, failures: map[string]error{}, names: map[string]string{}, later: map[string]string{}}
+	return &Herdr{journal: j, failures: map[string]error{}, names: map[string]string{}, later: map[string]string{}}
 }
 
 // AcceptKinds makes Read leave out agents of every other kind, as the real adapter does
@@ -129,10 +122,9 @@ func (h *Herdr) NameAgent(pane, name string) {
 }
 
 // SetStatus changes the status of the agent in pane, which Read reports from
-// then on. It ends any BlockAfterSnapshot.
+// then on.
 func (h *Herdr) SetStatus(pane, status string) {
 	h.mu.Lock()
-	delete(h.shown, pane)
 	h.agent(pane, func(a *herdr.Agent) { a.Status = status })
 	h.mu.Unlock()
 	h.notify(pane)
@@ -231,39 +223,6 @@ func (s *Streaming) Changes(ctx context.Context, changed func(pane string)) erro
 	}
 }
 
-// BlockAfterSnapshot blocks the agent in pane while Read keeps reporting the
-// status it had, which is an agent that stopped to ask a question after
-// dispatch looked. Prompt refuses it from then on. Unblock undoes it.
-func (h *Herdr) BlockAfterSnapshot(pane string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.agent(pane, func(a *herdr.Agent) {
-		if a.Status == "blocked" {
-			return
-		}
-		h.shown[pane] = a.Status
-		a.Status = "blocked"
-	})
-}
-
-// VanishAfterSnapshot closes the pane after dispatch looked: Read keeps listing the agent and
-// Prompt refuses with agent_not_found, as it does for a pane the user closed in between.
-func (h *Herdr) VanishAfterSnapshot(pane string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.vanished[pane] = true
-}
-
-// Unblock gives the agent in pane the status it had before BlockAfterSnapshot.
-func (h *Herdr) Unblock(pane string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if shown, ok := h.shown[pane]; ok {
-		delete(h.shown, pane)
-		h.agent(pane, func(a *herdr.Agent) { a.Status = shown })
-	}
-}
-
 // SetSession changes the Claude session id of the agent in pane, as a relaunch
 // does.
 func (h *Herdr) SetSession(pane, session string) {
@@ -329,9 +288,6 @@ func (h *Herdr) HasWorkspace(id string) bool {
 	return h.workspaceAt(id) >= 0
 }
 
-// Prompted lists what was typed into agents, as "<pane>|<text>".
-func (h *Herdr) Prompted() []string { return h.log(&h.prompted) }
-
 // WorkspaceRenames lists the accepted workspace renames, as "<workspace>|<label>".
 func (h *Herdr) WorkspaceRenames() []string { return h.log(&h.renamed) }
 
@@ -359,11 +315,6 @@ func (h *Herdr) Read(ctx context.Context) (herdr.Snapshot, error) {
 	if h.failures[OpTabList] == nil {
 		s.Tabs = slices.Clone(h.tabs)
 	}
-	for i, a := range s.Agents {
-		if shown, ok := h.shown[a.PaneID]; ok {
-			s.Agents[i].Status = shown
-		}
-	}
 	if h.kinds != nil {
 		s.Agents = slices.DeleteFunc(s.Agents, func(a herdr.Agent) bool { return !slices.Contains(h.kinds, a.Kind) })
 	}
@@ -390,51 +341,10 @@ func (h *Herdr) AgentAt(ctx context.Context, pane string) (herdr.Agent, bool, er
 		return herdr.Agent{}, false, err
 	}
 	i := slices.IndexFunc(h.agents, func(a herdr.Agent) bool { return a.PaneID == pane })
-	if i < 0 || h.vanished[pane] {
+	if i < 0 {
 		return herdr.Agent{}, false, nil
 	}
-	a := h.agents[i]
-	if shown, ok := h.shown[pane]; ok {
-		a.Status = shown
-	}
-	return a, true, nil
-}
-
-// StallPrompts makes every Prompt from now on wait until its context ends, which is a
-// herdr that takes the text and never answers.
-func (h *Herdr) StallPrompts() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.stalled = true
-}
-
-func (h *Herdr) Prompt(ctx context.Context, pane, text string) error {
-	h.journal.Record("herdr", "prompt", pane, text)
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	h.mu.Lock()
-	stalled := h.stalled
-	h.mu.Unlock()
-	if stalled {
-		<-ctx.Done()
-		return ctx.Err()
-	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if err := h.failures[OpPrompt]; err != nil {
-		return err
-	}
-	const command = "cli:agent:prompt"
-	i := slices.IndexFunc(h.agents, func(a herdr.Agent) bool { return a.PaneID == pane })
-	switch {
-	case i < 0 || h.vanished[pane]:
-		return &herdr.Refusal{Code: "agent_not_found", Message: fmt.Sprintf("agent target %s not found", pane), Command: command}
-	case h.agents[i].Status == "blocked":
-		return &herdr.Refusal{Code: "agent_blocked", Message: fmt.Sprintf("agent %s is blocked and requires interactive input", pane), Command: command}
-	}
-	h.prompted = append(h.prompted, pane+"|"+text)
-	return nil
+	return h.agents[i], true, nil
 }
 
 // SlowNextRename delays the next RenameWorkspace so a test can finish a cycle while a

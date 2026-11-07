@@ -141,41 +141,24 @@ func TestCLIReadFailsWhenWorkspacesOrAgentsCannotBeListed(t *testing.T) {
 }
 
 func TestCLIReportsWhatHerdrRefuses(t *testing.T) {
-	const blocked = `{"error":{"code":"agent_blocked","message":"agent w1:p1 is blocked and requires interactive input"},"id":"cli:agent:prompt"}`
 	cli := standIn(t, map[string]reply{
-		"agent prompt w1:p1 hi":         {Exit: 1, Stderr: blocked + "\n"},
-		"agent prompt w9:p9 hi":         {Exit: 1, Stderr: `{"error":{"code":"agent_not_found","message":"agent target w9:p9 not found"},"id":"cli:agent:prompt"}`},
-		"workspace rename w1 x":         {Exit: 2, Stderr: "error: unrecognized subcommand"},
-		"workspace close w9":            {Exit: 1, Stderr: `{"error":{"code":"workspace_not_found","message":"workspace w9 not found"},"id":"cli:workspace:close"}`},
-		"tab rename w1:t1 y":            {},
-		"tab close w1:t1":               {},
-		"tab close w1:t9":               {Exit: 1, Stderr: `{"error":{"code":"tab_not_found","message":"tab w1:t9 not found"},"id":"cli:tab:close"}`},
-		"workspace rename w1 renamed":   {},
-		"agent prompt w1:p1 keep going": {},
+		"workspace rename w1 x":       {Exit: 2, Stderr: "error: unrecognized subcommand"},
+		"workspace close w9":          {Exit: 1, Stderr: `{"error":{"code":"workspace_not_found","message":"workspace w9 not found"},"id":"cli:workspace:close"}`},
+		"tab rename w1:t1 y":          {},
+		"tab close w1:t1":             {},
+		"tab close w1:t9":             {Exit: 1, Stderr: `{"error":{"code":"tab_not_found","message":"tab w1:t9 not found"},"id":"cli:tab:close"}`},
+		"workspace rename w1 renamed": {},
 	})
 	ctx := context.Background()
 
-	err := cli.Prompt(ctx, "w1:p1", "hi")
-	require.ErrorIs(t, err, herdr.ErrAgentBlocked)
-	assert.EqualError(t, err, blocked)
-	var refusal *herdr.Refusal
-	require.ErrorAs(t, err, &refusal)
-	assert.Equal(t, "agent_blocked", refusal.Code)
-
-	err = cli.Prompt(ctx, "w9:p9", "hi")
-	require.ErrorContains(t, err, "agent_not_found")
-	assert.NotErrorIs(t, err, herdr.ErrAgentBlocked)
-
-	err = cli.RenameWorkspace(ctx, "w1", "x")
+	err := cli.RenameWorkspace(ctx, "w1", "x")
 	require.ErrorContains(t, err, "unrecognized subcommand")
-	assert.NotErrorIs(t, err, herdr.ErrAgentBlocked)
 
 	require.ErrorContains(t, cli.CloseWorkspace(ctx, "w9"), "workspace_not_found")
 	require.ErrorContains(t, cli.CloseTab(ctx, "w1:t9"), "tab_not_found")
 	require.NoError(t, cli.RenameTab(ctx, "w1:t1", "y"))
 	require.NoError(t, cli.CloseTab(ctx, "w1:t1"))
 	require.NoError(t, cli.RenameWorkspace(ctx, "w1", "renamed"))
-	require.NoError(t, cli.Prompt(ctx, "w1:p1", "keep going"))
 }
 
 func TestCLIPutsItsGlobalArgumentsBeforeTheSubcommand(t *testing.T) {

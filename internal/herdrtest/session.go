@@ -187,3 +187,10 @@ func StandInClaude(t testing.TB) string {
 	require.NoError(t, standInErr)
 	return standInDir
 }
+
+// Type types text into the agent in pane and submits it, as a person does. Production never
+// types a nudge, so only a test that has to put a worker in a state does.
+func (s *Session) Type(t testing.TB, pane, text string) {
+	t.Helper()
+	require.NoError(t, s.Run("agent", "prompt", pane, text))
+}

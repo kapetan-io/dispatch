@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch"
+	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
@@ -41,16 +42,16 @@ const backgroundTask = "sleep 601"
 // in a first-run folder. The app host runs the program directly, so no shell command line sits above
 // Claude for the launcher's Unrun check to misread (see CLAUDE.md).
 type liveWorker struct {
-	session *herdrtest.CoreSession
-	core    *herdr.Core
-	pane    string
-	id      string
-	cwd     string
-	log     string
-	trace   string
-	socket  string
-	state   string
-	program herdr.Program
+	session     *herdrtest.CoreSession
+	core        *herdr.Core
+	pane        string
+	id          string
+	cwd         string
+	log         string
+	trace       string
+	seenSession string
+	state       string
+	program     herdr.Program
 }
 
 // hookCall is one run of a plugin hook: the dispatch subcommand it ran and the input Claude Code gave it.
@@ -162,17 +163,19 @@ func startLiveWorker(t *testing.T) *liveWorker {
 	require.NoError(t, err)
 	w.pane = started.Pane
 
-	socketFile := filepath.Join(root, "socket")
-	err = w.core.Kickoff(ctx, w.pane, "Run this shell command, then reply with the word done: printenv CLAUDE_CODE_MESSAGING_SOCKET > "+socketFile, w.program.Startup)
+	sessionFile := filepath.Join(root, "socket")
+	err = w.core.Kickoff(ctx, w.pane, "Run this shell command, then reply with the word done: printenv CLAUDE_CODE_SESSION_ID > "+sessionFile, w.program.Startup)
 	if err != nil {
 		t.Logf("terminal:\n%s\nscreen:\n%s", w.session.Run(t, "get", w.pane), w.screen(t))
 	}
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		b, err := os.ReadFile(socketFile)
-		w.socket = strings.TrimSpace(string(b))
-		return err == nil && w.socket != ""
+		b, err := os.ReadFile(sessionFile)
+		w.seenSession = strings.TrimSpace(string(b))
+		return err == nil && w.seenSession != ""
 	}, turnTimeout, 500*time.Millisecond)
+	// A Bash tool sees the session id the launch chose, which is what followers send by.
+	require.Equal(t, w.id, w.seenSession)
 	return w
 }
 
@@ -388,8 +391,6 @@ func TestHerdrReadsARealWorkersStatusAndSession(t *testing.T) {
 	w.typeLine(t, "Use the AskUserQuestion tool to ask me one question, which color I want, with the options Crimson and Cobalt. Do nothing else until I answer.")
 	w.status(t, "blocked", turnTimeout)
 	assert.Contains(t, w.screen(t), "Enter to select")
-	// A nudge into an open popup would answer the question, so the adapter refuses it.
-	assert.ErrorIs(t, w.core.Prompt(context.Background(), w.pane, "dispatch nudge"), herdr.ErrAgentBlocked)
 }
 
 // TestClaudeCodeTakesAMessageWrittenToItsMessagingSocket fails when the frame Deliver writes stops
@@ -401,7 +402,7 @@ func TestClaudeCodeTakesAMessageWrittenToItsMessagingSocket(t *testing.T) {
 	w.status(t, "done", turnTimeout)
 	before := w.count(t, "wake", "UserPromptSubmit")
 
-	require.NoError(t, harness.ClaudeCode{}.Deliver(context.Background(), w.socket, "dispatch event: reply with the word received."))
+	require.NoError(t, harness.ClaudeCode{Sessions: harness.SessionsDir(environment.Process())}.Deliver(context.Background(), w.id, "dispatch event: reply with the word received."))
 
 	got := w.await(t, "wake", "UserPromptSubmit", before, time.Minute)
 	assert.Contains(t, got.field("prompt"), "dispatch event: reply with the word received.")

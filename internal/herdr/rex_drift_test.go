@@ -167,38 +167,6 @@ func TestRexLeavesOneWorkerWhenTwoStartsRace(t *testing.T) {
 	assert.Equal(t, 1, succeeded)
 }
 
-func TestRexTypesOnlyIntoAWorkerThatReportsAStatusItCanDescribe(t *testing.T) {
-	r := newRexRig(t)
-	started, err := r.rex.StartWorker(context.Background(), r.worker)
-	require.NoError(t, err)
-	// Claude at its trust dialog reports no status, and a Prompt there would press Enter on "No, exit".
-	require.Eventually(t, func() bool { a, ok := r.agent(t); return ok && a.Status == "unknown" }, 20*time.Second, 100*time.Millisecond)
-
-	err = r.rex.Prompt(context.Background(), started.Pane, "hello")
-
-	require.ErrorIs(t, err, herdr.ErrStatusUnknown)
-	assert.True(t, herdr.NothingTyped(err))
-	require.NoError(t, r.rex.Kickoff(context.Background(), started.Pane, "/dispatch:build ENG-1", r.worker.Program.Startup))
-
-	require.NoError(t, r.rex.Prompt(context.Background(), started.Pane, "!blocked"))
-	r.awaitStatus(t, "blocked")
-	err = r.rex.Prompt(context.Background(), started.Pane, "hello")
-	require.ErrorIs(t, err, herdr.ErrAgentBlocked)
-	assert.True(t, herdr.NothingTyped(err))
-}
-
-func TestRexPromptSubmitsToAnIdleAndADoneWorker(t *testing.T) {
-	r := newRexRig(t)
-	started := r.launched(t)
-
-	require.NoError(t, r.rex.Prompt(context.Background(), started.Pane, "!idle"))
-	r.awaitStatus(t, "idle")
-	require.NoError(t, r.rex.Prompt(context.Background(), started.Pane, "!done"))
-	r.awaitStatus(t, "done")
-	require.NoError(t, r.rex.Prompt(context.Background(), started.Pane, "hello"))
-	r.awaitStatus(t, "working")
-}
-
 func TestRexRenamesTheWorkspaceEmojiAndTheTabTitleApart(t *testing.T) {
 	r := newRexRig(t)
 	r.launched(t)
