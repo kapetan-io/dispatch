@@ -1357,6 +1357,23 @@ func TestLaunchSwitchesOnceAndTheNextLaunchSucceedsWhenGitRefusesTheBranchOnce(t
 	assert.Equal(t, "thrawn01/eng-1", strings.TrimSpace(revParseName(t, tree)))
 }
 
+func TestLaunchReturnsATreeWithoutTheIndexLockACutOffSwitchLeft(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	// Stands in for the launch deadline killing git: the switch dies with its index.lock still in the tree's git directory.
+	hook := "#!/bin/sh\n[ \"$1\" = prepared ] && grep -q 'refs/heads/thrawn01/eng-1$' && touch \"$(git rev-parse --absolute-git-dir)/index.lock\" && exit 1\nexit 0\n"
+	require.NoError(t, os.WriteFile(filepath.Join(d.Repo, ".git", "hooks", "reference-transaction"), []byte(hook), 0o755))
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "switch_failed", out.result["status"])
+	assert.Equal(t, []string{d.Repo + "|" + tree + "|ENG-1"}, d.Trees.Returned())
+	gitDir, err := exec.Command("git", "-C", tree, "rev-parse", "--absolute-git-dir").Output()
+	require.NoError(t, err)
+	assert.NoFileExists(t, filepath.Join(strings.TrimSpace(string(gitDir)), "index.lock"))
+}
+
 func TestLaunchCarriesGitsMessageWhenTheCheckoutFails(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})

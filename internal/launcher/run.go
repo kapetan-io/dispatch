@@ -446,8 +446,25 @@ func (l *launch) checkout(ctx context.Context, existed bool) (Result, bool) {
 		// A leftover record would attach to whatever branch of this name is created later.
 		_ = stackrecord.Clear(context.WithoutCancel(ctx), l.opts.Env, l.repo, req.Branch)
 	}
+	l.clearIndexLock(ctx)
 	l.returnLease(ctx)
 	return Result{Status: StatusSwitchFailed, Detail: fmt.Sprintf("git switch to %s%s failed in leased tree %s (lease returned): %s", req.Branch, from, l.tree, said)}, false
+}
+
+// clearIndexLock removes the index.lock a git switch killed by the launch deadline leaves in the
+// tree's git directory. Neither git clean nor treehouse return touches it, so the next worker in
+// the tree could not commit. Only a tree this launch just leased reaches here, so no worker's git
+// can hold the lock.
+func (l *launch) clearIndexLock(ctx context.Context) {
+	ctx = context.WithoutCancel(ctx)
+	dir, err := l.git(ctx, l.tree, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return
+	}
+	lock := filepath.Join(strings.TrimSpace(dir), "index.lock")
+	if err := os.Remove(lock); err == nil {
+		l.log("removed %s left by the cut-off switch", lock)
+	}
 }
 
 // writeStackRecord fetches the stack parent's branch so the fork point is present locally, then
