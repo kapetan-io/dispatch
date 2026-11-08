@@ -287,10 +287,11 @@ func rollupState(contexts []checkContext, rules Rules) (state string, gated bool
 
 // countedRollupState reads the checks behind PR number and returns the rollup
 // state of the ones that count under rules, and whether an approval check has
-// not passed. A second page of checks is an
-// error, because a failure beyond the first page would go unnoticed. Checks of any
-// commit but head, which a push between the two reads causes, are PENDING, so
-// the PR is not ready until the next read agrees with itself.
+// not passed. A second page of checks is an error, because a failure beyond the
+// first page would go unnoticed. Checks of any commit but head, which a push
+// between the two reads causes, are PENDING, so the PR is not ready until the
+// next read agrees with itself. Such a read can't say whether an approval check
+// passed, so it gates only in a repo that has approval checks.
 func countedRollupState(ctx context.Context, src Source, number int, head string, rules Rules) (state string, gated bool, err error) {
 	b, err := src.Checks(ctx, number)
 	if err != nil {
@@ -302,7 +303,7 @@ func countedRollupState(ctx context.Context, src Source, number int, head string
 	}
 	for _, c := range resp.Data.Repository.PullRequest.Commits.Nodes {
 		if c.Commit.Oid != head {
-			return "PENDING", true, nil
+			return "PENDING", len(rules.ApprovalChecks) > 0, nil
 		}
 		if r := c.Commit.StatusCheckRollup; r != nil {
 			if r.Contexts.PageInfo.HasNextPage {
@@ -313,7 +314,8 @@ func countedRollupState(ctx context.Context, src Source, number int, head string
 		}
 	}
 	// The rollup the branch query saw has vanished, so this read can't vouch for it.
-	return "PENDING", true, nil
+	// Without approval checks there is no gate to leave unmet, so an approval stands.
+	return "PENDING", len(rules.ApprovalChecks) > 0, nil
 }
 
 type reviewNode struct {

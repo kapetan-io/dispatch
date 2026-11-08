@@ -339,3 +339,28 @@ func TestCLIReadDoesNotCallPRTextAboutRateLimitsARateLimit(t *testing.T) {
 	var limit *pullrequest.RateLimitError
 	assert.False(t, errors.As(err, &limit))
 }
+
+func TestCLIReadKeepsAnApprovalWhenAPushMovesTheHeadAndNoApprovalCheckExists(t *testing.T) {
+	// The stand-in answers the checks query with this page too, which names no
+	// commit, so the checks read as belonging to a different head.
+	const approved = `{"data":{"repository":{"pullRequests":{"nodes":[{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"a1","mergeable":"MERGEABLE","commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"PENDING"}}}]},"latestOpinionatedReviews":{"nodes":[{"state":"APPROVED","commit":{"oid":"a1"},"author":{"login":"person"}}]},"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}]}}}}`
+
+	for _, test := range []struct {
+		name  string
+		rules pullrequest.Rules
+		want  bool
+	}{
+		{name: "noApprovalChecks", rules: pullrequest.Rules{RequiredChecksOnly: true}, want: true},
+		{name: "approvalChecks", rules: pullrequest.Rules{RequiredChecksOnly: true, ApprovalChecks: []string{"human-approval"}}, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			exe, _ := standIn(t, approved, "", "0")
+
+			pr, found, err := pullrequest.NewCLI(exe).Read(context.Background(), t.TempDir(), "b", test.rules)
+
+			require.NoError(t, err)
+			require.True(t, found)
+			assert.Equal(t, test.want, pr.Approved)
+		})
+	}
+}
