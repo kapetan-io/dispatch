@@ -11,12 +11,16 @@ Each principle is a skill of its own. Load one with the Skill tool and apply it,
 |---|---|
 | `dispatch:principle-problem-domains` | Naming a package, type or method, or reviewing structure. |
 | `dispatch:principle-boundary-discipline` | Wiring validation, error handling or adapters. |
+| `dispatch:principle-design-to-the-port-not-the-vendor` | Writing or changing a port's contract, adding a product or delivery mechanism behind one, naming config or terms after a product, or branching on which product or source is in use. |
 | `dispatch:principle-encode-lessons-in-structure` | A mistake just happened and you are choosing the fix, or you write the same instruction twice. |
 | `dispatch:principle-laziness-protocol` | Refactoring, sizing a diff, tempted to add a layer. |
 | `dispatch:principle-make-operations-idempotent` | Commands or loops that must survive crashes and retries. |
 | `dispatch:principle-minimize-reader-load` | Code is hard to trace. |
 | `dispatch:principle-separate-before-serializing-shared-state` | Several actors might write the same file, branch or key. |
 | `dispatch:principle-subtract-before-you-add` | About to add code, a command, a setting or a part of a design. |
+| `dispatch:principle-question-the-requirement` | A requirement is about to cost structure: a mechanism, special case, criterion or threshold to satisfy it, a wider scope, or a repair to keep a feature. |
+| `dispatch:principle-keep-one-source-of-truth` | About to create a second place that holds a fact: a config key or mapping, a cache or on-disk format, a document restating code or tests, or a field a tool holds for you. |
+| `dispatch:principle-mechanism-not-policy` | Designing a tool, library or platform others build on, and adding a restriction, a default, a special-case path or a feature request to it. |
 | `dispatch:principle-guard-the-context-window` | Before reading or pasting bulky content into context. |
 | `dispatch:principle-zero-value-settings` | Naming a setting, config key or option a user can leave unset. |
 | `dispatch:principle-fast-tests` | Writing, reviewing or speeding up tests. |

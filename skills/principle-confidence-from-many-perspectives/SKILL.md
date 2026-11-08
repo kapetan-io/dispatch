@@ -12,6 +12,7 @@ Before you call a design, plan, ticket or root cause done, or a change that woul
 - **Different personas.** A perspective is a persona run by a method. Give each reviewer a persona, such as the user or caller, the next maintainer, an operator, or a skeptic of the premise. Hand each the artifact and the question, not your conclusion or session history, and keep answers apart so none just echoes another.
 - **Same ground rules for every reviewer.** Point each at the nearest `docs/CONTEXT.md` for one vocabulary, tell it to coin no labels and to follow `dispatch:principle-verify-dont-assume`, and name the principles (`dispatch:principles`) that bear on the work, so each judges against the same standards.
 - **Different methods.** Reading the same code twice is one perspective. Measuring, running or reproducing it is another.
+- **Judge findings against the owner's threat model.** A reviewer that flags a threat inside the boundary the owner drew, such as a repo they configured or a hook they review, has found an accepted risk, not a finding. Drop it before relaying.
 - **You choose how many and which,** scaled to risk and scope.
 - **Report coverage.** Where you publish the result, say which perspectives checked the work and which didn't. A claim resting on one perspective and no cited source is a guess. Label it that way, as `dispatch:principle-verify-dont-assume` does anything unchecked.
 

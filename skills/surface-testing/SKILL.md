@@ -67,6 +67,7 @@ A fake encodes someone's understanding of the real tool, and it drifts. A fake `
 4. **A fake you write**, behind a port (next section). For an external command-line tool there is usually no published substitute, so this is the default. It has to refuse what the real tool refuses. A spy that accepts every call and records it proves your handler calls your fake, nothing more. Give it the real tool's state and rules, and make it return the errors the real tool returns.
 
 > **The DNS server.** A team ran a real Go DNS server in tests and the service made actual lookups against it. A new Go version changed resolver behavior and the suite caught it before deploy. A mocked resolver would have shipped the bug.
+Tests are hermetic. Nothing a test reads or writes lives in the user's home, real config or credential store; it gets a scratch directory and a fixed environment. A scenario that can only run against real user state, or a credential only the user can mint, is dropped and the gap noted, not provisioned.
 
 ### Ports and adapters
 
