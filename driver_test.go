@@ -416,7 +416,9 @@ func (d *Dispatch) Tick() string {
 // hook returns before the loop has seen it, so a caller waits for the count first.
 func (d *Dispatch) settleLoop() {
 	d.t.Helper()
-	resp, err := loop.Ask(d.t.Context(), d.state, loop.Request{Op: loop.OpSettle})
+	ctx, cancel := context.WithTimeout(d.t.Context(), 10*time.Second)
+	defer cancel()
+	resp, err := loop.Ask(ctx, d.state, loop.Request{Op: loop.OpSettle})
 	require.NoError(d.t, err)
 	require.Equal(d.t, loop.CodeSettled, resp.Code)
 }

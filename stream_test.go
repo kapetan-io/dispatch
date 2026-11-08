@@ -411,3 +411,20 @@ func TestStreamRunsACycleWhileChangesKeepArriving(t *testing.T) {
 
 	require.Eventually(t, func() bool { return lastReadingOf(d, "ENG-1") == "state blocked" }, 5*time.Second, 5*time.Millisecond)
 }
+
+func TestSettleAnswersWhenAStreamNameLeavesNoWorkBehind(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Streaming: true})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+	d.startStreaming()
+	d.tools.Herdr.Fail(herdrtest.OpRead, errors.New("the server is down"))
+	require.NoError(t, d.TickAfterASecond())
+	d.settleLoop()
+
+	// The failed read lists no panes, so a name the stream sends is dropped without starting a read.
+	for range 300 {
+		d.tools.Herdr.Changed("w-ENG-1:p1")
+		d.settleLoop()
+	}
+}
