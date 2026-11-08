@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Manage
 
-First, load `dispatch:dispatch` with the Skill tool. Where it differs from this skill, this skill wins. The differences: you review every active ticket's ready PR without asking, and a Needs Human ticket whose worker asked in chat gets your decision when the question is the worker's to answer. A feature `dispatch:autobots` covers keeps autobots' terms for its pieces, merging included.
+First, load `dispatch:dispatch` with the Skill tool. Where it differs from this skill, this skill wins. The differences: you review every active ticket's ready PR without asking, and a Needs Human ticket whose worker asked in chat gets your decision, including on product behavior, a public contract, a security default, an ADR or a design. A feature `dispatch:autobots` covers keeps autobots' terms for its pieces, merging included.
 
 Run until the user says stop. You never merge or move a ticket to Done. Starting this skill is the user's approval to review, as starting `dispatch:autobots` is for one feature's pieces.
 
@@ -14,7 +14,7 @@ Run `dispatch watch` on every `ai` ticket that is In Progress, In Review or Need
 
 ## Report
 
-After each wake and each event you acted on, tell the user in one short message which tickets wait on them (merges, questions you couldn't decide, tickets to move), which workers you told something and what, and nothing when nothing changed. Read it fresh each time from Linear (`dispatch ticket list` for `LOC-` tickets), each ticket's workspace emoji (`docs/worker-states.md`) and GitHub.
+After each wake and each event you acted on, tell the user in one short message which tickets wait on them (merges, questions you put to them, tickets to move), and in one line each decision you made with its reason, which workers you told something and what, and nothing when nothing changed. Read it fresh each time from Linear (`dispatch ticket list` for `LOC-` tickets), each ticket's workspace emoji (`docs/worker-states.md`) and GitHub.
 
 ## Keep workers moving
 
@@ -26,7 +26,13 @@ Read the worker's workspace first. A worker sometimes answers its own question a
 
 When the question is how to proceed within the ticket as written, decide it. Research before you do, reading the ticket, its blueprint and the code through sub-agents so their output stays out of your context, and prefer the product's documented behavior to convenience. When the worker couldn't choose between shapes, tell it to run `dispatch:arena`, put the candidates and its pick on the ticket, then decide on that. Post the decision as a ticket comment that starts `## Manager decision`, so the worker, the user and a later session can tell it from the user's. Move the ticket to In Progress and `dispatch tell` the worker.
 
-A question about product behavior, a public contract, a security default or an ADR is the user's. So is a worker blocked on a question popup. Put it to the user alone, with your recommendation, as `dispatch:converse` says.
+Decide product, contract, security, ADR and design questions the same way, with the same `## Manager decision` comment, ticket move and `dispatch tell`: you are the independent point of view on what the worker builds, not a relay for the user's approval. Tell the user the decision in one line with its reason. Put the question to the user, alone and with your recommendation, only when you say which of these applies:
+
+- Your answer differs from the one the worker proposed. A worker that proposed none gives you nothing to disagree with, so decide.
+- A claim the decision rests on can't be verified (`dispatch:principle-verify-dont-assume`).
+- You are still unsure on a call that is costly to reverse, such as a shipped public contract, a stored data format or superseding an ADR.
+
+A worker blocked on a question popup also goes to the user, since `dispatch tell` sends nothing to a blocked session.
 
 ## PR review
 
