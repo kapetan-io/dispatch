@@ -28,7 +28,10 @@ const (
 	OpAgentAt = "agent-at"
 	// OpFollowSession makes FollowSession fail, as it does when the host refuses the new label.
 	OpFollowSession = "follow-session"
-	OpOpenWorkspace = "open-workspace"
+	// OpFollowSessionLanded makes FollowSession apply the label and then fail, as it does when
+	// the deadline lands while the host is applying it.
+	OpFollowSessionLanded = "follow-session-landed"
+	OpOpenWorkspace       = "open-workspace"
 	// OpStartTab fails StartWorker before any tab exists. OpStartAgent fails it
 	// after the tab came up, with the program not running in it.
 	OpStartTab   = "start-tab"
@@ -360,7 +363,7 @@ func (h *Herdr) FollowSession(ctx context.Context, pane, session string) error {
 		return err
 	}
 	h.agent(pane, func(a *herdr.Agent) { a.Session = session })
-	return nil
+	return h.failures[OpFollowSessionLanded]
 }
 
 // SlowNextRename delays the next RenameWorkspace so a test can finish a cycle while a

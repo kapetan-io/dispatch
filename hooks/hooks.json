@@ -10,6 +10,7 @@
         ]
       },
       {
+        "matcher": "clear",
         "hooks": [
           {
             "type": "command",

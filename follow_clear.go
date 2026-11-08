@@ -33,20 +33,22 @@ func followClear(ctx context.Context, opts Options) error {
 }
 
 func moveCleared(ctx context.Context, opts Options, kind string, h harness.Harness, session, dir string) {
-	ctx, cancel := clock.WithTimeout(ctx, opts.Clock, "follow-clear", stopTimeout)
-	defer cancel()
 	cleared := loop.Cleared{New: session, Kind: kind, Process: h.Process(opts.Env)}
 	moved := moveWorker(ctx, opts, h, session, dir)
 	if moved || cleared.Process != "" {
-		_, _ = loop.Ask(ctx, opts.StateDir, loop.Request{Op: loop.OpCleared, Cleared: &cleared})
+		askCtx, cancel := clock.WithTimeout(ctx, opts.Clock, "follow-clear", stopTimeout)
+		defer cancel()
+		_, _ = loop.Ask(askCtx, opts.StateDir, loop.Request{Op: loop.OpCleared, Cleared: &cleared})
 	}
 }
 
 // moveWorker moves the records and then the host label of the worker whose session cleared, and
 // reports whether both moved. The label is the only place that remembers the old id, so a move that
 // fails part way puts the records back under it, and the next clear starts from the same old id.
+// Each host call has its own budget, and git runs untimed as in record-stop, so a slow machine
+// spends one budget and not the others.
 func moveWorker(ctx context.Context, opts Options, h harness.Harness, session, dir string) bool {
-	agent, found := reportingAgent(ctx, opts)
+	agent, found := lookupAgent(ctx, opts)
 	if !found || agent.Kind != h.AgentKind() || agent.Session == "" || agent.Session == session {
 		return false
 	}
@@ -58,10 +60,29 @@ func moveWorker(ctx context.Context, opts Options, h harness.Harness, session, d
 	if stops.Rekey(opts.StateDir, tree, old, session) != nil {
 		return false
 	}
-	if sessionlog.Rekey(opts.StateDir, tree, old, session) != nil || agent.Host.FollowSession(ctx, agent.Place, session) != nil {
-		_ = stops.Rekey(opts.StateDir, tree, session, old)
-		_ = sessionlog.Rekey(opts.StateDir, tree, session, old)
-		return false
+	if sessionlog.Rekey(opts.StateDir, tree, old, session) == nil && labelled(ctx, opts, agent, session) {
+		return true
 	}
-	return true
+	_ = stops.Rekey(opts.StateDir, tree, session, old)
+	_ = sessionlog.Rekey(opts.StateDir, tree, session, old)
+	return false
+}
+
+func lookupAgent(ctx context.Context, opts Options) (reporter, bool) {
+	ctx, cancel := clock.WithTimeout(ctx, opts.Clock, "follow-clear", stopTimeout)
+	defer cancel()
+	return reportingAgent(ctx, opts)
+}
+
+// labelled gives the worker's host label the new session. A call cut off by its deadline may still
+// have landed, so on any error the label is read back, and only a label that still holds the old
+// id lets the caller put the records back.
+func labelled(ctx context.Context, opts Options, agent reporter, session string) bool {
+	setCtx, cancel := clock.WithTimeout(ctx, opts.Clock, "follow-clear", stopTimeout)
+	defer cancel()
+	if agent.Host.FollowSession(setCtx, agent.Place, session) == nil {
+		return true
+	}
+	now, found := lookupAgent(ctx, opts)
+	return found && now.Session == session
 }

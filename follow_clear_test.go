@@ -74,6 +74,25 @@ func TestFollowClearPutsTheRecordsBackWhenTheHostRefusesTheNewLabel(t *testing.T
 	assert.True(t, d.StopRecorded(tree, "second"))
 }
 
+func TestFollowClearKeepsTheRecordsWithTheNewIDWhenTheLabelLandedButTheCallFailed(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule), FakeHarness: true})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "")
+	pane := d.SessionOf("ENG-1", "fake", "idle")
+	tree := d.worktreeOf("ENG-1")
+	d.StartBeforeTheEvents()
+	defer d.FromTerminal(pane)()
+	require.NoError(t, d.Hook("record-stop", fakeStop(tree, 1)).Err)
+	d.tools.Herdr.Fail(herdrtest.OpFollowSessionLanded, errors.New("deadline exceeded"))
+
+	require.NoError(t, d.Hook("follow-clear", fakeClear("first", tree)).Err)
+
+	assert.Equal(t, "first", d.workerSessionOf("ENG-1"))
+	assert.True(t, d.StopRecorded(tree, "first"))
+	assert.False(t, d.StopRecorded(tree, "worker"))
+}
+
 func TestFollowClearMovesTheRecordsEvenWhenNoDispatchRuns(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule), FakeHarness: true})
@@ -114,6 +133,53 @@ func TestFollowClearKeepsAFollowerOfTheSameProcessFollowing(t *testing.T) {
 	require.Len(t, d.Tools().Harness.Delivered(after), 1)
 	assert.Contains(t, d.Tools().Harness.Delivered(after)[0], "ENG-1 is ready for review")
 	assert.Empty(t, d.LoopStderr())
+}
+
+func TestWatchAgainFromAResumedProcessKeepsOneFollowerThatUnwatchRemoves(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{FakeHarness: true})
+	session := d.Tools().Harness.Open()
+	d.FakeSession(session)
+	d.FakeProcess("process-1")
+	d.StartBeforeTheEvents()
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+	d.FakeProcess("process-2")
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+
+	d.Tick()
+
+	assert.Len(t, d.Tools().Harness.Delivered(session), 1)
+
+	require.NoError(t, d.Run("unwatch", "ENG-1").Err)
+	d.GitHub.PullRequest("ENG-1", cleanPR("a2"))
+	d.Tick()
+
+	assert.Len(t, d.Tools().Harness.Delivered(session), 1)
+}
+
+func TestFollowClearMovesAFollowerThatWatchedAgainAfterAResume(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{FakeHarness: true})
+	before, after := d.Tools().Harness.Open(), d.Tools().Harness.Open()
+	d.FakeSession(before)
+	d.FakeProcess("process-1")
+	d.StartBeforeTheEvents()
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+	d.FakeProcess("process-2")
+	require.NoError(t, d.Run("watch", "ENG-1").Err)
+	d.Tools().Harness.Exit(before)
+	d.FakeSession(after)
+
+	require.NoError(t, d.Hook("follow-clear", fakeClear(after, d.worktreeOf("ENG-1"))).Err)
+	d.Tick()
+
+	assert.Len(t, d.Tools().Harness.Delivered(after), 1)
 }
 
 func TestFollowClearLeavesAFollowerOfAnotherProcessAlone(t *testing.T) {

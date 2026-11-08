@@ -35,9 +35,12 @@ func TestRealClaudesClearGivesANewSessionIDInTheSameProcess(t *testing.T) {
 	})
 	session := herdrtest.StartSession(t)
 	ctx := context.Background()
-	cwd, log := t.TempDir(), filepath.Join(t.TempDir(), "starts.log")
+	cwd, log, matched := t.TempDir(), filepath.Join(t.TempDir(), "starts.log"), filepath.Join(t.TempDir(), "matched.log")
 	settings, err := json.Marshal(map[string]any{"hooks": map[string]any{"SessionStart": []any{map[string]any{
 		"hooks": []any{map[string]any{"type": "command", "command": fmt.Sprintf(`echo "$CLAUDE_CODE_MESSAGING_SOCKET $(cat | tr -d '\n')" >> %q`, log)}},
+	}, map[string]any{
+		"matcher": "clear",
+		"hooks":   []any{map[string]any{"type": "command", "command": fmt.Sprintf(`cat >> %q`, matched)}},
 	}}}})
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(filepath.Join(cwd, ".claude"), 0o755))
@@ -95,4 +98,10 @@ func TestRealClaudesClearGivesANewSessionIDInTheSameProcess(t *testing.T) {
 	_, _, ok = harness.ClaudeCode{}.Cleared([]byte(compacted[1]))
 	assert.False(t, ok)
 	assert.Contains(t, compacted[1], `"session_id":"`+id+`"`)
+
+	// hooks.json relies on the clear matcher to keep follow-clear from starting on every session start.
+	only, err := os.ReadFile(matched)
+	require.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(string(only), `"hook_event_name":"SessionStart"`))
+	assert.Contains(t, string(only), `"source":"clear"`)
 }

@@ -29,7 +29,8 @@ type Followers struct {
 }
 
 // Follow records that a session follows a ticket, so Tell sends that ticket's
-// notifications to the session through its harness.
+// notifications to the session through its harness. A session is its kind and address, so
+// following again from a restarted process keeps one entry and updates its process.
 func (f *Followers) Follow(ticket string, who Follower) error {
 	if ticket == "" {
 		return errors.New("a follower needs a ticket")
@@ -42,9 +43,13 @@ func (f *Followers) Follow(ticket string, who Follower) error {
 	if f.byTicket == nil {
 		f.byTicket = map[string][]Follower{}
 	}
-	if !slices.Contains(f.byTicket[ticket], who) {
-		f.byTicket[ticket] = append(f.byTicket[ticket], who)
+	for i, o := range f.byTicket[ticket] {
+		if o.Kind == who.Kind && o.Address == who.Address {
+			f.byTicket[ticket][i].Process = who.Process
+			return nil
+		}
 	}
+	f.byTicket[ticket] = append(f.byTicket[ticket], who)
 	return nil
 }
 
@@ -63,7 +68,7 @@ func (f *Followers) Move(kind, process, address string) {
 			if who.Kind == kind && who.Process == process {
 				who.Address = address
 			}
-			if !slices.Contains(moved, who) {
+			if !slices.ContainsFunc(moved, func(o Follower) bool { return sameSession(o, who) }) {
 				moved = append(moved, who)
 			}
 		}
@@ -79,8 +84,10 @@ func (f *Followers) Unfollow(ticket string, who Follower) {
 	if f.byTicket == nil {
 		return
 	}
-	f.byTicket[ticket] = slices.DeleteFunc(f.byTicket[ticket], func(o Follower) bool { return o == who })
+	f.byTicket[ticket] = slices.DeleteFunc(f.byTicket[ticket], func(o Follower) bool { return sameSession(o, who) })
 }
+
+func sameSession(a, b Follower) bool { return a.Kind == b.Kind && a.Address == b.Address }
 
 // Of lists the sessions following a ticket.
 func (f *Followers) Of(ticket string) []Follower {
@@ -96,7 +103,7 @@ func (f *Followers) Sessions() []Follower {
 	var out []Follower
 	for _, followers := range f.byTicket {
 		for _, who := range followers {
-			if !slices.Contains(out, who) {
+			if !slices.ContainsFunc(out, func(o Follower) bool { return sameSession(o, who) }) {
 				out = append(out, who)
 			}
 		}
@@ -110,7 +117,9 @@ func (f *Followers) drop(gone []Follower) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for ticket, followers := range f.byTicket {
-		f.byTicket[ticket] = slices.DeleteFunc(followers, func(o Follower) bool { return slices.Contains(gone, o) })
+		f.byTicket[ticket] = slices.DeleteFunc(followers, func(o Follower) bool {
+			return slices.ContainsFunc(gone, func(g Follower) bool { return sameSession(g, o) })
+		})
 	}
 }
 
