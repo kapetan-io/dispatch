@@ -8,7 +8,9 @@ package stops
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -76,6 +78,25 @@ func Write(stateDir, tree, session string, r Record) error {
 		return fmt.Errorf("while writing stop record: %w", err)
 	}
 	return os.Rename(tmp.Name(), filepath.Join(dir, treekey.Hash(session)+".json"))
+}
+
+// Rekey makes the record of session old in the tree the record of session new, because the
+// worker's program began a new conversation in the same process. A new session that already has a
+// record keeps it, which a new link never replaces, and an old one with none is not an error.
+func Rekey(stateDir, tree, old, new string) error {
+	dir := treeDir(stateDir, tree)
+	from := filepath.Join(dir, treekey.Hash(old)+".json")
+	err := os.Link(from, filepath.Join(dir, treekey.Hash(new)+".json"))
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(from); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // Read returns the latest Stop of session in the tree that ended after the last return.

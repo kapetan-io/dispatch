@@ -25,7 +25,9 @@ const (
 	// OpRead makes Read fail, as it does when the herdr server is down.
 	OpRead = "read"
 	// OpAgentAt makes AgentAt fail, as it does when the herdr server is down.
-	OpAgentAt       = "agent-at"
+	OpAgentAt = "agent-at"
+	// OpFollowSession makes FollowSession fail, as it does when the host refuses the new label.
+	OpFollowSession = "follow-session"
 	OpOpenWorkspace = "open-workspace"
 	// OpStartTab fails StartWorker before any tab exists. OpStartAgent fails it
 	// after the tab came up, with the program not running in it.
@@ -345,6 +347,20 @@ func (h *Herdr) AgentAt(ctx context.Context, pane string) (herdr.Agent, bool, er
 		return herdr.Agent{}, false, nil
 	}
 	return h.agents[i], true, nil
+}
+
+func (h *Herdr) FollowSession(ctx context.Context, pane, session string) error {
+	h.journal.Record("herdr", "follow-session", pane, session)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if err := h.failures[OpFollowSession]; err != nil {
+		return err
+	}
+	h.agent(pane, func(a *herdr.Agent) { a.Session = session })
+	return nil
 }
 
 // SlowNextRename delays the next RenameWorkspace so a test can finish a cycle while a

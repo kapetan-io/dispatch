@@ -222,7 +222,7 @@ One entry in the dispatch owner's GitHub notifications inbox, as GitHub lists it
 _Avoid_: notification (that means dispatch telling a follower)
 
 **Follower**:
-A session of a harness dispatch can deliver to that ran `dispatch watch` on a ticket and gets its notifications as messages through that harness. The address dispatch delivers to is the follower's session id. Followers live in the running dispatch process and end at a restart. The loop's warnings say "session", not "watcher socket".
+A session of a harness dispatch can deliver to that ran `dispatch watch` on a ticket and gets its notifications as messages through that harness. The address dispatch delivers to is the follower's session id. A follower also keeps its harness's process key, a string only that harness reads (Claude Code's is the process's messaging socket path), which stays the same when the session's id changes, so `dispatch follow-clear` can move the follower to the id a `/clear` gave the session. Followers live in the running dispatch process and end at a restart. The loop's warnings say "session", not "watcher socket".
 _Avoid_: subscriber (`dispatch subscribe` is gone)
 
 **Loop**:

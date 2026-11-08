@@ -74,6 +74,25 @@ func (*Harness) Follower(env environment.Environment) (string, error) {
 	return address, nil
 }
 
+// Process is the fake process the command runs in, which a cleared fake session keeps.
+func (*Harness) Process(env environment.Environment) string { return env.Get(ProcessEnv) }
+
+// ProcessEnv names the variable that carries a fake session's process.
+const ProcessEnv = "FAKE_HARNESS_PROCESS"
+
+// Cleared reads the fake's clear input, {"sid":"new","where":"/dir","cleared":true}.
+func (*Harness) Cleared(input []byte) (string, string, bool) {
+	var in struct {
+		SID     string `json:"sid"`
+		Where   string `json:"where"`
+		Cleared bool   `json:"cleared"`
+	}
+	if json.Unmarshal(input, &in) != nil || in.SID == "" || !in.Cleared {
+		return "", "", false
+	}
+	return in.SID, in.Where, true
+}
+
 // Deliver records text in the inbox at address.
 func (h *Harness) Deliver(_ context.Context, address, text string) error {
 	h.mu.Lock()
@@ -127,6 +146,12 @@ func (*Harness) Prompt(input []byte) (sessionlog.Prompt, string, bool) {
 		return sessionlog.Prompt{}, "", false
 	}
 	return sessionlog.Prompt{Session: in.SID, Text: in.Typed}, in.Where, true
+}
+
+// ClearedInput builds the fake's clear input for Cleared.
+func ClearedInput(session, dir string) []byte {
+	b, _ := json.Marshal(map[string]any{"sid": session, "where": dir, "cleared": true})
+	return b
 }
 
 // StopInput builds the fake's turn-end input for Stop.

@@ -193,6 +193,9 @@ const usage = `usage: dispatch run
   claude-shim  run the real claude with the plugin, the cross-session setting and, for a worker's Claude session,
                the worker flags added. Claude subcommands and print runs pass through. The claude
                shim in scripts/shims runs it
+  follow-clear read a SessionStart hook's JSON on stdin and, when it is a /clear, move what dispatch keyed by
+               the session's old id to the new one: the worker's session label on the Herdr app and Rex,
+               its Stop record and session log, and the followers in the same process. Silent elsewhere
   record-stop  read a Stop hook's JSON on stdin and report to the running dispatch when the session in
                this tree last ended a turn and whether it still has background tasks running.
                Finds the session's harness from the terminal the hook runs in: HC_TERMINAL_ID (Herdr app),
@@ -262,6 +265,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		return wakeLoop(ctx, opts)
 	case "record-stop":
 		return recordStop(ctx, opts)
+	case "follow-clear":
+		return followClear(ctx, opts)
 	case "watch", "unwatch":
 		if len(args) != 2 {
 			_, _ = fmt.Fprintln(opts.Stderr, usage)
@@ -404,7 +409,7 @@ func follow(ctx context.Context, opts Options, watch bool, ticket string) error 
 	if watch {
 		op, verb = loop.OpWatch, "watching"
 	}
-	resp, err := loop.Ask(ctx, opts.StateDir, loop.Request{Op: op, Ticket: ticket, Follower: &notify.Follower{Kind: kind, Address: address}})
+	resp, err := loop.Ask(ctx, opts.StateDir, loop.Request{Op: op, Ticket: ticket, Follower: &notify.Follower{Kind: kind, Address: address, Process: opts.Harnesses[kind].Process(opts.Env)}})
 	if errors.Is(err, loop.ErrNotRunning) {
 		return notRunning()
 	}

@@ -381,6 +381,38 @@ func (r *Rex) observe(ctx context.Context, pane string) (agent Agent, at uint64,
 	return Agent{}, 0, false, nil
 }
 
+func (r *Rex) FollowSession(ctx context.Context, pane, session string) error {
+	id, block, ok := splitRexPane(pane)
+	if !ok {
+		return nil
+	}
+	view, err := r.view(ctx, id)
+	if rexGone(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, window := range view.Windows {
+		for _, b := range window.Blocks {
+			label, isWorker := parseWorkerLabel(b.Label)
+			if b.ID != block || !isWorker {
+				continue
+			}
+			label.Session = session
+			if err := checkLabel(label); err != nil {
+				return err
+			}
+			err := r.api(ctx, id, "session.set_block_label", map[string]any{"session_id": id, "block_id": block, "label": label.String()}, nil)
+			if rexGone(err) {
+				return nil
+			}
+			return err
+		}
+	}
+	return nil
+}
+
 // OpenWorkspace derives the workspace id of the checkout in its repo session and creates
 // nothing. The window shows once a worker starts in it.
 func (r *Rex) OpenWorkspace(ctx context.Context, w NewWorkspace) (string, error) {

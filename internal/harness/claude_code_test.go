@@ -105,6 +105,10 @@ func TestClaudeCodeKeepsTheHarnessContract(t *testing.T) {
 					b, _ := json.Marshal(in)
 					return b
 				},
+				ClearedInput: func(session, dir string) []byte {
+					b, _ := json.Marshal(map[string]any{"hook_event_name": "SessionStart", "session_id": session, "cwd": dir, "source": "clear"})
+					return b
+				},
 				PromptInput: func(session, dir, text string) []byte {
 					in := map[string]any{"hook_event_name": "UserPromptSubmit", "session_id": session, "cwd": dir}
 					if text == "" {
@@ -250,4 +254,33 @@ func TestClaudeCodeDeliverToADeadSocketWithAnUnreadableEntryBesideItIsNotGone(t 
 
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, harness.ErrGone)
+}
+
+func TestClaudeCodeClearedReadsTheNewSessionOfASessionStartAfterClear(t *testing.T) {
+	session, dir, ok := harness.ClaudeCode{}.Cleared([]byte(`{"session_id":"9f4a","cwd":"/tree","hook_event_name":"SessionStart","source":"clear"}`))
+
+	assert.True(t, ok)
+	assert.Equal(t, "9f4a", session)
+	assert.Equal(t, "/tree", dir)
+}
+
+func TestClaudeCodeClearedDropsEveryOtherSessionStart(t *testing.T) {
+	for _, test := range []struct{ name, input string }{
+		{"Startup", `{"session_id":"9f4a","cwd":"/tree","source":"startup"}`},
+		{"Compact", `{"session_id":"9f4a","cwd":"/tree","source":"compact"}`},
+		{"Resume", `{"session_id":"9f4a","cwd":"/tree","source":"resume"}`},
+		{"NoSession", `{"cwd":"/tree","source":"clear"}`},
+		{"NotJSON", `clear`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, ok := harness.ClaudeCode{}.Cleared([]byte(test.input))
+
+			assert.False(t, ok)
+		})
+	}
+}
+
+func TestClaudeCodeProcessIsTheMessagingSocketAClearKeeps(t *testing.T) {
+	assert.Equal(t, "/tmp/cc-socks/1.sock", harness.ClaudeCode{}.Process(environment.Environment{"CLAUDE_CODE_MESSAGING_SOCKET=/tmp/cc-socks/1.sock"}))
+	assert.Empty(t, harness.ClaudeCode{}.Process(environment.Environment{}))
 }

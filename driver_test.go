@@ -336,6 +336,25 @@ func (d *Dispatch) FakeSession(address string) {
 	d.env = d.env.With("CLAUDE_CODE_SESSION_ID", "").With(harnesstest.InboxEnv, address)
 }
 
+// FakeProcess makes the commands that follow run in the fake harness's process with this name.
+func (d *Dispatch) FakeProcess(process string) {
+	d.env = d.env.With(harnesstest.ProcessEnv, process)
+}
+
+// StopRecorded reports whether the state directory holds a Stop record for the session in the tree.
+func (d *Dispatch) StopRecorded(tree, session string) bool {
+	_, ok := stops.Read(d.state, tree, session)
+	return ok
+}
+
+// CommandsLogged counts the commands the session log of the session in the tree holds.
+func (d *Dispatch) CommandsLogged(tree, session string) int {
+	d.t.Helper()
+	log, err := sessionlog.Read(d.state, tree, session)
+	require.NoError(d.t, err)
+	return len(log.Commands)
+}
+
 // Tools is the fakes behind dispatch, for a test to make one fail or to read what it recorded.
 func (d *Dispatch) Tools() *tooltest.Tools { return d.tools }
 

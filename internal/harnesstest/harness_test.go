@@ -24,8 +24,9 @@ func TestFakeHarness(t *testing.T) {
 						Exit:      func() { fake.Exit(address) },
 					}
 				},
-				StopInput:   harnesstest.StopInput,
-				PromptInput: harnesstest.PromptInput,
+				StopInput:    harnesstest.StopInput,
+				PromptInput:  harnesstest.PromptInput,
+				ClearedInput: harnesstest.ClearedInput,
 			})
 		})
 	}

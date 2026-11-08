@@ -81,6 +81,11 @@ type Herdr interface {
 	// adapter does not filter it by WithKinds, and the caller decides whether it runs the
 	// agent's kind. Core returns only a worker it started that runs one of its kinds.
 	AgentAt(ctx context.Context, pane string) (Agent, bool, error)
+	// FollowSession records the session id the worker in pane runs under now, after its program began
+	// a new conversation in the same process, so Agent.Session and a relaunch's resume follow it.
+	// A pane that holds no worker of dispatch's is left alone. The herdr TUI reports the id itself,
+	// so its adapter does nothing.
+	FollowSession(ctx context.Context, pane, session string) error
 	// RenameWorkspace sets a workspace's label. Core names the space in the Herdr app window, if one is open.
 	RenameWorkspace(ctx context.Context, id, label string) error
 	// RenameTab sets a tab's label. Core names the tab in the Herdr app window, if one is open.
@@ -536,6 +541,8 @@ func (c *CLI) AgentAt(ctx context.Context, pane string) (Agent, bool, error) {
 	a := got.Result.Agent
 	return Agent{Kind: a.Agent, Status: a.Status, PaneID: a.PaneID, TabID: a.TabID, WorkspaceID: a.WorkspaceID, Session: a.Session.Value}, true, nil
 }
+
+func (c *CLI) FollowSession(context.Context, string, string) error { return nil }
 
 func (c *CLI) RenameWorkspace(ctx context.Context, id, label string) error {
 	return c.act(ctx, "workspace", "rename", id, label)

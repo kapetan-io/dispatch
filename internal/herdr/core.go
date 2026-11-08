@@ -198,6 +198,15 @@ func (c *Core) AgentAt(ctx context.Context, pane string) (Agent, bool, error) {
 	return a, ok, nil
 }
 
+func (c *Core) FollowSession(ctx context.Context, pane, session string) error {
+	err := c.call(ctx, "terminal.label", map[string]any{"terminal": pane, "labels": map[string]string{LabelSession: session}}, nil)
+	var refusal *Refusal
+	if errors.As(err, &refusal) && refusal.Code == "agent_not_found" {
+		return nil
+	}
+	return err
+}
+
 // sendReply is what hc says of a send.
 type sendReply struct {
 	Started *bool  `json:"started"`

@@ -47,12 +47,13 @@ func withRexSettings(h herdr.Herdr, table config.Rex) {
 	}
 }
 
-// reportingHarness finds the harness of the session whose hook is running, from the session's
-// own environment (HC_TERMINAL_ID, then HERDR_PANE_ID, then REX_SESSION with REX_BLOCK) and not
-// from the config. The Herdr app's terminal comes first, because a herdr TUI started from an app
-// terminal can hand its panes both variables. A Rex worker carries neither. A session outside herdr and Rex has none of these and is dropped before any herdr
+// reportingAgent is the agent of the session whose hook is running, with the host that holds it
+// and its place there, found from the session's own environment (HC_TERMINAL_ID, then HERDR_PANE_ID,
+// then REX_SESSION with REX_BLOCK) and not from the config. The Herdr app's terminal comes first,
+// because a herdr TUI started from an app terminal can hand its panes both variables. A Rex worker
+// carries neither. A session outside herdr and Rex has none of these and is dropped before any herdr
 // or Rex call, because the hook runs in every session on the machine.
-func reportingHarness(ctx context.Context, opts Options) (harness.Harness, bool) {
+func reportingAgent(ctx context.Context, opts Options) (reporter, bool) {
 	hosts := []struct{ place, host string }{
 		{opts.Env.Get("HC_TERMINAL_ID"), config.HostApp},
 		{opts.Env.Get("HERDR_PANE_ID"), config.HostTUI},
@@ -64,11 +65,28 @@ func reportingHarness(ctx context.Context, opts Options) (harness.Harness, bool)
 		if h.place == "" {
 			continue
 		}
-		agent, found, err := herdrFor(opts, h.host, nil).AgentAt(ctx, h.place)
+		host := herdrFor(opts, h.host, nil)
+		agent, found, err := host.AgentAt(ctx, h.place)
 		if err != nil || !found {
 			continue
 		}
-		return opts.Harnesses.ForAgent(agent.Kind)
+		return reporter{Agent: agent, Host: host, Place: h.place}, true
 	}
-	return nil, false
+	return reporter{}, false
+}
+
+// reporter is the agent a hook reports for, and where to reach it.
+type reporter struct {
+	herdr.Agent
+	Host  herdr.Herdr
+	Place string
+}
+
+// reportingHarness finds the harness of the session whose hook is running, from its reportingAgent.
+func reportingHarness(ctx context.Context, opts Options) (harness.Harness, bool) {
+	agent, found := reportingAgent(ctx, opts)
+	if !found {
+		return nil, false
+	}
+	return opts.Harnesses.ForAgent(agent.Kind)
 }

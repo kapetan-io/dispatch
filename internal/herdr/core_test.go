@@ -1087,3 +1087,15 @@ func TestCoreKickoffConfirmsADoneWorkerWhoseTurnWentUpAfterEnter(t *testing.T) {
 	assert.Len(t, calls.Params(t, "terminal.send"), 1)
 	assert.Len(t, calls.Params(t, "terminal.keys"), 1)
 }
+
+func TestCoreFollowSessionLabelsTheTerminalWithTheNewSession(t *testing.T) {
+	core, calls := coreStandIn(t, map[string][]string{"terminal.label": {ok(`{}`), fails("not_found", `no terminal "t9"`)}})
+
+	require.NoError(t, core.FollowSession(context.Background(), "t1", "cleared-session"))
+	assert.NoError(t, core.FollowSession(context.Background(), "t9", "cleared-session"))
+
+	labels := calls.Params(t, "terminal.label")
+	require.Len(t, labels, 2)
+	assert.Equal(t, "t1", labels[0]["terminal"])
+	assert.Equal(t, map[string]any{"dispatch.session": "cleared-session"}, labels[0]["labels"])
+}

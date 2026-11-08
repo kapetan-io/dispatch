@@ -139,6 +139,26 @@ func (ClaudeCode) Follower(env environment.Environment) (string, error) {
 	return session, nil
 }
 
+// processEnv names the variable Claude Code sets to the messaging socket of the process a session
+// runs in. /clear gives the session a new id but keeps the process and its socket.
+const processEnv = "CLAUDE_CODE_MESSAGING_SOCKET"
+
+// Process is the messaging socket of the process the calling session runs in.
+func (ClaudeCode) Process(env environment.Environment) string { return env.Get(processEnv) }
+
+// Cleared reads Claude Code's SessionStart hook input when its source is a /clear.
+func (ClaudeCode) Cleared(input []byte) (string, string, bool) {
+	var in struct {
+		SessionID string `json:"session_id"`
+		CWD       string `json:"cwd"`
+		Source    string `json:"source"`
+	}
+	if json.Unmarshal(input, &in) != nil || in.Source != "clear" || in.SessionID == "" {
+		return "", "", false
+	}
+	return in.SessionID, in.CWD, true
+}
+
 // socketOf finds the messaging socket of the running session with this id in Claude Code's
 // session list. A restart or resume keeps the id and moves the socket, and a crash can leave a
 // dead process's file behind, so the newest entry wins. doubt is true when a list file could not

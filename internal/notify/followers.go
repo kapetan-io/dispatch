@@ -16,6 +16,8 @@ import (
 type Follower struct {
 	Kind    string `json:"kind"`
 	Address string `json:"address"`
+	// Process is the harness's name for the process the session runs in, empty when it has none.
+	Process string `json:"process,omitempty"`
 }
 
 // Followers holds which sessions follow which ticket. It lives in memory only,
@@ -44,6 +46,29 @@ func (f *Followers) Follow(ticket string, who Follower) error {
 		f.byTicket[ticket] = append(f.byTicket[ticket], who)
 	}
 	return nil
+}
+
+// Move gives each session of kind running in process the new address, for every ticket it
+// follows, because the harness started a new conversation in the same process. A session
+// already at the address stays one entry.
+func (f *Followers) Move(kind, process, address string) {
+	if process == "" {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for ticket, followers := range f.byTicket {
+		var moved []Follower
+		for _, who := range followers {
+			if who.Kind == kind && who.Process == process {
+				who.Address = address
+			}
+			if !slices.Contains(moved, who) {
+				moved = append(moved, who)
+			}
+		}
+		f.byTicket[ticket] = moved
+	}
 }
 
 // Unfollow stops a session following a ticket. A session that was not

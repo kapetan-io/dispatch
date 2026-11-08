@@ -357,6 +357,26 @@ func (s *standInRex) call(session, method string, raw []byte) (any, error) {
 			}
 		}
 		return nil, standInRefusal(404, "not_found", "window "+args.WindowID+" not found")
+	case "session.set_block_label":
+		var args struct {
+			SessionID string `json:"session_id"`
+			BlockID   string `json:"block_id"`
+			Label     string `json:"label"`
+		}
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return nil, err
+		}
+		for i := range s.Sessions {
+			for j := range s.Sessions[i].Windows {
+				for k := range s.Sessions[i].Windows[j].Blocks {
+					if s.Sessions[i].ID == args.SessionID && s.Sessions[i].Windows[j].Blocks[k].ID == args.BlockID {
+						s.Sessions[i].Windows[j].Blocks[k].Label = args.Label
+						return map[string]any{}, nil
+					}
+				}
+			}
+		}
+		return nil, standInRefusal(404, "not_found", "block "+args.BlockID+" not found")
 	case "block.close":
 		var args struct {
 			Session string `json:"session_id"`
@@ -1013,4 +1033,29 @@ func TestRexKickoffClearsTheBoxAndPressesNoEnterWhenTheStatusMovesWhileTyping(t 
 	assert.Equal(t, "/dispatch:build ENG-1", writes[0])
 	assert.Contains(t, writes, "\x15\x15\x15")
 	assert.NotContains(t, writes, "\r")
+}
+
+func TestRexFollowSessionRelabelsTheWorkersBlockWithTheNewSession(t *testing.T) {
+	r := newStandInRig(t)
+	tree := shortTree(t)
+	started, err := r.rex.StartWorker(context.Background(), r.worker("repo", tree))
+	require.NoError(t, err)
+
+	require.NoError(t, r.rex.FollowSession(context.Background(), started.Pane, "cleared-session"))
+
+	agent, found, err := r.rex.AgentAt(context.Background(), started.Pane)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, "cleared-session", agent.Session)
+	snap, err := r.rex.Read(context.Background())
+	require.NoError(t, err)
+	require.Len(t, snap.Agents, 1)
+	assert.Equal(t, "cleared-session", snap.Agents[0].Session)
+}
+
+func TestRexFollowSessionLeavesAPaneThatIsNoWorkerAlone(t *testing.T) {
+	r := newStandInRig(t)
+
+	assert.NoError(t, r.rex.FollowSession(context.Background(), "nowhere", "cleared-session"))
+	assert.NoError(t, r.rex.FollowSession(context.Background(), "gone/b9", "cleared-session"))
 }

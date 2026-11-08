@@ -71,6 +71,9 @@ func (l *Loop) onRequest(r request) error {
 		l.readAgain(world.FromLocal)
 	case OpTyped:
 		r.reply <- l.onTyped(r.Typed)
+	case OpCleared:
+		r.reply <- l.onCleared(r.Cleared)
+		l.readAgain(world.FromLocal)
 	case OpTicket:
 		r.reply <- l.onTicket(r.Call)
 	case OpWatch, OpUnwatch:
@@ -155,6 +158,17 @@ func (l *Loop) onTyped(t *Typed) Response {
 		l.o.Typed.Clear(t.Tree)
 	} else {
 		l.o.Typed.Note(t.Tree, t.Text)
+	}
+	return Response{}
+}
+
+// onCleared moves the followers of a cleared session's process to its new session id.
+func (l *Loop) onCleared(c *Cleared) Response {
+	if c == nil || c.New == "" {
+		return Response{Code: CodeFailed, Error: "a cleared report needs the new session"}
+	}
+	if l.o.Executor != nil {
+		l.o.Executor.Followers.Move(c.Kind, c.Process, c.New)
 	}
 	return Response{}
 }

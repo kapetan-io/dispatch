@@ -29,6 +29,9 @@ const (
 	// OpTyped tells the loop dispatch is about to type text into a worker, or clears what it
 	// typed there, from a process that is not the loop.
 	OpTyped = "typed"
+	// OpCleared tells the loop a session began a new conversation in the same process, so it moves
+	// the followers in that process to the new session id and reads the worker again.
+	OpCleared = "cleared"
 )
 
 // Exit codes a client reports for a response.
@@ -50,10 +53,21 @@ type Request struct {
 	Stop *sessionlog.Stop `json:"stop,omitempty"`
 	// Prompt is the message the session's harness reported it took.
 	Prompt *sessionlog.Prompt `json:"prompt,omitempty"`
+	// Cleared is the session that began a new conversation.
+	Cleared *Cleared `json:"cleared,omitempty"`
 	// Typed is what a launch typed.
 	Typed *Typed `json:"typed,omitempty"`
 	// Call is the verb of a ticket request.
 	Call *TicketCall `json:"call,omitempty"`
+}
+
+// Cleared says a session's program began a new conversation in the same process. Kind and Process
+// find the followers to move to the session New. The hook has already moved a worker's records and
+// label, so the loop only reads them again.
+type Cleared struct {
+	New     string `json:"new"`
+	Kind    string `json:"kind"`
+	Process string `json:"process,omitempty"`
 }
 
 // Typed is a launch's note that it typed Text into the session in Tree, or with Clear set that

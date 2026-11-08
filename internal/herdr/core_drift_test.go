@@ -599,3 +599,34 @@ func TestCoreStartWorkerResumesAfterItsHolderWasLost(t *testing.T) {
 	assert.Contains(t, args, r.worker.Program.Session)
 	assert.NotContains(t, args, "--session-id")
 }
+
+func TestCoreFollowSessionKeepsTheOtherLabelsAndTheNextResumeUsesTheNewSession(t *testing.T) {
+	r := newCoreRig(t)
+	started := r.launched(t)
+
+	require.NoError(t, r.core.FollowSession(context.Background(), started.Pane, "cleared-session"))
+
+	labels := r.terminals(t, false).Terminals[0].Labels
+	assert.Equal(t, "cleared-session", labels["dispatch.session"])
+	assert.Equal(t, r.worker.Dir, labels["dispatch.tree"])
+	assert.Equal(t, r.space, labels["herdr.space"])
+	assert.NotEmpty(t, labels["herdr.tab"])
+	found, ok, err := r.core.AgentAt(context.Background(), started.Pane)
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "cleared-session", found.Session)
+
+	r.session.Restart(t)
+	require.Eventually(t, func() bool {
+		for _, term := range r.terminals(t, true).Terminals {
+			if term.State == "finished" && term.Reason == "server_stop" {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 100*time.Millisecond)
+	r.launched(t)
+	args := r.recordedArgs(t)
+	assert.Contains(t, args, "--resume")
+	assert.Contains(t, args, "cleared-session")
+}

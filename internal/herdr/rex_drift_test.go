@@ -353,3 +353,30 @@ func TestRexStreamNamesTheWorkerPaneWhenItsWorkspaceCloses(t *testing.T) {
 	defer mu.Unlock()
 	assert.Equal(t, started.Pane, named[len(named)-1])
 }
+
+func TestRexFollowSessionRelabelsTheBlockAndTheNextResumeUsesTheNewSession(t *testing.T) {
+	r := newRexRig(t)
+	started := r.launched(t)
+
+	require.NoError(t, r.rex.FollowSession(context.Background(), started.Pane, "cleared-session"))
+
+	agent, ok := r.agent(t)
+	require.True(t, ok)
+	assert.Equal(t, "cleared-session", agent.Session)
+
+	r.server.Restart(t)
+	restarted := r.worker
+	restarted.Program = harness.ClaudeCode{}.Program(harness.Start{Model: "sonnet", PluginRoot: r.worker.PluginRoot, Session: "99999999-0000-4000-8000-000000000001"})
+	_, err := r.rex.StartWorker(context.Background(), restarted)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		b, err := os.ReadFile(filepath.Join(r.worker.Dir, "standin-claude.json"))
+		if err != nil {
+			return false
+		}
+		var recorded struct {
+			Args []string `json:"args"`
+		}
+		return json.Unmarshal(b, &recorded) == nil && strings.Contains(strings.Join(recorded.Args, " "), "--resume cleared-session")
+	}, 20*time.Second, 100*time.Millisecond)
+}

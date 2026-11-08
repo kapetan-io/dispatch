@@ -155,6 +155,24 @@ func appendLine(stateDir, tree, session string, l line, what string) error {
 	return nil
 }
 
+// Rekey makes the log of session old in the tree the log of session new, so the turns and commands
+// from before a /clear stay the worker's. A new session that already has a log keeps it, and an
+// old one with none is not an error. A link never replaces the new log.
+func Rekey(stateDir, tree, old, new string) error {
+	from := file(stateDir, tree, old)
+	err := os.Link(from, file(stateDir, tree, new))
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(from); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 // Read returns the log of session in the tree. A missing file is an empty log.
 // A line that can't be decoded is an error, because a log with a hole in it
 // would pass for a shorter one. The exception is a last line with no newline,

@@ -53,6 +53,15 @@ type Harness interface {
 	// harness gets an error wrapped as fmt.Errorf("%w: reason", ErrNotThisHarness), where the
 	// reason tells the user how to run the command from this harness's session.
 	Follower(env environment.Environment) (address string, err error)
+	// Cleared reads a hook input that says the session began a new conversation in the same
+	// process, as Claude Code's /clear does: the new session id and the working directory.
+	// ok=false means the input is no such report and is dropped without a word.
+	Cleared(input []byte) (session, dir string, ok bool)
+	// Process names the process the calling session runs in, from the environment of a command
+	// or hook inside it. Dispatch only stores and compares the string. It stays the same when
+	// the session's id changes, so it ties a follower's old id to its new one. It is empty when
+	// the harness can't tell.
+	Process(env environment.Environment) string
 	// Deliver puts text into the session with this id, wherever it runs now, as a message
 	// the model reads, waking an idle session. It never lands as the answer to an open
 	// question. nil means the whole message reached the session and any error means none

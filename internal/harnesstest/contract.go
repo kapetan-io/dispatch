@@ -22,6 +22,9 @@ type Subject struct {
 	// PromptInput is what the program's own hook hands dispatch when text was typed into
 	// the session. Empty text is a session that went idle.
 	PromptInput func(session, dir, text string) []byte
+	// ClearedInput is what the program's own hook hands dispatch when the session began a new
+	// conversation in the same process under the session id given.
+	ClearedInput func(session, dir string) []byte
 	// OpenSession starts a session of this harness that follows nothing yet, and cleans
 	// it up when t ends.
 	OpenSession func(t *testing.T) Session
@@ -118,6 +121,23 @@ var Scenarios = []Scenario{
 		_, _, ok := s.Harness.Prompt([]byte("not json"))
 
 		assert.False(t, ok)
+	}},
+	{Name: "ClearedReadsTheNewSessionAndDirectory", Run: func(t *testing.T, s Subject) {
+		session, dir, ok := s.Harness.Cleared(s.ClearedInput("s2", "/work/tree"))
+
+		require.True(t, ok)
+		assert.Equal(t, "s2", session)
+		assert.Equal(t, "/work/tree", dir)
+	}},
+	{Name: "ClearedOfInputThatIsNoClearIsDropped", Run: func(t *testing.T, s Subject) {
+		for _, input := range [][]byte{[]byte("not json"), s.StopInput("s1", "/work/tree", nil), s.PromptInput("s1", "/work/tree", "hi")} {
+			_, _, ok := s.Harness.Cleared(input)
+
+			assert.False(t, ok)
+		}
+	}},
+	{Name: "ProcessOutsideASessionIsEmpty", Run: func(t *testing.T, s Subject) {
+		assert.Empty(t, s.Harness.Process(environment.Environment{}))
 	}},
 	{Name: "DeliverReachesAFollower", Run: func(t *testing.T, s Subject) {
 		session := s.OpenSession(t)
