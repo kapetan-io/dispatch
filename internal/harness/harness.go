@@ -26,7 +26,8 @@ import (
 //     Reported=false, never Running=0.
 //   - Every adapter implements Follower and Deliver, since receiving follower
 //     messages is required of every harness.
-//   - Deliver never answers an open question and is never retried.
+//   - Deliver never answers an open question. It returns nil only once the whole message
+//     reached the session, so any error means nothing did and the caller may send again later.
 //
 // Program's Startup must list every screen the program shows before it takes
 // input. Kickoff types the kickoff only once Ready matches, so an unlisted
@@ -48,21 +49,22 @@ type Harness interface {
 	// loop otherwise. ok=false as for Stop.
 	Prompt(input []byte) (report sessionlog.Prompt, dir string, ok bool)
 	// Follower reads, from the environment of a command running inside a session,
-	// where this harness delivers that session's messages. A session of another
+	// the id of that session, which is the address Deliver takes. A session of another
 	// harness gets an error wrapped as fmt.Errorf("%w: reason", ErrNotThisHarness), where the
 	// reason tells the user how to run the command from this harness's session.
 	Follower(env environment.Environment) (address string, err error)
-	// Deliver puts text into the follower session at address as a message the model
-	// reads, waking an idle session. It never lands as the answer to an open
-	// question. ErrGone means the session exited, so the follower is dropped.
-	Deliver(ctx context.Context, address, text string) error
+	// Deliver puts text into the session with this id, wherever it runs now, as a message
+	// the model reads, waking an idle session. It never lands as the answer to an open
+	// question. nil means the whole message reached the session and any error means none
+	// of it did. ErrGone means the session is not open, so a follower is dropped.
+	Deliver(ctx context.Context, session, text string) error
 }
 
 var (
 	// ErrNotThisHarness is what Follower returns for a session that belongs to another harness.
 	ErrNotThisHarness = errors.New("not a session of this harness")
-	// ErrGone is what Deliver returns when the follower session has exited.
-	ErrGone = errors.New("the follower session has exited")
+	// ErrGone is what Deliver returns when the session is not open.
+	ErrGone = errors.New("the session is not open")
 )
 
 // Start is what a harness needs to describe one worker's program.
@@ -111,7 +113,7 @@ func (r Registry) AgentKinds() []string {
 }
 
 // Follower asks each adapter whether the calling session is one of its own and
-// returns the first that claims it, with the address it delivers to. A session no
+// returns the first that claims it, with the session id it delivers to. A session no
 // adapter recognizes gets each adapter's reason, so the user learns which harnesses
 // dispatch drives.
 func (r Registry) Follower(env environment.Environment) (string, string, error) {

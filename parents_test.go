@@ -468,7 +468,7 @@ func TestTickNeverGivesAParentAWorker(t *testing.T) {
 			d.Tick()
 
 			assert.Empty(t, d.Workers.Launched())
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 		})
 	}
 }
@@ -633,7 +633,7 @@ func TestTickNeverGivesAParentAWorkerOrANudge(t *testing.T) {
 			d.Tick()
 
 			assert.Empty(t, d.Workers.Launched())
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 			assert.Empty(t, d.Linear.Moves())
 			assert.Empty(t, d.Linear.Comments())
 		})
@@ -649,7 +649,7 @@ func TestTickNeverGivesAParentAWorkerOrANudge(t *testing.T) {
 		d.Tick()
 
 		assert.Empty(t, d.Workers.Launched())
-		assert.Empty(t, d.Workers.Prompts())
+		assert.Empty(t, d.Workers.Received("ENG-1"))
 	})
 }
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -23,7 +24,19 @@ import (
 const sessionSettings = `{"crossSessionInbound":"accept"}`
 
 // ClaudeCode is the Claude Code harness.
-type ClaudeCode struct{}
+type ClaudeCode struct {
+	// Sessions is the directory of Claude Code's session list, one <pid>.json per running
+	// session. Deliver fails when it is empty, so a test never reads the developer's own list.
+	Sessions string
+}
+
+// SessionsDir is where Claude Code keeps its session list for a session run with env.
+func SessionsDir(env environment.Environment) string {
+	if dir := env.Get("CLAUDE_CONFIG_DIR"); dir != "" {
+		return filepath.Join(dir, "sessions")
+	}
+	return env.ExpandHome("~/.claude/sessions")
+}
 
 func (ClaudeCode) AgentKind() string { return "claude" }
 
@@ -111,32 +124,88 @@ func (ClaudeCode) Prompt(input []byte) (sessionlog.Prompt, string, bool) {
 	return sessionlog.Prompt{Session: in.SessionID, Text: in.Prompt}, in.CWD, true
 }
 
-// messagingSocketEnv names the variable Claude Code sets to a session's inbox socket.
-const messagingSocketEnv = "CLAUDE_CODE_MESSAGING_SOCKET"
+// sessionEnv names the variable Claude Code sets to the id of the session a command runs in.
+const sessionEnv = "CLAUDE_CODE_SESSION_ID"
 
 const sendTimeout = 5 * time.Second
 
-// Follower reads the inbox socket Claude Code gives the session. Only an absolute path is
-// taken, because the sender may run from any directory.
+// Follower reads the id of the session the command runs in.
 func (ClaudeCode) Follower(env environment.Environment) (string, error) {
-	socket := env.Get(messagingSocketEnv)
-	if socket == "" {
+	session := env.Get(sessionEnv)
+	if session == "" {
 		return "", fmt.Errorf("%w: %s is not set, so this is not a Claude Code session; run watch from one",
-			ErrNotThisHarness, messagingSocketEnv)
+			ErrNotThisHarness, sessionEnv)
 	}
-	if !filepath.IsAbs(socket) {
-		return "", fmt.Errorf("socket path %q is not absolute", socket)
-	}
-	return socket, nil
+	return session, nil
 }
 
-// Deliver writes one message into a Claude Code session's inbox socket. The
-// frame is undocumented, taken from the binary's own debug hint and a captured
-// SendMessage (anthropics/claude-code#93720), and observed working on Claude
-// Code 2.1.296. A Claude Code release that changes it breaks here and nowhere else.
-// The socket never replies. A socket that refuses the connection or whose file is
-// gone belongs to a session that has exited.
-func (ClaudeCode) Deliver(ctx context.Context, address, text string) error {
+// socketOf finds the messaging socket of the running session with this id in Claude Code's
+// session list. A restart or resume keeps the id and moves the socket, and a crash can leave a
+// dead process's file behind, so the newest entry wins. doubt is true when a list file could not
+// be read or parsed, because Claude rewrites its file as the session's status changes and one
+// caught half written may be the session's own.
+func (c ClaudeCode) socketOf(session string) (socket string, doubt bool, err error) {
+	if c.Sessions == "" {
+		return "", false, errors.New("the Claude Code session list directory is not set")
+	}
+	if session == "" {
+		return "", false, errors.New("no session id to deliver to")
+	}
+	// A directory that can't be listed says nothing about the session, so it is not ErrGone.
+	entries, err := os.ReadDir(c.Sessions)
+	if err != nil {
+		return "", false, fmt.Errorf("while reading the Claude Code session list: %w", err)
+	}
+	newest := float64(-1)
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(c.Sessions, e.Name()))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			doubt = true
+			continue
+		}
+		var entry struct {
+			SessionID string  `json:"sessionId"`
+			Socket    string  `json:"messagingSocketPath"`
+			StartedAt float64 `json:"startedAt"`
+		}
+		if json.Unmarshal(raw, &entry) != nil {
+			doubt = true
+			continue
+		}
+		if entry.SessionID != session || entry.Socket == "" {
+			continue
+		}
+		if entry.StartedAt > newest {
+			socket, newest = entry.Socket, entry.StartedAt
+		}
+	}
+	if socket == "" && doubt {
+		return "", true, fmt.Errorf("no Claude Code session %s was found, and a session list file could not be read", session)
+	}
+	if socket == "" {
+		return "", false, fmt.Errorf("%w: no Claude Code session %s is open", ErrGone, session)
+	}
+	return socket, doubt, nil
+}
+
+// Deliver writes one message into a Claude Code session's inbox socket, found in the session
+// list by the session's id. The frame is undocumented, taken from the binary's own debug hint
+// and a captured SendMessage (anthropics/claude-code#93720), and observed working on Claude
+// Code 2.1.319. A Claude Code release that changes it, or the session list, breaks here and
+// nowhere else. The socket never replies. A session with no list entry, or whose socket
+// refuses the connection or is gone, has exited. Claude drops a frame cut off before its
+// newline, so a failed write left nothing in the session.
+func (c ClaudeCode) Deliver(ctx context.Context, session, text string) error {
+	address, doubt, err := c.socketOf(session)
+	if err != nil {
+		return err
+	}
 	line, err := json.Marshal(map[string]any{
 		"type":    "user",
 		"message": map[string]string{"role": "user", "content": text},
@@ -147,6 +216,10 @@ func (ClaudeCode) Deliver(ctx context.Context, address, text string) error {
 	dialer := net.Dialer{Timeout: sendTimeout}
 	conn, err := dialer.DialContext(ctx, "unix", address)
 	if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, fs.ErrNotExist) {
+		if doubt {
+			// The entry that held the live socket may be the unreadable one.
+			return fmt.Errorf("the chosen socket is dead and a session list file could not be read: %w", err)
+		}
 		return fmt.Errorf("%w: %w", ErrGone, err)
 	}
 	if err != nil {

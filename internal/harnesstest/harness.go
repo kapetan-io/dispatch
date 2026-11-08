@@ -30,17 +30,17 @@ type inbox struct {
 	delivered []string
 }
 
-// InboxEnv names the variable that carries a fake session's inbox address.
+// InboxEnv names the variable that carries a fake session's id.
 const InboxEnv = "FAKE_HARNESS_INBOX"
 
 // New returns the fake harness.
 func New() *Harness { return &Harness{inboxes: map[string]*inbox{}} }
 
-// Open starts a fake session with an inbox and returns the address it delivers to.
+// Open starts a fake session with an inbox and returns its id, which Deliver takes.
 func (h *Harness) Open() string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	address := fmt.Sprintf("/fake/inbox/%d", len(h.inboxes)+1)
+	address := fmt.Sprintf("fake-session-%d", len(h.inboxes)+1)
 	h.inboxes[address] = &inbox{}
 	return address
 }
@@ -64,7 +64,7 @@ func (h *Harness) Delivered(address string) []string {
 	return nil
 }
 
-// Follower reads the address of the fake session the command runs in.
+// Follower reads the id of the fake session the command runs in.
 func (*Harness) Follower(env environment.Environment) (string, error) {
 	address := env.Get(InboxEnv)
 	if address == "" {

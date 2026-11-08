@@ -253,32 +253,6 @@ func TestCoreReadsAWorkerWhoseClaudeWasKilledAsHavingNoAgent(t *testing.T) {
 	assert.Equal(t, r.worker.Dir, snap.Workspaces[0].CheckoutPath)
 }
 
-func TestCoreTypesOnlyIntoAWorkerThatReportsAStatusItCanDescribe(t *testing.T) {
-	r := newCoreRig(t)
-	started, err := r.core.StartWorker(context.Background(), r.worker)
-	require.NoError(t, err)
-	// Claude at its trust dialog reports no status, and a Prompt there would press Enter on "No, exit".
-	require.Eventually(t, func() bool { a, ok := r.agent(t); return ok && a.Status == "unknown" }, 20*time.Second, 100*time.Millisecond)
-
-	err = r.core.Prompt(context.Background(), started.Pane, "hello")
-
-	require.ErrorIs(t, err, herdr.ErrStatusUnknown)
-	assert.True(t, herdr.NothingTyped(err))
-	require.NoError(t, r.core.Kickoff(context.Background(), started.Pane, "/dispatch:build ENG-1", r.worker.Program.Startup))
-
-	require.NoError(t, r.core.Prompt(context.Background(), started.Pane, "!blocked"))
-	r.awaitStatus(t, "blocked")
-	err = r.core.Prompt(context.Background(), started.Pane, "hello")
-	require.ErrorIs(t, err, herdr.ErrAgentBlocked)
-
-	r.session.Run(t, "send", started.Pane, "!idle", "--force")
-	r.awaitStatus(t, "idle")
-	require.NoError(t, r.core.Prompt(context.Background(), started.Pane, "!done"))
-	r.awaitStatus(t, "done")
-	require.NoError(t, r.core.Prompt(context.Background(), started.Pane, "hello"))
-	r.awaitStatus(t, "working")
-}
-
 func TestCoreCloseWorkspaceEndsEveryWorkerTerminalAndLeavesTheUsersOwn(t *testing.T) {
 	r := newCoreRig(t)
 	r.launched(t)
@@ -347,7 +321,7 @@ func TestHcAnswersWithTheRefusalKindsCoreTranslates(t *testing.T) {
 	started := r.launched(t)
 
 	assert.Equal(t, "status_mismatch", r.rpc(t, "terminal.send", map[string]any{"terminal": started.Pane, "text": "x", "if": "idle"}))
-	require.NoError(t, r.core.Prompt(context.Background(), started.Pane, "!blocked"))
+	r.session.Type(t, started.Pane, "!blocked")
 	r.awaitStatus(t, "blocked")
 	assert.Equal(t, "blocked", r.rpc(t, "terminal.send", map[string]any{"terminal": started.Pane, "text": "x"}))
 	assert.Equal(t, "not_found", r.rpc(t, "terminal.get", map[string]any{"terminal": "t999"}))

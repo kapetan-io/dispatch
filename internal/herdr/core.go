@@ -198,25 +198,6 @@ func (c *Core) AgentAt(ctx context.Context, pane string) (Agent, bool, error) {
 	return a, ok, nil
 }
 
-func (c *Core) Prompt(ctx context.Context, pane, text string) error {
-	t, err := c.get(ctx, pane)
-	if err != nil {
-		return err
-	}
-	agent, ok := c.agent(t)
-	if !ok {
-		return &Refusal{Code: "agent_not_found", Message: "no worker session in terminal " + pane, Command: "hc:terminal.send"}
-	}
-	switch agent.Status {
-	case "unknown":
-		return ErrStatusUnknown
-	case "blocked":
-		return &Refusal{Code: "agent_blocked", Message: "terminal " + pane + " is blocked and requires interactive input", Command: "hc:terminal.send"}
-	}
-	_, err = c.send(ctx, pane, text, agent.Status)
-	return err
-}
-
 // sendReply is what hc says of a send.
 type sendReply struct {
 	Started *bool  `json:"started"`
@@ -224,7 +205,7 @@ type sendReply struct {
 }
 
 // send types text and presses Enter. A worker that is idle is sent to only if it is still
-// idle, so a status that moved on is refused with nothing typed.
+// idle, so a status that moved on is refused with nothing typed. Only the kickoff sends this way.
 func (c *Core) send(ctx context.Context, pane, text, status string) (sendReply, error) {
 	params := map[string]any{"terminal": pane, "text": text}
 	if status == "idle" {

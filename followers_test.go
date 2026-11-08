@@ -1,7 +1,9 @@
 package dispatch_test
 
 import (
+	"errors"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,9 +15,9 @@ import (
 	"github.com/kapetan-io/dispatch"
 )
 
-// Session makes the commands that follow run in the Claude session whose inbox is socket.
-func (d *Dispatch) Session(socket string) {
-	d.env = d.env.With("CLAUDE_CODE_MESSAGING_SOCKET", socket)
+// Session makes the commands that follow run in the Claude session with this id.
+func (d *Dispatch) Session(session string) {
+	d.env = d.env.With("CLAUDE_CODE_SESSION_ID", session)
 }
 
 // RunWhileDown runs a command with no dispatch running and none started for it.
@@ -27,22 +29,26 @@ func (d *Dispatch) RunWhileDown(args ...string) Result {
 // LoopStderr is what the running dispatch has printed to stderr.
 func (d *Dispatch) LoopStderr() string { return d.loopErr() }
 
-// deadSocket is the socket file of a session that crashed: it is there and nothing listens on it.
-func deadSocket(t *testing.T, near string) string {
+// deadSession is a session that crashed: its list entry is there, its socket file is there, and
+// nothing listens on it.
+func deadSession(t *testing.T) string {
 	t.Helper()
-	dead := filepath.Join(filepath.Dir(near), "dead.sock")
+	dir, err := os.MkdirTemp("/tmp", "ds")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dead := filepath.Join(dir, "dead.sock")
 	ln, err := net.Listen("unix", dead)
 	require.NoError(t, err)
 	ln.(*net.UnixListener).SetUnlinkOnClose(false)
 	require.NoError(t, ln.Close())
-	return dead
+	return listSession(t, dead)
 }
 
 // Unreachable from the CLI: no command lists the state directory, so the test counts its entries.
 func TestWatchWritesNoFileToTheStateDir(t *testing.T) {
 	t.Parallel()
 	socket, _ := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.StartBeforeTheEvents()
 	before := d.StateEntries()
 
@@ -55,7 +61,7 @@ func TestWatchWritesNoFileToTheStateDir(t *testing.T) {
 func TestFollowersAreForgottenWhenDispatchRestarts(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.StartBeforeTheEvents()
 	require.NoError(t, d.Run("watch", "ENG-1").Err)
 
@@ -71,14 +77,14 @@ func TestFollowersAreForgottenWhenDispatchRestarts(t *testing.T) {
 
 func TestWatchFailsOutsideAClaudeSession(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": ""}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": ""}})
 
-	require.ErrorContains(t, d.Run("watch", "ENG-1").Err, "CLAUDE_CODE_MESSAGING_SOCKET is not set")
+	require.ErrorContains(t, d.Run("watch", "ENG-1").Err, "CLAUDE_CODE_SESSION_ID is not set")
 }
 
-func TestWatchRecordsTheSessionsSocket(t *testing.T) {
+func TestWatchRecordsTheSessionsID(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/cc-socks/42.sock"}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": "session-42"}})
 
 	res := d.Run("watch", "ENG-1")
 
@@ -88,24 +94,17 @@ func TestWatchRecordsTheSessionsSocket(t *testing.T) {
 
 func TestWatchFailsWhenNoDispatchRuns(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/cc-socks/42.sock"}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": "session-42"}})
 
 	for _, command := range []string{"watch", "unwatch"} {
 		require.ErrorContains(t, d.RunWhileDown(command, "ENG-1").Err, "not running")
 	}
 }
 
-func TestWatchRefusesARelativeSocket(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "cc-socks/42.sock"}})
-
-	require.ErrorContains(t, d.Run("watch", "ENG-1").Err, "not absolute")
-}
-
 func TestTickMessagesFollowersAboutAReadyPR(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -129,7 +128,7 @@ func TestTickMessagesFollowersAboutAReadyPR(t *testing.T) {
 func TestTickMessagesFollowersThatAPRIsApprovedAndReadyToMergeNotThatItIsReady(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{RepoSettings: draftSetting, Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d := newDispatch(t, dispatchOptions{RepoSettings: draftSetting, Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
 	d.StartBeforeTheEvents()
@@ -159,7 +158,7 @@ func TestTickMessagesFollowersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			socket, lines := sessionSocket(t)
-			d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+			d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 			d.StartBeforeTheEvents()
 			d.Linear.Tickets(ticket("ENG-1", test.status, "dispatch"))
 			d.Workers.Running("ENG-1", test.worker)
@@ -177,28 +176,28 @@ func TestTickMessagesFollowersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
 func TestTickDropsAFollowerWhoseSessionExited(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
 	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
 	require.NoError(t, d.Run("watch", "ENG-1").Err)
-	dead := deadSocket(t, socket)
+	dead := deadSession(t)
 	d.Session(dead)
 	require.NoError(t, d.Run("watch", "ENG-1").Err)
 
 	d.Tick()
 
 	assert.Equal(t, []string{readyText1}, d.Followed.Told())
-	assert.Contains(t, d.LoopStderr(), "dropped watcher socket "+dead)
+	assert.Contains(t, d.LoopStderr(), "dropped session "+dead+", which is not open")
 	assert.Contains(t, next(t, lines), "ENG-1 is ready for review")
 }
 
 func TestTickDropsAFollowerWhoseSocketFileIsGone(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
-	missing := filepath.Join(filepath.Dir(socket), "gone.sock")
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	missing := listSession(t, filepath.Join(os.TempDir(), "dispatch-test-no-such.sock"))
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -210,14 +209,14 @@ func TestTickDropsAFollowerWhoseSocketFileIsGone(t *testing.T) {
 	d.Tick()
 
 	assert.Equal(t, []string{readyText1}, d.Followed.Told())
-	assert.Contains(t, d.LoopStderr(), "dropped watcher socket "+missing)
+	assert.Contains(t, d.LoopStderr(), "dropped session "+missing+", which is not open")
 	assert.Contains(t, next(t, lines), "ENG-1 is ready for review")
 
 	// A dropped follower is not tried again by the next event.
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.GitHub.PullRequest("ENG-1", cleanPR("b1"))
 	d.Tick()
-	assert.Equal(t, 1, strings.Count(d.LoopStderr(), "dropped watcher socket "+missing))
+	assert.Equal(t, 1, strings.Count(d.LoopStderr(), "dropped session "+missing+", which is not open"))
 }
 
 func TestTickMessagesEveryFollowerOfATicket(t *testing.T) {
@@ -243,7 +242,7 @@ func TestTickMessagesEveryFollowerOfATicket(t *testing.T) {
 func TestTickMessagesFollowersAboutAMerge(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting, Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting, Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -261,7 +260,7 @@ func TestTickMessagesFollowersAboutAMerge(t *testing.T) {
 func TestTickMessagesFollowersAboutAnEscalation(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.LaunchResult(`{"status":"pool_error","detail":"treehouse lease failed"}`)
@@ -284,14 +283,14 @@ func TestTickMessagesFollowersAboutAnEscalation(t *testing.T) {
 
 func TestWatchRefusesAMissingTicket(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/cc-socks/42.sock"}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": "session-42"}})
 
 	require.ErrorContains(t, d.Run("watch").Err, "watch takes a ticket")
 }
 
 func TestWatchUppercasesTheTicket(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/cc-socks/42.sock"}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": "session-42"}})
 
 	res := d.Run("watch", "eng-1")
 
@@ -327,7 +326,7 @@ func TestTickMessagesOnlyTheSessionFollowingTheTicket(t *testing.T) {
 func TestTickMessagesASessionFollowingSeveralTickets(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -348,7 +347,7 @@ func TestTickMessagesASessionFollowingSeveralTickets(t *testing.T) {
 func TestUnwatchStopsMessagesForThatTicketOnly(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -370,23 +369,22 @@ func TestUnwatchStopsMessagesForThatTicketOnly(t *testing.T) {
 
 func TestUnwatchATicketNeverWatchedSucceeds(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/cc-socks/42.sock"}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": "session-42"}})
 
 	require.NoError(t, d.Run("unwatch", "ENG-1").Err)
 }
 
 func TestUnwatchFailsOutsideAClaudeSession(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": ""}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": ""}})
 
-	require.ErrorContains(t, d.Run("unwatch", "ENG-1").Err, "CLAUDE_CODE_MESSAGING_SOCKET is not set")
+	require.ErrorContains(t, d.Run("unwatch", "ENG-1").Err, "CLAUDE_CODE_SESSION_ID is not set")
 }
 
 func TestTickDroppingADeadSessionStopsItFollowingEveryTicket(t *testing.T) {
 	t.Parallel()
-	socket, _ := sessionSocket(t)
-	dead := deadSocket(t, socket)
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": dead}})
+	dead := deadSession(t)
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": dead}})
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -402,13 +400,13 @@ func TestTickDroppingADeadSessionStopsItFollowingEveryTicket(t *testing.T) {
 	d.Tick()
 
 	// ENG-2's event finds no follower left to try.
-	assert.Equal(t, 1, strings.Count(d.LoopStderr(), "dropped watcher socket "+dead))
+	assert.Equal(t, 1, strings.Count(d.LoopStderr(), "dropped session "+dead+", which is not open"))
 }
 
 func TestWatchRefusesAnythingButATicketIdentifier(t *testing.T) {
 	t.Parallel()
 	for _, arg := range []string{"banana", "ENG286", "ENG-", "ENG-1x"} {
-		d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/cc-socks/42.sock"}})
+		d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": "session-42"}})
 
 		require.ErrorContains(t, d.Run("watch", arg).Err, "not a ticket identifier")
 	}
@@ -417,7 +415,7 @@ func TestWatchRefusesAnythingButATicketIdentifier(t *testing.T) {
 func TestUnwatchAcceptsALowercaseTicket(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.StartBeforeTheEvents()
 	require.NoError(t, d.Run("watch", "ENG-1").Err)
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
@@ -434,7 +432,7 @@ func TestUnwatchAcceptsALowercaseTicket(t *testing.T) {
 func TestWatchingATicketTwiceMessagesTheSessionOnce(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.StartBeforeTheEvents()
 	for range 2 {
 		require.NoError(t, d.Run("watch", "ENG-1").Err)
@@ -452,7 +450,7 @@ func TestWatchingATicketTwiceMessagesTheSessionOnce(t *testing.T) {
 // subscribe was replaced by watch and unwatch.
 func TestSubscribeIsGone(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/cc-socks/42.sock"}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": "session-42"}})
 
 	require.Error(t, d.Run("subscribe").Err)
 }
@@ -470,7 +468,7 @@ func TestTickMessagesFollowersWithTheReasonARulePasses(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			socket, lines := sessionSocket(t)
 			d := newDispatch(t, dispatchOptions{
-				Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket},
+				Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket},
 				Rules: rule(`whenever({ name: "tell", each: "ticket", if: () => true,
   then: (t, ctx) => ctx.notify.queueSend(t, t.id + " deployed", ` + test.opts + `) });`),
 			})
@@ -488,7 +486,7 @@ func TestTickMessagesFollowersWithTheReasonARulePasses(t *testing.T) {
 func TestTickMessagesFollowersThatAMergedPRIsApproved(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting, Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting, Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
@@ -503,7 +501,7 @@ func TestTickMessagesFollowersThatAMergedPRIsApproved(t *testing.T) {
 func TestTickDoesNotMessageFollowersThatAnApprovedPRIsReadyToMergeWhenAutoMergeMergesIt(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{RepoSettings: draftSetting + autoMergeSetting, Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d := newDispatch(t, dispatchOptions{RepoSettings: draftSetting + autoMergeSetting, Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
 	d.StartBeforeTheEvents()
@@ -547,18 +545,18 @@ func TestTickDropsAFollowerOfAnotherHarnessWhoseSessionExited(t *testing.T) {
 
 	d.Tick()
 
-	assert.Contains(t, d.LoopStderr(), "dropped watcher socket "+inbox)
+	assert.Contains(t, d.LoopStderr(), "dropped session "+inbox+", which is not open")
 	assert.Empty(t, d.Tools().Harness.Delivered(inbox))
 }
 
 func TestWatchOutsideAnyHarnessSessionNamesWhatEachHarnessNeeds(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{FakeHarness: true, Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": ""}})
+	d := newDispatch(t, dispatchOptions{FakeHarness: true, Env: map[string]string{"CLAUDE_CODE_SESSION_ID": ""}})
 
 	err := d.Run("watch", "ENG-1").Err
 
 	require.ErrorContains(t, err, "not a session of a harness dispatch drives")
-	assert.ErrorContains(t, err, "CLAUDE_CODE_MESSAGING_SOCKET is not set")
+	assert.ErrorContains(t, err, "CLAUDE_CODE_SESSION_ID is not set")
 	assert.ErrorContains(t, err, "FAKE_HARNESS_INBOX"+" is not set")
 }
 
@@ -606,7 +604,7 @@ whenever({ name: "throws", each: "ticket", if: () => true, then: () => { throw n
 func TestTickSendsNothingToASessionThatDoesNotFollowTheTicket(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "Needs Human", "dispatch"))
 	require.NoError(t, d.Run("watch", "ENG-1").Err)
@@ -620,7 +618,7 @@ func TestTickSendsNothingToASessionThatDoesNotFollowTheTicket(t *testing.T) {
 func TestTickTellsASessionThatFollowsAfterARuleThrewOnce(t *testing.T) {
 	t.Parallel()
 	socket, lines := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}, Rules: rule(`
+	d := newDispatch(t, dispatchOptions{Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}, Rules: rule(`
 whenever({ name: "throws", each: "dispatch", if: () => true, then: () => { throw new Error("boom"); } });`)})
 	d.StartBeforeTheEvents()
 	d.Tick()
@@ -643,16 +641,35 @@ whenever({ name: "throws", each: "dispatch", if: () => true, then: () => { throw
 	d.StartBeforeTheEvents()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Followed.Leave()
-	d.Session(deadSocket(t, live))
+	d.Session(deadSession(t))
 	require.NoError(t, d.Run("watch", "ENG-1").Err)
 
 	// The only follower is dead, so nobody heard the message.
 	d.Tick()
-	assert.Contains(t, d.LoopStderr(), "dropped watcher socket")
+	assert.Contains(t, d.LoopStderr(), "dropped session")
 
 	d.Session(live)
 	require.NoError(t, d.Run("watch", "ENG-1").Err)
 	d.Tick()
 
 	assert.Contains(t, next(t, lines), "rule throws threw in its then")
+}
+
+func TestTickKeepsAFollowerWhoseDeliveryFailedWithAWriteError(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.StartBeforeTheEvents()
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	d.Workers.FailNextDeliveryTo("recorder", errors.New("write unix: broken pipe"))
+	d.Tick()
+	require.Empty(t, d.Followed.Told())
+	assert.Contains(t, d.LoopStderr(), "while messaging session recorder: write unix: broken pipe")
+	assert.NotContains(t, d.LoopStderr(), "dropped session")
+
+	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
+	d.Tick()
+
+	assert.Len(t, d.Followed.Told(), 1)
 }

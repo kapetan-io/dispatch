@@ -3,6 +3,7 @@ package dispatch_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -91,24 +92,10 @@ func withFailingPR(d *Dispatch) {
 	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 }
 
-// BlockAfterSnapshot has the worker stop to ask a question after dispatch read herdr, so herdr refuses
-// a prompt that the snapshot said was fine.
-func (w *Workers) BlockAfterSnapshot(ticket string) { w.d.blockAfterSnapshot(ticket) }
-
-// VanishAfterSnapshot closes the worker's pane after dispatch read herdr, so herdr no longer knows a pane
-// the snapshot lists.
-func (w *Workers) VanishAfterSnapshot(ticket string) { w.d.vanishAfterSnapshot(ticket) }
-
-// Unblock undoes BlockAfterSnapshot.
-func (w *Workers) Unblock(ticket string) { w.d.unblock(ticket) }
-
 // Gone closes the ticket's workspace, which leaves its tree leased and no worker for dispatch to see.
 func (w *Workers) Gone(ticket string) {
 	require.NoError(w.d.t, w.d.tools.Herdr.CloseWorkspace(context.Background(), "w-"+ticket))
 }
-
-// StallPrompts makes herdr take a prompt and never answer.
-func (w *Workers) StallPrompts() { w.d.tools.Herdr.StallPrompts() }
 
 // CheckedOut is Running on a tree that exists as a git worktree, as a worker's tree does when dispatch types into it.
 func (w *Workers) CheckedOut(ticket, status string) string {
@@ -127,10 +114,10 @@ func (w *Workers) Prompt(tree, session, prompt string) {
 	require.NoError(w.d.t, w.d.HookAndWaitForCommand("wake", string(input), tree, session, prompt).Err)
 }
 
-// Type has the person of the ticket's worker type a prompt into the "worker" session.
+// Type has the person of the ticket's worker type a prompt into the worker's session.
 func (w *Workers) Type(ticket, prompt string) {
 	w.d.t.Helper()
-	w.Prompt(w.d.worktreeOf(ticket), "worker", prompt)
+	w.Prompt(w.d.worktreeOf(ticket), workerSession(ticket), prompt)
 }
 
 // Kicked lists the kickoffs typed into new workers, as "<pane>|<text>".
@@ -196,7 +183,7 @@ func TestTickNudgesAnIdleWorkerWithoutCommenting(t *testing.T) {
 
 			require.NoError(t, d.TickAfterASecond())
 
-			assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Prompts())
+			assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
 			noLinearChanges(t, d)
 			assert.Empty(t, d.Workers.Launched())
 		})
@@ -225,27 +212,27 @@ func TestTickLeavesWorkingAndDesignWorkersAlone(t *testing.T) {
 
 			require.NoError(t, res.Err)
 			assert.Empty(t, res.Stdout)
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 			assert.Empty(t, d.Followed.Told())
 			noLinearChanges(t, d)
 		})
 	}
 }
 
-func TestTickDoesNotCountANudgeHerdrRefused(t *testing.T) {
+func TestTickDoesNotCountANudgeToASessionThatExitedAfterTheSnapshot(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
 	d.PullRequestFailsAfterEntry(prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
-	d.Workers.BlockAfterSnapshot("ENG-1")
+	d.Workers.SessionExits("ENG-1")
 
 	for range 4 {
 		err := d.TickAfterASecond()
-		require.ErrorContains(t, err, "ENG-1 nudge failed: blocked")
+		require.ErrorContains(t, err, "ENG-1 nudge failed: nothing sent: the session is not open")
 	}
 
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	noLinearChanges(t, d)
 	// Each tick retries the nudge, and every attempt is its own receipt.
 	var failed int
@@ -253,7 +240,7 @@ func TestTickDoesNotCountANudgeHerdrRefused(t *testing.T) {
 		assert.Equal(t, "nudge", receipt.Kind)
 		assert.Contains(t, []string{"attempted", "failed"}, receipt.State)
 		if receipt.State == "failed" {
-			assert.Equal(t, "blocked", receipt.Detail)
+			assert.Contains(t, receipt.Detail, "nothing sent: the session is not open")
 			failed++
 		}
 	}
@@ -274,7 +261,7 @@ func TestTickNotifiesOnceWhenATicketEntersNeedsHuman(t *testing.T) {
 	}
 
 	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	noLinearChanges(t, d)
 }
 
@@ -311,7 +298,7 @@ func TestTickNotifiesAgainWhileAWorkerStaysBlocked(t *testing.T) {
 			// The first notice, then one every 15 minutes.
 			assert.Equal(t, []int{1, 1, 1, 2, 2, 2, 3}, counts)
 			assert.Equal(t, want, d.Followed.Told()[0])
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 			noLinearChanges(t, d)
 		})
 	}
@@ -334,7 +321,7 @@ func TestTickNotifiesImmediatelyWhenAWorkerBlocksAgain(t *testing.T) {
 	assert.Len(t, d.Followed.Told(), 2)
 }
 
-func TestTellTypesTextIntoAWorker(t *testing.T) {
+func TestTellSendsTextToAWorkersSession(t *testing.T) {
 	t.Parallel()
 	for _, status := range []string{"idle", "working"} {
 		t.Run(status, func(t *testing.T) {
@@ -345,7 +332,7 @@ func TestTellTypesTextIntoAWorker(t *testing.T) {
 
 			require.NoError(t, res.Err)
 			assert.Equal(t, "told ENG-1\n", res.Stdout)
-			assert.Equal(t, []string{"w-ENG-1:p1|use the v2 endpoint"}, d.Workers.Prompts())
+			assert.Equal(t, []string{"use the v2 endpoint"}, d.Workers.Received("ENG-1"))
 		})
 	}
 }
@@ -361,7 +348,7 @@ func TestTellFails(t *testing.T) {
 		{name: "WorkerBlocked", worker: "blocked", args: []string{"tell", "ENG-1", "hi"}, wantErr: "ENG-1's worker is blocked on a question"},
 		{name: "NoWorker", worker: "", args: []string{"tell", "ENG-2", "hi"}, wantErr: "ENG-2 has no worker"},
 		{name: "WorkspaceWithoutClaude", worker: "none", args: []string{"tell", "ENG-1", "hi"}, wantErr: "ENG-1 has no worker"},
-		{name: "MissingText", worker: "idle", args: []string{"tell", "ENG-1"}, wantErr: "tell takes a ticket and the text to type"},
+		{name: "MissingText", worker: "idle", args: []string{"tell", "ENG-1"}, wantErr: "tell takes a ticket and the text to send"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -374,36 +361,36 @@ func TestTellFails(t *testing.T) {
 			}
 
 			require.ErrorContains(t, d.Run(test.args...).Err, test.wantErr)
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 		})
 	}
 }
 
-func TestTellReportsAWorkerHerdrRefuses(t *testing.T) {
+func TestTellReportsABlockedWorker(t *testing.T) {
 	t.Parallel()
 	for _, status := range []string{"idle", "working"} {
 		t.Run(status, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
 			d.Workers.Running("ENG-1", status)
-			d.Workers.BlockAfterSnapshot("ENG-1")
+			d.Workers.SetStatus("ENG-1", "blocked")
 
 			require.ErrorContains(t, d.Run("tell", "ENG-1", "hi").Err, "ENG-1's worker is blocked on a question")
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 		})
 	}
 }
 
-func TestTellReportsAPaneHerdrNoLongerKnows(t *testing.T) {
+func TestTellReportsASessionThatIsNotOpen(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Workers.Running("ENG-1", "idle")
-	d.Workers.VanishAfterSnapshot("ENG-1")
+	d.Workers.SessionExits("ENG-1")
 
 	res := d.Run("tell", "ENG-1", "hi")
 
-	require.ErrorContains(t, res.Err, "agent target w-ENG-1:p1 not found")
+	require.ErrorContains(t, res.Err, "nothing sent: the session is not open")
 	assert.NotContains(t, res.Err.Error(), "blocked on a question")
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestTellNamesAPoolItCouldNotRead(t *testing.T) {
@@ -439,7 +426,7 @@ func TestTickNotifiesForNeedsHumanWhateverTheWorkerIs(t *testing.T) {
 			}
 
 			assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 			assert.Empty(t, d.Workers.Launched())
 			noLinearChanges(t, d)
 		})
@@ -514,7 +501,7 @@ func TestTickNudgesAfterABlockedWorkerGoesIdle(t *testing.T) {
 
 	require.NoError(t, d.TickAfterASecond())
 
-	assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
 	noLinearChanges(t, d)
 }
 
@@ -532,7 +519,7 @@ func TestTickNudgesAgainWhenTheHistoryIsDeleted(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{prPrompt("a failed check"), prPrompt("a failed check")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("a failed check"), prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
 	noLinearChanges(t, d)
 }
 
@@ -554,7 +541,8 @@ func TestTickNudgesEachIdleTicketIndependently(t *testing.T) {
 
 	require.NoError(t, d.TickAfterASecond())
 
-	assert.Equal(t, []string{prPrompt("a failed check"), strings.ReplaceAll(prPrompt("a failed check"), "ENG-1", "ENG-2")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
+	assert.Equal(t, []string{strings.ReplaceAll(prPrompt("a failed check"), "ENG-1", "ENG-2")}, d.Workers.Received("ENG-2"))
 	noLinearChanges(t, d)
 }
 
@@ -565,7 +553,7 @@ func TestTellTypesTheTextVerbatim(t *testing.T) {
 
 	require.NoError(t, d.Run("tell", "ENG-1", `fix "it" && echo $HOME`).Err)
 
-	assert.Equal(t, []string{`w-ENG-1:p1|fix "it" && echo $HOME`}, d.Workers.Prompts())
+	assert.Equal(t, []string{`fix "it" && echo $HOME`}, d.Workers.Received("ENG-1"))
 }
 
 func TestTellRejectsExtraArguments(t *testing.T) {
@@ -573,8 +561,8 @@ func TestTellRejectsExtraArguments(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Workers.Running("ENG-1", "idle")
 
-	require.ErrorContains(t, d.Run("tell", "ENG-1", "use", "v2").Err, "tell takes a ticket and the text to type")
-	assert.Empty(t, d.Workers.Prompts())
+	require.ErrorContains(t, d.Run("tell", "ENG-1", "use", "v2").Err, "tell takes a ticket and the text to send")
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestTickNotifiesWhenAReviewWorkerIsBlockedOnAQuestion(t *testing.T) {
@@ -635,7 +623,7 @@ func TestTickStartsFreshWhenAPausedTicketReturns(t *testing.T) {
 
 	// The worker it had is gone, so a fresh one starts instead of a second nudge.
 	assert.Equal(t, []string{"w-ENG-1"}, d.Workers.Closed())
-	assert.Len(t, d.Workers.Prompts(), 1)
+	assert.Len(t, d.Workers.Received("ENG-1"), 1)
 	assert.Len(t, d.Workers.Launched(), 1)
 	noLinearChanges(t, d)
 }
@@ -660,7 +648,7 @@ func TestTickLaunchesAFreshWorkerWithoutANudgeWhenAPausedTicketMovesBack(t *test
 	d.Tick()
 
 	// The paused ticket's worker was closed, so a fresh one starts and nothing is typed into it.
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	assert.Len(t, d.Workers.Launched(), 1)
 }
 
@@ -690,18 +678,18 @@ func TestTickNudgedWorkerGetsNoPRNudgeBeforeTheNextResync(t *testing.T) {
 	d.Workers.Running("ENG-1", "idle")
 	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	d.Restart()
-	require.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Prompts())
+	require.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
 
 	// herdr still reports the nudged worker idle a second later. A tell reads herdr
 	// without a resync, and the worker must still count as busy.
 	d.Advance(time.Second)
 	require.NoError(t, d.Run("tell", "ENG-1", "check the logs").Err)
-	assert.Equal(t, []string{prPrompt("a failed check"), "w-ENG-1:p1|check the logs"}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("a failed check"), "check the logs"}, d.Workers.Received("ENG-1"))
 
 	// The next resync believes herdr again, and a worker still idle then gets its PR nudge.
 	d.Advance(time.Second)
 	d.Tick()
-	assert.Equal(t, []string{prPrompt("a failed check"), "w-ENG-1:p1|check the logs", prPrompt("a failed check")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("a failed check"), "check the logs", prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
 }
 
 func TestTickWorkerWithNoStopRecordIsNudgedAgainOnlyAtAResync(t *testing.T) {
@@ -713,12 +701,12 @@ func TestTickWorkerWithNoStopRecordIsNudgedAgainOnlyAtAResync(t *testing.T) {
 		d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 
 		d.Restart()
-		assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Prompts())
+		assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
 
 		d.Tick()
 		d.Tick()
 
-		assert.Len(t, d.Workers.Prompts(), 1)
+		assert.Len(t, d.Workers.Received("ENG-1"), 1)
 		assert.Empty(t, d.Followed.Told())
 	})
 
@@ -729,12 +717,12 @@ func TestTickWorkerWithNoStopRecordIsNudgedAgainOnlyAtAResync(t *testing.T) {
 		d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 
 		d.Restart()
-		assert.Len(t, d.Workers.Prompts(), 1)
+		assert.Len(t, d.Workers.Received("ENG-1"), 1)
 
 		d.Advance(5 * time.Minute)
-		assert.Len(t, d.Workers.Prompts(), 2)
+		assert.Len(t, d.Workers.Received("ENG-1"), 2)
 		d.Advance(5 * time.Minute)
-		assert.Len(t, d.Workers.Prompts(), 3)
+		assert.Len(t, d.Workers.Received("ENG-1"), 3)
 		assert.Empty(t, d.Followed.Told())
 	})
 }
@@ -765,7 +753,7 @@ func TestTickReadyNoticeAndMergeWaitWhileANudgedWorkerShowsAsWorking(t *testing.
 			pr.reviews = []activity{{"COMMENTED", time2, "alice", "", ""}}
 			d.GitHub.PullRequest("ENG-1", pr)
 			d.Tick()
-			assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Prompts())
+			assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Received("ENG-1"))
 			assert.Zero(t, test.done(d))
 
 			// Once a resync finds the nudged worker idle again, the notice and the merge follow.
@@ -776,16 +764,16 @@ func TestTickReadyNoticeAndMergeWaitWhileANudgedWorkerShowsAsWorking(t *testing.
 	}
 }
 
-// Unreachable from the CLI: a run that crashed between typing the text and writing its receipt.
+// Unreachable from the CLI: a run that crashed between sending the message and writing its receipt.
 func TestTickNeverSendsANudgeAttemptedBeforeACrash(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name    string
-		seeded  bool
-		prompts int
+		name     string
+		seeded   bool
+		received int
 	}{
-		{name: "NoEarlierAttempt", seeded: false, prompts: 1},
-		{name: "AttemptWithNoOutcome", seeded: true, prompts: 0},
+		{name: "NoEarlierAttempt", seeded: false, received: 1},
+		{name: "AttemptWithNoOutcome", seeded: true, received: 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -804,7 +792,7 @@ func TestTickNeverSendsANudgeAttemptedBeforeACrash(t *testing.T) {
 			d.Tick()
 			d.Tick()
 
-			assert.Len(t, d.Workers.Prompts(), test.prompts)
+			assert.Len(t, d.Workers.Received("ENG-1"), test.received)
 			noLinearChanges(t, d)
 		})
 	}
@@ -834,7 +822,7 @@ func TestTickNudgesNoWorkerAboutANewTicketComment(t *testing.T) {
 
 			d.Tick()
 
-			for _, prompt := range d.Workers.Prompts() {
+			for _, prompt := range d.Workers.Received("ENG-1") {
 				assert.NotContains(t, prompt, "new comment")
 			}
 		})
@@ -853,7 +841,7 @@ func TestTickPRNudgeIsNotHeldBackByATicketComment(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
 }
 
 func TestTickActivityNudgeFiresOnTheTickATicketCommentLands(t *testing.T) {
@@ -871,7 +859,7 @@ func TestTickActivityNudgeFiresOnTheTickATicketCommentLands(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Prompts())
+	assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Received("ENG-1"))
 }
 
 // watched starts an idle In Review worker whose PR has the reviews and comments of before, in a repo
@@ -908,13 +896,13 @@ func TestTickNudgesAnIdleWorkerOnceForNewPRActivity(t *testing.T) {
 
 			d.Tick()
 
-			assert.Equal(t, []string{activityPrompt(test.by)}, d.Workers.Prompts())
+			assert.Equal(t, []string{activityPrompt(test.by)}, d.Workers.Received("ENG-1"))
 			noLinearChanges(t, d)
 
 			// The nudge is not repeated, and the ready notice for this head already went out.
 			d.Advance(time.Second)
 			d.Tick()
-			assert.Len(t, d.Workers.Prompts(), 1)
+			assert.Len(t, d.Workers.Received("ENG-1"), 1)
 			assert.Len(t, d.Followed.Told(), notified)
 		})
 	}
@@ -930,7 +918,7 @@ func TestTickNamesTheNewestPRActivity(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{activityPrompt("a comment by bob")}, d.Workers.Prompts())
+	assert.Equal(t, []string{activityPrompt("a comment by bob")}, d.Workers.Received("ENG-1"))
 }
 
 func TestTickDoesNotNudgeForAnApprovalOrADraftReview(t *testing.T) {
@@ -944,7 +932,7 @@ func TestTickDoesNotNudgeForAnApprovalOrADraftReview(t *testing.T) {
 
 			d.Tick()
 
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 		})
 	}
 }
@@ -961,7 +949,7 @@ func TestTickSkipsPRActivityThatPredatesDispatchsCache(t *testing.T) {
 
 	d.Tick()
 
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestTickNudgesForActivityPresentWhenTheTicketEnteredInReview(t *testing.T) {
@@ -979,12 +967,12 @@ func TestTickNudgesForActivityPresentWhenTheTicketEnteredInReview(t *testing.T) 
 	pr.reviews = []activity{{"COMMENTED", time1, "alice", "", ""}}
 	d.GitHub.PullRequest("ENG-1", pr)
 	d.Tick()
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	d.Workers.SetStatus("ENG-1", "idle")
 
 	d.Tick()
 
-	assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Prompts())
+	assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Received("ENG-1"))
 }
 
 func TestTickHoldsPRActivityUntilTheWorkerIsIdle(t *testing.T) {
@@ -995,12 +983,12 @@ func TestTickHoldsPRActivityUntilTheWorkerIsIdle(t *testing.T) {
 	before.reviews = []activity{{"COMMENTED", time2, "alice", "", ""}}
 	d.GitHub.PullRequest("ENG-1", before)
 	d.Tick()
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	d.Workers.SetStatus("ENG-1", "idle")
 
 	d.Tick()
 
-	assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Prompts())
+	assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Received("ENG-1"))
 }
 
 func TestTickActivityNudgeDoesNotCountTowardThePRLimit(t *testing.T) {
@@ -1021,8 +1009,8 @@ func TestTickActivityNudgeDoesNotCountTowardThePRLimit(t *testing.T) {
 		d.Advance(time.Second)
 		d.Tick()
 
-		assert.Len(t, d.Workers.Prompts(), i+1)
-		assert.Equal(t, activityPrompt(fmt.Sprintf("a comment by bob%d", i)), d.Workers.Prompts()[i])
+		assert.Len(t, d.Workers.Received("ENG-1"), i+1)
+		assert.Equal(t, activityPrompt(fmt.Sprintf("a comment by bob%d", i)), d.Workers.Received("ENG-1")[i])
 	}
 	noLinearChanges(t, d)
 }
@@ -1035,15 +1023,15 @@ func TestTickNamesNewActivityInALaterNudgeWhenAPRProblemComesFirst(t *testing.T)
 	before.reviews = []activity{{"COMMENTED", time2, "alice", "", ""}}
 	d.GitHub.PullRequest("ENG-1", before)
 	d.Tick()
-	require.Len(t, d.Workers.Prompts(), 1)
-	assert.Equal(t, prPrompt("a failed check"), d.Workers.Prompts()[0])
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
+	assert.Equal(t, prPrompt("a failed check"), d.Workers.Received("ENG-1")[0])
 	before.checks = "SUCCESS"
 	d.GitHub.PullRequest("ENG-1", before)
 	d.Advance(time.Second)
 
 	d.Tick()
 
-	assert.Equal(t, []string{prPrompt("a failed check"), activityPrompt("a review by alice")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("a failed check"), activityPrompt("a review by alice")}, d.Workers.Received("ENG-1"))
 }
 
 func TestTickHoldsAutoMergeForNewPRActivity(t *testing.T) {
@@ -1061,7 +1049,7 @@ func TestTickHoldsAutoMergeForNewPRActivity(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{activityPrompt("a comment by alice")}, d.Workers.Prompts())
+	assert.Equal(t, []string{activityPrompt("a comment by alice")}, d.Workers.Received("ENG-1"))
 	assert.Empty(t, d.GitHub.Merged())
 
 	d.Advance(time.Second)
@@ -1076,7 +1064,7 @@ func TestTickDoesNotRepeatActivityAfterTheTicketLeavesAndReturnsToInReview(t *te
 	before.comments = []activity{{"", time2, "bob", "", ""}}
 	d.GitHub.PullRequest("ENG-1", before)
 	d.Tick()
-	require.Len(t, d.Workers.Prompts(), 1)
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
 	d.Workers.SetStatus("ENG-1", "working")
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Advance(time.Second)
@@ -1089,7 +1077,7 @@ func TestTickDoesNotRepeatActivityAfterTheTicketLeavesAndReturnsToInReview(t *te
 
 	d.Tick()
 
-	assert.Len(t, d.Workers.Prompts(), 1)
+	assert.Len(t, d.Workers.Received("ENG-1"), 1)
 }
 
 func TestTickNudgesForAnApprovalThatCarriesABody(t *testing.T) {
@@ -1101,7 +1089,7 @@ func TestTickNudgesForAnApprovalThatCarriesABody(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Prompts())
+	assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Received("ENG-1"))
 }
 
 func TestTickNudgesForAReviewSubmittedAfterItWasStarted(t *testing.T) {
@@ -1116,7 +1104,7 @@ func TestTickNudgesForAReviewSubmittedAfterItWasStarted(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Prompts())
+	assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Received("ENG-1"))
 }
 
 func TestTickKeepsPRActivityAcrossATicketAbsentFromTheRead(t *testing.T) {
@@ -1126,7 +1114,7 @@ func TestTickKeepsPRActivityAcrossATicketAbsentFromTheRead(t *testing.T) {
 	before.comments = []activity{{"", time2, "bob", "", ""}}
 	d.GitHub.PullRequest("ENG-1", before)
 	d.Tick()
-	require.Len(t, d.Workers.Prompts(), 1)
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
 	d.Trees.Leased("ENG-1", d.Trees.Clean("ENG-1"))
 	d.Linear.Tickets()
 	d.Advance(time.Second)
@@ -1136,23 +1124,23 @@ func TestTickKeepsPRActivityAcrossATicketAbsentFromTheRead(t *testing.T) {
 
 	d.Tick()
 
-	assert.Len(t, d.Workers.Prompts(), 1)
+	assert.Len(t, d.Workers.Received("ENG-1"), 1)
 }
 
-func TestTickRetriesAPRActivityNudgeHerdrRefused(t *testing.T) {
+func TestTickRetriesAPRActivityNudgeToASessionThatWasNotOpen(t *testing.T) {
 	t.Parallel()
 	before := cleanPR("a1")
 	d := watched(t, before)
 	before.reviews = []activity{{"COMMENTED", time2, "alice", "", ""}}
 	d.GitHub.PullRequest("ENG-1", before)
-	d.Workers.BlockAfterSnapshot("ENG-1")
-	require.ErrorContains(t, d.Run("tick").Err, "blocked")
-	assert.Empty(t, d.Workers.Prompts())
-	d.Workers.Unblock("ENG-1")
+	d.Workers.SessionExits("ENG-1")
+	require.ErrorContains(t, d.Run("tick").Err, "nothing sent")
+	assert.Empty(t, d.Workers.Received("ENG-1"))
+	d.Workers.SessionOpens("ENG-1")
 
 	d.Tick()
 
-	assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Prompts())
+	assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Received("ENG-1"))
 }
 
 func TestTickNudgesOnceForEachNewCommentOnAnOpenReviewThread(t *testing.T) {
@@ -1164,14 +1152,14 @@ func TestTickNudgesOnceForEachNewCommentOnAnOpenReviewThread(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{activityPrompt("a review thread comment by alice")}, d.Workers.Prompts())
+	assert.Equal(t, []string{activityPrompt("a review thread comment by alice")}, d.Workers.Received("ENG-1"))
 
 	// The thread stays open, and later ticks stay quiet.
 	for range 2 {
 		d.Advance(time.Second)
 		d.Tick()
 	}
-	assert.Len(t, d.Workers.Prompts(), 1)
+	assert.Len(t, d.Workers.Received("ENG-1"), 1)
 
 	// A reply on the same thread is a new comment.
 	before.threads = []activity{{"", time3, "bob", "", ""}}
@@ -1179,8 +1167,8 @@ func TestTickNudgesOnceForEachNewCommentOnAnOpenReviewThread(t *testing.T) {
 	d.Advance(time.Second)
 	d.Tick()
 
-	assert.Len(t, d.Workers.Prompts(), 2)
-	assert.Equal(t, activityPrompt("a review thread comment by bob"), d.Workers.Prompts()[1])
+	assert.Len(t, d.Workers.Received("ENG-1"), 2)
+	assert.Equal(t, activityPrompt("a review thread comment by bob"), d.Workers.Received("ENG-1")[1])
 }
 
 func TestTickIgnoresCommentsOnResolvedReviewThreads(t *testing.T) {
@@ -1192,7 +1180,7 @@ func TestTickIgnoresCommentsOnResolvedReviewThreads(t *testing.T) {
 
 	d.Tick()
 
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestTickHoldsTheReadyNoticeWhileAThreadStaysOpenAfterItsNudge(t *testing.T) {
@@ -1203,7 +1191,7 @@ func TestTickHoldsTheReadyNoticeWhileAThreadStaysOpenAfterItsNudge(t *testing.T)
 	before.threads = []activity{{"", time2, "alice", "", ""}}
 	d.GitHub.PullRequest("ENG-1", before)
 	d.Tick()
-	assert.Equal(t, []string{activityPrompt("a review thread comment by alice")}, d.Workers.Prompts())
+	assert.Equal(t, []string{activityPrompt("a review thread comment by alice")}, d.Workers.Received("ENG-1"))
 
 	for range 2 {
 		d.Advance(time.Second)
@@ -1233,7 +1221,7 @@ func TestTickDoesNotAutoMergeWhileAThreadStaysOpenAfterItsNudge(t *testing.T) {
 	pr.threads = []activity{{"", time2, "alice", "", ""}}
 	d.GitHub.PullRequest("ENG-1", pr)
 	d.Tick()
-	assert.Equal(t, []string{activityPrompt("a review thread comment by alice")}, d.Workers.Prompts())
+	assert.Equal(t, []string{activityPrompt("a review thread comment by alice")}, d.Workers.Received("ENG-1"))
 
 	for range 2 {
 		d.Advance(time.Second)
@@ -1258,14 +1246,14 @@ func TestTickNudgesAThreadCommentAfterAnotherPRProblemClears(t *testing.T) {
 	d.GitHub.PullRequest("ENG-1", before)
 
 	d.Tick()
-	assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
 
 	before.checks = "SUCCESS"
 	d.GitHub.PullRequest("ENG-1", before)
 	d.Advance(time.Second)
 	d.Tick()
 
-	assert.Equal(t, []string{prPrompt("a failed check"), activityPrompt("a review thread comment by alice")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("a failed check"), activityPrompt("a review thread comment by alice")}, d.Workers.Received("ENG-1"))
 }
 
 func TestTickRelaunchesAGoneWorkerOnceForAThreadComment(t *testing.T) {
@@ -1290,7 +1278,7 @@ func TestTickDoesNotRelaunchAGoneWorkerForAThreadCommentAlreadySeen(t *testing.T
 	before.threads = []activity{{"", time2, "alice", "", ""}}
 	d.GitHub.PullRequest("ENG-1", before)
 	d.Tick()
-	require.Len(t, d.Workers.Prompts(), 1)
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
 	d.Workers.Gone("ENG-1")
 	d.Advance(time.Second)
 
@@ -1307,7 +1295,7 @@ func TestTickDoesNotRelaunchAGoneWorkerForAPlainCommentWhileAThreadIsOpen(t *tes
 	before.comments = []activity{{"", time3, "bob", "", ""}}
 	d.GitHub.PullRequest("ENG-1", before)
 	d.Tick()
-	require.Len(t, d.Workers.Prompts(), 1)
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
 	d.Workers.Gone("ENG-1")
 	d.Advance(time.Second)
 
@@ -1369,7 +1357,7 @@ func TestTickIgnoresPRActivityByAListedAuthor(t *testing.T) {
 
 			d.Tick()
 
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 			assert.Empty(t, d.Workers.Launched())
 			assert.Equal(t, notified, d.Followed.Told())
 		})
@@ -1394,8 +1382,8 @@ func TestTickCountsPRActivityByAListedAuthorInARepoThatListsNobody(t *testing.T)
 
 			d.Tick()
 
-			require.Len(t, d.Workers.Prompts(), 1)
-			assert.Contains(t, d.Workers.Prompts()[0], test.want)
+			require.Len(t, d.Workers.Received("ENG-1"), 1)
+			assert.Contains(t, d.Workers.Received("ENG-1")[0], test.want)
 		})
 	}
 }
@@ -1409,9 +1397,9 @@ func TestTickCountsPRActivityByAnAuthorWhoIsNotListed(t *testing.T) {
 
 	d.Tick()
 
-	require.Len(t, d.Workers.Prompts(), 1)
-	assert.Contains(t, d.Workers.Prompts()[0], "a comment by alice")
-	assert.NotContains(t, d.Workers.Prompts()[0], listedBot)
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
+	assert.Contains(t, d.Workers.Received("ENG-1")[0], "a comment by alice")
+	assert.NotContains(t, d.Workers.Received("ENG-1")[0], listedBot)
 }
 
 func TestTickReadyIgnoresThreadsThatOnlyListedAuthorsTouched(t *testing.T) {
@@ -1475,8 +1463,8 @@ func TestTickCountsAChangeRequestFromAnUnlistedAuthor(t *testing.T) {
 
 	d.Tick()
 
-	require.Len(t, d.Workers.Prompts(), 1)
-	assert.Contains(t, d.Workers.Prompts()[0], "changes requested")
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
+	assert.Contains(t, d.Workers.Received("ENG-1")[0], "changes requested")
 }
 
 func TestTickReadsPastAWindowOfListedAuthorsToTheNewestUnlistedItem(t *testing.T) {
@@ -1517,8 +1505,8 @@ func TestTickReadsPastAWindowOfListedAuthorsToTheNewestUnlistedItem(t *testing.T
 
 			// Dispatch has not seen the person's item before, so it is new activity.
 			article := map[string]string{"comments": "a comment", "reviews": "a review"}[kind]
-			require.Len(t, d.Workers.Prompts(), 1)
-			assert.Contains(t, d.Workers.Prompts()[0], fmt.Sprintf("new activity, %s by alice", article))
+			require.Len(t, d.Workers.Received("ENG-1"), 1)
+			assert.Contains(t, d.Workers.Received("ENG-1")[0], fmt.Sprintf("new activity, %s by alice", article))
 			assert.Len(t, d.GitHub.OlderReads(), 2)
 		})
 	}
@@ -1556,8 +1544,8 @@ func TestTickJudgesAPRWhoseNewestCommentsAreListedByOlderUnlistedOnes(t *testing
 
 	d.Tick()
 
-	require.Len(t, d.Workers.Prompts(), 1)
-	assert.Contains(t, d.Workers.Prompts()[0], "a comment by alice")
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
+	assert.Contains(t, d.Workers.Received("ENG-1")[0], "a comment by alice")
 }
 
 func TestTickMatchesListedAuthorsWithoutRegardToCase(t *testing.T) {
@@ -1569,7 +1557,7 @@ func TestTickMatchesListedAuthorsWithoutRegardToCase(t *testing.T) {
 
 	d.Tick()
 
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestTickReadyIgnoresListedCommentsReviewsAndThreads(t *testing.T) {
@@ -1606,8 +1594,8 @@ func TestTickReadsPastUnlistedReviewsThatAskForNothing(t *testing.T) {
 
 	d.Tick()
 
-	require.Len(t, d.Workers.Prompts(), 1)
-	assert.Contains(t, d.Workers.Prompts()[0], "a review by alice")
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
+	assert.Contains(t, d.Workers.Received("ENG-1")[0], "a review by alice")
 }
 
 // commandsRule comments each time what a worker's commands read as changes, one comment for each reading.
@@ -1936,14 +1924,15 @@ func TestANudgeThatIsNotACommandLeavesAPersonsLaterCommandAPersons(t *testing.T)
 	assert.Equal(t, "commands keep|going|false|person of 1", lastReading(t, d))
 }
 
-func TestANudgeHerdrRefusedLeavesNoSendForAPersonsCommandToMatch(t *testing.T) {
+func TestANudgeThatWasRefusedLeavesNoSendForAPersonsCommandToMatch(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name  string
 		setup func(d *Dispatch)
 	}{
-		{"BlockedAfterSnapshot", func(d *Dispatch) { d.Workers.BlockAfterSnapshot("ENG-1") }},
+		{"SessionExitedAfterSnapshot", func(d *Dispatch) { d.Workers.SessionExits("ENG-1") }},
 		{"BlockedBeforeSnapshot", func(d *Dispatch) { d.Workers.SetStatus("ENG-1", "blocked") }},
+		{"WriteError", func(d *Dispatch) { d.Workers.FailNextDelivery(errors.New("write unix: broken pipe")) }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{Rules: rule(commandsRule)})
@@ -1951,7 +1940,7 @@ func TestANudgeHerdrRefusedLeavesNoSendForAPersonsCommandToMatch(t *testing.T) {
 			d.Workers.CheckedOut("ENG-1", "idle")
 			test.setup(d)
 			require.Error(t, d.Run("tell", "ENG-1", "/merge-it 42").Err)
-			require.Empty(t, d.Workers.Prompts())
+			require.Empty(t, d.Workers.Received("ENG-1"))
 
 			d.Workers.Type("ENG-1", "/merge-it 42")
 			d.Tick()
@@ -1961,23 +1950,23 @@ func TestANudgeHerdrRefusedLeavesNoSendForAPersonsCommandToMatch(t *testing.T) {
 	}
 }
 
-func TestANudgeThatTimedOutKeepsItsSendBecauseTheTextMayHaveBeenTyped(t *testing.T) {
+func TestANudgeThatTimedOutLeavesNoSendBecauseNothingWasWritten(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(commandsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.CheckedOut("ENG-1", "idle")
-	d.Workers.StallPrompts()
+	d.Workers.StallDeliveries()
 	told := later(func() Result {
 		return d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tell", "ENG-1", "/merge-it 42")
 	})
-	require.Eventually(t, func() bool { return len(d.tools.Calls("herdr", "prompt")) == 1 }, 20*time.Second, time.Millisecond)
+	require.Eventually(t, func() bool { return d.Workers.StalledDeliveries() == 1 }, 20*time.Second, time.Millisecond)
 	d.Expire("nudge ENG-1")
-	require.NoError(t, told().Err)
+	require.Error(t, told().Err)
 
 	d.Workers.Type("ENG-1", "/merge-it 42")
 	d.Tick()
 
-	assert.Equal(t, "commands merge-it|42|false|dispatch of 1", lastReading(t, d))
+	assert.Equal(t, "commands merge-it|42|false|person of 1", lastReading(t, d))
 }
 
 func TestEachSendMatchesOneCommandWhenManyHooksRace(t *testing.T) {
@@ -2018,13 +2007,7 @@ func TestClosingAWorkspaceDropsTheNotesOfWhatWasTypedIntoItsTree(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, commandsRule)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.CheckedOut("ENG-1", "idle")
-	d.Workers.StallPrompts()
-	told := later(func() Result {
-		return d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tell", "ENG-1", "/merge-it 42")
-	})
-	require.Eventually(t, func() bool { return len(d.tools.Calls("herdr", "prompt")) == 1 }, 20*time.Second, time.Millisecond)
-	d.Expire("nudge ENG-1")
-	require.NoError(t, told().Err)
+	require.NoError(t, d.Run("tell", "ENG-1", "/merge-it 42").Err)
 	d.Workers.Unconfirmed("ENG-1")
 	d.Advance(6 * time.Minute)
 	d.Tick()
@@ -2212,7 +2195,7 @@ func TestARuleNudgeThatStartsWithASlashReadsAsSentByDispatch(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.CheckedOut("ENG-1", "idle")
 	d.Tick()
-	require.Equal(t, []string{"w-ENG-1:p1|/merge-it 42"}, d.Workers.Prompts())
+	require.Equal(t, []string{"/merge-it 42"}, d.Workers.Received("ENG-1"))
 
 	d.Workers.Type("ENG-1", "/merge-it 42")
 	d.Advance(5 * time.Minute)

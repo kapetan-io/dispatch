@@ -594,7 +594,7 @@ func TestTickNeverNudgesOrEscalatesADesignWorker(t *testing.T) {
 		d.Advance(3 * time.Hour)
 	}
 
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	assert.Empty(t, d.Followed.Told())
 	assert.Empty(t, d.Linear.Changes())
 	assert.Empty(t, d.Workers.Launched())
@@ -613,7 +613,7 @@ func TestTickKeepsTheDesignWorkerOnceItHasChildren(t *testing.T) {
 		d.Advance(3 * time.Hour)
 	}
 
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	assert.Empty(t, d.Followed.Told())
 	assert.Empty(t, d.Linear.Changes())
 	assert.Empty(t, d.Workers.Launched())
@@ -879,7 +879,7 @@ func TestAnIdleWorkerWithAnUnconfirmedKickoffIsNotNudged(t *testing.T) {
 	d.Advance(90 * time.Second)
 	d.Tick()
 
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	assert.Empty(t, d.Workers.Closed())
 }
 

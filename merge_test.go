@@ -24,7 +24,7 @@ func TestTickNotifiesOnceWhenAnInReviewPRIsReady(t *testing.T) {
 	d.Tick()
 
 	assert.Equal(t, []string{readyText1}, d.Followed.Told())
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	noLinearChanges(t, d)
 
 	// No later tick repeats it.
@@ -308,7 +308,7 @@ func TestTickNotifiesWhenTheOnlyChangesRequestedIsOnAnOlderCommit(t *testing.T) 
 	d.Tick()
 
 	assert.Len(t, d.Followed.Told(), 1)
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
 
 func TestTickMergesAnApprovedReadyPRInAListedRepo(t *testing.T) {
@@ -322,7 +322,7 @@ func TestTickMergesAnApprovedReadyPRInAListedRepo(t *testing.T) {
 
 	assert.Equal(t, []string{mergeCall1}, d.GitHub.Merged())
 	assert.Equal(t, []string{mergedText1}, d.Followed.Told())
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 
 	// The merged PR is no longer open, so later ticks do nothing.
 	d.Tick()

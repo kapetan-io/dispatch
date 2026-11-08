@@ -31,7 +31,7 @@ type Subject struct {
 type Session struct {
 	// Env is the environment of a command the session runs.
 	Env environment.Environment
-	// Address is where the harness delivers the session's messages.
+	// Address is the session id, which the harness delivers the session's messages by.
 	Address string
 	// Delivered lists the messages the session has received, in order.
 	Delivered func() []string
@@ -135,6 +135,11 @@ var Scenarios = []Scenario{
 		session.Exit()
 
 		err := s.Harness.Deliver(context.Background(), session.Address, "dispatch event: ENG-1 is ready")
+
+		assert.ErrorIs(t, err, harness.ErrGone)
+	}},
+	{Name: "DeliverToASessionThatWasNeverOpenIsGone", Run: func(t *testing.T, s Subject) {
+		err := s.Harness.Deliver(context.Background(), "never-opened", "dispatch event: ENG-1 is ready")
 
 		assert.ErrorIs(t, err, harness.ErrGone)
 	}},

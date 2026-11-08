@@ -158,8 +158,9 @@ const usage = `usage: dispatch run
   state reset  start a new history segment with an empty ledger, keeping what the world remembers.
                With --quiet, record the messages the first cycle wants as sent, so none is repeated.
                Exits 1 while dispatch run holds the lock
-  tell         type text into the ticket's worker through the running loop; fails when the worker's Claude
-               session is blocked or gone
+  tell         send text to the ticket's worker as a message to its session, through the running loop; fails
+               with nothing sent when the worker is blocked, reports no status, has no session id yet or its
+               session is not open
   ticket       file, read and change local tickets (LOC-<n>), kept in a database that only dispatch run opens
                and that [plugins.local] turns on. Talks to the running dispatch run, and exits 3 with
                "dispatch: not running" when none runs. It works on local tickets only; Linear tickets use
@@ -209,8 +210,8 @@ const usage = `usage: dispatch run
   watch        make this session follow the ticket, so each notification dispatch sends about
                it is also sent to this session as a message through its harness. A session can follow
                several tickets, and a ticket can have several followers. Fails outside a session of a
-               harness dispatch drives (for Claude Code, when the messaging socket is unset or its path
-               is not absolute), or when no dispatch is running.
+               harness dispatch drives (for Claude Code, when CLAUDE_CODE_SESSION_ID is unset), or when
+               no dispatch is running. Dispatch addresses the session by its id.
                Dispatch keeps followers in memory, so run it again after a restart
   unwatch      stop this session following the ticket; fails when no dispatch is running`
 
@@ -242,7 +243,7 @@ func Run(ctx context.Context, args []string, opts Options) error {
 	case "tell":
 		if len(args) != 3 {
 			_, _ = fmt.Fprintln(opts.Stderr, usage)
-			return errors.New(`tell takes a ticket and the text to type`)
+			return errors.New(`tell takes a ticket and the text to send`)
 		}
 		return tellCommand(ctx, opts, args[1], args[2])
 	case "ticket":
@@ -281,7 +282,7 @@ func Run(ctx context.Context, args []string, opts Options) error {
 
 func withDefaults(o Options) Options {
 	if o.Harnesses == nil {
-		o.Harnesses = harness.Registry{config.KindClaudeCode: harness.ClaudeCode{}}
+		o.Harnesses = harness.Registry{config.KindClaudeCode: harness.ClaudeCode{Sessions: harness.SessionsDir(o.Env)}}
 	}
 	if o.Dir == "" {
 		o.Dir, _ = os.Getwd()

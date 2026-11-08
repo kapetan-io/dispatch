@@ -282,7 +282,7 @@ func tellResponse(w rules.Want, rc ledger.Receipt) Response {
 	return Response{Code: CodeFailed, Error: rc.Detail}
 }
 
-// tell types text into a ticket's worker through the nudge path, so it is
+// tell sends text to a ticket's worker through the nudge path, so it is
 // receipted like any other nudge and counts as the last one.
 func (l *Loop) tell(r request) error {
 	ticket := strings.ToUpper(r.Ticket)

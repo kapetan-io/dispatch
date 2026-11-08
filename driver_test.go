@@ -148,7 +148,9 @@ type Dispatch struct {
 	// ticket the test seeds, so a test reads back what dispatch told followers.
 	followers *notify.Followers
 	recorder  *recorder
-	seeded    []string
+	// sessions is the Claude sessions the test's workers run, and what was delivered to them.
+	sessions *sessionBook
+	seeded   []string
 	// running is the loop started by the first command that needs one, and started every loop
 	// this test started, so a failing test can show what they printed.
 	running *runningLoop
@@ -244,6 +246,7 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 		}
 	})
 	d.recorder = newRecorder()
+	d.sessions = &sessionBook{recorder: d.recorder.follower.Address, tools: d.tools}
 	d.followers = d.freshFollowers()
 	d.linear = &linearHarness{Workspace: d.tools.Linear, follow: d.followRecorder}
 	d.tools.Linear.Now = d.Clock.Now
@@ -330,7 +333,7 @@ func expiring[T any](d *Dispatch, what string, run func() T) T {
 // FakeSession makes the commands that follow run in the fake harness's session whose inbox is
 // address, and in no Claude session.
 func (d *Dispatch) FakeSession(address string) {
-	d.env = d.env.With("CLAUDE_CODE_MESSAGING_SOCKET", "").With(harnesstest.InboxEnv, address)
+	d.env = d.env.With("CLAUDE_CODE_SESSION_ID", "").With(harnesstest.InboxEnv, address)
 }
 
 // Tools is the fakes behind dispatch, for a test to make one fail or to read what it recorded.
@@ -1017,8 +1020,35 @@ func (w *Workers) SetStatus(ticket, status string) { w.d.setWorkerStatus(ticket,
 // relaunch does. An empty id is a worker herdr reports no session for.
 func (w *Workers) SetSession(ticket, session string) { w.d.setWorkerSession(ticket, session) }
 
-// Prompts lists what was typed into workers, as "<pane>|<text>".
-func (w *Workers) Prompts() []string { return w.d.prompts() }
+// Received lists what was delivered to the ticket's worker's sessions as messages, in order.
+func (w *Workers) Received(ticket string) []string {
+	return w.d.sessions.received(w.d.sessionIDsOf(ticket))
+}
+
+// SessionExits has the Claude session of the ticket's worker exit while herdr still lists
+// it, as in the moment between dispatch reading herdr and sending, so a delivery to it fails as to a
+// session that is not open.
+func (w *Workers) SessionExits(ticket string) { w.d.sessions.exit(w.d.sessionIDsOf(ticket)...) }
+
+// SessionOpens undoes SessionExits.
+func (w *Workers) SessionOpens(ticket string) { w.d.sessions.open(w.d.sessionIDsOf(ticket)...) }
+
+// FailNextDelivery makes the next message delivered to any session fail with err, such as a write
+// error on a broken connection.
+func (w *Workers) FailNextDelivery(err error) { w.d.sessions.failNext("", err) }
+
+// FailNextDeliveryTo is FailNextDelivery for the next message to the follower session with this address.
+func (w *Workers) FailNextDeliveryTo(session string, err error) { w.d.sessions.failNext(session, err) }
+
+// StallDeliveries makes every message to a worker's session wait until its context ends, which is a
+// session that takes the frame and never lets the write finish.
+func (w *Workers) StallDeliveries() { w.d.sessions.stallDeliveries(true) }
+
+// UnstallDeliveries undoes StallDeliveries.
+func (w *Workers) UnstallDeliveries() { w.d.sessions.stallDeliveries(false) }
+
+// StalledDeliveries is how many deliveries have started waiting since StallDeliveries.
+func (w *Workers) StalledDeliveries() int { return int(w.d.sessions.stalls.Load()) }
 
 // Launched lists the launch requests dispatch made, as "<repo> <ticket> <branch> --model <model>"
 // plus " --kickoff <text>" when one was set.
@@ -1038,7 +1068,7 @@ type stopTasks struct {
 // StopInput is what Claude Code hands the Stop hook for the worker session of ticket.
 func (w *Workers) StopInput(ticket string, tasks stopTasks) string {
 	w.d.t.Helper()
-	return w.StopInputFrom("worker", ticket, tasks)
+	return w.StopInputFrom(workerSession(ticket), ticket, tasks)
 }
 
 // StopInputFrom is StopInput for the Claude session with the given id.
@@ -1078,7 +1108,7 @@ func (w *Workers) LateStop(ticket string, tasks stopTasks, late time.Duration) {
 // and requires it to succeed.
 func (w *Workers) Stop(ticket string, tasks stopTasks) {
 	w.d.t.Helper()
-	w.StopFrom("worker", ticket, tasks)
+	w.StopFrom(workerSession(ticket), ticket, tasks)
 }
 
 // StopFrom is Stop for the Claude session with the given id.
@@ -1239,7 +1269,7 @@ const (
 )
 
 func activityPrompt(by string) string {
-	return fmt.Sprintf("w-ENG-1:p1|/dispatch:pr-respond PR %s for ENG-1 has new activity, %s. Read it and handle it. If it asks for nothing, say nothing.", prURL1, by)
+	return fmt.Sprintf("/dispatch:pr-respond PR %s for ENG-1 has new activity, %s. Load the dispatch:pr-respond skill with the Skill tool, then read it and handle it. If it asks for nothing, say nothing.", prURL1, by)
 }
 
 const (
@@ -1396,7 +1426,7 @@ func (d *Dispatch) options(extra dispatch.Options) dispatch.Options {
 	if !d.builtinLauncher {
 		extra.Launcher = d.tools.Launcher
 	}
-	claude := recordingClaude{rec: d.recorder}
+	claude := recordingClaude{ClaudeCode: harness.ClaudeCode{Sessions: claudeSessionList()}, rec: d.recorder, book: d.sessions}
 	if d.fakeHarness {
 		extra.Harnesses = harness.Registry{config.KindClaudeCode: claude, harnesstest.Kind: d.tools.Harness}
 	}
@@ -1892,7 +1922,36 @@ func (d *Dispatch) workerOn(ticket, tree, id, status string) {
 	}
 	d.tools.Herdr.AddTab(herdr.Tab{ID: id + ":t1", Label: ticket, WorkspaceID: id})
 	d.tools.Herdr.AddPane(herdr.Pane{ID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
-	d.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: status, Session: "worker", PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
+	d.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: status, Session: workerSession(ticket), PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
+	d.openWorkerSession(ticket, workerSession(ticket))
+}
+
+// workerSession is the session id herdr reports for ticket's worker. ENG-1 keeps the plain id
+// the hook tests write, and every other ticket gets its own, so a nudge delivered to the wrong
+// ticket's worker shows up in Received.
+func workerSession(ticket string) string {
+	if ticket == "ENG-1" {
+		return "worker"
+	}
+	return "worker-" + ticket
+}
+
+// openWorkerSession opens a Claude session for the ticket's worker in the delivery record.
+func (d *Dispatch) openWorkerSession(ticket, session string) {
+	d.sessions.open(session)
+	d.sessions.attach(ticket, session)
+}
+
+// sessionIDsOf lists the ids of the sessions the ticket's workers have had: those made with
+// Running and SetSession, and those the launcher started.
+func (d *Dispatch) sessionIDsOf(ticket string) []string {
+	ids := d.sessions.attached(ticket)
+	for _, w := range d.tools.Herdr.Started() {
+		if w.Label == ticket && w.Program.Session != "" {
+			ids = append(ids, w.Program.Session)
+		}
+	}
+	return ids
 }
 
 // setWorkerStatus changes the herdr status of a worker added with worker.
@@ -1904,28 +1963,9 @@ func (d *Dispatch) setWorkerStatus(ticket, status string) {
 // added with worker, as a relaunch does.
 func (d *Dispatch) setWorkerSession(ticket, session string) {
 	d.tools.Herdr.SetSession("w-"+ticket+":p1", session)
-}
-
-// blockAfterSnapshot has the worker stop to ask a question after dispatch's
-// snapshot, so herdr refuses a prompt the snapshot says is fine.
-func (d *Dispatch) blockAfterSnapshot(ticket string) {
-	d.tools.Herdr.BlockAfterSnapshot("w-" + ticket + ":p1")
-}
-
-// vanishAfterSnapshot closes the worker's pane after dispatch's snapshot, so herdr no longer
-// knows a pane the snapshot lists.
-func (d *Dispatch) vanishAfterSnapshot(ticket string) {
-	d.tools.Herdr.VanishAfterSnapshot("w-" + ticket + ":p1")
-}
-
-// unblock undoes blockAfterSnapshot.
-func (d *Dispatch) unblock(ticket string) {
-	d.tools.Herdr.Unblock("w-" + ticket + ":p1")
-}
-
-// prompts lists what was typed into workers, as "<pane>|<text>".
-func (d *Dispatch) prompts() []string {
-	return d.tools.Herdr.Prompted()
+	if session != "" {
+		d.openWorkerSession(ticket, session)
+	}
 }
 
 // notifications lists the texts of the messages the recorder received.
@@ -1957,20 +1997,150 @@ func newRecorder() *recorder {
 	return &recorder{follower: notify.Follower{Kind: config.KindClaudeCode, Address: "recorder"}}
 }
 
-// recordingClaude is Claude Code, except that a message for the recorder is kept instead of sent.
+// recordingClaude is Claude Code, except that a message for the recorder or for a worker's
+// session is kept instead of sent. A session no test opened is looked up in the session list, so
+// a follower with a real socket is delivered to for real.
 type recordingClaude struct {
 	harness.ClaudeCode
-	rec *recorder
+	rec  *recorder
+	book *sessionBook
 }
 
-func (c recordingClaude) Deliver(ctx context.Context, address, text string) error {
-	if address != c.rec.follower.Address {
-		return c.ClaudeCode.Deliver(ctx, address, text)
+func (c recordingClaude) Deliver(ctx context.Context, session, text string) error {
+	handled, err := c.book.deliver(ctx, session, text)
+	if handled {
+		return err
+	}
+	if session != c.rec.follower.Address {
+		return c.ClaudeCode.Deliver(ctx, session, text)
 	}
 	c.rec.mu.Lock()
 	defer c.rec.mu.Unlock()
 	c.rec.messages = append(c.rec.messages, text)
 	return nil
+}
+
+// sessionBook is the Claude sessions the test's workers run: which are open, what each was
+// delivered, and the failures a test planted.
+type sessionBook struct {
+	// recorder is the address of the follower session that keeps its messages itself.
+	recorder string
+	tools    *tooltest.Tools
+
+	mu       sync.Mutex
+	known    map[string]bool
+	exited   map[string]bool
+	byTicket map[string][]string
+	log      []delivery
+	failures []plantedFailure
+	stalled  bool
+	stalls   atomic.Int32
+}
+
+type delivery struct{ session, text string }
+
+type plantedFailure struct {
+	session string
+	err     error
+}
+
+func (b *sessionBook) open(sessions ...string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.known == nil {
+		b.known, b.exited = map[string]bool{}, map[string]bool{}
+	}
+	for _, id := range sessions {
+		b.known[id] = true
+		delete(b.exited, id)
+	}
+}
+
+func (b *sessionBook) exit(sessions ...string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.exited == nil {
+		b.known, b.exited = map[string]bool{}, map[string]bool{}
+	}
+	for _, id := range sessions {
+		b.exited[id] = true
+	}
+}
+
+func (b *sessionBook) attach(ticket, session string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.byTicket == nil {
+		b.byTicket = map[string][]string{}
+	}
+	if !slices.Contains(b.byTicket[ticket], session) {
+		b.byTicket[ticket] = append(b.byTicket[ticket], session)
+	}
+}
+
+func (b *sessionBook) attached(ticket string) []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return slices.Clone(b.byTicket[ticket])
+}
+
+func (b *sessionBook) failNext(session string, err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.failures = append(b.failures, plantedFailure{session, err})
+}
+
+func (b *sessionBook) stallDeliveries(on bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.stalled = on
+}
+
+// received lists the texts delivered to any of sessions, in order.
+func (b *sessionBook) received(sessions []string) []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var texts []string
+	for _, d := range b.log {
+		if slices.Contains(sessions, d.session) {
+			texts = append(texts, d.text)
+		}
+	}
+	return texts
+}
+
+// deliver handles a message for a worker's session, or one a test planted a failure for. It
+// reports false for a session it has no say over.
+func (b *sessionBook) deliver(ctx context.Context, session, text string) (bool, error) {
+	b.mu.Lock()
+	known := b.known[session]
+	for _, w := range b.tools.Herdr.Started() {
+		known = known || w.Program.Session == session
+	}
+	for i, f := range b.failures {
+		if f.session == "" || f.session == session {
+			b.failures = slices.Delete(b.failures, i, i+1)
+			b.mu.Unlock()
+			return true, f.err
+		}
+	}
+	stalled := b.stalled
+	if !known {
+		b.mu.Unlock()
+		return false, nil
+	}
+	if stalled {
+		b.mu.Unlock()
+		b.stalls.Add(1)
+		<-ctx.Done()
+		return true, ctx.Err()
+	}
+	defer b.mu.Unlock()
+	if b.exited[session] {
+		return true, fmt.Errorf("%w: no Claude Code session %s is open", harness.ErrGone, session)
+	}
+	b.log = append(b.log, delivery{session, text})
+	return true, nil
 }
 
 // texts lists what was delivered without the "dispatch event (reason): " prefix and " Ticket: <url>" suffix that notify.message adds.
@@ -2293,7 +2463,7 @@ const requiredOnly = "ignore_optional_checks = true\n"
 const prURL1 = "https://github.com/kapetan-io/dispatch/pull/7"
 
 func prPrompt(problem string) string {
-	return fmt.Sprintf("w-ENG-1:p1|/dispatch:pr-respond PR %s for ENG-1 has %s. Handle it, and push.", prURL1, problem)
+	return fmt.Sprintf("/dispatch:pr-respond PR %s for ENG-1 has %s. Load the dispatch:pr-respond skill with the Skill tool, then handle it, and push.", prURL1, problem)
 }
 
 // prState is the part of a PR the dispatcher reads.
@@ -2817,8 +2987,40 @@ func markLaunch(t *testing.T, state, tree string, at time.Time) {
 // launchRecord is when the unconfirmed launch on tree began, and whether one is on record.
 func launchRecord(state, tree string) (time.Time, bool) { return kickoffs.Since(state, tree) }
 
-// sessionSocket stands in for a Claude Code session's inbox and collects the
-// lines written to it. The path is short because macOS caps socket paths.
+var (
+	sessionListOnce sync.Once
+	sessionListDir  string
+	sessionListSeq  atomic.Int64
+)
+
+// claudeSessionList is the directory standing in for Claude Code's session list in every
+// test, so none reads the developer's own. Each session id in it is unique to its test.
+func claudeSessionList() string {
+	sessionListOnce.Do(func() {
+		var err error
+		if sessionListDir, err = os.MkdirTemp("", "dispatch-sessions"); err != nil {
+			panic(err)
+		}
+	})
+	return sessionListDir
+}
+
+// listSession writes the session list entry of a running session that listens on socket and
+// returns its id, which is how the session is addressed.
+func listSession(t *testing.T, socket string) string {
+	t.Helper()
+	id := fmt.Sprintf("test-session-%d", sessionListSeq.Add(1))
+	entry, err := json.Marshal(map[string]any{"sessionId": id, "messagingSocketPath": socket, "startedAt": 1})
+	require.NoError(t, err)
+	file := filepath.Join(claudeSessionList(), id+".json")
+	require.NoError(t, os.WriteFile(file, entry, 0o600))
+	t.Cleanup(func() { _ = os.Remove(file) })
+	return id
+}
+
+// sessionSocket stands in for a Claude Code session's inbox, lists the session, and collects
+// the lines written to it. It returns the session's id. The path is short because macOS caps
+// socket paths.
 func sessionSocket(t *testing.T) (string, <-chan string) {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "ds")
@@ -2844,7 +3046,7 @@ func sessionSocket(t *testing.T) (string, <-chan string) {
 			}()
 		}
 	}()
-	return path, lines
+	return listSession(t, path), lines
 }
 
 func next(t *testing.T, lines <-chan string) string {
@@ -2914,6 +3116,7 @@ func (d *Dispatch) SessionOf(ticket, kind, status string) string {
 	id := "w-" + ticket
 	d.tools.Herdr.AddTab(herdr.Tab{ID: id + ":t1", Label: ticket, WorkspaceID: id})
 	d.tools.Herdr.AddPane(herdr.Pane{ID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
-	d.tools.Herdr.AddAgent(herdr.Agent{Kind: kind, Status: status, Session: "worker", PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
+	d.tools.Herdr.AddAgent(herdr.Agent{Kind: kind, Status: status, Session: workerSession(ticket), PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
+	d.openWorkerSession(ticket, workerSession(ticket))
 	return id + ":p1"
 }

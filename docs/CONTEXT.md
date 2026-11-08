@@ -126,7 +126,7 @@ The file of one worker session's commands and turns, appended by the running dis
 _Avoid_: transcript (Claude's own file), history (dispatch's segments)
 
 **Send record**:
-The text of a slash command dispatch is about to type into a worker's pane, kept in the running dispatch process and claimed by the command it matches, so the session log marks that command as sent by dispatch.
+The text of a slash command dispatch is about to send to a worker's session (a nudge) or type into its pane (a kickoff), kept so the session log can tell dispatch's commands from a person's.
 _Avoid_: ledger entry, receipt (both are in history)
 
 **Workspace emoji**:
@@ -198,7 +198,7 @@ Moving a stacked ticket's own commits onto the default branch after its stack pa
 _Avoid_: rebase (the git step), retarget (one step of it)
 
 **Nudge**:
-Text dispatch types into a worker's pane, such as the PR nudge or a `dispatch tell`. dispatch never types into a blocked session, since the text would answer its question; the shipped rules nudge only an idle one. A nudge that starts with /name is also a command, and dispatch keeps a send record of it before typing.
+Text dispatch delivers to a worker's session as a message through its harness, never typed into the pane. A nudge that fails sent nothing. A rule's nudge is wanted again at the next cycle, and a failed `dispatch tell` is reported to its caller. Dispatch sends no nudge to a blocked session, to one whose status herdr reports as unknown, or to a worker whose session id herdr does not report yet.
 _Avoid_: notification (that goes to you), prompt
 
 **Close**:
@@ -222,7 +222,7 @@ One entry in the dispatch owner's GitHub notifications inbox, as GitHub lists it
 _Avoid_: notification (that means dispatch telling a follower)
 
 **Follower**:
-A session of a harness dispatch can deliver to that ran `dispatch watch` on a ticket and gets its notifications as messages through that harness. Followers live in the running dispatch process and end at a restart. The loop's stderr calls a follower's address a watcher socket.
+A session of a harness dispatch can deliver to that ran `dispatch watch` on a ticket and gets its notifications as messages through that harness. The address dispatch delivers to is the follower's session id. Followers live in the running dispatch process and end at a restart. The loop's warnings say "session", not "watcher socket".
 _Avoid_: subscriber (`dispatch subscribe` is gone)
 
 **Loop**:

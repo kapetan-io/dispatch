@@ -52,7 +52,7 @@ var Actions = []ActionSpec{
 		Params: []Param{{"changes", "TicketChanges"}}},
 	{Plugin: "worker", Method: "queueLaunch", Doc: "Queues starting a worker for t, taking a worker slot under max_in_progress unless uncapped is true. harness names a [harness.<name>] table, model a Claude Code model, kickoff the first command typed into the worker, and stackOn starts t's branch at that PR's head.", Receipt: "launch", Subject: Param{"t", "Ticket"},
 		Options: "harness?: string; model?: string; kickoff?: string; uncapped?: boolean; stackOn?: PR", Capped: true},
-	{Plugin: "worker", Method: "queueNudge", Doc: "Queues typing text into t's worker.", Receipt: "nudge", Subject: Param{"t", "Ticket"},
+	{Plugin: "worker", Method: "queueNudge", Doc: "Queues sending text to t's worker as a message to its session.", Receipt: "nudge", Subject: Param{"t", "Ticket"},
 		Params: []Param{{"text", "string"}}},
 	{Plugin: "worker", Method: "queueClose", Doc: "Queues closing the worker's workspace.", Receipt: "close", Subject: Param{"w", "Worker"}},
 	{Plugin: "tree", Method: "queueReturn", Doc: "Queues returning the tree to its repo's pool. Dispatch refuses it while the tree holds work it would destroy.", Receipt: "return", Subject: Param{"tree", "Tree"}},

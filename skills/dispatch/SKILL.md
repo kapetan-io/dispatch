@@ -29,7 +29,7 @@ Run `dispatch watch <ticket>` only when the user asks you to follow it, or says 
 - After a ticket moves, whether you or the user moved it, run `dispatch tick`.
 - After posting review findings on a worker's PR, run `dispatch tick` so the nudge reaches the worker now instead of at the next resync.
 - Before moving a ticket, read its status from Linear (or `dispatch ticket show` for a local ticket), not from memory. A merged PR has already moved its ticket to Done, so ask the user before moving a ticket out of Done.
-- To type into a worker by hand, run `dispatch tell <ticket> "<text>"`. It fails when the worker's Claude session is blocked on a question popup or gone.
+- To send a message to a worker by hand, run `dispatch tell <ticket> "<text>"`. It fails with nothing sent when the worker's Claude session is blocked on a question popup, reports no status, has no session id yet or is not open.
 
 ### Breaking down and starting work
 

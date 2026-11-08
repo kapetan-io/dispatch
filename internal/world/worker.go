@@ -32,12 +32,18 @@ type Worker struct {
 	TabID       string
 	// Session is the id herdr reports for the session running there, or empty.
 	Session string
+	// Kind is the agent kind herdr detected there, such as "claude".
+	Kind string
 	// UnconfirmedSince is when the latest launch on this tree began, in
 	// milliseconds, while its kickoff is unconfirmed, read from the kickoffs record. Zero means the launch returned.
 	UnconfirmedSince int64
 	// noStatus is set while the session reports no status, as Claude does at a startup dialog.
 	noStatus bool
 }
+
+// StatusKnown reports whether herdr can tell what the session is doing. Claude reports
+// no status while it shows a startup dialog.
+func (w Worker) StatusKnown() bool { return !w.noStatus }
 
 // FindWorker looks up the worker on the ticket's first tree. FindWorkers returns one for
 // every tree.
@@ -75,6 +81,7 @@ func onTree(t treehouse.Tree, snap herdr.Snapshot) Worker {
 		w.PaneID = a.PaneID
 		w.TabID = a.TabID
 		w.Session = a.Session
+		w.Kind = a.Kind
 		w.State = stateOf(a.Status)
 		w.noStatus = a.Status == "unknown"
 	}

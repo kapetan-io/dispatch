@@ -20,6 +20,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch"
+	"github.com/kapetan-io/dispatch/internal/environment"
+	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/journal"
@@ -251,9 +253,28 @@ func realClaudeTakesDispatchsCommands(t *testing.T, host string) {
 	}
 	settled(1)
 
+	// Deliver finds the worker in Claude's session list by the id herdr reports, on every host.
+	listed, err := filepath.Glob(filepath.Join(harness.SessionsDir(environment.Process()), "*.json"))
+	require.NoError(t, err)
+	var ids []string
+	for _, file := range listed {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		var entry struct {
+			SessionID string `json:"sessionId"`
+		}
+		if json.Unmarshal(raw, &entry) == nil {
+			ids = append(ids, entry.SessionID)
+		}
+	}
+	assert.Contains(t, ids, worker().Session)
+
 	nudge := func(text string) {
 		loop.Typing(state).Note(launched.Worktree, text)
-		require.NoError(t, cli.Prompt(context.Background(), launched.Pane, text))
+		// Delivered the way production sends a nudge, so a real Claude's hook reports the raw text.
+		require.NoError(t, harness.ClaudeCode{Sessions: harness.SessionsDir(environment.Process())}.Deliver(context.Background(), worker().Session, text))
 	}
 	nudge("/dispatch:principles")
 	settled(2)

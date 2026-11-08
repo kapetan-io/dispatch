@@ -143,7 +143,7 @@ declare module "dispatch" {
   }
   /** A ticket's place on a tree it holds, and the Claude session there, if any. Every ticket has one, with state none when no session runs. */
   export interface Worker {
-    /** none when the ticket has no Claude session in a workspace, working when it is running a turn, when dispatch typed into it and no read has yet seen it working or blocked, or when herdr can't tell its status (a worker with no status whose launch is unconfirmed reads idle instead), idle when it is waiting at its prompt, blocked when it waits on a question popup. A worker the ticket never had also reads none. */
+    /** none when the ticket has no Claude session in a workspace, working when it is running a turn, when dispatch sent it a nudge and no read has yet seen it working or blocked, or when herdr can't tell its status (a worker with no status whose launch is unconfirmed reads idle instead), idle when it is waiting at its prompt, blocked when it waits on a question popup. A worker the ticket never had also reads none. */
     readonly state: "none" | "working" | "idle" | "blocked";
     /** The ticket the worker serves. */
     readonly ticket: Ticket;
@@ -155,7 +155,7 @@ declare module "dispatch" {
     readonly seenAt: number;
     /** The same time as seenAt. Read it as when the worker went none when its state is none. */
     readonly goneSince: number;
-    /** When the worker became idle, in milliseconds since the epoch, undefined unless it is idle. Dispatch typing into an idle worker makes it working, so the value then is undefined. */
+    /** When the worker became idle, in milliseconds since the epoch, undefined unless it is idle. Dispatch sending a nudge to an idle worker makes it working, so the value then is undefined. */
     readonly idleSince: number | undefined;
     /** When the worker became blocked on a popup, in milliseconds since the epoch, undefined unless it is blocked. */
     readonly blockedSince: number | undefined;
@@ -490,7 +490,7 @@ declare module "dispatch" {
       in(tree: Tree): Worker;
       /** Queues starting a worker for t, taking a worker slot under max_in_progress unless uncapped is true. harness names a [harness.<name>] table, model a Claude Code model, kickoff the first command typed into the worker, and stackOn starts t's branch at that PR's head. */
       queueLaunch(t: Ticket, o: { once: Once; harness?: string; model?: string; kickoff?: string; uncapped?: boolean; stackOn?: PR }): Action;
-      /** Queues typing text into t's worker. */
+      /** Queues sending text to t's worker as a message to its session. */
       queueNudge(t: Ticket, text: string, o: { once: Once }): Action;
       /** Queues closing the worker's workspace. */
       queueClose(w: Worker, o: { once: Once }): Action;

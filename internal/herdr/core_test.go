@@ -271,57 +271,6 @@ func TestCoreReadNamesHcWhenItIsMissing(t *testing.T) {
 	require.ErrorContains(t, err, "hc-that-is-not-installed")
 }
 
-func TestCoreTranslatesHcRefusalsToThePortsCodes(t *testing.T) {
-	for _, test := range []struct {
-		kind, code string
-	}{
-		{"not_found", "agent_not_found"},
-		{"blocked", "agent_blocked"},
-		{"status_mismatch", "status_mismatch"},
-		{"finished", "finished"},
-	} {
-		t.Run(test.kind, func(t *testing.T) {
-			core, _ := coreStandIn(t, map[string][]string{
-				"terminal.get":  {ok(term(worker("t1", "spA", "tbA", "idle")))},
-				"terminal.send": {fails(test.kind, "refused")},
-			})
-
-			err := core.Prompt(context.Background(), "t1", "go on")
-
-			var refusal *herdr.Refusal
-			require.ErrorAs(t, err, &refusal)
-			assert.Equal(t, test.code, refusal.Code)
-			assert.Equal(t, "hc:terminal.send", refusal.Command)
-			assert.True(t, herdr.NothingTyped(err))
-		})
-	}
-}
-
-func TestCorePromptTypesOnlyIntoAWorkerItCanDescribe(t *testing.T) {
-	for _, test := range []struct {
-		name, status string
-		wantIf       any
-	}{
-		{"Idle", "idle", "idle"},
-		{"Done", "done", nil},
-		{"Working", "working", nil},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			core, calls := coreStandIn(t, map[string][]string{
-				"terminal.get":  {ok(term(worker("t1", "spA", "tbA", test.status)))},
-				"terminal.send": {ok(`{"turn":1,"started":true}`)},
-			})
-
-			require.NoError(t, core.Prompt(context.Background(), "t1", "go on"))
-
-			sends := calls.Params(t, "terminal.send")
-			require.Len(t, sends, 1)
-			assert.Equal(t, map[string]any{"terminal": "t1", "text": "go on"}, withoutIf(sends[0]))
-			assert.Equal(t, test.wantIf, sends[0]["if"])
-		})
-	}
-}
-
 func withoutIf(params map[string]any) map[string]any {
 	out := map[string]any{}
 	for k, v := range params {
@@ -330,39 +279,6 @@ func withoutIf(params map[string]any) map[string]any {
 		}
 	}
 	return out
-}
-
-func TestCorePromptRefusesWithNothingTypedWhenItCannotTell(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		get    string
-		wantIs error
-		code   string
-	}{
-		{"NoStatus", ok(term(worker("t1", "spA", "tbA", ""))), herdr.ErrStatusUnknown, ""},
-		{"ErrorStatus", ok(term(worker("t1", "spA", "tbA", "error"))), herdr.ErrStatusUnknown, ""},
-		{"Blocked", ok(term(worker("t1", "spA", "tbA", "blocked"))), herdr.ErrAgentBlocked, "agent_blocked"},
-		{"NotAWorker", ok(term(spec{address: "t1", program: "/Users/me/.local/bin/claude", status: "idle"})), nil, "agent_not_found"},
-		{"NoSuchTerminal", fails("not_found", `no terminal "t1"`), nil, "agent_not_found"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			core, calls := coreStandIn(t, map[string][]string{"terminal.get": {test.get}})
-
-			err := core.Prompt(context.Background(), "t1", "go on")
-
-			require.Error(t, err)
-			if test.wantIs != nil {
-				require.ErrorIs(t, err, test.wantIs)
-			}
-			var refusal *herdr.Refusal
-			if test.code != "" {
-				require.ErrorAs(t, err, &refusal)
-				assert.Equal(t, test.code, refusal.Code)
-			}
-			assert.True(t, herdr.NothingTyped(err))
-			assert.Empty(t, calls.Params(t, "terminal.send"))
-		})
-	}
 }
 
 func TestCoreAgentAtFindsOnlyAWorkerRunningAListedProgram(t *testing.T) {

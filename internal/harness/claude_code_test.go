@@ -2,12 +2,18 @@ package harness_test
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,14 +23,26 @@ import (
 	"github.com/kapetan-io/dispatch/internal/harnesstest"
 )
 
-// openInbox listens on a socket the way a Claude Code session's inbox does and records each
-// message frame it receives.
-func openInbox(t *testing.T) harnesstest.Session {
+var sessionSeq atomic.Int64
+
+// listEntry writes the session list entry Claude Code keeps for a running session.
+func listEntry(t *testing.T, sessions, id, socket string, startedAt int64) {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{"sessionId": id, "messagingSocketPath": socket, "startedAt": startedAt})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(sessions, fmt.Sprintf("%d.json", sessionSeq.Add(1))), body, 0o600))
+}
+
+// openInbox listens on a socket the way a Claude Code session's inbox does, lists the
+// session in sessions, and records each message frame it receives.
+func openInbox(t *testing.T, sessions string) harnesstest.Session {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "ds")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	path := filepath.Join(dir, "1.sock")
+	id := fmt.Sprintf("session-%d", sessionSeq.Add(1))
+	listEntry(t, sessions, id, path, 1)
 	ln, err := net.Listen("unix", path)
 	require.NoError(t, err)
 	// A crashed session leaves its socket file behind.
@@ -57,8 +75,8 @@ func openInbox(t *testing.T) harnesstest.Session {
 		}
 	}()
 	return harnesstest.Session{
-		Env:     environment.Environment{"CLAUDE_CODE_MESSAGING_SOCKET=" + path},
-		Address: path,
+		Env:     environment.Environment{"CLAUDE_CODE_SESSION_ID=" + id},
+		Address: id,
 		Delivered: func() []string {
 			mu.Lock()
 			defer mu.Unlock()
@@ -71,9 +89,10 @@ func openInbox(t *testing.T) harnesstest.Session {
 func TestClaudeCodeKeepsTheHarnessContract(t *testing.T) {
 	for _, scenario := range harnesstest.Scenarios {
 		t.Run(scenario.Name, func(t *testing.T) {
+			sessions := t.TempDir()
 			scenario.Run(t, harnesstest.Subject{
-				Harness:     harness.ClaudeCode{},
-				OpenSession: openInbox,
+				Harness:     harness.ClaudeCode{Sessions: sessions},
+				OpenSession: func(t *testing.T) harnesstest.Session { return openInbox(t, sessions) },
 				StopInput: func(session, dir string, tasks *int) []byte {
 					in := map[string]any{"hook_event_name": "Stop", "session_id": session, "cwd": dir}
 					if tasks != nil {
@@ -136,12 +155,99 @@ func TestClaudeCodeFollowerOutsideASessionSaysWhereToRunWatch(t *testing.T) {
 	_, err := harness.ClaudeCode{}.Follower(environment.Environment{})
 
 	assert.ErrorIs(t, err, harness.ErrNotThisHarness)
-	assert.ErrorContains(t, err, "CLAUDE_CODE_MESSAGING_SOCKET is not set, so this is not a Claude Code session; run watch from one")
+	assert.ErrorContains(t, err, "CLAUDE_CODE_SESSION_ID is not set, so this is not a Claude Code session; run watch from one")
 }
 
-func TestClaudeCodeFollowerRefusesARelativeSocket(t *testing.T) {
-	_, err := harness.ClaudeCode{}.Follower(environment.Environment{"CLAUDE_CODE_MESSAGING_SOCKET=1.sock"})
+func TestClaudeCodeFollowerIsTheSessionID(t *testing.T) {
+	id, err := harness.ClaudeCode{}.Follower(environment.Environment{"CLAUDE_CODE_SESSION_ID=3f2a"})
 
-	assert.ErrorContains(t, err, "not absolute")
-	assert.NotErrorIs(t, err, harness.ErrNotThisHarness)
+	require.NoError(t, err)
+	assert.Equal(t, "3f2a", id)
+}
+
+func TestClaudeCodeDeliverReachesTheNewestEntryOfASession(t *testing.T) {
+	sessions := t.TempDir()
+	old := openInbox(t, sessions)
+	listEntry(t, sessions, old.Address, "/tmp/dead-socket-that-does-not-exist.sock", 0)
+
+	require.NoError(t, harness.ClaudeCode{Sessions: sessions}.Deliver(context.Background(), old.Address, "hello"))
+
+	require.Eventually(t, func() bool { return slices.Contains(old.Delivered(), "hello") }, 5*time.Second, 10*time.Millisecond)
+}
+
+func TestClaudeCodeDeliverToAnIDWithNoEntryIsGone(t *testing.T) {
+	err := harness.ClaudeCode{Sessions: t.TempDir()}.Deliver(context.Background(), "missing", "hello")
+
+	assert.ErrorIs(t, err, harness.ErrGone)
+}
+
+func TestClaudeCodeDeliverToARefusedSocketIsGone(t *testing.T) {
+	sessions := t.TempDir()
+	session := openInbox(t, sessions)
+	session.Exit()
+
+	err := harness.ClaudeCode{Sessions: sessions}.Deliver(context.Background(), session.Address, "hello")
+
+	assert.ErrorIs(t, err, harness.ErrGone)
+}
+
+func TestClaudeCodeDeliverWithoutASessionListIsNotGone(t *testing.T) {
+	err := harness.ClaudeCode{}.Deliver(context.Background(), "s1", "hello")
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, harness.ErrGone)
+}
+
+func TestClaudeCodeDeliverThatBreaksMidWriteIsNotGone(t *testing.T) {
+	sessions := t.TempDir()
+	dir, err := os.MkdirTemp("/tmp", "ds")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	path := filepath.Join(dir, "1.sock")
+	ln, err := net.Listen("unix", path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+	listEntry(t, sessions, "s1", path, 1)
+
+	err = harness.ClaudeCode{Sessions: sessions}.Deliver(context.Background(), "s1", strings.Repeat("x", 4<<20))
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, harness.ErrGone)
+}
+
+func TestClaudeCodeDeliverWithOnlyAnUnreadableListEntryIsNotGone(t *testing.T) {
+	sessions := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(sessions, "1.json"), []byte(`{"sessionId":"s1","messagingSo`), 0o600))
+
+	err := harness.ClaudeCode{Sessions: sessions}.Deliver(context.Background(), "s1", "hello")
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, harness.ErrGone)
+}
+
+func TestClaudeCodeDeliverWithAMissingSessionListDirectoryIsNotGone(t *testing.T) {
+	err := harness.ClaudeCode{Sessions: filepath.Join(t.TempDir(), "nope")}.Deliver(context.Background(), "s1", "hello")
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, harness.ErrGone)
+}
+
+func TestClaudeCodeDeliverToADeadSocketWithAnUnreadableEntryBesideItIsNotGone(t *testing.T) {
+	sessions := t.TempDir()
+	listEntry(t, sessions, "s1", "/tmp/dead-socket-that-does-not-exist.sock", 1)
+	require.NoError(t, os.WriteFile(filepath.Join(sessions, "9.json"), []byte(`{"sessionId":"s1","messagingSo`), 0o600))
+
+	err := harness.ClaudeCode{Sessions: sessions}.Deliver(context.Background(), "s1", "hello")
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, harness.ErrGone)
 }

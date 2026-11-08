@@ -914,102 +914,6 @@ func TestRexTreatsASessionDestroyedUnderItAsGone(t *testing.T) {
 	require.NoError(t, r.rex.RenameTab(context.Background(), snap.Tabs[0].ID, "ENG-1 new title"))
 }
 
-func TestRexPromptPressesEnterWhenTheWorkerCanTakeIt(t *testing.T) {
-	for _, state := range []string{"idle", "done", "working"} {
-		t.Run(state, func(t *testing.T) {
-			r := newStandInRig(t)
-			started, err := r.rex.StartWorker(context.Background(), r.worker("repo", shortTree(t)))
-			require.NoError(t, err)
-			r.setStatus(t, started.Pane, idle(state))
-
-			require.NoError(t, r.rex.Prompt(context.Background(), started.Pane, "keep going"))
-
-			assert.Equal(t, []string{"keep going", "\r"}, r.writes(t, started.Pane))
-		})
-	}
-}
-
-func TestRexPromptClearsTheBoxWhenTheStatusMovesWhileTyping(t *testing.T) {
-	for _, after := range []string{"blocked", "error"} {
-		t.Run(after, func(t *testing.T) {
-			r := newStandInRig(t)
-			started, err := r.rex.StartWorker(context.Background(), r.worker("repo", shortTree(t)))
-			require.NoError(t, err)
-			r.setStatus(t, started.Pane, idle("idle"))
-			session, block, _ := strings.Cut(started.Pane, "/")
-			r.edit(t, func(s *standInRex) { s.find(session, block).AfterWrite = after })
-
-			err = r.rex.Prompt(context.Background(), started.Pane, "keep going")
-
-			var refusal *herdr.Refusal
-			require.ErrorAs(t, err, &refusal)
-			assert.Equal(t, "status_mismatch", refusal.Code)
-			assert.True(t, herdr.NothingTyped(err))
-			// Ctrl-U twice for the one line, once more.
-			assert.Equal(t, []string{"keep going", "\x15\x15\x15"}, r.writes(t, started.Pane))
-		})
-	}
-}
-
-func TestRexPromptClearsTwicePerLineOfAMultiLineNudge(t *testing.T) {
-	r := newStandInRig(t)
-	started, err := r.rex.StartWorker(context.Background(), r.worker("repo", shortTree(t)))
-	require.NoError(t, err)
-	r.setStatus(t, started.Pane, idle("idle"))
-	session, block, _ := strings.Cut(started.Pane, "/")
-	r.edit(t, func(s *standInRex) { s.find(session, block).AfterWrite = "blocked" })
-
-	err = r.rex.Prompt(context.Background(), started.Pane, "one\ntwo")
-
-	require.Error(t, err)
-	assert.Equal(t, []string{"one\ntwo", strings.Repeat("\x15", 5)}, r.writes(t, started.Pane))
-}
-
-func TestRexPromptTypesNothingIntoAWorkerThatCannotTakeIt(t *testing.T) {
-	for _, test := range []struct {
-		name    string
-		records []standInRecord
-		wantErr error
-		code    string
-	}{
-		{"NoStatusYet", nil, herdr.ErrStatusUnknown, ""},
-		{"AQuestionState", []standInRecord{idle("question")}, herdr.ErrStatusUnknown, ""},
-		{"ErrorState", []standInRecord{idle("error")}, herdr.ErrStatusUnknown, ""},
-		{"Blocked", []standInRecord{idle("blocked")}, herdr.ErrAgentBlocked, "agent_blocked"},
-		{"ChildBlockedUnderAWorkingRoot", []standInRecord{idle("working"), {ID: "child", State: "blocked"}}, herdr.ErrAgentBlocked, "agent_blocked"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			r := newStandInRig(t)
-			started, err := r.rex.StartWorker(context.Background(), r.worker("repo", shortTree(t)))
-			require.NoError(t, err)
-			r.setStatus(t, started.Pane, test.records...)
-
-			err = r.rex.Prompt(context.Background(), started.Pane, "keep going")
-
-			require.ErrorIs(t, err, test.wantErr)
-			assert.True(t, herdr.NothingTyped(err))
-			assert.Empty(t, r.writes(t, started.Pane))
-		})
-	}
-}
-
-func TestRexPromptRefusesAPaneThatHoldsNoWorker(t *testing.T) {
-	r := newStandInRig(t)
-	tree := shortTree(t)
-	var pane string
-	r.edit(t, func(s *standInRex) {
-		session, block := s.block("repo", "ENG-1 title", standInBlock{Label: workerLabelOf("01234567", tree), Argv0: "zsh"})
-		pane = session + "/" + block
-	})
-
-	err := r.rex.Prompt(context.Background(), pane, "keep going")
-
-	var refusal *herdr.Refusal
-	require.ErrorAs(t, err, &refusal)
-	assert.Equal(t, "agent_not_found", refusal.Code)
-	assert.Empty(t, r.writes(t, pane))
-}
-
 func TestRexRenamesKeepTheEmojiAndTheTitleApart(t *testing.T) {
 	r := newStandInRig(t)
 	tree := shortTree(t)
@@ -1078,4 +982,35 @@ func TestRexReportsAFailureWithoutAStatusTailAsWhatRexPrinted(t *testing.T) {
 	require.ErrorContains(t, err, "Error: socket closed")
 	var refusal *herdr.Refusal
 	assert.False(t, errors.As(err, &refusal))
+}
+
+func TestRexKickoffPressesEnterOnTheTypedKickoffOfAnIdleWorker(t *testing.T) {
+	r := newStandInRig(t)
+	started, err := r.rex.StartWorker(context.Background(), r.worker("repo", shortTree(t)))
+	require.NoError(t, err)
+	r.setStatus(t, started.Pane, idle("idle"))
+
+	_ = r.rex.Kickoff(context.Background(), started.Pane, "/dispatch:build ENG-1", r.program.Startup)
+
+	writes := r.writes(t, started.Pane)
+	require.NotEmpty(t, writes)
+	assert.Equal(t, "/dispatch:build ENG-1", writes[0])
+	assert.Contains(t, writes, "\r")
+}
+
+func TestRexKickoffClearsTheBoxAndPressesNoEnterWhenTheStatusMovesWhileTyping(t *testing.T) {
+	r := newStandInRig(t)
+	started, err := r.rex.StartWorker(context.Background(), r.worker("repo", shortTree(t)))
+	require.NoError(t, err)
+	r.setStatus(t, started.Pane, idle("idle"))
+	session, block, _ := strings.Cut(started.Pane, "/")
+	r.edit(t, func(s *standInRex) { s.find(session, block).AfterWrite = "blocked" })
+
+	_ = r.rex.Kickoff(context.Background(), started.Pane, "/dispatch:build ENG-1", r.program.Startup)
+
+	writes := r.writes(t, started.Pane)
+	require.NotEmpty(t, writes)
+	assert.Equal(t, "/dispatch:build ENG-1", writes[0])
+	assert.Contains(t, writes, "\x15\x15\x15")
+	assert.NotContains(t, writes, "\r")
 }

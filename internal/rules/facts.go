@@ -108,13 +108,13 @@ type Ticket struct {
 
 // Worker is a ticket's place on a tree it holds, and the Claude session there, if any.
 type Worker struct {
-	State        Fact[string]  `js:"state" ts:"\"none\" | \"working\" | \"idle\" | \"blocked\"" doc:"none when the ticket has no Claude session in a workspace, working when it is running a turn, when dispatch typed into it and no read has yet seen it working or blocked, or when herdr can't tell its status (a worker with no status whose launch is unconfirmed reads idle instead), idle when it is waiting at its prompt, blocked when it waits on a question popup. A worker the ticket never had also reads none."`
+	State        Fact[string]  `js:"state" ts:"\"none\" | \"working\" | \"idle\" | \"blocked\"" doc:"none when the ticket has no Claude session in a workspace, working when it is running a turn, when dispatch sent it a nudge and no read has yet seen it working or blocked, or when herdr can't tell its status (a worker with no status whose launch is unconfirmed reads idle instead), idle when it is waiting at its prompt, blocked when it waits on a question popup. A worker the ticket never had also reads none."`
 	Ticket       Fact[Ref]     `js:"ticket" ref:"ticket" doc:"The ticket the worker serves."`
 	Tree         Fact[*string] `js:"tree" doc:"The path of the treehouse tree the worker runs in, undefined when it has none."`
 	Workspace    Fact[*string] `js:"workspace" doc:"The id of the herdr workspace the worker runs in, undefined when it has none."`
 	SeenAt       Fact[int64]   `js:"seenAt" doc:"When the worker last changed between present (any state but none) and absent, in milliseconds since the epoch. It survives a change from working to idle and a restart."`
 	GoneSince    Fact[int64]   `js:"goneSince" doc:"The same time as seenAt. Read it as when the worker went none when its state is none."`
-	IdleSince    Fact[*int64]  `js:"idleSince" doc:"When the worker became idle, in milliseconds since the epoch, undefined unless it is idle. Dispatch typing into an idle worker makes it working, so the value then is undefined."`
+	IdleSince    Fact[*int64]  `js:"idleSince" doc:"When the worker became idle, in milliseconds since the epoch, undefined unless it is idle. Dispatch sending a nudge to an idle worker makes it working, so the value then is undefined."`
 	BlockedSince Fact[*int64]  `js:"blockedSince" doc:"When the worker became blocked on a popup, in milliseconds since the epoch, undefined unless it is blocked."`
 	// UnconfirmedSince is when the latest launch on this tree began, while its
 	// kickoff is still unconfirmed. A launch killed before the kickoff leaves it set.

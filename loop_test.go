@@ -442,32 +442,38 @@ func TestALaunchThatLandsAfterItsDeadlineGetsNoSecondWorker(t *testing.T) {
 	assert.Len(t, d.ReceiptsOf("launch", "ENG-1"), 1)
 }
 
-func TestANudgeThatTimesOutCountsAsToldAndIsNeverRepeated(t *testing.T) {
+func TestANudgeThatTimesOutFailsWithNothingSentAndTheRuleSendsItAgain(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
 	d.Workers.Running("ENG-1", "idle")
 	require.NoError(t, d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tick").Err)
-	d.Workers.StallPrompts()
+	d.Workers.StallDeliveries()
 	d.Advance(time.Minute)
 	pr := cleanPR("a1")
 	pr.reviews = []activity{{"COMMENTED", time2, "alice", "", ""}}
 	d.GitHub.PullRequest("ENG-1", pr)
 	advanced := later(func() bool { d.Advance(time.Hour); return true })
-	require.Eventually(t, func() bool { return len(d.tools.Calls("herdr", "prompt")) == 1 }, 20*time.Second, time.Millisecond)
+	require.Eventually(t, func() bool { return d.Workers.StalledDeliveries() == 1 }, 20*time.Second, time.Millisecond)
 	d.Expire("nudge ENG-1")
 	advanced()
+	d.Workers.UnstallDeliveries()
 	d.Tick()
-	for range 2 {
-		d.Advance(time.Hour)
-		d.Tick()
-	}
 
-	nudges := d.ReceiptsOf("nudge", "ENG-1")
-	require.Len(t, nudges, 1)
-	assert.Equal(t, "done", nudges[0].State)
-	assert.Equal(t, "timeout", nudges[0].Detail)
+	assert.Equal(t, []string{activityPrompt("a review by alice")}, d.Workers.Received("ENG-1"))
+	var failed, done int
+	for _, nudge := range d.attemptsOf("ENG-1", "nudge") {
+		switch nudge.State {
+		case "failed":
+			assert.Contains(t, nudge.Detail, "nothing sent")
+			failed++
+		case "done":
+			done++
+		}
+	}
+	assert.Equal(t, 1, failed)
+	assert.Equal(t, 1, done)
 }
 
 func TestStoppingTheLoopAnswersATickThatIsWaiting(t *testing.T) {
@@ -837,14 +843,9 @@ func TestANudgeToldBeforeARestartIsNotToldAgain(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
 	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
-	d.Workers.StallPrompts()
-	ticked := later(func() Result { return d.RunWith(dispatch.Options{ActionTimeout: 100 * time.Millisecond}, "tick") })
-	require.Eventually(t, func() bool { return len(d.tools.Calls("herdr", "prompt")) == 1 }, 20*time.Second, time.Millisecond)
-	d.Expire("nudge ENG-1")
-	require.NoError(t, ticked().Err)
-	require.Len(t, d.ReceiptsOf("nudge", "ENG-1"), 1)
+	d.Tick()
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
 
-	// Dispatch cannot know the text never arrived, so a restart sends nothing more.
 	d.Restart()
 	for range 2 {
 		d.Advance(time.Hour)
@@ -852,6 +853,7 @@ func TestANudgeToldBeforeARestartIsNotToldAgain(t *testing.T) {
 	}
 
 	assert.Len(t, d.ReceiptsOf("nudge", "ENG-1"), 1)
+	assert.Len(t, d.Workers.Received("ENG-1"), 1)
 }
 
 func TestAMissedResyncReadsLinearAgainBeforeActing(t *testing.T) {
@@ -861,7 +863,7 @@ func TestAMissedResyncReadsLinearAgainBeforeActing(t *testing.T) {
 	d.Workers.Running("ENG-1", "idle")
 	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	d.Tick()
-	require.Len(t, d.Workers.Prompts(), 1)
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
 	callsBefore := d.Linear.Calls()
 
 	// While the machine slept someone moved the ticket to Needs Human, and the worker went idle again.
@@ -870,7 +872,7 @@ func TestAMissedResyncReadsLinearAgainBeforeActing(t *testing.T) {
 	d.Advance(6 * time.Hour)
 
 	assert.Greater(t, d.Linear.Calls(), callsBefore)
-	assert.Len(t, d.Workers.Prompts(), 1)
+	assert.Len(t, d.Workers.Received("ENG-1"), 1)
 	assert.Empty(t, d.Workers.Launched())
 }
 
@@ -923,7 +925,7 @@ func TestAnEventAfterASleepReadsEverySourceBeforeActing(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "idle")
 	d.Tick()
-	before, prompted := d.Linear.Calls(), len(d.Workers.Prompts())
+	before, prompted := d.Linear.Calls(), len(d.Workers.Received("ENG-1"))
 	d.Clock.Skew(6 * time.Hour)
 	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
 
@@ -931,7 +933,7 @@ func TestAnEventAfterASleepReadsEverySourceBeforeActing(t *testing.T) {
 	require.NoError(t, d.Run("tell", "ENG-1", "hello").Err)
 
 	assert.Greater(t, d.Linear.Calls(), before)
-	assert.Equal(t, []string{"w-ENG-1:p1|hello"}, d.Workers.Prompts()[prompted:])
+	assert.Equal(t, []string{"hello"}, d.Workers.Received("ENG-1")[prompted:])
 }
 
 // Pool returns decide whether a full pool is retried, so a restart must not forget one, or the next

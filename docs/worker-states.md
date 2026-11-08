@@ -15,7 +15,7 @@ Each worker's workspace is labeled `<emoji> <ticket>`, and the emoji says who th
 | 🔴 | You | Needs Human, or the worker is blocked on a question popup |
 | ⏸️ | Nobody | Paused (Backlog or Todo) with the tree kept and a workspace still open |
 
-💤 changes the label and tells the sessions following the ticket once each time it appears (the `notify-idle` rule, In Progress tickets only, `design` tickets send nothing). It types nothing into the worker and sends no reminder, and it goes back to 🟢 within seconds of you typing into the window. That depends on herdr already reporting the worker as working when the hook fires. Otherwise 💤 stays until the next Notification or resync.
+💤 changes the label and tells the sessions following the ticket once each time it appears (the `notify-idle` rule, In Progress tickets only, `design` tickets send nothing). It sends nothing to the worker and no reminder, and it goes back to 🟢 within seconds of you typing into the window. That depends on herdr already reporting the worker as working when the hook fires. Otherwise 💤 stays until the next Notification or resync.
 
 ## How the label is chosen
 
@@ -24,7 +24,7 @@ The first line that fits wins.
 1. The ticket is Needs Human: 🔴.
 2. The ticket is paused and its worker's Claude session is gone: ⏸️.
 3. The worker is blocked on a question popup: 🔴.
-4. The worker is working, or dispatch typed into it and no read has yet seen it working or blocked: 🟢.
+4. The worker is working, or dispatch sent it a nudge and no read has yet seen it working or blocked: 🟢.
 5. The PR is ready and the worker is idle or gone: ⏳ if the repo opens drafts, the PR has left draft and its head isn't approved, 🔀 if the same PR is approved, otherwise 👀. "Approved" is what `auto_merge` counts, so a repo's `approval_checks` that haven't passed keep the PR at ⏳.
 6. The worker's Claude session is gone, or its launch isn't confirmed: 🟡 if the PR's checks are running, otherwise 🟢.
 7. The worker is idle and its last Stop (the Claude Code hook that records when a turn ended) lists a background task still running, and that Stop is under 60 minutes old: 🟢.
@@ -34,11 +34,11 @@ The first line that fits wins.
 
 A PR that dispatch could not read leaves a 🟢, 👀, ⏳, 🔀, 🟡 or 💤 label as it is until the next read.
 
-The Stop record comes from the plugin's Stop hook (`dispatch record-stop`). The plugin's Notification and UserPromptSubmit hooks run `dispatch wake`, which asks the running loop to read herdr and the pools again and run a cycle. That is not a resync, so nothing that failed is retried and no PR is read again unless a worker just went idle. Claude Code raises an `idle_prompt` Notification about 60 seconds after a turn ends with nobody typing, so 💤 shows within about a minute of the worker going idle. Without a running loop the label moves at the next resync. A worker dispatch just typed into shows 🟢 until a read sees it working or blocked, or the next resync. A read that still sees it idle keeps the 🟢, so a second nudge cannot type before Claude takes the first.
+The Stop record comes from the plugin's Stop hook (`dispatch record-stop`). The plugin's Notification and UserPromptSubmit hooks run `dispatch wake`, which asks the running loop to read herdr and the pools again and run a cycle. That is not a resync, so nothing that failed is retried and no PR is read again unless a worker just went idle. Claude Code raises an `idle_prompt` Notification about 60 seconds after a turn ends with nobody typing, so 💤 shows within about a minute of the worker going idle. Without a running loop the label moves at the next resync. A worker dispatch just nudged shows 🟢 until a read sees it working or blocked, or the next resync. A read that still sees it idle keeps the 🟢, so a second nudge cannot go out before Claude takes the first.
 
 Under Rex the loop also listens to Rex's event stream. A worker's status change, its Claude exiting and its tab closing each make the loop read only that worker's pane, so 💤 and the idle and blocked notices show within moments, with no Notification and no full read. A stream that ends prints `dispatch: the worker stream ended: <reason>; workers update at each resync until it reopens` to stderr, after the time like the other stderr lines. The loop reopens it at the next resync, including one `dispatch tick` forces. The herdr TUI and the Herdr app have no stream and behave as before.
 
-A worker can report no status, as Claude does under the Herdr app host (`host = "app"`) while it shows a startup dialog. It reads working, and dispatch types nothing into it. A nudge to it fails with "status unknown" and the send record is withdrawn. If the launch that started it died before its kickoff was confirmed, the worker reads idle instead, so `close-unconfirmed-worker` closes it after its grace period.
+A worker can report no status, as Claude does while it shows a startup dialog. It reads working, and on every host dispatch sends nothing to it. A nudge to it fails with "status unknown, nothing sent" and the send record is withdrawn. If the launch that started it died before its kickoff was confirmed, the worker reads idle instead, so `close-unconfirmed-worker` closes it after its grace period.
 
 ## Every combination
 
@@ -51,7 +51,7 @@ A worker can report no status, as Claude does under the Herdr app host (`host = 
 | Working | any | 🟢 | Nothing |
 | Idle | none, or without the task list | 🟢 | Nothing |
 | Idle | a task still running, under 60 minutes old | 🟢 | Nothing. After 60 minutes it counts as stopped, so the next row applies |
-| Idle | stopped, nothing running | 💤 | Tells the sessions following the ticket once, unless it is a `design` ticket. No nudge, nothing typed into the worker |
+| Idle | stopped, nothing running | 💤 | Tells the sessions following the ticket once, unless it is a `design` ticket. No nudge, nothing sent to the worker |
 | Idle, unconfirmed | any | 🟢 | After 5 minutes, closes the workspace and relaunches the worker. The closes count toward `launch_failure_limit` |
 | Blocked on a popup | any | 🔴 | Notifies on the first cycle and every `blocked_renotify_minutes`. Never nudges, never moves the ticket |
 | Gone | n/a | 🟢 | Relaunches the worker. A launch a rule asked to stack on another ticket's PR starts a new branch at that PR's head and records it, and its receipt says `stacked on <ticket> at <short head> (<branch>)`. A relaunch never changes the record |
@@ -100,6 +100,6 @@ A `design` or `design-review` worker is never nudged, and a `design` ticket send
 
 ## What dispatch no longer does
 
-Dispatch used to type a stall nudge into an idle In Progress worker, and to notify you on every 6th stall nudge and once when a nudge went unanswered for an hour. Both are gone. The stall nudge could land on top of a question the worker had just asked and read as the answer. Without it, nothing prompts a worker that stopped In Progress without moving its ticket, and 💤 is how you see it. Going 💤 sends one message to the sessions following the ticket, which only tells them and never types into the worker.
+Dispatch used to type a stall nudge into an idle In Progress worker, and to notify you on every 6th stall nudge and once when a nudge went unanswered for an hour. Both are gone. The stall nudge could land on top of a question the worker had just asked and read as the answer. Without it, nothing prompts a worker that stopped In Progress without moving its ticket, and 💤 is how you see it. Going 💤 sends one message to the sessions following the ticket, which only tells them and never sends the worker anything.
 
 A build worker asks you its questions in chat, not through the question popup. A popup it still opens is handled as before: herdr reports the worker blocked, the sessions following the ticket get the notification, and the label is 🔴.

@@ -179,11 +179,6 @@ func (r *Rex) command(w Worker, exe string, argv []string) []string {
 	return append(command, argv...)
 }
 
-func (r *Rex) Prompt(ctx context.Context, pane, text string) error {
-	_, err := r.submit(ctx, pane, text, "")
-	return err
-}
-
 // submit types text into the worker's box and presses Enter only when the status read before
 // and after typing says idle, done or working. A worker showing a question is refused before
 // anything is typed, and a status that moved clears the box with Ctrl-U and returns

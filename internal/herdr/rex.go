@@ -92,7 +92,7 @@ const (
 	terminalFlavor = "com.superlogical.terminal.shell"
 	// instanceLen is how much of the server's instance id a worker label keeps.
 	instanceLen = 8
-	// clearWait bounds the Ctrl-U clearing of a typed nudge when the call's own context has ended.
+	// clearWait bounds the Ctrl-U clearing of a typed kickoff when the call's own context has ended.
 	clearWait = 3 * time.Second
 )
 
@@ -237,7 +237,7 @@ type reported struct {
 // programStatus reads the status the block's program reported. The root record gives the
 // status, but any blocked record, root or child, makes the worker blocked, since the protocol
 // lets a child be blocked under a working root. Error, an unknown state or no record reads as
-// unknown, because idle would let a nudge type.
+// unknown, because idle would let the kickoff type.
 func (r *Rex) programStatus(ctx context.Context, session, block string) (reported, error) {
 	var out struct {
 		Records []struct {

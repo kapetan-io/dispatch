@@ -93,6 +93,13 @@ func (s *CoreSession) Run(t testing.TB, args ...string) string {
 	return string(out)
 }
 
+// Type types text into the terminal at pane and presses Enter, as a person does. Production
+// never types a nudge, so only a test that has to put a worker in a state does.
+func (s *CoreSession) Type(t testing.TB, pane, text string) {
+	t.Helper()
+	s.Run(t, "send", pane, text, "--force")
+}
+
 // Restart stops the scratch core and starts it again, which ends every terminal in it with
 // reason server_stop. It never touches any other core.
 func (s *CoreSession) Restart(t testing.TB) {

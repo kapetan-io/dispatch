@@ -147,7 +147,7 @@ func TestReplayMatchesARunThatReadLocalTickets(t *testing.T) {
 func TestExplainAndWatchAcceptALocalTicketID(t *testing.T) {
 	t.Parallel()
 	socket, _ := sessionSocket(t)
-	d := newDispatch(t, dispatchOptions{Config: localOn, Env: map[string]string{"CLAUDE_CODE_MESSAGING_SOCKET": socket}})
+	d := newDispatch(t, dispatchOptions{Config: localOn, Env: map[string]string{"CLAUDE_CODE_SESSION_ID": socket}})
 	d.StartBeforeTheEvents()
 	d.fileLocal("In Progress")
 	d.Tick()

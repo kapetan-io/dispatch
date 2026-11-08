@@ -159,7 +159,7 @@ func TestTickShowsAnIdleWorkerAsSoonAsItsTurnEnds(t *testing.T) {
 			d.Tick()
 
 			assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1", "w-ENG-1|💤 ENG-1"}, d.Workers.Renames())
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 			assert.Equal(t, test.told, d.Followed.Told())
 		})
 	}
@@ -178,7 +178,7 @@ func TestTickShowsAnIdleBuildWorkerAsWaitingOnTheUserWithoutNudgingIt(t *testing
 	}
 
 	assert.Equal(t, []string{"w-ENG-1|💤 ENG-1"}, d.Workers.Renames())
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	assert.Equal(t, []string{"ENG-1's worker is idle with nothing running: ticket ENG-1"}, d.Followed.Told())
 }
 
@@ -286,7 +286,7 @@ func TestTickShowsAnIdleStoppedInReviewWorkerAsWaitingOnTheUserWhenItsPRHasNothi
 			}
 
 			assert.Equal(t, []string{"w-ENG-1|💤 ENG-1"}, d.Workers.Renames())
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 			assert.Empty(t, d.Followed.Told())
 		})
 	}
@@ -311,7 +311,7 @@ func TestTickShowsAnInReviewWorkerWithAFailingPRAsGreenOnceNudged(t *testing.T) 
 
 			d.Tick()
 
-			assert.Len(t, d.Workers.Prompts(), 1)
+			assert.Len(t, d.Workers.Received("ENG-1"), 1)
 			assert.Equal(t, "w-ENG-1|🟢 ENG-1", d.Workers.lastRename(t))
 		})
 	}
@@ -342,7 +342,7 @@ func TestTickKeepsTheLabelThePRGaveWhenThePRCannotBeRead(t *testing.T) {
 			d.Tick()
 
 			assert.Equal(t, []string{"w-ENG-1|" + test.want + " ENG-1"}, d.Workers.Renames())
-			assert.Empty(t, d.Workers.Prompts())
+			assert.Empty(t, d.Workers.Received("ENG-1"))
 		})
 	}
 }
@@ -353,14 +353,14 @@ func TestTickKeepsTheWaitingLabelOfANudgedWorkerWhenThePRCannotBeRead(t *testing
 	withFailingPR(d)
 	d.Workers.Stop("ENG-1", stopTasks{})
 	d.Tick()
-	require.Len(t, d.Workers.Prompts(), 1)
+	require.Len(t, d.Workers.Received("ENG-1"), 1)
 	before := d.Workers.Renames()
 
 	d.GitHub.FailRead(errors.New("exit status 1"))
 	d.Advance(time.Minute)
 	d.Tick()
 
-	assert.Len(t, d.Workers.Prompts(), 1)
+	assert.Len(t, d.Workers.Received("ENG-1"), 1)
 	assert.Equal(t, before[len(before)-1], d.Workers.lastRename(t))
 	assert.Equal(t, "w-ENG-1|🟢 ENG-1", d.Workers.lastRename(t))
 }
@@ -422,7 +422,7 @@ func TestTickStillNudgesAnInReviewWorkerWhoseStopLeftABackgroundTaskRunning(t *t
 
 	d.Tick()
 
-	assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
 }
 
 func TestTickNeverNudgesAnIdleInReviewWorkerWhosePRNeedsNothingFromIt(t *testing.T) {
@@ -438,7 +438,7 @@ func TestTickNeverNudgesAnIdleInReviewWorkerWhosePRNeedsNothingFromIt(t *testing
 		d.Tick()
 	}
 
-	assert.Empty(t, d.Workers.Prompts())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
 	assert.Empty(t, d.Followed.Told())
 	noLinearChanges(t, d)
 }
@@ -588,11 +588,11 @@ func TestWakeKeepsANudgedWorkerGreenWhileHerdrStillSaysIdle(t *testing.T) {
 	d.Workers.Stop("ENG-1", stopTasks{})
 	d.PullRequestFailsAfterEntry(prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 	require.NoError(t, d.TickAfterASecond())
-	require.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Prompts())
+	require.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
 	renames := d.Workers.Renames()
 
 	require.NoError(t, d.Wake(d.Workers.Tree("ENG-1")).Err)
-	assert.Never(t, func() bool { return len(d.Workers.Prompts()) > 1 || len(d.Workers.Renames()) > len(renames) }, 300*time.Millisecond, 10*time.Millisecond)
+	assert.Never(t, func() bool { return len(d.Workers.Received("ENG-1")) > 1 || len(d.Workers.Renames()) > len(renames) }, 300*time.Millisecond, 10*time.Millisecond)
 	assert.Equal(t, "w-ENG-1|🟢 ENG-1", d.Workers.lastRename(t))
 }
 
@@ -705,7 +705,7 @@ func TestTickStillFindsAWorkerWhoseLabelChanged(t *testing.T) {
 	d.Workers.Stop("ENG-1", stopTasks{})
 	d.Tick()
 
-	assert.Equal(t, []string{prPrompt("a failed check"), prPrompt("a failed check")}, d.Workers.Prompts())
+	assert.Equal(t, []string{prPrompt("a failed check"), prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
 	assert.Empty(t, d.Workers.Launched())
 }
 
@@ -819,7 +819,7 @@ func TestTickEndsOnTheLatestLabelWhenAnEarlierRenameLandsLate(t *testing.T) {
 	// The first cycle labels the idle worker 💤, then nudges it, and the next cycle labels it 🟢.
 	d.Tick()
 
-	assert.Len(t, d.Workers.Prompts(), 1)
+	assert.Len(t, d.Workers.Received("ENG-1"), 1)
 	assert.Equal(t, []string{"w-ENG-1|💤 ENG-1", "w-ENG-1|🟢 ENG-1"}, d.Workers.Renames())
 }
 
@@ -836,7 +836,7 @@ func TestTickEndsOnTheLatestLabelWhenTheWorkspaceAlreadyShowedIt(t *testing.T) {
 	// 💤 goes out first, the nudge sends the worker back to 🟢 before herdr is read again.
 	d.Tick()
 
-	assert.Len(t, d.Workers.Prompts(), 1)
+	assert.Len(t, d.Workers.Received("ENG-1"), 1)
 	assert.Equal(t, []string{"w-ENG-1|💤 ENG-1", "w-ENG-1|🟢 ENG-1"}, d.Workers.Renames())
 }
 
