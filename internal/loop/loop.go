@@ -754,6 +754,10 @@ func (l *Loop) settle() error {
 	busy := l.busy()
 	if l.wasBusy && !busy {
 		l.idle++
+	}
+	// A settle request that arrived behind other messages saw busy, and a batch that left no work behind
+	// has no busy-to-idle transition to answer it, so idle alone decides, without advancing the count.
+	if !busy {
 		l.release()
 	}
 	l.wasBusy = busy
