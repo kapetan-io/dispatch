@@ -11,6 +11,7 @@ Each principle is a skill of its own. Load one with the Skill tool and apply it,
 |---|---|
 | `dispatch:principle-problem-domains` | Naming a package, type or method, or reviewing structure. |
 | `dispatch:principle-boundary-discipline` | Wiring validation, error handling or adapters. |
+| `dispatch:principle-the-owner-enforces-its-invariants` | Placing a validation check, constraint or consistency rule in a constructor, a store's interface, a handler, a service layer or a gateway, or reading or writing a store directly. |
 | `dispatch:principle-design-to-the-port-not-the-vendor` | Writing or changing a port's contract, adding a product or delivery mechanism behind one, naming config or terms after a product, or branching on which product or source is in use. |
 | `dispatch:principle-encode-lessons-in-structure` | A mistake just happened and you are choosing the fix, or you write the same instruction twice. |
 | `dispatch:principle-laziness-protocol` | Refactoring, sizing a diff, tempted to add a layer. |
