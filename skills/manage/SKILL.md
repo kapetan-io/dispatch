@@ -14,7 +14,17 @@ Run `dispatch watch` on every `ai` ticket that is In Progress, In Review or Need
 
 ## Report
 
-After each wake and each event you acted on, tell the user in one short message which tickets wait on them (merges, questions you put to them, tickets to move), and in one line each decision you made with its reason, which workers you told something and what, and nothing when nothing changed. Read it fresh each time from Linear (`dispatch ticket list` for `LOC-` tickets), each ticket's workspace emoji (`docs/worker-states.md`) and GitHub.
+After each wake and each event you acted on, tell the user in one short message which tickets wait on them (merges, questions you put to them, tickets to move), and in one line each decision you made with its reason, which workers you told something and what, and nothing when nothing changed. Write every ticket that needs the user in this format, in every message, so the user can scan for it:
+
+```
+### Status
+- ENG-XXX <title>
+  <a paragraph in the plain words `dispatch:bro` uses: what the ticket is, what it needs from the user and why>
+  #### Recommendation
+  <what you recommend, and why in a sentence>
+```
+
+Read it fresh each time from Linear (`dispatch ticket list` for `LOC-` tickets), each ticket's workspace emoji (`docs/worker-states.md`) and GitHub.
 
 ## Keep workers moving
 
@@ -46,7 +56,7 @@ Review a ready PR as `dispatch:dispatch` says, without asking first, then `dispa
 
 ## Starting work
 
-When told to start work, list the Todo `ai` tickets without a `design` or `design-review` label whose blockers are Done. Group them by what each unblocks and recommend a batch. Start only the tickets the user names. Move them to In Progress, run `dispatch tick`, and report which launched and which failed from the tick's output.
+When told to start work, list the Todo `ai` tickets without a `design` or `design-review` label whose blockers are Done. Group them by what each unblocks and recommend a batch, one entry per ticket in the Report format. Start only the tickets the user names. Move them to In Progress, run `dispatch tick`, and report which launched and which failed from the tick's output.
 
 ## Gaps in dispatch
 
