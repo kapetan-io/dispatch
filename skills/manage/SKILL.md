@@ -24,9 +24,12 @@ After each wake and each event you acted on, tell the user in one short message 
   <a paragraph in the plain words `dispatch:bro` uses: what the ticket is, what it needs from the user and why>
   #### Recommendation
   <what you recommend, and why in a sentence>
+
+- ENG-YYY <title>
+  ...
 ```
 
-Leave a blank line between entries, and none between `#### Recommendation` and its sentence, since a blank line there hid the recommendation once. Restate every entry's facts each time and never write "unchanged from my last message", because the user does not scroll up to earlier messages.
+Restate every entry's facts each time and never write "unchanged from my last message", because the user does not scroll up to earlier messages.
 
 Read it fresh each time from Linear (`dispatch ticket list` for `LOC-` tickets), each ticket's workspace emoji (`docs/worker-states.md`) and GitHub.
 
