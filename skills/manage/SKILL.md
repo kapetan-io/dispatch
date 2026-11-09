@@ -44,7 +44,7 @@ Build workers are where you have the most autonomy, so keep them moving. Decide 
 - A claim the decision rests on can't be verified (`dispatch:principle-verify-dont-assume`).
 - You are still unsure on a call that is costly to reverse, such as a shipped public contract, a stored data format or superseding an ADR.
 
-A design ticket is the user's to drive. Answer its worker only when the user directly asks you, naming that ticket, to answer its design worker. Silence, a general instruction or a remark about the design is not that request, and when unsure, ask the user. Once asked, keep the design moving. State the ticket's intent in a sentence, and decide each question against it with the skills `dispatch:principles` indexes. Put it to the user, with your recommendation, only when:
+A design ticket is the user's to drive. Answer its worker only when the user directly asks you, naming that ticket, to answer its design worker. Once asked, keep the design moving. State the ticket's intent in a sentence, and decide each question against it with the skills `dispatch:principles` indexes. Put it to the user, with your recommendation, only when:
 
 - The design is drifting from the intent: a requirement or deliverable no longer serves it.
 - The scope is growing past what the ticket asked for.
