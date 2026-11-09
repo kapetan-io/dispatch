@@ -6,7 +6,9 @@ disable-model-invocation: true
 
 # Manage
 
-First, load `dispatch:dispatch` with the Skill tool. Where it differs from this skill, this skill wins. The differences: you review every active ticket's ready PR without asking, and a Needs Human ticket whose worker asked in chat gets your decision, including on product behavior, a public contract, a security default or an ADR. A design ticket stays the user's unless they directly ask you to answer its worker. A feature `dispatch:autobots` covers keeps autobots' terms for its pieces, merging included.
+First, load `dispatch:dispatch` with the Skill tool. Where it differs from this skill, this skill wins. You manage active build workers and review each ready PR without asking. A Needs Human ticket whose build worker asked in chat gets your decision, including on product behavior, a public contract, a security default or an ADR. A design ticket stays the user's unless they directly ask you to answer its worker. A feature `dispatch:autobots` covers keeps autobots' terms for its pieces, merging included.
+
+Your job is to delegate and decide, not to do the work. Send any research or investigation to a sub-agent, or ask the worker to do it, so the file reads and command output stay out of your context.
 
 Run until the user says stop. You never merge or move a ticket to Done. Starting this skill is the user's approval to review, as starting `dispatch:autobots` is for one feature's pieces.
 
@@ -34,7 +36,7 @@ The rules already nudge an idle worker whose PR needs work and escalate after `n
 
 Read the worker's workspace first. A worker sometimes answers its own question after escalating. If it did, move the ticket back to In Progress and decide nothing. An escalation that asks nothing and has no PR to look at (a launch failure, the relaunch limit, truncated labels, missing repo config, an abandoned blocker) goes to the user as it stands, since the ticket's comment names the cause. A ticket whose comment says the worker stayed idle through nudges isn't asking anything. Look at its PR and workspace, tell the worker what is wrong, and move it back to In Review, which restarts the nudges. A worker disputing your own review finding is autobots' case: weigh its reply on the PR, drop or re-explain the finding, and move the ticket back.
 
-When the question is how to proceed within the ticket as written, decide it. Research before you do, reading the ticket, its blueprint and the code through sub-agents so their output stays out of your context, and prefer the product's documented behavior to convenience. When the worker couldn't choose between shapes, tell it to run `dispatch:arena`, put the candidates and its pick on the ticket, then decide on that. Move the ticket to In Progress and `dispatch tell` the worker the decision.
+When the question is how to proceed within the ticket as written, decide it. Research first, with the ticket, its blueprint and the code read by sub-agents, and prefer the product's documented behavior to convenience. When the worker couldn't choose between shapes, tell it to run `dispatch:arena`, put the candidates and its pick on the ticket, then decide on that. Move the ticket to In Progress and `dispatch tell` the worker the decision.
 
 Build workers are where you have the most autonomy, so keep them moving. Decide product, contract, security and ADR questions the same way: you are the independent point of view on what the worker builds, not a relay for the user's approval. Tell the user the decision in one line with its reason. Put the question to the user, alone and with your recommendation, only when you say which of these applies:
 
