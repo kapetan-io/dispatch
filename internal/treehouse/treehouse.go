@@ -196,6 +196,13 @@ func Inspect(ctx context.Context, env environment.Environment, path string) (Wor
 	return Work{Unpushed: unpushed, TrackedChanges: strings.TrimSpace(status) != ""}, nil
 }
 
+// Branch is the branch checked out in the tree at path, or empty when HEAD is detached, as a
+// tree treehouse returned is.
+func Branch(ctx context.Context, env environment.Environment, path string) (string, error) {
+	out, err := git(ctx, env, path, "branch", "--show-current")
+	return strings.TrimSpace(out), err
+}
+
 // String describes the work, or is empty when there is none.
 func (w Work) String() string {
 	var found []string

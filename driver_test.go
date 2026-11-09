@@ -1146,7 +1146,7 @@ func (t *Trees) Pushed(ticket string) string {
 	hintGit(h.t, h.dir, "init", "-q", "--bare", remote)
 	tree := filepath.Join(h.dir, "trees", ticket)
 	hintGit(h.t, tree, "remote", "add", "origin", remote)
-	hintGit(h.t, tree, "push", "-q", "--set-upstream", "origin", "br-"+ticket)
+	hintGit(h.t, tree, "push", "-q", "--set-upstream", "origin", prBranch(ticket))
 	return tree
 }
 
@@ -2858,7 +2858,7 @@ func (d *Dispatch) worktreeOf(ticket string) string {
 		copyPlainRepo(d.t, d.Repo)
 	}
 	if _, err := os.Stat(tree); err != nil {
-		hintGit(d.t, d.Repo, "worktree", "add", "-q", "-b", "br-"+ticket, tree)
+		hintGit(d.t, d.Repo, "worktree", "add", "-q", "-b", prBranch(ticket), tree)
 	}
 	return tree
 }

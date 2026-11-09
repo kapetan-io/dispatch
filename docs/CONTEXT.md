@@ -189,6 +189,10 @@ _Avoid_: parent (a Linear parent ticket), base ticket
 Two keys in the repo clone's git config under the stacked ticket's branch naming the stack parent and the fork point. The launcher writes it once on a brand-new branch, and dispatch never changes it once the branch exists. Rules read it as `t.stack`.
 _Avoid_: stack state, stack metadata
 
+**Launched branch**:
+The branch the launcher put a ticket's worker on, kept in the state directory under the ticket id. Dispatch looks for the ticket's PR on the branch checked out in its tree first, this record second and the name Linear reports last, because Linear's name can drift from the branch that was pushed.
+_Avoid_: ticket branch (Linear's name for it)
+
 **Fork point**:
 The commit a stacked ticket's branch started at, the stack parent's PR head at launch.
 _Avoid_: merge base (git computes that, and it moves)

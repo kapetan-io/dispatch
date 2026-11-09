@@ -16,6 +16,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
+	"github.com/kapetan-io/dispatch/internal/launchedbranch"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/typed"
@@ -57,7 +58,8 @@ type Options struct {
 	// Stderr receives progress. Defaults to discarding it.
 	Stderr io.Writer
 	// StateDir is where a launch records that its kickoff is unconfirmed, so a
-	// tick can find a session the launch died on. Empty records nothing.
+	// tick can find a session the launch died on, and the branch it put the worker on.
+	// Empty records nothing.
 	StateDir string
 	// Clock stamps a launch's kickoff record, which the rules compare with the loop's clock,
 	// and runs the preflight deadline. Defaults to the wall clock.
@@ -196,6 +198,7 @@ func (l *launch) run(ctx context.Context) Result {
 	if r, ok := l.fetchAndLease(ctx); !ok {
 		return r
 	}
+	l.recordBranch()
 	if r, ok := l.openWorkspace(ctx); !ok {
 		return r
 	}
@@ -233,6 +236,18 @@ func (l *launch) run(ctx context.Context) Result {
 	return Result{
 		Status: StatusOK, Ticket: req.Ticket, Branch: req.Branch, Worktree: l.tree,
 		Workspace: l.workspace, Pane: started.Pane, Agent: started.Agent, Kickoff: req.Kickoff, Stacked: l.stacked,
+	}
+}
+
+// recordBranch keeps the branch the worker is on, so the dispatcher still finds its PR after Linear
+// reports another name. A reused tree was not switched, so it may be on another branch than the
+// request names. A failure is logged and the launch goes on, since the world falls back to Linear's name.
+func (l *launch) recordBranch() {
+	if l.opts.StateDir == "" || !l.fresh {
+		return
+	}
+	if err := launchedbranch.Write(l.opts.StateDir, l.req.Ticket, l.req.Branch); err != nil {
+		l.log("%v", err)
 	}
 }
 

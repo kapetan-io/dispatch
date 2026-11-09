@@ -59,7 +59,7 @@ type ExplainLine struct {
 	// Why is what started the cycle.
 	Why  string `json:"why,omitempty"`
 	Rule string `json:"rule,omitempty"`
-	// Decision is wants, waits, held, dropped, covered, exempt, threw, timeout or nothing.
+	// Decision is wants, waits, held, dropped, covered, exempt, threw, timeout, no-pr or nothing.
 	Decision string `json:"decision,omitempty"`
 	Kind     string `json:"kind,omitempty"`
 	Subject  string `json:"subject,omitempty"`
@@ -102,6 +102,9 @@ type tracing struct {
 	last string
 	// lastHTTP is the exchanges most recently printed, so an answer that changed prints even when the decision didn't.
 	lastHTTP []exchange
+	// notFound holds the branches the newest read asked for when its PR read of the ticket found
+	// no open PR, empty when it found one or did not read.
+	notFound []string
 	// err is the first write to out that failed.
 	err error
 }
@@ -144,7 +147,7 @@ func (t *tracing) segment(seg Segment) {
 	// Only a rotated segment continues the run before it, so every other segment (a start or a reset)
 	// shows its first cycle again.
 	if seg.Header.Why != "rotate" {
-		t.last, t.lastHTTP = unprinted, nil
+		t.last, t.lastHTTP, t.notFound = unprinted, nil, nil
 	}
 	for _, raw := range seg.Lines {
 		var head struct {
@@ -156,6 +159,15 @@ func (t *tracing) segment(seg Segment) {
 			var c Cycle
 			if json.Unmarshal(raw, &c) == nil {
 				t.cycle(c)
+			}
+		case LineRead:
+			var r struct {
+				World struct {
+					PRNotFound map[string][]string `json:"prNotFound"`
+				} `json:"world"`
+			}
+			if json.Unmarshal(raw, &r) == nil {
+				t.notFound = r.World.PRNotFound[t.ticket]
 			}
 		case LineWorld:
 			var w World
@@ -183,7 +195,7 @@ func (t *tracing) cycle(c Cycle) {
 	decided := t.decisions(c)
 	keys := make([]string, len(decided))
 	for i, d := range decided {
-		keys[i] = d.rule + "  " + d.text
+		keys[i] = strings.TrimPrefix(d.rule+"  "+d.text, "  ")
 	}
 	key := strings.Join(keys, "\n")
 	if len(decided) > 0 {
@@ -253,6 +265,15 @@ func (t *tracing) exchanges(c Cycle) []exchange {
 // reads a new value and decides the same thing doesn't make another cycle.
 func (t *tracing) decisions(c Cycle) []decision {
 	var out []decision
+	// A PR read that found nothing is the likely reason an In Review ticket's PR rules never fire.
+	if len(t.notFound) > 0 {
+		list := strings.Join(t.notFound, ", ")
+		noun := "branch"
+		if len(t.notFound) > 1 {
+			noun = "branches"
+		}
+		out = append(out, decision{text: fmt.Sprintf("found no open PR on %s %s", noun, list), line: ExplainLine{Decision: "no-pr", Detail: list}})
+	}
 	add := func(rule, text string, line ExplainLine) {
 		line.Rule = rule
 		out = append(out, decision{rule: rule, text: text, line: line, readKey: rule + "/" + t.ticket})
