@@ -16,7 +16,7 @@ Run `dispatch watch` on every `ai` ticket that is In Progress, In Review or Need
 
 ## Report
 
-After each wake and each event you acted on, tell the user in one short message which tickets wait on them (merges, questions you put to them, tickets to move), and in one line each decision you made with its reason, which workers you told something and what, and nothing when nothing changed. Write every ticket that needs the user in this format, in every message, so the user can scan for it:
+After each wake and each event you acted on, tell the user in one short message which tickets wait on them (merges, questions you put to them, tickets to move), and in one line each decision you made with its reason, which workers you told something and what, and nothing when nothing changed. Only a ticket that needs something from the user gets a Status entry. A ticket waiting on a reviewer or on its own worker gets at most one line outside the Status block, and "nothing when nothing changed" covers only decisions and told workers, not a Status entry. Write every ticket that needs the user in this format, in every message, so the user can scan for it:
 
 ```
 ### Status
@@ -24,13 +24,20 @@ After each wake and each event you acted on, tell the user in one short message 
   <a paragraph in the plain words `dispatch:bro` uses: what the ticket is, what it needs from the user and why>
   #### Recommendation
   <what you recommend, and why in a sentence>
+
+- ENG-YYY <title>
+  ...
 ```
+
+Restate every entry's facts each time and never write "unchanged from my last message", because the user does not scroll up to earlier messages.
 
 Read it fresh each time from Linear (`dispatch ticket list` for `LOC-` tickets), each ticket's workspace emoji (`docs/worker-states.md`) and GitHub.
 
 ## Keep workers moving
 
 The rules already nudge an idle worker whose PR needs work and escalate after `nudge_limit`. Tell a worker (`dispatch tell`) only where they don't reach: an idle In Progress worker whose ticket is not done (the rules never nudge In Progress, whether or not it has opened a PR), or a ticket `dispatch explain` or `dispatch cycle` shows waiting on something you can supply. Check the ticket's acceptance criteria before you ask a worker to inspect something, since they may already settle it.
+
+A 💤 worker whose last ticket comment says it answered everything the ticket asked and that opened no PR, such as an investigation that ends in a comment, has nothing left to do. This overrides `dispatch:dispatch`'s "Worker is idle" event. Tell the user to move the ticket to Done or Canceled, which closes its workspace and returns the tree, not to open its window. Closing the workspace alone makes dispatch launch a new worker.
 
 ## Needs Human
 
@@ -58,7 +65,11 @@ Review a ready PR as `dispatch:dispatch` says, without asking first, then `dispa
 
 ## Starting work
 
-When told to start work, list the Todo `ai` tickets without a `design` or `design-review` label whose blockers are Done. Group them by what each unblocks and recommend a batch, one entry per ticket in the Report format. Start only the tickets the user names. Move them to In Progress, run `dispatch tick`, and report which launched and which failed from the tick's output.
+When told to start work, list the Todo `ai` tickets without a `design` or `design-review` label whose blockers are Done. Count how many more workers can start now: `max_in_progress` (`~/.config/dispatch/config.toml`) minus the In Progress tickets that have a worker, capped, for each repo, by the trees it can still lease: `max_trees` in the repo's `treehouse.toml` minus the trees `treehouse status --json` lists whose status is not `available`, since treehouse creates trees up to `max_trees` only when a lease asks for one. Group the tickets by what each unblocks and recommend a batch no larger than that count, one entry per ticket in the Report format, since a launch past either limit is refused and waits for the next resync. Start only the tickets the user names. Move them to In Progress, run `dispatch tick`, and report which launched, which were refused and which failed from the tick's output.
+
+## Tickets workers file
+
+Before you report a ticket a worker filed, search Linear and `dispatch ticket list` for open tickets on the same topic filed by others in the last day, since a teammate's ticket on the same incident lands minutes apart. Report the overlap to the user, and leave marking the duplicate to them.
 
 ## Gaps in dispatch
 
