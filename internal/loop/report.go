@@ -63,7 +63,7 @@ func (l *Loop) onRequest(r request) error {
 		r.reply <- Response{}
 	case OpTell:
 		l.readAgain(world.FromLocal)
-		l.afterRead = append(l.afterRead, func() error { return l.tell(r) })
+		l.afterRead = append(l.afterRead, readCallback{run: func() error { return l.tell(r) }, reply: r.reply})
 	case OpStop:
 		r.reply <- l.onStop(r.Stop)
 	case OpPrompt:

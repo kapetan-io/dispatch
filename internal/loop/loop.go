@@ -97,7 +97,7 @@ type Loop struct {
 	reading bool
 	pending world.Part
 	// afterRead runs once the read in flight lands.
-	afterRead []func() error
+	afterRead []readCallback
 
 	flights   map[string]*flight
 	launching map[string]bool
@@ -193,6 +193,13 @@ type toldDone struct {
 
 // tellDeadline bounds one message to the followers, because a stalled session must not hold the loop.
 const tellDeadline = 10 * time.Second
+
+// readCallback is work that waits for a read to land. reply is the client of a request that waits
+// with it, so a stopping loop can answer it.
+type readCallback struct {
+	run   func() error
+	reply chan Response
+}
 
 type request struct {
 	Request
@@ -330,6 +337,13 @@ func (l *Loop) drain() error {
 		w.reply <- Response{Code: CodeFailed, Error: "dispatch is stopping"}
 	}
 	l.waiters = nil
+	// A stopping loop never runs afterRead and cannot exit while an action is in flight.
+	for _, cb := range l.afterRead {
+		if cb.reply != nil {
+			cb.reply <- Response{Code: CodeFailed, Error: "dispatch is stopping"}
+		}
+	}
+	l.afterRead = nil
 	deadline := time.After(executor.DefaultDeadline + 5*time.Second)
 	for len(l.flights) > 0 || l.reading {
 		select {
@@ -488,9 +502,9 @@ func (l *Loop) onResync(typ string) error {
 	l.readAgain(world.Everything)
 	// A step that failed after the one before it landed is not wanted again by its rule,
 	// because the first step made the rule's condition false.
-	l.afterRead = append(l.afterRead, l.resumeRest)
+	l.afterRead = append(l.afterRead, readCallback{run: l.resumeRest})
 	if typ == history.EventResync {
-		l.afterRead = append(l.afterRead, func() error { l.printResync(); return nil })
+		l.afterRead = append(l.afterRead, readCallback{run: func() error { l.printResync(); return nil }})
 	}
 	return l.rotate()
 }
@@ -659,8 +673,8 @@ func (l *Loop) onRead(m readDone) error {
 		_, _ = fmt.Fprintf(l.o.Err, "%s dispatch: while reading: %v\n", l.clock.Now().Format(time.TimeOnly), m.err)
 		callbacks := l.afterRead
 		l.afterRead = nil
-		for _, f := range callbacks {
-			if err := f(); err != nil {
+		for _, cb := range callbacks {
+			if err := cb.run(); err != nil {
 				return err
 			}
 		}
@@ -731,8 +745,8 @@ func (l *Loop) onRead(m readDone) error {
 	}
 	callbacks := l.afterRead
 	l.afterRead = nil
-	for _, f := range callbacks {
-		if err := f(); err != nil {
+	for _, cb := range callbacks {
+		if err := cb.run(); err != nil {
 			return err
 		}
 	}
