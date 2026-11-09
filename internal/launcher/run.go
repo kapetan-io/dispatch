@@ -59,7 +59,8 @@ type Options struct {
 	// Stderr receives progress. Defaults to discarding it.
 	Stderr io.Writer
 	// StateDir is where a launch records that its kickoff is unconfirmed, so a
-	// tick can find a session the launch died on. Empty records nothing.
+	// tick can find a session the launch died on, and the branch it put the worker on.
+	// Empty records nothing.
 	StateDir string
 	// Clock stamps a launch's kickoff record, which the rules compare with the loop's clock,
 	// and runs the preflight deadline. Defaults to the wall clock.
@@ -198,6 +199,7 @@ func (l *launch) run(ctx context.Context) Result {
 	if r, ok := l.fetchAndLease(ctx); !ok {
 		return r
 	}
+	l.recordBranch()
 	if r, ok := l.openWorkspace(ctx); !ok {
 		return r
 	}
@@ -235,6 +237,19 @@ func (l *launch) run(ctx context.Context) Result {
 	return Result{
 		Status: StatusOK, Ticket: req.Ticket, Branch: req.Branch, Worktree: l.tree,
 		Workspace: l.workspace, Pane: started.Pane, Agent: started.Agent, Kickoff: req.Kickoff, Stacked: l.stacked,
+	}
+}
+
+// recordBranch keeps the branch the worker is on, so every later read of the ticket's branch uses
+// the one the launch chose, whatever name Linear reports then. A reused tree was not switched, so it
+// may be on another branch than the request names. A failure is logged and the launch goes on, since
+// the world finds the branch by the ticket's id.
+func (l *launch) recordBranch() {
+	if l.opts.StateDir == "" || !l.fresh {
+		return
+	}
+	if err := ticket.WriteBranch(l.opts.StateDir, l.req.Ticket, l.req.Branch); err != nil {
+		l.log("%v", err)
 	}
 }
 
@@ -371,7 +386,7 @@ func (l *launch) adoptBranch(ctx context.Context) {
 	for name := range strings.SplitSeq(local, "\n") {
 		add(strings.TrimSpace(name))
 	}
-	remote, _ := l.git(ctx, l.repo, "ls-remote", "--heads", "origin")
+	remote, _ := l.git(ctx, l.repo, "ls-remote", "--heads", "origin", "*"+strings.ToLower(l.req.Ticket)+"*")
 	for line := range strings.SplitSeq(remote, "\n") {
 		if _, ref, ok := strings.Cut(line, "\t"); ok {
 			add(strings.TrimPrefix(strings.TrimSpace(ref), "refs/heads/"))

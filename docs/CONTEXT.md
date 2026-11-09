@@ -190,7 +190,7 @@ Two keys in the repo clone's git config under the stacked ticket's branch naming
 _Avoid_: stack state, stack metadata
 
 **Ticket branch**:
-The branch a ticket's work is on. Linear's name for it is the id followed by the title, and the title is what changes or gets cut short, so dispatch matches a branch to its ticket by the id at the start of the name and takes Linear's name only when no branch matches.
+The branch a ticket's work is on. Dispatch keeps it in the state directory, one file per ticket, written when the launcher puts a worker on a branch, when a PR is found for the ticket, and at start for a ticket whose tree holds a branch starting with its id. Linear's name for it is the id followed by the title, and the title is what changes or gets cut short, so a branch is matched to its ticket by the id at the start of the name. Linear's name is only the first guess.
 _Avoid_: launched branch
 
 **Fork point**:

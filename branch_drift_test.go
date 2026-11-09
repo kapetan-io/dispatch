@@ -84,8 +84,39 @@ func TestTickReadsLinearsNameWhenTwoOpenBranchesStartWithTheTicketsId(t *testing
 
 	d.Tick()
 
-	assert.Equal(t, []string{"thrawn01/eng-1-cut"}, d.prReads())
+	assert.Equal(t, []string{"thrawn01/eng-1"}, d.prReads())
 	assert.Empty(t, d.Workers.Received("ENG-1"))
+}
+
+func TestTickReadsThePROnTheBranchADetachedTreeWasLeftOnWithoutListingTheRepo(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	ticket := ticket("ENG-1", "In Review", "dispatch")
+	ticket.Branch = cutBranch
+	d.Linear.Tickets(ticket)
+	tree := d.Workers.CheckedOut("ENG-1", "idle")
+	d.Trees.Git(tree, "branch", "-m", fullBranch)
+	d.GitHub.PullRequestsOn("ENG-1", fullBranch)
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "SUCCESS", mergeable: "MERGEABLE"})
+
+	d.Tick()
+
+	assert.Equal(t, []string{fullBranch}, d.prReads())
+	assert.Empty(t, d.tools.Calls("pullrequest", "open-branches"))
+}
+
+func TestTickKeepsAWorkerOffThePROfAnotherTicketWhoseBranchItsTreeHasCheckedOut(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
+	tree := d.Workers.CheckedOut("ENG-2", "idle")
+	d.Trees.Git(tree, "branch", "-m", prBranch("ENG-1"))
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
+
+	d.Tick()
+
+	assert.NotContains(t, d.prReads(), prBranch("ENG-1"))
+	assert.Empty(t, d.Workers.Received("ENG-2"))
 }
 
 func TestExplainNamesTheBranchTheReadOfAnInReviewTicketsPRAskedFor(t *testing.T) {
@@ -99,7 +130,7 @@ func TestExplainNamesTheBranchTheReadOfAnInReviewTicketsPRAskedFor(t *testing.T)
 	res := d.Run("explain", "ENG-1")
 	require.NoError(t, res.Err)
 	assert.NotContains(t, res.Stdout, "wants nothing")
-	assert.Contains(t, res.Stdout, "found no open PR on branch thrawn01/eng-1-cut")
+	assert.Contains(t, res.Stdout, "found no open PR on branch thrawn01/eng-1")
 }
 
 // inReviewBranchRule comments the branch ENG-1 reads as its own while it is In Review.

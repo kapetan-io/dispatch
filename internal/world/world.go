@@ -39,7 +39,7 @@ type Sources struct {
 	Inbox inbox.Inbox
 	// Env is what the git commands that inspect a tree run with.
 	Env environment.Environment
-	// StateDir holds the Stop records and session logs.
+	// StateDir holds the Stop records, session logs, kickoff records and ticket branches.
 	StateDir string
 	// Stderr receives one line for each read that failed without stopping the read.
 	Stderr io.Writer
@@ -186,9 +186,6 @@ type World struct {
 	// PRRateLimited holds the tickets in PRReadFailed whose read GitHub refused because the
 	// account's budget is spent, with the time GitHub says it refills, zero when it gives none.
 	PRRateLimited map[string]time.Time
-	// PRBranch maps a ticket to the branch its open PR was found on. Linear's name can differ from
-	// the pushed branch, so a ticket keeps the name its PR was found under until a read finds none.
-	PRBranch map[string]string
 	// PRNotFound maps a ticket whose last PR read found no open PR to the branch it asked for.
 	PRNotFound map[string]string
 	// PRReadsAnswered counts the PR reads GitHub answered, so a read that asked it nothing is not
@@ -330,7 +327,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		switch {
 		case err == nil:
 			w.Tickets, w.LinearErr = replaceLinear(src, w.Tickets, tickets), nil
-			w.keepPRBranches()
+			w.Tickets = w.onRecordedBranches(ctx, src, scope, prev.At.IsZero())
 		case src.Resilient:
 			w.LinearErr = err
 			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the tickets: %v\n", err)
@@ -570,30 +567,52 @@ func (w *World) inspectTrees(ctx context.Context, env environment.Environment, s
 	}
 }
 
-// keepPRBranches puts each ticket back on the branch its PR was found on, since the Linear read
-// that just replaced the tickets gave every one Linear's name.
-func (w *World) keepPRBranches() {
-	w.Tickets = slices.Clone(w.Tickets)
-	kept := map[string]string{}
-	for i, t := range w.Tickets {
-		if branch, ok := w.PRBranch[t.Identifier]; ok {
-			w.Tickets[i].Branch, kept[t.Identifier] = branch, branch
+// onRecordedBranches is the tickets with each Linear ticket on the branch dispatch recorded for it,
+// since the Linear read that just replaced them gave every one Linear's name. On the first read
+// after a start it first records the branch of each ticket's tree when that branch starts with the
+// ticket's id, so tickets launched before dispatch kept records are covered while their tree exists.
+// A tree on a branch that is not the ticket's own, such as its parent's, records nothing.
+func (w *World) onRecordedBranches(ctx context.Context, src Sources, scope Scope, started bool) []ticket.Ticket {
+	if started && src.StateDir != "" {
+		for _, tree := range w.Trees {
+			if tree.LeaseHolder == "" || ticket.SystemOf(tree.LeaseHolder) == ticket.SystemLocal {
+				continue
+			}
+			readCtx, done := bound(ctx)
+			branch, err := treehouse.Branch(readCtx, src.Env, tree.Path)
+			done()
+			if err != nil || !ticket.OnBranch(tree.LeaseHolder, branch) {
+				continue
+			}
+			if recorded, ok := ticket.RecordedBranch(src.StateDir, tree.LeaseHolder); ok && recorded == branch {
+				continue
+			}
+			if err := ticket.WriteBranch(src.StateDir, tree.LeaseHolder, branch); err != nil {
+				_, _ = fmt.Fprintf(src.Stderr, "dispatch: %v\n", err)
+			}
 		}
 	}
-	w.PRBranch = kept
+	tickets := slices.Clone(w.Tickets)
+	for i, t := range tickets {
+		if ticket.SystemOf(t.Identifier) == ticket.SystemLocal {
+			continue
+		}
+		if branch, ok := ticket.RecordedBranch(src.StateDir, t.Identifier); ok {
+			tickets[i].Branch = branch
+		}
+	}
+	return tickets
 }
 
-// readPRs reads the open PR of each ticket for which ReadsPR is true. A PR that can't be read is
-// reported and left out, so it holds back only its own ticket.
+// readPRs reads the open PR of each ticket for which ReadsPR is true, on the ticket's branch. A
+// ticket with no PR there is looked for among the repo's open PRs by the id its branch starts with.
+// A PR that can't be read is reported and left out, so it holds back only its own ticket.
 func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 	w.PRReadsAnswered = 0
 	w.PRs, w.PRReadFailed, w.PRRateLimited = map[string]pullrequest.PullRequest{}, map[string]bool{}, map[string]time.Time{}
 	w.PRNotFound = map[string]string{}
-	// The previous world may still be in use, so a ticket's Branch and its record change on copies.
-	w.Tickets, w.PRBranch = slices.Clone(w.Tickets), maps.Clone(w.PRBranch)
-	if w.PRBranch == nil {
-		w.PRBranch = map[string]string{}
-	}
+	// The previous world may still be in use, so a ticket's Branch changes on a copy.
+	w.Tickets = slices.Clone(w.Tickets)
 	type listing struct {
 		branches []string
 		err      error
@@ -604,8 +623,15 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 		if !ok {
 			continue
 		}
+		rules := pullrequest.Rules{IgnoreAuthors: settings.IgnoreCommentAuthors, RequiredChecksOnly: settings.IgnoreOptionalChecks, ApprovalChecks: settings.ApprovalChecks}
+		read := func(branch string) (pullrequest.PullRequest, bool, error) {
+			readCtx, done := bound(ctx)
+			defer done()
+			return src.PullRequests.Read(readCtx, settings.Path, branch, rules)
+		}
 		branch := t.Branch
-		if ticket.SystemOf(t.Identifier) == ticket.SystemLinear {
+		pr, found, err := read(branch)
+		if err == nil && !found && ticket.SystemOf(t.Identifier) == ticket.SystemLinear {
 			list, listed := open[settings.Path]
 			if !listed {
 				readCtx, done := bound(ctx)
@@ -613,16 +639,12 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 				done()
 				open[settings.Path] = list
 			}
-			if list.err != nil {
-				_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, list.err)
-				w.failPRRead(t.Identifier, list.err)
-				continue
+			err = list.err
+			if other := branchOf(t, list.branches); err == nil && other != branch {
+				branch = other
+				pr, found, err = read(branch)
 			}
-			branch = branchOf(t, list.branches)
 		}
-		readCtx, done := bound(ctx)
-		pr, found, err := src.PullRequests.Read(readCtx, settings.Path, branch, pullrequest.Rules{IgnoreAuthors: settings.IgnoreCommentAuthors, RequiredChecksOnly: settings.IgnoreOptionalChecks, ApprovalChecks: settings.ApprovalChecks})
-		done()
 		if err != nil {
 			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, err)
 			w.failPRRead(t.Identifier, err)
@@ -630,25 +652,24 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 		}
 		w.PRReadsAnswered++
 		if !found {
-			// A ticket with no PR follows Linear's name again from the next Linear read.
 			w.PRNotFound[t.Identifier] = branch
-			delete(w.PRBranch, t.Identifier)
 			continue
 		}
 		w.PRs[t.Identifier] = pr
 		// The branch fact is the branch the PR is on, which the next launch and a stacked ticket start from.
-		w.Tickets[i].Branch, w.PRBranch[t.Identifier] = branch, branch
+		w.Tickets[i].Branch = branch
+		if recorded, ok := ticket.RecordedBranch(src.StateDir, t.Identifier); (!ok || recorded != branch) && src.StateDir != "" && ticket.SystemOf(t.Identifier) == ticket.SystemLinear {
+			if err := ticket.WriteBranch(src.StateDir, t.Identifier, branch); err != nil {
+				_, _ = fmt.Fprintf(src.Stderr, "dispatch: %v\n", err)
+			}
+		}
 	}
 }
 
-// branchOf is the branch of t's open PR among open. Linear's name stands when a PR is open on it.
-// Otherwise the one open branch that starts with the ticket's id is the ticket's, because the
-// title after the id is what changes or gets cut short. With none or several, Linear's name is
-// all there is to go on.
+// branchOf is the branch of t's open PR among open: the one open branch that starts with the
+// ticket's id, because the title after the id is what changes or gets cut short. With none or
+// several, it is t's own branch.
 func branchOf(t ticket.Ticket, open []string) string {
-	if slices.Contains(open, t.Branch) {
-		return t.Branch
-	}
 	matches := slices.DeleteFunc(slices.Clone(open), func(b string) bool { return !ticket.OnBranch(t.Identifier, b) })
 	if len(matches) == 1 {
 		return matches[0]
