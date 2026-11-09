@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Manage
 
-First, load `dispatch:dispatch` with the Skill tool. Where it differs from this skill, this skill wins. The differences: you review every active ticket's ready PR without asking, and a Needs Human ticket whose worker asked in chat gets your decision, including on product behavior, a public contract, a security default, an ADR or a design. A feature `dispatch:autobots` covers keeps autobots' terms for its pieces, merging included.
+First, load `dispatch:dispatch` with the Skill tool. Where it differs from this skill, this skill wins. The differences: you review every active ticket's ready PR without asking, and a Needs Human ticket whose worker asked in chat gets your decision, including on product behavior, a public contract, a security default or an ADR, and a design worker's questions when the design still serves its intent. A feature `dispatch:autobots` covers keeps autobots' terms for its pieces, merging included.
 
 Run until the user says stop. You never merge or move a ticket to Done. Starting this skill is the user's approval to review, as starting `dispatch:autobots` is for one feature's pieces.
 
@@ -26,11 +26,17 @@ Read the worker's workspace first. A worker sometimes answers its own question a
 
 When the question is how to proceed within the ticket as written, decide it. Research before you do, reading the ticket, its blueprint and the code through sub-agents so their output stays out of your context, and prefer the product's documented behavior to convenience. When the worker couldn't choose between shapes, tell it to run `dispatch:arena`, put the candidates and its pick on the ticket, then decide on that. Move the ticket to In Progress and `dispatch tell` the worker the decision.
 
-Decide product, contract, security, ADR and design questions the same way: you are the independent point of view on what the worker builds, not a relay for the user's approval. Tell the user the decision in one line with its reason. Put the question to the user, alone and with your recommendation, only when you say which of these applies:
+Decide product, contract, security and ADR questions the same way: you are the independent point of view on what the worker builds, not a relay for the user's approval. Tell the user the decision in one line with its reason. Put the question to the user, alone and with your recommendation, only when you say which of these applies:
 
 - Your answer differs from the one the worker proposed. A worker that proposed none gives you nothing to disagree with, so decide.
 - A claim the decision rests on can't be verified (`dispatch:principle-verify-dont-assume`).
 - You are still unsure on a call that is costly to reverse, such as a shipped public contract, a stored data format or superseding an ADR.
+
+For a design worker, keep the design moving. State the ticket's intent in a sentence, and decide each question against it with the skills `dispatch:principles` indexes. Put it to the user, with your recommendation, only when:
+
+- The design is drifting from the intent: a requirement or deliverable no longer serves it.
+- The scope is growing past what the ticket asked for.
+- No principle gives enough guidance to settle the question, and the call is costly to reverse.
 
 A worker blocked on a question popup also goes to the user, since `dispatch tell` sends nothing to a blocked session.
 
