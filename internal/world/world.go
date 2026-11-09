@@ -584,7 +584,9 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 	w.PRReadsAnswered = 0
 	w.PRs, w.PRReadFailed, w.PRRateLimited = map[string]pullrequest.PullRequest{}, map[string]bool{}, map[string]time.Time{}
 	w.PRNotFound = map[string][]string{}
-	for _, t := range w.Tickets {
+	// The previous world may still be in use, so a ticket's Branch and names are changed on copies.
+	w.Tickets, w.PRBranches = slices.Clone(w.Tickets), maps.Clone(w.PRBranches)
+	for i, t := range w.Tickets {
 		settings, ok := scope.PRRepo(t, w.Workers[t.Identifier].State)
 		if !ok {
 			continue
@@ -606,6 +608,11 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 			}
 			if found {
 				w.PRs[t.Identifier] = pr
+				// The branch fact is the branch the PR is on, which a rule stacks the next ticket on.
+				w.Tickets[i].Branch = name
+				if len(names) > 1 {
+					w.PRBranches[t.Identifier] = foremost(names, name)
+				}
 				break
 			}
 		}
@@ -621,28 +628,48 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 	}
 }
 
-// resolveBranches sets each ticket's Branch to the branch its worker is on, and records the
-// names to look its PR up by. Linear's name comes last, because it drifts from the branch that was
-// pushed (it truncates long names), while the tree's branch is where the worker pushes from and
-// the launch record is where the launcher put it.
+// resolveBranches sets each ticket's Branch to the first name its PR is looked up by, and records
+// the names. Linear's name can drift from the pushed branch (it truncates long names), so the
+// branch the launcher recorded comes before it. A tree's branch is evidence only so long as it is
+// the ticket's own: a worker may check out its parent's branch to read it, so once a launch record
+// exists the tree's branch is tried last, and a branch that another ticket names is never used.
 func (w *World) resolveBranches(ctx context.Context, src Sources, scope Scope) {
+	earlier := w.PRBranches
 	w.PRBranches = map[string][]string{}
 	w.Tickets = slices.Clone(w.Tickets)
+	launched := map[string]string{}
+	named := map[string]string{}
+	for _, t := range w.Tickets {
+		if ticket.SystemOf(t.Identifier) == ticket.SystemLocal {
+			continue
+		}
+		launched[t.Identifier], _ = launchedbranch.Of(src.StateDir, t.Identifier)
+		for _, name := range []string{t.Branch, launched[t.Identifier]} {
+			if name != "" {
+				named[name] = t.Identifier
+			}
+		}
+	}
 	for i, t := range w.Tickets {
 		// A local ticket's branch is set once at create and never renamed.
 		if ticket.SystemOf(t.Identifier) == ticket.SystemLocal {
 			continue
 		}
 		var names []string
-		add := func(name string) {
-			if name != "" && !slices.Contains(names, name) {
-				names = append(names, name)
+		label, _ := scope.RepoOf(t)
+		if kept := earlier[t.Identifier]; len(kept) > 0 && w.UnreadRepos[label] {
+			// No tree was read, so the last names are the best evidence there is.
+			names = kept
+		} else {
+			tree := w.checkedOut(ctx, src, scope, t)
+			if owner := named[tree]; owner != "" && owner != t.Identifier {
+				tree = ""
+			}
+			names = branchNames(launched[t.Identifier], tree, t.Branch)
+			if len(kept) > 0 && slices.Contains(names, kept[0]) {
+				names = foremost(names, kept[0])
 			}
 		}
-		add(w.checkedOut(ctx, src, scope, t))
-		launched, _ := launchedbranch.Of(src.StateDir, t.Identifier)
-		add(launched)
-		add(t.Branch)
 		if len(names) > 0 {
 			w.Tickets[i].Branch = names[0]
 		}
@@ -650,6 +677,26 @@ func (w *World) resolveBranches(ctx context.Context, src Sources, scope Scope) {
 			w.PRBranches[t.Identifier] = names
 		}
 	}
+}
+
+// branchNames lists the names to look a ticket's PR up by, in order, without repeats or blanks.
+func branchNames(launched, tree, linear string) []string {
+	order := []string{tree, linear}
+	if launched != "" {
+		order = []string{launched, linear, tree}
+	}
+	var names []string
+	for _, name := range order {
+		if name != "" && !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// foremost is names with name moved to the front.
+func foremost(names []string, name string) []string {
+	return append([]string{name}, slices.DeleteFunc(slices.Clone(names), func(n string) bool { return n == name })...)
 }
 
 // checkedOut is the branch checked out in the ticket's tree in the ticket's repo, or empty when

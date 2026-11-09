@@ -2,6 +2,7 @@ package dispatch_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -189,4 +190,55 @@ func TestATicketStackedOnOneWhoseLinearNameDriftedLaunchesFromItsRealBranch(t *t
 	assert.Contains(t, d.fakes().Herdr.Kicked()[len(d.fakes().Herdr.Kicked())-1], "/dispatch:build ENG-2 --base "+prBranch("ENG-1"))
 	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
 	assert.Equal(t, head, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))
+}
+
+// inReviewBranchRule comments the branch ENG-1 reads as its own while it is In Review.
+const inReviewBranchRule = `
+whenever({ name: "branch", each: "ticket", if: (t) => t.id === "ENG-1" && t.status === "in_review",
+  then: (t, ctx) => ctx.ticket.queueComment(t, "branch " + t.branch, { once: ["branch", t.branch] }) });`
+
+func TestTickKeepsAWorkerOffThePROfAnotherTicketWhoseBranchItsTreeHasCheckedOut(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Review", "dispatch"))
+	tree := d.Workers.CheckedOut("ENG-2", "idle")
+	d.Trees.Git(tree, "branch", "-m", prBranch("ENG-1"))
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
+	d.Restart()
+
+	require.NoError(t, d.TickAfterASecond())
+
+	assert.NotContains(t, d.prReads(), prBranch("ENG-1"))
+	assert.Empty(t, d.Workers.Received("ENG-2"))
+}
+
+func TestARuleReadsTheBranchThePRWasFoundOnAsTheTicketsBranch(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: rule(inReviewBranchRule)})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	tree := d.Workers.CheckedOut("ENG-1", "idle")
+	d.Trees.Git(tree, "branch", "-m", "scratch")
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "SUCCESS", mergeable: "MERGEABLE"})
+
+	d.Tick()
+
+	assert.Equal(t, "branch "+prBranch("ENG-1"), lastReadingOf(d, "ENG-1"))
+}
+
+func TestARuleKeepsTheBranchItReadWhenALaterRefreshCannotReadThePool(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: rule(inReviewBranchRule)})
+	d.Linear.Tickets(drifted("ENG-1", "In Review"))
+	tree := d.Workers.CheckedOut("ENG-1", "idle")
+	d.Trees.Git(tree, "branch", "-m", "renamed-by-hand")
+	d.Tick()
+	require.Equal(t, "branch renamed-by-hand", lastReadingOf(d, "ENG-1"))
+
+	d.fakes().Treehouse.FailTrees(errors.New("exit status 1"))
+	d.Linear.Tickets(drifted("ENG-1", "In Review"))
+	d.Tick()
+
+	for _, comment := range d.Linear.Comments() {
+		assert.NotContains(t, comment, "branch "+driftedBranch)
+	}
 }

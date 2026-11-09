@@ -190,7 +190,7 @@ Two keys in the repo clone's git config under the stacked ticket's branch naming
 _Avoid_: stack state, stack metadata
 
 **Launched branch**:
-The branch the launcher put a ticket's worker on, kept in the state directory under the ticket id. Dispatch looks for the ticket's PR on the branch checked out in its tree first, this record second and the name Linear reports last, because Linear's name can drift from the branch that was pushed.
+The branch the launcher put a ticket's worker on, kept in the state directory under the ticket id. Dispatch looks for the ticket's PR on this record first, then the name Linear reports, then the branch checked out in its tree, because Linear's name can drift from the branch that was pushed and a tree can hold another ticket's branch. A ticket with no record tries its tree first.
 _Avoid_: ticket branch (Linear's name for it)
 
 **Fork point**:
