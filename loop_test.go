@@ -505,6 +505,35 @@ func TestStoppingTheLoopAnswersATickThatIsWaiting(t *testing.T) {
 	}
 }
 
+func TestStoppingTheLoopAnswersATellThatWaitsForARead(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.StartWithLaunchTimeout(3 * time.Second)
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.StallLaunches()
+	ticked := later(func() Result { return d.Run("tick", "--timeout", "1m") })
+	require.Eventually(t, func() bool { return len(d.Workers.Launched()) == 1 }, 20*time.Second, 5*time.Millisecond)
+
+	// A tell is answered once the read it asks for lands, so it is still waiting when the loop stops.
+	d.tools.Treehouse.DelayTrees(2 * time.Second)
+	reads := len(d.tools.Calls("treehouse", "trees"))
+	told := make(chan Result, 1)
+	go func() { told <- d.RunWhileDown("tell", "ENG-99", "probe") }()
+	require.Eventually(t, func() bool { return len(d.tools.Calls("treehouse", "trees")) > reads }, 20*time.Second, 5*time.Millisecond)
+	stopped := later(d.stopLoop)
+
+	// The stalled launch keeps the loop up until its deadline, which passes only after the answer.
+	select {
+	case res := <-told:
+		require.ErrorContains(t, res.Err, "dispatch is stopping")
+	case <-time.After(10 * time.Second):
+		t.Fatal("the tell was never answered")
+	}
+	d.Clock.expire("launch ENG-1")
+	require.NoError(t, stopped())
+	require.ErrorContains(t, ticked().Err, "dispatch is stopping")
+}
+
 func TestAStateDirectoryThatCannotHoldTheSocketLaunchesNothing(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})

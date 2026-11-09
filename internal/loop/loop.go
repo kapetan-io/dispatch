@@ -98,6 +98,9 @@ type Loop struct {
 	pending world.Part
 	// afterRead runs once the read in flight lands.
 	afterRead []func() error
+	// waitingTells are the replies of the tells that wait in afterRead. drain answers them, because a
+	// stopping loop never runs afterRead and cannot exit while an action is in flight.
+	waitingTells []chan Response
 
 	flights   map[string]*flight
 	launching map[string]bool
@@ -330,6 +333,10 @@ func (l *Loop) drain() error {
 		w.reply <- Response{Code: CodeFailed, Error: "dispatch is stopping"}
 	}
 	l.waiters = nil
+	for _, reply := range l.waitingTells {
+		reply <- Response{Code: CodeFailed, Error: "dispatch is stopping"}
+	}
+	l.waitingTells = nil
 	deadline := time.After(executor.DefaultDeadline + 5*time.Second)
 	for len(l.flights) > 0 || l.reading {
 		select {
