@@ -11,7 +11,7 @@ Each worker's workspace is labeled `<emoji> <ticket>`, and the emoji says who th
 | 👀 | You | In Review, the PR is ready for your review (the notification also needs an idle worker) |
 | ⏳ | The PR's approvers | In Review in a repo with `open_pr_as = "draft"`, the PR is ready, you have opened it and its head isn't approved. No notification |
 | 🔀 | Whoever merges | In Review in a repo with `open_pr_as = "draft"`, the PR is ready, opened and its head is approved. Dispatch merges it when `auto_merge` is on. When it is off the label waits on you, and an idle worker sends one "approved and ready to merge" notification per head |
-| 💤 | You | The worker is idle with no background task running and nothing else pending. Open its window |
+| 💤 | You | The worker is idle with no background task running and nothing else pending. Open its window, or close its workspace when its last ticket comment says it answered everything the ticket asked and it opened no PR |
 | 🔴 | You | Needs Human, or the worker is blocked on a question popup |
 | ⏸️ | Nobody | Paused (Backlog or Todo) with the tree kept and a workspace still open |
 
