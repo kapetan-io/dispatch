@@ -58,7 +58,7 @@ A worker can report no status, as Claude does while it shows a startup dialog. I
 
 ### In Review
 
-dispatch reads the PR only when the worker is idle or gone. It looks for an open PR on up to three branch names in turn and stops at the first that has one: the branch the launcher recorded for the ticket, the name Linear reports, and the branch checked out in the worker's tree. A ticket launched before dispatch kept that record has no record, so its tree's branch goes first. A branch that another ticket names is never taken from a tree, because a worker may check out its parent's branch. Linear's name can drift from the pushed branch (it truncates long names), which is why it does not come first. The ticket's `branch` fact is the branch its PR was found on, or the first name when none was found. A ticket with no PR on any of them shows `found no open PR on branches <names>` in `dispatch explain`, in place of `wants nothing`.
+dispatch reads the PR only when the worker is idle or gone.
 
 | Worker | Stop record | PR | Emoji | What dispatch does |
 |---|---|---|---|---|

@@ -221,3 +221,16 @@ type System interface {
 	// newest comment moved since seen.
 	Unchanged(ctx context.Context, seen Ticket) error
 }
+
+// OnBranch reports whether branch belongs to the Linear ticket id: a slash-separated part of it is
+// the id, or starts with the id and a dash. Linear writes the id first and the title after it, and
+// the title is the part that changes or gets cut short, so only the id says whose branch it is.
+func OnBranch(id, branch string) bool {
+	id = strings.ToLower(id)
+	for _, part := range strings.Split(strings.ToLower(branch), "/") {
+		if part == id || strings.HasPrefix(part, id+"-") {
+			return true
+		}
+	}
+	return false
+}

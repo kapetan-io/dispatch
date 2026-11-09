@@ -19,7 +19,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/inbox"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
-	"github.com/kapetan-io/dispatch/internal/launchedbranch"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/localticket"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
@@ -40,7 +39,7 @@ type Sources struct {
 	Inbox inbox.Inbox
 	// Env is what the git commands that inspect a tree run with.
 	Env environment.Environment
-	// StateDir holds the Stop records, session logs, kickoff records and launched branches.
+	// StateDir holds the Stop records and session logs.
 	StateDir string
 	// Stderr receives one line for each read that failed without stopping the read.
 	Stderr io.Writer
@@ -187,12 +186,11 @@ type World struct {
 	// PRRateLimited holds the tickets in PRReadFailed whose read GitHub refused because the
 	// account's budget is spent, with the time GitHub says it refills, zero when it gives none.
 	PRRateLimited map[string]time.Time
-	// PRBranches maps a Linear ticket to the branch names its PR is looked up by, in order, when
-	// there is more than one. The first is the ticket's Branch. A ticket with one name is absent.
-	PRBranches map[string][]string
-	// PRNotFound maps an In Review ticket whose PR read answered with no open PR to the branches it
-	// asked for, in the order it asked.
-	PRNotFound map[string][]string
+	// PRBranch maps a ticket to the branch its open PR was found on. Linear's name can differ from
+	// the pushed branch, so a ticket keeps the name its PR was found under until a read finds none.
+	PRBranch map[string]string
+	// PRNotFound maps a ticket whose last PR read found no open PR to the branch it asked for.
+	PRNotFound map[string]string
 	// PRReadsAnswered counts the PR reads GitHub answered, so a read that asked it nothing is not
 	// taken for proof the budget is back.
 	PRReadsAnswered int
@@ -321,7 +319,6 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 			w.UnreadRepos[label] = true
 		}
 	}
-	var linearRead bool
 	if parts&FromLinear != 0 || prev.At.IsZero() {
 		parts |= FromLinear
 		readCtx, done := bound(ctx)
@@ -333,7 +330,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		switch {
 		case err == nil:
 			w.Tickets, w.LinearErr = replaceLinear(src, w.Tickets, tickets), nil
-			linearRead = true
+			w.keepPRBranches()
 		case src.Resilient:
 			w.LinearErr = err
 			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the tickets: %v\n", err)
@@ -376,10 +373,6 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 			w.joinWorker(src, scope, t)
 		}
 		w.joinLeases()
-		// Only tickets just read carry Linear's name, which later refreshes would otherwise lose.
-		if linearRead {
-			w.resolveBranches(ctx, src, scope)
-		}
 	}
 	if parts&FromLinear != 0 && w.LinearErr == nil {
 		// Only promotion and closing wait on the children, so a failed read holds
@@ -577,145 +570,90 @@ func (w *World) inspectTrees(ctx context.Context, env environment.Environment, s
 	}
 }
 
-// readPRs reads the open PR of each ticket for which ReadsPR is true, asking for each of the
-// ticket's branch names in turn until one has an open PR. A PR that can't be read is reported and
-// left out, so it holds back only its own ticket.
+// keepPRBranches puts each ticket back on the branch its PR was found on, since the Linear read
+// that just replaced the tickets gave every one Linear's name.
+func (w *World) keepPRBranches() {
+	w.Tickets = slices.Clone(w.Tickets)
+	kept := map[string]string{}
+	for i, t := range w.Tickets {
+		if branch, ok := w.PRBranch[t.Identifier]; ok {
+			w.Tickets[i].Branch, kept[t.Identifier] = branch, branch
+		}
+	}
+	w.PRBranch = kept
+}
+
+// readPRs reads the open PR of each ticket for which ReadsPR is true. A PR that can't be read is
+// reported and left out, so it holds back only its own ticket.
 func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 	w.PRReadsAnswered = 0
 	w.PRs, w.PRReadFailed, w.PRRateLimited = map[string]pullrequest.PullRequest{}, map[string]bool{}, map[string]time.Time{}
-	w.PRNotFound = map[string][]string{}
-	// The previous world may still be in use, so a ticket's Branch and names are changed on copies.
-	w.Tickets, w.PRBranches = slices.Clone(w.Tickets), maps.Clone(w.PRBranches)
+	w.PRNotFound = map[string]string{}
+	// The previous world may still be in use, so a ticket's Branch and its record change on copies.
+	w.Tickets, w.PRBranch = slices.Clone(w.Tickets), maps.Clone(w.PRBranch)
+	if w.PRBranch == nil {
+		w.PRBranch = map[string]string{}
+	}
+	type listing struct {
+		branches []string
+		err      error
+	}
+	open := map[string]listing{}
 	for i, t := range w.Tickets {
 		settings, ok := scope.PRRepo(t, w.Workers[t.Identifier].State)
 		if !ok {
 			continue
 		}
-		rules := pullrequest.Rules{IgnoreAuthors: settings.IgnoreCommentAuthors, RequiredChecksOnly: settings.IgnoreOptionalChecks, ApprovalChecks: settings.ApprovalChecks}
-		names := w.PRBranches[t.Identifier]
-		if len(names) == 0 {
-			names = []string{t.Branch}
-		}
-		var failed error
-		var found bool
-		for _, name := range names {
-			readCtx, done := bound(ctx)
-			var pr pullrequest.PullRequest
-			pr, found, failed = src.PullRequests.Read(readCtx, settings.Path, name, rules)
-			done()
-			if failed != nil {
-				break
+		branch := t.Branch
+		if ticket.SystemOf(t.Identifier) == ticket.SystemLinear {
+			list, listed := open[settings.Path]
+			if !listed {
+				readCtx, done := bound(ctx)
+				list.branches, list.err = src.PullRequests.OpenBranches(readCtx, settings.Path)
+				done()
+				open[settings.Path] = list
 			}
-			if found {
-				w.PRs[t.Identifier] = pr
-				// The branch fact is the branch the PR is on, which a rule stacks the next ticket on.
-				w.Tickets[i].Branch = name
-				if len(names) > 1 {
-					w.PRBranches[t.Identifier] = foremost(names, name)
-				}
-				break
+			if list.err != nil {
+				_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, list.err)
+				w.failPRRead(t.Identifier, list.err)
+				continue
 			}
+			branch = branchOf(t, list.branches)
 		}
-		if failed != nil {
-			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, failed)
-			w.failPRRead(t.Identifier, failed)
+		readCtx, done := bound(ctx)
+		pr, found, err := src.PullRequests.Read(readCtx, settings.Path, branch, pullrequest.Rules{IgnoreAuthors: settings.IgnoreCommentAuthors, RequiredChecksOnly: settings.IgnoreOptionalChecks, ApprovalChecks: settings.ApprovalChecks})
+		done()
+		if err != nil {
+			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the PR for %s: %v\n", t.Identifier, err)
+			w.failPRRead(t.Identifier, err)
 			continue
 		}
 		w.PRReadsAnswered++
 		if !found {
-			w.PRNotFound[t.Identifier] = names
-		}
-	}
-}
-
-// resolveBranches sets each ticket's Branch to the first name its PR is looked up by, and records
-// the names. Linear's name can drift from the pushed branch (it truncates long names), so the
-// branch the launcher recorded comes before it. A tree's branch is evidence only so long as it is
-// the ticket's own: a worker may check out its parent's branch to read it, so once a launch record
-// exists the tree's branch is tried last, and a branch that another ticket names is never used.
-func (w *World) resolveBranches(ctx context.Context, src Sources, scope Scope) {
-	earlier := w.PRBranches
-	w.PRBranches = map[string][]string{}
-	w.Tickets = slices.Clone(w.Tickets)
-	launched := map[string]string{}
-	named := map[string]string{}
-	for _, t := range w.Tickets {
-		if ticket.SystemOf(t.Identifier) == ticket.SystemLocal {
+			// A ticket with no PR follows Linear's name again from the next Linear read.
+			w.PRNotFound[t.Identifier] = branch
+			delete(w.PRBranch, t.Identifier)
 			continue
 		}
-		launched[t.Identifier], _ = launchedbranch.Of(src.StateDir, t.Identifier)
-		for _, name := range []string{t.Branch, launched[t.Identifier]} {
-			if name != "" {
-				named[name] = t.Identifier
-			}
-		}
-	}
-	for i, t := range w.Tickets {
-		// A local ticket's branch is set once at create and never renamed.
-		if ticket.SystemOf(t.Identifier) == ticket.SystemLocal {
-			continue
-		}
-		var names []string
-		label, _ := scope.RepoOf(t)
-		if kept := earlier[t.Identifier]; len(kept) > 0 && w.UnreadRepos[label] {
-			// No tree was read, so the last names are the best evidence there is.
-			names = kept
-		} else {
-			tree := w.checkedOut(ctx, src, scope, t)
-			if owner := named[tree]; owner != "" && owner != t.Identifier {
-				tree = ""
-			}
-			names = branchNames(launched[t.Identifier], tree, t.Branch)
-			if len(kept) > 0 && slices.Contains(names, kept[0]) {
-				names = foremost(names, kept[0])
-			}
-		}
-		if len(names) > 0 {
-			w.Tickets[i].Branch = names[0]
-		}
-		if len(names) > 1 {
-			w.PRBranches[t.Identifier] = names
-		}
+		w.PRs[t.Identifier] = pr
+		// The branch fact is the branch the PR is on, which the next launch and a stacked ticket start from.
+		w.Tickets[i].Branch, w.PRBranch[t.Identifier] = branch, branch
 	}
 }
 
-// branchNames lists the names to look a ticket's PR up by, in order, without repeats or blanks.
-func branchNames(launched, tree, linear string) []string {
-	order := []string{tree, linear}
-	if launched != "" {
-		order = []string{launched, linear, tree}
+// branchOf is the branch of t's open PR among open. Linear's name stands when a PR is open on it.
+// Otherwise the one open branch that starts with the ticket's id is the ticket's, because the
+// title after the id is what changes or gets cut short. With none or several, Linear's name is
+// all there is to go on.
+func branchOf(t ticket.Ticket, open []string) string {
+	if slices.Contains(open, t.Branch) {
+		return t.Branch
 	}
-	var names []string
-	for _, name := range order {
-		if name != "" && !slices.Contains(names, name) {
-			names = append(names, name)
-		}
+	matches := slices.DeleteFunc(slices.Clone(open), func(b string) bool { return !ticket.OnBranch(t.Identifier, b) })
+	if len(matches) == 1 {
+		return matches[0]
 	}
-	return names
-}
-
-// foremost is names with name moved to the front.
-func foremost(names []string, name string) []string {
-	return append([]string{name}, slices.DeleteFunc(slices.Clone(names), func(n string) bool { return n == name })...)
-}
-
-// checkedOut is the branch checked out in the ticket's tree in the ticket's repo, or empty when
-// it holds none or git can't say.
-func (w *World) checkedOut(ctx context.Context, src Sources, scope Scope, t ticket.Ticket) string {
-	label, _ := scope.RepoOf(t)
-	_, repo, _ := scope.Repos.Find(label)
-	for _, tree := range w.Trees {
-		if tree.LeaseHolder != t.Identifier || (repo.Path != "" && tree.RepoDir != repo.Path) {
-			continue
-		}
-		readCtx, done := bound(ctx)
-		branch, err := treehouse.Branch(readCtx, src.Env, tree.Path)
-		done()
-		if err == nil && branch != "" {
-			return branch
-		}
-	}
-	return ""
+	return t.Branch
 }
 
 // failPRRead holds the ticket's PR as unreadable, and as rate-limited when GitHub said why.

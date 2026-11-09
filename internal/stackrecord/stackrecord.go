@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/kapetan-io/dispatch/internal/environment"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 )
 
 const (
@@ -40,6 +41,30 @@ func (r Records) Of(branch string) (rec Record, found, partial bool) {
 	}
 	rec, found = r.Whole[branch]
 	return rec, found, false
+}
+
+// OfTicket is the record of the ticket's branch. Linear's name for it can differ from the branch
+// the record was written under, so when branch has no record the one record on a branch that
+// starts with the ticket's id stands for it.
+func (r Records) OfTicket(id, branch string) (rec Record, found, partial bool) {
+	if rec, found, partial = r.Of(branch); found || partial {
+		return rec, found, partial
+	}
+	var matches []string
+	for name := range r.Whole {
+		if ticket.OnBranch(id, name) {
+			matches = append(matches, name)
+		}
+	}
+	for name := range r.Partial {
+		if ticket.OnBranch(id, name) {
+			matches = append(matches, name)
+		}
+	}
+	if len(matches) != 1 {
+		return Record{}, false, false
+	}
+	return r.Of(matches[0])
 }
 
 // Read reads the records of the clone at repoDir. A clone with none is an empty read, and

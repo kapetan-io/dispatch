@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -173,6 +174,28 @@ func (r *Repository) Read(ctx context.Context, repoDir, branch string, rules pul
 		delete(r.pushes, branch)
 	}
 	return pr, found, err
+}
+
+// OpenBranches lists the branches that have an open PR from this repo, in name order.
+func (r *Repository) OpenBranches(ctx context.Context, repoDir string) ([]string, error) {
+	r.journal.Record("pullrequest", "open-branches")
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.readFail != nil {
+		return nil, r.readFail
+	}
+	var branches []string
+	for branch, pages := range r.pages {
+		for _, page := range pages {
+			for _, node := range nodes(page) {
+				if cross, _ := node["isCrossRepository"].(bool); !cross {
+					branches = append(branches, branch)
+				}
+			}
+		}
+	}
+	slices.Sort(branches)
+	return slices.Compact(branches), nil
 }
 
 // source answers Find from the pages the test set.

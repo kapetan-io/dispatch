@@ -102,9 +102,9 @@ type tracing struct {
 	last string
 	// lastHTTP is the exchanges most recently printed, so an answer that changed prints even when the decision didn't.
 	lastHTTP []exchange
-	// notFound holds the branches the newest read asked for when its PR read of the ticket found
-	// no open PR, empty when it found one or did not read.
-	notFound []string
+	// notFound is the branch the newest read asked for when its PR read of the ticket found no open
+	// PR, empty when it found one or did not read.
+	notFound string
 	// err is the first write to out that failed.
 	err error
 }
@@ -147,7 +147,7 @@ func (t *tracing) segment(seg Segment) {
 	// Only a rotated segment continues the run before it, so every other segment (a start or a reset)
 	// shows its first cycle again.
 	if seg.Header.Why != "rotate" {
-		t.last, t.lastHTTP, t.notFound = unprinted, nil, nil
+		t.last, t.lastHTTP, t.notFound = unprinted, nil, ""
 	}
 	for _, raw := range seg.Lines {
 		var head struct {
@@ -163,7 +163,7 @@ func (t *tracing) segment(seg Segment) {
 		case LineRead:
 			var r struct {
 				World struct {
-					PRNotFound map[string][]string `json:"prNotFound"`
+					PRNotFound map[string]string `json:"prNotFound"`
 				} `json:"world"`
 			}
 			if json.Unmarshal(raw, &r) == nil {
@@ -266,13 +266,8 @@ func (t *tracing) exchanges(c Cycle) []exchange {
 func (t *tracing) decisions(c Cycle) []decision {
 	var out []decision
 	// A PR read that found nothing is the likely reason an In Review ticket's PR rules never fire.
-	if len(t.notFound) > 0 {
-		list := strings.Join(t.notFound, ", ")
-		noun := "branch"
-		if len(t.notFound) > 1 {
-			noun = "branches"
-		}
-		out = append(out, decision{text: fmt.Sprintf("found no open PR on %s %s", noun, list), line: ExplainLine{Decision: "no-pr", Detail: list}})
+	if t.notFound != "" {
+		out = append(out, decision{text: "found no open PR on branch " + t.notFound, line: ExplainLine{Decision: "no-pr", Detail: t.notFound}})
 	}
 	add := func(rule, text string, line ExplainLine) {
 		line.Rule = rule

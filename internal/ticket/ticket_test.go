@@ -62,3 +62,24 @@ func TestStatusesFindIgnoresCase(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "In Review", st.Name)
 }
+
+func TestOnBranch(t *testing.T) {
+	for _, test := range []struct {
+		name, id, branch string
+		want             bool
+	}{
+		{name: "idThenTitle", id: "ENG-691", branch: "thrawn01/eng-691-keep-the-launched-branch", want: true},
+		{name: "titleCutShort", id: "ENG-691", branch: "thrawn01/eng-691-keep", want: true},
+		{name: "idOnly", id: "ENG-691", branch: "eng-691", want: true},
+		{name: "idAfterAFolder", id: "ENG-691", branch: "feature/eng-691-x", want: true},
+		{name: "otherCase", id: "ENG-691", branch: "thrawn01/ENG-691-Title", want: true},
+		{name: "longerNumber", id: "ENG-69", branch: "thrawn01/eng-691-title", want: false},
+		{name: "otherTeam", id: "ENG-691", branch: "thrawn01/xeng-691-title", want: false},
+		{name: "idInsideTheTitle", id: "ENG-691", branch: "thrawn01/fix-eng-691", want: false},
+		{name: "main", id: "ENG-691", branch: "main", want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, ticket.OnBranch(test.id, test.branch))
+		})
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -16,8 +17,8 @@ import (
 	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
-	"github.com/kapetan-io/dispatch/internal/launchedbranch"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
+	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/typed"
 )
@@ -58,8 +59,7 @@ type Options struct {
 	// Stderr receives progress. Defaults to discarding it.
 	Stderr io.Writer
 	// StateDir is where a launch records that its kickoff is unconfirmed, so a
-	// tick can find a session the launch died on, and the branch it put the worker on.
-	// Empty records nothing.
+	// tick can find a session the launch died on. Empty records nothing.
 	StateDir string
 	// Clock stamps a launch's kickoff record, which the rules compare with the loop's clock,
 	// and runs the preflight deadline. Defaults to the wall clock.
@@ -198,7 +198,6 @@ func (l *launch) run(ctx context.Context) Result {
 	if r, ok := l.fetchAndLease(ctx); !ok {
 		return r
 	}
-	l.recordBranch()
 	if r, ok := l.openWorkspace(ctx); !ok {
 		return r
 	}
@@ -236,18 +235,6 @@ func (l *launch) run(ctx context.Context) Result {
 	return Result{
 		Status: StatusOK, Ticket: req.Ticket, Branch: req.Branch, Worktree: l.tree,
 		Workspace: l.workspace, Pane: started.Pane, Agent: started.Agent, Kickoff: req.Kickoff, Stacked: l.stacked,
-	}
-}
-
-// recordBranch keeps the branch the worker is on, so the dispatcher still finds its PR after Linear
-// reports another name. A reused tree was not switched, so it may be on another branch than the
-// request names. A failure is logged and the launch goes on, since the world falls back to Linear's name.
-func (l *launch) recordBranch() {
-	if l.opts.StateDir == "" || !l.fresh {
-		return
-	}
-	if err := launchedbranch.Write(l.opts.StateDir, l.req.Ticket, l.req.Branch); err != nil {
-		l.log("%v", err)
 	}
 }
 
@@ -348,6 +335,7 @@ func (l *launch) fetchAndLease(ctx context.Context) (Result, bool) {
 // trackBranch reports whether the branch already exists, locally or on origin,
 // creating a local tracking branch for one that exists only there.
 func (l *launch) trackBranch(ctx context.Context) bool {
+	l.adoptBranch(ctx)
 	b := l.req.Branch
 	_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", b)
 	if _, err := l.git(ctx, l.repo, "show-ref", "--verify", "--quiet", "refs/heads/"+b); err == nil {
@@ -358,6 +346,41 @@ func (l *launch) trackBranch(ctx context.Context) bool {
 		return true
 	}
 	return false
+}
+
+// adoptBranch moves the request onto the branch the ticket already has when no branch has the
+// requested name. Linear's name for a ticket can differ from the branch its worker pushed (it cuts
+// long names short), and a launch on the requested name would start a new, empty branch beside the
+// worker's own. The branch counts only when it is the one branch, local or on origin, that starts
+// with the ticket's id.
+func (l *launch) adoptBranch(ctx context.Context) {
+	b := l.req.Branch
+	if _, err := l.git(ctx, l.repo, "show-ref", "--verify", "--quiet", "refs/heads/"+b); err == nil {
+		return
+	}
+	if _, err := l.git(ctx, l.repo, "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/"+b); err == nil {
+		return
+	}
+	var found []string
+	add := func(name string) {
+		if ticket.OnBranch(l.req.Ticket, name) && !slices.Contains(found, name) {
+			found = append(found, name)
+		}
+	}
+	local, _ := l.git(ctx, l.repo, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+	for name := range strings.SplitSeq(local, "\n") {
+		add(strings.TrimSpace(name))
+	}
+	remote, _ := l.git(ctx, l.repo, "ls-remote", "--heads", "origin")
+	for line := range strings.SplitSeq(remote, "\n") {
+		if _, ref, ok := strings.Cut(line, "\t"); ok {
+			add(strings.TrimPrefix(strings.TrimSpace(ref), "refs/heads/"))
+		}
+	}
+	if len(found) == 1 {
+		l.log("branch %s does not exist, so the launch uses %s, the branch the ticket already has", b, found[0])
+		l.req.Branch = found[0]
+	}
 }
 
 // leaseTree reuses the tree already holding this ticket's lease, so a relaunch
