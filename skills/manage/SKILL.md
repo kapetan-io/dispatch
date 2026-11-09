@@ -34,6 +34,8 @@ Read it fresh each time from Linear (`dispatch ticket list` for `LOC-` tickets),
 
 The rules already nudge an idle worker whose PR needs work and escalate after `nudge_limit`. Tell a worker (`dispatch tell`) only where they don't reach: an idle In Progress worker whose ticket is not done (the rules never nudge In Progress, whether or not it has opened a PR), or a ticket `dispatch explain` or `dispatch cycle` shows waiting on something you can supply. Check the ticket's acceptance criteria before you ask a worker to inspect something, since they may already settle it.
 
+A 💤 worker whose last ticket comment says it answered everything the ticket asked and that opened no PR, such as an investigation that ends in a comment, has nothing left to do. This overrides `dispatch:dispatch`'s "Worker is idle" event. Tell the user to move the ticket to Done or Canceled, which closes its workspace and returns the tree, not to open its window. Closing the workspace alone makes dispatch launch a new worker.
+
 ## Needs Human
 
 Read the worker's workspace first. A worker sometimes answers its own question after escalating. If it did, move the ticket back to In Progress and decide nothing. An escalation that asks nothing and has no PR to look at (a launch failure, the relaunch limit, truncated labels, missing repo config, an abandoned blocker) goes to the user as it stands, since the ticket's comment names the cause. A ticket whose comment says the worker stayed idle through nudges isn't asking anything. Look at its PR and workspace, tell the worker what is wrong, and move it back to In Review, which restarts the nudges. A worker disputing your own review finding is autobots' case: weigh its reply on the PR, drop or re-explain the finding, and move the ticket back.
