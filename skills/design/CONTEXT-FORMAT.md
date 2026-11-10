@@ -7,6 +7,10 @@
 
 {One or two sentence description of what this context is and why it exists.}
 
+## Purpose
+
+{Who the user is and what the domain does for them, then `### Tradeoffs` and `### Capabilities`. Drafted by `dispatch:purpose` and corrected by the owner.}
+
 ## Language
 
 **Order**:
