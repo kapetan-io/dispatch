@@ -9,7 +9,7 @@
 
 ## Purpose
 
-{Who the user is and what the domain does for them, then `### Tradeoffs` and `### Capabilities`. Drafted by `dispatch:purpose` and corrected by the owner.}
+{Who the user is and what the domain does for them, then `### Tradeoffs` (when the domain has any) and `### Capabilities`. Drafted by `dispatch:purpose` and corrected by the owner.}
 
 ## Language
 
