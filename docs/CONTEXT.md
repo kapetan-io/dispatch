@@ -190,7 +190,7 @@ Two keys in the repo clone's git config under the stacked ticket's branch naming
 _Avoid_: stack state, stack metadata
 
 **Ticket branch**:
-The branch a ticket's work is on. Dispatch keeps it in the state directory, one file per ticket, written when the launcher puts a worker on a branch, when a PR is found for the ticket, and at start for a ticket whose tree holds a branch starting with its id. Linear's name for it is the id followed by the title, and the title is what changes or gets cut short, so a branch is matched to its ticket by the id at the start of the name. Linear's name is only the first guess.
+The branch a ticket's work is on. It is named by the ticket branch key, the git config variable `branch.<name>.dispatchTicket` in the repo clone, whose value is the ticket's id. The launcher writes the key when it puts a worker on a branch, and at start dispatch writes it for a tracked ticket whose one local branch starts with its id. git moves the key when a branch is renamed and drops it when the branch is deleted. The ticket system's name for the branch is only the first guess, since Linear writes the id followed by a title that changes or gets cut short.
 _Avoid_: launched branch
 
 **Fork point**:

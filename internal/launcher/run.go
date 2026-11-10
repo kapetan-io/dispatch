@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -18,7 +17,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
-	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/typed"
 )
@@ -33,6 +31,7 @@ const (
 	StatusLeaseFailed          = "lease_failed"
 	StatusSwitchFailed         = "switch_failed"
 	StatusStackRecordFailed    = "stack_record_failed"
+	StatusBranchTaken          = "branch_taken"
 	StatusWorkspaceFailed      = "workspace_failed"
 	StatusAgentStartFailed     = "agent_start_failed"
 	StatusInjectionUnconfirmed = "injection_unconfirmed"
@@ -59,8 +58,7 @@ type Options struct {
 	// Stderr receives progress. Defaults to discarding it.
 	Stderr io.Writer
 	// StateDir is where a launch records that its kickoff is unconfirmed, so a
-	// tick can find a session the launch died on, and the branch it put the worker on.
-	// Empty records nothing.
+	// tick can find a session the launch died on. Empty records nothing.
 	StateDir string
 	// Clock stamps a launch's kickoff record, which the rules compare with the loop's clock,
 	// and runs the preflight deadline. Defaults to the wall clock.
@@ -199,7 +197,6 @@ func (l *launch) run(ctx context.Context) Result {
 	if r, ok := l.fetchAndLease(ctx); !ok {
 		return r
 	}
-	l.recordBranch()
 	if r, ok := l.openWorkspace(ctx); !ok {
 		return r
 	}
@@ -237,19 +234,6 @@ func (l *launch) run(ctx context.Context) Result {
 	return Result{
 		Status: StatusOK, Ticket: req.Ticket, Branch: req.Branch, Worktree: l.tree,
 		Workspace: l.workspace, Pane: started.Pane, Agent: started.Agent, Kickoff: req.Kickoff, Stacked: l.stacked,
-	}
-}
-
-// recordBranch keeps the branch the worker is on, so every later read of the ticket's branch uses
-// the one the launch chose, whatever name Linear reports then. A reused tree was not switched, so it
-// may be on another branch than the request names. A failure is logged and the launch goes on, since
-// the world finds the branch by the ticket's id.
-func (l *launch) recordBranch() {
-	if l.opts.StateDir == "" || !l.fresh {
-		return
-	}
-	if err := ticket.WriteBranch(l.opts.StateDir, l.req.Ticket, l.req.Branch); err != nil {
-		l.log("%v", err)
 	}
 }
 
@@ -350,7 +334,7 @@ func (l *launch) fetchAndLease(ctx context.Context) (Result, bool) {
 // trackBranch reports whether the branch already exists, locally or on origin,
 // creating a local tracking branch for one that exists only there.
 func (l *launch) trackBranch(ctx context.Context) bool {
-	l.adoptBranch(ctx)
+	l.adoptKeyed(ctx)
 	b := l.req.Branch
 	_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", b)
 	if _, err := l.git(ctx, l.repo, "show-ref", "--verify", "--quiet", "refs/heads/"+b); err == nil {
@@ -363,12 +347,10 @@ func (l *launch) trackBranch(ctx context.Context) bool {
 	return false
 }
 
-// adoptBranch moves the request onto the branch the ticket already has when no branch has the
-// requested name. Linear's name for a ticket can differ from the branch its worker pushed (it cuts
-// long names short), and a launch on the requested name would start a new, empty branch beside the
-// worker's own. The branch counts only when it is the one branch, local or on origin, that starts
-// with the ticket's id.
-func (l *launch) adoptBranch(ctx context.Context) {
+// adoptKeyed moves the request onto the branch keyed to the ticket when no branch has the requested
+// name. The world already names that branch, so this covers a launch whose keys the world could not
+// read. Without it the launch would start a new, empty branch beside the worker's own.
+func (l *launch) adoptKeyed(ctx context.Context) {
 	b := l.req.Branch
 	if _, err := l.git(ctx, l.repo, "show-ref", "--verify", "--quiet", "refs/heads/"+b); err == nil {
 		return
@@ -376,25 +358,10 @@ func (l *launch) adoptBranch(ctx context.Context) {
 	if _, err := l.git(ctx, l.repo, "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/"+b); err == nil {
 		return
 	}
-	var found []string
-	add := func(name string) {
-		if ticket.OnBranch(l.req.Ticket, name) && !slices.Contains(found, name) {
-			found = append(found, name)
-		}
-	}
-	local, _ := l.git(ctx, l.repo, "for-each-ref", "--format=%(refname:short)", "refs/heads")
-	for name := range strings.SplitSeq(local, "\n") {
-		add(strings.TrimSpace(name))
-	}
-	remote, _ := l.git(ctx, l.repo, "ls-remote", "--heads", "origin", "*"+strings.ToLower(l.req.Ticket)+"*")
-	for line := range strings.SplitSeq(remote, "\n") {
-		if _, ref, ok := strings.Cut(line, "\t"); ok {
-			add(strings.TrimPrefix(strings.TrimSpace(ref), "refs/heads/"))
-		}
-	}
-	if len(found) == 1 {
-		l.log("branch %s does not exist, so the launch uses %s, the branch the ticket already has", b, found[0])
-		l.req.Branch = found[0]
+	recs, err := stackrecord.Read(ctx, l.opts.Env, l.repo)
+	if keyed, ok := recs.BranchOf(l.req.Ticket); err == nil && ok {
+		l.log("branch %s does not exist, so the launch uses %s, the branch keyed to the ticket", b, keyed)
+		l.req.Branch = keyed
 	}
 }
 
@@ -488,7 +455,7 @@ func (l *launch) checkout(ctx context.Context, existed bool) (Result, bool) {
 		}
 	}
 	if err == nil {
-		return Result{}, true
+		return l.keyBranch(ctx)
 	}
 	said := strings.Join(strings.Fields(out.String()), " ")
 	if said == "" {
@@ -502,6 +469,31 @@ func (l *launch) checkout(ctx context.Context, existed bool) (Result, bool) {
 	l.clearIndexLock(ctx)
 	l.returnLease(ctx)
 	return Result{Status: StatusSwitchFailed, Detail: fmt.Sprintf("git switch to %s%s failed in leased tree %s (lease returned): %s", req.Branch, from, l.tree, said)}, false
+}
+
+// keyBranch writes the ticket branch key on the branch the tree was just switched to, which is how
+// every later read finds the ticket's branch whatever name its ticket system reports. A branch keyed
+// to another ticket is refused, since one branch carries one ticket's work. A key that cannot be
+// read or written is logged and the launch goes on, since the world finds the branch by the id.
+func (l *launch) keyBranch(ctx context.Context) (Result, bool) {
+	req := l.req
+	recs, err := stackrecord.Read(ctx, l.opts.Env, l.repo)
+	if err != nil {
+		l.log("%v", err)
+		return Result{}, true
+	}
+	switch owner := recs.Tickets[req.Branch]; {
+	case strings.EqualFold(owner, req.Ticket):
+	case owner != "":
+		l.log("branch %s belongs to %s, returning the lease", req.Branch, owner)
+		l.returnLease(ctx)
+		return Result{Status: StatusBranchTaken, Detail: fmt.Sprintf("branch %s belongs to %s, not %s (lease returned); `git config --unset branch.%s.dispatchTicket` in %s hands it over", req.Branch, owner, req.Ticket, req.Branch, l.repo)}, false
+	default:
+		if err := stackrecord.WriteTicket(ctx, l.opts.Env, l.repo, req.Branch, req.Ticket); err != nil {
+			l.log("%v", err)
+		}
+	}
+	return Result{}, true
 }
 
 // clearIndexLock removes the index.lock a git switch killed by the launch deadline leaves in the

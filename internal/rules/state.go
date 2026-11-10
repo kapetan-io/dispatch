@@ -278,7 +278,7 @@ func (s *State) stackOf(t ticket.Ticket, repo string, at int64) Fact[*Stack] {
 	if !ok {
 		return Unread[*Stack]("the stack records of " + repo + " were not read")
 	}
-	rec, found, partial := recs.OfTicket(t.Identifier, t.Branch)
+	rec, found, partial := recs.Of(t.Branch)
 	switch {
 	case partial:
 		return Unread[*Stack]("the stack record of " + t.Branch + " in " + repo + " is partial")

@@ -405,6 +405,14 @@ func (l *Loop) start(ctx context.Context) error {
 		_ = l.hist.Close(false)
 		return err
 	}
+	// Tickets launched before the launcher kept a key on each branch get one now, and the PRs are read
+	// again on the branches those keys name.
+	if world.KeyBranches(ctx, l.o.Sources, l.scope, wd) > 0 {
+		if wd, err = world.Refresh(ctx, l.o.Sources, l.scope, wd, world.FromLocal|world.FromGitHub, at); err != nil {
+			_ = l.hist.Close(false)
+			return err
+		}
+	}
 	l.wd = wd
 	l.tellOverflow(readDone{parts: world.Everything, w: wd})
 	_, _ = fmt.Fprintf(l.o.Out, "%s start: %s, %s, ledger %s from %s\n", at.Format(time.TimeOnly), count(len(l.wd.Tickets), "tracked ticket"),

@@ -33,7 +33,8 @@ func TestTickNudgesAnIdleWorkerWhoseLinearBranchWasCutShort(t *testing.T) {
 	ticket := ticket("ENG-1", "In Review", "dispatch")
 	ticket.Branch = cutBranch
 	d.Linear.Tickets(ticket)
-	d.Workers.CheckedOut("ENG-1", "idle")
+	tree := d.Workers.CheckedOut("ENG-1", "idle")
+	d.Trees.Git(tree, "branch", "-m", fullBranch)
 	d.GitHub.PullRequestsOn("ENG-1", fullBranch)
 	d.PullRequestFailsAfterEntry(prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 
@@ -41,6 +42,7 @@ func TestTickNudgesAnIdleWorkerWhoseLinearBranchWasCutShort(t *testing.T) {
 
 	assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
 	assert.Contains(t, d.prReads(), fullBranch)
+	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch."+fullBranch+".dispatchTicket"))
 }
 
 func TestTickFindsThePRWhenTheTicketWasRetitledAfterItsBranchWasPushed(t *testing.T) {
@@ -49,7 +51,8 @@ func TestTickFindsThePRWhenTheTicketWasRetitledAfterItsBranchWasPushed(t *testin
 	ticket := ticket("ENG-1", "In Review", "dispatch")
 	ticket.Branch = "thrawn01/eng-1-a-better-title"
 	d.Linear.Tickets(ticket)
-	d.Workers.CheckedOut("ENG-1", "idle")
+	tree := d.Workers.CheckedOut("ENG-1", "idle")
+	d.Trees.Git(tree, "branch", "-m", fullBranch)
 	d.GitHub.PullRequestsOn("ENG-1", fullBranch)
 	d.PullRequestFailsAfterEntry(prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
 
@@ -72,23 +75,32 @@ func TestTickKeepsATicketOffThePROfAnotherTicketWhoseIdStartsWithItsOwn(t *testi
 	assert.NotContains(t, d.prReads(), "thrawn01/eng-10-another-ticket")
 }
 
-func TestTickReadsLinearsNameWhenTwoOpenBranchesStartWithTheTicketsId(t *testing.T) {
+func TestTickReadsLinearsNameWhenTwoBranchesStartWithTheTicketsIdAndNoTreeHasEither(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(cut("ENG-1", "In Review"))
-	d.Workers.CheckedOut("ENG-1", "idle")
-	for _, branch := range []string{"thrawn01/eng-1-first", "thrawn01/eng-1-second"} {
-		d.GitHub.PullRequestsOn("ENG-1", branch)
-		d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
-	}
+	tree := d.Workers.CheckedOut("ENG-1", "idle")
+	d.Trees.Git(tree, "branch", "thrawn01/eng-1-second")
+	d.Trees.Git(tree, "checkout", "-q", "--detach")
 
 	d.Tick()
 
-	assert.Equal(t, []string{"thrawn01/eng-1"}, d.prReads())
-	assert.Empty(t, d.Workers.Received("ENG-1"))
+	assert.Equal(t, []string{"thrawn01/eng-1-cut"}, d.prReads())
 }
 
-func TestTickReadsThePROnTheBranchADetachedTreeWasLeftOnWithoutListingTheRepo(t *testing.T) {
+func TestTickPrefersTheBranchTheTicketsTreeHasWhenTwoBranchesStartWithTheTicketsId(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(cut("ENG-1", "In Review"))
+	tree := d.Workers.CheckedOut("ENG-1", "idle")
+	d.Trees.Git(tree, "branch", "thrawn01/eng-1-old")
+
+	d.Tick()
+
+	assert.Contains(t, d.prReads(), prBranch("ENG-1"))
+}
+
+func TestTickReadsThePROnTheBranchAWorkerRenamedItsTreeTo(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	ticket := ticket("ENG-1", "In Review", "dispatch")
@@ -101,8 +113,7 @@ func TestTickReadsThePROnTheBranchADetachedTreeWasLeftOnWithoutListingTheRepo(t 
 
 	d.Tick()
 
-	assert.Equal(t, []string{fullBranch}, d.prReads())
-	assert.Empty(t, d.tools.Calls("pullrequest", "open-branches"))
+	assert.Contains(t, d.prReads(), fullBranch)
 }
 
 func TestTickKeepsAWorkerOffThePROfAnotherTicketWhoseBranchItsTreeHasCheckedOut(t *testing.T) {
@@ -138,11 +149,12 @@ const inReviewBranchRule = `
 whenever({ name: "branch", each: "ticket", if: (t) => t.id === "ENG-1" && t.status === "in_review",
   then: (t, ctx) => ctx.ticket.queueComment(t, "branch " + t.branch, { once: ["branch", t.branch] }) });`
 
-func TestARuleReadsTheBranchThePRWasFoundOnAsTheTicketsBranchAcrossLinearReads(t *testing.T) {
+func TestARuleReadsTheBranchTheTicketIsKeyedToAsItsBranchAcrossLinearReads(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(inReviewBranchRule)})
 	d.Linear.Tickets(cut("ENG-1", "In Review"))
-	d.Workers.CheckedOut("ENG-1", "idle")
+	tree := d.Workers.CheckedOut("ENG-1", "idle")
+	d.Trees.Git(tree, "branch", "-m", fullBranch)
 	d.GitHub.PullRequestsOn("ENG-1", fullBranch)
 	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "SUCCESS", mergeable: "MERGEABLE"})
 	d.Tick()
@@ -234,4 +246,50 @@ func TestATicketStackedOnOneWhoseLinearNameDriftedLaunchesFromItsRealBranch(t *t
 	assert.Contains(t, d.fakes().Herdr.Kicked()[len(d.fakes().Herdr.Kicked())-1], "/dispatch:build ENG-2 --base "+prBranch("ENG-1"))
 	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
 	assert.Equal(t, head, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))
+}
+
+func TestALaunchKeysItsBranchAndGitMovesTheKeyWhenAWorkerRenamesTheBranch(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(inReviewBranchRule)})
+	tree := d.Trees.Pooled()
+	d.launch("ENG-1", prBranch("ENG-1"))
+	require.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch."+prBranch("ENG-1")+".dispatchTicket"))
+	d.Trees.Git(tree, "branch", "-m", fullBranch)
+	d.Linear.Tickets(cut("ENG-1", "In Review"))
+
+	d.Tick()
+
+	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch."+fullBranch+".dispatchTicket"))
+	assert.Empty(t, gitConfig(t, d.Repo, "branch."+prBranch("ENG-1")+".dispatchTicket"))
+	assert.Equal(t, "branch "+fullBranch, lastReadingOf(d, "ENG-1"))
+}
+
+func TestATicketBranchKeyOnADeletedBranchIsIgnored(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(inReviewBranchRule)})
+	tree := d.Trees.Pooled()
+	d.launch("ENG-1", prBranch("ENG-1"))
+	d.Trees.Git(tree, "checkout", "-q", "--detach")
+	d.Trees.Git(tree, "branch", "-D", prBranch("ENG-1"))
+	d.Linear.Tickets(cut("ENG-1", "In Review"))
+
+	d.Tick()
+
+	assert.Equal(t, "branch thrawn01/eng-1-cut", lastReadingOf(d, "ENG-1"))
+	assert.Empty(t, gitConfig(t, d.Repo, "branch."+prBranch("ENG-1")+".dispatchTicket"))
+}
+
+func TestALaunchOntoABranchKeyedToAnotherTicketFailsAndReturnsTheLease(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.launch("ENG-1", prBranch("ENG-1"))
+	d.Trees.Git(tree, "checkout", "-q", "--detach")
+	require.NoError(t, d.fakes().Herdr.CloseWorkspace(context.Background(), "w2"))
+	require.NoError(t, d.fakes().Treehouse.Return(context.Background(), d.Repo, tree, "ENG-1"))
+
+	out := d.launch("ENG-2", prBranch("ENG-1"))
+
+	assert.Equal(t, "branch_taken", out.result["status"])
+	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch."+prBranch("ENG-1")+".dispatchTicket"))
 }

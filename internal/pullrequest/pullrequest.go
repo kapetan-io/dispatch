@@ -24,9 +24,6 @@ type Repository interface {
 	// repoDir, as judged by rules. It returns false when the branch has no open
 	// PR from this repo.
 	Read(ctx context.Context, repoDir, branch string, rules Rules) (PullRequest, bool, error)
-	// OpenBranches lists the head branches of the repo's open PRs that come from this repo, so a
-	// caller can find a ticket's branch by its id when the name Linear gives it has changed.
-	OpenBranches(ctx context.Context, repoDir string) ([]string, error)
 	// ReadMerged finds, for each of up to MergedBatch branches, the newest PR from this repo
 	// that merged into the repo's default branch. A branch with none is left out.
 	ReadMerged(ctx context.Context, repoDir string, branches []string) (map[string]MergedPR, error)
@@ -182,19 +179,6 @@ const query = `query PullRequest($owner: String!, $repo: String!, $branch: Strin
     }
   }
 }`
-
-const openBranchesQuery = `query OpenBranches($owner: String!, $repo: String!, $after: String) {
-  repository(owner: $owner, name: $repo) {
-    pullRequests(states: OPEN, first: 100, after: $after) {
-      pageInfo { hasNextPage endCursor }
-      nodes { headRefName isCrossRepository }
-    }
-  }
-}`
-
-// openPages bounds how many pages of 100 open PRs OpenBranches reads, so a repo with more open PRs
-// than that is an error rather than a list that silently misses a ticket's branch.
-const openPages = 10
 
 const olderReviewsQuery = `query OlderReviews($owner: String!, $repo: String!, $number: Int!, $before: String!) {
   repository(owner: $owner, name: $repo) {
@@ -654,52 +638,6 @@ func NewCLI(bin string, opts ...Option) *CLI {
 		opt(c)
 	}
 	return c
-}
-
-// OpenBranches makes one `gh api graphql` call per 100 open PRs.
-func (c *CLI) OpenBranches(ctx context.Context, repoDir string) ([]string, error) {
-	var branches []string
-	after := ""
-	for range openPages {
-		args := []string{"api", "graphql", "-F", "owner={owner}", "-F", "repo={repo}", "-f", "query=" + openBranchesQuery}
-		if after != "" {
-			args = append(args, "-f", "after="+after)
-		}
-		b, err := c.graphql(ctx, repoDir, args)
-		if err != nil {
-			return nil, err
-		}
-		var resp struct {
-			Data struct {
-				Repository struct {
-					PullRequests struct {
-						PageInfo struct {
-							HasNextPage bool   `json:"hasNextPage"`
-							EndCursor   string `json:"endCursor"`
-						} `json:"pageInfo"`
-						Nodes []struct {
-							HeadRefName       string `json:"headRefName"`
-							IsCrossRepository bool   `json:"isCrossRepository"`
-						} `json:"nodes"`
-					} `json:"pullRequests"`
-				} `json:"repository"`
-			} `json:"data"`
-		}
-		if err := json.Unmarshal(b, &resp); err != nil {
-			return nil, fmt.Errorf("while reading gh output for the open PRs: %w", err)
-		}
-		prs := resp.Data.Repository.PullRequests
-		for _, node := range prs.Nodes {
-			if !node.IsCrossRepository {
-				branches = append(branches, node.HeadRefName)
-			}
-		}
-		if !prs.PageInfo.HasNextPage {
-			return branches, nil
-		}
-		after = prs.PageInfo.EndCursor
-	}
-	return nil, fmt.Errorf("more than %d open PRs, too many to match a ticket's branch by its id", openPages*100)
 }
 
 // Read makes one `gh api graphql` call per page of same-named PRs, and more

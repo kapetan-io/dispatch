@@ -115,25 +115,6 @@ func TestCLIReadAsksGHForTheBranchsOpenPRs(t *testing.T) {
 	assert.NotContains(t, call, "after=")
 }
 
-func TestCLIOpenBranchesListsTheBranchesOfThisReposOpenPRs(t *testing.T) {
-	exe, args := standIn(t, `{"data":{"repository":{"pullRequests":{"nodes":[{"headRefName":"thrawn01/eng-1-a","isCrossRepository":false},{"headRefName":"thrawn01/eng-1-fork","isCrossRepository":true}]}}}}`, "", "0")
-
-	branches, err := pullrequest.NewCLI(exe).OpenBranches(context.Background(), t.TempDir())
-
-	require.NoError(t, err)
-	assert.Equal(t, []string{"thrawn01/eng-1-a"}, branches)
-	assert.True(t, strings.HasPrefix(recorded(t, args)[0], "api graphql -F owner={owner} -F repo={repo} -f query=..."))
-}
-
-func TestCLIOpenBranchesFollowsTheCursorToTheNextPage(t *testing.T) {
-	exe, args := standIn(t, `{"data":{"repository":{"pullRequests":{"pageInfo":{"hasNextPage":true,"endCursor":"c1"},"nodes":[{"headRefName":"a","isCrossRepository":false}]}}}}`, "", "0")
-
-	_, err := pullrequest.NewCLI(exe).OpenBranches(context.Background(), t.TempDir())
-
-	require.ErrorContains(t, err, "too many to match")
-	assert.Contains(t, recorded(t, args)[1], "after=c1")
-}
-
 func TestCLIReadReportsADraft(t *testing.T) {
 	exe, _ := standIn(t, `{"data":{"repository":{"pullRequests":{"nodes":[{"number":7,"url":"https://github.com/o/r/pull/7","isDraft":true,"headRefOid":"a1","mergeable":"MERGEABLE","reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}]}}}}`, "", "0")
 
