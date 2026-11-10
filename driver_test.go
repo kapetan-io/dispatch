@@ -121,6 +121,8 @@ type Dispatch struct {
 	Services *Services
 	// Repo is the dispatch repo, a directory the config lists under [repos.dispatch].
 	Repo string
+	// prOn holds the branch a ticket's PR is on when that is not the name Linear gives it.
+	prOn map[string]string
 	// Home is the HOME every command and hook runs under, a directory of the test's own.
 	Home string
 	// env is the environment every command runs with, and cwd the directory it runs in. Empty cwd
@@ -1146,7 +1148,7 @@ func (t *Trees) Pushed(ticket string) string {
 	hintGit(h.t, h.dir, "init", "-q", "--bare", remote)
 	tree := filepath.Join(h.dir, "trees", ticket)
 	hintGit(h.t, tree, "remote", "add", "origin", remote)
-	hintGit(h.t, tree, "push", "-q", "--set-upstream", "origin", "br-"+ticket)
+	hintGit(h.t, tree, "push", "-q", "--set-upstream", "origin", prBranch(ticket))
 	return tree
 }
 
@@ -1155,6 +1157,15 @@ func (t *Trees) Returned() []string { return t.d.returns() }
 
 // GitHub is the pull requests, reviews, checks and merges.
 type GitHub struct{ d *Dispatch }
+
+// PullRequestsOn puts the pull requests of the ticket on branch from now on, the branch its
+// worker pushed when Linear reports another name for it.
+func (g *GitHub) PullRequestsOn(ticket, branch string) {
+	if g.d.prOn == nil {
+		g.d.prOn = map[string]string{}
+	}
+	g.d.prOn[ticket] = branch
+}
 
 // PullRequest gives the ticket's branch an open pull request in this state.
 func (g *GitHub) PullRequest(ticket string, pr prState) { g.d.pr(ticket, pr) }
@@ -2679,12 +2690,12 @@ func prBranch(ticket string) string {
 func (d *Dispatch) respond(ticket, cursor string, response any) {
 	b, err := json.Marshal(response)
 	require.NoError(d.t, err)
-	d.tools.PullRequests.Respond(prBranch(ticket), cursor, json.RawMessage(b))
+	d.tools.PullRequests.Respond(cmp.Or(d.prOn[ticket], prBranch(ticket)), cursor, json.RawMessage(b))
 }
 
 // closePR closes the ticket's PR without merging it.
 func (d *Dispatch) closePR(ticket string) {
-	d.tools.PullRequests.Close(prBranch(ticket))
+	d.tools.PullRequests.Close(cmp.Or(d.prOn[ticket], prBranch(ticket)))
 }
 
 // merges lists the PRs that merged, as url|head.
@@ -2858,7 +2869,7 @@ func (d *Dispatch) worktreeOf(ticket string) string {
 		copyPlainRepo(d.t, d.Repo)
 	}
 	if _, err := os.Stat(tree); err != nil {
-		hintGit(d.t, d.Repo, "worktree", "add", "-q", "-b", "br-"+ticket, tree)
+		hintGit(d.t, d.Repo, "worktree", "add", "-q", "-b", prBranch(ticket), tree)
 	}
 	return tree
 }

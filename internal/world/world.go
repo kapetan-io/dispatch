@@ -186,6 +186,8 @@ type World struct {
 	// PRRateLimited holds the tickets in PRReadFailed whose read GitHub refused because the
 	// account's budget is spent, with the time GitHub says it refills, zero when it gives none.
 	PRRateLimited map[string]time.Time
+	// PRNotFound maps a ticket whose last PR read found no open PR to the branch it asked for.
+	PRNotFound map[string]string
 	// PRReadsAnswered counts the PR reads GitHub answered, so a read that asked it nothing is not
 	// taken for proof the budget is back.
 	PRReadsAnswered int
@@ -337,6 +339,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		w.readLocal(src, scope)
 	}
 	if parts&(FromLinear|FromLocal|FromLocalTickets) != 0 {
+		w.onTicketBranches(scope)
 		// A failed lease lookup skips teardown only; launches and nudges still run.
 		if parts&FromLinear != 0 && w.LinearErr == nil {
 			readCtx, done := bound(ctx)
@@ -564,11 +567,99 @@ func (w *World) inspectTrees(ctx context.Context, env environment.Environment, s
 	}
 }
 
+// onTicketBranches is the tickets each on the branch whose ticket branch key names it, since a
+// ticket system's read gives every ticket that system's name for the branch, which drifts from the
+// branch the worker pushed. A ticket whose repo's keys were not read, or that has no key, keeps the
+// ticket system's name.
+func (w *World) onTicketBranches(scope Scope) {
+	// The previous world may still be in use, so a ticket's Branch changes on a copy.
+	w.Tickets = slices.Clone(w.Tickets)
+	for i, t := range w.Tickets {
+		label, ok := scope.RepoOf(t)
+		if !ok {
+			continue
+		}
+		if branch, found := w.StackRecords[label].BranchOf(t.Identifier); found {
+			w.Tickets[i].Branch = branch
+		}
+	}
+}
+
+// KeyBranches writes the ticket branch key on the local branch of each tracked ticket that has
+// none, which covers tickets launched before the launcher wrote keys. A ticket's branch is the one
+// local branch that starts with its id, and with several the one a tree the ticket holds has
+// checked out. A branch is never keyed from the tree alone, since a tree can hold another ticket's
+// branch. It returns how many keys it wrote, and the caller reads again when that is not zero.
+func KeyBranches(ctx context.Context, src Sources, scope Scope, w World) int {
+	branches := map[string]map[string]string{}
+	var written int
+	for _, t := range w.Tickets {
+		label, ok := scope.RepoOf(t)
+		repo, known := scope.Repos[label]
+		recs, read := w.StackRecords[label]
+		if !ok || !known || !read {
+			continue
+		}
+		if _, keyed := recs.BranchOf(t.Identifier); keyed {
+			continue
+		}
+		local, listed := branches[label]
+		if !listed {
+			readCtx, done := bound(ctx)
+			var err error
+			local, err = stackrecord.LocalBranches(readCtx, src.Env, repo.Path)
+			done()
+			if err != nil {
+				_, _ = fmt.Fprintf(src.Stderr, "dispatch: %v\n", err)
+			}
+			branches[label] = local
+		}
+		var named, held []string
+		for branch, tree := range local {
+			if _, taken := recs.Tickets[branch]; taken || !ticket.OnBranch(t.Identifier, branch) {
+				continue
+			}
+			named = append(named, branch)
+			if tree != "" && w.holder(tree) == t.Identifier {
+				held = append(held, branch)
+			}
+		}
+		if len(named) > 1 {
+			named = held
+		}
+		if len(named) != 1 {
+			continue
+		}
+		readCtx, done := bound(ctx)
+		err := stackrecord.WriteTicket(readCtx, src.Env, repo.Path, named[0], t.Identifier)
+		done()
+		if err != nil {
+			_, _ = fmt.Fprintf(src.Stderr, "dispatch: %v\n", err)
+			continue
+		}
+		// The branch is claimed, so a second ticket whose id this one's extends does not take it.
+		recs.Tickets[named[0]] = t.Identifier
+		written++
+	}
+	return written
+}
+
+// holder is the ticket that holds the lease on the tree at path, empty when none does.
+func (w World) holder(path string) string {
+	for _, tree := range w.Trees {
+		if tree.Path == path {
+			return tree.LeaseHolder
+		}
+	}
+	return ""
+}
+
 // readPRs reads the open PR of each ticket for which ReadsPR is true. A PR that
 // can't be read is reported and left out, so it holds back only its own ticket.
 func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 	w.PRReadsAnswered = 0
 	w.PRs, w.PRReadFailed, w.PRRateLimited = map[string]pullrequest.PullRequest{}, map[string]bool{}, map[string]time.Time{}
+	w.PRNotFound = map[string]string{}
 	for _, t := range w.Tickets {
 		settings, ok := scope.PRRepo(t, w.Workers[t.Identifier].State)
 		if !ok {
@@ -585,6 +676,8 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 		w.PRReadsAnswered++
 		if found {
 			w.PRs[t.Identifier] = pr
+		} else {
+			w.PRNotFound[t.Identifier] = t.Branch
 		}
 	}
 }

@@ -45,6 +45,7 @@ type worldRecord struct {
 	PRs             map[string]pullrequest.PullRequest `json:"prs,omitempty"`
 	PRReadFailed    map[string]bool                    `json:"prReadFailed,omitempty"`
 	PRRateLimited   map[string]time.Time               `json:"prRateLimited,omitempty"`
+	PRNotFound      map[string]string                  `json:"prNotFound,omitempty"`
 	PRReadsAnswered int                                `json:"prReadsAnswered,omitempty"`
 	MergedPRs       map[string]pullrequest.MergedPR    `json:"mergedPRs,omitempty"`
 	UnreadRepos     map[string]bool                    `json:"unreadRepos,omitempty"`
@@ -72,7 +73,7 @@ func (w World) MarshalJSON() ([]byte, error) {
 		PoolErrs: errTexts(w.PoolErrs), Workers: w.Workers, Stops: w.Stops, Sessions: w.Sessions, SessionErrs: errTexts(w.SessionErrs), LeaseHolders: w.LeaseHolders,
 		HoldersErr: errText(w.HoldersErr), Leases: w.Leases, Leased: w.Leased, Children: w.Children,
 		ChildrenErr: errText(w.ChildrenErr), Unfinished: w.Unfinished, Work: w.Work, CheckErrors: errTexts(w.CheckErrors),
-		Untracked: w.Untracked, PRs: w.PRs, PRReadFailed: w.PRReadFailed, PRRateLimited: w.PRRateLimited, PRReadsAnswered: w.PRReadsAnswered, MergedPRs: w.MergedPRs, UnreadRepos: w.UnreadRepos, Nudged: w.Nudged,
+		Untracked: w.Untracked, PRs: w.PRs, PRReadFailed: w.PRReadFailed, PRRateLimited: w.PRRateLimited, PRNotFound: w.PRNotFound, PRReadsAnswered: w.PRReadsAnswered, MergedPRs: w.MergedPRs, UnreadRepos: w.UnreadRepos, Nudged: w.Nudged,
 		StackRecords: w.StackRecords, StackErrs: errTexts(w.StackErrs),
 		Inbox: w.Inbox, InboxErr: errText(w.InboxErr), InboxReadAt: w.InboxReadAt,
 		Remotes: w.Remotes, RemoteErrs: errTexts(w.RemoteErrs),
@@ -94,7 +95,7 @@ func (w *World) UnmarshalJSON(b []byte) error {
 		PoolErrs: asErrors(r.PoolErrs), Workers: r.Workers, Stops: r.Stops, Sessions: r.Sessions, SessionErrs: asErrors(r.SessionErrs), LeaseHolders: r.LeaseHolders,
 		HoldersErr: asError(r.HoldersErr), Leases: r.Leases, Leased: r.Leased, Children: r.Children,
 		ChildrenErr: asError(r.ChildrenErr), Unfinished: r.Unfinished, Work: r.Work, CheckErrors: asErrors(r.CheckErrors),
-		Untracked: r.Untracked, PRs: r.PRs, PRReadFailed: r.PRReadFailed, PRRateLimited: r.PRRateLimited, PRReadsAnswered: r.PRReadsAnswered, MergedPRs: r.MergedPRs, UnreadRepos: r.UnreadRepos, Nudged: r.Nudged,
+		Untracked: r.Untracked, PRs: r.PRs, PRReadFailed: r.PRReadFailed, PRRateLimited: r.PRRateLimited, PRNotFound: r.PRNotFound, PRReadsAnswered: r.PRReadsAnswered, MergedPRs: r.MergedPRs, UnreadRepos: r.UnreadRepos, Nudged: r.Nudged,
 		StackRecords: r.StackRecords, StackErrs: asErrors(r.StackErrs),
 		Inbox: r.Inbox, InboxErr: asError(r.InboxErr), InboxReadAt: r.InboxReadAt,
 		Remotes: r.Remotes, RemoteErrs: asErrors(r.RemoteErrs),
