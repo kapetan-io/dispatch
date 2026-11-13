@@ -24,7 +24,7 @@ declare module "dispatch/testing" {
     head?: string; draft?: boolean; approved?: boolean; ready?: boolean; conflict?: boolean; problems?: string[];
     activityAt?: string; activitySummary?: string; threadAt?: string; merged?: boolean;
   }): Fixture;
-  export function tree(path: string, fields?: { holder?: string; pushed?: boolean; trackedChanges?: boolean }): Fixture;
+  export function tree(path: string, fields?: { holder?: string; pushed?: boolean; trackedChanges?: boolean; untracked?: string[] }): Fixture;
   export function inbox(id: string, fields?: {
     reason?: string; unread?: boolean; updatedAt?: string; repoName?: string; subjectType?: string; title?: string; apiUrl?: string;
   }): Fixture;

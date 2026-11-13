@@ -40,18 +40,3 @@ whenever({
   then: (issue, ctx) => ctx.ticket.queueCreate({ title: `Sentry: ${issue.title}`, optIn: true, links: [issue.url] },
            { once: ["sentry", issue.url] }),
 });
-
-// A leased tree nobody has used for two hours, for a ticket no other rule looks after.
-// The wait runs from the newest of the facts that make it true.
-const orphanedSince = (tree, ctx) =>
-  Math.max(tree.leasedSince, ctx.worker.in(tree).goneSince, tree.holder.statusSince);
-whenever({
-  name: "notify-orphaned-tree",
-  each: "tree",
-  if:   (tree, ctx) => tree.leased && ctx.worker.in(tree).state === "none"
-           && !tree.holder.paused && !tree.holder.finished
-           && tree.holder.status !== "in_progress" && tree.holder.status !== "in_review"
-           && ctx.now >= orphanedSince(tree, ctx) + hours(2),
-  then: (tree, ctx) => ctx.notify.queueSend(tree.holder, `${tree.path} is leased to ${tree.holder.id} but no worker uses it`,
-           { once: ["orphaned", tree.path, orphanedSince(tree, ctx)], reason: "orphaned" }),
-});

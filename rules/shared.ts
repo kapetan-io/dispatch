@@ -46,13 +46,17 @@ export const launchAs = (t: Ticket, ctx: Ctx): { harness?: string; model?: strin
 // workers wait on you, so neither is nudged.
 export const nudgeable = (t: Ticket) => !t.hasChildren && !isDesign(t);
 
+// A Todo child of an In Progress parent. One that holds a tree was paused on purpose, so
+// teardown-clean-tree keeps its tree.
+export const pausedChild = (c: Ticket, ctx: Ctx) => {
+  const parent = ctx.ticket.parent(c);
+  return parent?.status === "in_progress" && !isDesign(parent) && c.status === "todo";
+};
+
 // A Todo child of an In Progress parent that promote-child would start once its
 // blockers are Done. A child that still holds a tree was paused on purpose.
-export const startableChild = (c: Ticket, ctx: Ctx) => {
-  const parent = ctx.ticket.parent(c);
-  return parent?.status === "in_progress" && !isDesign(parent)
-      && c.status === "todo" && c.optedIn && !isDesign(c) && !ctx.tree.leased(c);
-};
+export const startableChild = (c: Ticket, ctx: Ctx) =>
+  pausedChild(c, ctx) && c.optedIn && !isDesign(c) && !ctx.tree.leased(c);
 
 export const openBlockers = (t: Ticket, ctx: Ctx) => ctx.ticket.blockers(t).filter(b => !b.done);
 
