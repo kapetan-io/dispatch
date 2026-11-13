@@ -57,11 +57,15 @@ func (w workLog) kickoff(ctx context.Context, h kickoffHost, text string, startu
 	ready := false
 	for range kickoffChecks {
 		if ctx.Err() != nil {
+			w.record("gave up", ctx.Err().Error())
 			return ErrKickoffUnconfirmed
 		}
-		o, err := h.read(ctx)
+		o, err := w.read(ctx, h)
 		if err == nil && !o.Alive {
 			return ErrKickoffUnconfirmed
+		}
+		if err == nil && !o.Agent {
+			w.record("screen", h.screen(ctx, 30))
 		}
 		if err == nil && o.Agent {
 			switch o.Status {
@@ -81,6 +85,7 @@ func (w workLog) kickoff(ctx context.Context, h kickoffHost, text string, startu
 		w.sleep(ctx, w.pace)
 	}
 	if !ready {
+		w.record("gave up", fmt.Sprintf("the program never reached its input box in %d reads", kickoffChecks))
 		return ErrKickoffUnconfirmed
 	}
 	for try := 1; try <= kickoffTries; try++ {
@@ -96,7 +101,7 @@ func (w workLog) kickoff(ctx context.Context, h kickoffHost, text string, startu
 		case sendNotStarted:
 			// Nothing was typed, so the worker leaving idle is no confirmation. Another try is
 			// safe unless the worker now needs a person or says nothing.
-			if seen, err = h.read(ctx); err != nil || !seen.Alive {
+			if seen, err = w.read(ctx, h); err != nil || !seen.Alive {
 				return ErrKickoffUnconfirmed
 			}
 			if seen.Status == "blocked" || seen.Status == "unknown" {
@@ -132,7 +137,22 @@ func (w workLog) kickoff(ctx context.Context, h kickoffHost, text string, startu
 			return ErrKickoffUnconfirmed
 		}
 	}
+	w.record("gave up", fmt.Sprintf("the text was typed %d times and the program never started a turn", kickoffTries))
 	return ErrKickoffUnconfirmed
+}
+
+// read is h.read with the result written to the trace, so a launch that fails shows what dispatch saw.
+func (w workLog) read(ctx context.Context, h kickoffHost) (observed, error) {
+	o, err := h.read(ctx)
+	if err != nil {
+		w.record("status", "read failed: "+err.Error())
+		return o, err
+	}
+	if !o.Alive {
+		w.record("exited", "the program is gone or finished\n"+h.screen(ctx, 30))
+	}
+	w.record("status", fmt.Sprintf("alive=%t agent=%t status=%q turn=%d", o.Alive, o.Agent, o.Status, o.Turn))
+	return o, nil
 }
 
 // awaitLeft reads until the status is no longer from, for up to kickoffWaits reads, and returns the last read.
@@ -140,11 +160,12 @@ func (w workLog) awaitLeft(ctx context.Context, h kickoffHost, from string) (obs
 	var o observed
 	var err error
 	for range kickoffWaits {
-		if o, err = h.read(ctx); err != nil || !o.Alive || o.Status != from {
+		if o, err = w.read(ctx, h); err != nil || !o.Alive || o.Status != from {
 			return o, err
 		}
 		w.sleep(ctx, w.pace)
 	}
+	w.record("gave up", fmt.Sprintf("the status stayed %q for %d reads", from, kickoffWaits))
 	return o, err
 }
 
