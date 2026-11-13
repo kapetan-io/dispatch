@@ -196,8 +196,8 @@ func TestLaunchStartsTheWorkerOnTheModelOfTheHarnessTable(t *testing.T) {
 	out := d.launch("ENG-1", "thrawn01/eng-1", "--harness", "harness.claude-opus")
 
 	assert.Equal(t, "ok", out.result["status"])
-	require.Len(t, d.fakes().Herdr.Started(), 1)
-	assert.Equal(t, "opus", modelOf(d.fakes().Herdr.Started()[0].Program))
+	require.Len(t, d.fakes().Multiplexer.Started(), 1)
+	assert.Equal(t, "opus", modelOf(d.fakes().Multiplexer.Started()[0].Program))
 }
 
 func TestLaunchRefusesHarnessAndModelTogether(t *testing.T) {
@@ -209,7 +209,7 @@ func TestLaunchRefusesHarnessAndModelTogether(t *testing.T) {
 
 	assert.Equal(t, "usage_error", out.result["status"])
 	assert.Contains(t, out.result["detail"], "--harness and --model together")
-	assert.Empty(t, d.fakes().Herdr.Started())
+	assert.Empty(t, d.fakes().Multiplexer.Started())
 }
 
 func TestLaunchRefusesAHarnessThatNamesNoTable(t *testing.T) {
@@ -228,7 +228,7 @@ func TestLaunchRefusesAHarnessThatNamesNoTable(t *testing.T) {
 
 			assert.Equal(t, "usage_error", out.result["status"])
 			assert.Contains(t, out.result["detail"], test.want)
-			assert.Empty(t, d.fakes().Herdr.Started())
+			assert.Empty(t, d.fakes().Multiplexer.Started())
 		})
 	}
 }

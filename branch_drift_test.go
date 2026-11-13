@@ -186,7 +186,7 @@ func TestTickRelaunchesATicketOnTheBranchItAlreadyHasWhenLinearsNameForItWasCutS
 	hintGit(t, tree, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "ENG-1 work")
 	work := revParse(t, tree, "HEAD")
 	d.Trees.Git(tree, "checkout", "-q", "--detach")
-	require.NoError(t, d.fakes().Herdr.CloseWorkspace(context.Background(), "w2"))
+	require.NoError(t, d.fakes().Multiplexer.CloseWorkspace(context.Background(), "w2"))
 	require.NoError(t, d.fakes().Treehouse.Return(context.Background(), d.Repo, tree, "ENG-1"))
 	d.Linear.Tickets(cut("ENG-1", "In Progress"))
 
@@ -234,7 +234,7 @@ func TestATicketStackedOnOneWhoseLinearNameDriftedLaunchesFromItsRealBranch(t *t
 	hintGit(t, tree, "push", "-q", "origin", prBranch("ENG-1"))
 	head := revParse(t, tree, "HEAD")
 	d.Trees.Git(tree, "checkout", "-q", "--detach")
-	require.NoError(t, d.fakes().Herdr.CloseWorkspace(context.Background(), "w2"))
+	require.NoError(t, d.fakes().Multiplexer.CloseWorkspace(context.Background(), "w2"))
 	require.NoError(t, d.fakes().Treehouse.Return(context.Background(), d.Repo, tree, "ENG-1"))
 	child := ticket("ENG-2", "In Progress", "dispatch")
 	child.Blockers = []tkt.Blocker{{Identifier: "ENG-1", Status: "In Review"}}
@@ -243,7 +243,7 @@ func TestATicketStackedOnOneWhoseLinearNameDriftedLaunchesFromItsRealBranch(t *t
 
 	d.Tick()
 
-	assert.Contains(t, d.fakes().Herdr.Kicked()[len(d.fakes().Herdr.Kicked())-1], "/dispatch:build ENG-2 --base "+prBranch("ENG-1"))
+	assert.Contains(t, d.fakes().Multiplexer.Kicked()[len(d.fakes().Multiplexer.Kicked())-1], "/dispatch:build ENG-2 --base "+prBranch("ENG-1"))
 	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
 	assert.Equal(t, head, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))
 }
@@ -285,7 +285,7 @@ func TestALaunchOntoABranchKeyedToAnotherTicketFailsAndReturnsTheLease(t *testin
 	tree := d.Trees.Pooled()
 	d.launch("ENG-1", prBranch("ENG-1"))
 	d.Trees.Git(tree, "checkout", "-q", "--detach")
-	require.NoError(t, d.fakes().Herdr.CloseWorkspace(context.Background(), "w2"))
+	require.NoError(t, d.fakes().Multiplexer.CloseWorkspace(context.Background(), "w2"))
 	require.NoError(t, d.fakes().Treehouse.Return(context.Background(), d.Repo, tree, "ENG-1"))
 
 	out := d.launch("ENG-2", prBranch("ENG-1"))

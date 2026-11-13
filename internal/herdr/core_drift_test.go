@@ -432,13 +432,13 @@ func TestCoreKeepsTheHostNeutralHerdrContract(t *testing.T) {
 			rig := newCoreRig(t)
 			subject := &contractSubject{rig: rig, exec: map[string]bool{}}
 			scenario.Run(t, herdrtest.Subject{
-				Herdr:      rig.core,
-				PluginRoot: rig.worker.PluginRoot,
-				Program:    rig.worker.Program,
-				Checkout:   func() (string, string) { return herdrtest.NewCheckout(t) },
-				Workspace:  func(label string) herdrtest.Layout { return subject.workspace(t, label) },
-				Tab:        func(workspace, label string) herdrtest.Layout { return subject.tab(t, workspace, label) },
-				Agent:      func(pane, status string) { subject.agent(t, pane, status) },
+				Multiplexer: rig.core,
+				PluginRoot:  rig.worker.PluginRoot,
+				Program:     rig.worker.Program,
+				Checkout:    func() (string, string) { return herdrtest.NewCheckout(t) },
+				Workspace:   func(label string) herdrtest.Layout { return subject.workspace(t, label) },
+				Tab:         func(workspace, label string) herdrtest.Layout { return subject.tab(t, workspace, label) },
+				Agent:       func(pane, status string) { subject.agent(t, pane, status) },
 			})
 		})
 	}

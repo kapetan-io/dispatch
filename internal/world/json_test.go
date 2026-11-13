@@ -32,7 +32,7 @@ func full() world.World {
 		LocalErr:        errors.New("the local database is held"),
 		LocalStatuses:   ticket.Statuses{{Name: "Todo", Jobs: []ticket.Job{ticket.Todo}}},
 		Snapshot:        herdr.Snapshot{Workspaces: []herdr.Workspace{{ID: "w1", CheckoutPath: "/trees/1"}}},
-		HerdrErr:        errors.New("herdr is down"),
+		MultiplexerErr:  errors.New("herdr is down"),
 		Trees:           []treehouse.Tree{{Path: "/trees/1", Status: "leased", LeaseHolder: "ENG-1", RepoDir: "/repo"}},
 		PoolErrs:        map[string]error{"tiger": errors.New("pool tiger unread")},
 		Workers:         map[string]world.Worker{"ENG-1": worker},

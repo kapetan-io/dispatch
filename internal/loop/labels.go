@@ -39,7 +39,7 @@ func tabLabel(t ticket.Ticket) string { return herdr.TabLabel(t.Identifier, t.Ti
 
 // differs is true when the workspace or tab needs renaming to want. A rename sent since the
 // last resync to want needs none, whether or not it landed, and one sent to another label
-// needs it even when the last read of herdr shows want, because that read predates the rename.
+// needs it even when the last read of the multiplexer shows want, because that read predates the rename.
 func (l *Loop) differs(id, have, want string) bool {
 	if sent, ok := l.renaming[id]; ok {
 		return sent != want
@@ -49,12 +49,12 @@ func (l *Loop) differs(id, have, want string) bool {
 
 // workspaceRenames lists the workspaces whose label differs from the one their
 // ticket's status calls for, and the tabs whose label differs from their ticket's.
-// A workspace or tab herdr didn't list is left alone, so a label changes only when
+// A workspace or tab the multiplexer didn't list is left alone, so a label changes only when
 // the status does.
 func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 	wd := l.wd
 	scope := wd.Scope(l.o.Config)
-	if wd.HerdrErr != nil {
+	if wd.MultiplexerErr != nil {
 		return nil, nil
 	}
 	current := map[string]string{}
@@ -206,12 +206,12 @@ func (l *Loop) renameWorkspaces() {
 		ctx, cancel := context.WithTimeout(l.runCtx, executor.DefaultDeadline)
 		defer cancel()
 		for _, r := range workspaces {
-			if err := l.o.Herdr.RenameWorkspace(ctx, r.id, r.label); err != nil {
+			if err := l.o.Multiplexer.RenameWorkspace(ctx, r.id, r.label); err != nil {
 				_, _ = fmt.Fprintf(l.o.Err, "dispatch: while renaming workspace %s: %v\n", r.id, err)
 			}
 		}
 		for _, r := range tabs {
-			if err := l.o.Herdr.RenameTab(ctx, r.id, r.label); err != nil {
+			if err := l.o.Multiplexer.RenameTab(ctx, r.id, r.label); err != nil {
 				_, _ = fmt.Fprintf(l.o.Err, "dispatch: while renaming tab %s: %v\n", r.id, err)
 			}
 		}

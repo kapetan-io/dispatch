@@ -62,14 +62,14 @@ func TestLaunchReportsAlreadyRunningWhenHerdrFindsASessionOnTheTree(t *testing.T
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpStartTab, herdr.ErrSessionRunning)
+	d.fakes().Multiplexer.Fail(herdrtest.OpStartTab, herdr.ErrSessionRunning)
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "already_running", out.result["status"])
-	assert.Empty(t, d.fakes().Herdr.ClosedWorkspaces())
+	assert.Empty(t, d.fakes().Multiplexer.ClosedWorkspaces())
 	assert.Empty(t, d.fakes().Calls("treehouse", "return"))
-	assert.Empty(t, d.fakes().Herdr.Kicked())
+	assert.Empty(t, d.fakes().Multiplexer.Kicked())
 }
 
 func TestARefusedLaunchKeepsTheKickoffRecordAndDatesItFromItsOwnStart(t *testing.T) {
@@ -77,7 +77,7 @@ func TestARefusedLaunchKeepsTheKickoffRecordAndDatesItFromItsOwnStart(t *testing
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	markLaunch(t, d.state, tree, d.Clock.Now().Add(-10*time.Minute))
-	d.fakes().Herdr.Fail(herdrtest.OpStartTab, herdr.ErrSessionRunning)
+	d.fakes().Multiplexer.Fail(herdrtest.OpStartTab, herdr.ErrSessionRunning)
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
@@ -91,7 +91,7 @@ func TestARefusedLaunchLeavesNoKickoffRecordBesideAHealthyWorker(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpStartTab, herdr.ErrSessionRunning)
+	d.fakes().Multiplexer.Fail(herdrtest.OpStartTab, herdr.ErrSessionRunning)
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
@@ -117,15 +117,15 @@ func TestLaunchFailsNamingTheTerminalThatHoldsTheTreeWithNoClaude(t *testing.T) 
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpStartTab, &herdr.TerminalWithoutAgent{Address: "t7"})
+	d.fakes().Multiplexer.Fail(herdrtest.OpStartTab, &herdr.TerminalWithoutAgent{Address: "t7"})
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "terminal_without_agent", out.result["status"])
 	assert.Contains(t, out.result["detail"], "t7")
-	assert.Empty(t, d.fakes().Herdr.ClosedWorkspaces())
+	assert.Empty(t, d.fakes().Multiplexer.ClosedWorkspaces())
 	assert.Empty(t, d.fakes().Calls("treehouse", "return"))
-	assert.Empty(t, d.fakes().Herdr.Kicked())
+	assert.Empty(t, d.fakes().Multiplexer.Kicked())
 }
 
 func TestLaunchStartsClaudeOnTheSessionItChose(t *testing.T) {
@@ -136,7 +136,7 @@ func TestLaunchStartsClaudeOnTheSessionItChose(t *testing.T) {
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	require.Equal(t, "ok", out.result["status"])
-	program := d.fakes().Herdr.Started()[0].Program
+	program := d.fakes().Multiplexer.Started()[0].Program
 	assert.Regexp(t, `^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`, program.Session)
 	assert.Equal(t, "--session-id", program.SessionFlag)
 	assert.NotContains(t, program.Argv, "--session-id")
@@ -175,9 +175,9 @@ func TestRecordStopLandsTheTurnEndOfASessionInARexBlock(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Rules: rule(turnsRule), FakeHarness: true})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "")
-	d.tools.Herdr.AddTab(herdr.Tab{ID: "s1/w1", Label: "ENG-1", WorkspaceID: "w-ENG-1"})
-	d.tools.Herdr.AddPane(herdr.Pane{ID: "s1/b1", TabID: "s1/w1", WorkspaceID: "w-ENG-1"})
-	d.tools.Herdr.AddAgent(herdr.Agent{Kind: "fake", Status: "idle", Session: "worker", PaneID: "s1/b1", TabID: "s1/w1", WorkspaceID: "w-ENG-1"})
+	d.tools.Multiplexer.AddTab(herdr.Tab{ID: "s1/w1", Label: "ENG-1", WorkspaceID: "w-ENG-1"})
+	d.tools.Multiplexer.AddPane(herdr.Pane{ID: "s1/b1", TabID: "s1/w1", WorkspaceID: "w-ENG-1"})
+	d.tools.Multiplexer.AddAgent(herdr.Agent{Kind: "fake", Status: "idle", Session: "worker", PaneID: "s1/b1", TabID: "s1/w1", WorkspaceID: "w-ENG-1"})
 	d.StartBeforeTheEvents()
 
 	defer d.FromRexBlock("s1", "b1")()

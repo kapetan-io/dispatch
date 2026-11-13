@@ -143,13 +143,13 @@ declare module "dispatch" {
   }
   /** A ticket's place on a tree it holds, and the Claude session there, if any. Every ticket has one, with state none when no session runs. */
   export interface Worker {
-    /** none when the ticket has no Claude session in a workspace, working when it is running a turn, when dispatch sent it a nudge and no read has yet seen it working or blocked, or when herdr can't tell its status (a worker with no status whose launch is unconfirmed reads idle instead), idle when it is waiting at its prompt, blocked when it waits on a question popup. A worker the ticket never had also reads none. */
+    /** none when the ticket has no Claude session in a workspace, working when it is running a turn, when dispatch sent it a nudge and no read has yet seen it working or blocked, or when the multiplexer can't tell its status (a worker with no status whose launch is unconfirmed reads idle instead), idle when it is waiting at its prompt, blocked when it waits on a question popup. A worker the ticket never had also reads none. */
     readonly state: "none" | "working" | "idle" | "blocked";
     /** The ticket the worker serves. */
     readonly ticket: Ticket;
     /** The path of the treehouse tree the worker runs in, undefined when it has none. */
     readonly tree: string | undefined;
-    /** The id of the herdr workspace the worker runs in, undefined when it has none. */
+    /** The id of the multiplexer workspace the worker runs in, undefined when it has none. */
     readonly workspace: string | undefined;
     /** When the worker last changed between present (any state but none) and absent, in milliseconds since the epoch. It survives a change from working to idle and a restart. */
     readonly seenAt: number;
@@ -167,9 +167,9 @@ declare module "dispatch" {
     readonly busy: boolean;
     /** True when the worker is idle on an In Progress ticket, its kickoff has run, and its latest Stop listed no background task still running (a task listed over 60 minutes ago counts as stopped, as for busy). This is the Stop-record part of the test that gives its workspace the 💤 label. False for a worker that is not idle, whose kickoff is unconfirmed, with no Stop record or a Stop that did not list background tasks, or with a background task still running, and for a worker on a ticket that is not In Progress. */
     readonly waiting: boolean;
-    /** Every slash command the worker's current Claude session has taken, oldest first, for a worker on an In Progress or In Review ticket. A message counts when it starts with /name, so a message that only mentions one does not. A skill the model loads by itself is not a command. Empty for a session that has taken none, and unknown when herdr reports no session or the session's record can't be read. A worker relaunched in a new session starts over. */
+    /** Every slash command the worker's current Claude session has taken, oldest first, for a worker on an In Progress or In Review ticket. A message counts when it starts with /name, so a message that only mentions one does not. A skill the model loads by itself is not a command. Empty for a session that has taken none, and unknown when the multiplexer reports no session or the session's record can't be read. A worker relaunched in a new session starts over. */
     readonly commands: Command[];
-    /** Every turn the worker's current Claude session has ended, oldest first, for a worker on an In Progress or In Review ticket. Empty for a session that has ended none, and unknown when herdr reports no session or the session's record can't be read. A worker relaunched in a new session starts over. */
+    /** Every turn the worker's current Claude session has ended, oldest first, for a worker on an In Progress or In Review ticket. Empty for a session that has ended none, and unknown when the multiplexer reports no session or the session's record can't be read. A worker relaunched in a new session starts over. */
     readonly turns: Turn[];
   }
   /** A tree in a repo's treehouse pool. */

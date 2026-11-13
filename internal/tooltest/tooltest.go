@@ -23,7 +23,7 @@ type Tools struct {
 	Treehouse    *treehousetest.Pool
 	PullRequests *pullrequesttest.Repository
 	Inbox        *inboxtest.Inbox
-	Herdr        *herdrtest.Herdr
+	Multiplexer  *herdrtest.Multiplexer
 	Harness      *harnesstest.Harness
 	Launcher     *launchertest.Launcher
 	Linear       *lineartest.Workspace
@@ -33,7 +33,7 @@ type Tools struct {
 func New(t testing.TB) *Tools {
 	t.Helper()
 	j := &journal.Journal{}
-	return &Tools{Journal: j, Treehouse: treehousetest.New(j), PullRequests: pullrequesttest.New(j), Inbox: inboxtest.New(j), Herdr: herdrtest.New(j), Harness: harnesstest.New(), Launcher: launchertest.New(j), Linear: lineartest.New(j)}
+	return &Tools{Journal: j, Treehouse: treehousetest.New(j), PullRequests: pullrequesttest.New(j), Inbox: inboxtest.New(j), Multiplexer: herdrtest.New(j), Harness: harnesstest.New(), Launcher: launchertest.New(j), Linear: lineartest.New(j)}
 }
 
 // Calls lists the calls to a tool's operation, each as its arguments joined by

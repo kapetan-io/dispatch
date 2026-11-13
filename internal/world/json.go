@@ -25,7 +25,7 @@ type worldRecord struct {
 	LocalErr        string                             `json:"localErr,omitempty"`
 	LocalStatuses   ticket.Statuses                    `json:"localStatuses,omitempty"`
 	Snapshot        herdr.Snapshot                     `json:"snapshot"`
-	HerdrErr        string                             `json:"herdrErr,omitempty"`
+	MultiplexerErr  string                             `json:"herdrErr,omitempty"`
 	Trees           []treeRecord                       `json:"trees,omitempty"`
 	PoolErrs        map[string]string                  `json:"poolErrs,omitempty"`
 	Workers         map[string]Worker                  `json:"workers,omitempty"`
@@ -69,7 +69,7 @@ type treeRecord struct {
 // MarshalJSON writes the read in the form history keeps.
 func (w World) MarshalJSON() ([]byte, error) {
 	r := worldRecord{
-		At: w.At, Tickets: w.Tickets, LinearErr: errText(w.LinearErr), LocalErr: errText(w.LocalErr), LocalStatuses: w.LocalStatuses, Snapshot: w.Snapshot, HerdrErr: errText(w.HerdrErr),
+		At: w.At, Tickets: w.Tickets, LinearErr: errText(w.LinearErr), LocalErr: errText(w.LocalErr), LocalStatuses: w.LocalStatuses, Snapshot: w.Snapshot, MultiplexerErr: errText(w.MultiplexerErr),
 		PoolErrs: errTexts(w.PoolErrs), Workers: w.Workers, Stops: w.Stops, Sessions: w.Sessions, SessionErrs: errTexts(w.SessionErrs), LeaseHolders: w.LeaseHolders,
 		HoldersErr: errText(w.HoldersErr), Leases: w.Leases, Leased: w.Leased, Children: w.Children,
 		ChildrenErr: errText(w.ChildrenErr), Unfinished: w.Unfinished, Work: w.Work, CheckErrors: errTexts(w.CheckErrors),
@@ -91,7 +91,7 @@ func (w *World) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*w = World{
-		At: r.At, Tickets: r.Tickets, LinearErr: asError(r.LinearErr), LocalErr: asError(r.LocalErr), LocalStatuses: r.LocalStatuses, Snapshot: r.Snapshot, HerdrErr: asError(r.HerdrErr),
+		At: r.At, Tickets: r.Tickets, LinearErr: asError(r.LinearErr), LocalErr: asError(r.LocalErr), LocalStatuses: r.LocalStatuses, Snapshot: r.Snapshot, MultiplexerErr: asError(r.MultiplexerErr),
 		PoolErrs: asErrors(r.PoolErrs), Workers: r.Workers, Stops: r.Stops, Sessions: r.Sessions, SessionErrs: asErrors(r.SessionErrs), LeaseHolders: r.LeaseHolders,
 		HoldersErr: asError(r.HoldersErr), Leases: r.Leases, Leased: r.Leased, Children: r.Children,
 		ChildrenErr: asError(r.ChildrenErr), Unfinished: r.Unfinished, Work: r.Work, CheckErrors: asErrors(r.CheckErrors),

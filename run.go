@@ -76,7 +76,7 @@ func runCommand(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	opts = withHerdr(opts, cfg, nil)
+	opts = withMultiplexer(opts, cfg, nil)
 	if cfg.Dispatch.Resync <= 0 {
 		return fmt.Errorf("[dispatch].resync must be positive, got %s", time.Duration(cfg.Dispatch.Resync))
 	}
@@ -129,7 +129,7 @@ func runCommand(ctx context.Context, opts Options) error {
 	exec := executor.New(executor.Env{
 		Config: cfg, Systems: executor.Systems{Linear: linear.System{
 			Workspace: func() linear.Workspace { return lin }, AILabel: cfg.Plugins.Linear.AILabel, Teams: cfg.Plugins.Linear.Teams, Statuses: cfg.Plugins.Linear.Statuses.Table(),
-		}}, Herdr: opts.Herdr, Treehouse: opts.Treehouse,
+		}}, Multiplexer: opts.Multiplexer, Treehouse: opts.Treehouse,
 		PullRequests: opts.PullRequests, Launcher: launcherFor(opts, cfg.Plugins.PluginRoot(), nil, sent), Harnesses: opts.Harnesses, Followers: opts.Followers,
 		Environment: opts.Env, StateDir: opts.StateDir, Stderr: opts.Stderr, LaunchDeadline: opts.LaunchTimeout, Deadline: opts.ActionTimeout,
 		HTTP: services, Typed: sent, Clock: opts.Clock,
@@ -137,7 +137,7 @@ func runCommand(ctx context.Context, opts Options) error {
 	return loop.New(loop.Options{
 		Config: cfg, ConfigText: string(text), StateDir: opts.StateDir, Rules: loaded, Clock: opts.Clock,
 		Sources:  sources(opts, cfg, lin, loaded),
-		Executor: exec, Typed: sent, HTTP: services, Herdr: opts.Herdr, Usage: lin.Usage,
+		Executor: exec, Typed: sent, HTTP: services, Multiplexer: opts.Multiplexer, Usage: lin.Usage,
 		Viewer: viewer.Name, Out: opts.Stdout, Err: opts.Stderr, Local: local,
 	}).Run(ctx)
 }

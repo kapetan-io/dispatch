@@ -34,7 +34,7 @@ func (d *Dispatch) startStreaming() {
 // streamLive waits for the nth stream to name its first panes and for the loop to take them.
 func (d *Dispatch) streamLive(n int) {
 	d.t.Helper()
-	require.Eventually(d.t, func() bool { return d.tools.Herdr.Streams() >= n }, 5*time.Second, time.Millisecond)
+	require.Eventually(d.t, func() bool { return d.tools.Multiplexer.Streams() >= n }, 5*time.Second, time.Millisecond)
 	d.settleLoop()
 }
 
@@ -97,8 +97,10 @@ func TestStreamShowsAWorkerGoneWhenItsClaudeExitsOrItsTabOrWorkspaceCloses(t *te
 		name string
 		gone func(d *Dispatch)
 	}{
-		{"ClaudeExits", func(d *Dispatch) { d.tools.Herdr.ExitAgent("w-ENG-1:p1") }},
-		{"TabCloses", func(d *Dispatch) { require.NoError(d.t, d.tools.Herdr.CloseTab(context.Background(), "w-ENG-1:t1")) }},
+		{"ClaudeExits", func(d *Dispatch) { d.tools.Multiplexer.ExitAgent("w-ENG-1:p1") }},
+		{"TabCloses", func(d *Dispatch) {
+			require.NoError(d.t, d.tools.Multiplexer.CloseTab(context.Background(), "w-ENG-1:t1"))
+		}},
 		{"WorkspaceCloses", func(d *Dispatch) { d.Workers.Gone("ENG-1") }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -128,7 +130,7 @@ func TestStreamLeavesAWorkerAloneForAChangeToAPaneItNoLongerHolds(t *testing.T) 
 	d.settleLoop()
 	calls := len(d.tools.Journal.Calls())
 
-	d.tools.Herdr.Changed("w-ENG-1:p1")
+	d.tools.Multiplexer.Changed("w-ENG-1:p1")
 
 	d.settleLoop()
 	assert.Equal(t, calls, len(d.tools.Journal.Calls()))
@@ -140,7 +142,7 @@ func TestStreamAppliesAChangeThatArrivesDuringAReadAfterThatRead(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
 	d.startStreaming()
-	d.tools.Herdr.SetStatusAfterSnapshot("w-ENG-1:p1", "blocked")
+	d.tools.Multiplexer.SetStatusAfterSnapshot("w-ENG-1:p1", "blocked")
 
 	require.NoError(t, d.TickAfterASecond())
 
@@ -157,7 +159,7 @@ func TestStreamIgnoresAChangeToAPaneThatHoldsNoWorker(t *testing.T) {
 	d.startStreaming()
 	calls, receipts := len(d.tools.Journal.Calls()), len(d.Receipts("ENG-1"))
 
-	d.tools.Herdr.Changed("a-pane-of-the-users:p1")
+	d.tools.Multiplexer.Changed("a-pane-of-the-users:p1")
 
 	d.settleLoop()
 	assert.Equal(t, calls, len(d.tools.Journal.Calls()))
@@ -170,7 +172,7 @@ func TestStreamMakesNoCallForAChangeAfterAFailedReadOfTheMultiplexer(t *testing.
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
 	d.startStreaming()
-	d.tools.Herdr.Fail(herdrtest.OpRead, errors.New("the server is down"))
+	d.tools.Multiplexer.Fail(herdrtest.OpRead, errors.New("the server is down"))
 	require.NoError(t, d.TickAfterASecond())
 	d.settleLoop()
 	calls := len(d.tools.Journal.Calls())
@@ -186,7 +188,7 @@ func TestStreamDownIsReportedAtEachTickAndReopenedWhenTheMultiplexerIsBack(t *te
 	d := newDispatch(t, dispatchOptions{Streaming: true})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
-	d.tools.Herdr.Fail(herdrtest.OpStream, herdr.ErrRexNotRunning)
+	d.tools.Multiplexer.Fail(herdrtest.OpStream, herdr.ErrRexNotRunning)
 	d.Restart()
 	const downLine = "dispatch: the worker stream ended: Rex is not running, and dispatch never starts it: open Rex; workers update at each resync until it reopens\n"
 	waitForDown := func(n int) {
@@ -197,7 +199,7 @@ func TestStreamDownIsReportedAtEachTickAndReopenedWhenTheMultiplexerIsBack(t *te
 	require.NoError(t, d.TickAfterASecond())
 	waitForDown(2)
 
-	d.tools.Herdr.Fail(herdrtest.OpStream, nil)
+	d.tools.Multiplexer.Fail(herdrtest.OpStream, nil)
 	require.NoError(t, d.TickAfterASecond())
 	d.streamLive(1)
 	assert.Equal(t, 3, d.herdrCalls("changes"))
@@ -214,7 +216,7 @@ func TestStreamDroppedIsReportedOnceAndDoesNotReopenInPlace(t *testing.T) {
 	d.Workers.Running("ENG-1", "working")
 	d.startStreaming()
 
-	d.tools.Herdr.DropStream(herdr.ErrRexEventsEnded)
+	d.tools.Multiplexer.DropStream(herdr.ErrRexEventsEnded)
 
 	require.Eventually(t, func() bool {
 		return strings.Contains(d.loopErr(), "the worker stream ended: rex events ended: the server disconnected; workers update at each resync until it reopens")
@@ -270,8 +272,10 @@ func TestTickAfterAStreamChangeLeavesTheWorkerAsTheStreamReadIt(t *testing.T) {
 		state  string
 	}{
 		{"Idle", func(d *Dispatch) { d.Workers.SetStatus("ENG-1", "idle") }, "idle"},
-		{"ClaudeExits", func(d *Dispatch) { d.tools.Herdr.ExitAgent("w-ENG-1:p1") }, "none"},
-		{"TabCloses", func(d *Dispatch) { require.NoError(d.t, d.tools.Herdr.CloseTab(context.Background(), "w-ENG-1:t1")) }, "none"},
+		{"ClaudeExits", func(d *Dispatch) { d.tools.Multiplexer.ExitAgent("w-ENG-1:p1") }, "none"},
+		{"TabCloses", func(d *Dispatch) {
+			require.NoError(d.t, d.tools.Multiplexer.CloseTab(context.Background(), "w-ENG-1:t1"))
+		}, "none"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -309,7 +313,7 @@ func TestStreamShowsANudgedWorkerIdleOnceItWorkedAndKeepsItWorkingWhileItReadsId
 
 	// A change that finds the worker still idle before Claude took the nudge keeps it working.
 	panes := d.herdrCalls("agent-at")
-	d.tools.Herdr.Changed("w-ENG-1:p1")
+	d.tools.Multiplexer.Changed("w-ENG-1:p1")
 	require.Eventually(t, func() bool { return d.herdrCalls("agent-at") > panes }, 5*time.Second, time.Millisecond)
 	d.settleLoop()
 	assert.Len(t, d.Workers.Renames(), 2)
@@ -353,14 +357,14 @@ func TestStreamDownLeavesWorkersToTheNextTickWhichReopensIt(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
 	d.startStreaming()
-	d.tools.Herdr.Fail(herdrtest.OpStream, herdr.ErrRexNotRunning)
-	d.tools.Herdr.DropStream(herdr.ErrRexEventsEnded)
+	d.tools.Multiplexer.Fail(herdrtest.OpStream, herdr.ErrRexNotRunning)
+	d.tools.Multiplexer.DropStream(herdr.ErrRexEventsEnded)
 	require.Eventually(t, func() bool { return strings.Contains(d.loopErr(), "the worker stream ended") }, 5*time.Second, time.Millisecond)
 
 	d.Workers.SetStatus("ENG-1", "blocked")
 	d.settleLoop()
 	require.NotContains(t, d.Followed.Told(), "ENG-1 is waiting on your answer in its workspace")
-	d.tools.Herdr.Fail(herdrtest.OpStream, nil)
+	d.tools.Multiplexer.Fail(herdrtest.OpStream, nil)
 	require.NoError(t, d.TickAfterASecond())
 
 	assert.Contains(t, d.Followed.Told(), "ENG-1 is waiting on your answer in its workspace")
@@ -374,13 +378,13 @@ func TestStreamNamesMadeDuringAFailedReadAreLeftToTheNextFullRead(t *testing.T) 
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
 	d.startStreaming()
-	d.tools.Herdr.Fail(herdrtest.OpRead, errors.New("the server is down"))
+	d.tools.Multiplexer.Fail(herdrtest.OpRead, errors.New("the server is down"))
 	require.NoError(t, d.TickAfterASecond())
 	d.settleLoop()
 
 	d.Workers.SetStatus("ENG-1", "blocked")
 	d.settleLoop()
-	d.tools.Herdr.Fail(herdrtest.OpRead, nil)
+	d.tools.Multiplexer.Fail(herdrtest.OpRead, nil)
 	require.NoError(t, d.TickAfterASecond())
 
 	assert.Contains(t, d.Followed.Told(), "ENG-1 is waiting on your answer in its workspace")
@@ -401,7 +405,7 @@ func TestStreamRunsACycleWhileChangesKeepArriving(t *testing.T) {
 			case <-stop:
 				return
 			default:
-				d.tools.Herdr.Changed("w-ENG-1:p1")
+				d.tools.Multiplexer.Changed("w-ENG-1:p1")
 			}
 		}
 	}()
@@ -418,13 +422,13 @@ func TestSettleAnswersWhenAStreamNameLeavesNoWorkBehind(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
 	d.startStreaming()
-	d.tools.Herdr.Fail(herdrtest.OpRead, errors.New("the server is down"))
+	d.tools.Multiplexer.Fail(herdrtest.OpRead, errors.New("the server is down"))
 	require.NoError(t, d.TickAfterASecond())
 	d.settleLoop()
 
 	// The failed read lists no panes, so a name the stream sends is dropped without starting a read.
 	for range 300 {
-		d.tools.Herdr.Changed("w-ENG-1:p1")
+		d.tools.Multiplexer.Changed("w-ENG-1:p1")
 		d.settleLoop()
 	}
 }

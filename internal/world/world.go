@@ -1,4 +1,4 @@
-// Package world reads what Linear, herdr, treehouse, GitHub and the Stop
+// Package world reads what Linear, the multiplexer, treehouse, GitHub and the Stop
 // records say right now, and joins it into the facts the dispatcher decides
 // from. A read that fails or comes back cut short is recorded as unread, never
 // as empty, so nothing downstream mistakes "couldn't look" for "nothing there".
@@ -32,7 +32,7 @@ import (
 // Sources are the tools one read goes through.
 type Sources struct {
 	Linear       linear.Workspace
-	Herdr        herdr.Herdr
+	Multiplexer  herdr.Multiplexer
 	Treehouse    treehouse.Pool
 	PullRequests pullrequest.Repository
 	// Inbox is the owner's GitHub inbox. Nil means no read is made.
@@ -43,7 +43,7 @@ type Sources struct {
 	StateDir string
 	// Stderr receives one line for each read that failed without stopping the read.
 	Stderr io.Writer
-	// Tolerant keeps going when herdr, or every pool, can't be read, and
+	// Tolerant keeps going when the multiplexer, or every pool, can't be read, and
 	// records them as unread. Without it the read returns that failure.
 	Tolerant bool
 	// Resilient records a failed Linear read in World.LinearErr and goes on,
@@ -138,9 +138,9 @@ type World struct {
 	// LocalErr is set when the last read of the local tickets failed, so those records are unknown.
 	LocalStatuses ticket.Statuses
 	LocalErr      error
-	// Snapshot is herdr's view. It is empty when HerdrErr is set.
-	Snapshot herdr.Snapshot
-	HerdrErr error
+	// Snapshot is the multiplexer's view. It is empty when MultiplexerErr is set.
+	Snapshot       herdr.Snapshot
+	MultiplexerErr error
 	// Trees are the trees of every pool that was read. PoolErrs holds the repo
 	// labels whose pool wasn't, and so whose tickets' workers are unknown.
 	Trees    []treehouse.Tree
@@ -226,7 +226,7 @@ type Part uint
 const (
 	// FromLinear reads the tracked tickets, who holds the trees and the children of open parents.
 	FromLinear Part = 1 << iota
-	// FromLocal reads herdr, every pool and the Stop records.
+	// FromLocal reads the multiplexer, every pool and the Stop records.
 	FromLocal
 	// FromGitHub reads the PR of each ticket that has one to read.
 	FromGitHub
@@ -241,7 +241,7 @@ const (
 )
 
 // Read takes one reading of the world. The failures that leave nothing to
-// decide from, which are Linear's tickets and, unless Tolerant, herdr and
+// decide from, which are Linear's tickets and, unless Tolerant, the multiplexer and
 // every pool, are returned. The others are recorded in the World.
 func Read(ctx context.Context, src Sources, scope Scope, now time.Time) (World, error) {
 	return Refresh(ctx, src, scope, World{}, Everything, now)
@@ -256,7 +256,7 @@ func bound(ctx context.Context) (context.Context, context.CancelFunc) {
 }
 
 // Refresh reads the sources in parts again and keeps what prev says about the
-// rest, so a launch can be followed by a look at herdr and treehouse that makes
+// rest, so a launch can be followed by a look at the multiplexer and treehouse that makes
 // no Linear call. A failed read of one source never empties what another source
 // said. With Resilient, a failed Linear read is recorded in LinearErr and the
 // tickets prev held are kept, so nothing downstream mistakes the failure for
@@ -270,16 +270,16 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 	}
 	if parts&FromLocal != 0 || prev.At.IsZero() {
 		parts |= FromLocal | FromLocalTickets
-		w.HerdrErr, w.PoolErrs, w.UnreadRepos, w.Trees = nil, map[string]error{}, map[string]bool{}, nil
+		w.MultiplexerErr, w.PoolErrs, w.UnreadRepos, w.Trees = nil, map[string]error{}, map[string]bool{}, nil
 		w.StackRecords, w.StackErrs = map[string]stackrecord.Records{}, map[string]error{}
 		readCtx, done := bound(ctx)
-		snap, err := src.Herdr.Read(readCtx)
+		snap, err := src.Multiplexer.Read(readCtx)
 		done()
 		if err != nil {
 			if !src.Tolerant {
 				return w, err
 			}
-			w.HerdrErr = fmt.Errorf("%s unread: %w", src.Herdr.Multiplexer(), err)
+			w.MultiplexerErr = fmt.Errorf("%s unread: %w", src.Multiplexer.Name(), err)
 		}
 		w.Snapshot = snap
 		readErrs := map[string]error{}
@@ -435,7 +435,7 @@ func (w *World) joinWorker(src Sources, scope Scope, t ticket.Ticket) {
 		}
 	}
 	if wk.State != NoWorker && (scope.Is(t, ticket.InProgress) || scope.Is(t, ticket.InReview)) {
-		w.readSession(src.Herdr.Multiplexer(), src.StateDir, t.Identifier, wk)
+		w.readSession(src.Multiplexer.Name(), src.StateDir, t.Identifier, wk)
 	}
 }
 
@@ -470,7 +470,7 @@ func ReadPanes(ctx context.Context, src Sources, scope Scope, prev World, panes 
 			return prev, false
 		}
 		readCtx, done := bound(ctx)
-		agent, found, err := src.Herdr.AgentAt(readCtx, pane)
+		agent, found, err := src.Multiplexer.AgentAt(readCtx, pane)
 		done()
 		if err != nil || !found || agent.Kind != was.Kind || agent.Session != was.Session {
 			return prev, false
@@ -505,7 +505,7 @@ func ReadPanes(ctx context.Context, src Sources, scope Scope, prev World, panes 
 	return w, true
 }
 
-// readSession reads the log of the worker's current session. With no session from herdr
+// readSession reads the log of the worker's current session. With no session from the multiplexer
 // the log is unknown, never another session's, because a tree holds the logs of every
 // session that ran in it.
 func (w *World) readSession(multiplexer, stateDir, ticket string, wk Worker) {

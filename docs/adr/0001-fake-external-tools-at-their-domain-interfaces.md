@@ -15,7 +15,7 @@ Accepted
 
 ## Decision
 
-We will fake each external tool behind a Go interface named for its domain role (`herdr.Herdr`, `treehouse.Pool`, `pullrequest.Repository`, `notify.Alerts`). Each interface has a real adapter that runs the installed tool and an in-memory fake that refuses what the real tool refuses. One set of contract scenarios runs against the fake in every test run, and against the real adapter under the `drift` build tag on a maintainer's machine.
+We will fake each external tool behind a Go interface named for its domain role (`herdr.Multiplexer`, `treehouse.Pool`, `pullrequest.Repository`, `notify.Alerts`). Each interface has a real adapter that runs the installed tool and an in-memory fake that refuses what the real tool refuses. One set of contract scenarios runs against the fake in every test run, and against the real adapter under the `drift` build tag on a maintainer's machine.
 
 ## Consequences
 

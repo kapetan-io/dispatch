@@ -28,7 +28,7 @@ func TestRefreshReadsOneCopyOfALinearTicketWhoseIDStartsWithLOC(t *testing.T) {
 		Assignee: "viewer-1",
 	})
 	src := world.Sources{
-		Linear: tools.Linear.Connect(lineartest.Key), Herdr: tools.Herdr, Treehouse: tools.Treehouse,
+		Linear: tools.Linear.Connect(lineartest.Key), Multiplexer: tools.Multiplexer, Treehouse: tools.Treehouse,
 		PullRequests: tools.PullRequests, Stderr: io.Discard, Tolerant: true, Resilient: true,
 	}
 	scope := world.ScopeOf(config.Config{Plugins: config.Plugins{Linear: config.Linear{AILabel: "ai", Teams: []string{"LOC"}}}})

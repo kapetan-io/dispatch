@@ -104,7 +104,7 @@ var StreamScenarios = []StreamScenario{
 		require.Eventually(t, func() bool { return count(named(), tab.Pane) > 0 }, streamWait, 10*time.Millisecond)
 		live := count(named(), tab.Pane)
 
-		require.NoError(t, s.Herdr.CloseTab(context.Background(), tab.Tab))
+		require.NoError(t, s.Multiplexer.CloseTab(context.Background(), tab.Tab))
 
 		require.Eventually(t, func() bool { return count(named(), tab.Pane) > live }, streamWait, 10*time.Millisecond)
 	}},
@@ -118,7 +118,7 @@ var StreamScenarios = []StreamScenario{
 		s.Exit(ws.Pane)
 
 		require.Eventually(t, func() bool { return count(named(), ws.Pane) > live }, streamWait, 10*time.Millisecond)
-		_, found, err := s.Herdr.AgentAt(context.Background(), ws.Pane)
+		_, found, err := s.Multiplexer.AgentAt(context.Background(), ws.Pane)
 		require.NoError(t, err)
 		assert.False(t, found)
 	}},
@@ -132,11 +132,11 @@ var StreamScenarios = []StreamScenario{
 		s.Agent(ws.Pane, "idle")
 		require.Eventually(t, func() bool { return count(named(), ws.Pane) > live }, streamWait, 10*time.Millisecond)
 
-		agent, found, err := s.Herdr.AgentAt(context.Background(), ws.Pane)
+		agent, found, err := s.Multiplexer.AgentAt(context.Background(), ws.Pane)
 		require.NoError(t, err)
 		require.True(t, found)
 		assert.Equal(t, "idle", agent.Status)
-		snap, err := s.Herdr.Read(context.Background())
+		snap, err := s.Multiplexer.Read(context.Background())
 		require.NoError(t, err)
 		require.Len(t, snap.Agents, 1)
 		assert.Equal(t, agent.Status, snap.Agents[0].Status)

@@ -138,13 +138,13 @@ func TestANudgeToALaunchedWorkerGoesToItsSessionAndOnlyTheKickoffIsTyped(t *test
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
 	require.Equal(t, "ok", d.launch("ENG-1", "thrawn01/eng-1").result["status"])
-	require.Len(t, d.fakes().Herdr.Kicked(), 1)
+	require.Len(t, d.fakes().Multiplexer.Kicked(), 1)
 
 	res := d.Run("tell", "ENG-1", "keep going")
 
 	require.NoError(t, res.Err)
 	assert.Equal(t, []string{"keep going"}, d.Workers.Received("ENG-1"))
-	assert.Len(t, d.fakes().Herdr.Kicked(), 1)
+	assert.Len(t, d.fakes().Multiplexer.Kicked(), 1)
 }
 
 // nudgeStates lists the outcome of each nudge receipt for the ticket, oldest first.

@@ -27,7 +27,7 @@ const (
 	labelTab     = "herdr.tab"
 )
 
-// Core is the Herdr that drives herdr-core through the installed hc command, so the
+// Core is the Multiplexer that drives herdr-core through the installed hc command, so the
 // workers show in the Herdr app. It never stops or restarts herdr-core.
 type Core struct {
 	workLog
@@ -38,7 +38,7 @@ type Core struct {
 	kinds       []string
 }
 
-// NewCore returns a Herdr that runs hc.
+// NewCore returns a Multiplexer that runs hc.
 func NewCore(hc string) *Core {
 	return &Core{hc: hc, app: appCommand, workLog: newWorkLog()}
 }
@@ -92,10 +92,10 @@ func (c *Core) WithProgress(w io.Writer) *Core {
 	return c
 }
 
-var _ Herdr = (*Core)(nil)
+var _ Multiplexer = (*Core)(nil)
 
 // Multiplexer is "herdr", not "herdr-core", because the person sees the Herdr app.
-func (c *Core) Multiplexer() string { return "herdr" }
+func (c *Core) Name() string { return "herdr" }
 
 // terminal is what herdr-core reports about one terminal.
 type terminal struct {

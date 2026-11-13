@@ -46,10 +46,10 @@ func TestLaunchStartsAWorkerTypedTheBuildKickoff(t *testing.T) {
 	assert.Equal(t, "w2:p2", out.result["pane"])
 	assert.Equal(t, "eng-1", out.result["agent"])
 	assert.Equal(t, "/dispatch:build ENG-1", out.result["kickoff"])
-	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, d.fakes().Herdr.Kicked())
+	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, d.fakes().Multiplexer.Kicked())
 	assert.Equal(t, "thrawn01/eng-1", branchIn(t, tree))
-	require.Len(t, d.fakes().Herdr.Started(), 1)
-	started := d.fakes().Herdr.Started()[0]
+	require.Len(t, d.fakes().Multiplexer.Started(), 1)
+	started := d.fakes().Multiplexer.Started()[0]
 	assert.Equal(t, herdr.Worker{Workspace: "w2", Dir: tree, FreshLease: true, Label: "ENG-1", Name: "eng-1", PluginRoot: "/plugin", Program: started.Program}, started)
 	assert.Equal(t, "claude", started.Program.AgentKind)
 	assert.Equal(t, []string{
@@ -67,8 +67,8 @@ func TestLaunchLabelsTheTabWithTheTicketAndTitle(t *testing.T) {
 	out := d.launch("ENG-1", "thrawn01/eng-1", "--title", "Fix the thing")
 
 	assert.Equal(t, "ok", out.result["status"])
-	require.Len(t, d.fakes().Herdr.Started(), 1)
-	assert.Equal(t, "ENG-1 Fix the thing", d.fakes().Herdr.Started()[0].Label)
+	require.Len(t, d.fakes().Multiplexer.Started(), 1)
+	assert.Equal(t, "ENG-1 Fix the thing", d.fakes().Multiplexer.Started()[0].Label)
 }
 
 func TestLaunchTypesTheKickoffItIsGiven(t *testing.T) {
@@ -80,9 +80,9 @@ func TestLaunchTypesTheKickoffItIsGiven(t *testing.T) {
 
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, "/dispatch:design ENG-1", out.result["kickoff"])
-	assert.Equal(t, []string{"w2:p2|/dispatch:design ENG-1"}, d.fakes().Herdr.Kicked())
-	require.Len(t, d.fakes().Herdr.Started(), 1)
-	assert.Equal(t, "opus", modelOf(d.fakes().Herdr.Started()[0].Program))
+	assert.Equal(t, []string{"w2:p2|/dispatch:design ENG-1"}, d.fakes().Multiplexer.Kicked())
+	require.Len(t, d.fakes().Multiplexer.Started(), 1)
+	assert.Equal(t, "opus", modelOf(d.fakes().Multiplexer.Started()[0].Program))
 }
 
 func TestLaunchStartsNewBranchesFromTheBase(t *testing.T) {
@@ -103,16 +103,16 @@ func TestLaunchReportsAWorkerThatIsAlreadyRunning(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
-	d.fakes().Herdr.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: tree})
-	d.fakes().Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: "working", PaneID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
+	d.fakes().Multiplexer.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: tree})
+	d.fakes().Multiplexer.AddAgent(herdr.Agent{Kind: "claude", Status: "working", PaneID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "already_running", out.result["status"])
 	assert.Equal(t, "w3", out.result["workspace"])
 	assert.Equal(t, "w3:p2", out.result["pane"])
-	assert.Empty(t, d.fakes().Herdr.Kicked())
-	assert.Empty(t, d.fakes().Herdr.Started())
+	assert.Empty(t, d.fakes().Multiplexer.Kicked())
+	assert.Empty(t, d.fakes().Multiplexer.Started())
 	assert.Empty(t, d.fakes().Calls("treehouse", "lease"))
 }
 
@@ -127,8 +127,8 @@ func TestLaunchReusesTheLeaseOfAnEarlierRun(t *testing.T) {
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, tree, out.result["worktree"])
 	assert.Empty(t, d.fakes().Calls("treehouse", "lease"))
-	require.Len(t, d.fakes().Herdr.Started(), 1)
-	assert.False(t, d.fakes().Herdr.Started()[0].FreshLease)
+	require.Len(t, d.fakes().Multiplexer.Started(), 1)
+	assert.False(t, d.fakes().Multiplexer.Started()[0].FreshLease)
 }
 
 func TestLaunchReportsAPoolReadThatFailsAndTheNextLaunchReusesTheLease(t *testing.T) {
@@ -148,8 +148,8 @@ func TestLaunchReportsAPoolReadThatFailsAndTheNextLaunchReusesTheLease(t *testin
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, tree, out.result["worktree"])
 	assert.Empty(t, d.fakes().Calls("treehouse", "lease"))
-	require.Len(t, d.fakes().Herdr.Started(), 1)
-	assert.False(t, d.fakes().Herdr.Started()[0].FreshLease)
+	require.Len(t, d.fakes().Multiplexer.Started(), 1)
+	assert.False(t, d.fakes().Multiplexer.Started()[0].FreshLease)
 }
 
 func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
@@ -198,7 +198,7 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 		},
 		{
 			name:   "HerdrUnavailable",
-			setup:  func(d *Dispatch) { d.fakes().Herdr.Fail(herdrtest.OpRead, errors.New("server not running")) },
+			setup:  func(d *Dispatch) { d.fakes().Multiplexer.Fail(herdrtest.OpRead, errors.New("server not running")) },
 			args:   []string{"ENG-1", "b"},
 			status: "herdr_unavailable",
 			detail: "herdr server not answering: server not running",
@@ -319,7 +319,7 @@ func TestLaunchReturnsALeaseItTookWhenTheWorkspaceFails(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
+	d.fakes().Multiplexer.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
@@ -335,7 +335,7 @@ func TestLaunchKeepsALeaseFromAnEarlierRunWhenTheWorkspaceFails(t *testing.T) {
 	// The tree is already leased to ENG-1, so it may hold a worker's
 	// uncommitted work that a forced return would discard.
 	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
-	d.fakes().Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
+	d.fakes().Multiplexer.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
@@ -347,12 +347,12 @@ func TestLaunchClosesTheWorkspaceBeforeReturningALeaseItTook(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpStartTab, errors.New("herdr tab create failed in w2"))
+	d.fakes().Multiplexer.Fail(herdrtest.OpStartTab, errors.New("herdr tab create failed in w2"))
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "workspace_failed", out.result["status"])
-	assert.Equal(t, []string{"w2"}, d.fakes().Herdr.ClosedWorkspaces())
+	assert.Equal(t, []string{"w2"}, d.fakes().Multiplexer.ClosedWorkspaces())
 	assert.Equal(t, []string{d.Repo + "|" + tree + "|ENG-1"}, d.Trees.Returned())
 	assert.Less(t, d.callIndex("herdr", "close-workspace"), d.callIndex("treehouse", "return"))
 }
@@ -361,10 +361,10 @@ func TestLaunchKeepsALeaseWhoseWorkspaceWouldNotClose(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpStartTab, errors.New("herdr tab create failed in w2"))
+	d.fakes().Multiplexer.Fail(herdrtest.OpStartTab, errors.New("herdr tab create failed in w2"))
 	// A tree returned with its workspace still open would match that
 	// workspace by path, so the next ticket to lease it would never start.
-	d.fakes().Herdr.Fail(herdrtest.OpCloseWorkspace, errors.New("exit status 1"))
+	d.fakes().Multiplexer.Fail(herdrtest.OpCloseWorkspace, errors.New("exit status 1"))
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
@@ -376,14 +376,14 @@ func TestLaunchClosesTheTabsTheWorkspaceOpenedWith(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
-	d.fakes().Herdr.AddWorkspace(herdr.Workspace{ID: "w2", Label: "other"})
-	d.fakes().Herdr.AddTab(herdr.Tab{ID: "w2:t1", Label: "other", WorkspaceID: "w2"})
-	d.fakes().Herdr.AddPane(herdr.Pane{ID: "w2:p1", TabID: "w2:t1", WorkspaceID: "w2"})
+	d.fakes().Multiplexer.AddWorkspace(herdr.Workspace{ID: "w2", Label: "other"})
+	d.fakes().Multiplexer.AddTab(herdr.Tab{ID: "w2:t1", Label: "other", WorkspaceID: "w2"})
+	d.fakes().Multiplexer.AddPane(herdr.Pane{ID: "w2:p1", TabID: "w2:t1", WorkspaceID: "w2"})
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	snap, err := d.fakes().Herdr.Read(context.Background())
+	snap, err := d.fakes().Multiplexer.Read(context.Background())
 	require.NoError(t, err)
 	assert.Contains(t, snap.Tabs, herdr.Tab{ID: "w2:t1", Label: "other", WorkspaceID: "w2"})
 	assert.Contains(t, snap.Tabs, herdr.Tab{ID: out.result["workspace"] + ":t2", Label: "ENG-1", WorkspaceID: out.result["workspace"]})
@@ -394,24 +394,24 @@ func TestLaunchGivesBackTheLeaseWhenTheAgentWillNotStart(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpStartAgent, errors.New("herdr agent start failed in pane w2:p2"))
+	d.fakes().Multiplexer.Fail(herdrtest.OpStartAgent, errors.New("herdr agent start failed in pane w2:p2"))
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "agent_start_failed", out.result["status"])
 	assert.Equal(t, "w2:p2", out.result["pane"])
-	assert.Equal(t, []string{"w2"}, d.fakes().Herdr.ClosedWorkspaces())
+	assert.Equal(t, []string{"w2"}, d.fakes().Multiplexer.ClosedWorkspaces())
 	assert.Equal(t, []string{d.Repo + "|" + tree + "|ENG-1"}, d.Trees.Returned())
-	assert.Empty(t, d.fakes().Herdr.Kicked())
+	assert.Empty(t, d.fakes().Multiplexer.Kicked())
 }
 
 func TestLaunchNamesARelaunchedWorkerApartFromItsPredecessor(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
-	d.fakes().Herdr.AddWorkspace(herdr.Workspace{ID: "w1", CheckoutPath: "/elsewhere"})
-	d.fakes().Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: "done", PaneID: "w1:p1", TabID: "w1:t1", WorkspaceID: "w1"})
-	d.fakes().Herdr.NameAgent("w1:p1", "eng-1")
+	d.fakes().Multiplexer.AddWorkspace(herdr.Workspace{ID: "w1", CheckoutPath: "/elsewhere"})
+	d.fakes().Multiplexer.AddAgent(herdr.Agent{Kind: "claude", Status: "done", PaneID: "w1:p1", TabID: "w1:t1", WorkspaceID: "w1"})
+	d.fakes().Multiplexer.NameAgent("w1:p1", "eng-1")
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
@@ -423,7 +423,7 @@ func TestLaunchClosesTheWorkspaceWhenTheKickoffNeverRuns(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
+	d.fakes().Multiplexer.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
@@ -431,7 +431,7 @@ func TestLaunchClosesTheWorkspaceWhenTheKickoffNeverRuns(t *testing.T) {
 	// would retry the launch.
 	assert.Equal(t, "injection_unconfirmed", out.result["status"])
 	assert.Contains(t, out.result["detail"], "Claude started but herdr never showed the kickoff running")
-	assert.Equal(t, []string{"w2"}, d.fakes().Herdr.ClosedWorkspaces())
+	assert.Equal(t, []string{"w2"}, d.fakes().Multiplexer.ClosedWorkspaces())
 	assert.Empty(t, d.Trees.Returned())
 }
 
@@ -439,8 +439,8 @@ func TestLaunchNamesTheMultiplexerInUseWhenTheKickoffNeverRuns(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
-	d.fakes().Herdr.NameMultiplexer("Rex")
-	d.fakes().Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
+	d.fakes().Multiplexer.NameMultiplexer("Rex")
+	d.fakes().Multiplexer.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
@@ -453,21 +453,21 @@ func TestLaunchReportsTheExitAndScreenOfAProgramThatExitedBeforeTheKickoff(t *te
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
-	d.fakes().Herdr.NameMultiplexer("Rex")
-	d.fakes().Herdr.Fail(herdrtest.OpKickoff, &herdr.ProgramExited{Exit: "exit status 1", Screen: "dispatch: no real claude found on PATH"})
+	d.fakes().Multiplexer.NameMultiplexer("Rex")
+	d.fakes().Multiplexer.Fail(herdrtest.OpKickoff, &herdr.ProgramExited{Exit: "exit status 1", Screen: "dispatch: no real claude found on PATH"})
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "program_exited", out.result["status"])
 	assert.Equal(t, "Claude exited (exit status 1) before Rex showed the kickoff running. Its screen ended with: dispatch: no real claude found on PATH. The workspace was closed and the next resync retries.", out.result["detail"])
-	assert.Equal(t, []string{"w2"}, d.fakes().Herdr.ClosedWorkspaces())
+	assert.Equal(t, []string{"w2"}, d.fakes().Multiplexer.ClosedWorkspaces())
 }
 
 func TestLaunchReportsAnExitWithNoStatusOrScreenWithoutQuotingOne(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpKickoff, &herdr.ProgramExited{})
+	d.fakes().Multiplexer.Fail(herdrtest.OpKickoff, &herdr.ProgramExited{})
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
@@ -479,21 +479,21 @@ func TestLaunchReportsClaudeNeverStartedWhenItsCommandStaysAtTheShellPrompt(t *t
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpKickoff, herdr.ErrNeverStarted)
+	d.fakes().Multiplexer.Fail(herdrtest.OpKickoff, herdr.ErrNeverStarted)
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "injection_unconfirmed", out.result["status"])
 	assert.Contains(t, out.result["detail"], "never started")
 	assert.NotContains(t, out.result["detail"], "Claude started")
-	assert.Equal(t, []string{"w2"}, d.fakes().Herdr.ClosedWorkspaces())
+	assert.Equal(t, []string{"w2"}, d.fakes().Multiplexer.ClosedWorkspaces())
 }
 
 func TestLaunchReportsEnterNotSentWhenHerdrRefusesTheKey(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpKickoff, herdr.ErrEnterNotSent)
+	d.fakes().Multiplexer.Fail(herdrtest.OpKickoff, herdr.ErrEnterNotSent)
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
@@ -521,7 +521,7 @@ func TestLaunchPutsStatusFirstInEveryResult(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
+	d.fakes().Multiplexer.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
@@ -673,7 +673,7 @@ func TestLaunchOpensTheWorkspaceFromTheMainCheckout(t *testing.T) {
 	assert.Equal(t, "ok", out.result["status"])
 	resolved, err := filepath.EvalSymlinks(d.Repo)
 	require.NoError(t, err)
-	assert.Equal(t, []herdr.NewWorkspace{{Repo: resolved, Path: tree, Label: "ENG-1"}}, d.fakes().Herdr.Opened())
+	assert.Equal(t, []herdr.NewWorkspace{{Repo: resolved, Path: tree, Label: "ENG-1"}}, d.fakes().Multiplexer.Opened())
 }
 
 func TestLaunchReusesAWorkspaceThatHasNoClaudePane(t *testing.T) {
@@ -681,17 +681,17 @@ func TestLaunchReusesAWorkspaceThatHasNoClaudePane(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
 	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
-	d.fakes().Herdr.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: tree})
-	d.fakes().Herdr.AddTab(herdr.Tab{ID: "w3:t1", WorkspaceID: "w3"})
-	d.fakes().Herdr.AddPane(herdr.Pane{ID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
+	d.fakes().Multiplexer.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: tree})
+	d.fakes().Multiplexer.AddTab(herdr.Tab{ID: "w3:t1", WorkspaceID: "w3"})
+	d.fakes().Multiplexer.AddPane(herdr.Pane{ID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
 	assert.Equal(t, "w3", out.result["workspace"])
-	assert.Empty(t, d.fakes().Herdr.Opened())
-	require.Len(t, d.fakes().Herdr.Started(), 1)
-	assert.Equal(t, "w3", d.fakes().Herdr.Started()[0].Workspace)
+	assert.Empty(t, d.fakes().Multiplexer.Opened())
+	require.Len(t, d.fakes().Multiplexer.Started(), 1)
+	assert.Equal(t, "w3", d.fakes().Multiplexer.Started()[0].Workspace)
 }
 
 func TestTickLaunchesWithTheBuiltInLauncher(t *testing.T) {
@@ -705,12 +705,12 @@ func TestTickLaunchesWithTheBuiltInLauncher(t *testing.T) {
 	launched := d.receiptsOfKind("ENG-1", "launch")
 	require.Len(t, launched, 1)
 	assert.Equal(t, "done", launched[0].State)
-	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, d.fakes().Herdr.Kicked())
-	require.Len(t, d.fakes().Herdr.Started(), 1)
-	started := d.fakes().Herdr.Started()[0]
+	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, d.fakes().Multiplexer.Kicked())
+	require.Len(t, d.fakes().Multiplexer.Started(), 1)
+	started := d.fakes().Multiplexer.Started()[0]
 	assert.Equal(t, "sonnet", modelOf(started.Program))
 	assert.Equal(t, "ENG-1 ticket ENG-1", started.Label)
-	assert.Equal(t, tree, d.fakes().Herdr.Opened()[0].Path)
+	assert.Equal(t, tree, d.fakes().Multiplexer.Opened()[0].Path)
 }
 
 func TestLaunchTakesFlagsBeforeAndBetweenTheTicketAndBranch(t *testing.T) {
@@ -726,8 +726,8 @@ func TestLaunchTakesFlagsBeforeAndBetweenTheTicketAndBranch(t *testing.T) {
 
 		assert.Equal(t, "ok", out.result["status"])
 		assert.Equal(t, "thrawn01/eng-1", out.result["branch"])
-		require.Len(t, d.fakes().Herdr.Started(), 1)
-		assert.Equal(t, "opus", modelOf(d.fakes().Herdr.Started()[0].Program))
+		require.Len(t, d.fakes().Multiplexer.Started(), 1)
+		assert.Equal(t, "opus", modelOf(d.fakes().Multiplexer.Started()[0].Program))
 	}
 }
 
@@ -735,7 +735,7 @@ func TestLaunchGivesUpAtOnceWhenThePreflightTimeoutIsZero(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Launcher: builtinLauncher, Env: map[string]string{"DISPATCH_PLUGIN_ROOT": "/plugin", "DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT": "0"}})
 	d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpRead, errors.New("server not running"))
+	d.fakes().Multiplexer.Fail(herdrtest.OpRead, errors.New("server not running"))
 
 	launched := later(func() launchOutput { return d.launch("ENG-1", "thrawn01/eng-1") })
 	assert.Equal(t, time.Nanosecond, d.Deadline("launch preflight"))
@@ -759,7 +759,7 @@ func TestLaunchRefusesAnEmptyPluginRoot(t *testing.T) {
 
 	assert.Equal(t, "usage_error", out.result["status"])
 	assert.Contains(t, out.result["detail"], "no plugin root")
-	assert.Empty(t, d.fakes().Herdr.Started())
+	assert.Empty(t, d.fakes().Multiplexer.Started())
 }
 
 func TestTickRefusesAnEmptyPluginRoot(t *testing.T) {
@@ -1179,12 +1179,12 @@ func TestLaunchesQueuedBehindOthersKeepTheirWholeDeadline(t *testing.T) {
 		d.advance(60 * time.Millisecond)
 		release()
 		// A launch is over once it has typed its kickoff. The next advance must not land before.
-		until(func() bool { return len(d.fakes().Herdr.Kicked()) == held })
+		until(func() bool { return len(d.fakes().Multiplexer.Kicked()) == held })
 	}
 	res := ticked()
 
 	require.NoError(t, res.Err)
-	assert.Len(t, d.fakes().Herdr.Started(), 3)
+	assert.Len(t, d.fakes().Multiplexer.Started(), 3)
 }
 
 func TestALaunchHoldingTheRepoThatHangsFailsTheOnesQueuedBehindIt(t *testing.T) {
@@ -1219,7 +1219,7 @@ func TestALaunchHoldingTheRepoThatHangsFailsTheOnesQueuedBehindIt(t *testing.T) 
 	res := ticked()
 
 	require.ErrorContains(t, res.Err, queued+" launch failed: pool_error: gave up waiting for another launch into")
-	assert.Len(t, d.fakes().Herdr.Started(), 1)
+	assert.Len(t, d.fakes().Multiplexer.Started(), 1)
 }
 
 func TestALaunchThatHangsAfterQueueingStillTimesOut(t *testing.T) {
@@ -1237,7 +1237,7 @@ func TestALaunchThatHangsAfterQueueingStillTimesOut(t *testing.T) {
 	res := ticked()
 
 	require.ErrorContains(t, res.Err, "ENG-1 launch failed")
-	assert.Empty(t, d.fakes().Herdr.Started())
+	assert.Empty(t, d.fakes().Multiplexer.Started())
 }
 
 func TestLaunchesIntoDifferentReposLeaseTogether(t *testing.T) {
@@ -1461,12 +1461,12 @@ func TestLaunchStartsClaudeOnASessionIdDispatchChose(t *testing.T) {
 
 		assert.Equal(t, "ok", d.launch("ENG-1", "thrawn01/eng-1").result["status"])
 
-		started := d.fakes().Herdr.Started()
+		started := d.fakes().Multiplexer.Started()
 		require.Len(t, started, 1)
 		assert.Equal(t, "--session-id", started[0].Program.SessionFlag)
 		assert.Regexp(t, uuid, started[0].Program.Session)
 		assert.NotContains(t, started[0].Program.Argv, "--session-id")
-		snap, err := d.fakes().Herdr.Read(context.Background())
+		snap, err := d.fakes().Multiplexer.Read(context.Background())
 		require.NoError(t, err)
 		require.Len(t, snap.Agents, 1)
 		assert.Equal(t, started[0].Program.Session, snap.Agents[0].Session)
@@ -1492,9 +1492,9 @@ func TestRecordStopFromAnotherClaudeSessionInAWorkersTreeDoesNotCountAsTheWorker
 			tree := d.Trees.Pooled()
 			out := d.launch("ENG-1", "thrawn01/eng-1")
 			require.Equal(t, "ok", out.result["status"])
-			session := d.fakes().Herdr.Started()[0].Program.Session
+			session := d.fakes().Multiplexer.Started()[0].Program.Session
 			pane := out.result["pane"]
-			d.fakes().Herdr.SetStatus(pane, "idle")
+			d.fakes().Multiplexer.SetStatus(pane, "idle")
 			d.StartBeforeTheEvents()
 			defer d.FromPane(pane)()
 			if test.other {

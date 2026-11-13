@@ -18,7 +18,7 @@ type Layout struct {
 
 // Subject is a herdr under test and the means to set up what it shows.
 type Subject struct {
-	Herdr herdr.Herdr
+	Multiplexer herdr.Multiplexer
 	// Workspace opens a workspace labeled label, with one tab and one pane.
 	Workspace func(label string) Layout
 	// Tab adds a tab labeled label, with one pane, to a workspace.
@@ -43,12 +43,12 @@ type Scenario struct {
 	Run     func(t *testing.T, s Subject)
 }
 
-// Scenarios is the contract for herdr.Herdr. The fake runs it in every test
+// Scenarios is the contract for herdr.Multiplexer. The fake runs it in every test
 // run, and the real adapter runs it under the drift build tag. The refusals
 // checked are herdr's own codes and wording, which the fake copies.
 var Scenarios = []Scenario{
 	{Name: "ReadOfAnEmptySessionShowsNothing", Run: func(t *testing.T, s Subject) {
-		snap, err := s.Herdr.Read(context.Background())
+		snap, err := s.Multiplexer.Read(context.Background())
 
 		require.NoError(t, err)
 		assert.Empty(t, snap.Workspaces)
@@ -61,7 +61,7 @@ var Scenarios = []Scenario{
 		second := s.Tab(first.Workspace, "beta")
 		s.Agent(second.Pane, "idle")
 
-		snap, err := s.Herdr.Read(context.Background())
+		snap, err := s.Multiplexer.Read(context.Background())
 
 		require.NoError(t, err)
 		require.Len(t, snap.Workspaces, 1)
@@ -80,7 +80,7 @@ var Scenarios = []Scenario{
 		s.Agent(first.Pane, "working")
 		s.Agent(second.Pane, "idle")
 
-		agent, ok, err := s.Herdr.AgentAt(context.Background(), second.Pane)
+		agent, ok, err := s.Multiplexer.AgentAt(context.Background(), second.Pane)
 
 		require.NoError(t, err)
 		require.True(t, ok)
@@ -89,13 +89,13 @@ var Scenarios = []Scenario{
 	{Name: "AgentAtAPaneWithNoAgentFindsNone", Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
 
-		_, ok, err := s.Herdr.AgentAt(context.Background(), layout.Pane)
+		_, ok, err := s.Multiplexer.AgentAt(context.Background(), layout.Pane)
 
 		require.NoError(t, err)
 		assert.False(t, ok)
 	}},
 	{Name: "AgentAtAnUnknownPaneFindsNone", Run: func(t *testing.T, s Subject) {
-		_, ok, err := s.Herdr.AgentAt(context.Background(), "w999:p1")
+		_, ok, err := s.Multiplexer.AgentAt(context.Background(), "w999:p1")
 
 		require.NoError(t, err)
 		assert.False(t, ok)
@@ -105,7 +105,7 @@ var Scenarios = []Scenario{
 		s.Agent(layout.Pane, "working")
 		s.Agent(layout.Pane, "blocked")
 
-		snap, err := s.Herdr.Read(context.Background())
+		snap, err := s.Multiplexer.Read(context.Background())
 
 		require.NoError(t, err)
 		require.Len(t, snap.Agents, 1)
@@ -114,15 +114,15 @@ var Scenarios = []Scenario{
 	{Name: "RenameWorkspaceChangesItsLabel", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
 
-		require.NoError(t, s.Herdr.RenameWorkspace(context.Background(), layout.Workspace, "🟢 ENG-1"))
+		require.NoError(t, s.Multiplexer.RenameWorkspace(context.Background(), layout.Workspace, "🟢 ENG-1"))
 
-		snap, err := s.Herdr.Read(context.Background())
+		snap, err := s.Multiplexer.Read(context.Background())
 		require.NoError(t, err)
 		require.Len(t, snap.Workspaces, 1)
 		assert.Equal(t, "🟢 ENG-1", snap.Workspaces[0].Label)
 	}},
 	{Name: "RenameWorkspaceRefusesAnUnknownWorkspace", TUIOnly: true, Run: func(t *testing.T, s Subject) {
-		err := s.Herdr.RenameWorkspace(context.Background(), "w999", "x")
+		err := s.Multiplexer.RenameWorkspace(context.Background(), "w999", "x")
 
 		require.ErrorContains(t, err, "workspace_not_found")
 		assert.ErrorContains(t, err, "workspace w999 not found")
@@ -130,9 +130,9 @@ var Scenarios = []Scenario{
 	{Name: "RenameTabChangesItsLabel", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
 
-		require.NoError(t, s.Herdr.RenameTab(context.Background(), layout.Tab, "ENG-1 title"))
+		require.NoError(t, s.Multiplexer.RenameTab(context.Background(), layout.Tab, "ENG-1 title"))
 
-		snap, err := s.Herdr.Read(context.Background())
+		snap, err := s.Multiplexer.Read(context.Background())
 		require.NoError(t, err)
 		require.Len(t, snap.Tabs, 1)
 		assert.Equal(t, "ENG-1 title", snap.Tabs[0].Label)
@@ -140,7 +140,7 @@ var Scenarios = []Scenario{
 	{Name: "RenameTabRefusesAnUnknownTab", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
 
-		err := s.Herdr.RenameTab(context.Background(), layout.Workspace+":t999", "x")
+		err := s.Multiplexer.RenameTab(context.Background(), layout.Workspace+":t999", "x")
 
 		require.ErrorContains(t, err, "tab_not_found")
 	}},
@@ -151,9 +151,9 @@ var Scenarios = []Scenario{
 		s.Agent(second.Pane, "working")
 		staying := s.Workspace("staying")
 
-		require.NoError(t, s.Herdr.CloseWorkspace(context.Background(), closing.Workspace))
+		require.NoError(t, s.Multiplexer.CloseWorkspace(context.Background(), closing.Workspace))
 
-		snap, err := s.Herdr.Read(context.Background())
+		snap, err := s.Multiplexer.Read(context.Background())
 		require.NoError(t, err)
 		require.Len(t, snap.Workspaces, 1)
 		assert.Equal(t, staying.Workspace, snap.Workspaces[0].ID)
@@ -164,15 +164,15 @@ var Scenarios = []Scenario{
 		assert.Empty(t, snap.Agents)
 	}},
 	{Name: "CloseWorkspaceRefusesAnUnknownWorkspace", TUIOnly: true, Run: func(t *testing.T, s Subject) {
-		err := s.Herdr.CloseWorkspace(context.Background(), "w999")
+		err := s.Multiplexer.CloseWorkspace(context.Background(), "w999")
 
 		require.ErrorContains(t, err, "workspace_not_found")
 	}},
 	{Name: "CloseWorkspaceRefusesAWorkspaceAlreadyClosed", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
-		require.NoError(t, s.Herdr.CloseWorkspace(context.Background(), layout.Workspace))
+		require.NoError(t, s.Multiplexer.CloseWorkspace(context.Background(), layout.Workspace))
 
-		err := s.Herdr.CloseWorkspace(context.Background(), layout.Workspace)
+		err := s.Multiplexer.CloseWorkspace(context.Background(), layout.Workspace)
 
 		require.ErrorContains(t, err, "workspace_not_found")
 	}},
@@ -182,9 +182,9 @@ var Scenarios = []Scenario{
 		s.Agent(first.Pane, "idle")
 		s.Agent(second.Pane, "working")
 
-		require.NoError(t, s.Herdr.CloseTab(context.Background(), second.Tab))
+		require.NoError(t, s.Multiplexer.CloseTab(context.Background(), second.Tab))
 
-		snap, err := s.Herdr.Read(context.Background())
+		snap, err := s.Multiplexer.Read(context.Background())
 		require.NoError(t, err)
 		require.Len(t, snap.Workspaces, 1)
 		require.Len(t, snap.Tabs, 1)
@@ -197,17 +197,17 @@ var Scenarios = []Scenario{
 	{Name: "CloseTabRefusesAnUnknownTab", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
 
-		err := s.Herdr.CloseTab(context.Background(), layout.Workspace+":t999")
+		err := s.Multiplexer.CloseTab(context.Background(), layout.Workspace+":t999")
 
 		require.ErrorContains(t, err, "tab_not_found")
 	}},
 	{Name: "OpenWorkspaceShowsTheCheckout", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		repo, tree := s.Checkout()
 
-		id, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
+		id, err := s.Multiplexer.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
 
 		require.NoError(t, err)
-		snap, err := s.Herdr.Read(context.Background())
+		snap, err := s.Multiplexer.Read(context.Background())
 		require.NoError(t, err)
 		// herdr nests the checkout's workspace under one for its repo.
 		assert.Contains(t, snap.Workspaces, herdr.Workspace{ID: id, Label: "ENG-1", CheckoutPath: tree})
@@ -215,27 +215,27 @@ var Scenarios = []Scenario{
 	}},
 	{Name: "OpenWorkspaceReturnsTheWorkspaceAlreadyShowingTheCheckout", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		repo, tree := s.Checkout()
-		first, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
+		first, err := s.Multiplexer.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
 		require.NoError(t, err)
 
-		second, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
+		second, err := s.Multiplexer.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
 
 		require.NoError(t, err)
 		assert.Equal(t, first, second)
-		snap, err := s.Herdr.Read(context.Background())
+		snap, err := s.Multiplexer.Read(context.Background())
 		require.NoError(t, err)
 		assert.Len(t, snap.Workspaces, 2)
 	}},
 	{Name: "StartWorkerRunsTheProgramInANewTab", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		repo, tree := s.Checkout()
-		id, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
+		id, err := s.Multiplexer.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
 		require.NoError(t, err)
 
-		started, err := s.Herdr.StartWorker(context.Background(), herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1 title", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
+		started, err := s.Multiplexer.StartWorker(context.Background(), herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1 title", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
 
 		require.NoError(t, err)
 		assert.Equal(t, "eng-1", started.Agent)
-		snap, err := s.Herdr.Read(context.Background())
+		snap, err := s.Multiplexer.Read(context.Background())
 		require.NoError(t, err)
 		// The tab the workspace opened with held no agent and is gone.
 		var tabs []herdr.Tab
@@ -254,13 +254,13 @@ var Scenarios = []Scenario{
 	}},
 	{Name: "StartWorkerNamesASecondWorkerApartFromTheFirst", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		repo, tree := s.Checkout()
-		id, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
+		id, err := s.Multiplexer.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
 		require.NoError(t, err)
 		worker := herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program}
-		first, err := s.Herdr.StartWorker(context.Background(), worker)
+		first, err := s.Multiplexer.StartWorker(context.Background(), worker)
 		require.NoError(t, err)
 
-		second, err := s.Herdr.StartWorker(context.Background(), worker)
+		second, err := s.Multiplexer.StartWorker(context.Background(), worker)
 
 		require.NoError(t, err)
 		assert.Equal(t, "eng-1", first.Agent)
@@ -270,7 +270,7 @@ var Scenarios = []Scenario{
 	{Name: "StartWorkerRefusesAnUnknownWorkspace", TUIOnly: true, Run: func(t *testing.T, s Subject) {
 		_, tree := s.Checkout()
 
-		started, err := s.Herdr.StartWorker(context.Background(), herdr.Worker{Workspace: "w999", Dir: tree, Label: "ENG-1", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
+		started, err := s.Multiplexer.StartWorker(context.Background(), herdr.Worker{Workspace: "w999", Dir: tree, Label: "ENG-1", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
 
 		require.ErrorContains(t, err, "workspace_not_found")
 		assert.Empty(t, started.Pane)
@@ -280,7 +280,7 @@ var Scenarios = []Scenario{
 		second := s.Tab(first.Workspace, "beta")
 		s.Agent(second.Pane, "idle")
 
-		snap, err := s.Herdr.Read(context.Background())
+		snap, err := s.Multiplexer.Read(context.Background())
 
 		require.NoError(t, err)
 		require.Len(t, snap.Workspaces, 1)
@@ -294,16 +294,16 @@ var Scenarios = []Scenario{
 	}},
 	{Name: "ReadShowsTheCheckoutOnceAWorkerStartsInIt", Run: func(t *testing.T, s Subject) {
 		repo, tree := s.Checkout()
-		id, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
+		id, err := s.Multiplexer.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
 		require.NoError(t, err)
-		again, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
+		again, err := s.Multiplexer.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
 		require.NoError(t, err)
 		assert.Equal(t, id, again)
 
-		_, err = s.Herdr.StartWorker(context.Background(), herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
+		_, err = s.Multiplexer.StartWorker(context.Background(), herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
 
 		require.NoError(t, err)
-		snap, err := s.Herdr.Read(context.Background())
+		snap, err := s.Multiplexer.Read(context.Background())
 		require.NoError(t, err)
 		var shown []herdr.Workspace
 		for _, w := range snap.Workspaces {
@@ -316,16 +316,16 @@ var Scenarios = []Scenario{
 	}},
 	{Name: "StartWorkerRunsTheProgramOnTheTree", Run: func(t *testing.T, s Subject) {
 		repo, tree := s.Checkout()
-		id, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
+		id, err := s.Multiplexer.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
 		require.NoError(t, err)
 
-		started, err := s.Herdr.StartWorker(context.Background(), herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1 title", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
+		started, err := s.Multiplexer.StartWorker(context.Background(), herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1 title", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
 
 		require.NoError(t, err)
 		assert.NotEmpty(t, started.Agent)
 		// The program may still be loading, so the agent shows once herdr sees it run.
 		require.Eventually(t, func() bool {
-			snap, err := s.Herdr.Read(context.Background())
+			snap, err := s.Multiplexer.Read(context.Background())
 			if err != nil {
 				return false
 			}
@@ -336,20 +336,20 @@ var Scenarios = []Scenario{
 			}
 			return false
 		}, 20*time.Second, 100*time.Millisecond)
-		snap, err := s.Herdr.Read(context.Background())
+		snap, err := s.Multiplexer.Read(context.Background())
 		require.NoError(t, err)
 		assert.Len(t, snap.Agents, 1)
 	}},
 	{Name: "KickoffMakesTheWorkerRun", Run: func(t *testing.T, s Subject) {
 		repo, tree := s.Checkout()
-		id, err := s.Herdr.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
+		id, err := s.Multiplexer.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree, Label: "ENG-1"})
 		require.NoError(t, err)
-		started, err := s.Herdr.StartWorker(context.Background(), herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
+		started, err := s.Multiplexer.StartWorker(context.Background(), herdr.Worker{Workspace: id, Dir: tree, Label: "ENG-1", Name: "eng-1", PluginRoot: s.PluginRoot, Program: s.Program})
 		require.NoError(t, err)
 
-		require.NoError(t, s.Herdr.Kickoff(context.Background(), started.Pane, "/dispatch:build ENG-1", s.Program.Startup))
+		require.NoError(t, s.Multiplexer.Kickoff(context.Background(), started.Pane, "/dispatch:build ENG-1", s.Program.Startup))
 
-		snap, err := s.Herdr.Read(context.Background())
+		snap, err := s.Multiplexer.Read(context.Background())
 		require.NoError(t, err)
 		require.Len(t, snap.Agents, 1)
 		assert.Equal(t, "working", snap.Agents[0].Status)
@@ -357,7 +357,7 @@ var Scenarios = []Scenario{
 	{Name: "KickoffGivesUpOnAPaneWithNoAgent", Run: func(t *testing.T, s Subject) {
 		layout := s.Workspace("alpha")
 
-		err := s.Herdr.Kickoff(context.Background(), layout.Pane, "/dispatch:build ENG-1", s.Program.Startup)
+		err := s.Multiplexer.Kickoff(context.Background(), layout.Pane, "/dispatch:build ENG-1", s.Program.Startup)
 
 		// The adapter waits for an input box that never comes, so this takes
 		// about 30s against real herdr.

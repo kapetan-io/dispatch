@@ -95,7 +95,7 @@ func TestRulesCheckHoldsWhenHerdrCannotBeRead(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Tools().Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
+	d.Tools().Multiplexer.Fail(herdrtest.OpRead, errors.New("herdr is down"))
 
 	res := d.Run("rules", "check")
 
@@ -273,7 +273,7 @@ whenever({ name: "asks", each: "ticket",
   then: (t, ctx) => ctx.ticket.queueComment(t, "herdr is unread", { once: ["asks", t.id] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Tools().Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
+	d.Tools().Multiplexer.Fail(herdrtest.OpRead, errors.New("herdr is down"))
 
 	res := d.Run("rules", "check")
 
@@ -830,7 +830,7 @@ func TestRulesCheckHoldsARuleWhoseKnownCallbackCatchesTheUnknownRead(t *testing.
   then: (t, ctx) => ctx.ticket.queueComment(t, "acted", { once: ["swallows", t.id] }) });`),
 	})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Tools().Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
+	d.Tools().Multiplexer.Fail(herdrtest.OpRead, errors.New("herdr is down"))
 
 	res := d.Run("rules", "check")
 

@@ -74,8 +74,8 @@ func launchWorker(ctx context.Context, opts Options, args []string) error {
 				break
 			}
 			// A launch run by hand shows its progress. Launches the loop starts stay quiet.
-			opts.Herdr = herdrFor(opts, host, opts.Stderr)
-			withRexSettings(opts.Herdr, rex)
+			opts.Multiplexer = multiplexerFor(opts, host, opts.Stderr)
+			withRexSettings(opts.Multiplexer, rex)
 			res = launcherFor(opts, root, opts.Stderr, loop.Typing(opts.StateDir)).Launch(ctx, req)
 		}
 	}
@@ -104,7 +104,7 @@ func launchHost(opts Options) (string, config.Rex, error) {
 	return cfg.Plugins.Host(), cfg.Plugins.Rex, nil
 }
 
-// launchProgram is what herdr runs for a launch by hand: the harness table ref, spelled
+// launchProgram is what the multiplexer runs for a launch by hand: the harness table ref, spelled
 // "harness.<name>", names, or Claude Code with model, which is sonnet when empty.
 func launchProgram(opts Options, root, ref, model string) (herdr.Program, error) {
 	// Without a harness table, a launch runs Claude Code.
@@ -151,16 +151,16 @@ func launcherFor(opts Options, root string, progress io.Writer, typed launcher.T
 		return opts.Launcher
 	}
 	lo := launcher.Options{
-		PluginRoot: root,
-		Herdr:      opts.Herdr,
-		Treehouse:  opts.Treehouse,
-		Pace:       opts.LaunchPace,
-		Stderr:     progress,
-		StateDir:   opts.StateDir,
-		Typed:      typed,
+		PluginRoot:  root,
+		Multiplexer: opts.Multiplexer,
+		Treehouse:   opts.Treehouse,
+		Pace:        opts.LaunchPace,
+		Stderr:      progress,
+		StateDir:    opts.StateDir,
+		Typed:       typed,
 	}
 	lo.Clock, lo.Env = opts.Clock, opts.Env
-	// DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT=<seconds> bounds the wait for the herdr
+	// DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT=<seconds> bounds the wait for the multiplexer
 	// server. Zero fails at once, so it becomes the smallest nonzero wait.
 	if secs, err := strconv.Atoi(opts.Env.Get("DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT")); err == nil {
 		lo.PreflightTimeout = max(time.Duration(secs)*time.Second, time.Nanosecond)

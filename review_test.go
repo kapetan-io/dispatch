@@ -17,8 +17,8 @@ import (
 // Agent starts a Claude agent in a workspace made with an empty status.
 func (w *Workers) Agent(ticket, status string) {
 	id := "w-" + ticket
-	w.d.tools.Herdr.AddPane(herdr.Pane{ID: id + ":p1", WorkspaceID: id})
-	w.d.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: status, Session: "worker", PaneID: id + ":p1", WorkspaceID: id})
+	w.d.tools.Multiplexer.AddPane(herdr.Pane{ID: id + ":p1", WorkspaceID: id})
+	w.d.tools.Multiplexer.AddAgent(herdr.Agent{Kind: "claude", Status: status, Session: "worker", PaneID: id + ":p1", WorkspaceID: id})
 	w.d.openWorkerSession(ticket, "worker")
 }
 

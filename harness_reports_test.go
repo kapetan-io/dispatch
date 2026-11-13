@@ -44,7 +44,7 @@ func TestRecordStopWritesNothingWhenNoRegisteredHarnessOwnsTheReportingPane(t *t
 		{"NoPaneId", func(d *Dispatch, fake string) string { return "" }, func(tree string) string { return fakeStop(tree, 1) }},
 		{"PaneHerdrDoesNotList", func(d *Dispatch, fake string) string { return "w404:p9" }, func(tree string) string { return fakeStop(tree, 1) }},
 		{"PaneOfAnUnregisteredKind", func(d *Dispatch, fake string) string {
-			d.tools.Herdr.AddAgent(herdr.Agent{Kind: "pi", Status: "idle", PaneID: "pi:p1"})
+			d.tools.Multiplexer.AddAgent(herdr.Agent{Kind: "pi", Status: "idle", PaneID: "pi:p1"})
 			return "pi:p1"
 		}, func(tree string) string { return fakeStop(tree, 1) }},
 		{"InputInAnotherHarnessesForm", func(d *Dispatch, fake string) string { return fake }, func(tree string) string {
@@ -124,14 +124,14 @@ func TestLaunchReportsAWorkerWhoseSessionIsOfARegisteredHarnessKind(t *testing.T
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, FakeHarness: true})
 	tree := d.Trees.Pooled()
 	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
-	d.fakes().Herdr.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: tree})
-	d.fakes().Herdr.AddAgent(herdr.Agent{Kind: "fake", Status: "working", PaneID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
+	d.fakes().Multiplexer.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: tree})
+	d.fakes().Multiplexer.AddAgent(herdr.Agent{Kind: "fake", Status: "working", PaneID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "already_running", out.result["status"])
 	assert.Equal(t, "w3:p2", out.result["pane"])
-	assert.Empty(t, d.fakes().Herdr.Started())
+	assert.Empty(t, d.fakes().Multiplexer.Started())
 }
 
 func TestLaunchIgnoresAnAgentOfAKindNoHarnessRuns(t *testing.T) {
@@ -139,13 +139,13 @@ func TestLaunchIgnoresAnAgentOfAKindNoHarnessRuns(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, FakeHarness: true})
 	tree := d.Trees.Pooled()
 	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
-	d.fakes().Herdr.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: tree})
-	d.fakes().Herdr.AddAgent(herdr.Agent{Kind: "pi", Status: "working", PaneID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
+	d.fakes().Multiplexer.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: tree})
+	d.fakes().Multiplexer.AddAgent(herdr.Agent{Kind: "pi", Status: "working", PaneID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Len(t, d.fakes().Herdr.Started(), 1)
+	assert.Len(t, d.fakes().Multiplexer.Started(), 1)
 }
 
 func TestRecordStopWritesNothingWhenHerdrCannotSayWhatRunsInThePane(t *testing.T) {
@@ -155,7 +155,7 @@ func TestRecordStopWritesNothingWhenHerdrCannotSayWhatRunsInThePane(t *testing.T
 	d.Workers.Running("ENG-1", "")
 	pane := d.SessionOf("ENG-1", "fake", "idle")
 	d.StartBeforeTheEvents()
-	d.fakes().Herdr.Fail(herdrtest.OpAgentAt, errors.New("herdr is down"))
+	d.fakes().Multiplexer.Fail(herdrtest.OpAgentAt, errors.New("herdr is down"))
 	defer d.FromPane(pane)()
 
 	res := d.Hook("record-stop", fakeStop(d.worktreeOf("ENG-1"), 1))
@@ -163,7 +163,7 @@ func TestRecordStopWritesNothingWhenHerdrCannotSayWhatRunsInThePane(t *testing.T
 	require.NoError(t, res.Err)
 	assert.Empty(t, res.Stdout)
 	assert.Empty(t, res.Stderr)
-	d.fakes().Herdr.Fail(herdrtest.OpAgentAt, nil)
+	d.fakes().Multiplexer.Fail(herdrtest.OpAgentAt, nil)
 	d.Tick()
 	assert.Equal(t, []string{"ENG-1: turns  of 0"}, d.Linear.Comments())
 }

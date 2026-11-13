@@ -6,7 +6,7 @@ import { isDesign, prMerged, openBlockers, abandonedBlocker, nudgeable, launchAs
 // Once per stretch with no worker. After a full pool, once more each time a tree comes
 // back to that repo's pool. Another ticket's lease doesn't count, so a full pool is
 // never retried as it stands.
-// If herdr or the repo's pool couldn't be read, the worker is unknown and this holds,
+// If the multiplexer or the repo's pool couldn't be read, the worker is unknown and this holds,
 // so dispatch never starts a second worker beside one it can't see.
 whenever({
   name: "launch-worker",

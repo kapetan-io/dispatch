@@ -10,7 +10,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/loop"
 )
 
-// stopTimeout caps what record-stop waits on herdr and dispatch together, and what wake waits on herdr, because the
+// stopTimeout caps what record-stop waits on the multiplexer and dispatch together, and what wake waits on the multiplexer, because the
 // hook runs after every turn. A report lost to it costs little, since a worker with no record keeps its busy label until the next Stop.
 const stopTimeout = time.Second
 
@@ -23,7 +23,7 @@ func recordStop(ctx context.Context, opts Options) error {
 	if !ok {
 		return nil
 	}
-	// One budget covers the herdr lookup and the report, so the hook never holds a turn longer than stopTimeout on them.
+	// One budget covers the multiplexer lookup and the report, so the hook never holds a turn longer than stopTimeout on them.
 	askCtx, cancel := clock.WithTimeout(ctx, opts.Clock, "record-stop", stopTimeout)
 	defer cancel()
 	harness, ok := reportingHarness(askCtx, opts)

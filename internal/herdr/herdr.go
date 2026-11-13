@@ -72,11 +72,11 @@ type Agent struct {
 	Session string
 }
 
-// Herdr is the port to the multiplexer that hosts the workers.
-type Herdr interface {
-	// Multiplexer is what messages call this product: "herdr" for the herdr TUI and for
+// Multiplexer is the port to the multiplexer that hosts the workers.
+type Multiplexer interface {
+	// Name is what messages call this product: "herdr" for the herdr TUI and for
 	// herdr-core with the Herdr app, "Rex" for Rex.
-	Multiplexer() string
+	Name() string
 	// Read takes a snapshot of every workspace, tab, pane and agent.
 	Read(ctx context.Context) (Snapshot, error)
 	// AgentAt returns the agent in pane, asking herdr about that pane alone. A pane
@@ -386,7 +386,7 @@ func (r *Refusal) Error() string {
 	return strings.TrimSpace(buf.String())
 }
 
-// CLI is the Herdr that runs the installed herdr command.
+// CLI is the Multiplexer that runs the installed herdr command.
 type CLI struct {
 	workLog
 	bin         string
@@ -396,7 +396,7 @@ type CLI struct {
 	kinds       []string
 }
 
-// NewCLI returns a Herdr that runs bin. Arguments in global come before every
+// NewCLI returns a Multiplexer that runs bin. Arguments in global come before every
 // subcommand, such as "--session", "name" to act on a named session.
 func NewCLI(bin string, global ...string) *CLI {
 	return &CLI{bin: bin, global: global, workLog: newWorkLog()}
@@ -609,9 +609,9 @@ func (c *CLI) command(ctx context.Context, args ...string) *exec.Cmd {
 	return c.env.Command(ctx, c.bin, append(append([]string{}, c.global...), args...)...)
 }
 
-var _ Herdr = (*CLI)(nil)
+var _ Multiplexer = (*CLI)(nil)
 
-func (c *CLI) Multiplexer() string { return "herdr" }
+func (c *CLI) Name() string { return "herdr" }
 
 // TabLabel is the label of a worker's tab, `<ticket> <title>`, or the ticket alone when it has no title.
 func TabLabel(ticket, title string) string {

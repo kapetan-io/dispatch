@@ -23,19 +23,19 @@ import (
 
 // Statuses Run reports besides the ones in launcher.go.
 const (
-	StatusPoolError            = "pool_error"
-	StatusHerdrUnavailable     = "herdr_unavailable"
-	StatusUsageError           = "usage_error"
-	StatusNotARepo             = "not_a_repo"
-	StatusNotPooled            = "not_pooled"
-	StatusLeaseFailed          = "lease_failed"
-	StatusSwitchFailed         = "switch_failed"
-	StatusStackRecordFailed    = "stack_record_failed"
-	StatusBranchTaken          = "branch_taken"
-	StatusWorkspaceFailed      = "workspace_failed"
-	StatusAgentStartFailed     = "agent_start_failed"
-	StatusInjectionUnconfirmed = "injection_unconfirmed"
-	StatusProgramExited        = "program_exited"
+	StatusPoolError              = "pool_error"
+	StatusMultiplexerUnavailable = "herdr_unavailable"
+	StatusUsageError             = "usage_error"
+	StatusNotARepo               = "not_a_repo"
+	StatusNotPooled              = "not_pooled"
+	StatusLeaseFailed            = "lease_failed"
+	StatusSwitchFailed           = "switch_failed"
+	StatusStackRecordFailed      = "stack_record_failed"
+	StatusBranchTaken            = "branch_taken"
+	StatusWorkspaceFailed        = "workspace_failed"
+	StatusAgentStartFailed       = "agent_start_failed"
+	StatusInjectionUnconfirmed   = "injection_unconfirmed"
+	StatusProgramExited          = "program_exited"
 )
 
 // Typing is where a launch notes what it types into the worker, so the prompt hook can tell
@@ -52,8 +52,8 @@ type Options struct {
 	// PluginRoot is the plugin checkout, stamped on the worker as
 	// DISPATCH_PLUGIN_ROOT. It has no default.
 	PluginRoot string
-	// Herdr hosts the worker. Required: the caller builds it for the config's host.
-	Herdr herdr.Herdr
+	// Multiplexer hosts the worker. Required: the caller builds it for the config's host.
+	Multiplexer herdr.Multiplexer
 	// Treehouse is the pool to lease from. Defaults to the installed treehouse.
 	Treehouse treehouse.Pool
 	// Stderr receives progress. Defaults to discarding it.
@@ -101,7 +101,7 @@ func (o Options) withDefaults() Options {
 }
 
 // Local is the Launcher that leases a tree from the pool on this machine and
-// starts the worker in the herdr that hosts it.
+// starts the worker in the multiplexer that hosts it.
 type Local struct {
 	opts Options
 }
@@ -119,9 +119,9 @@ func New(opts Options) *Local { return &Local{opts: opts.withDefaults()} }
 // for nothing because the next resync launches again. pool_error is an unreadable
 // pool or a lease returned without a path, and counts toward launch_failure_limit.
 //
-// The herdr handling depends on nested worktree workspaces, an env-stamped tab,
+// The multiplexer handling depends on nested worktree workspaces, an env-stamped tab,
 // waiting for the shell before starting the agent, answering the consent and
-// folder-trust dialogs, and confirming the kickoff landed. The herdr adapter
+// folder-trust dialogs, and confirming the kickoff landed. The adapters
 // does all of it behind OpenWorkspace, StartWorker and Kickoff. A StartWorker that finds a
 // session already running on the tree ends the launch as already_running, and one that finds only
 // a terminal with no Claude ends it as terminal_without_agent. Both close and return nothing.
@@ -171,7 +171,7 @@ func (l *launch) run(ctx context.Context) Result {
 	if req.Kickoff == "" {
 		req.Kickoff = "/dispatch:build " + req.Ticket
 	}
-	// The worker's herdr agent name is the lowercased ticket id, so a relaunch
+	// The worker's agent name is the lowercased ticket id, so a relaunch
 	// reclaims the same name. Claude itself is never given --name: it draws the
 	// name in a rule below an open question, and herdr then misses the question
 	// and reports the worker done instead of blocked.
@@ -213,12 +213,12 @@ func (l *launch) run(ctx context.Context) Result {
 
 	// An unconfirmed kickoff closes the workspace. Left open, its idle program
 	// would look like a live worker, and no cycle would retry or escalate.
-	if err := l.opts.Herdr.Kickoff(ctx, started.Pane, req.Kickoff, req.Program.Startup); err != nil {
-		if l.opts.Herdr.CloseWorkspace(context.WithoutCancel(ctx), l.workspace) != nil {
+	if err := l.opts.Multiplexer.Kickoff(ctx, started.Pane, req.Kickoff, req.Program.Startup); err != nil {
+		if l.opts.Multiplexer.CloseWorkspace(context.WithoutCancel(ctx), l.workspace) != nil {
 			l.workspaceOpen = true
 		}
 		l.opts.Typed.Clear(l.tree)
-		program, name := req.Program.Name, l.opts.Herdr.Multiplexer()
+		program, name := req.Program.Name, l.opts.Multiplexer.Name()
 		var exited *herdr.ProgramExited
 		if errors.As(err, &exited) {
 			detail := program + " exited"
@@ -256,7 +256,7 @@ func (l *launch) run(ctx context.Context) Result {
 // beginKickoff marks the launch unconfirmed until it returns. A launch killed
 // before then leaves the mark, which is how a later tick knows the session in
 // this tree never got its kickoff. A record already there is shared, not replaced,
-// so a launch that herdr refuses cannot erase the winner's.
+// so a launch that the multiplexer refuses cannot erase the winner's.
 func (l *launch) beginKickoff() {
 	if l.opts.StateDir == "" {
 		return
@@ -298,22 +298,22 @@ func (l *launch) preflight(ctx context.Context) (Result, bool) {
 	waitCtx, cancel := clock.WithTimeout(ctx, l.opts.Clock, "launch preflight", l.opts.PreflightTimeout)
 	defer cancel()
 	unanswered := func(readErr error) Result {
-		return Result{Status: StatusHerdrUnavailable, Detail: fmt.Sprintf("%s server not answering: %v", l.opts.Herdr.Multiplexer(), readErr)}
+		return Result{Status: StatusMultiplexerUnavailable, Detail: fmt.Sprintf("%s server not answering: %v", l.opts.Multiplexer.Name(), readErr)}
 	}
 	for {
-		_, err := l.opts.Herdr.Read(ctx)
+		_, err := l.opts.Multiplexer.Read(ctx)
 		if err == nil {
 			return Result{}, true
 		}
 		if waitCtx.Err() != nil && ctx.Err() == nil {
 			return unanswered(err), false
 		}
-		l.log("waiting for %s server...", l.opts.Herdr.Multiplexer())
+		l.log("waiting for %s server...", l.opts.Multiplexer.Name())
 		if !l.sleep(waitCtx, 5*l.opts.Pace) {
 			if ctx.Err() == nil {
 				return unanswered(err), false
 			}
-			return Result{Status: StatusHerdrUnavailable, Detail: "interrupted while waiting for the " + l.opts.Herdr.Multiplexer() + " server"}, false
+			return Result{Status: StatusMultiplexerUnavailable, Detail: "interrupted while waiting for the " + l.opts.Multiplexer.Name() + " server"}, false
 		}
 	}
 }
@@ -618,7 +618,7 @@ func (l *launch) giveBack(ctx context.Context) {
 	// The lease goes back only after the workspace is confirmed closed. A tree
 	// returned with its workspace still open would match that workspace by
 	// path, so the next ticket to lease it would never start.
-	if l.workspace != "" && l.opts.Herdr.CloseWorkspace(ctx, l.workspace) != nil {
+	if l.workspace != "" && l.opts.Multiplexer.CloseWorkspace(ctx, l.workspace) != nil {
 		l.log("workspace %s did not close, keeping the lease on %s", l.workspace, l.tree)
 		return
 	}
@@ -633,10 +633,10 @@ func (l *launch) returnLease(ctx context.Context) {
 }
 
 func (l *launch) openWorkspace(ctx context.Context) (Result, bool) {
-	snap, err := l.opts.Herdr.Read(ctx)
+	snap, err := l.opts.Multiplexer.Read(ctx)
 	if err != nil {
 		l.giveBack(ctx)
-		return Result{Status: StatusWorkspaceFailed, Detail: fmt.Sprintf("while reading %s for %s: %v", l.opts.Herdr.Multiplexer(), l.tree, err), Worktree: l.tree}, false
+		return Result{Status: StatusWorkspaceFailed, Detail: fmt.Sprintf("while reading %s for %s: %v", l.opts.Multiplexer.Name(), l.tree, err), Worktree: l.tree}, false
 	}
 	for _, w := range snap.Workspaces {
 		if w.CheckoutPath == l.tree {
@@ -658,7 +658,7 @@ func (l *launch) openWorkspace(ctx context.Context) (Result, bool) {
 	// herdr refuses a linked worktree as the source, so name the main
 	// checkout even when the launcher runs from inside a pool tree.
 	common, _ := l.git(ctx, l.repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
-	id, err := l.opts.Herdr.OpenWorkspace(ctx, herdr.NewWorkspace{Repo: filepath.Dir(strings.TrimSpace(common)), Path: l.tree, Label: l.req.Ticket})
+	id, err := l.opts.Multiplexer.OpenWorkspace(ctx, herdr.NewWorkspace{Repo: filepath.Dir(strings.TrimSpace(common)), Path: l.tree, Label: l.req.Ticket})
 	if err != nil {
 		l.giveBack(ctx)
 		return Result{Status: StatusWorkspaceFailed, Detail: err.Error(), Worktree: l.tree}, false
@@ -668,7 +668,7 @@ func (l *launch) openWorkspace(ctx context.Context) (Result, bool) {
 }
 
 func (l *launch) startWorker(ctx context.Context, name string) (herdr.Started, Result, bool) {
-	started, err := l.opts.Herdr.StartWorker(ctx, herdr.Worker{
+	started, err := l.opts.Multiplexer.StartWorker(ctx, herdr.Worker{
 		Workspace:  l.workspace,
 		Dir:        l.tree,
 		FreshLease: l.fresh,

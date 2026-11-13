@@ -94,7 +94,7 @@ func withFailingPR(d *Dispatch) {
 
 // Gone closes the ticket's workspace, which leaves its tree leased and no worker for dispatch to see.
 func (w *Workers) Gone(ticket string) {
-	require.NoError(w.d.t, w.d.tools.Herdr.CloseWorkspace(context.Background(), "w-"+ticket))
+	require.NoError(w.d.t, w.d.tools.Multiplexer.CloseWorkspace(context.Background(), "w-"+ticket))
 }
 
 // CheckedOut is Running on a tree that exists as a git worktree, as a worker's tree does when dispatch types into it.
@@ -121,16 +121,16 @@ func (w *Workers) Type(ticket, prompt string) {
 }
 
 // Kicked lists the kickoffs typed into new workers, as "<pane>|<text>".
-func (w *Workers) Kicked() []string { return w.d.tools.Herdr.Kicked() }
+func (w *Workers) Kicked() []string { return w.d.tools.Multiplexer.Kicked() }
 
 // SetPaneSession changes the Claude session id herdr reports for a pane.
 func (w *Workers) SetPaneSession(pane, session string) {
-	w.d.tools.Herdr.SetSession(pane, session)
+	w.d.tools.Multiplexer.SetSession(pane, session)
 }
 
 // FailKickoff makes herdr report that it never confirmed a kickoff.
 func (w *Workers) FailKickoff() {
-	w.d.tools.Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
+	w.d.tools.Multiplexer.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
 }
 
 // LaunchResult sets what the fake launcher answers to a launch, as the launcher's JSON.

@@ -10,12 +10,12 @@ import (
 	"github.com/kapetan-io/dispatch/internal/herdr"
 )
 
-// herdrFor is the herdr that hosts the workers of host: Options.Herdr when a test or caller
+// multiplexerFor is the multiplexer that hosts the workers of host: Options.Multiplexer when a test or caller
 // set one, and otherwise the real adapter for that host. progress, when given, receives the
 // adapter's launch progress.
-func herdrFor(opts Options, host string, progress io.Writer) herdr.Herdr {
-	if opts.Herdr != nil {
-		return opts.Herdr
+func multiplexerFor(opts Options, host string, progress io.Writer) herdr.Multiplexer {
+	if opts.Multiplexer != nil {
+		return opts.Multiplexer
 	}
 	// DISPATCH_LAUNCH_TRACE=<file> records each status read and screen the kickoff step sees, and the program exiting.
 	trace := opts.Env.Get("DISPATCH_LAUNCH_TRACE")
@@ -33,15 +33,15 @@ func herdrFor(opts Options, host string, progress io.Writer) herdr.Herdr {
 		WithTrace(trace).WithDispatchBin(exe).WithProgress(progress)
 }
 
-// withHerdr is opts with the herdr of the host cfg names, for the commands that drive or read workers.
-func withHerdr(opts Options, cfg config.Config, progress io.Writer) Options {
-	opts.Herdr = herdrFor(opts, cfg.Plugins.Host(), progress)
-	withRexSettings(opts.Herdr, cfg.Plugins.Rex)
+// withMultiplexer is opts with the multiplexer of the host cfg names, for the commands that drive or read workers.
+func withMultiplexer(opts Options, cfg config.Config, progress io.Writer) Options {
+	opts.Multiplexer = multiplexerFor(opts, cfg.Plugins.Host(), progress)
+	withRexSettings(opts.Multiplexer, cfg.Plugins.Rex)
 	return opts
 }
 
 // withRexSettings passes the [plugins.rex] settings that only a close needs to h when h is the Rex adapter.
-func withRexSettings(h herdr.Herdr, table config.Rex) {
+func withRexSettings(h herdr.Multiplexer, table config.Rex) {
 	if rex, ok := h.(*herdr.Rex); ok {
 		rex.WithDeleteEmptySessions(table.DeleteEmptySessions)
 	}
@@ -50,7 +50,7 @@ func withRexSettings(h herdr.Herdr, table config.Rex) {
 // reportingHarness finds the harness of the session whose hook is running, from the session's
 // own environment (HC_TERMINAL_ID, then HERDR_PANE_ID, then REX_SESSION with REX_BLOCK) and not
 // from the config. The Herdr app's terminal comes first, because a herdr TUI started from an app
-// terminal can hand its panes both variables. A Rex worker carries neither. A session outside herdr and Rex has none of these and is dropped before any herdr
+// terminal can hand its panes both variables. A Rex worker carries neither. A session outside herdr and Rex has none of these and is dropped before any multiplexer
 // or Rex call, because the hook runs in every session on the machine.
 func reportingHarness(ctx context.Context, opts Options) (harness.Harness, bool) {
 	hosts := []struct{ place, host string }{
@@ -64,7 +64,7 @@ func reportingHarness(ctx context.Context, opts Options) (harness.Harness, bool)
 		if h.place == "" {
 			continue
 		}
-		agent, found, err := herdrFor(opts, h.host, nil).AgentAt(ctx, h.place)
+		agent, found, err := multiplexerFor(opts, h.host, nil).AgentAt(ctx, h.place)
 		if err != nil || !found {
 			continue
 		}
