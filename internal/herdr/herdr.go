@@ -74,7 +74,7 @@ type Agent struct {
 
 // Multiplexer is the port to the multiplexer that hosts the workers.
 type Multiplexer interface {
-	// Multiplexer is what messages call this product: "herdr" for the herdr TUI and for
+	// Name is what messages call this product: "herdr" for the herdr TUI and for
 	// herdr-core with the Herdr app, "Rex" for Rex.
 	Name() string
 	// Read takes a snapshot of every workspace, tab, pane and agent.
