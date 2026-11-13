@@ -1060,6 +1060,11 @@ func (l *Loop) onAction(m actionDone) error {
 	}
 	rc := f.rc
 	rc.Outcome, rc.Detail, rc.Ended, rc.Steps = res.Outcome, res.Detail, l.ingest(), res.Steps
+	// Ctrl-C also kills the launch's child processes, which the launch reports as ordinary
+	// failures, so a launch that fails once dispatch was asked to stop is the stop's doing.
+	if f.want.Receipt == "launch" && res.Outcome == ledger.Failed && l.runCtx.Err() != nil {
+		rc.Detail = ledger.InterruptedPrefix + rc.Detail
+	}
 	if res.TicketID != "" {
 		rc.TicketID = res.TicketID
 	}
@@ -1068,7 +1073,7 @@ func (l *Loop) onAction(m actionDone) error {
 	}
 	l.led.Upsert(rc)
 	l.ended = append(l.ended, logged{seq: len(l.ended) + 1, rc: rc})
-	note := res.Detail
+	note := rc.Reason()
 	if res.Note != "" {
 		note = res.Note
 	}
@@ -1076,7 +1081,7 @@ func (l *Loop) onAction(m actionDone) error {
 	case res.Outcome == ledger.Done:
 		_, _ = fmt.Fprintf(l.o.Out, "%s %s %s %s\n", l.clock.Now().Format(time.TimeOnly), f.want.Receipt, f.want.Subject, orDefault(note, "done"))
 	default:
-		_, _ = fmt.Fprintf(l.o.Out, "%s %s %s %s: %s\n", l.clock.Now().Format(time.TimeOnly), f.want.Receipt, f.want.Subject, res.Outcome, note)
+		_, _ = fmt.Fprintf(l.o.Out, "%s %s %s %s: %s\n", l.clock.Now().Format(time.TimeOnly), f.want.Receipt, f.want.Subject, rc.State(), note)
 	}
 	if res.Nudged != "" {
 		if l.reading {

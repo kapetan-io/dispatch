@@ -28,4 +28,5 @@ Accepted
 - A flaky lease or checkout costs one resync (5 minutes by default) instead of seconds.
 - A ticket whose lease or switch fails for good is relaunched at every resync and never reaches Needs Human on its own. The error line in `dispatch run`'s output is the signal.
 - A launch still counts a failed pool read, a lease returned without a path, an interrupted wait for another launch and a failed stack-record write. A full pool (`pool_exhausted`) still never counts.
+- A launch that fails after `dispatch run` was asked to stop (SIGINT or SIGTERM) never counts, whatever its error. Ctrl-C kills the launch's treehouse child with dispatch, so the failure is the stop's doing. The receipt keeps the `failed` outcome, so the next run launches again, and its detail starts with `interrupted:`, which `dispatch explain` shows as `interrupted`. This amends the previous item: an interrupted wait for another launch counts only when dispatch is still running.
 - A proposal for a retry loop, a backoff or an in-place second try needs to supersede this ADR first.

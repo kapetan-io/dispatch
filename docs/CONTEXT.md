@@ -106,7 +106,7 @@ What dispatch did, one receipt per action, keyed by the action's once key. A rul
 _Avoid_: log, history (history is the segment files the ledger is written to)
 
 **Receipt**:
-The ledger's record of one action: key, rule, outcome (done, refused, failed; absent while attempted), detail, times.
+The ledger's record of one action: key, rule, outcome (done, refused, failed; absent while attempted), detail, times. A failed launch whose detail starts "interrupted: " ended after dispatch was asked to stop; `dispatch explain` shows its state as interrupted and the launch-failure rule does not count it.
 _Avoid_: result, audit entry
 
 **Executor**:

@@ -114,6 +114,12 @@ func (d *Dispatch) ReceiptsOf(kind, ticket string) []Receipt {
 	return found
 }
 
+// HoldLaunches keeps every launch running until ReleaseLaunches.
+func (w *Workers) HoldLaunches() { w.d.tools.Launcher.Hold() }
+
+// ReleaseLaunches lets the held launches end with the LaunchResult.
+func (w *Workers) ReleaseLaunches() { w.d.tools.Launcher.Release() }
+
 // StallLaunches makes every launch from now on wait until its deadline.
 func (w *Workers) StallLaunches() { w.d.tools.Launcher.Stall() }
 
@@ -1120,4 +1126,34 @@ func TestRunPrintsAFailedLeaseAndAFailedSwitchWithTheTicketAndTheMessage(t *test
 			assert.Empty(t, d.Linear.Changes())
 		})
 	}
+}
+
+func TestALaunchEndedByStoppingTheLoopDoesNotCountTowardTheLaunchFailureLimit(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.StartWithLaunchTimeout(time.Minute)
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.HoldLaunches()
+	ticked := later(func() Result { return d.Run("tick", "--timeout", "1m") })
+	require.Eventually(t, func() bool { return len(d.Workers.Launched()) == 1 }, 20*time.Second, 5*time.Millisecond)
+
+	// Ctrl-C reaches the loop and the treehouse child together, so the launch fails after the stop began.
+	stopped := later(func() bool { d.Stop(); return true })
+	require.Eventually(t, func() bool {
+		err := d.RunWhileDown("tell", "ENG-99", "probe").Err
+		return err != nil && (strings.Contains(err.Error(), "dispatch is stopping") || err.Error() == "not running")
+	}, 20*time.Second, 5*time.Millisecond)
+	d.Workers.LaunchResult(`{"status":"pool_error","detail":"while running treehouse status: signal: interrupt"}`)
+	d.Workers.ReleaseLaunches()
+	stopped()
+	ticked()
+
+	receipts := d.ReceiptsOf("launch", "ENG-1")
+	require.Len(t, receipts, 1)
+	assert.Equal(t, "interrupted", receipts[0].State)
+
+	// With launch_failure_limit = 2, one real failure after the restart is the first, not the second.
+	res := d.Run("tick")
+	require.ErrorContains(t, res.Err, "ENG-1 launch failed: pool_error")
+	assert.Empty(t, d.Linear.Changes())
 }

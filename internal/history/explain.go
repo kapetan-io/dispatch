@@ -320,7 +320,7 @@ func (t *tracing) decisions(c Cycle) []decision {
 }
 
 func (t *tracing) receipt(r ledger.Receipt) {
-	when, state := r.Ended, string(r.Outcome)
+	when, state := r.Ended, r.State()
 	if when == 0 {
 		when, state = r.Started, "attempted"
 	}
@@ -331,14 +331,14 @@ func (t *tracing) receipt(r ledger.Receipt) {
 	t.printed[key] = true
 	line := ExplainLine{
 		Type: "receipt", Time: time.UnixMilli(when).UTC(), Kind: r.Kind, Subject: r.Subject, State: state,
-		Once: r.Once.String(), Detail: r.Detail, Reset: r.Reset, Rule: r.Rule,
+		Once: r.Once.String(), Detail: r.Reason(), Reset: r.Reset, Rule: r.Rule,
 	}
 	if r.Reset {
 		state += " (reset, never sent)"
 	}
 	text := fmt.Sprintf("%s receipt  %s %s %s once %s", clockTime(when), r.Kind, r.Subject, state, line.Once)
-	if r.Detail != "" {
-		text += ": " + r.Detail
+	if r.Reason() != "" {
+		text += ": " + r.Reason()
 	}
 	t.emit(text, line)
 }

@@ -18,6 +18,22 @@ const (
 	Failed  Outcome = "failed"
 )
 
+// InterruptedPrefix starts the detail of a launch that failed after dispatch was asked to
+// stop. Its outcome stays Failed, so a later cycle runs it again, and the launch-failure
+// rule skips it.
+const InterruptedPrefix = "interrupted: "
+
+// State is the outcome in words, or "interrupted" for a failure caused by stopping dispatch.
+func (r Receipt) State() string {
+	if r.Outcome == Failed && strings.HasPrefix(r.Detail, InterruptedPrefix) {
+		return "interrupted"
+	}
+	return string(r.Outcome)
+}
+
+// Reason is the detail without the interrupted prefix, which State already says.
+func (r Receipt) Reason() string { return strings.TrimPrefix(r.Detail, InterruptedPrefix) }
+
 // Step is one part of an action and how it ended.
 type Step struct {
 	Name    string  `json:"name"`
