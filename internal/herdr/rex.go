@@ -81,7 +81,7 @@ func (r *Rex) WithPace(d time.Duration) *Rex {
 	return r
 }
 
-// WithTrace appends every screen Kickoff reads to the file at path.
+// WithTrace appends what Kickoff sees to the file at path, which is each status read, each screen and the program exiting.
 func (r *Rex) WithTrace(path string) *Rex {
 	r.trace = path
 	return r

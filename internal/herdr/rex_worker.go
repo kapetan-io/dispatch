@@ -164,9 +164,14 @@ func (r *Rex) createWorker(ctx context.Context, sessions []rexSession, repo stri
 	return Started{Pane: rexPane(made.Session, made.Windows[0].Blocks[0]), Agent: name}, nil
 }
 
-// command is the block's command. Rex has no env option, so env sets dispatch's stamps.
+// command is the block's command. Rex has no env option, so env sets dispatch's stamps. PATH is
+// one of them because the Rex server's own PATH can be launchd's bare one, which has no Claude.
 func (r *Rex) command(w Worker, exe string, argv []string) []string {
-	stamps := map[string]string{"AUTONOMOUS_WORKER": "1", "DISPATCH_PLUGIN_ROOT": w.PluginRoot}
+	stamps := map[string]string{
+		"PATH":                 strings.Join(append(slices.Clone(w.Program.PathFirst), r.env.Get("PATH")), ":"),
+		"AUTONOMOUS_WORKER":    "1",
+		"DISPATCH_PLUGIN_ROOT": w.PluginRoot,
+	}
 	if r.dispatchBin != "" {
 		stamps["DISPATCH_BIN"] = r.dispatchBin
 	}

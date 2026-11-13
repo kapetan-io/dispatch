@@ -17,7 +17,7 @@ func herdrFor(opts Options, host string, progress io.Writer) herdr.Herdr {
 	if opts.Herdr != nil {
 		return opts.Herdr
 	}
-	// DISPATCH_LAUNCH_TRACE=<file> records every screen the kickoff step reads.
+	// DISPATCH_LAUNCH_TRACE=<file> records each status read and screen the kickoff step sees, and the program exiting.
 	trace := opts.Env.Get("DISPATCH_LAUNCH_TRACE")
 	exe, _ := os.Executable()
 	kinds := opts.Harnesses.AgentKinds()

@@ -812,6 +812,52 @@ func TestCoreKickoffTypesNothingWhileTheWorkerReportsNoStatusAndNoDialogShows(t 
 	assert.Empty(t, calls.Params(t, "terminal.keys"))
 }
 
+func TestCoreKickoffTraceShowsTheProgramExiting(t *testing.T) {
+	trace := t.TempDir() + "/trace"
+	finished := worker("t1", "spA", "tbA", "")
+	finished.state, finished.program = "finished", ""
+	core, _ := coreStandIn(t, map[string][]string{"terminal.get": {ok(term(finished))}})
+	core.WithTrace(trace)
+
+	err := core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup)
+
+	require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
+	written, err := os.ReadFile(trace)
+	require.NoError(t, err)
+	assert.Contains(t, string(written), "exited")
+}
+
+func TestCoreKickoffTraceShowsEachStatusReadAndTheWaitRunningOut(t *testing.T) {
+	trace := t.TempDir() + "/trace"
+	core, _ := coreStandIn(t, map[string][]string{
+		"terminal.get":  {ok(term(worker("t1", "spA", "tbA", "")))},
+		"terminal.read": {ok(`{"text":"loading","complete":true,"how":"screen"}`)},
+	})
+	core.WithTrace(trace)
+
+	err := core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup)
+
+	require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
+	written, err := os.ReadFile(trace)
+	require.NoError(t, err)
+	assert.Contains(t, string(written), "status\nalive=true agent=true status=\"unknown\"")
+	assert.Contains(t, string(written), "dialogs\nloading")
+	assert.Contains(t, string(written), "gave up")
+}
+
+func TestCoreKickoffTraceShowsAFailedStatusRead(t *testing.T) {
+	trace := t.TempDir() + "/trace"
+	core, _ := coreStandIn(t, map[string][]string{"terminal.get": {fails("internal", "boom")}})
+	core.WithTrace(trace)
+
+	err := core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup)
+
+	require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
+	written, err := os.ReadFile(trace)
+	require.NoError(t, err)
+	assert.Contains(t, string(written), "boom")
+}
+
 func TestCoreKickoffGivesUpOnATerminalThatFinishedOrNeedsAPerson(t *testing.T) {
 	finished := worker("t1", "spA", "tbA", "")
 	finished.state, finished.program = "finished", ""
