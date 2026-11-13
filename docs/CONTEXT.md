@@ -2,6 +2,34 @@
 
 Terms dispatch's tests and docs use for the tools it drives. herdr is the terminal workspace manager whose workspaces show each worker's tree, and treehouse keeps the pools of trees that tickets lease.
 
+## Purpose
+
+The user is a developer who owns the tickets, repos and rules dispatch runs. They approve a ticket by moving it to In Progress, and dispatch keeps a worker on it until its pull request is ready, telling the user when a ticket waits on them. The user keeps what gets built, the product questions, the rules and the merge.
+
+### Tradeoffs
+
+- **Worker time over the user's attention.** A worker reads the design, the code and the docs and tries things before it asks, so the user is asked only for product calls. The user pays for the extra worker turns.
+- **Behavior in rules the user edits, not in Go.** Dispatch supplies facts and actions, and the rules decide what to do with them, so the user can change any behavior by editing a rule. The user keeps near-copies of shipped rules in step, and an edit can remove a guarantee.
+- **A failed read is never an answer.** When a source that other records point at cannot be read, the decisions that depend on it are held, except a source nothing else references, such as the GitHub inbox, which keeps its last good read. During a Linear or GitHub outage, tickets stop moving.
+- **A message goes out at most once.** A nudge, notification, comment or post whose outcome was lost counts as sent and is not repeated. The user can miss a notification that never arrived.
+- **One slow clock, not retries.** A failed step or an expired wait is picked up at the next resync, 5 minutes by default. The user waits up to one resync for a retry.
+
+### Capabilities
+
+**Hand a ticket to a worker.** The user moves an `ai` ticket, or a local ticket made with `dispatch ticket create`, to In Progress. Dispatch leases a tree, starts a worker on it and moves the ticket on as the pull request progresses.
+
+**Design a feature first.** A `design` ticket moved to In Progress starts a design conversation that ends in a blueprint and build tickets. Dispatch then starts the children in order and closes the parent when they finish.
+
+**See who each ticket waits on.** Each worker's workspace label starts with an emoji that says whether the ticket waits on the worker, CI, the user, the pull request's approvers or whoever merges.
+
+**Hear when a ticket needs them.** A session that runs `dispatch watch <ticket>` gets a message when the ticket is ready, needs a human or goes idle. `dispatch tell` sends a worker text, and `dispatch tick` makes dispatch act now.
+
+**Keep pull requests moving.** Dispatch nudges an idle worker about review comments and failing checks and escalates when nudges don't help. In a repo with `auto_merge` on, it merges an approved, ready pull request.
+
+**Change what dispatch decides.** `dispatch rules init`, `check` and `test` write, lint and test the TypeScript rules that make every decision, and `exempt` switches a shipped rule off for a class of records.
+
+**Ask why it acted.** `dispatch cycle`, `dispatch explain <ticket>` and `dispatch replay` show what each cycle read, what it wanted and how each action came out.
+
 **Tool fake**:
 An in-process Go state model of herdr, treehouse, gh or Linear that refuses what the real tool refuses.
 _Avoid_: shell fake, mock, stub
