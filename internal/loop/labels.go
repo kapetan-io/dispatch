@@ -94,7 +94,7 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 			add(t, w, l.workspaceEmoji(w, pr, l.repoOf(t).OpenPRAs))
 		case scope.Is(t, ticket.NeedsHuman):
 			add(t, w, emojiNeedsHuman)
-		case scope.Is(t, ticket.Paused) && w.State == world.NoWorker:
+		case scope.Is(t, ticket.Paused) && w.State == world.NoWorker && heldChild(wd, scope, t):
 			add(t, w, emojiPaused)
 		}
 		if scope.Is(t, ticket.InProgress) || scope.Is(t, ticket.InReview) || scope.Is(t, ticket.NeedsHuman) {
@@ -104,7 +104,7 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 		}
 	}
 	for _, t := range wd.LeaseHolders {
-		if !scope.Is(t, ticket.Paused) || wd.TicketsErrOf(t.Identifier) != nil {
+		if !scope.Is(t, ticket.Paused) || wd.TicketsErrOf(t.Identifier) != nil || !heldChild(wd, scope, t) {
 			continue
 		}
 		for _, w := range wd.Leases[t.Identifier] {
@@ -115,6 +115,24 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 		}
 	}
 	return workspaces, tabs
+}
+
+// heldChild reports whether t is a Todo child of an In Progress parent that is not a design ticket,
+// the same test as pausedChild in rules/shared.ts. Its tree stays leased to mark
+// it paused on purpose, while any other paused ticket's tree is returned, so only a held child's
+// workspace is worth a label.
+func heldChild(wd world.World, scope world.Scope, t ticket.Ticket) bool {
+	if !scope.Is(t, ticket.Todo) {
+		return false
+	}
+	for parent, kids := range wd.Children {
+		if slices.ContainsFunc(kids, func(k ticket.Ticket) bool { return k.Identifier == t.Identifier }) {
+			return slices.ContainsFunc(wd.Tickets, func(p ticket.Ticket) bool {
+				return p.Identifier == parent && scope.Is(p, ticket.InProgress) && world.NotDesign(p)
+			})
+		}
+	}
+	return false
 }
 
 // repoOf is the settings table of the ticket's repo label, empty when it has none.

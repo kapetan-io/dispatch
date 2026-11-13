@@ -37,8 +37,9 @@ type treeModel struct {
 	path, holder   string
 	pushed         bool
 	trackedChanges bool
+	untracked      []string
 	since          int64
-	// clean is when the tree last became safe to return.
+	// clean is when pushed, trackedChanges or untracked last changed.
 	clean int64
 }
 
@@ -416,14 +417,22 @@ func (s *scenario) applyTree(path string, fields map[string]any) {
 		tm.holder = v
 		tm.since = s.ms()
 	}
-	wasSafe := tm.pushed && !tm.trackedChanges
+	before := fmt.Sprint(tm.pushed, tm.trackedChanges, tm.untracked)
 	if v, ok := boolean(fields, "pushed"); ok {
 		tm.pushed = v
 	}
 	if v, ok := boolean(fields, "trackedChanges"); ok {
 		tm.trackedChanges = v
 	}
-	if !wasSafe && tm.pushed && !tm.trackedChanges {
+	if names, ok := fields["untracked"].([]any); ok {
+		tm.untracked = nil
+		for _, name := range names {
+			if text, ok := name.(string); ok {
+				tm.untracked = append(tm.untracked, text)
+			}
+		}
+	}
+	if fmt.Sprint(tm.pushed, tm.trackedChanges, tm.untracked) != before {
 		tm.clean = s.ms()
 	}
 }
@@ -488,22 +497,24 @@ func (s *scenario) world() world.World {
 	}
 	for _, tm := range trees {
 		holder, ok := m.tickets[tm.holder]
-		if tm.holder == "" || !ok || started(holder) {
+		if tm.holder == "" || !ok {
 			continue
 		}
-		w.LeaseHolders = append(w.LeaseHolders, *holder)
 		wk := workerOf(tm.holder)
 		wk.TreePath = tm.path
 		if wk.State == world.NoWorker {
 			wk = world.Worker{State: world.NoWorker, TreePath: tm.path}
 		}
-		w.Leases[tm.holder] = append(w.Leases[tm.holder], wk)
-		if scope.Retires(*holder) {
+		if !started(holder) {
+			w.LeaseHolders = append(w.LeaseHolders, *holder)
+			w.Leases[tm.holder] = append(w.Leases[tm.holder], wk)
+		}
+		if scope.Returns(*holder) && (wk.State == world.NoWorker || scope.Retires(*holder)) {
 			work := treehouse.Work{TrackedChanges: tm.trackedChanges}
 			if !tm.pushed {
 				work.Unpushed = 1
 			}
-			w.Work[tm.path], w.Unfinished[tm.path], w.Untracked[tm.path] = work, work.String(), nil
+			w.Work[tm.path], w.Unfinished[tm.path], w.Untracked[tm.path] = work, work.String(), tm.untracked
 		}
 	}
 	for _, parent := range scope.Parents(w.Tickets) {

@@ -746,7 +746,7 @@ func TestRunStartsActsAndStopsCleanlyOnCancel(t *testing.T) {
 
 	d.Stop()
 
-	assert.Contains(t, out, "start: 1 tracked ticket, 26 rules")
+	assert.Contains(t, out, "start: 1 tracked ticket, 27 rules")
 }
 
 func TestRunRejectsANonPositiveResync(t *testing.T) {
