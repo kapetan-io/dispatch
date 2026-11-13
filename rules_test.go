@@ -707,7 +707,9 @@ func TestRulesCheckHoldsTheTearDownOfATreeItCannotRead(t *testing.T) {
 
 	require.NoError(t, res.Err)
 	assert.Regexp(t, `teardown-clean-tree +whenever +tree +wants nothing now; held for ENG-1\n`, res.Stdout)
-	assert.Regexp(t, `comment-kept-tree +whenever +tree +wants nothing now; held for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `comment-discarded-work +whenever +tree +wants nothing now; held for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `stop-worker-on-kept-tree +whenever +tree +wants nothing now; held for ENG-1\n`, res.Stdout)
+	assert.Regexp(t, `comment-kept-tree +whenever +tree +wants nothing now\n`, res.Stdout)
 	assert.Empty(t, d.Trees.Returned())
 	assert.Empty(t, d.Linear.Moves())
 	assert.Empty(t, d.Linear.Comments())

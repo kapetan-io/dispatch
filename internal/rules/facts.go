@@ -155,15 +155,15 @@ type Tree struct {
 	Leased         Fact[bool]   `js:"leased" doc:"True when a ticket holds the tree."`
 	Holder         Fact[Ref]    `js:"holder" ref:"ticket" ts:"Ticket | undefined" doc:"The ticket that holds the tree, undefined when it is free. A holder that isn't one of your tickets reads as a ticket with only id known, and finished and paused read false."`
 	LeasedSince    Fact[int64]  `js:"leasedSince" doc:"When dispatch first saw the tree with its current holder, in milliseconds since the epoch. While the holder is unknown it reads this cycle's time instead of Unknown, so don't key a once on it then."`
-	Pushed         Fact[bool]   `js:"pushed" doc:"True when no commit reachable from HEAD is missing from every remote. Unknown unless a finished ticket holds the tree, because dispatch inspects only trees it may return, and unknown when the git read failed."`
-	TrackedChanges Fact[bool]   `js:"trackedChanges" doc:"True when git tracks a file in the tree with uncommitted changes. Unknown unless a finished ticket holds the tree, or when the git read failed."`
-	Unfinished     Fact[string] `js:"unfinished" doc:"What returning the tree would destroy, as text, empty for a pushed tree with no tracked changes. Unknown unless a finished ticket holds the tree, or when the git read failed."`
+	Pushed         Fact[bool]   `js:"pushed" doc:"True when no commit reachable from HEAD is missing from every remote. Unknown unless dispatch inspected the tree, which it does for a finished ticket's tree and for the tree of a ticket outside In Progress and In Review that has no worker in it, and unknown when the git read failed."`
+	TrackedChanges Fact[bool]   `js:"trackedChanges" doc:"True when git tracks a file in the tree with uncommitted changes. Unknown unless dispatch inspected the tree (see pushed), or when the git read failed."`
+	Unfinished     Fact[string] `js:"unfinished" doc:"What returning the tree would destroy, as text, empty for a pushed tree with no tracked changes. Unknown unless dispatch inspected the tree (see pushed), or when the git read failed."`
 	// Untracked lists the files git has never seen in the tree, one per line. Returning a
 	// tree deletes them, but a nested repository survives that and keeps the return refused.
-	Untracked Fact[string] `js:"untracked" doc:"The files in the tree that git does not track and .gitignore does not cover, one per line. Returning the tree deletes them, but a nested repository survives that and keeps the return refused. Unknown unless a finished ticket holds the tree, or when the git read failed."`
-	// CleanSince is when the tree last became safe to return, so a return refused for
+	Untracked Fact[string] `js:"untracked" doc:"The files in the tree that git does not track and .gitignore does not cover, one per line. Returning the tree deletes them, but a nested repository survives that and keeps the return refused. Unknown unless dispatch inspected the tree (see pushed), or when the git read failed."`
+	// CleanSince is when pushed, trackedChanges or untracked last changed, so a return refused for
 	// late work or a nested repository is tried again once that is gone.
-	CleanSince Fact[int64] `js:"cleanSince" doc:"The latest time pushed, trackedChanges or untracked changed value; for a tree that is safe to return, when it last became safe. Lets a return refused for late work or a nested repository be tried again once that is gone. Unknown until pushed, trackedChanges and untracked are all known."`
+	CleanSince Fact[int64] `js:"cleanSince" doc:"The latest time pushed, trackedChanges or untracked changed value. Lets a return refused for late work or a nested repository be tried again once that is gone. Unknown until pushed, trackedChanges and untracked are all known."`
 }
 
 // Escalation is a ticket's move to Needs Human and the comment that explains it.

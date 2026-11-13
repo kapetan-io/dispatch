@@ -182,15 +182,15 @@ declare module "dispatch" {
     readonly holder: Ticket | undefined;
     /** When dispatch first saw the tree with its current holder, in milliseconds since the epoch. While the holder is unknown it reads this cycle's time instead of Unknown, so don't key a once on it then. */
     readonly leasedSince: number;
-    /** True when no commit reachable from HEAD is missing from every remote. Unknown unless a finished ticket holds the tree, because dispatch inspects only trees it may return, and unknown when the git read failed. */
+    /** True when no commit reachable from HEAD is missing from every remote. Unknown unless dispatch inspected the tree, which it does for a finished ticket's tree and for the tree of a ticket outside In Progress and In Review that has no worker in it, and unknown when the git read failed. */
     readonly pushed: boolean;
-    /** True when git tracks a file in the tree with uncommitted changes. Unknown unless a finished ticket holds the tree, or when the git read failed. */
+    /** True when git tracks a file in the tree with uncommitted changes. Unknown unless dispatch inspected the tree (see pushed), or when the git read failed. */
     readonly trackedChanges: boolean;
-    /** What returning the tree would destroy, as text, empty for a pushed tree with no tracked changes. Unknown unless a finished ticket holds the tree, or when the git read failed. */
+    /** What returning the tree would destroy, as text, empty for a pushed tree with no tracked changes. Unknown unless dispatch inspected the tree (see pushed), or when the git read failed. */
     readonly unfinished: string;
-    /** The files in the tree that git does not track and .gitignore does not cover, one per line. Returning the tree deletes them, but a nested repository survives that and keeps the return refused. Unknown unless a finished ticket holds the tree, or when the git read failed. */
+    /** The files in the tree that git does not track and .gitignore does not cover, one per line. Returning the tree deletes them, but a nested repository survives that and keeps the return refused. Unknown unless dispatch inspected the tree (see pushed), or when the git read failed. */
     readonly untracked: string;
-    /** The latest time pushed, trackedChanges or untracked changed value; for a tree that is safe to return, when it last became safe. Lets a return refused for late work or a nested repository be tried again once that is gone. Unknown until pushed, trackedChanges and untracked are all known. */
+    /** The latest time pushed, trackedChanges or untracked changed value. Lets a return refused for late work or a nested repository be tried again once that is gone. Unknown until pushed, trackedChanges and untracked are all known. */
     readonly cleanSince: number;
   }
   /** A ticket's move to Needs Human and the comment that explains it, one for each escalate receipt in the ledger. */
@@ -501,8 +501,8 @@ declare module "dispatch" {
       pool(repo: string | undefined): { returns: number };
       /** True when t holds a tree. Unknown when the pool of t's repo wasn't read. Not detected when t has no known repo. */
       leased(t: Ticket): boolean;
-      /** Queues returning the tree to its repo's pool. Dispatch refuses it while the tree holds work it would destroy. */
-      queueReturn(tree: Tree, o: { once: Once }): Action;
+      /** Queues returning the tree to its repo's pool. Dispatch deletes the untracked files first and refuses the return while the tree has uncommitted changes, unless discard is true, which drops them. The ticket's branch and its commits stay, but commits on a detached HEAD that no remote has keep the return refused. A nested repository inside the tree also keeps it refused. */
+      queueReturn(tree: Tree, o: { once: Once; discard?: boolean }): Action;
     };
     /** Reads of pull requests and the action that merges one. */
     pr: {

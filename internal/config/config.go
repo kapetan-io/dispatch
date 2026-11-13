@@ -201,7 +201,7 @@ type Statuses struct {
 	NeedsHuman  string `toml:"needs_human"`
 	// Finished lists the statuses of a finished ticket, whose worker and tree are
 	// cleaned up. Paused lists the statuses of a ticket whose worker is stopped
-	// and whose tree is kept.
+	// and whose tree is returned once the worker is gone.
 	Finished []string `toml:"finished"`
 	Paused   []string `toml:"paused"`
 }

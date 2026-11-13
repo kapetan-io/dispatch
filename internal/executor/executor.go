@@ -438,7 +438,10 @@ func (e *Executor) escalate(ctx context.Context, w rules.Want, wd world.World) R
 
 // returnTree closes the tree's workspace, looks at the tree again, removes
 // untracked files and gives the tree back. Work found on the second look keeps
-// the tree, because the worker could have written to it since the cycle ran.
+// the tree, because the worker could have written to it since the cycle ran,
+// unless the rule asked to discard. A discard drops uncommitted changes and
+// untracked files; the ticket's branch and its commits stay, since treehouse
+// returns a tree by detaching HEAD.
 func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World) Result {
 	path, holder := w.Target["path"], w.Target["holder"]
 	var repoDir string
@@ -456,12 +459,21 @@ func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World)
 			return failed("while closing workspace %s: %v", id, err)
 		}
 	}
-	why, err := treehouse.Unfinished(ctx, e.Environment, path)
+	work, err := treehouse.Inspect(ctx, e.Environment, path)
 	if err != nil {
 		return failed("%v", err)
 	}
-	if why != "" {
-		res.Outcome, res.Detail = ledger.Refused, "the worker left "+why+" in "+path
+	discard := w.Options["discard"] == true
+	// Commits on a branch survive a return, so only a detached HEAD puts them at risk.
+	var lost []string
+	if work.TrackedChanges && !discard {
+		lost = append(lost, "uncommitted changes")
+	}
+	if work.Detached && work.Unpushed > 0 {
+		lost = append(lost, fmt.Sprintf("%d %s on a detached HEAD that no remote has", work.Unpushed, map[bool]string{true: "commit", false: "commits"}[work.Unpushed == 1]))
+	}
+	if len(lost) > 0 {
+		res.Outcome, res.Detail = ledger.Refused, "the worker left "+strings.Join(lost, " and ")+" in "+path
 		return res
 	}
 	files, err := treehouse.Untracked(ctx, e.Environment, path)
@@ -469,6 +481,9 @@ func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World)
 		return failed("%v", err)
 	}
 	detail := "returned " + path
+	if discard && work.TrackedChanges {
+		detail += ", discarded uncommitted changes"
+	}
 	if len(files) > 0 {
 		if err := treehouse.RemoveUntracked(ctx, e.Environment, path); err != nil {
 			return failed("%v", err)

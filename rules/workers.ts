@@ -44,7 +44,8 @@ whenever({
 });
 
 // A paused ticket's worker is closed, once for each worker dispatch sees. Its tree
-// stays leased for when you resume it.
+// goes back to the pool once the worker is gone (see teardown-clean-tree), except a Todo
+// child of an In Progress parent, which keeps its tree for when you resume it.
 whenever({
   name: "stop-paused-worker",
   each: "worker",

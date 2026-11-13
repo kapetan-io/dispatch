@@ -3,6 +3,7 @@ package rules
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"reflect"
 	"slices"
@@ -530,6 +531,10 @@ func (c *call) ticketAPI() *sobek.Object {
 		t := ticket(call.Argument(0))
 		parent, ok := s.parents[t.id]
 		if !ok {
+			// A parent whose children were not read may be this ticket's parent.
+			for _, id := range slices.Sorted(maps.Keys(s.childrenUnread)) {
+				c.unknownRead(s.childrenUnread[id])
+			}
 			return sobek.Undefined()
 		}
 		if p, ok := s.lookup("ticket", parent); ok {

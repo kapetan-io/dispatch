@@ -244,8 +244,8 @@ Each value is the exact name of a workflow status in your Linear team. dispatch 
 | `needs_human` | `Needs Human` | The worker or dispatcher needs you. Every team in `teams` must have this status in the Started category, because dispatch looks it up by name when it escalates and reads only tickets in Started statuses. |
 | `close_parent` | `Done` | What a parent becomes when all its children are finished. |
 | `blocker_done` | `Done` | What a blocker must reach before its child is promoted. A Canceled or Duplicate blocker moves its child to Needs Human instead. |
-| `finished` | `["Done", "Canceled", "Duplicate"]` | Statuses of a finished ticket. Its worker is stopped and its tree returned, unless the tree holds modified or staged tracked files, or unpushed commits. Untracked files are deleted first. A parent closes when every child is in one of these. |
-| `paused` | `["Backlog", "Todo"]` | Statuses of a ticket you parked. Its worker is stopped and its tree kept. |
+| `finished` | `["Done", "Canceled", "Duplicate"]` | Statuses of a finished ticket. Its worker is stopped and its tree returned. Uncommitted changes and untracked files are discarded, and the ticket's branch and its commits stay. A parent closes when every child is in one of these. |
+| `paused` | `["Backlog", "Todo"]` | Statuses of a ticket you parked. Its worker is stopped and its tree returned, with uncommitted changes discarded and the branch and its commits kept. A Todo child of an In Progress parent (not a design ticket) keeps its tree, because a held tree marks a child paused on purpose. |
 
 ## `[repos.<label>]`
 
@@ -364,4 +364,4 @@ paused = ["Backlog", "Ready"]
 path = "~/src/platform"
 ```
 
-Keep every status you park tickets in inside `paused`. A ticket moved to a status listed in neither `paused` nor `finished` keeps its running worker.
+Keep every status you park tickets in inside `paused`. A ticket moved to a status listed in neither `paused` nor `finished` keeps its running worker. Dispatch also returns the tree of a ticket in a status such as Needs Human once no worker runs in it, and never the tree of an In Progress or In Review ticket.

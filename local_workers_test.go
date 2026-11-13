@@ -94,7 +94,7 @@ func TestTickLabelsALocalWorkspaceByTheJobOfItsStatus(t *testing.T) {
 	}
 }
 
-func TestTickKeepsABacklogLocalTicketsTreeAndShowsItPaused(t *testing.T) {
+func TestTickReturnsABacklogLocalTicketsTreeWithoutLabelingItsWorkspace(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
 	d.fileLocal("Backlog")
@@ -103,7 +103,8 @@ func TestTickKeepsABacklogLocalTicketsTreeAndShowsItPaused(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{"w-LOC-1|⏸️ LOC-1"}, d.Workers.Renames())
+	assert.Empty(t, d.Workers.Renames())
+	assert.Len(t, d.Trees.Returned(), 1)
 	assert.Empty(t, d.Workers.Launched())
 }
 

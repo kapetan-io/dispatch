@@ -339,7 +339,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		w.readLocal(src, scope)
 	}
 	if parts&(FromLinear|FromLocal|FromLocalTickets) != 0 {
-		w.onTicketBranches(scope)
+		w.Tickets = w.onTicketBranches(scope, w.Tickets)
 		// A failed lease lookup skips teardown only; launches and nudges still run.
 		if parts&FromLinear != 0 && w.LinearErr == nil {
 			readCtx, done := bound(ctx)
@@ -403,6 +403,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		}
 	}
 	if parts&(FromLinear|FromLocal|FromLocalTickets) != 0 {
+		w.LeaseHolders = w.onTicketBranches(scope, w.LeaseHolders)
 		w.inspectTrees(ctx, src.Env, scope)
 	}
 	if parts&FromGitHub != 0 || prev.At.IsZero() {
@@ -538,16 +539,19 @@ func leaseHolders(ctx context.Context, lin linear.Workspace, scope Scope, trees 
 	return lin.LeasedTickets(ctx, scope.AILabel, scope.Teams, holders)
 }
 
-// inspectTrees reads the git state of each tree of a finished ticket. An
-// unreadable tree is recorded and kept leased.
+// inspectTrees reads the git state of each tree the dispatcher may return: a finished ticket's, and
+// any other returnable ticket's with no worker in it. An unreadable tree is recorded and kept leased.
 func (w *World) inspectTrees(ctx context.Context, env environment.Environment, scope Scope) {
 	w.Unfinished, w.CheckErrors, w.Untracked = map[string]string{}, map[string]error{}, map[string][]string{}
 	w.Work = map[string]treehouse.Work{}
-	for _, t := range w.LeaseHolders {
-		if !scope.Retires(t) {
+	for _, t := range slices.Concat(w.Tickets, w.LeaseHolders) {
+		if !scope.Returns(t) {
 			continue
 		}
-		for _, wk := range w.Leases[t.Identifier] {
+		for _, wk := range FindWorkers(t.Identifier, w.Trees, w.Snapshot) {
+			if wk.State != NoWorker && !scope.Retires(t) {
+				continue
+			}
 			readCtx, done := bound(ctx)
 			work, err := treehouse.Inspect(readCtx, env, wk.TreePath)
 			done()
@@ -571,18 +575,19 @@ func (w *World) inspectTrees(ctx context.Context, env environment.Environment, s
 // ticket system's read gives every ticket that system's name for the branch, which drifts from the
 // branch the worker pushed. A ticket whose repo's keys were not read, or that has no key, keeps the
 // ticket system's name.
-func (w *World) onTicketBranches(scope Scope) {
+func (w *World) onTicketBranches(scope Scope, tickets []ticket.Ticket) []ticket.Ticket {
 	// The previous world may still be in use, so a ticket's Branch changes on a copy.
-	w.Tickets = slices.Clone(w.Tickets)
-	for i, t := range w.Tickets {
+	tickets = slices.Clone(tickets)
+	for i, t := range tickets {
 		label, ok := scope.RepoOf(t)
 		if !ok {
 			continue
 		}
 		if branch, found := w.StackRecords[label].BranchOf(t.Identifier); found {
-			w.Tickets[i].Branch = branch
+			tickets[i].Branch = branch
 		}
 	}
+	return tickets
 }
 
 // KeyBranches writes the ticket branch key on the local branch of each tracked ticket that has
@@ -807,6 +812,14 @@ func NotDesign(t ticket.Ticket) bool {
 // its status is a finished one.
 func (s Scope) Retires(t ticket.Ticket) bool {
 	return s.Is(t, ticket.Finished)
+}
+
+// Returns reports whether the dispatcher may return this lease holder's trees once no worker
+// runs in them. In Progress and In Review tickets keep theirs, because dispatch relaunches a
+// worker there and a relaunch resumes in the tree that holds the lease. teardown-clean-tree in
+// rules/trees.ts must agree, or a tree it would return is never inspected.
+func (s Scope) Returns(t ticket.Ticket) bool {
+	return !s.Is(t, ticket.InProgress) && !s.Is(t, ticket.InReview)
 }
 
 // Parents returns the tickets whose children the dispatcher acts on: In

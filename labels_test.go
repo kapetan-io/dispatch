@@ -632,16 +632,19 @@ func TestTickLabelsEachWorkspaceWithItsStatusEmoji(t *testing.T) {
 	}
 }
 
-func TestTickLabelsAPausedTicketsWorkspace(t *testing.T) {
+func TestTickLabelsTheWorkspaceOfATodoChildThatKeepsItsTree(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
-	d.Trees.Clean("ENG-1")
-	d.Workers.Running("ENG-1", "")
-	d.Linear.Finished(ticket("ENG-1", "Todo", "dispatch"))
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
+	d.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	d.Trees.Clean("ENG-2")
+	d.Workers.Running("ENG-2", "")
+	d.Linear.Finished(child("ENG-2", "ENG-1", "Todo"))
 
 	d.Tick()
 
-	assert.Equal(t, []string{"w-ENG-1|⏸️ ENG-1"}, d.Workers.Renames())
+	assert.Equal(t, []string{"w-ENG-2|⏸️ ENG-2"}, d.Workers.Renames())
+	assert.Empty(t, d.Trees.Returned())
 }
 
 func TestTickRelabelsWhenTheStatusChanges(t *testing.T) {
@@ -711,7 +714,7 @@ func TestTickStillFindsAWorkerWhoseLabelChanged(t *testing.T) {
 	assert.Empty(t, d.Workers.Launched())
 }
 
-func TestTickLabelsABacklogTicketsKeptWorkspace(t *testing.T) {
+func TestTickDoesNotLabelTheWorkspaceOfABacklogTicketWhoseTreeIsReturned(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Trees.Clean("ENG-1")
@@ -720,7 +723,8 @@ func TestTickLabelsABacklogTicketsKeptWorkspace(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{"w-ENG-1|⏸️ ENG-1"}, d.Workers.Renames())
+	assert.Empty(t, d.Workers.Renames())
+	assert.Len(t, d.Trees.Returned(), 1)
 }
 
 func TestTickDoesNotRenameATicketWithoutAWorkspace(t *testing.T) {

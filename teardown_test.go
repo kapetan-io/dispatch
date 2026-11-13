@@ -84,31 +84,34 @@ func TestTickReturnsATreeWhoseWorkspaceHoldsNoAgent(t *testing.T) {
 	assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
 }
 
-func TestTickKeepsTheTreeOfAFinishedTicketThatHoldsWork(t *testing.T) {
+func TestTickCommentsOnTheDiscardedWorkThenReturnsTheTreeOfAFinishedTicket(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name   string
-		strand func(d *Dispatch, path string)
-		work   string
+		name    string
+		strand  func(d *Dispatch, path string)
+		discard string
+		detail  string
 	}{
 		{
-			name:   "UncommittedFile",
-			strand: func(d *Dispatch, path string) { d.Trees.Dirty(path) },
-			work:   "uncommitted changes",
+			name:    "UncommittedFile",
+			strand:  func(d *Dispatch, path string) { d.Trees.Dirty(path) },
+			discard: "uncommitted changes to tracked files.",
+			detail:  ", discarded uncommitted changes",
 		},
 		{
-			name:   "UnpushedCommit",
-			strand: func(d *Dispatch, path string) { d.Trees.Commit(path) },
-			work:   "1 commit that no remote has",
+			name:    "UntrackedFile",
+			strand:  func(d *Dispatch, path string) { d.Trees.Leave(path, "zz_tmp_test.go") },
+			discard: "untracked files (zz_tmp_test.go).",
+			detail:  ", removed untracked zz_tmp_test.go",
 		},
 		{
 			name: "BothKinds",
 			strand: func(d *Dispatch, path string) {
-				d.Trees.Commit(path)
-				d.Trees.Commit(path)
 				d.Trees.Dirty(path)
+				d.Trees.Leave(path, "zz_tmp_test.go")
 			},
-			work: "uncommitted changes and 2 commits that no remote has",
+			discard: "uncommitted changes to tracked files and untracked files (zz_tmp_test.go).",
+			detail:  ", discarded uncommitted changes, removed untracked zz_tmp_test.go",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -120,24 +123,42 @@ func TestTickKeepsTheTreeOfAFinishedTicketThatHoldsWork(t *testing.T) {
 			d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 
 			d.Tick()
+			d.Tick()
+			d.Tick()
 
 			assert.Equal(t, []string{"w-ENG-1"}, d.Workers.Closed())
-			assert.Empty(t, d.Trees.Returned())
+			assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
 			assert.Empty(t, d.Linear.Moves())
 			comments := d.Linear.Comments()
 			require.Len(t, comments, 1)
 			assert.True(t, strings.HasPrefix(comments[0], "ENG-1: "))
-			assert.Contains(t, comments[0], "`"+path+"` has "+test.work+".")
-			assert.Contains(t, comments[0], "kept this ticket's tree leased")
-
-			// Later ticks neither comment again nor close anything else.
-			d.Tick()
-			d.Tick()
-			assert.Len(t, d.Linear.Comments(), 1)
-			assert.Len(t, d.Workers.Closed(), 1)
-			assert.Empty(t, d.Trees.Returned())
+			assert.Contains(t, comments[0], "`"+path+"`")
+			assert.Contains(t, comments[0], "It discards "+test.discard)
+			assert.Contains(t, comments[0], "Branch `thrawn01/eng-1` and its commits stay.")
+			assert.NoFileExists(t, filepath.Join(path, "zz_tmp_test.go"))
+			returns := teardownReceipts(d, "ENG-1", "return")
+			require.Len(t, returns, 1)
+			assert.Equal(t, "done", returns[0].State)
+			assert.Equal(t, "returned "+path+test.detail, returns[0].Detail)
 		})
 	}
+}
+
+func TestTickReturnsTheTreeOfAFinishedTicketWhoseCommitsNoRemoteHas(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	path := d.Trees.Clean("ENG-1")
+	d.Trees.Commit(path)
+	d.Trees.Commit(path)
+	d.Workers.Running("ENG-1", "idle")
+	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
+
+	d.Tick()
+
+	// The ticket's branch keeps the commits, so they are no reason to keep the tree.
+	assert.Equal(t, []string{"w-ENG-1"}, d.Workers.Closed())
+	assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickRemovesUntrackedFilesBeforeReturningTheTree(t *testing.T) {
@@ -148,12 +169,13 @@ func TestTickRemovesUntrackedFilesBeforeReturningTheTree(t *testing.T) {
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 
 	d.Tick()
+	d.Tick()
 
 	assert.NoFileExists(t, filepath.Join(path, "zz_tmp_test.go"))
 	assert.Equal(t, []string{"w-ENG-1"}, d.Workers.Closed())
 	assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
 	assert.Empty(t, d.Linear.Moves())
-	assert.Empty(t, d.Linear.Comments())
+	require.Len(t, d.Linear.Comments(), 1)
 	returns := slices.DeleteFunc(d.Receipts("ENG-1"), func(r Receipt) bool { return r.Kind != "return" })
 	require.Len(t, returns, 1)
 	assert.Equal(t, "done", returns[0].State)
@@ -264,7 +286,7 @@ func TestTickReturnsATreeWhoseOnlyLeftoversAreIgnored(t *testing.T) {
 	assert.Len(t, d.Trees.Returned(), 1)
 }
 
-func TestTickKeepsTheTreeAndItsUntrackedFilesWhenTrackedWorkIsAlsoThere(t *testing.T) {
+func TestTickDiscardsUntrackedFilesAndTrackedChangesInOneComment(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
@@ -274,15 +296,16 @@ func TestTickKeepsTheTreeAndItsUntrackedFilesWhenTrackedWorkIsAlsoThere(t *testi
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 
 	d.Tick()
+	d.Tick()
 
-	assert.FileExists(t, filepath.Join(path, "scratch.txt"))
-	assert.Empty(t, d.Trees.Returned())
+	assert.NoFileExists(t, filepath.Join(path, "scratch.txt"))
+	assert.Len(t, d.Trees.Returned(), 1)
 	comments := d.Linear.Comments()
 	require.Len(t, comments, 1)
-	assert.Contains(t, comments[0], "`"+path+"` has uncommitted changes.")
+	assert.Contains(t, comments[0], "It discards uncommitted changes to tracked files and untracked files (scratch.txt).")
 }
 
-func TestTickKeepsTheTreeWhenATrackedFileIsModifiedButNotStaged(t *testing.T) {
+func TestTickDiscardsATrackedFileModifiedButNotStaged(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
@@ -296,35 +319,16 @@ func TestTickKeepsTheTreeWhenATrackedFileIsModifiedButNotStaged(t *testing.T) {
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 
 	d.Tick()
+	d.Tick()
 
-	assert.FileExists(t, filepath.Join(path, "scratch.txt"))
-	assert.Empty(t, d.Trees.Returned())
+	assert.NoFileExists(t, filepath.Join(path, "scratch.txt"))
+	assert.Len(t, d.Trees.Returned(), 1)
 	comments := d.Linear.Comments()
 	require.Len(t, comments, 1)
-	assert.Contains(t, comments[0], "`"+path+"` has uncommitted changes.")
+	assert.Contains(t, comments[0], "It discards uncommitted changes to tracked files and untracked files (scratch.txt).")
 }
 
-func TestTickReturnsTheTreeOnceItsWorkIsPushed(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	path := d.Trees.Clean("ENG-1")
-	d.Trees.Commit(path)
-	d.Workers.Running("ENG-1", "idle")
-	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
-	d.Tick()
-	require.Empty(t, d.Trees.Returned())
-
-	d.Trees.Push(path)
-	d.Tick()
-
-	assert.Len(t, d.Trees.Returned(), 1)
-	assert.Len(t, d.Linear.Comments(), 1)
-	returns := teardownReceipts(d, "ENG-1", "return")
-	require.Len(t, returns, 1)
-	assert.Equal(t, "done", returns[0].State)
-}
-
-func TestTickRetriesADirtyTreeCommentThatLinearRefused(t *testing.T) {
+func TestTickReturnsTheTreeOnlyAfterTheDiscardCommentLanded(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
@@ -337,15 +341,18 @@ func TestTickRetriesADirtyTreeCommentThatLinearRefused(t *testing.T) {
 	require.ErrorContains(t, res.Err, "while commenting on ENG-1:")
 	assert.Equal(t, []string{"w-ENG-1"}, d.Workers.Closed())
 	assert.Empty(t, d.Linear.Comments())
+	assert.Empty(t, d.Trees.Returned())
 
-	// The comment never landed, so the next tick tries it again.
+	// The comment never landed, so the tree stays until a tick lands it.
 	d.Linear.FailComments(false)
+	d.Tick()
 	d.Tick()
 
 	assert.Len(t, d.Workers.Closed(), 1)
+	assert.Len(t, d.Trees.Returned(), 1)
 	comments := d.Linear.Comments()
 	require.Len(t, comments, 1)
-	assert.Contains(t, comments[0], "`"+path+"` has uncommitted changes.")
+	assert.Contains(t, comments[0], "`"+path+"`")
 
 	d.Tick()
 	assert.Len(t, d.Linear.Comments(), 1)
@@ -402,7 +409,7 @@ func TestTickKeepsTheTreeWhenTreehouseRefusesTheReturn(t *testing.T) {
 	assert.Empty(t, d.Linear.Comments())
 }
 
-func TestTickTearsDownOneTreeAndKeepsAnotherOfTheSameTicket(t *testing.T) {
+func TestTickCommentsOnlyOnTheTreeWithWorkToDiscardOfATicketWithTwoTrees(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	clean := d.Trees.Clean("ENG-1")
@@ -413,9 +420,10 @@ func TestTickTearsDownOneTreeAndKeepsAnotherOfTheSameTicket(t *testing.T) {
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 
 	d.Tick()
+	d.Tick()
 
 	assert.ElementsMatch(t, []string{"w-ENG-1", "w-library"}, d.Workers.Closed())
-	assert.Equal(t, []string{d.Repo + "|" + clean + "|ENG-1"}, d.Trees.Returned())
+	assert.ElementsMatch(t, []string{d.Repo + "|" + clean + "|ENG-1", d.Repo + "|" + stranded + "|ENG-1"}, d.Trees.Returned())
 	comments := d.Linear.Comments()
 	require.Len(t, comments, 1)
 	assert.Contains(t, comments[0], stranded)
@@ -501,7 +509,7 @@ func TestTickReturnsTheCleanTreeOfAFinishedReviewTicket(t *testing.T) {
 	}
 }
 
-func TestTickKeepsTheDirtyTreeOfADoneReviewTicketWithOneComment(t *testing.T) {
+func TestTickReturnsTheDirtyTreeOfADoneReviewTicketWithOneComment(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
@@ -510,11 +518,12 @@ func TestTickKeepsTheDirtyTreeOfADoneReviewTicketWithOneComment(t *testing.T) {
 	d.Linear.Finished(withLabel(ticket("ENG-1", "Done", "dispatch"), "design-review"))
 
 	d.Tick()
+	d.Tick()
 
-	assert.Empty(t, d.Trees.Returned())
+	assert.Len(t, d.Trees.Returned(), 1)
 	comments := d.Linear.Comments()
 	require.Len(t, comments, 1)
-	assert.Contains(t, comments[0], "`"+path+"` has uncommitted changes.")
+	assert.Contains(t, comments[0], "`"+path+"`")
 
 	d.Tick()
 	assert.Len(t, d.Linear.Comments(), 1)
@@ -531,7 +540,7 @@ func TestTickAsksLinearAboutLeasesOnlyWhenAManagedTicketDoesNotHoldThem(t *testi
 	assert.Zero(t, d.Linear.Lookups())
 }
 
-func TestTickStopsTheWorkerOfAPausedTicketAndKeepsItsTree(t *testing.T) {
+func TestTickStopsTheWorkerOfAPausedTicketAndReturnsItsTree(t *testing.T) {
 	t.Parallel()
 	for _, status := range []string{"Todo", "Backlog"} {
 		t.Run(status, func(t *testing.T) {
@@ -542,48 +551,54 @@ func TestTickStopsTheWorkerOfAPausedTicketAndKeepsItsTree(t *testing.T) {
 			d.Linear.Finished(ticket("ENG-1", status, "dispatch"))
 
 			d.Tick()
+			d.Tick()
+			d.Tick()
 
 			assert.Equal(t, []string{"w-ENG-1"}, d.Workers.Closed())
-			assert.Empty(t, d.Trees.Returned())
+			assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
 			assert.Empty(t, d.Linear.Moves())
-			assert.Empty(t, d.Linear.Comments())
 			assert.Empty(t, d.Workers.Launched())
-			assert.FileExists(t, filepath.Join(path, "wip.txt"))
+			comments := d.Linear.Comments()
+			require.Len(t, comments, 1)
+			assert.Contains(t, comments[0], "`"+path+"`")
+			assert.Contains(t, comments[0], "It discards uncommitted changes to tracked files.")
 
-			// The lease stays, and nothing more happens while the ticket is paused.
+			// The tree is back in the pool, so nothing more happens while the ticket is paused.
 			d.Tick()
 			assert.Len(t, d.Workers.Closed(), 1)
-			assert.Empty(t, d.Trees.Returned())
+			assert.Len(t, d.Trees.Returned(), 1)
+			assert.Len(t, d.Linear.Comments(), 1)
 		})
 	}
 }
 
-func TestTickLeavesAWorkspaceOpenedByHandOnAPausedTicket(t *testing.T) {
+func TestTickReturnsThePausedTicketsTreeAndClosesItsAgentlessWorkspace(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
-	d.Trees.Clean("ENG-1")
-	// A workspace with no Claude agent is not a worker, so it may be yours.
+	path := d.Trees.Clean("ENG-1")
+	// A workspace with no Claude agent is not a worker, so the pause leaves it open until the return closes it.
 	d.Workers.Running("ENG-1", "")
 	d.Linear.Finished(ticket("ENG-1", "Todo", "dispatch"))
 
 	d.Tick()
 
-	assert.Empty(t, d.Workers.Closed())
+	assert.Equal(t, []string{"w-ENG-1"}, d.Workers.Closed())
+	assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
 }
 
-func TestTickLeavesAWorkspaceOpenedByHandOnAKeptTree(t *testing.T) {
+func TestTickClosesAnAgentlessWorkspaceWhenItReturnsADirtyTree(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Dirty(path)
 	d.Workers.Running("ENG-1", "")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
+
+	d.Tick()
 	d.Tick()
 
-	// The comment is posted once, and the workspace stays for the next tick too.
-	d.Tick()
-
-	assert.Empty(t, d.Workers.Closed())
+	assert.Equal(t, []string{"w-ENG-1"}, d.Workers.Closed())
+	assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
 	assert.Len(t, d.Linear.Comments(), 1)
 }
 
@@ -591,11 +606,12 @@ func TestTickDoesNotRepeatTheCommentAfterALeaseLookupFails(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
-	d.Trees.Dirty(path)
+	d.Trees.NestRepo(path)
 	d.Workers.Running("ENG-1", "idle")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
+	require.ErrorContains(t, d.Run("tick").Err, "untracked nested/")
 	d.Tick()
-	require.Len(t, d.Linear.Comments(), 1)
+	require.Len(t, d.Linear.Comments(), 2)
 
 	// A tick that can't tell who holds a lease holds the tree's rules, and the receipt still stands.
 	d.Linear.FailLookups()
@@ -603,18 +619,20 @@ func TestTickDoesNotRepeatTheCommentAfterALeaseLookupFails(t *testing.T) {
 	d.Linear.AllowLookups()
 	d.Tick()
 
-	assert.Len(t, d.Linear.Comments(), 1)
+	assert.Len(t, d.Linear.Comments(), 2)
 }
 
 func TestTickDoesNotRepeatTheCommentAfterAPoolCannotBeRead(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
-	d.Trees.Dirty(path)
+	d.Trees.NestRepo(path)
 	d.Workers.Running("ENG-1", "idle")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
+	require.ErrorContains(t, d.Run("tick").Err, "untracked nested/")
+	d.Advance(time.Second)
 	d.Tick()
-	require.Len(t, d.Linear.Comments(), 1)
+	require.Len(t, d.Linear.Comments(), 2)
 
 	// A second repo whose pool fails leaves the first one's trees readable.
 	d.addRepo("tiger", filepath.Join(d.dir, "moved"))
@@ -625,7 +643,7 @@ func TestTickDoesNotRepeatTheCommentAfterAPoolCannotBeRead(t *testing.T) {
 	d.Restart()
 	d.Tick()
 
-	assert.Len(t, d.Linear.Comments(), 1)
+	assert.Len(t, d.Linear.Comments(), 2)
 }
 
 func TestTickReturnsATreeWhileAnotherBranchOfTheRepoHoldsUnpushedWork(t *testing.T) {
@@ -661,22 +679,22 @@ func TestTickKeepsTickingWhenLinearCannotListTheTicketsHoldingTrees(t *testing.T
 	assert.Empty(t, d.Trees.Returned())
 }
 
-func TestTickRelaunchesAPausedTicketOnItsKeptTree(t *testing.T) {
+func TestTickRelaunchesAPausedTicketOnceItsTreeIsReturned(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
-	path := d.Trees.Clean("ENG-1")
+	d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "working")
 	d.Linear.Finished(ticket("ENG-1", "Todo", "dispatch"))
 	d.Tick()
 	require.Empty(t, d.Workers.Launched())
+	require.Len(t, d.Trees.Returned(), 1)
 
 	d.Linear.Finished()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
 
 	assert.Len(t, d.Workers.Launched(), 1)
-	assert.Empty(t, d.Trees.Returned())
-	assert.Equal(t, "ENG-1", d.Trees.Holder(path))
+	assert.Len(t, d.Trees.Returned(), 1)
 }
 
 func TestTickDoesNotTouchTreesOfTicketsInReviewOrNeedsHuman(t *testing.T) {
@@ -721,7 +739,7 @@ func TestTickReadsDoneAndPausedStatusesFromConfig(t *testing.T) {
 	d.tools.Linear.AddState("Shipped", "completed")
 	d.tools.Linear.AddState("Parked", "backlog")
 	first := d.Trees.Clean("ENG-1")
-	d.Trees.Clean("ENG-2")
+	second := d.Trees.Clean("ENG-2")
 	d.Trees.Clean("ENG-3")
 	d.Workers.Running("ENG-1", "idle")
 	d.Workers.Running("ENG-2", "idle")
@@ -735,7 +753,7 @@ func TestTickReadsDoneAndPausedStatusesFromConfig(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{d.Repo + "|" + first + "|ENG-1"}, d.Trees.Returned())
+	assert.ElementsMatch(t, []string{d.Repo + "|" + first + "|ENG-1", d.Repo + "|" + second + "|ENG-2"}, d.Trees.Returned())
 	assert.ElementsMatch(t, []string{"w-ENG-1", "w-ENG-2"}, d.Workers.Closed())
 }
 
@@ -783,14 +801,15 @@ func TestTickLeavesNoTabPaneOrAgentOfAClosedWorkspace(t *testing.T) {
 	assert.Equal(t, "w-ENG-2:p1", snap.Agents[0].PaneID)
 }
 
-func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
+func TestTickKeepsTheTreeOfChangesWrittenWhileTheWorkspaceClosedUntilTheyAreNoted(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "working")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
-	// The cycle saw a clean tree, and the worker writes a file as it is killed.
+	// The cycle saw a clean tree, and the worker stages a file as it is killed.
 	d.tools.Multiplexer.BeforeCloseWorkspace(func(string) {
+		d.Clock.Advance(time.Second)
 		require.NoError(t, os.WriteFile(filepath.Join(path, "late.txt"), []byte("late\n"), 0o644))
 		require.NoError(t, exec.Command("git", "-C", path, "add", "late.txt").Run())
 	})
@@ -799,32 +818,32 @@ func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
 
 	require.ErrorContains(t, res.Err, "the worker left uncommitted changes")
 	assert.Equal(t, []string{"w-ENG-1"}, d.Workers.Closed())
-	assert.Empty(t, d.Trees.Returned())
-	assert.FileExists(t, filepath.Join(path, "late.txt"))
-	returns := teardownReceipts(d, "ENG-1", "return")
-	require.Len(t, returns, 1)
-	assert.Equal(t, "refused", returns[0].State)
-	assert.Equal(t, "the worker left uncommitted changes in "+path, returns[0].Detail)
-
-	// The next tick sees the work and posts the one comment. A tick reports the receipts written
-	// since it asked, and the fake clock only moves when told.
-	d.Advance(time.Second)
-	d.Tick()
-	comments := d.Linear.Comments()
-	require.Len(t, comments, 1)
-	assert.Contains(t, comments[0], "`"+path+"` has uncommitted changes.")
-	assert.Empty(t, d.Trees.Returned())
-	assert.Len(t, d.Workers.Closed(), 1)
-
-	// Pushing the work frees the slot, though the earlier return was refused.
-	d.Trees.Git(path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "late work")
-	d.Trees.Git(path, "push", "origin", "main")
-	d.Advance(time.Second)
-	d.Tick()
+	// The refusal is the first look at the late work, so the comment lands before the retry returns the tree.
+	assert.Contains(t, strings.Join(d.Linear.Comments(), "\n"), "It discards uncommitted changes to tracked files.")
 	assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
+	returns := teardownReceipts(d, "ENG-1", "return")
+	require.Len(t, returns, 2)
+	assert.Equal(t, "refused", returns[0].State)
+	assert.Equal(t, "done", returns[1].State)
 }
 
-func TestTickCommentsOnADirtyTreeThatHasNoWorkspace(t *testing.T) {
+func TestTickKeepsATreeWhoseUnpushedCommitsAreOnADetachedHead(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	path := d.Trees.Clean("ENG-1")
+	d.Trees.Git(path, "checkout", "--detach")
+	d.Trees.Commit(path)
+	d.Trees.Leased("ENG-1", path)
+	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
+
+	res := d.Run("tick")
+
+	// No branch holds the commit, so a return would leave it reachable only from the reflog.
+	require.ErrorContains(t, res.Err, "1 commit on a detached HEAD that no remote has")
+	assert.Empty(t, d.Trees.Returned())
+}
+
+func TestTickCommentsThenReturnsADirtyTreeThatHasNoWorkspace(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
@@ -835,17 +854,17 @@ func TestTickCommentsOnADirtyTreeThatHasNoWorkspace(t *testing.T) {
 	d.Tick()
 
 	assert.Empty(t, d.Workers.Closed())
-	assert.Empty(t, d.Trees.Returned())
+	assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
 	assert.Len(t, d.Linear.Comments(), 1)
 
 	d.Tick()
 	assert.Len(t, d.Linear.Comments(), 1)
 }
 
-func TestTickKeepsATreeWhoseCommitsNoRemoteHas(t *testing.T) {
+func TestTickReturnsATreeWithNoRemoteForItsCommits(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
-	// A tree with no remote at all has nowhere its commits could be pushed.
+	// A tree with no remote at all has nowhere its commits could be pushed, and the ticket's branch keeps them.
 	path := d.Trees.PathOf("ENG-1")
 	require.NoError(t, os.MkdirAll(path, 0o755))
 	d.Trees.Git(path, "init", "--initial-branch=main")
@@ -855,10 +874,8 @@ func TestTickKeepsATreeWhoseCommitsNoRemoteHas(t *testing.T) {
 
 	d.Tick()
 
-	assert.Empty(t, d.Trees.Returned())
-	comments := d.Linear.Comments()
-	require.Len(t, comments, 1)
-	assert.Contains(t, comments[0], "`"+path+"` has 1 commit that no remote has.")
+	assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
+	assert.Empty(t, d.Linear.Comments())
 }
 
 func TestTickLeavesPausedTicketsItDoesNotManage(t *testing.T) {
@@ -892,7 +909,7 @@ func TestTickLeavesPausedTicketsItDoesNotManage(t *testing.T) {
 	}
 }
 
-func TestTickStopsEveryWorkerOfAPausedTicket(t *testing.T) {
+func TestTickStopsEveryWorkerOfAPausedTicketAndReturnsItsTrees(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	first := d.Trees.Clean("ENG-1")
@@ -902,36 +919,37 @@ func TestTickStopsEveryWorkerOfAPausedTicket(t *testing.T) {
 	d.Linear.Finished(ticket("ENG-1", "Backlog", "dispatch"))
 
 	d.Tick()
+	d.Tick()
 
 	assert.ElementsMatch(t, []string{"w-ENG-1", "w-library"}, d.Workers.Closed())
-	assert.Empty(t, d.Trees.Returned())
+	assert.ElementsMatch(t, []string{d.Repo + "|" + first + "|ENG-1", d.Repo + "|" + second + "|ENG-1"}, d.Trees.Returned())
 }
 
-func TestTickDoesNothingForAPausedTicketWithNoWorkspace(t *testing.T) {
+func TestTickReturnsTheTreeOfAPausedTicketWithNoWorkspace(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Trees.Leased("ENG-1", path)
 	d.Linear.Finished(ticket("ENG-1", "Todo", "dispatch"))
 
-	out := d.Tick()
+	d.Tick()
 
-	assert.Empty(t, out)
 	assert.Empty(t, d.Workers.Closed())
-	assert.Empty(t, d.Trees.Returned())
+	assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
+	assert.Empty(t, d.Linear.Comments())
 }
 
-func TestTickStopsTheWorkerOfAPausedReviewTicketAndKeepsItsTree(t *testing.T) {
+func TestTickStopsTheWorkerOfAPausedReviewTicketAndReturnsItsTree(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
-	d.Trees.Clean("ENG-1")
+	path := d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "idle")
 	d.Linear.Finished(withLabel(ticket("ENG-1", "Backlog", "dispatch"), "design-review"))
 
 	d.Tick()
 
 	assert.Equal(t, []string{"w-ENG-1"}, d.Workers.Closed())
-	assert.Empty(t, d.Trees.Returned())
+	assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
 }
 
 func TestTickCommentsAgainWhenAReopenedTicketFinishesWithWorkInItsTree(t *testing.T) {
@@ -958,25 +976,26 @@ func TestTickCommentsAgainWhenAReopenedTicketFinishesWithWorkInItsTree(t *testin
 	assert.Len(t, d.Linear.Comments(), 2)
 }
 
-func TestTickPostsACommentForEachKeptTree(t *testing.T) {
+func TestTickPostsACommentForEachTreeWithWorkToDiscard(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	first := d.Trees.Clean("ENG-1")
 	second := d.Trees.Clean("library")
 	d.Trees.Dirty(first)
-	d.Trees.Commit(second)
+	d.Trees.Leave(second, "scratch.txt")
 	d.Workers.RunningAs("ENG-1", first, "w-ENG-1", "idle")
 	d.Workers.RunningAs("ENG-1", second, "w-library", "idle")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 
 	d.Tick()
+	d.Tick()
 
 	assert.ElementsMatch(t, []string{"w-ENG-1", "w-library"}, d.Workers.Closed())
-	assert.Empty(t, d.Trees.Returned())
+	assert.ElementsMatch(t, []string{d.Repo + "|" + first + "|ENG-1", d.Repo + "|" + second + "|ENG-1"}, d.Trees.Returned())
 	comments := d.Linear.Comments()
 	require.Len(t, comments, 2)
-	assert.Contains(t, strings.Join(comments, "\n"), "`"+first+"` has uncommitted changes.")
-	assert.Contains(t, strings.Join(comments, "\n"), "`"+second+"` has 1 commit that no remote has.")
+	assert.Contains(t, strings.Join(comments, "\n"), "`"+first+"` to its pool")
+	assert.Contains(t, strings.Join(comments, "\n"), "`"+second+"` to its pool")
 
 	d.Tick()
 	assert.Len(t, d.Linear.Comments(), 2)
@@ -987,11 +1006,13 @@ func TestPlanNamesEachKeptTreeOfOneTicket(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	first := d.Trees.Clean("ENG-1")
 	second := d.Trees.Clean("library")
-	d.Trees.Dirty(first)
-	d.Trees.Dirty(second)
+	d.Trees.NestRepo(first)
+	d.Trees.NestRepo(second)
 	d.Workers.RunningAs("ENG-1", first, "w-ENG-1", "idle")
 	d.Workers.RunningAs("ENG-1", second, "w-library", "idle")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
+	require.ErrorContains(t, d.Run("tick").Err, "untracked nested/")
+	d.Advance(time.Second)
 	d.Tick()
 
 	plan := d.Run("cycle")
@@ -1012,18 +1033,20 @@ func TestPlanListsTheCommentOfAKeptTreeAsCoveredOnEveryTick(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
-	d.Trees.Commit(path)
+	d.Trees.NestRepo(path)
 	d.Workers.Running("ENG-1", "idle")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
+	require.ErrorContains(t, d.Run("tick").Err, "untracked nested/")
+	d.Advance(time.Second)
 	d.Tick()
-	require.Len(t, d.Linear.Comments(), 1)
+	require.Len(t, d.Linear.Comments(), 2)
 
 	d.Tick()
 	plan := d.Run("cycle")
 	require.NoError(t, plan.Err)
 
 	assert.Regexp(t, `(?m)^covered +ENG-1 +comment +comment-kept-tree +done .*`+regexp.QuoteMeta(path), plan.Stdout)
-	assert.Len(t, d.Linear.Comments(), 1)
+	assert.Len(t, d.Linear.Comments(), 2)
 }
 
 func TestTickKeepsATreeWhoseGitStateIsBroken(t *testing.T) {
@@ -1047,31 +1070,22 @@ func TestTickKeepsATreeWhoseGitStateIsBroken(t *testing.T) {
 	assert.DirExists(t, path)
 }
 
-func TestTickKeepsATreeThatGainedACommitAfterTheCycleDecidedToReturnIt(t *testing.T) {
+func TestTickReturnsATreeThatGainedACommitAfterTheCycleDecidedToReturnIt(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "working")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
-	// The cycle read a clean, pushed tree, and the worker commits as its workspace closes.
+	// The worker commits as its workspace closes, and the ticket's branch keeps the commit.
 	d.tools.Multiplexer.BeforeCloseWorkspace(func(string) { d.Trees.Commit(path) })
 
-	res := d.Run("tick")
+	d.Tick()
 
-	require.ErrorContains(t, res.Err, "the worker left 1 commit that no remote has")
-	assert.Empty(t, d.Trees.Returned())
+	assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
+	assert.Empty(t, d.Linear.Comments())
 	returns := teardownReceipts(d, "ENG-1", "return")
 	require.Len(t, returns, 1)
-	assert.Equal(t, "refused", returns[0].State)
-	assert.Equal(t, "the worker left 1 commit that no remote has in "+path, returns[0].Detail)
-
-	// The next tick sees the commit and explains why the tree was kept.
-	d.Advance(time.Second)
-	d.Tick()
-	comments := d.Linear.Comments()
-	require.Len(t, comments, 1)
-	assert.Contains(t, comments[0], "`"+path+"` has 1 commit that no remote has.")
-	assert.Empty(t, d.Trees.Returned())
+	assert.Equal(t, "done", returns[0].State)
 }
 
 func TestTickKeepsATreeThatGainedANestedRepoAfterTheCycleDecidedToReturnIt(t *testing.T) {
@@ -1096,15 +1110,16 @@ func TestTickKeepsATreeThatGainedANestedRepoAfterTheCycleDecidedToReturnIt(t *te
 	assert.Equal(t, "refused", returns[0].State)
 	assert.Equal(t, "untracked nested/ in "+path+" survived git clean", returns[0].Detail)
 
-	// While the nested repository stays, the tree is not returned however many ticks follow,
-	// and a comment tells the user why it is still leased.
+	// While the nested repository stays, the tree is not returned however many ticks follow.
+	// One comment says what the return would discard, and one says why the tree is still leased.
 	d.Advance(time.Second)
 	d.Tick()
 	assert.Empty(t, d.Trees.Returned())
 	assert.DirExists(t, filepath.Join(path, "nested"))
 	comments := d.Linear.Comments()
-	require.Len(t, comments, 1)
-	assert.Contains(t, comments[0], "nested/")
+	require.Len(t, comments, 2)
+	assert.Contains(t, comments[0], "It discards untracked files (nested/).")
+	assert.Contains(t, comments[1], "kept this ticket's tree leased, because untracked nested/")
 
 	// Removing the nested repository frees the slot, though nothing tracked changed.
 	require.NoError(t, os.RemoveAll(filepath.Join(path, "nested")))
@@ -1138,11 +1153,13 @@ func TestTickDoesNotRepeatTheKeptTreeCommentAfterOnePoolReadFails(t *testing.T) 
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
-	d.Trees.Dirty(path)
+	d.Trees.NestRepo(path)
 	d.Workers.Running("ENG-1", "idle")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
+	require.ErrorContains(t, d.Run("tick").Err, "untracked nested/")
+	d.Advance(time.Second)
 	d.Tick()
-	require.Len(t, d.Linear.Comments(), 1)
+	require.Len(t, d.Linear.Comments(), 2)
 
 	// FailTrees fails only the next read of the pool.
 	d.tools.Treehouse.FailTrees(errors.New("treehouse is busy"))
@@ -1151,7 +1168,7 @@ func TestTickDoesNotRepeatTheKeptTreeCommentAfterOnePoolReadFails(t *testing.T) 
 	d.Advance(time.Minute)
 	d.Tick()
 
-	assert.Len(t, d.Linear.Comments(), 1)
+	assert.Len(t, d.Linear.Comments(), 2)
 }
 
 func assignedTo(t fakeTicket, user string) fakeTicket {
@@ -1181,6 +1198,12 @@ func (t *Trees) Dirty(path string) { t.d.dirty(path) }
 
 // Leave puts a file git has never seen into the tree.
 func (t *Trees) Leave(path, name string) { t.d.untracked(path, name) }
+
+// NestRepo leaves a git repository the tree does not track, which git clean will not remove.
+func (t *Trees) NestRepo(path string) {
+	require.NoError(t.d.t, os.MkdirAll(filepath.Join(path, "nested"), 0o755))
+	t.d.git(filepath.Join(path, "nested"), "init", "--initial-branch=main")
+}
 
 // Commit adds a commit that no remote has.
 func (t *Trees) Commit(path string) { t.d.commit(path) }
@@ -1215,12 +1238,12 @@ func TestTickKeepsATreeUnreadWhenTheLeaseLookupFailsAfterTheTicketReopened(t *te
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	path := d.Trees.Clean("ENG-1")
-	d.Trees.Commit(path)
+	d.Trees.NestRepo(path)
 	d.Workers.Running("ENG-1", "idle")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
-	d.Tick()
+	require.ErrorContains(t, d.Run("tick").Err, "untracked nested/")
 	require.Empty(t, d.Trees.Returned())
-	d.Trees.Push(path)
+	require.NoError(t, os.RemoveAll(filepath.Join(path, "nested")))
 
 	// The ticket reopened, but the lookup that would say so failed. The Done holder from the last
 	// good lookup must not decide for a ticket that may have moved.
@@ -1229,4 +1252,132 @@ func TestTickKeepsATreeUnreadWhenTheLeaseLookupFailsAfterTheTicketReopened(t *te
 	d.Tick()
 
 	assert.Empty(t, d.Trees.Returned())
+}
+
+func TestExplainShowsTheCommentAndTheReturnOfABacklogTicketsDirtyTree(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	path := d.Trees.Clean("ENG-1")
+	d.Trees.Dirty(path)
+	d.Trees.Leased("ENG-1", path)
+	d.Linear.Finished(ticket("ENG-1", "Backlog", "dispatch"))
+
+	d.Tick()
+	d.Tick()
+
+	assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
+	comments := d.Linear.Comments()
+	require.Len(t, comments, 1)
+	assert.Contains(t, comments[0], "Branch `thrawn01/eng-1` and its commits stay.")
+	assert.Contains(t, comments[0], "It discards uncommitted changes to tracked files.")
+	res := d.Run("explain", "ENG-1")
+	require.NoError(t, res.Err)
+	assert.Regexp(t, `comment-discarded-work  wants comment`, res.Stdout)
+	assert.Regexp(t, `teardown-clean-tree  wants return`, res.Stdout)
+	assert.Regexp(t, `receipt  return ENG-1 done .*: returned .*, discarded uncommitted changes`, res.Stdout)
+}
+
+func TestTickReturnsTheDirtyTreeOfATicketNoWorkerRunsIn(t *testing.T) {
+	t.Parallel()
+	for _, status := range []string{"Backlog", "Todo", "Needs Human"} {
+		t.Run(status, func(t *testing.T) {
+			t.Parallel()
+			d := newDispatch(t, dispatchOptions{})
+			path := d.Trees.Clean("ENG-1")
+			d.Trees.Dirty(path)
+			d.Trees.Leave(path, "scratch.txt")
+			d.Trees.Leased("ENG-1", path)
+			d.Linear.Finished(ticket("ENG-1", status, "dispatch"))
+
+			d.Tick()
+			d.Tick()
+
+			assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
+			assert.NoFileExists(t, filepath.Join(path, "scratch.txt"))
+			comments := d.Linear.Comments()
+			require.Len(t, comments, 1)
+			assert.Contains(t, comments[0], "Branch `thrawn01/eng-1` and its commits stay.")
+			assert.Contains(t, comments[0], "It discards uncommitted changes to tracked files and untracked files (scratch.txt).")
+		})
+	}
+}
+
+func TestTickReturnsTheTreeOfAnUnfinishedTicketWhoseCommitsNoRemoteHasWithoutAComment(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	path := d.Trees.Clean("ENG-1")
+	d.Trees.Commit(path)
+	d.Trees.Leased("ENG-1", path)
+	d.Linear.Finished(ticket("ENG-1", "Backlog", "dispatch"))
+
+	d.Tick()
+
+	assert.Equal(t, []string{d.Repo + "|" + path + "|ENG-1"}, d.Trees.Returned())
+	assert.Empty(t, d.Linear.Comments())
+}
+
+func TestTickKeepsTheDirtyTreeOfANeedsHumanTicketWhileItsWorkerRuns(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"blocked", "working", "idle"} {
+		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+			d := newDispatch(t, dispatchOptions{})
+			path := d.Trees.Clean("ENG-1")
+			d.Trees.Dirty(path)
+			d.Trees.Leave(path, "scratch.txt")
+			d.Workers.Running("ENG-1", state)
+			d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
+
+			d.Tick()
+			d.Tick()
+
+			assert.FileExists(t, filepath.Join(path, "scratch.txt"))
+			assert.Empty(t, d.Workers.Closed())
+			assert.Empty(t, d.Trees.Returned())
+			assert.Empty(t, teardownComments(d))
+		})
+	}
+}
+
+func TestTickKeepsTheDirtyTreeOfATodoChildOfAnInProgressParent(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(parent("ENG-1", "In Progress"))
+	d.setChildren(child("ENG-2", "ENG-1", "Todo"))
+	path := d.Trees.Clean("ENG-2")
+	d.Trees.Dirty(path)
+	d.Trees.Leased("ENG-2", path)
+	d.Linear.Finished(child("ENG-2", "ENG-1", "Todo"))
+
+	d.Tick()
+	d.Tick()
+
+	assert.Empty(t, d.Trees.Returned())
+	assert.Empty(t, teardownComments(d))
+	assert.Equal(t, "ENG-2", d.Trees.Holder(path))
+}
+
+func TestTickKeepsTheDirtyTreeOfAnInProgressOrInReviewTicketWithNoWorker(t *testing.T) {
+	t.Parallel()
+	for _, status := range []string{"In Progress", "In Review"} {
+		t.Run(status, func(t *testing.T) {
+			t.Parallel()
+			d := newDispatch(t, dispatchOptions{})
+			path := d.Trees.Clean("ENG-1")
+			d.Trees.Dirty(path)
+			d.Trees.Leased("ENG-1", path)
+			d.Linear.Tickets(ticket("ENG-1", status, "dispatch"))
+
+			d.Tick()
+			d.Tick()
+
+			assert.Empty(t, d.Trees.Returned())
+			assert.Empty(t, teardownComments(d))
+		})
+	}
+}
+
+// teardownComments lists the comments that name a tree to be returned.
+func teardownComments(d *Dispatch) []string {
+	return slices.DeleteFunc(d.Linear.Comments(), func(c string) bool { return !strings.Contains(c, "is returning") })
 }

@@ -154,32 +154,23 @@ func (c *CLI) command(ctx context.Context, repoDir string, args ...string) *exec
 	return cmd
 }
 
-// Unfinished says what returning the tree at path would destroy: modified or
-// staged tracked files, or commits reachable from HEAD that no remote has. Other local
-// branches are not counted, since the pool's trees share one repository and
-// treehouse returns a tree by detaching HEAD (gitvcs in treehouse v3.1.2), which
-// leaves every branch in place. Untracked files are not counted, since Untracked
-// and RemoveUntracked deal with them. The result is empty when the tree has no
-// tracked changes and its HEAD is pushed. A squash-merged branch whose remote
-// copy was pruned counts as unpushed.
-func Unfinished(ctx context.Context, env environment.Environment, path string) (string, error) {
-	work, err := Inspect(ctx, env, path)
-	if err != nil {
-		return "", err
-	}
-	return work.String(), nil
-}
-
 // Work is what returning a tree would destroy.
 type Work struct {
 	// Unpushed counts the commits reachable from HEAD that no remote has.
 	Unpushed int
 	// TrackedChanges means tracked files are modified or staged.
 	TrackedChanges bool
+	// Detached means HEAD is on no branch, so no branch keeps the unpushed commits through a return.
+	Detached bool
 }
 
-// Inspect reads what returning the tree at path would destroy. See Unfinished
-// for what counts.
+// Inspect reads what returning the tree at path would destroy: modified or staged
+// tracked files, or commits reachable from HEAD that no remote has. Other local
+// branches are not counted, since the pool's trees share one repository and
+// treehouse returns a tree by detaching HEAD (gitvcs in treehouse v3.1.2), which
+// leaves every branch in place. Untracked files are not counted, since Untracked
+// and RemoveUntracked deal with them. A squash-merged branch whose remote copy was
+// pruned counts as unpushed.
 func Inspect(ctx context.Context, env environment.Environment, path string) (Work, error) {
 	status, err := git(ctx, env, path, "status", "--porcelain", "--untracked-files=no")
 	if err != nil {
@@ -193,7 +184,11 @@ func Inspect(ctx context.Context, env environment.Environment, path string) (Wor
 	if err != nil {
 		return Work{}, fmt.Errorf("while counting unpushed commits in %s: %w", path, err)
 	}
-	return Work{Unpushed: unpushed, TrackedChanges: strings.TrimSpace(status) != ""}, nil
+	head, err := git(ctx, env, path, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return Work{}, err
+	}
+	return Work{Unpushed: unpushed, TrackedChanges: strings.TrimSpace(status) != "", Detached: strings.TrimSpace(head) == "HEAD"}, nil
 }
 
 // String describes the work, or is empty when there is none.

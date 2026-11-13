@@ -13,7 +13,7 @@ Each worker's workspace is labeled `<emoji> <ticket>`, and the emoji says who th
 | 🔀 | Whoever merges | In Review in a repo with `open_pr_as = "draft"`, the PR is ready, opened and its head is approved. Dispatch merges it when `auto_merge` is on. When it is off the label waits on you, and an idle worker sends one "approved and ready to merge" notification per head |
 | 💤 | You | The worker is idle with no background task running and nothing else pending. Open its window |
 | 🔴 | You | Needs Human, or the worker is blocked on a question popup |
-| ⏸️ | Nobody | Paused (Backlog or Todo) with the tree kept and a workspace still open |
+| ⏸️ | Nobody | A Todo child of an In Progress parent, which keeps its tree, with a workspace still open |
 
 💤 changes the label and tells the sessions following the ticket once each time it appears (the `notify-idle` rule, In Progress tickets only, `design` tickets send nothing). It sends nothing to the worker and no reminder, and it goes back to 🟢 within seconds of you typing into the window. That depends on herdr already reporting the worker as working when the hook fires. Otherwise 💤 stays until the next Notification or resync.
 
@@ -93,7 +93,7 @@ An idle In Review worker whose PR gains a review or comment gets the activity nu
 | Ticket | Worker | Emoji | What dispatch does |
 |---|---|---|---|
 | Needs Human | any | 🔴 | Notifies once on entering the status. A `design` ticket doesn't notify |
-| Paused (Backlog or Todo) | gone, tree kept | ⏸️ | Nothing |
+| Paused (Backlog or Todo) | gone | none | Returns the tree, discarding uncommitted changes. A Todo child of an In Progress parent keeps its tree and shows ⏸️ |
 | Paused | live | unchanged | Closes the workspace, then ⏸️ |
 
 A `design` or `design-review` worker is never nudged, and a `design` ticket sends no notification for a blocked popup, for Needs Human or for going idle. Its label follows the same lines as a build worker's, and 💤 is how you see that a design is waiting on you.

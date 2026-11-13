@@ -206,11 +206,11 @@ Text dispatch delivers to a worker's session as a message through its harness, n
 _Avoid_: notification (that goes to you), prompt
 
 **Close**:
-Closing a worker's workspace, which ends its session and keeps its tree, so a relaunch can start a new session in the same worker.
+Closing a worker's workspace, which ends its session and keeps its tree, so a relaunch can start a new session in the same worker. See Return for when the tree goes back.
 _Avoid_: kill, stop (a Stop is a turn ending)
 
 **Return**:
-Giving a tree back to its treehouse pool. dispatch closes the workspace on the tree, deletes its untracked files, and returns it only when it has no uncommitted changes, no commits that no remote has, and nothing untracked left after the deletion (git clean skips a nested repository, which a return would discard). Otherwise it keeps the tree, and the refusal's detail says why. After the return it deletes the tree's Stop records (keeping the time of the return, so a Stop that ended by then is ignored even when it is reported later), session logs and kickoff record.
+Giving a tree back to its treehouse pool once no worker runs in it, unless its ticket is In Progress or In Review (a relaunch resumes in the tree that holds the lease), or is a Todo child of an In Progress parent that is not a design ticket (a held tree marks the child paused on purpose). dispatch closes the workspace on the tree, deletes its untracked files, and returns it with its uncommitted changes discarded. The ticket's branch and its commits stay, pushed or not, because treehouse returns a tree by detaching HEAD. Before a return that discards anything, dispatch comments on the ticket naming the branch and what is discarded. A rule's return without `discard: true` is refused instead while the tree has uncommitted changes or commits that no remote has. Either way a return is refused when an untracked nested repository survives the deletion (git clean skips it, and a return would discard it), and the refusal's detail says why. After the return it deletes the tree's Stop records (keeping the time of the return, so a Stop that ended by then is ignored even when it is reported later), session logs and kickoff record.
 _Avoid_: free, delete (the untracked files are deleted, the tree is not)
 
 **Action**:

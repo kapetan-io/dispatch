@@ -613,7 +613,7 @@ func (s *State) treeRecords(w world.World) {
 			rec.Pushed, rec.TrackedChanges, rec.Unfinished = Unread[bool](reason), Unread[bool](reason), Unread[string](reason)
 			rec.Untracked, rec.CleanSince = Unread[string](reason), Unread[int64](reason)
 		case !tried:
-			reason := tree.Path + " was not inspected, because its ticket isn't finished"
+			reason := tree.Path + " was not inspected, because its ticket is In Progress or In Review, or a worker runs in it and the ticket is not finished"
 			rec.Pushed, rec.TrackedChanges, rec.Unfinished = Unread[bool](reason), Unread[bool](reason), Unread[string](reason)
 			rec.Untracked, rec.CleanSince = Unread[string](reason), Unread[int64](reason)
 		default:
