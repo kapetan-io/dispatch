@@ -380,3 +380,29 @@ func TestRexStreamNamesTheWorkerPaneWhenItsWorkspaceCloses(t *testing.T) {
 	defer mu.Unlock()
 	assert.Equal(t, started.Pane, named[len(named)-1])
 }
+
+// Rex sometimes drops a block whose program exits at once before anything can read its exit, so
+// the test tries a few times for one Rex kept.
+func TestRexKickoffReportsTheExitAndScreenOfAClaudeThatExitsAtOnce(t *testing.T) {
+	shim := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(shim, "claude"), []byte("#!/bin/sh\necho 'dispatch: no real claude found on PATH'\nexit 1\n"), 0o755))
+	const attempts = 5
+	for range attempts {
+		r := newRexRig(t, "PATH="+shim+string(os.PathListSeparator)+os.Getenv("PATH"))
+		r.worker.Program.PathFirst = []string{shim}
+		started, err := r.rex.StartWorker(context.Background(), r.worker)
+		require.NoError(t, err)
+
+		err = r.rex.Kickoff(context.Background(), started.Pane, "/dispatch:build ENG-1", r.worker.Program.Startup)
+
+		var exited *herdr.ProgramExited
+		if !errors.As(err, &exited) {
+			require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
+			continue
+		}
+		assert.Equal(t, "exit status 1", exited.Exit)
+		assert.Contains(t, exited.Screen, "dispatch: no real claude found on PATH")
+		return
+	}
+	t.Fatalf("Rex dropped the block of a program that exited at once in all %d attempts", attempts)
+}

@@ -72,8 +72,11 @@ type Agent struct {
 	Session string
 }
 
-// Herdr is the terminal workspace manager that hosts the workers.
+// Herdr is the port to the multiplexer that hosts the workers.
 type Herdr interface {
+	// Multiplexer is what messages call this product: "herdr" for the herdr TUI and for
+	// herdr-core with the Herdr app, "Rex" for Rex.
+	Multiplexer() string
 	// Read takes a snapshot of every workspace, tab, pane and agent.
 	Read(ctx context.Context) (Snapshot, error)
 	// AgentAt returns the agent in pane, asking herdr about that pane alone. A pane
@@ -103,9 +106,10 @@ type Herdr interface {
 	// *TerminalWithoutAgent when a terminal dispatch started for the tree runs no Claude.
 	StartWorker(ctx context.Context, w Worker) (Started, error)
 	// Kickoff types text into the program in pane once its input box is ready,
-	// answering the startup dialogs the Startup lists first, and returns once herdr
-	// shows the agent running it. It fails with ErrNeverStarted or
-	// ErrKickoffUnconfirmed when the agent never runs it.
+	// answering the startup dialogs the Startup lists first, and returns once the
+	// multiplexer shows the agent running it. It fails with ErrNeverStarted or
+	// ErrKickoffUnconfirmed when the agent never runs it, and with *ProgramExited (which is also an
+	// ErrKickoffUnconfirmed) when the multiplexer shows the program finished first.
 	Kickoff(ctx context.Context, pane, text string, startup Startup) error
 }
 
@@ -305,13 +309,36 @@ func oneLine(screen string) string { return strings.ReplaceAll(screen, "\n", " "
 
 // Reasons Kickoff gives up.
 var (
-	// ErrKickoffUnconfirmed means the program was up but herdr never showed it running the kickoff.
-	ErrKickoffUnconfirmed = errors.New("herdr never showed the kickoff running")
+	// ErrKickoffUnconfirmed means the multiplexer never showed the program running the kickoff.
+	ErrKickoffUnconfirmed = errors.New("the multiplexer never showed the kickoff running")
 	// ErrNeverStarted means the command that starts the program still showed at the shell prompt after Enter was pressed on it.
 	ErrNeverStarted = errors.New("the program never started, because its launch command still showed at the shell prompt after Enter was pressed on it")
-	// ErrEnterNotSent means the launch command still showed at the shell prompt and herdr refused every Enter sent to it.
-	ErrEnterNotSent = errors.New("the program never started, because its launch command still showed at the shell prompt and herdr could not send Enter to it")
+	// ErrEnterNotSent means the launch command still showed at the shell prompt and the multiplexer refused every Enter sent to it.
+	ErrEnterNotSent = errors.New("the program never started, because its launch command still showed at the shell prompt and the multiplexer could not send Enter to it")
 )
+
+// ProgramExited is Kickoff's failure when the multiplexer shows the worker's program finished
+// before the kickoff ran. errors.Is(err, ErrKickoffUnconfirmed) is true for it.
+type ProgramExited struct {
+	// Exit is how the program ended in the multiplexer's words, such as "exit status 1", or ""
+	// when it reports none.
+	Exit string
+	// Screen is the end of the program's screen on one line, or "" when it can't be read.
+	Screen string
+}
+
+func (e *ProgramExited) Error() string {
+	msg := "the program exited"
+	if e.Exit != "" {
+		msg += " (" + e.Exit + ")"
+	}
+	if e.Screen != "" {
+		msg += ", and its screen ended with: " + e.Screen
+	}
+	return msg
+}
+
+func (e *ProgramExited) Unwrap() error { return ErrKickoffUnconfirmed }
 
 var (
 	// ErrStatusUnknown means Kickoff found a worker that reports no status, as Claude does at
@@ -583,6 +610,8 @@ func (c *CLI) command(ctx context.Context, args ...string) *exec.Cmd {
 }
 
 var _ Herdr = (*CLI)(nil)
+
+func (c *CLI) Multiplexer() string { return "herdr" }
 
 // TabLabel is the label of a worker's tab, `<ticket> <title>`, or the ticket alone when it has no title.
 func TabLabel(ticket, title string) string {

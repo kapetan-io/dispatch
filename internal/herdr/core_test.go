@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -1132,4 +1133,60 @@ func TestCoreKickoffConfirmsADoneWorkerWhoseTurnWentUpAfterEnter(t *testing.T) {
 
 	assert.Len(t, calls.Params(t, "terminal.send"), 1)
 	assert.Len(t, calls.Params(t, "terminal.keys"), 1)
+}
+
+func TestCoreKickoffReportsHowAFinishedProgramEndedAndWhatItsScreenShowed(t *testing.T) {
+	exited := worker("t1", "spA", "tbA", "")
+	exited.state, exited.program, exited.reason = "finished", "", "killed"
+	core, _ := coreStandIn(t, map[string][]string{
+		"terminal.get":  {ok(term(exited))},
+		"terminal.read": {ok(`{"text":"dispatch: no real claude found on PATH\n","complete":true,"how":"screen"}`)},
+	})
+
+	err := core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup)
+
+	var ended *herdr.ProgramExited
+	require.ErrorAs(t, err, &ended)
+	require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
+	assert.Equal(t, "killed", ended.Exit)
+	assert.Equal(t, "dispatch: no real claude found on PATH", ended.Screen)
+}
+
+func TestCoreKickoffReportsNoExitForATerminalTheCoreStopped(t *testing.T) {
+	stopped := worker("t1", "spA", "tbA", "")
+	stopped.state, stopped.program, stopped.reason = "finished", "", "server_stop"
+	core, _ := coreStandIn(t, map[string][]string{"terminal.get": {ok(term(stopped))}})
+
+	err := core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup)
+
+	require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
+	var ended *herdr.ProgramExited
+	assert.False(t, errors.As(err, &ended))
+}
+
+func TestCoreKickoffReportsAnExitedProgramWhenTheSendFailsBecauseItFinished(t *testing.T) {
+	finished := worker("t1", "spA", "tbA", "")
+	finished.state, finished.program, finished.reason = "finished", "", "killed"
+	core, _ := coreStandIn(t, map[string][]string{
+		"terminal.get":  {ok(term(worker("t1", "spA", "tbA", "idle"))), ok(term(finished))},
+		"terminal.send": {fails("terminal_finished", "the terminal finished")},
+	})
+
+	err := core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup)
+
+	var exited *herdr.ProgramExited
+	require.ErrorAs(t, err, &exited)
+	assert.Equal(t, "killed", exited.Exit)
+}
+
+func TestCoreKickoffReportsNoExitForATerminalThatIsNotFinished(t *testing.T) {
+	starting := worker("t1", "spA", "tbA", "")
+	starting.state, starting.program = "starting", ""
+	core, _ := coreStandIn(t, map[string][]string{"terminal.get": {ok(term(starting))}})
+
+	err := core.Kickoff(context.Background(), "t1", "/dispatch:build ENG-1", startup)
+
+	require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
+	var exited *herdr.ProgramExited
+	assert.False(t, errors.As(err, &exited))
 }

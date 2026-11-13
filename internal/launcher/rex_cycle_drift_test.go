@@ -160,7 +160,7 @@ func TestRexRunReportsAStoppedRexAndLaunchesNothing(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Contains(t, out.String(), "launch-worker")
-	assert.Contains(t, out.String(), "herdr unread: Rex is not running")
+	assert.Contains(t, out.String(), "Rex unread: Rex is not running")
 	_, statErr := os.Stat(c.server.Socket)
 	assert.True(t, os.IsNotExist(statErr))
 	leased, err := filepath.Glob(filepath.Join(c.root, "pool", ".treehouse", "*", "[0-9]*"))

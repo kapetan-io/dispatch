@@ -300,7 +300,11 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 	s.Viewer = viewer
 	at := s.ms()
 	if w.HerdrErr != nil {
-		s.herdrUnread = "herdr unread: " + w.HerdrErr.Error()
+		s.herdrUnread = w.HerdrErr.Error()
+		// A World recorded before the read error carried the multiplexer's name has no prefix.
+		if !strings.Contains(s.herdrUnread, " unread: ") {
+			s.herdrUnread = "herdr unread: " + s.herdrUnread
+		}
 	}
 	for label, err := range w.PoolErrs {
 		s.pools[label] = pool{unknown: fmt.Sprintf("treehouse pool %s unread: %v", label, err)}

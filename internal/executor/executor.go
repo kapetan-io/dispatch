@@ -142,7 +142,7 @@ func (e *Executor) WhyNotLaunch(w rules.Want, wd world.World) string {
 		return ""
 	}
 	if wd.HerdrErr != nil {
-		return "herdr was not read"
+		return e.Herdr.Multiplexer() + " was not read"
 	}
 	if wk := world.FindWorker(w.Subject, wd.Trees, wd.Snapshot); wk.State != world.NoWorker {
 		return "a worker is running"

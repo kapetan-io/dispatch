@@ -35,6 +35,7 @@ const (
 	StatusWorkspaceFailed      = "workspace_failed"
 	StatusAgentStartFailed     = "agent_start_failed"
 	StatusInjectionUnconfirmed = "injection_unconfirmed"
+	StatusProgramExited        = "program_exited"
 )
 
 // Typing is where a launch notes what it types into the worker, so the prompt hook can tell
@@ -66,9 +67,9 @@ type Options struct {
 	// Typed is told the kickoff before it is typed, so the prompt hook labels it as dispatch's.
 	// Defaults to noting nothing.
 	Typed Typing
-	// PreflightTimeout bounds the wait for the herdr server. Defaults to 60s.
+	// PreflightTimeout bounds the wait for the multiplexer to answer. Defaults to 60s.
 	PreflightTimeout time.Duration
-	// Pace is the unit of waiting between polls for the herdr server, which waits 5 units.
+	// Pace is the unit of waiting between polls for the multiplexer, which waits 5 units.
 	// Defaults to 1s.
 	Pace time.Duration
 	// Env is what the launcher's git commands and the default treehouse run with.
@@ -217,13 +218,28 @@ func (l *launch) run(ctx context.Context) Result {
 			l.workspaceOpen = true
 		}
 		l.opts.Typed.Clear(l.tree)
-		program := req.Program.Name
-		detail := program + " started but herdr"
+		program, name := req.Program.Name, l.opts.Herdr.Multiplexer()
+		var exited *herdr.ProgramExited
+		if errors.As(err, &exited) {
+			detail := program + " exited"
+			if exited.Exit != "" {
+				detail += " (" + exited.Exit + ")"
+			}
+			detail += " before " + name + " showed the kickoff running."
+			if exited.Screen != "" {
+				detail += " Its screen ended with: " + exited.Screen + "."
+			}
+			return Result{
+				Status: StatusProgramExited, Detail: detail + " The workspace was closed and the next resync retries.",
+				Workspace: l.workspace, Pane: started.Pane, Worktree: l.tree,
+			}
+		}
+		detail := program + " started but " + name
 		switch {
 		case errors.Is(err, herdr.ErrEnterNotSent):
-			detail = program + " never started, because its launch command still showed at the shell prompt and herdr could not send Enter to it, and herdr"
+			detail = program + " never started, because its launch command still showed at the shell prompt and " + name + " could not send Enter to it, and " + name
 		case errors.Is(err, herdr.ErrNeverStarted):
-			detail = program + " never started, because its launch command still showed at the shell prompt after Enter was pressed on it, and herdr"
+			detail = program + " never started, because its launch command still showed at the shell prompt after Enter was pressed on it, and " + name
 		}
 		return Result{
 			Status:    StatusInjectionUnconfirmed,
@@ -282,7 +298,7 @@ func (l *launch) preflight(ctx context.Context) (Result, bool) {
 	waitCtx, cancel := clock.WithTimeout(ctx, l.opts.Clock, "launch preflight", l.opts.PreflightTimeout)
 	defer cancel()
 	unanswered := func(readErr error) Result {
-		return Result{Status: StatusHerdrUnavailable, Detail: fmt.Sprintf("herdr server not answering: %v", readErr)}
+		return Result{Status: StatusHerdrUnavailable, Detail: fmt.Sprintf("%s server not answering: %v", l.opts.Herdr.Multiplexer(), readErr)}
 	}
 	for {
 		_, err := l.opts.Herdr.Read(ctx)
@@ -292,12 +308,12 @@ func (l *launch) preflight(ctx context.Context) (Result, bool) {
 		if waitCtx.Err() != nil && ctx.Err() == nil {
 			return unanswered(err), false
 		}
-		l.log("waiting for herdr server...")
+		l.log("waiting for %s server...", l.opts.Herdr.Multiplexer())
 		if !l.sleep(waitCtx, 5*l.opts.Pace) {
 			if ctx.Err() == nil {
 				return unanswered(err), false
 			}
-			return Result{Status: StatusHerdrUnavailable, Detail: "interrupted while waiting for the herdr server"}, false
+			return Result{Status: StatusHerdrUnavailable, Detail: "interrupted while waiting for the " + l.opts.Herdr.Multiplexer() + " server"}, false
 		}
 	}
 }
@@ -620,7 +636,7 @@ func (l *launch) openWorkspace(ctx context.Context) (Result, bool) {
 	snap, err := l.opts.Herdr.Read(ctx)
 	if err != nil {
 		l.giveBack(ctx)
-		return Result{Status: StatusWorkspaceFailed, Detail: fmt.Sprintf("while reading herdr for %s: %v", l.tree, err), Worktree: l.tree}, false
+		return Result{Status: StatusWorkspaceFailed, Detail: fmt.Sprintf("while reading %s for %s: %v", l.opts.Herdr.Multiplexer(), l.tree, err), Worktree: l.tree}, false
 	}
 	for _, w := range snap.Workspaces {
 		if w.CheckoutPath == l.tree {

@@ -260,7 +260,7 @@ func (k rexKickoff) read(ctx context.Context) (observed, error) {
 		return observed{}, err
 	}
 	if proc.LastExit != nil {
-		return observed{}, nil
+		return observed{Exited: true, Exit: proc.LastExit.text()}, nil
 	}
 	o := observed{Alive: true, Status: "unknown"}
 	if _, o.Agent = k.r.kind(proc); !o.Agent {

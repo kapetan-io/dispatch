@@ -94,6 +94,9 @@ func (c *Core) WithProgress(w io.Writer) *Core {
 
 var _ Herdr = (*Core)(nil)
 
+// Multiplexer is "herdr", not "herdr-core", because the person sees the Herdr app.
+func (c *Core) Multiplexer() string { return "herdr" }
+
 // terminal is what herdr-core reports about one terminal.
 type terminal struct {
 	Address    string            `json:"address"`
@@ -470,7 +473,14 @@ func (k coreKickoff) read(ctx context.Context) (observed, error) {
 		return observed{}, err
 	}
 	_, agent := k.c.runs(t)
-	return observed{Alive: t.live(), Agent: agent, Status: t.status(), Turn: t.Turn}, nil
+	o := observed{Alive: t.live(), Agent: agent, Status: t.status(), Turn: t.Turn}
+	if t.State == "finished" && !slices.Contains(resumable, t.Reason) {
+		o.Exited = true
+		if t.Reason != "exited" {
+			o.Exit = t.Reason
+		}
+	}
+	return o, nil
 }
 
 func (k coreKickoff) screen(ctx context.Context, history int) string {
