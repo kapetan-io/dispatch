@@ -57,6 +57,25 @@ func newRexRig(t *testing.T, serverEnv ...string) *rexRig {
 	}}
 }
 
+// newBarePathRexRig is newRexRig with a server started on the bare path launchd gives a login
+// item, and with the stand-in Claude on dispatch's own PATH only.
+func newBarePathRexRig(t *testing.T) *rexRig {
+	t.Helper()
+	server := herdrtest.StartRexServer(t, herdrtest.CleanEnv().With("PATH", "/usr/bin:/bin:/usr/sbin:/sbin"))
+	dispatchEnv := herdrtest.CleanEnv().With("PATH", herdrtest.StandInClaude(t)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	plugin, err := filepath.Abs("../..")
+	require.NoError(t, err)
+	repo, tree := herdrtest.NewShortCheckout(t)
+	stateDir := t.TempDir()
+	rex := herdr.NewRex(stateDir).WithSocket(server.Socket).WithEnv(dispatchEnv).WithKinds("claude").WithDispatchBin(dispatchBinary(t)).WithPace(100 * time.Millisecond)
+	space, err := rex.OpenWorkspace(context.Background(), herdr.NewWorkspace{Repo: repo, Path: tree})
+	require.NoError(t, err)
+	program := harness.ClaudeCode{}.Program(harness.Start{Model: "sonnet", PluginRoot: plugin, Session: rexSessionID})
+	return &rexRig{stateDir: stateDir, server: server, rex: rex, repo: repo, worker: herdr.Worker{
+		Workspace: space, Dir: tree, Label: "ENG-1 title", Name: "eng-1", PluginRoot: plugin, Program: program,
+	}}
+}
+
 func (r *rexRig) agent(t *testing.T) (herdr.Agent, bool) {
 	t.Helper()
 	snap, err := r.rex.Read(context.Background())
@@ -106,6 +125,14 @@ func TestRexStartsAWorkerAnswersItsDialogsAndTypesTheKickoff(t *testing.T) {
 	require.NoError(t, json.Unmarshal(b, &recorded))
 	assert.Contains(t, recorded.Args, "--session-id")
 	assert.Contains(t, recorded.Args, rexSessionID)
+}
+
+func TestRexWorkerThroughTheClaudeShimFindsClaudeOnDispatchsPathWhenTheServerHasABarePath(t *testing.T) {
+	r := newBarePathRexRig(t)
+
+	r.launched(t)
+
+	r.awaitStatus(t, "working")
 }
 
 func TestRexRefusesASecondWorkerOnTheTreeAndClosesNothing(t *testing.T) {
