@@ -37,7 +37,7 @@ Fix and reply to a confirmed finding, resolve it, and record the fix as a diverg
 
 ## A question
 
-A question is not a claim. Answer a question about what the code does on the PR, with evidence. If the answer is a call the Rules reserve for the user, move the ticket to Needs Human, ask in chat, and post nothing on the PR. A `## Manager decision` comment on the ticket answers it the same as the user: move the ticket back to In Progress and reply on the PR quoting it. When the user answers in chat, write the answer on the ticket, move the ticket back to In Progress, and reply to the question on the PR quoting their answer. Any other question is yours to answer on the PR. Resolve a question's thread once you have answered it.
+A question is not a claim. Answer a question about what the code does on the PR, with evidence. If the answer is a call the Rules reserve for the user, move the ticket to Needs Human, ask in chat, and post nothing on the PR. A `## Manager decision` comment on the ticket, as the build Rules describe it, answers it the same as the user: move the ticket back to In Progress and reply on the PR quoting it. When the user answers in chat, write the answer on the ticket, move the ticket back to In Progress, and reply to the question on the PR quoting their answer. Any other question is yours to answer on the PR. Resolve a question's thread once you have answered it.
 
 ## A failing check
 
