@@ -353,3 +353,19 @@ func TestRexStreamNamesTheWorkerPaneWhenItsWorkspaceCloses(t *testing.T) {
 	defer mu.Unlock()
 	assert.Equal(t, started.Pane, named[len(named)-1])
 }
+
+func TestRexKickoffReportsTheExitAndScreenOfAClaudeThatExitsAtOnce(t *testing.T) {
+	shim := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(shim, "claude"), []byte("#!/bin/sh\necho 'dispatch: no real claude found on PATH'\nexit 1\n"), 0o755))
+	r := newRexRig(t, "PATH="+shim+string(os.PathListSeparator)+os.Getenv("PATH"))
+	r.worker.Program.PathFirst = []string{shim}
+	started, err := r.rex.StartWorker(context.Background(), r.worker)
+	require.NoError(t, err)
+
+	err = r.rex.Kickoff(context.Background(), started.Pane, "/dispatch:build ENG-1", r.worker.Program.Startup)
+
+	var exited *herdr.ProgramExited
+	require.ErrorAs(t, err, &exited)
+	assert.Equal(t, "exit status 1", exited.Exit)
+	assert.Contains(t, exited.Screen, "dispatch: no real claude found on PATH")
+}

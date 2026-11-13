@@ -63,8 +63,12 @@ type standInBlock struct {
 	// Args is what followed the program in the block's command.
 	Args     []string
 	LastExit bool
-	Records  []standInRecord
-	Writes   []string
+	// ExitCode is the status last_exit reports once LastExit is set.
+	ExitCode int
+	// Screen is what the block's terminal shows.
+	Screen  string
+	Records []standInRecord
+	Writes  []string
 	// AfterWrite is the root state the block reports once anything is written to it.
 	AfterWrite string
 }
@@ -443,12 +447,16 @@ func (s *standInRex) blockMethod(raw []byte) (any, error) {
 	case "process":
 		reply := map[string]any{"last_exit": nil, "foreground": nil}
 		if b.LastExit {
-			reply["last_exit"] = map[string]any{}
+			reply["last_exit"] = map[string]any{"exit_code": b.ExitCode, "error": fmt.Sprintf("exit status %d", b.ExitCode)}
 		}
 		if b.Argv0 != "" {
 			reply["foreground"] = map[string]string{"argv0": b.Argv0}
 		}
 		return reply, nil
+	case "size":
+		return map[string]any{"rows": 24, "cols": 80}, nil
+	case "format":
+		return map[string]any{"content": b.Screen}, nil
 	case "program_status":
 		records := []map[string]string{}
 		for _, r := range b.Records {
@@ -1013,4 +1021,36 @@ func TestRexKickoffClearsTheBoxAndPressesNoEnterWhenTheStatusMovesWhileTyping(t 
 	assert.Equal(t, "/dispatch:build ENG-1", writes[0])
 	assert.Contains(t, writes, "\x15\x15\x15")
 	assert.NotContains(t, writes, "\r")
+}
+
+func TestRexKickoffReportsTheExitAndScreenOfAProgramThatExitedAtOnce(t *testing.T) {
+	r := newStandInRig(t)
+	started, err := r.rex.StartWorker(context.Background(), r.worker("repo", shortTree(t)))
+	require.NoError(t, err)
+	session, block, _ := strings.Cut(started.Pane, "/")
+	r.edit(t, func(s *standInRex) {
+		b := s.find(session, block)
+		b.LastExit, b.ExitCode, b.Screen = true, 1, "$ claude\ndispatch: no real claude found on PATH\n"
+	})
+
+	err = r.rex.Kickoff(context.Background(), started.Pane, "/dispatch:build ENG-1", r.program.Startup)
+
+	var exited *herdr.ProgramExited
+	require.ErrorAs(t, err, &exited)
+	require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
+	assert.Equal(t, "exit status 1", exited.Exit)
+	assert.Equal(t, "$ claude dispatch: no real claude found on PATH", exited.Screen)
+}
+
+func TestRexKickoffReportsNoExitForAProgramStillRunning(t *testing.T) {
+	r := newStandInRig(t)
+	started, err := r.rex.StartWorker(context.Background(), r.worker("repo", shortTree(t)))
+	require.NoError(t, err)
+	r.setStatus(t, started.Pane, idle("blocked"))
+
+	err = r.rex.Kickoff(context.Background(), started.Pane, "/dispatch:build ENG-1", r.program.Startup)
+
+	require.ErrorIs(t, err, herdr.ErrKickoffUnconfirmed)
+	var exited *herdr.ProgramExited
+	assert.False(t, errors.As(err, &exited))
 }

@@ -10,6 +10,11 @@ import (
 type observed struct {
 	// Alive is false once the terminal is gone or its program finished.
 	Alive bool
+	// Exited is true when the program finished by itself (exited, was killed or crashed), not
+	// because the multiplexer stopped it or the terminal went away. It implies !Alive.
+	Exited bool
+	// Exit is how the program ended in the multiplexer's words, or "" when it reports none. Only Exited sets it.
+	Exit string
 	// Agent is true when a program of an agent kind runs there.
 	Agent bool
 	// Status is idle, done, working, blocked or unknown.
@@ -61,7 +66,7 @@ func (w workLog) kickoff(ctx context.Context, h kickoffHost, text string, startu
 		}
 		o, err := h.read(ctx)
 		if err == nil && !o.Alive {
-			return ErrKickoffUnconfirmed
+			return w.exitError(ctx, h, o)
 		}
 		if err == nil && o.Agent {
 			switch o.Status {
@@ -88,6 +93,10 @@ func (w workLog) kickoff(ctx context.Context, h kickoffHost, text string, startu
 		status := seen.Status
 		res, err := h.send(ctx, text, status)
 		if err != nil {
+			// A send to a program that finished since the last read fails the same way as any other send.
+			if now, readErr := h.read(ctx); readErr == nil && !now.Alive {
+				return w.exitError(ctx, h, now)
+			}
 			return ErrKickoffUnconfirmed
 		}
 		switch res.Outcome {
@@ -96,8 +105,10 @@ func (w workLog) kickoff(ctx context.Context, h kickoffHost, text string, startu
 		case sendNotStarted:
 			// Nothing was typed, so the worker leaving idle is no confirmation. Another try is
 			// safe unless the worker now needs a person or says nothing.
-			if seen, err = h.read(ctx); err != nil || !seen.Alive {
+			if seen, err = h.read(ctx); err != nil {
 				return ErrKickoffUnconfirmed
+			} else if !seen.Alive {
+				return w.exitError(ctx, h, seen)
 			}
 			if seen.Status == "blocked" || seen.Status == "unknown" {
 				return ErrKickoffUnconfirmed
@@ -105,8 +116,10 @@ func (w workLog) kickoff(ctx context.Context, h kickoffHost, text string, startu
 			continue
 		}
 		// The host could not tell whether the text started a turn, so give the status time to move before judging.
-		if seen, err = w.awaitLeft(ctx, h, status); err != nil || !seen.Alive {
+		if seen, err = w.awaitLeft(ctx, h, status); err != nil {
 			return ErrKickoffUnconfirmed
+		} else if !seen.Alive {
+			return w.exitError(ctx, h, seen)
 		}
 		now := seen.Status
 		// A turn token past the send's own means the text ran, whatever the status reads now.
@@ -119,8 +132,10 @@ func (w workLog) kickoff(ctx context.Context, h kickoffHost, text string, startu
 			// Still at the prompt: press Enter if the text sits in the input box, else retype.
 			if strings.Contains(h.screen(ctx, 30), probeOf(text)) {
 				h.press(ctx, []string{"Enter"})
-				if seen, err = w.awaitLeft(ctx, h, now); err != nil || !seen.Alive {
+				if seen, err = w.awaitLeft(ctx, h, now); err != nil {
 					return ErrKickoffUnconfirmed
+				} else if !seen.Alive {
+					return w.exitError(ctx, h, seen)
 				}
 				after := seen.Status
 				if seen.Turn > res.Turn || after == "working" || after == "blocked" || (after == "done" && now == "idle") {
@@ -133,6 +148,26 @@ func (w workLog) kickoff(ctx context.Context, h kickoffHost, text string, startu
 		}
 	}
 	return ErrKickoffUnconfirmed
+}
+
+// exitScreenChars bounds the screen a failure quotes, because the ticket's escalation comment repeats it.
+const (
+	exitScreenChars = 300
+	// exitScreenLines is the history read with the screen, enough to hold a launch error that scrolled.
+	exitScreenLines = 10
+)
+
+// exitError is why the kickoff stopped on a read that shows the program gone: a ProgramExited with
+// the end of its screen when the multiplexer shows the program finished, else ErrKickoffUnconfirmed.
+func (w workLog) exitError(ctx context.Context, h kickoffHost, o observed) error {
+	if !o.Exited {
+		return ErrKickoffUnconfirmed
+	}
+	screen := strings.Join(strings.Fields(h.screen(ctx, exitScreenLines)), " ")
+	if r := []rune(screen); len(r) > exitScreenChars {
+		screen = "..." + string(r[len(r)-exitScreenChars:])
+	}
+	return &ProgramExited{Exit: o.Exit, Screen: screen}
 }
 
 // awaitLeft reads until the status is no longer from, for up to kickoffWaits reads, and returns the last read.

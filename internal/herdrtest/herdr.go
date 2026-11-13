@@ -63,6 +63,7 @@ type Herdr struct {
 	kinds       []string          // the agent kinds Read keeps, or every kind when unset
 	sinks       []*sink           // the streams Changes holds open
 	live        int               // how many streams have named their first panes
+	multiplexer string            // what Multiplexer returns, "herdr" when unset
 	later       map[string]string // pane to the status Read applies, and streams, after it took its snapshot
 }
 
@@ -75,6 +76,23 @@ type sink struct {
 // New returns an empty Herdr that records its calls in j.
 func New(j *journal.Journal) *Herdr {
 	return &Herdr{journal: j, failures: map[string]error{}, names: map[string]string{}, later: map[string]string{}}
+}
+
+// NameMultiplexer sets the name Multiplexer returns, so a test sees the messages built for Rex.
+func (h *Herdr) NameMultiplexer(name string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.multiplexer = name
+}
+
+// Multiplexer is "herdr" until NameMultiplexer sets another.
+func (h *Herdr) Multiplexer() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.multiplexer == "" {
+		return "herdr"
+	}
+	return h.multiplexer
 }
 
 // AcceptKinds makes Read leave out agents of every other kind, as the real adapter does

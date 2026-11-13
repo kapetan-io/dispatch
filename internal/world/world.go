@@ -279,7 +279,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 			if !src.Tolerant {
 				return w, err
 			}
-			w.HerdrErr = err
+			w.HerdrErr = fmt.Errorf("%s unread: %w", src.Herdr.Multiplexer(), err)
 		}
 		w.Snapshot = snap
 		readErrs := map[string]error{}
@@ -434,7 +434,7 @@ func (w *World) joinWorker(src Sources, scope Scope, t ticket.Ticket) {
 		}
 	}
 	if wk.State != NoWorker && (scope.Is(t, ticket.InProgress) || scope.Is(t, ticket.InReview)) {
-		w.readSession(src.StateDir, t.Identifier, wk)
+		w.readSession(src.Herdr.Multiplexer(), src.StateDir, t.Identifier, wk)
 	}
 }
 
@@ -507,9 +507,9 @@ func ReadPanes(ctx context.Context, src Sources, scope Scope, prev World, panes 
 // readSession reads the log of the worker's current session. With no session from herdr
 // the log is unknown, never another session's, because a tree holds the logs of every
 // session that ran in it.
-func (w *World) readSession(stateDir, ticket string, wk Worker) {
+func (w *World) readSession(multiplexer, stateDir, ticket string, wk Worker) {
 	if wk.Session == "" {
-		w.SessionErrs[ticket] = errors.New("herdr reports no session for the worker")
+		w.SessionErrs[ticket] = errors.New(multiplexer + " reports no session for the worker")
 		return
 	}
 	log, err := sessionlog.Read(stateDir, wk.TreePath, wk.Session)

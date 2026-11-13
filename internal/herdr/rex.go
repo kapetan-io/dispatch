@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -87,6 +88,8 @@ func (r *Rex) WithTrace(path string) *Rex {
 }
 
 var _ Herdr = (*Rex)(nil)
+
+func (r *Rex) Multiplexer() string { return "Rex" }
 
 const (
 	terminalFlavor = "com.superlogical.terminal.shell"
@@ -208,10 +211,27 @@ func repoSession(sessions []rexSession, label string) (rexSession, bool) {
 
 // rexProcess is what a block reports of its program.
 type rexProcess struct {
-	LastExit   *struct{} `json:"last_exit"`
+	LastExit   *rexExit `json:"last_exit"`
 	Foreground *struct {
 		Argv0 string `json:"argv0"`
 	} `json:"foreground"`
+}
+
+// rexExit is how a block's program ended.
+type rexExit struct {
+	Code  *int   `json:"exit_code"`
+	Error string `json:"error"`
+}
+
+// text is the end in Rex's own words, "exit status 1", or "" when it reports none.
+func (e rexExit) text() string {
+	switch {
+	case e.Error != "":
+		return e.Error
+	case e.Code != nil:
+		return "exit status " + strconv.Itoa(*e.Code)
+	}
+	return ""
 }
 
 // kind is the agent kind the block's foreground program is, by the base name of its argv0.

@@ -435,6 +435,46 @@ func TestLaunchClosesTheWorkspaceWhenTheKickoffNeverRuns(t *testing.T) {
 	assert.Empty(t, d.Trees.Returned())
 }
 
+func TestLaunchNamesTheMultiplexerInUseWhenTheKickoffNeverRuns(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	d.fakes().Herdr.NameMultiplexer("Rex")
+	d.fakes().Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "injection_unconfirmed", out.result["status"])
+	assert.Contains(t, out.result["detail"], "Claude started but Rex never showed the kickoff running")
+	assert.NotContains(t, out.result["detail"], "herdr")
+}
+
+func TestLaunchReportsTheExitAndScreenOfAProgramThatExitedBeforeTheKickoff(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	d.fakes().Herdr.NameMultiplexer("Rex")
+	d.fakes().Herdr.Fail(herdrtest.OpKickoff, &herdr.ProgramExited{Exit: "exit status 1", Screen: "dispatch: no real claude found on PATH"})
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "program_exited", out.result["status"])
+	assert.Equal(t, "Claude exited (exit status 1) before Rex showed the kickoff running. Its screen ended with: dispatch: no real claude found on PATH. The workspace was closed and the next resync retries.", out.result["detail"])
+	assert.Equal(t, []string{"w2"}, d.fakes().Herdr.ClosedWorkspaces())
+}
+
+func TestLaunchReportsAnExitWithNoStatusOrScreenWithoutQuotingOne(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	d.fakes().Herdr.Fail(herdrtest.OpKickoff, &herdr.ProgramExited{})
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	assert.Equal(t, "program_exited", out.result["status"])
+	assert.Equal(t, "Claude exited before herdr showed the kickoff running. The workspace was closed and the next resync retries.", out.result["detail"])
+}
+
 func TestLaunchReportsClaudeNeverStartedWhenItsCommandStaysAtTheShellPrompt(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
