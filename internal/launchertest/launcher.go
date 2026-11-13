@@ -21,6 +21,7 @@ type Launcher struct {
 	launched []launcher.Request
 	answer   *launcher.Result
 	stalled  bool
+	held     chan struct{}
 }
 
 // New returns a Launcher that records its calls in j.
@@ -42,6 +43,22 @@ func (l *Launcher) Stall() {
 	l.stalled = true
 }
 
+// Hold makes every launch from now on wait until Release.
+func (l *Launcher) Hold() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.held = make(chan struct{})
+}
+
+// Release lets the launches Hold is keeping end with the answer Answer gave.
+func (l *Launcher) Release() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.held != nil {
+		close(l.held)
+	}
+}
+
 // Launched lists the requests, oldest first.
 func (l *Launcher) Launched() []launcher.Request {
 	l.mu.Lock()
@@ -53,8 +70,11 @@ func (l *Launcher) Launch(ctx context.Context, r launcher.Request) launcher.Resu
 	l.journal.Record("launcher", "launch", r.Ticket, r.Branch)
 	l.mu.Lock()
 	l.launched = append(l.launched, r)
-	stalled := l.stalled
+	stalled, held := l.stalled, l.held
 	l.mu.Unlock()
+	if held != nil {
+		<-held
+	}
 	if stalled {
 		<-ctx.Done()
 		return launcher.Result{Status: "agent_start_failed", Detail: "the launch outlasted its deadline", Ticket: r.Ticket}

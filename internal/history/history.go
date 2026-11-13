@@ -561,7 +561,7 @@ func CycleLine(now int64, why string, res rules.Result) Cycle {
 
 // CoveredBy says how a receipt stands in for running an action again.
 func CoveredBy(rc ledger.Receipt) string {
-	outcome := string(rc.Outcome)
+	outcome := rc.State()
 	if outcome == "" {
 		outcome = "attempted"
 	}
