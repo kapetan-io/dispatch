@@ -75,7 +75,7 @@ func TestAnExemptionReadingAnUnknownFactHoldsTheRulesItNames(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig, Rules: rule(greetRule + `
 exempt({ name: "skip-idle", each: "ticket", rules: ["greet"], if: (t, ctx) => ctx.worker.of(t).state === "idle" });`)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Tools().Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
+	d.Tools().Multiplexer.Fail(herdrtest.OpRead, errors.New("herdr is down"))
 
 	res := d.Run("rules", "check")
 
@@ -89,12 +89,12 @@ func TestAHeldExemptionActsOnceItCanBeRead(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig, Rules: rule(greetRule + `
 exempt({ name: "skip-idle", each: "ticket", rules: ["greet"], if: (t, ctx) => ctx.worker.of(t).state === "idle" });`)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.Tools().Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
+	d.Tools().Multiplexer.Fail(herdrtest.OpRead, errors.New("herdr is down"))
 
 	d.Tick()
 
 	assert.Equal(t, []string{"ENG-1: bye"}, d.Linear.Comments())
-	d.Tools().Herdr.Fail(herdrtest.OpRead, nil)
+	d.Tools().Multiplexer.Fail(herdrtest.OpRead, nil)
 	d.Tick()
 	assert.ElementsMatch(t, []string{"ENG-1: bye", "ENG-1: hi"}, d.Linear.Comments())
 }
@@ -183,7 +183,7 @@ func TestReplayOfACycleWithAnExemptionShowsNoDifferences(t *testing.T) {
 exempt({ name: "skip-eng-1", each: "ticket", rules: ["greet"], if: (t) => t.id === "ENG-1" });
 exempt({ name: "skip-idle", each: "ticket", rules: ["farewell"], if: (t, ctx) => ctx.worker.of(t).state === "idle" });`)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
-	d.Tools().Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
+	d.Tools().Multiplexer.Fail(herdrtest.OpRead, errors.New("herdr is down"))
 	d.Tick()
 	d.Stop()
 

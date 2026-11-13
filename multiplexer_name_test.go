@@ -17,8 +17,8 @@ func TestTickEscalatesAProgramThatExitedBeforeTheKickoffNamingRexItsExitAndItsSc
 	d := newDispatch(t, dispatchOptions{})
 	d.RealLauncher()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.tools.Herdr.NameMultiplexer("Rex")
-	d.tools.Herdr.Fail(herdrtest.OpKickoff, &herdr.ProgramExited{Exit: "exit status 1", Screen: "dispatch: no real claude found on PATH"})
+	d.tools.Multiplexer.NameMultiplexer("Rex")
+	d.tools.Multiplexer.Fail(herdrtest.OpKickoff, &herdr.ProgramExited{Exit: "exit status 1", Screen: "dispatch: no real claude found on PATH"})
 
 	res := d.Run("tick")
 	require.ErrorContains(t, res.Err, "ENG-1 launch failed: program_exited: Claude exited (exit status 1) before Rex showed the kickoff running")
@@ -40,8 +40,8 @@ func TestTickEscalatesAProgramStillRunningAtTheKickoffNamingRex(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.RealLauncher()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.tools.Herdr.NameMultiplexer("Rex")
-	d.tools.Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
+	d.tools.Multiplexer.NameMultiplexer("Rex")
+	d.tools.Multiplexer.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
 
 	_ = d.Run("tick")
 	d.Advance(time.Second)
@@ -58,7 +58,7 @@ func TestTickEscalationNamesHerdrWhenHerdrIsTheMultiplexer(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.RealLauncher()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.tools.Herdr.Fail(herdrtest.OpKickoff, &herdr.ProgramExited{Exit: "killed"})
+	d.tools.Multiplexer.Fail(herdrtest.OpKickoff, &herdr.ProgramExited{Exit: "killed"})
 
 	_ = d.Run("tick")
 	d.Advance(time.Second)
@@ -73,8 +73,8 @@ func TestExplainNamesRexWhenTheRunCouldNotReadIt(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.tools.Herdr.NameMultiplexer("Rex")
-	d.tools.Herdr.Fail(herdrtest.OpRead, errors.New("Rex is not running"))
+	d.tools.Multiplexer.NameMultiplexer("Rex")
+	d.tools.Multiplexer.Fail(herdrtest.OpRead, errors.New("Rex is not running"))
 
 	run := d.Run("tick")
 	explain := d.Run("explain", "ENG-1")

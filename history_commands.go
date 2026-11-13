@@ -233,7 +233,7 @@ var quietKinds = []string{"nudge", "notify", "comment", "post"}
 // it wants, with the memory that cycle leaves, because a message's once key can hold a time that
 // memory first saw.
 func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *world.Memory, at time.Time, resync int, local *localticket.Listing) ([]ledger.Receipt, *world.Memory, error) {
-	opts = withHerdr(opts, cfg, nil)
+	opts = withMultiplexer(opts, cfg, nil)
 	loaded, err := loadRules(opts, cfg)
 	if err != nil {
 		return nil, nil, err
@@ -302,7 +302,7 @@ func firstUnread(w world.World) error {
 	for label, err := range w.PoolErrs {
 		return fmt.Errorf("the %s pool: %w", label, err)
 	}
-	for _, err := range []error{w.LinearErr, w.LocalErr, w.HerdrErr, w.HoldersErr, w.ChildrenErr, w.InboxErr} {
+	for _, err := range []error{w.LinearErr, w.LocalErr, w.MultiplexerErr, w.HoldersErr, w.ChildrenErr, w.InboxErr} {
 		if err != nil {
 			return err
 		}

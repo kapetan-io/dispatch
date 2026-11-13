@@ -15,7 +15,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 )
 
-// Kind is the config kind and herdr agent kind the fake registers under.
+// Kind is the config kind and multiplexer agent kind the fake registers under.
 const Kind = "fake"
 
 // Harness is a program that is not Claude Code, so a test can launch something whose

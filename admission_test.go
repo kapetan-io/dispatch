@@ -24,7 +24,7 @@ func (d *Dispatch) ExactRules() { d.exactRules = true }
 func (l *Linear) CommentAttempts() int { return l.d.linear.CallsTo(lineartest.OnComment) }
 
 // Started lists the agents the built-in launcher started.
-func (w *Workers) Started() []herdr.Worker { return w.d.tools.Herdr.Started() }
+func (w *Workers) Started() []herdr.Worker { return w.d.tools.Multiplexer.Started() }
 
 func TestTickLaunchesApprovedTicketWithNoWorker(t *testing.T) {
 	t.Parallel()
@@ -768,7 +768,7 @@ func TestAWorkerWhoseLaunchReturnedIsNotClosedWhateverItsAge(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Tick()
 	require.Len(t, d.Workers.Kicked(), 1)
-	d.tools.Herdr.SetStatus("w2:p2", "idle")
+	d.tools.Multiplexer.SetStatus("w2:p2", "idle")
 
 	d.Advance(10 * time.Minute)
 	d.Tick()
@@ -968,12 +968,12 @@ func TestAKickoffThatFailedWithTheWorkspaceStuckOpenIsClosedLater(t *testing.T) 
 	d := newDispatch(t, dispatchOptions{})
 	d.RealLauncher()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
-	d.tools.Herdr.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
-	d.tools.Herdr.Fail(herdrtest.OpCloseWorkspace, errors.New("herdr would not close it"))
+	d.tools.Multiplexer.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
+	d.tools.Multiplexer.Fail(herdrtest.OpCloseWorkspace, errors.New("herdr would not close it"))
 	_ = d.Run("tick")
-	d.tools.Herdr.Fail(herdrtest.OpCloseWorkspace, nil)
-	d.tools.Herdr.Fail(herdrtest.OpKickoff, nil)
-	d.tools.Herdr.SetStatus("w2:p2", "idle")
+	d.tools.Multiplexer.Fail(herdrtest.OpCloseWorkspace, nil)
+	d.tools.Multiplexer.Fail(herdrtest.OpKickoff, nil)
+	d.tools.Multiplexer.SetStatus("w2:p2", "idle")
 
 	d.Advance(10 * time.Minute)
 	d.Tick()

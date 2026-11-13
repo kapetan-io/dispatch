@@ -125,8 +125,8 @@ type State struct {
 	// reserved holds the tickets a launch or a promotion is under way for.
 	reserved map[string]bool
 	// treeRepo maps a tree path to the label of the repo whose pool holds it.
-	treeRepo    map[string]string
-	herdrUnread string
+	treeRepo          map[string]string
+	multiplexerUnread string
 	// scope holds both ticket systems' statuses, so every status question goes to the ticket's own system.
 	scope world.Scope
 	// linearUnread and localUnread hold the reason one ticket system's tickets weren't read, which makes
@@ -299,11 +299,11 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 	}
 	s.Viewer = viewer
 	at := s.ms()
-	if w.HerdrErr != nil {
-		s.herdrUnread = w.HerdrErr.Error()
+	if w.MultiplexerErr != nil {
+		s.multiplexerUnread = w.MultiplexerErr.Error()
 		// A World recorded before the read error carried the multiplexer's name has no prefix.
-		if !strings.Contains(s.herdrUnread, " unread: ") {
-			s.herdrUnread = "herdr unread: " + s.herdrUnread
+		if !strings.Contains(s.multiplexerUnread, " unread: ") {
+			s.multiplexerUnread = "herdr unread: " + s.multiplexerUnread
 		}
 	}
 	for label, err := range w.PoolErrs {
@@ -558,8 +558,8 @@ func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop sto
 	}
 	r := newRecord("worker", id, subject, rec)
 	r.stopFallback = fallback
-	if w.HerdrErr != nil {
-		r.unknownAll(s.herdrUnread)
+	if w.MultiplexerErr != nil {
+		r.unknownAll(s.multiplexerUnread)
 	} else if wk.State == world.NoWorker {
 		if t, ok := s.lookup("ticket", subject); ok {
 			if repo, ok := repoOf(t); ok && w.UnreadRepos[repo] {

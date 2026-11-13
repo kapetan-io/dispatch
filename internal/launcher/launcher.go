@@ -35,7 +35,7 @@ type Request struct {
 	// StartPR starts a new branch at the head of this PR in the repo, a fork's PR included, and
 	// writes no stack record and sets no upstream. A stacked launch and an existing branch ignore it.
 	StartPR int
-	// Program is what herdr runs for the worker, as a harness describes it. It
+	// Program is what the multiplexer runs for the worker, as a harness describes it. It
 	// has no default.
 	Program herdr.Program
 	// Kickoff is the first command typed into the worker. Defaults to

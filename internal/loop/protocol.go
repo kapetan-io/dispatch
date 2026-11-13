@@ -20,7 +20,7 @@ const (
 	// OpWatch and OpUnwatch add or remove a session on a ticket's followers.
 	OpWatch   = "watch"
 	OpUnwatch = "unwatch"
-	// OpWake reads herdr and the pools again and runs a cycle, without a resync, and
+	// OpWake reads the multiplexer and the pools again and runs a cycle, without a resync, and
 	// answers at once. A hook asks for it, so it must not retry what failed or wait.
 	OpWake = "wake"
 	// OpPrompt carries a UserPromptSubmit hook's report of a slash command, which the loop

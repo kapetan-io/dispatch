@@ -374,7 +374,7 @@ func TestTickKeepsTheTreeWhenTheWorkspaceWillNotClose(t *testing.T) {
 	d.Trees.Clean("ENG-1")
 	d.Workers.Running("ENG-1", "idle")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
-	d.tools.Herdr.Fail(herdrtest.OpCloseWorkspace, errors.New("exit status 1"))
+	d.tools.Multiplexer.Fail(herdrtest.OpCloseWorkspace, errors.New("exit status 1"))
 
 	res := d.Run("tick")
 
@@ -748,7 +748,7 @@ func TestTickClosesTheWorkspaceBeforeItReturnsTheTree(t *testing.T) {
 	// A worker still running in the tree could write to it after the return.
 	var order []string
 	d.tools.Treehouse.BeforeReturn(func(string) {
-		if d.tools.Herdr.HasWorkspace("w-ENG-1") {
+		if d.tools.Multiplexer.HasWorkspace("w-ENG-1") {
 			order = append(order, "open")
 		} else {
 			order = append(order, "closed")
@@ -771,7 +771,7 @@ func TestTickLeavesNoTabPaneOrAgentOfAClosedWorkspace(t *testing.T) {
 
 	d.Tick()
 
-	snap, err := d.tools.Herdr.Read(t.Context())
+	snap, err := d.tools.Multiplexer.Read(t.Context())
 	require.NoError(t, err)
 	require.Len(t, snap.Workspaces, 1)
 	assert.Equal(t, "w-ENG-2", snap.Workspaces[0].ID)
@@ -790,7 +790,7 @@ func TestTickKeepsTheTreeOfWorkWrittenWhileTheWorkspaceClosed(t *testing.T) {
 	d.Workers.Running("ENG-1", "working")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 	// The cycle saw a clean tree, and the worker writes a file as it is killed.
-	d.tools.Herdr.BeforeCloseWorkspace(func(string) {
+	d.tools.Multiplexer.BeforeCloseWorkspace(func(string) {
 		require.NoError(t, os.WriteFile(filepath.Join(path, "late.txt"), []byte("late\n"), 0o644))
 		require.NoError(t, exec.Command("git", "-C", path, "add", "late.txt").Run())
 	})
@@ -1054,7 +1054,7 @@ func TestTickKeepsATreeThatGainedACommitAfterTheCycleDecidedToReturnIt(t *testin
 	d.Workers.Running("ENG-1", "working")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 	// The cycle read a clean, pushed tree, and the worker commits as its workspace closes.
-	d.tools.Herdr.BeforeCloseWorkspace(func(string) { d.Trees.Commit(path) })
+	d.tools.Multiplexer.BeforeCloseWorkspace(func(string) { d.Trees.Commit(path) })
 
 	res := d.Run("tick")
 
@@ -1081,7 +1081,7 @@ func TestTickKeepsATreeThatGainedANestedRepoAfterTheCycleDecidedToReturnIt(t *te
 	d.Workers.Running("ENG-1", "working")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 	// An untracked repository is work git clean will not remove and returning would discard.
-	d.tools.Herdr.BeforeCloseWorkspace(func(string) {
+	d.tools.Multiplexer.BeforeCloseWorkspace(func(string) {
 		require.NoError(t, os.MkdirAll(filepath.Join(path, "nested"), 0o755))
 		d.Trees.Git(filepath.Join(path, "nested"), "init", "--initial-branch=main")
 	})
@@ -1120,7 +1120,7 @@ func TestTickDoesNotReturnATreeWhoseGitFailsAfterTheCycleDecidedToReturnIt(t *te
 	d.Workers.Running("ENG-1", "working")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 	// The cycle read the tree fine, and git cannot read it when the executor looks again.
-	d.tools.Herdr.BeforeCloseWorkspace(func(string) {
+	d.tools.Multiplexer.BeforeCloseWorkspace(func(string) {
 		require.NoError(t, os.WriteFile(filepath.Join(path, ".git", "HEAD"), []byte("garbage\n"), 0o644))
 	})
 

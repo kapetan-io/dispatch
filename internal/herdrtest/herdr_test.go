@@ -35,7 +35,7 @@ func TestStreamKeepsTheStreamContract(t *testing.T) {
 	}
 }
 
-func subjectOf(t *testing.T, fake *herdrtest.Herdr) herdrtest.Subject {
+func subjectOf(t *testing.T, fake *herdrtest.Multiplexer) herdrtest.Subject {
 	var workspaces int
 	layout := func(workspace string, tab int, label string) herdrtest.Layout {
 		l := herdrtest.Layout{Workspace: workspace, Tab: fmt.Sprintf("%s:t%d", workspace, tab), Pane: fmt.Sprintf("%s:p%d", workspace, tab)}
@@ -45,10 +45,10 @@ func subjectOf(t *testing.T, fake *herdrtest.Herdr) herdrtest.Subject {
 	}
 	tabs, started := map[string]int{}, map[string]bool{}
 	return herdrtest.Subject{
-		Herdr:      fake,
-		PluginRoot: "/plugin",
-		Program:    harness.ClaudeCode{}.Program(harness.Start{Model: "sonnet", PluginRoot: "/plugin"}),
-		Checkout:   func() (string, string) { return herdrtest.NewCheckout(t) },
+		Multiplexer: fake,
+		PluginRoot:  "/plugin",
+		Program:     harness.ClaudeCode{}.Program(harness.Start{Model: "sonnet", PluginRoot: "/plugin"}),
+		Checkout:    func() (string, string) { return herdrtest.NewCheckout(t) },
 		Workspace: func(label string) herdrtest.Layout {
 			workspaces++
 			id := fmt.Sprintf("w%d", workspaces)
@@ -77,7 +77,7 @@ func subjectOf(t *testing.T, fake *herdrtest.Herdr) herdrtest.Subject {
 	}
 }
 
-func seeded() *herdrtest.Herdr {
+func seeded() *herdrtest.Multiplexer {
 	fake := herdrtest.New(&journal.Journal{})
 	fake.AddWorkspace(herdr.Workspace{ID: "w1", Label: "ENG-1"})
 	fake.AddTab(herdr.Tab{ID: "w1:t1", Label: "ENG-1", WorkspaceID: "w1"})

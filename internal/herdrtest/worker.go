@@ -11,7 +11,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/herdr"
 )
 
-func (h *Herdr) OpenWorkspace(ctx context.Context, w herdr.NewWorkspace) (string, error) {
+func (h *Multiplexer) OpenWorkspace(ctx context.Context, w herdr.NewWorkspace) (string, error) {
 	h.journal.Record("herdr", "open-workspace", w.Path, w.Label)
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -38,7 +38,7 @@ func (h *Herdr) OpenWorkspace(ctx context.Context, w herdr.NewWorkspace) (string
 
 // openBare adds a workspace showing path, with one tab and one pane that hold
 // no agent.
-func (h *Herdr) openBare(label, path, tab string) string {
+func (h *Multiplexer) openBare(label, path, tab string) string {
 	id := "w" + strconv.Itoa(h.nextWorkspace())
 	h.workspaces = append(h.workspaces, herdr.Workspace{ID: id, Label: label, CheckoutPath: path})
 	h.tabs = append(h.tabs, herdr.Tab{ID: id + ":t1", Label: tab, WorkspaceID: id})
@@ -46,7 +46,7 @@ func (h *Herdr) openBare(label, path, tab string) string {
 	return id
 }
 
-func (h *Herdr) StartWorker(ctx context.Context, w herdr.Worker) (herdr.Started, error) {
+func (h *Multiplexer) StartWorker(ctx context.Context, w herdr.Worker) (herdr.Started, error) {
 	h.journal.Record("herdr", "start-worker", w.Workspace, w.Name)
 	if err := ctx.Err(); err != nil {
 		return herdr.Started{}, err
@@ -83,7 +83,7 @@ func (h *Herdr) StartWorker(ctx context.Context, w herdr.Worker) (herdr.Started,
 	return herdr.Started{Pane: pane, Agent: name}, nil
 }
 
-func (h *Herdr) Kickoff(ctx context.Context, pane, text string, startup herdr.Startup) error {
+func (h *Multiplexer) Kickoff(ctx context.Context, pane, text string, startup herdr.Startup) error {
 	h.journal.Record("herdr", "kickoff", pane, text)
 	if err := ctx.Err(); err != nil {
 		return err
@@ -108,7 +108,7 @@ func (h *Herdr) Kickoff(ctx context.Context, pane, text string, startup herdr.St
 
 // dropAgentlessTabs closes the tabs of a workspace that hold no agent, except
 // keep, which is the new worker's tab and does not hold its agent yet.
-func (h *Herdr) dropAgentlessTabs(workspace, keep string) {
+func (h *Multiplexer) dropAgentlessTabs(workspace, keep string) {
 	hasAgent := func(tab string) bool {
 		return slices.ContainsFunc(h.agents, func(a herdr.Agent) bool { return a.TabID == tab })
 	}
@@ -122,7 +122,7 @@ func (h *Herdr) dropAgentlessTabs(workspace, keep string) {
 	h.panes = slices.DeleteFunc(h.panes, func(p herdr.Pane) bool { return slices.Contains(gone, p.TabID) })
 }
 
-func (h *Herdr) agentNames() []string {
+func (h *Multiplexer) agentNames() []string {
 	names := make([]string, 0, len(h.names))
 	for pane, name := range h.names {
 		if slices.ContainsFunc(h.agents, func(a herdr.Agent) bool { return a.PaneID == pane }) {
@@ -133,7 +133,7 @@ func (h *Herdr) agentNames() []string {
 }
 
 // nextWorkspace is one more than the highest workspace number herdr shows.
-func (h *Herdr) nextWorkspace() int {
+func (h *Multiplexer) nextWorkspace() int {
 	highest := 0
 	for _, w := range h.workspaces {
 		if n, err := strconv.Atoi(strings.TrimPrefix(w.ID, "w")); err == nil {

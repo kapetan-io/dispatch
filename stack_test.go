@@ -78,7 +78,7 @@ func TestARuleLaunchesATicketOnAnotherTicketsPRHead(t *testing.T) {
 	assert.Equal(t, head, revParse(t, filepath.Join(filepath.Dir(d.Repo), "tree"), "HEAD"))
 	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
 	assert.Equal(t, head, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))
-	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-2 --base thrawn01/eng-1"}, d.fakes().Herdr.Kicked())
+	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-2 --base thrawn01/eng-1"}, d.fakes().Multiplexer.Kicked())
 	launches := d.receiptsOfKind("ENG-2", "launch")
 	require.Len(t, launches, 1)
 	assert.Equal(t, "ok: workspace w2, stacked on ENG-1 at "+head[:7]+" (thrawn01/eng-1)", launches[0].Detail)

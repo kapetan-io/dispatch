@@ -34,13 +34,15 @@ func (w *Workers) LabelWorkspace(id, label string) { w.d.labelWorkspace(id, labe
 func (w *Workers) LabelTab(ticket, label string) { w.d.labelTab(ticket, label) }
 
 // FailRenames makes herdr refuse every workspace rename with err until it is called with nil.
-func (w *Workers) FailRenames(err error) { w.d.tools.Herdr.Fail(herdrtest.OpRenameWorkspace, err) }
+func (w *Workers) FailRenames(err error) {
+	w.d.tools.Multiplexer.Fail(herdrtest.OpRenameWorkspace, err)
+}
 
 // SlowNextRename makes herdr apply the next workspace rename only after delay.
-func (w *Workers) SlowNextRename(delay time.Duration) { w.d.tools.Herdr.SlowNextRename(delay) }
+func (w *Workers) SlowNextRename(delay time.Duration) { w.d.tools.Multiplexer.SlowNextRename(delay) }
 
 // FailTabList makes herdr fail every read of a workspace's tabs with err.
-func (w *Workers) FailTabList(err error) { w.d.tools.Herdr.Fail(herdrtest.OpTabList, err) }
+func (w *Workers) FailTabList(err error) { w.d.tools.Multiplexer.Fail(herdrtest.OpTabList, err) }
 
 func (w *Workers) lastRename(t *testing.T) string {
 	t.Helper()

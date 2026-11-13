@@ -25,14 +25,14 @@ func TestLaunchStartsTheProgramOfAHarnessKindThatIsNotClaude(t *testing.T) {
 	out := d.launch("ENG-1", "thrawn01/eng-1", "--harness", "harness.fake-fast")
 
 	assert.Equal(t, "ok", out.result["status"])
-	require.Len(t, d.fakes().Herdr.Started(), 1)
-	program := d.fakes().Herdr.Started()[0].Program
+	require.Len(t, d.fakes().Multiplexer.Started(), 1)
+	program := d.fakes().Multiplexer.Started()[0].Program
 	assert.Equal(t, "fake", program.AgentKind)
 	assert.Equal(t, []string{"--model", "tiny"}, program.Argv)
 	assert.Empty(t, program.PathFirst)
-	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, d.fakes().Herdr.Kicked())
-	assert.Equal(t, []herdr.Startup{program.Startup}, d.fakes().Herdr.KickedWith())
-	snap, err := d.fakes().Herdr.Read(context.Background())
+	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, d.fakes().Multiplexer.Kicked())
+	assert.Equal(t, []herdr.Startup{program.Startup}, d.fakes().Multiplexer.KickedWith())
+	snap, err := d.fakes().Multiplexer.Read(context.Background())
 	require.NoError(t, err)
 	require.Len(t, snap.Agents, 1)
 	assert.Equal(t, "fake", snap.Agents[0].Kind)
@@ -46,16 +46,16 @@ func TestTickLaunchesTheProgramOfAHarnessKindThatIsNotClaude(t *testing.T) {
 
 	d.Tick()
 
-	require.Len(t, d.fakes().Herdr.Started(), 1)
-	assert.Equal(t, "fake", d.fakes().Herdr.Started()[0].Program.AgentKind)
-	assert.Equal(t, "tiny", modelOf(d.fakes().Herdr.Started()[0].Program))
+	require.Len(t, d.fakes().Multiplexer.Started(), 1)
+	assert.Equal(t, "fake", d.fakes().Multiplexer.Started()[0].Program.AgentKind)
+	assert.Equal(t, "tiny", modelOf(d.fakes().Multiplexer.Started()[0].Program))
 }
 
 func TestLaunchNamesTheProgramInTheReasonItNeverStarted(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, FakeHarness: true, Config: fakeTable})
 	d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpKickoff, herdr.ErrNeverStarted)
+	d.fakes().Multiplexer.Fail(herdrtest.OpKickoff, herdr.ErrNeverStarted)
 
 	out := d.launch("ENG-1", "thrawn01/eng-1", "--harness", "harness.fake-fast")
 
@@ -67,7 +67,7 @@ func TestLaunchNamesClaudeInTheReasonItNeverStarted(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
-	d.fakes().Herdr.Fail(herdrtest.OpKickoff, herdr.ErrNeverStarted)
+	d.fakes().Multiplexer.Fail(herdrtest.OpKickoff, herdr.ErrNeverStarted)
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
@@ -90,8 +90,8 @@ func TestLaunchKicksOffWithTheStartupScreensOfClaudeCode(t *testing.T) {
 
 	d.launch("ENG-1", "thrawn01/eng-1")
 
-	require.Len(t, d.fakes().Herdr.KickedWith(), 1)
-	startup := d.fakes().Herdr.KickedWith()[0]
+	require.Len(t, d.fakes().Multiplexer.KickedWith(), 1)
+	startup := d.fakes().Multiplexer.KickedWith()[0]
 	assert.Len(t, startup.Answers, 3)
 	assert.Equal(t, "❯", startup.Ready.String())
 	assert.Equal(t, "❯ *claude +--", startup.Unrun.String())

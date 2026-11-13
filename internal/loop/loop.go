@@ -44,8 +44,8 @@ type Options struct {
 	// Typed is what dispatch sent or typed into workers, which the loop compares with the commands the hooks report.
 	Typed *typed.Log
 	// HTTP is how a rule's then reaches the services config.toml names.
-	HTTP  httpservice.Services
-	Herdr herdr.Herdr
+	HTTP        httpservice.Services
+	Multiplexer herdr.Multiplexer
 	// Usage reports the Linear calls made so far.
 	Usage func() linear.Stats
 	// Viewer names the Linear user whose tickets are tracked.
@@ -215,7 +215,7 @@ func New(o Options) *Loop {
 	if o.Sources.Stderr == nil {
 		o.Sources.Stderr = o.Err
 	}
-	stream, _ := o.Sources.Herdr.(herdr.Stream)
+	stream, _ := o.Sources.Multiplexer.(herdr.Stream)
 	return &Loop{
 		stream: stream, named: map[string]bool{},
 		o: o, clock: o.Clock, scope: world.ScopeOf(o.Config),
@@ -696,7 +696,7 @@ func (l *Loop) onRead(m readDone) error {
 	if m.epoch != l.nudgeEpoch {
 		l.wd.Nudged = nil
 	}
-	// Herdr was read before a nudge that landed during this read, so the worker still
+	// The multiplexer was read before a nudge that landed during this read, so the worker still
 	// shows idle in it, and the overlay for that nudge has to survive it.
 	if len(l.nudgedDuring) > 0 {
 		late := maps.Clone(l.wd.Nudged)
@@ -708,7 +708,7 @@ func (l *Loop) onRead(m readDone) error {
 		}
 		l.wd.Nudged = late
 	}
-	// A read of herdr that sees a nudged worker working or blocked proves the nudge landed, so
+	// A read of the multiplexer that sees a nudged worker working or blocked proves the nudge landed, so
 	// its mark ends. One that sees it idle keeps the mark, since Claude may not have taken the
 	// nudge yet. A nudge sent while the read was out is newer than what it saw.
 	// A pane read speaks only for the workers on the panes it read.

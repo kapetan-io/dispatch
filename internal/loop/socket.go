@@ -118,7 +118,7 @@ func Ask(ctx context.Context, stateDir string, req Request) (Response, error) {
 	return resp, nil
 }
 
-// Wake asks the loop over stateDir to read herdr again and run a cycle, and does not wait for it. A hook
+// Wake asks the loop over stateDir to read the multiplexer again and run a cycle, and does not wait for it. A hook
 // uses it, because a prompt must not wait on a cycle. It returns ErrNotRunning when
 // nothing listens.
 func Wake(ctx context.Context, stateDir string) error {

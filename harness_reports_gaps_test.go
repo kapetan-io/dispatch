@@ -83,7 +83,7 @@ func TestWakeWritesNothingWhenNoRegisteredHarnessOwnsTheReportingPane(t *testing
 	}{
 		{"PaneHerdrDoesNotList", func(d *Dispatch) string { return "w404:p9" }},
 		{"PaneOfAnUnregisteredKind", func(d *Dispatch) string {
-			d.tools.Herdr.AddAgent(herdr.Agent{Kind: "pi", Status: "idle", PaneID: "pi:p1"})
+			d.tools.Multiplexer.AddAgent(herdr.Agent{Kind: "pi", Status: "idle", PaneID: "pi:p1"})
 			return "pi:p1"
 		}},
 	} {

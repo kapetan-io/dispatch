@@ -120,7 +120,7 @@ func realClaudeTakesDispatchsCommands(t *testing.T, host string) {
 	t.Setenv("DISPATCH_DRIFT_STATE", state)
 	// The loop and the launch share this pool.
 	t.Setenv("TREEHOUSE_ROOT", filepath.Join(root, "pool"))
-	var cli herdr.Herdr
+	var cli herdr.Multiplexer
 	var env []string
 	var shimEnv string
 	var core *herdrtest.CoreSession
@@ -171,7 +171,7 @@ func realClaudeTakesDispatchsCommands(t *testing.T, host string) {
 	done := make(chan error, 1)
 	go func() {
 		done <- dispatch.Run(ctx, []string{"run"}, dispatch.Options{
-			ConfigPath: config, StateDir: state, Herdr: cli, LinearKey: lineartest.Key,
+			ConfigPath: config, StateDir: state, Multiplexer: cli, LinearKey: lineartest.Key,
 			Linear: lineartest.New(nil).Connect, PullRequests: pullrequesttest.New(calls), Stdout: os.Stderr, Stderr: os.Stderr,
 		})
 	}()

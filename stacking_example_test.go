@@ -22,7 +22,7 @@ func TestTheStackingExampleLaunchesATicketOnItsBlockersReadyPR(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-2 --base thrawn01/eng-1"}, d.fakes().Herdr.Kicked())
+	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-2 --base thrawn01/eng-1"}, d.fakes().Multiplexer.Kicked())
 	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
 	assert.Equal(t, head, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))
 	assert.Empty(t, d.Linear.Comments())
@@ -37,7 +37,7 @@ func TestTheStackingExampleLeavesABlockerWithoutAReadyPRWaiting(t *testing.T) {
 
 	d.Tick()
 
-	assert.Empty(t, d.fakes().Herdr.Kicked())
+	assert.Empty(t, d.fakes().Multiplexer.Kicked())
 	assert.Empty(t, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
 }
 
@@ -55,7 +55,7 @@ func TestTheStackingExampleRelaunchesATicketThatOwesARestackWithOneLaunch(t *tes
 	d.Tick()
 
 	require.Len(t, d.receiptsOfKind("ENG-2", "launch"), 1)
-	kicked := d.fakes().Herdr.Kicked()
+	kicked := d.fakes().Multiplexer.Kicked()
 	require.Len(t, kicked, 1)
 	assert.Contains(t, kicked[0], "git rebase --onto origin/<default> "+fork)
 	assert.Equal(t, fork, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))

@@ -170,17 +170,17 @@ func (h *scenarioHost) run(rules *Rules, name string, body sobek.Callable) {
 // scenario is one test: a world that changes step by step, and the cycle that
 // runs after each change.
 type scenario struct {
-	host        *scenarioHost
-	rules       *Rules
-	cfg         config.Config
-	m           *scenarioModel
-	led         *ledger.Ledger
-	now         time.Time
-	pools       map[string]int
-	herdrUnread bool
-	poolUnread  map[string]bool
-	prUnread    map[string]bool
-	stackUnread map[string]bool
+	host              *scenarioHost
+	rules             *Rules
+	cfg               config.Config
+	m                 *scenarioModel
+	led               *ledger.Ledger
+	now               time.Time
+	pools             map[string]int
+	multiplexerUnread bool
+	poolUnread        map[string]bool
+	prUnread          map[string]bool
+	stackUnread       map[string]bool
 	// inbox holds the items the fixtures gave. inboxGood and inboxReadAt are what the last good read
 	// saw, which a failed read leaves as it was.
 	inbox       map[string]*inboxModel
@@ -406,8 +406,8 @@ func (s *scenario) cycle() {
 func (s *scenario) state() *State {
 	s.trackWaiting()
 	w := s.world()
-	if s.herdrUnread {
-		w.HerdrErr = errors.New("scenario marked it unread")
+	if s.multiplexerUnread {
+		w.MultiplexerErr = errors.New("scenario marked it unread")
 	}
 	for repo := range s.poolUnread {
 		w.UnreadRepos[repo] = true
@@ -557,7 +557,7 @@ func (s *scenario) explainWaiting() string {
 func (s *scenario) unread(source string) {
 	switch {
 	case source == "herdr":
-		s.herdrUnread = true
+		s.multiplexerUnread = true
 	case source == "treehouse":
 		for repo := range s.cfg.Repos {
 			s.poolUnread[repo] = true

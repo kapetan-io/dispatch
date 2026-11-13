@@ -17,10 +17,10 @@ import (
 )
 
 // Harness is the program that runs in a session. Dispatch reaches a worker's
-// program through herdr, so this port says what herdr runs.
+// program through the multiplexer, so this port says what it runs.
 //
 // Every adapter keeps these:
-//   - Its reports carry the session id herdr reports as Agent.Session.
+//   - Its reports carry the session id the multiplexer reports as Agent.Session.
 //   - A prompt report's text is exactly as typed, before expansion.
 //   - A program that can't say whether background tasks run reports
 //     Reported=false, never Running=0.
@@ -33,9 +33,9 @@ import (
 // input. Kickoff types the kickoff only once Ready matches, so an unlisted
 // dialog stalls the launch.
 type Harness interface {
-	// AgentKind is the herdr agent kind this harness is detected as.
+	// AgentKind is the multiplexer agent kind this harness is detected as.
 	AgentKind() string
-	// Program is how herdr runs this harness for one worker. It touches nothing;
+	// Program is how the multiplexer runs this harness for one worker. It touches nothing;
 	// the same Start gives the same Program.
 	Program(s Start) herdr.Program
 	// Stop parses a turn-ended report from the program's own hook or extension
@@ -76,7 +76,7 @@ type Start struct {
 }
 
 // Registry maps the kind a [harness.<name>] table names, such as "claude-code",
-// to its adapter. It is not herdr's agent kind, which Program carries.
+// to its adapter. It is not the multiplexer's agent kind, which Program carries.
 type Registry map[string]Harness
 
 // Kinds lists the kinds the registry has an adapter for, in no fixed order.
@@ -84,7 +84,7 @@ func (r Registry) Kinds() []string {
 	return slices.Collect(maps.Keys(r))
 }
 
-// Program describes how herdr runs the harness of kind with model.
+// Program describes how the multiplexer runs the harness of kind with model.
 func (r Registry) Program(kind, model, pluginRoot string) (herdr.Program, error) {
 	h, ok := r[kind]
 	if !ok {
@@ -93,7 +93,7 @@ func (r Registry) Program(kind, model, pluginRoot string) (herdr.Program, error)
 	return h.Program(Start{Model: model, PluginRoot: pluginRoot, Session: newSessionID()}), nil
 }
 
-// ForAgent returns the harness herdr detects as agentKind.
+// ForAgent returns the harness the multiplexer detects as agentKind.
 func (r Registry) ForAgent(agentKind string) (Harness, bool) {
 	for _, h := range r {
 		if h.AgentKind() == agentKind {
@@ -103,7 +103,7 @@ func (r Registry) ForAgent(agentKind string) (Harness, bool) {
 	return nil, false
 }
 
-// AgentKinds lists the herdr agent kinds of the registered harnesses, in no fixed order.
+// AgentKinds lists the multiplexer agent kinds of the registered harnesses, in no fixed order.
 func (r Registry) AgentKinds() []string {
 	var kinds []string
 	for _, h := range r {

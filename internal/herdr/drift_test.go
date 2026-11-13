@@ -58,10 +58,10 @@ func TestRealHerdrKeepsTheHerdrContract(t *testing.T) {
 			require.NoError(t, err)
 
 			scenario.Run(t, herdrtest.Subject{
-				Herdr:      session.CLI().WithDispatchBin(built),
-				PluginRoot: plugin,
-				Program:    harness.ClaudeCode{}.Program(harness.Start{Model: "sonnet", PluginRoot: plugin}),
-				Checkout:   func() (string, string) { return herdrtest.NewCheckout(t) },
+				Multiplexer: session.CLI().WithDispatchBin(built),
+				PluginRoot:  plugin,
+				Program:     harness.ClaudeCode{}.Program(harness.Start{Model: "sonnet", PluginRoot: plugin}),
+				Checkout:    func() (string, string) { return herdrtest.NewCheckout(t) },
 				Workspace: func(label string) herdrtest.Layout {
 					out, err := session.Output(ctx, "workspace", "create", "--cwd", cwd, "--label", label, "--no-focus")
 					require.NoError(t, err)

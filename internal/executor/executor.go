@@ -2,7 +2,7 @@
 // source right before it acts, so a decision made on a stale read fails instead
 // of landing, and ends as a receipt outcome the ledger keeps. The cycle decides
 // what is wanted; the only veto here is a launch while a Claude session runs in the
-// worker, herdr was not read, or the ticket's repo pool was not read.
+// worker, the multiplexer was not read, or the ticket's repo pool was not read.
 package executor
 
 import (
@@ -53,7 +53,7 @@ const (
 type Env struct {
 	Config       config.Config
 	Systems      Systems
-	Herdr        herdr.Herdr
+	Multiplexer  herdr.Multiplexer
 	Treehouse    treehouse.Pool
 	PullRequests pullrequest.Repository
 	Launcher     launcher.Launcher
@@ -135,14 +135,14 @@ func New(env Env) *Executor {
 }
 
 // WhyNotLaunch says why a launch must not start whatever the rule asked, or "" when it
-// may. A Claude session running in the worker, or a herdr or repo pool that was not
+// may. A Claude session running in the worker, or a multiplexer or repo pool that was not
 // read, means a second session could start beside it.
 func (e *Executor) WhyNotLaunch(w rules.Want, wd world.World) string {
 	if w.Receipt != "launch" {
 		return ""
 	}
-	if wd.HerdrErr != nil {
-		return e.Herdr.Multiplexer() + " was not read"
+	if wd.MultiplexerErr != nil {
+		return e.Multiplexer.Name() + " was not read"
 	}
 	if wk := world.FindWorker(w.Subject, wd.Trees, wd.Snapshot); wk.State != world.NoWorker {
 		return "a worker is running"
@@ -353,7 +353,7 @@ func (e *Executor) closeWorkspace(ctx context.Context, w rules.Want) Result {
 	if id == "" {
 		return Result{Outcome: ledger.Done, Detail: "no workspace"}
 	}
-	if err := e.Herdr.CloseWorkspace(ctx, id); err != nil {
+	if err := e.Multiplexer.CloseWorkspace(ctx, id); err != nil {
 		return failed("while closing workspace %s: %v", id, err)
 	}
 	res := Result{Outcome: ledger.Done, Reread: world.FromLocal}
@@ -452,7 +452,7 @@ func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World)
 	}
 	res := Result{Reread: world.FromLocal}
 	if id := e.workspaceOn(path, wd); id != "" {
-		if err := e.Herdr.CloseWorkspace(ctx, id); err != nil {
+		if err := e.Multiplexer.CloseWorkspace(ctx, id); err != nil {
 			return failed("while closing workspace %s: %v", id, err)
 		}
 	}

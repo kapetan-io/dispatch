@@ -7,7 +7,7 @@ import (
 
 // A worker is found by the join from a ticket to each tree it holds (the lease
 // holder is the ticket id), to the workspace showing that tree, to the
-// session of a registered harness that herdr reports there. herdr's own agent names are not used,
+// session of a registered harness that the multiplexer reports there. The multiplexer's own agent names are not used,
 // because they clear when the program exits.
 
 // WorkerState is what the worker's session is doing. NoWorker is the saved
@@ -30,9 +30,9 @@ type Worker struct {
 	WorkspaceID string
 	PaneID      string
 	TabID       string
-	// Session is the id herdr reports for the session running there, or empty.
+	// Session is the id the multiplexer reports for the session running there, or empty.
 	Session string
-	// Kind is the agent kind herdr detected there, such as "claude".
+	// Kind is the agent kind the multiplexer detected there, such as "claude".
 	Kind string
 	// UnconfirmedSince is when the latest launch on this tree began, in
 	// milliseconds, while its kickoff is unconfirmed, read from the kickoffs record. Zero means the launch returned.
@@ -41,7 +41,7 @@ type Worker struct {
 	noStatus bool
 }
 
-// StatusKnown reports whether herdr can tell what the session is doing. Claude reports
+// StatusKnown reports whether the multiplexer can tell what the session is doing. Claude reports
 // no status while it shows a startup dialog.
 func (w Worker) StatusKnown() bool { return !w.noStatus }
 
@@ -95,7 +95,7 @@ func stateOf(status string) WorkerState {
 	case "blocked":
 		return Blocked
 	default:
-		// working, and unknown, which herdr reports while it can't tell.
+		// working, and unknown, which the multiplexer reports while it can't tell.
 		return Working
 	}
 }

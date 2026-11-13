@@ -7,7 +7,7 @@ An in-process Go state model of herdr, treehouse, gh or Linear that refuses what
 _Avoid_: shell fake, mock, stub
 
 **Port**:
-An interface dispatch owns and names for a tool's role (`treehouse.Pool`, `herdr.Herdr`), implemented by a real adapter and a tool fake.
+An interface dispatch owns and names for a tool's role (`treehouse.Pool`, `herdr.Multiplexer`), implemented by a real adapter and a tool fake.
 _Avoid_: domain interface (ADR 0001 and older designs use it for the same thing), client interface
 
 **Multiplexer**:
@@ -64,7 +64,7 @@ _Avoid_: review claim (a claim asserts something to check)
 
 ## Relationships
 
-- Each port has one or more **real adapters** (the herdr port has two, one per **multiplexer**) and one **tool fake**, and every **contract scenario** runs against both, except Linear's, which run against the fake only.
+- Each port has one or more **real adapters** (the multiplexer port has three, one for the herdr TUI, one for herdr-core with the Herdr app and one for Rex) and one **tool fake**, and every **contract scenario** runs against both, except Linear's, which run against the fake only.
 - The **drift check** runs the scenarios against the **real adapter** only, and does not run Linear's.
 - Every ticket belongs to exactly one **Ticket system**, and its id's prefix says which.
 - A **Local ticket** has one status, and each status carries any number of **Jobs**. `todo`, `in_progress`, `in_review`, `needs_human`, `close_parent` and `blocker_done` each belong to exactly one status, `finished` and `paused` to any number.

@@ -144,7 +144,7 @@ func startLiveWorker(t *testing.T) *liveWorker {
 	done := make(chan error, 1)
 	go func() {
 		done <- dispatch.Run(loopCtx, []string{"run"}, dispatch.Options{
-			ConfigPath: config, StateDir: w.state, Herdr: w.core, LinearKey: lineartest.Key, Linear: lineartest.New(nil).Connect,
+			ConfigPath: config, StateDir: w.state, Multiplexer: w.core, LinearKey: lineartest.Key, Linear: lineartest.New(nil).Connect,
 			PullRequests: pullrequesttest.New(&journal.Journal{}), Stdout: os.Stderr, Stderr: os.Stderr,
 		})
 	}()

@@ -24,7 +24,7 @@ blocked_renotify_minutes = 15
 
 ## Check them against the world
 
-`dispatch rules check` lints the rules, reads Linear, herdr, treehouse and GitHub once, runs one cycle, and prints what it found. With `[plugins.local]` on it reads the local tickets too, and the `ticket` line says how many of the tracked tickets are local and which statuses they use. It never changes the local ticket database or creates it: with `dispatch run` stopped it opens the file read-only, and while `dispatch run` holds the file it asks that process for the tickets.
+`dispatch rules check` lints the rules, reads Linear, the multiplexer, treehouse and GitHub once, runs one cycle, and prints what it found. With `[plugins.local]` on it reads the local tickets too, and the `ticket` line says how many of the tracked tickets are local and which statuses they use. It never changes the local ticket database or creates it: with `dispatch run` stopped it opens the file read-only, and while `dispatch run` holds the file it asks that process for the tickets.
 
 ```
 ticket             37 tracked tickets (assigned to Ada Lovelace; teams ENG; statuses Todo, In Progress, In Review, Needs Human)

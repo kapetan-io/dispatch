@@ -17,7 +17,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/treekey"
 )
 
-// Rex is the Herdr that drives a local Rex server through the rex command. Each repo's workers
+// Rex is the Multiplexer that drives a local Rex server through the rex command. Each repo's workers
 // run in one Rex session, labeled with the folder name of the repo's main checkout, and each
 // worker is a window in it holding one terminal block. Rex never starts or stops from here.
 //
@@ -37,7 +37,7 @@ type Rex struct {
 	bin string
 }
 
-// NewRex returns a Herdr for Rex that keeps its structure lock, rex.lock, in stateDir.
+// NewRex returns a Multiplexer for Rex that keeps its structure lock, rex.lock, in stateDir.
 func NewRex(stateDir string) *Rex {
 	return &Rex{stateDir: stateDir, workLog: newWorkLog()}
 }
@@ -87,9 +87,9 @@ func (r *Rex) WithTrace(path string) *Rex {
 	return r
 }
 
-var _ Herdr = (*Rex)(nil)
+var _ Multiplexer = (*Rex)(nil)
 
-func (r *Rex) Multiplexer() string { return "Rex" }
+func (r *Rex) Name() string { return "Rex" }
 
 const (
 	terminalFlavor = "com.superlogical.terminal.shell"

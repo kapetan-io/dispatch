@@ -8,7 +8,7 @@ Accepted, amended
 
 ## Context
 
-- Dispatch drives workers through one port, `herdr.Herdr`, with one real adapter, `herdr.CLI`, for the herdr TUI. The user now also works in the Herdr app, whose terminals herdr-core runs and `hc` drives.
+- Dispatch drives workers through one port, `herdr.Multiplexer`, with one real adapter, `herdr.CLI`, for the herdr TUI. The user now also works in the Herdr app, whose terminals herdr-core runs and `hc` drives.
 - Everything above the port passes the workspace, tab and pane ids it returns straight back to the port, or compares them for equality.
 - A flatter worker-window port was weighed. It rewrote the fake and 17 root test files for no visible gain.
 - herdr-core keeps no record that ties a space to a tree, and hc refuses a second live terminal with the same name.
@@ -16,7 +16,7 @@ Accepted, amended
 
 ## Decision
 
-We will keep `herdr.Herdr` and add `herdr.Core` as a second real adapter behind it, chosen by `[plugins.herdr] host`. Core derives the space id, the tab id and the terminal name from the resolved tree by hashing, and writes `dispatch.tree` and `dispatch.session` labels on each worker terminal. This amends ADR 0001: an interface has one or more real adapters, and each passes the same contract scenarios.
+We will keep `herdr.Multiplexer` and add `herdr.Core` as a second real adapter behind it, chosen by `[plugins.herdr] host`. Core derives the space id, the tab id and the terminal name from the resolved tree by hashing, and writes `dispatch.tree` and `dispatch.session` labels on each worker terminal. This amends ADR 0001: an interface has one or more real adapters, and each passes the same contract scenarios.
 
 ## Consequences
 
@@ -37,7 +37,7 @@ Date: 2026-11-04
 
 ### Decision
 
-We will add `herdr.Rex` as a third real adapter behind `herdr.Herdr`. Its worker identity is the block label `dispatch <claude session id> <instance> <tree>`, where the instance is the first 8 characters of the server's instance id, so a block a Rex restart brought back is told from one still loading. The workspace id is `<session label>|<tree>`, the tab id is `<session id>/<window id>` and the pane id is `<session id>/<block id>`. One worker per tree is held by a file lock in dispatch's state dir (`rex.lock`, the structure lock) that every change to Rex sessions, windows or worker blocks takes. Rex is chosen by writing `[plugins.rex]`, never through `[plugins.herdr] host`, and a config with both tables fails to load. A restored block is closed and the worker starts on the conversation in its label, unless the launch took the lease fresh, which starts a new one. A close ends the worker and always leaves the repo session.
+We will add `herdr.Rex` as a third real adapter behind `herdr.Multiplexer`. Its worker identity is the block label `dispatch <claude session id> <instance> <tree>`, where the instance is the first 8 characters of the server's instance id, so a block a Rex restart brought back is told from one still loading. The workspace id is `<session label>|<tree>`, the tab id is `<session id>/<window id>` and the pane id is `<session id>/<block id>`. One worker per tree is held by a file lock in dispatch's state dir (`rex.lock`, the structure lock) that every change to Rex sessions, windows or worker blocks takes. Rex is chosen by writing `[plugins.rex]`, never through `[plugins.herdr] host`, and a config with both tables fails to load. A restored block is closed and the worker starts on the conversation in its label, unless the launch took the lease fresh, which starts a new one. A close ends the worker and always leaves the repo session.
 
 ### Consequences
 

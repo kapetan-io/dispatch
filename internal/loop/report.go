@@ -286,8 +286,8 @@ func tellResponse(w rules.Want, rc ledger.Receipt) Response {
 // receipted like any other nudge and counts as the last one.
 func (l *Loop) tell(r request) error {
 	ticket := strings.ToUpper(r.Ticket)
-	if l.wd.HerdrErr != nil {
-		r.reply <- Response{Code: CodeFailed, Error: l.wd.HerdrErr.Error()}
+	if l.wd.MultiplexerErr != nil {
+		r.reply <- Response{Code: CodeFailed, Error: l.wd.MultiplexerErr.Error()}
 		return nil
 	}
 	wk := workerOf(l.wd, ticket)

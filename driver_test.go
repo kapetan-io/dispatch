@@ -141,7 +141,7 @@ type Dispatch struct {
 	linear        *linearHarness
 	tools         *tooltest.Tools
 	// builtinLauncher leaves Options.Launcher empty, so a tick starts workers
-	// with the launcher built into dispatch, over tools.Herdr and tools.Treehouse.
+	// with the launcher built into dispatch, over tools.Multiplexer and tools.Treehouse.
 	builtinLauncher bool
 	fakeHarness     bool
 	realHerdr       bool
@@ -1407,7 +1407,7 @@ func (d *Dispatch) options(extra dispatch.Options) dispatch.Options {
 	// harness from that pane. Other commands never see the pane, so it stays out of their snapshots.
 	if extra.Stdin != nil && !d.hookPaneShown {
 		d.hookPaneShown = true
-		d.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: "idle", PaneID: hookPane})
+		d.tools.Multiplexer.AddAgent(herdr.Agent{Kind: "claude", Status: "idle", PaneID: hookPane})
 	}
 	d.writeConfig(d.withRules(d.withHistory(d.extra)) + d.historyTOML() + d.reposTOML())
 	extra.ConfigPath = filepath.Join(d.dir, "config.toml")
@@ -1424,9 +1424,9 @@ func (d *Dispatch) options(extra dispatch.Options) dispatch.Options {
 		extra.LinearKey = lineartest.Key
 	}
 	if !d.realHerdr {
-		extra.Herdr = d.tools.Herdr
+		extra.Multiplexer = d.tools.Multiplexer
 		if d.streaming {
-			extra.Herdr = d.tools.Herdr.Streaming()
+			extra.Multiplexer = d.tools.Multiplexer.Streaming()
 		}
 	}
 	extra.Treehouse = d.tools.Treehouse
@@ -1447,7 +1447,7 @@ func (d *Dispatch) options(extra dispatch.Options) dispatch.Options {
 		extra.Harnesses = harness.Registry{config.KindClaudeCode: claude}
 	}
 	registered := extra.Harnesses
-	d.tools.Herdr.AcceptKinds(registered.AgentKinds()...)
+	d.tools.Multiplexer.AcceptKinds(registered.AgentKinds()...)
 	if extra.RulesDir == "" && !strings.Contains(d.extra, "\nrules = ") {
 		extra.RulesDir = d.rulesDir
 	}
@@ -1929,13 +1929,13 @@ func (d *Dispatch) worker(ticket, status string) {
 func (d *Dispatch) workerOn(ticket, tree, id, status string) {
 	d.tools.Treehouse.Seed(d.Repo, treehouse.Tree{Path: tree, Status: "leased", LeaseHolder: ticket})
 
-	d.tools.Herdr.AddWorkspace(herdr.Workspace{ID: id, Label: ticket, CheckoutPath: tree})
+	d.tools.Multiplexer.AddWorkspace(herdr.Workspace{ID: id, Label: ticket, CheckoutPath: tree})
 	if status == "" {
 		return
 	}
-	d.tools.Herdr.AddTab(herdr.Tab{ID: id + ":t1", Label: ticket, WorkspaceID: id})
-	d.tools.Herdr.AddPane(herdr.Pane{ID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
-	d.tools.Herdr.AddAgent(herdr.Agent{Kind: "claude", Status: status, Session: workerSession(ticket), PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
+	d.tools.Multiplexer.AddTab(herdr.Tab{ID: id + ":t1", Label: ticket, WorkspaceID: id})
+	d.tools.Multiplexer.AddPane(herdr.Pane{ID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
+	d.tools.Multiplexer.AddAgent(herdr.Agent{Kind: "claude", Status: status, Session: workerSession(ticket), PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
 	d.openWorkerSession(ticket, workerSession(ticket))
 }
 
@@ -1959,7 +1959,7 @@ func (d *Dispatch) openWorkerSession(ticket, session string) {
 // Running and SetSession, and those the launcher started.
 func (d *Dispatch) sessionIDsOf(ticket string) []string {
 	ids := d.sessions.attached(ticket)
-	for _, w := range d.tools.Herdr.Started() {
+	for _, w := range d.tools.Multiplexer.Started() {
 		if w.Label == ticket && w.Program.Session != "" {
 			ids = append(ids, w.Program.Session)
 		}
@@ -1969,13 +1969,13 @@ func (d *Dispatch) sessionIDsOf(ticket string) []string {
 
 // setWorkerStatus changes the herdr status of a worker added with worker.
 func (d *Dispatch) setWorkerStatus(ticket, status string) {
-	d.tools.Herdr.SetStatus("w-"+ticket+":p1", status)
+	d.tools.Multiplexer.SetStatus("w-"+ticket+":p1", status)
 }
 
 // setWorkerSession changes the Claude session id herdr reports for a worker
 // added with worker, as a relaunch does.
 func (d *Dispatch) setWorkerSession(ticket, session string) {
-	d.tools.Herdr.SetSession("w-"+ticket+":p1", session)
+	d.tools.Multiplexer.SetSession("w-"+ticket+":p1", session)
 	if session != "" {
 		d.openWorkerSession(ticket, session)
 	}
@@ -2127,7 +2127,7 @@ func (b *sessionBook) received(sessions []string) []string {
 func (b *sessionBook) deliver(ctx context.Context, session, text string) (bool, error) {
 	b.mu.Lock()
 	known := b.known[session]
-	for _, w := range b.tools.Herdr.Started() {
+	for _, w := range b.tools.Multiplexer.Started() {
 		known = known || w.Program.Session == session
 	}
 	for i, f := range b.failures {
@@ -2187,27 +2187,27 @@ func (d *Dispatch) lines(name string) []string {
 
 // labelWorkspace sets the label herdr reports for a workspace.
 func (d *Dispatch) labelWorkspace(id, label string) {
-	d.tools.Herdr.SetWorkspaceLabel(id, label)
+	d.tools.Multiplexer.SetWorkspaceLabel(id, label)
 }
 
 // renames lists the workspace renames, as "<workspace>|<label>".
 func (d *Dispatch) renames() []string {
-	return d.tools.Herdr.WorkspaceRenames()
+	return d.tools.Multiplexer.WorkspaceRenames()
 }
 
 // tabRenames lists the tab renames, as "<tab>|<label>".
 func (d *Dispatch) tabRenames() []string {
-	return d.tools.Herdr.TabRenames()
+	return d.tools.Multiplexer.TabRenames()
 }
 
 // labelTab sets the label herdr reports for a worker's tab.
 func (d *Dispatch) labelTab(ticket, label string) {
-	d.tools.Herdr.SetTabLabel("w-"+ticket+":t1", label)
+	d.tools.Multiplexer.SetTabLabel("w-"+ticket+":t1", label)
 }
 
 // closes lists the workspaces that were closed.
 func (d *Dispatch) closes() []string {
-	return d.tools.Herdr.ClosedWorkspaces()
+	return d.tools.Multiplexer.ClosedWorkspaces()
 }
 
 // returns lists the treehouse return calls, as "<repo>|<tree>|<holder>".
@@ -3127,9 +3127,9 @@ func (d *Dispatch) FromRexBlock(session, block string) (restore func()) {
 func (d *Dispatch) SessionOf(ticket, kind, status string) string {
 	d.t.Helper()
 	id := "w-" + ticket
-	d.tools.Herdr.AddTab(herdr.Tab{ID: id + ":t1", Label: ticket, WorkspaceID: id})
-	d.tools.Herdr.AddPane(herdr.Pane{ID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
-	d.tools.Herdr.AddAgent(herdr.Agent{Kind: kind, Status: status, Session: workerSession(ticket), PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
+	d.tools.Multiplexer.AddTab(herdr.Tab{ID: id + ":t1", Label: ticket, WorkspaceID: id})
+	d.tools.Multiplexer.AddPane(herdr.Pane{ID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
+	d.tools.Multiplexer.AddAgent(herdr.Agent{Kind: kind, Status: status, Session: workerSession(ticket), PaneID: id + ":p1", TabID: id + ":t1", WorkspaceID: id})
 	d.openWorkerSession(ticket, workerSession(ticket))
 	return id + ":p1"
 }

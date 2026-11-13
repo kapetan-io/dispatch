@@ -292,7 +292,7 @@ func TestPlanHoldsATicketWhoseRepoPoolCouldNotBeRead(t *testing.T) {
 	d.MovedRepo("tiger")
 	d.Linear.Tickets(ticket("ENG-2", "In Progress", "tiger"))
 	// A worker may already run in the repo whose pool nobody could read.
-	d.tools.Herdr.AddWorkspace(herdr.Workspace{ID: "w-ENG-2", Label: "ENG-2", CheckoutPath: d.Trees.PathOf("ENG-2")})
+	d.tools.Multiplexer.AddWorkspace(herdr.Workspace{ID: "w-ENG-2", Label: "ENG-2", CheckoutPath: d.Trees.PathOf("ENG-2")})
 	d.Tick()
 	d.Advance(time.Second)
 	d.Tick()
@@ -860,7 +860,7 @@ func TestAnUnreadHerdrHoldsALaunchAndPlanSaysWhy(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
-	d.tools.Herdr.Fail(herdrtest.OpRead, errors.New("server not running"))
+	d.tools.Multiplexer.Fail(herdrtest.OpRead, errors.New("server not running"))
 	d.Restart()
 	d.Advance(time.Hour)
 	d.Tick()
@@ -1003,10 +1003,10 @@ func TestAFailedHerdrReadDoesNotMakeAFullPoolRetry(t *testing.T) {
 	d.Tick()
 	require.Len(t, d.Workers.Launched(), 1)
 
-	d.tools.Herdr.Fail(herdrtest.OpRead, errors.New("herdr is down"))
+	d.tools.Multiplexer.Fail(herdrtest.OpRead, errors.New("herdr is down"))
 	d.Advance(time.Second)
 	d.Tick()
-	d.tools.Herdr.Fail(herdrtest.OpRead, nil)
+	d.tools.Multiplexer.Fail(herdrtest.OpRead, nil)
 	d.Advance(time.Second)
 	d.Tick()
 

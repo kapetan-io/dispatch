@@ -47,7 +47,7 @@ func (d *Dispatch) herdrDown(on bool) {
 	if on {
 		err = errors.New("server not running")
 	}
-	d.tools.Herdr.Fail(herdrtest.OpRead, err)
+	d.tools.Multiplexer.Fail(herdrtest.OpRead, err)
 }
 
 func TestTickPromotesAnUnblockedChildAndHoldsTheBlockedOne(t *testing.T) {
@@ -812,7 +812,7 @@ func TestTickGivesOneFreeSlotToEitherAPromotionOrALaunchNeverBoth(t *testing.T) 
 	// A promotion holds its slot until Linear shows the child In Progress and its worker is up,
 	// so the launch that wanted the same slot in the same cycle waits.
 	// Surface exception: herdr's started workspaces are the fake's state, not command output.
-	assert.Len(t, d.tools.Herdr.Started(), 1)
+	assert.Len(t, d.tools.Multiplexer.Started(), 1)
 	assert.Contains(t, d.plan(), "waiting")
 }
 

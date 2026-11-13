@@ -1,6 +1,6 @@
 // Package dispatch is the dispatcher. `dispatch run` starts a reconcile loop in
 // the foreground, in a terminal the user watches. Events wake it, and each
-// cycle runs the TypeScript rules over what Linear, herdr, treehouse and GitHub
+// cycle runs the TypeScript rules over what Linear, the multiplexer, treehouse and GitHub
 // say right now and over what dispatch has already done. A resync every few
 // minutes re-reads everything as a backstop, so a failure or a missed event is
 // retried.
@@ -60,9 +60,9 @@ type Options struct {
 	// KeyCommandTimeout cuts off, on Clock, an api_key_command that never returns, such as a
 	// password manager waiting on an unlock prompt. Defaults to 1 minute.
 	KeyCommandTimeout time.Duration
-	// Herdr is the workspace manager that hosts the workers. Defaults to the real adapter for the
+	// Multiplexer is the product that hosts the workers. Defaults to the real adapter for the
 	// configured host: the installed herdr, hc for the Herdr app, or rex when [plugins.rex] is written.
-	Herdr herdr.Herdr
+	Multiplexer herdr.Multiplexer
 	// Treehouse is the pool of trees. Defaults to the installed treehouse.
 	Treehouse treehouse.Pool
 	// PullRequests is the GitHub repo's pull requests. Defaults to the installed
@@ -80,7 +80,7 @@ type Options struct {
 	// Followers is the sessions following each ticket. Defaults to none, and `dispatch watch` adds to it.
 	Followers *notify.Followers
 	// Launcher starts the workers. Defaults to leasing a tree from Treehouse and
-	// starting the worker in Herdr.
+	// starting the worker in the multiplexer.
 	Launcher launcher.Launcher
 	// Dir is the working directory of the command. It is where `dispatch launch` looks for the
 	// target repo, where ticket-hint and repo-settings find the repo they are in, what a relative
@@ -201,7 +201,7 @@ const usage = `usage: dispatch run
                no harness dispatch has an adapter for, and outside a worktree of a repo listed under [repos]. The
                plugin's Stop hook runs it
   wake         read a Notification or UserPromptSubmit hook's JSON on stdin and ask the running loop
-               to read herdr again and run a cycle without waiting for it, so the worker's workspace
+               to read the multiplexer again and run a cycle without waiting for it, so the worker's workspace
                label follows within seconds. Finds the session's harness from the terminal the hook
                runs in: HC_TERMINAL_ID (Herdr app), HERDR_PANE_ID (herdr TUI) or REX_SESSION with
                REX_BLOCK (Rex). Does nothing when none of them is set or the terminal is unlisted or
@@ -438,7 +438,7 @@ func loadConfig(opts Options) (config.Config, error) {
 // over it, so an owner with no inbox rule makes no gh call for it and a failing gh login costs them nothing.
 func sources(opts Options, cfg config.Config, lin linear.Workspace, loaded *rules.Rules) world.Sources {
 	src := world.Sources{
-		Linear: lin, Herdr: opts.Herdr, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
+		Linear: lin, Multiplexer: opts.Multiplexer, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
 		Env: opts.Env, StateDir: opts.StateDir, Stderr: opts.Stderr,
 	}
 	src.LocalOn = cfg.Plugins.Local.On
