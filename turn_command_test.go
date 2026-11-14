@@ -48,19 +48,19 @@ func TestTurnPrintsTheTurnTheWorkerWaitsAtAndItsClosingMessage(t *testing.T) {
 	d.Workers.Running("ENG-1", "idle")
 	const said = "Should we retry for 24 hours?\n\nI recommend yes.\n"
 	d.Workers.Stop("ENG-1", stopTasks{Said: said, Transcript: d.transcript("t1")})
-	at := d.Clock.Now().UnixMilli()
+	at := d.Clock.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 
 	res := d.Run("turn", "ENG-1")
 
 	require.NoError(t, res.Err)
-	assert.Equal(t, fmt.Sprintf("ENG-1 turn %d ended %s\n%s", at, d.Clock.Now().UTC().Format(time.RFC3339), said), res.Stdout)
+	assert.Equal(t, fmt.Sprintf("ENG-1 turn %s\n%s", at, said), res.Stdout)
 
 	res = d.Run("turn", "eng-1", "--json")
 
 	require.NoError(t, res.Err)
 	var got struct {
 		Ticket  string `json:"ticket"`
-		At      int64  `json:"at"`
+		At      string `json:"at"`
 		Message string `json:"message"`
 		Cut     bool   `json:"cut"`
 	}

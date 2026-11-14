@@ -221,9 +221,9 @@ func tickCommand(ctx context.Context, opts Options, args []string) error {
 	return nil
 }
 
-// tellCommand sends text to a ticket's worker through the running loop.
-func tellCommand(ctx context.Context, opts Options, ticket, text string) error {
-	resp, err := loop.Ask(ctx, opts.StateDir, loop.Request{Op: loop.OpTell, Ticket: ticket, Text: text})
+// tellCommand sends text to a ticket's worker through the running loop, as req says.
+func tellCommand(ctx context.Context, opts Options, req loop.Request) error {
+	resp, err := loop.Ask(ctx, opts.StateDir, req)
 	if errors.Is(err, loop.ErrNotRunning) {
 		return notRunning()
 	}

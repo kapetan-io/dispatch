@@ -13,6 +13,8 @@ const (
 	// without forcing a read.
 	OpSettle = "settle"
 	OpTell   = "tell"
+	// OpTellTurn sends text to a ticket's worker at most once for the turn that ended at Request.Turn.
+	OpTellTurn = "tell-turn"
 	// OpTurn reads the turn a ticket's worker waits at and its closing message, and never waits.
 	OpTurn    = "turn"
 	OpIdle    = "idle"
@@ -46,6 +48,8 @@ type Request struct {
 	Op     string `json:"op"`
 	Ticket string `json:"ticket,omitempty"`
 	Text   string `json:"text,omitempty"`
+	// Turn is when the turn OpTellTurn answers ended, in milliseconds since the epoch.
+	Turn int64 `json:"turn,omitempty"`
 	// Follower is the session that watches or unwatches Ticket.
 	Follower *notify.Follower `json:"follower,omitempty"`
 	// Stop is the turn end the session's harness reported.

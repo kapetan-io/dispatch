@@ -64,6 +64,9 @@ func (l *Loop) onRequest(r request) error {
 	case OpTell:
 		l.readAgain(world.FromLocal)
 		l.afterRead = append(l.afterRead, readCallback{run: func() error { return l.tell(r) }, reply: r.reply})
+	case OpTellTurn:
+		l.readAgain(world.FromLocal)
+		l.afterRead = append(l.afterRead, readCallback{run: func() error { return l.tellTurn(r) }, reply: r.reply})
 	case OpTurn:
 		l.readAgain(world.FromLocal)
 		l.afterRead = append(l.afterRead, readCallback{run: func() error { r.reply <- l.turn(r); return nil }, reply: r.reply})
@@ -295,23 +298,34 @@ func tellResponse(w rules.Want, rc ledger.Receipt) Response {
 // receipted like any other nudge and counts as the last one.
 func (l *Loop) tell(r request) error {
 	ticket := strings.ToUpper(r.Ticket)
-	if l.wd.MultiplexerErr != nil {
-		r.reply <- Response{Code: CodeFailed, Error: l.wd.MultiplexerErr.Error()}
-		return nil
-	}
-	wk := workerOf(l.wd, ticket)
-	switch wk {
-	case "none":
-		r.reply <- Response{Code: CodeFailed, Error: l.noWorker(ticket)}
-		return nil
-	case "blocked":
-		r.reply <- Response{Code: CodeFailed, Error: fmt.Sprintf("%s's worker is blocked on a question; answer it in its workspace", ticket)}
+	if refusal, ok := l.refuseTell(ticket); ok {
+		r.reply <- refusal
 		return nil
 	}
 	l.tells++
+	return l.sendTell(r, ticket, ledger.Once{"tell", l.ingest(), l.tells})
+}
+
+// refuseTell answers a tell to a ticket whose worker can't take one: the multiplexer is unread, or the
+// ticket has no worker or one stuck on a question.
+func (l *Loop) refuseTell(ticket string) (Response, bool) {
+	if l.wd.MultiplexerErr != nil {
+		return Response{Code: CodeFailed, Error: l.wd.MultiplexerErr.Error()}, true
+	}
+	switch workerOf(l.wd, ticket) {
+	case "none":
+		return Response{Code: CodeFailed, Error: l.noWorker(ticket)}, true
+	case "blocked":
+		return Response{Code: CodeFailed, Error: fmt.Sprintf("%s's worker is blocked on a question; answer it in its workspace", ticket)}, true
+	}
+	return Response{}, false
+}
+
+// sendTell is the send both tells share, for a ticket refuseTell passed. once decides what counts as a repeat.
+func (l *Loop) sendTell(r request, ticket string, once ledger.Once) error {
 	want := rules.Want{
 		Rule: "tell", Receipt: "nudge", Subject: ticket,
-		Once: ledger.Once{"tell", l.ingest(), l.tells}, Args: map[string]any{"text": r.Text},
+		Once: once, Args: map[string]any{"text": r.Text},
 	}
 	if err := l.begin(want, nil, r.reply); err != nil {
 		r.reply <- Response{Code: CodeFailed, Error: err.Error()}
