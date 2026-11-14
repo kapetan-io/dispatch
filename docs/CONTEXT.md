@@ -22,7 +22,7 @@ The user is a developer who owns the tickets, repos and rules dispatch runs. The
 
 **See who each ticket waits on.** Each worker's workspace label starts with an emoji that says whether the ticket waits on the worker, CI, the user, the pull request's approvers or whoever merges.
 
-**Hear when a ticket needs them.** A session that runs `dispatch watch <ticket>` gets a message when the ticket is ready, needs a human or goes idle. `dispatch tell` sends a worker text, and `dispatch tick` makes dispatch act now.
+**Hear when a ticket needs them.** A session that runs `dispatch watch <ticket>` gets a message when the ticket is ready, needs a human or goes idle. `dispatch tell` sends a worker text, `dispatch turn` prints the turn a worker waits at and its closing message, and `dispatch tick` makes dispatch act now.
 
 **Keep pull requests moving.** Dispatch nudges an idle worker about review comments and failing checks and escalates when nudges don't help. In a repo with `auto_merge` on, it merges an approved, ready pull request.
 
@@ -150,7 +150,7 @@ One reply a worker's session finished, ending in a Stop, with whether a backgrou
 _Avoid_: stop (a Stop record keeps only the latest turn)
 
 **Closing message**:
-The last thing a worker said in a turn, as the harness reports it at the Stop. `dispatch turn` prints it.
+The last thing a worker said in a turn, as the harness reports it at the Stop. Dispatch keeps it in a file beside the session's log, cut at 64 KiB, and removes it when the tree is returned. `dispatch turn` prints it.
 _Avoid_: transcript (Claude's own file), last message
 
 **Decision comment**:

@@ -105,6 +105,27 @@ func TestClaudeCodeKeepsTheHarnessContract(t *testing.T) {
 					b, _ := json.Marshal(in)
 					return b
 				},
+				StopSaying: func(session, dir, said, transcript string) []byte {
+					b, _ := json.Marshal(map[string]any{
+						"hook_event_name": "Stop", "session_id": session, "cwd": dir,
+						"last_assistant_message": said, "transcript_path": transcript,
+					})
+					return b
+				},
+				// Entries as Claude Code writes them: user and assistant ones carry the conversation, and
+				// what it appends after a Stop carries no message.
+				Transcript: func(t *testing.T, taken ...int64) string {
+					var lines []string
+					for _, at := range taken {
+						lines = append(lines,
+							fmt.Sprintf(`{"type":"user","timestamp":%q}`, time.UnixMilli(at).UTC().Format("2006-01-02T15:04:05.000Z")),
+							fmt.Sprintf(`{"type":"assistant","timestamp":%q}`, time.UnixMilli(at+1).UTC().Format("2006-01-02T15:04:05.000Z")))
+					}
+					lines = append(lines, `{"type":"stop_hook_summary"}`, `{"type":"last-prompt"}`, `{"type":"cost-state"}`)
+					path := filepath.Join(t.TempDir(), "transcript.jsonl")
+					require.NoError(t, os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644))
+					return path
+				},
 				PromptInput: func(session, dir, text string) []byte {
 					in := map[string]any{"hook_event_name": "UserPromptSubmit", "session_id": session, "cwd": dir}
 					if text == "" {

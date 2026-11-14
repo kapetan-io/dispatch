@@ -43,6 +43,10 @@ type Harness interface {
 	// working directory, which the caller maps to a tree. The caller sets Tree and
 	// At. ok=false means the input is not a turn end and is dropped without a word.
 	Stop(input []byte) (report sessionlog.Stop, dir string, ok bool)
+	// TookMessageAfter reports whether the session took a message after at, in milliseconds
+	// since the epoch, from the transcript the Stop report named in Stop.Transcript. An error
+	// means the harness cannot tell, and a caller must then act as if a message was taken.
+	TookMessageAfter(transcript string, at int64) (bool, error)
 	// Prompt parses a report that the session was typed into or went idle: session
 	// id, working directory, and the text exactly as typed, empty when the program
 	// went idle. The caller records a command when the text is one and wakes the

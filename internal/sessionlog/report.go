@@ -19,4 +19,9 @@ type Stop struct {
 	Reported bool `json:"reported"`
 	// Running counts the background tasks the program listed as running.
 	Running int `json:"running"`
+	// Message is the turn's closing message as the program reported it, empty when it gave none.
+	Message string `json:"message,omitempty"`
+	// Transcript names the program's own record of the session, which its harness reads to tell
+	// whether the session took a message after this turn. Empty when the program gave none.
+	Transcript string `json:"transcript,omitempty"`
 }

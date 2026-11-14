@@ -1067,6 +1067,10 @@ type stopTasks struct {
 	Running int
 	// Unreported leaves the field out, as a Claude Code that predates it does.
 	Unreported bool
+	// Said is the closing message the Stop hook carries, left out when empty.
+	Said string
+	// Transcript is the path of the session's transcript the Stop hook carries, left out when empty.
+	Transcript string
 }
 
 // StopInput is what Claude Code hands the Stop hook for the worker session of ticket.
@@ -1082,14 +1086,21 @@ func (w *Workers) StopInputFrom(session, ticket string, tasks stopTasks) string 
 }
 
 func (s stopTasks) json() string {
-	if s.Unreported {
-		return ""
+	var fields []string
+	if !s.Unreported {
+		running := make([]string, s.Running)
+		for i := range running {
+			running[i] = `{"type":"shell","status":"running"}`
+		}
+		fields = append(fields, `"background_tasks":[`+strings.Join(running, ",")+`]`)
 	}
-	running := make([]string, s.Running)
-	for i := range running {
-		running[i] = `{"type":"shell","status":"running"}`
+	if s.Said != "" {
+		fields = append(fields, fmt.Sprintf(`"last_assistant_message":%q`, s.Said))
 	}
-	return `"background_tasks":[` + strings.Join(running, ",") + `]`
+	if s.Transcript != "" {
+		fields = append(fields, fmt.Sprintf(`"transcript_path":%q`, s.Transcript))
+	}
+	return strings.Join(fields, ",")
 }
 
 // behindClock is a clock that reads an interval before Dispatch.Clock.
@@ -1254,7 +1265,9 @@ func sessionLogs(t *testing.T, stateDir string) []string {
 		if err != nil || e.IsDir() {
 			return err
 		}
-		out = append(out, path)
+		if filepath.Ext(path) == ".jsonl" {
+			out = append(out, path)
+		}
 		return nil
 	})
 	if !os.IsNotExist(err) {
@@ -1507,7 +1520,7 @@ func (d *Dispatch) runWith(ctx context.Context, extra dispatch.Options, args ...
 	if len(args) > 0 && args[0] == "record-stop" && d.running == nil {
 		d.answerStopsOfAnEarlierRun()
 	}
-	if len(args) > 0 && slices.Contains([]string{"tick", "tell", "watch", "unwatch"}, args[0]) && d.running == nil {
+	if len(args) > 0 && slices.Contains([]string{"tick", "tell", "turn", "watch", "unwatch"}, args[0]) && d.running == nil {
 		if err := d.startLoop(extra); err != nil {
 			return "", "", err
 		}
@@ -1546,6 +1559,7 @@ func (d *Dispatch) answerStopsOfAnEarlierRun() {
 				rec := stops.Record{At: time.UnixMilli(s.At).UTC(), Reported: s.Reported, Running: s.Running}
 				_ = stops.Write(d.state, s.Tree, s.Session, rec)
 				_ = sessionlog.AppendTurn(d.state, s.Tree, s.Session, sessionlog.Turn{At: s.At, Running: s.Running > 0})
+				_ = stops.WriteClosing(d.state, s.Tree, s.Session, stops.NewClosing(s.At, s.Message, s.Transcript))
 			}
 			_ = json.NewEncoder(conn).Encode(loop.Response{})
 			_ = conn.Close()
