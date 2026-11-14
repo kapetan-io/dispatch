@@ -73,7 +73,7 @@ func (l *Loop) tellTurn(r request) error {
 	}
 	once := ledger.Once{"tell-turn", ticket, at}
 	if l.led.Done(ticket, once) {
-		r.reply <- Response{Lines: []string{fmt.Sprintf("already told %s for turn %d", ticket, at)}}
+		r.reply <- Response{Lines: []string{fmt.Sprintf("already told %s for turn %s", ticket, stops.FormatTurnTime(at))}}
 		return nil
 	}
 	if l.o.Executor == nil {
@@ -89,7 +89,7 @@ func (l *Loop) tellTurn(r request) error {
 		ended = ended || t.At == at
 	}
 	if !ended {
-		return refuse("%s's worker has no turn that ended at %d", ticket, at)
+		return refuse("%s's worker has no turn that ended at %s", ticket, stops.FormatTurnTime(at))
 	}
 	moved := "%s's worker has moved past that turn; nothing sent"
 	if later || log.TookMessageAfter(at) {
@@ -101,7 +101,7 @@ func (l *Loop) tellTurn(r request) error {
 	}
 	closing, ok := stops.ReadClosing(dir, wk.TreePath, wk.Session, at)
 	if !ok {
-		return refuse("%s's worker has no closing message for turn %d; nothing sent", ticket, at)
+		return refuse("%s's worker has no closing message for turn %s; nothing sent", ticket, stops.FormatTurnTime(at))
 	}
 	took, known := l.harnessTookMessage(wk, closing)
 	if !known {

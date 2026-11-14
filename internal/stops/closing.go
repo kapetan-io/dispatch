@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 	"unicode/utf8"
 
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
@@ -78,4 +79,21 @@ func ReadClosing(stateDir, tree, session string, at int64) (Closing, bool) {
 		return Closing{}, false
 	}
 	return c, true
+}
+
+// TurnTimeLayout is how a turn's end is written for people and models: RFC 3339 in UTC with
+// milliseconds, so two turns in one second stay apart.
+const TurnTimeLayout = "2006-01-02T15:04:05.000Z07:00"
+
+// FormatTurnTime writes a turn's end, in milliseconds since the epoch, as TurnTimeLayout.
+func FormatTurnTime(at int64) string { return time.UnixMilli(at).UTC().Format(TurnTimeLayout) }
+
+// ParseTurnTime reads an RFC 3339 time, with or without milliseconds and in any zone, as
+// milliseconds since the epoch.
+func ParseTurnTime(s string) (int64, error) {
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return 0, err
+	}
+	return t.UnixMilli(), nil
 }

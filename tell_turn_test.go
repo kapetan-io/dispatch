@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -22,7 +21,7 @@ func askedWorker(t *testing.T) (d *Dispatch, at string, transcript string) {
 	d.Workers.Running("ENG-1", "idle")
 	transcript = d.transcript("t1")
 	d.Workers.Stop("ENG-1", stopTasks{Said: "retry for 24 hours?", Transcript: transcript})
-	return d, strconv.FormatInt(d.Clock.Now().UnixMilli(), 10), transcript
+	return d, d.turnTime(), transcript
 }
 
 func TestTellTurnDeliversOnceToAWorkerOnANeedsHumanTicket(t *testing.T) {
@@ -158,7 +157,7 @@ func TestTellTurnRefusesAWorkerThatIsWorking(t *testing.T) {
 		d.Workers.Running("ENG-1", "idle")
 		d.Workers.Stop("ENG-1", stopTasks{Running: 1, Said: "q?", Transcript: d.transcript("t1")})
 
-		res := d.Run("tell", "ENG-1", "--turn", strconv.FormatInt(d.Clock.Now().UnixMilli(), 10), "yes")
+		res := d.Run("tell", "ENG-1", "--turn", d.turnTime(), "yes")
 
 		require.ErrorContains(t, res.Err, refusal)
 		assert.Empty(t, d.Workers.Received("ENG-1"))
@@ -168,7 +167,7 @@ func TestTellTurnRefusesAWorkerThatIsWorking(t *testing.T) {
 		d.Workers.Running("ENG-1", "idle")
 		d.Workers.Stop("ENG-1", stopTasks{Said: "q?"})
 
-		res := d.Run("tell", "ENG-1", "--turn", strconv.FormatInt(d.Clock.Now().UnixMilli(), 10), "yes")
+		res := d.Run("tell", "ENG-1", "--turn", d.turnTime(), "yes")
 
 		require.ErrorContains(t, res.Err, refusal)
 		assert.Empty(t, d.Workers.Received("ENG-1"))
@@ -183,13 +182,13 @@ func TestTellTurnRefusesWhenThereIsNoTurnToAnswer(t *testing.T) {
 		turn    string
 		wantErr string
 	}{
-		{"NoWorker", func(d *Dispatch) {}, "5", "ENG-1 has no worker"},
-		{"Popup", func(d *Dispatch) { d.Workers.Running("ENG-1", "blocked") }, "5", "ENG-1's worker is blocked on a question; answer it in its workspace"},
-		{"NoTurnEndedYet", func(d *Dispatch) { d.Workers.Running("ENG-1", "idle") }, "5", "ENG-1's worker has no turn that ended at 5"},
+		{"NoWorker", func(d *Dispatch) {}, "2026-01-01T00:00:00.005Z", "ENG-1 has no worker"},
+		{"Popup", func(d *Dispatch) { d.Workers.Running("ENG-1", "blocked") }, "2026-01-01T00:00:00.005Z", "ENG-1's worker is blocked on a question; answer it in its workspace"},
+		{"NoTurnEndedYet", func(d *Dispatch) { d.Workers.Running("ENG-1", "idle") }, "2026-01-01T00:00:00.005Z", "ENG-1's worker has no turn that ended at 2026-01-01T00:00:00.005Z"},
 		{"UnknownTime", func(d *Dispatch) {
 			d.Workers.Running("ENG-1", "idle")
 			d.Workers.Stop("ENG-1", stopTasks{Said: "q?", Transcript: d.transcript("t1")})
-		}, "5", "ENG-1's worker has no turn that ended at 5"},
+		}, "2026-01-01T00:00:00.005Z", "ENG-1's worker has no turn that ended at 2026-01-01T00:00:00.005Z"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			d := newDispatch(t, dispatchOptions{})
@@ -238,9 +237,9 @@ func TestTellTurnRejectsBadArguments(t *testing.T) {
 		args    []string
 		wantErr string
 	}{
-		{[]string{"tell", "ENG-1", "--turn", "soon", "yes"}, "tell --turn takes the time the turn ended in milliseconds"},
-		{[]string{"tell", "ENG-1", "--turn", "5"}, "tell takes a ticket"},
-		{[]string{"tell", "ENG-1", "--when", "5", "yes"}, "tell takes a ticket"},
+		{[]string{"tell", "ENG-1", "--turn", "1794638400000", "yes"}, "tell --turn takes the time the turn ended as dispatch turn prints it"},
+		{[]string{"tell", "ENG-1", "--turn", "2026-01-01T00:00:00.005Z"}, "tell takes a ticket"},
+		{[]string{"tell", "ENG-1", "--when", "2026-01-01T00:00:00.005Z", "yes"}, "tell takes a ticket"},
 	} {
 		t.Run(strings.Join(test.args[2:], "_"), func(t *testing.T) {
 			res := d.Run(test.args...)
@@ -255,7 +254,7 @@ func TestTellTurnFailsWithExitCode3WhenNoDispatchRuns(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 
-	res := d.RunWhileDown("tell", "ENG-1", "--turn", "5", "yes")
+	res := d.RunWhileDown("tell", "ENG-1", "--turn", "2026-01-01T00:00:00.005Z", "yes")
 
 	require.ErrorContains(t, res.Err, "not running")
 	assert.Equal(t, 3, res.Code)
@@ -275,7 +274,7 @@ func TestTellTurnSendsNothingWhenAnEarlierRunCrashedAfterRecordingTheAttempt(t *
 	d.Workers.Running("ENG-1", "idle")
 	d.Workers.Stop("ENG-1", stopTasks{Said: "q?", Transcript: d.transcript("t1")})
 
-	res := d.Run("tell", "ENG-1", "--turn", strconv.FormatInt(at, 10), "yes")
+	res := d.Run("tell", "ENG-1", "--turn", d.turnTime(), "yes")
 
 	require.NoError(t, res.Err)
 	assert.Contains(t, res.Stdout, "already told")
@@ -296,4 +295,20 @@ func TestTellTurnNamesAMissingClosingMessage(t *testing.T) {
 	require.ErrorContains(t, res.Err, fmt.Sprintf("ENG-1's worker has no closing message for turn %s; nothing sent", at))
 	assert.Equal(t, 1, res.Code)
 	assert.Empty(t, d.Workers.Received("ENG-1"))
+}
+
+// turnTime is the clock's time as dispatch turn prints it, which is when a Stop run now ends its turn.
+func (d *Dispatch) turnTime() string {
+	return d.Clock.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+}
+
+func TestTellTurnAcceptsTheTurnTimeInAnyZone(t *testing.T) {
+	t.Parallel()
+	d, _, _ := askedWorker(t)
+	zoned := d.Clock.Now().In(time.FixedZone("plus2", 2*3600)).Format("2006-01-02T15:04:05.000Z07:00")
+
+	res := d.Run("tell", "ENG-1", "--turn", zoned, "yes")
+
+	require.NoError(t, res.Err)
+	assert.Equal(t, "told ENG-1\n", res.Stdout)
 }

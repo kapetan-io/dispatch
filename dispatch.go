@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +32,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
+	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
@@ -170,8 +170,8 @@ const usage = `usage: dispatch run
                a message after it or ended a later turn (exit 1); the worker is working, or its harness
                can't say whether it took a message (exit 1); otherwise it prints "told <ticket>"
   turn         print the turn the ticket's worker waits at and its closing message, through the running
-               loop, and never wait. Plain output is the line "<ticket> turn <at> ended <time>", where at is the
-               turn's end in epoch milliseconds and time is the same instant in RFC 3339, then the message as the worker wrote it.
+               loop, and never wait. Plain output is the line "<ticket> turn <at>", where at is the
+               turn's end as RFC 3339 UTC with milliseconds (2026-11-14T06:40:00.123Z), then the message as the worker wrote it.
                With --json, print {"ticket","at","message","cut"}, where cut is true when the message was
                longer than 64 KiB and is shortened. Exits 1 with nothing printed on stdout when the ticket has
                no worker, its worker is in a turn (working, took a message after its latest Stop, or left a
@@ -261,10 +261,10 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		case len(args) == 3:
 			return tellCommand(ctx, opts, loop.Request{Op: loop.OpTell, Ticket: args[1], Text: args[2]})
 		case len(args) == 5 && args[2] == "--turn":
-			at, err := strconv.ParseInt(args[3], 10, 64)
+			at, err := stops.ParseTurnTime(args[3])
 			if err != nil {
 				_, _ = fmt.Fprintln(opts.Stderr, usage)
-				return fmt.Errorf("tell --turn takes the time the turn ended in milliseconds, as dispatch turn prints it, not %q", args[3])
+				return fmt.Errorf("tell --turn takes the time the turn ended as dispatch turn prints it, such as 2026-11-14T06:40:00.123Z, not %q", args[3])
 			}
 			return tellCommand(ctx, opts, loop.Request{Op: loop.OpTellTurn, Ticket: args[1], Turn: at, Text: args[4]})
 		}
