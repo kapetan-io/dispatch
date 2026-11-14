@@ -332,6 +332,13 @@ func TestClaudeCodeStopHookCarriesTheSessionTheTreeAndTheBackgroundTasks(t *test
 	assert.True(t, record.Reported)
 	assert.False(t, record.Busy(time.Now()))
 
+	// The same Stop left the closing message beside the session's log, with the transcript path the
+	// harness reads to tell whether the session took a message after it.
+	closing, found := stops.ReadClosing(w.state, w.cwd, w.id, record.At.UnixMilli())
+	require.True(t, found)
+	assert.Equal(t, stop.Message, closing.Message)
+	assert.NotEmpty(t, closing.Transcript)
+
 	w.typeLine(t, "Start `"+backgroundTask+"` as a background task with the Bash tool's run_in_background option, then reply with the word started.")
 	busy := w.await(t, "record-stop", "Stop", 1, turnTimeout)
 	stop, _, ok = harness.ClaudeCode{}.Stop(busy.Input)
@@ -343,6 +350,46 @@ func TestClaudeCodeStopHookCarriesTheSessionTheTreeAndTheBackgroundTasks(t *test
 		return found && record.Running == 1
 	}))
 	assert.True(t, record.Busy(time.Now()))
+	closing, found = stops.ReadClosing(w.state, w.cwd, w.id, record.At.UnixMilli())
+	require.True(t, found)
+	assert.Equal(t, stop.Message, closing.Message)
+	assert.Contains(t, strings.ToLower(closing.Message), "started")
+}
+
+// TestClaudeCodeTakesATypedAndADeliveredMessageAsMessagesAfterTheStop fails when a message typed into
+// a worker, or one dispatch delivers, stops adding a time to the session log, or stops showing in the
+// transcript the harness reads as a message after the turn that ended before it.
+func TestClaudeCodeTakesATypedAndADeliveredMessageAsMessagesAfterTheStop(t *testing.T) {
+	w := startLiveWorker(t)
+	claude := harness.ClaudeCode{Sessions: harness.SessionsDir(environment.Process())}
+	var closing stops.Closing
+	require.True(t, poll(time.Minute, func() bool {
+		record, found := stops.Read(w.state, w.cwd, w.id)
+		if !found {
+			return false
+		}
+		closing, found = stops.ReadClosing(w.state, w.cwd, w.id, record.At.UnixMilli())
+		return found
+	}))
+	took, err := claude.TookMessageAfter(closing.Transcript, closing.At)
+	require.NoError(t, err)
+	assert.False(t, took)
+
+	w.typeLine(t, "Reply with the word typed.")
+	require.True(t, poll(time.Minute, func() bool {
+		log, err := sessionlog.Read(w.state, w.cwd, w.id)
+		return err == nil && len(log.Messages) == 1
+	}))
+	w.status(t, "done", turnTimeout)
+	took, err = claude.TookMessageAfter(closing.Transcript, closing.At)
+	require.NoError(t, err)
+	assert.True(t, took)
+
+	require.NoError(t, claude.Deliver(context.Background(), w.id, "dispatch event: reply with the word received."))
+	require.True(t, poll(time.Minute, func() bool {
+		log, err := sessionlog.Read(w.state, w.cwd, w.id)
+		return err == nil && len(log.Messages) == 2
+	}))
 }
 
 // TestClaudeCodeFiresNotificationWhenIdleAndUserPromptSubmitWhenTextIsTyped fails when the hooks

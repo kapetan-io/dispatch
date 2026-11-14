@@ -142,6 +142,12 @@ func file(stateDir, tree, session string) string {
 	return filepath.Join(treeDir(stateDir, tree), treekey.Hash(session)+".jsonl")
 }
 
+// ClosingPath is where the closing message of session's latest turn is kept, beside its log, so
+// Remove deletes it with the log when the tree is returned.
+func ClosingPath(stateDir, tree, session string) string {
+	return filepath.Join(treeDir(stateDir, tree), treekey.Hash(session)+".closing")
+}
+
 // AppendTurn adds a turn to the log of session in the tree.
 func AppendTurn(stateDir, tree, session string, t Turn) error {
 	return appendLine(stateDir, tree, session, line{Turn: &t}, "the turn")

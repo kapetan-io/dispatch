@@ -21,8 +21,9 @@ const Kind = "fake"
 // Harness is a program that is not Claude Code, so a test can launch something whose
 // kind no code path special-cases.
 type Harness struct {
-	mu      sync.Mutex
-	inboxes map[string]*inbox
+	mu          sync.Mutex
+	inboxes     map[string]*inbox
+	transcripts map[string][]int64
 }
 
 type inbox struct {
@@ -34,7 +35,7 @@ type inbox struct {
 const InboxEnv = "FAKE_HARNESS_INBOX"
 
 // New returns the fake harness.
-func New() *Harness { return &Harness{inboxes: map[string]*inbox{}} }
+func New() *Harness { return &Harness{inboxes: map[string]*inbox{}, transcripts: map[string][]int64{}} }
 
 // Open starts a fake session with an inbox and returns its id, which Deliver takes.
 func (h *Harness) Open() string {
@@ -105,11 +106,13 @@ func (*Harness) Stop(input []byte) (sessionlog.Stop, string, bool) {
 		SID   string `json:"sid"`
 		Where string `json:"where"`
 		Tasks *int   `json:"tasks"`
+		Said  string `json:"said"`
+		Notes string `json:"notes"`
 	}
 	if json.Unmarshal(input, &in) != nil || in.SID == "" {
 		return sessionlog.Stop{}, "", false
 	}
-	report := sessionlog.Stop{Session: in.SID, Reported: in.Tasks != nil}
+	report := sessionlog.Stop{Session: in.SID, Reported: in.Tasks != nil, Message: in.Said, Transcript: in.Notes}
 	if in.Tasks != nil {
 		report.Running = *in.Tasks
 	}
@@ -139,8 +142,39 @@ func StopInput(session, dir string, tasks *int) []byte {
 	return b
 }
 
+// TookMessageAfter answers from the times of the messages the fake's transcript named by ref
+// holds. A ref it was never given is a transcript it cannot read.
+func (h *Harness) TookMessageAfter(ref string, at int64) (bool, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	taken, ok := h.transcripts[ref]
+	if !ok {
+		return false, fmt.Errorf("the fake has no transcript %q", ref)
+	}
+	for _, when := range taken {
+		if when > at {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// Take records that the session whose transcript is ref took a message at at, in milliseconds
+// since the epoch, creating the transcript on first use.
+func (h *Harness) Take(ref string, at int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.transcripts[ref] = append(h.transcripts[ref], at)
+}
+
 // PromptInput builds the fake's typed-text input for Prompt.
 func PromptInput(session, dir, text string) []byte {
 	b, _ := json.Marshal(map[string]any{"sid": session, "where": dir, "typed": text})
+	return b
+}
+
+// StopSaying builds the fake's turn-end input for a turn that ended with said and a transcript.
+func StopSaying(session, dir, said, transcript string) []byte {
+	b, _ := json.Marshal(map[string]any{"sid": session, "where": dir, "said": said, "notes": transcript})
 	return b
 }

@@ -11,8 +11,10 @@ const (
 	OpTick = "tick"
 	// OpSettle waits until the loop is idle and reports every action since it started,
 	// without forcing a read.
-	OpSettle  = "settle"
-	OpTell    = "tell"
+	OpSettle = "settle"
+	OpTell   = "tell"
+	// OpTurn reads the turn a ticket's worker waits at and its closing message, and never waits.
+	OpTurn    = "turn"
 	OpIdle    = "idle"
 	OpPending = "pending"
 	// OpStop carries a Stop hook's report, which the loop stores.
@@ -74,8 +76,19 @@ type Response struct {
 	// Idle counts the times the loop went idle, and Busy says whether it is idle now.
 	Idle uint64 `json:"idle,omitempty"`
 	Busy bool   `json:"busy,omitempty"`
+	// Turn answers OpTurn when the worker waits at a turn.
+	Turn *Turn `json:"turn,omitempty"`
 	// Tracked answers VerbTracked, which only `dispatch rules check` sends, with every local ticket and the database's statuses.
 	Tracked *localticket.Listing `json:"tracked,omitempty"`
+}
+
+// Turn is the turn a worker waits at and what it said at the end of it.
+type Turn struct {
+	// At is when the turn ended, in milliseconds since the epoch.
+	At      int64  `json:"at"`
+	Message string `json:"message"`
+	// Cut is true when the message was longer than stops.MessageLimit.
+	Cut bool `json:"cut"`
 }
 
 // OpTicket carries a `dispatch ticket` verb to the loop, the only opener of the local ticket database.

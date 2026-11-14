@@ -1,10 +1,13 @@
 package harness
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"os"
@@ -90,16 +93,21 @@ func (ClaudeCode) Program(s Start) herdr.Program {
 // an empty list.
 func (ClaudeCode) Stop(input []byte) (sessionlog.Stop, string, bool) {
 	var in struct {
-		SessionID       string `json:"session_id"`
-		CWD             string `json:"cwd"`
-		BackgroundTasks *[]struct {
+		SessionID            string `json:"session_id"`
+		CWD                  string `json:"cwd"`
+		TranscriptPath       string `json:"transcript_path"`
+		LastAssistantMessage string `json:"last_assistant_message"`
+		BackgroundTasks      *[]struct {
 			Status string `json:"status"`
 		} `json:"background_tasks"`
 	}
 	if json.Unmarshal(input, &in) != nil {
 		return sessionlog.Stop{}, "", false
 	}
-	report := sessionlog.Stop{Session: in.SessionID, Reported: in.BackgroundTasks != nil}
+	report := sessionlog.Stop{
+		Session: in.SessionID, Reported: in.BackgroundTasks != nil,
+		Message: in.LastAssistantMessage, Transcript: in.TranscriptPath,
+	}
 	if report.Reported {
 		for _, task := range *in.BackgroundTasks {
 			if task.Status == "running" {
@@ -108,6 +116,46 @@ func (ClaudeCode) Stop(input []byte) (sessionlog.Stop, string, bool) {
 		}
 	}
 	return report, in.CWD, true
+}
+
+// TookMessageAfter reads the transcript at the path the Stop hook reported. Only user and assistant
+// entries carry the conversation: after a Stop Claude appends only stop_hook_summary, last-prompt
+// and cost-state entries, so a user entry stamped after the turn ended is a message the session took.
+func (ClaudeCode) TookMessageAfter(transcript string, at int64) (bool, error) {
+	if transcript == "" {
+		return false, errors.New("the Stop report named no transcript")
+	}
+	f, err := os.Open(transcript)
+	if err != nil {
+		return false, fmt.Errorf("while reading the transcript: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	reader := bufio.NewReaderSize(f, 1<<20)
+	for {
+		raw, err := reader.ReadBytes('\n')
+		if bytes.Contains(raw, []byte(`"user"`)) {
+			var entry struct {
+				Type      string `json:"type"`
+				Timestamp string `json:"timestamp"`
+			}
+			// A last line with no newline is a write in progress.
+			if json.Unmarshal(raw, &entry) == nil && entry.Type == "user" {
+				when, perr := time.Parse(time.RFC3339Nano, entry.Timestamp)
+				if perr != nil {
+					return false, fmt.Errorf("while reading the transcript: a user entry has no readable time: %w", perr)
+				}
+				if when.UnixMilli() > at {
+					return true, nil
+				}
+			}
+		}
+		if err == io.EOF {
+			return false, nil
+		}
+		if err != nil {
+			return false, fmt.Errorf("while reading the transcript: %w", err)
+		}
+	}
 }
 
 // Prompt reads Claude Code's UserPromptSubmit and Notification hook input. A

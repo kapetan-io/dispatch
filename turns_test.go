@@ -383,7 +383,7 @@ func TestAStopReportedAfterTheReturnDoesNotMakeTheNextSessionBusy(t *testing.T) 
 	require.Len(t, d.Trees.Returned(), 1)
 
 	// The old session's last Stop arrives after the return.
-	d.Workers.Stop("ENG-1", stopTasks{Running: 1})
+	d.Workers.Stop("ENG-1", stopTasks{Running: 1, Said: "late"})
 	d.Linear.Tickets(ticket("ENG-2", "In Progress", "dispatch"))
 	d.Workers.RunningIn("ENG-2", tree, "idle")
 	// An unknown session reads the latest Stop of any session in the tree.
@@ -391,6 +391,7 @@ func TestAStopReportedAfterTheReturnDoesNotMakeTheNextSessionBusy(t *testing.T) 
 	d.Tick()
 
 	assert.Equal(t, []string{"ENG-2: busy false"}, d.Linear.Comments())
+	assert.Empty(t, closingFiles(t, d.state))
 }
 
 func TestAStopFromASessionStartedAfterTheReturnStillMakesItBusy(t *testing.T) {

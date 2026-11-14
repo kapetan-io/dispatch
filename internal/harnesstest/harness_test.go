@@ -24,7 +24,15 @@ func TestFakeHarness(t *testing.T) {
 						Exit:      func() { fake.Exit(address) },
 					}
 				},
-				StopInput:   harnesstest.StopInput,
+				StopInput:  harnesstest.StopInput,
+				StopSaying: harnesstest.StopSaying,
+				Transcript: func(t *testing.T, taken ...int64) string {
+					ref := t.Name()
+					for _, at := range taken {
+						fake.Take(ref, at)
+					}
+					return ref
+				},
 				PromptInput: harnesstest.PromptInput,
 			})
 		})

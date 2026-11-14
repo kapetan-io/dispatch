@@ -64,6 +64,9 @@ func (l *Loop) onRequest(r request) error {
 	case OpTell:
 		l.readAgain(world.FromLocal)
 		l.afterRead = append(l.afterRead, readCallback{run: func() error { return l.tell(r) }, reply: r.reply})
+	case OpTurn:
+		l.readAgain(world.FromLocal)
+		l.afterRead = append(l.afterRead, readCallback{run: func() error { r.reply <- l.turn(r); return nil }, reply: r.reply})
 	case OpStop:
 		r.reply <- l.onStop(r.Stop)
 	case OpPrompt:
@@ -105,6 +108,9 @@ func (l *Loop) onStop(s *sessionlog.Stop) Response {
 	}
 	turn := sessionlog.Turn{At: s.At, Running: s.Running > 0}
 	if err := sessionlog.AppendTurn(l.o.StateDir, s.Tree, s.Session, turn); err != nil {
+		return Response{Code: CodeFailed, Error: err.Error()}
+	}
+	if err := stops.WriteClosing(l.o.StateDir, s.Tree, s.Session, stops.NewClosing(s.At, s.Message, s.Transcript)); err != nil {
 		return Response{Code: CodeFailed, Error: err.Error()}
 	}
 	l.nameStoppedPane(s.Tree)
@@ -296,16 +302,7 @@ func (l *Loop) tell(r request) error {
 	wk := workerOf(l.wd, ticket)
 	switch wk {
 	case "none":
-		var unread []string
-		for label, err := range l.wd.PoolErrs {
-			unread = append(unread, fmt.Sprintf("%s (%v)", label, err))
-		}
-		slices.Sort(unread)
-		msg := fmt.Sprintf("%s has no worker", ticket)
-		if len(unread) > 0 {
-			msg += "; could not read the pool of " + strings.Join(unread, ", ")
-		}
-		r.reply <- Response{Code: CodeFailed, Error: msg}
+		r.reply <- Response{Code: CodeFailed, Error: l.noWorker(ticket)}
 		return nil
 	case "blocked":
 		r.reply <- Response{Code: CodeFailed, Error: fmt.Sprintf("%s's worker is blocked on a question; answer it in its workspace", ticket)}
@@ -321,4 +318,19 @@ func (l *Loop) tell(r request) error {
 		return err
 	}
 	return nil
+}
+
+// noWorker says a ticket has no worker, and names each pool it could not read, since a worker in
+// one of those would not show.
+func (l *Loop) noWorker(ticket string) string {
+	var unread []string
+	for label, err := range l.wd.PoolErrs {
+		unread = append(unread, fmt.Sprintf("%s (%v)", label, err))
+	}
+	slices.Sort(unread)
+	msg := fmt.Sprintf("%s has no worker", ticket)
+	if len(unread) > 0 {
+		msg += "; could not read the pool of " + strings.Join(unread, ", ")
+	}
+	return msg
 }

@@ -22,6 +22,12 @@ type Subject struct {
 	// PromptInput is what the program's own hook hands dispatch when text was typed into
 	// the session. Empty text is a session that went idle.
 	PromptInput func(session, dir, text string) []byte
+	// StopSaying is StopInput for a turn that ended with the closing message said and the
+	// transcript named by transcript.
+	StopSaying func(session, dir, said, transcript string) []byte
+	// Transcript makes the program's record of a session that took a message at each time in taken
+	// (milliseconds since the epoch) and returns the name a Stop report gives it.
+	Transcript func(t *testing.T, taken ...int64) string
 	// OpenSession starts a session of this harness that follows nothing yet, and cleans
 	// it up when t ends.
 	OpenSession func(t *testing.T) Session
@@ -91,6 +97,55 @@ var Scenarios = []Scenario{
 		require.True(t, ok)
 		assert.Empty(t, report.Tree)
 		assert.Zero(t, report.At)
+	}},
+	{Name: "StopReadsTheClosingMessageAndTheTranscriptItNames", Run: func(t *testing.T, s Subject) {
+		const said = "Should we retry for 24 hours?\nI recommend yes."
+
+		report, _, ok := s.Harness.Stop(s.StopSaying("s1", "/work/tree", said, "transcript-1"))
+
+		require.True(t, ok)
+		assert.Equal(t, said, report.Message)
+		assert.Equal(t, "transcript-1", report.Transcript)
+	}},
+	{Name: "StopThatSaidNothingHasNoClosingMessage", Run: func(t *testing.T, s Subject) {
+		tasks := 0
+
+		report, _, ok := s.Harness.Stop(s.StopInput("s1", "/work/tree", &tasks))
+
+		require.True(t, ok)
+		assert.Empty(t, report.Message)
+		assert.Empty(t, report.Transcript)
+	}},
+	{Name: "TookMessageAfterIsFalseWhenEveryMessageCameBeforeTheTurnEnded", Run: func(t *testing.T, s Subject) {
+		transcript := s.Transcript(t, 1_000, 2_000)
+
+		took, err := s.Harness.TookMessageAfter(transcript, 3_000)
+
+		require.NoError(t, err)
+		assert.False(t, took)
+	}},
+	{Name: "TookMessageAfterIsFalseForAMessageTakenAtTheMomentTheTurnEnded", Run: func(t *testing.T, s Subject) {
+		transcript := s.Transcript(t, 3_000)
+
+		took, err := s.Harness.TookMessageAfter(transcript, 3_000)
+
+		require.NoError(t, err)
+		assert.False(t, took)
+	}},
+	{Name: "TookMessageAfterIsTrueWhenOneMessageCameAfterTheTurnEnded", Run: func(t *testing.T, s Subject) {
+		transcript := s.Transcript(t, 1_000, 5_000)
+
+		took, err := s.Harness.TookMessageAfter(transcript, 3_000)
+
+		require.NoError(t, err)
+		assert.True(t, took)
+	}},
+	{Name: "TookMessageAfterCannotTellFromATranscriptItWasNeverGiven", Run: func(t *testing.T, s Subject) {
+		for _, transcript := range []string{"", "/no/such/transcript"} {
+			_, err := s.Harness.TookMessageAfter(transcript, 0)
+
+			assert.Error(t, err)
+		}
 	}},
 	{Name: "StopOfInputThatIsNotAReportIsDropped", Run: func(t *testing.T, s Subject) {
 		_, _, ok := s.Harness.Stop([]byte("not json"))

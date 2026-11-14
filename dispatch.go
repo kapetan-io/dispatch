@@ -124,6 +124,7 @@ const usage = `usage: dispatch run
        dispatch replay [--from TIME] [--to TIME] [--rules DIR]
        dispatch state reset [--quiet]
        dispatch tell <ticket> "<text>"
+       dispatch turn <ticket> [--json]
        dispatch ticket create|show|list|move|comment|edit|statuses
        dispatch rules init|check|test [dir]
        dispatch ticket-hint
@@ -161,6 +162,14 @@ const usage = `usage: dispatch run
   tell         send text to the ticket's worker as a message to its session, through the running loop; fails
                with nothing sent when the worker is blocked, reports no status, has no session id yet or its
                session is not open
+  turn         print the turn the ticket's worker waits at and its closing message, through the running
+               loop, and never wait. Plain output is the line "<ticket> turn <at> ended <time>", where at is the
+               turn's end in epoch milliseconds and time is the same instant in RFC 3339, then the message as the worker wrote it.
+               With --json, print {"ticket","at","message","cut"}, where cut is true when the message was
+               longer than 64 KiB and is shortened. Exits 1 with nothing printed on stdout when the ticket has
+               no worker, its worker is in a turn (working, took a message after its latest Stop, or left a
+               background task running), is blocked on a question, has ended no turn yet, its latest turn has
+               no closing message, or dispatch cannot read the multiplexer. Exits 3 with "dispatch: not running" when no loop runs
   ticket       file, read and change local tickets (LOC-<n>), kept in a database that only dispatch run opens
                and that [plugins.local] turns on. Talks to the running dispatch run, and exits 3 with
                "dispatch: not running" when none runs. It works on local tickets only; Linear tickets use
@@ -246,6 +255,13 @@ func Run(ctx context.Context, args []string, opts Options) error {
 			return errors.New(`tell takes a ticket and the text to send`)
 		}
 		return tellCommand(ctx, opts, args[1], args[2])
+	case "turn":
+		ticket, asJSON, ok := explainArgs(args[1:])
+		if !ok {
+			_, _ = fmt.Fprintln(opts.Stderr, usage)
+			return errors.New("turn takes a ticket")
+		}
+		return turnCommand(ctx, opts, ticket, asJSON)
 	case "ticket":
 		return ticketCommand(ctx, opts, args[1:])
 	case "ticket-hint":
