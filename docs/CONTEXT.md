@@ -146,11 +146,19 @@ A message to a worker that starts with `/name`, as the session took it, recorded
 _Avoid_: prompt, message (both include text that isn't a command), skill (a skill the model loads by itself is not a command)
 
 **Turn**:
-One reply a worker's session finished, ending in a Stop, with whether a background task was still running.
+One reply a worker's session finished, ending in a Stop, with whether a background task was still running. A turn is named by the time it ended. A worker is in a turn while herdr reads it working, its session has taken a message since its latest Stop, or that Stop left a background task running.
 _Avoid_: stop (a Stop record keeps only the latest turn)
 
+**Closing message**:
+The last thing a worker said in a turn, as the harness reports it at the Stop. `dispatch turn` prints it.
+_Avoid_: transcript (Claude's own file), last message
+
+**Decision comment**:
+The `## Decision` comment a manager posts on the ticket that asked, naming the turn it answers.
+_Avoid_: answer, reply
+
 **Session log**:
-The file of one worker session's commands and turns, appended by the running dispatch from the hooks' reports and read by the world.
+The file of one worker session's commands, other messages (each only its time) and turns, appended by the running dispatch from the hooks' reports and read by the world.
 _Avoid_: transcript (Claude's own file), history (dispatch's segments)
 
 **Send record**:

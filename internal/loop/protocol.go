@@ -23,7 +23,7 @@ const (
 	// OpWake reads the multiplexer and the pools again and runs a cycle, without a resync, and
 	// answers at once. A hook asks for it, so it must not retry what failed or wait.
 	OpWake = "wake"
-	// OpPrompt carries a UserPromptSubmit hook's report of a slash command, which the loop
+	// OpPrompt carries a UserPromptSubmit hook's report of a message, a slash command or any other, which the loop
 	// stores and then wakes as OpWake does.
 	OpPrompt = "prompt"
 	// OpTyped tells the loop dispatch is about to type text into a worker, or clears what it

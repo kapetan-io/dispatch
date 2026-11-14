@@ -147,13 +147,13 @@ type World struct {
 	PoolErrs map[string]error
 	// Workers maps a ticket identifier to what the lookup found.
 	Workers map[string]Worker
-	// Stops maps an In Progress ticket identifier to its idle worker's latest Stop.
+	// Stops maps an In Progress or Needs Human ticket identifier to its idle worker's latest Stop.
 	// Tickets without a record are absent.
 	Stops map[string]stops.Record
-	// Sessions maps an In Progress or In Review ticket identifier to the log of its
+	// Sessions maps an In Progress, In Review or Needs Human ticket identifier to the log of its
 	// worker's current session. SessionErrs holds the tickets whose log could not
 	// be read, which is unknown, not empty. A ticket in neither map has no worker or is
-	// not In Progress or In Review.
+	// not In Progress, In Review or Needs Human.
 	Sessions    map[string]sessionlog.Log
 	SessionErrs map[string]error
 	// LeaseHolders holds the tickets that hold a lease and aren't in Tickets,
@@ -429,12 +429,12 @@ func (w *World) joinWorker(src Sources, scope Scope, t ticket.Ticket) {
 		}
 	}
 	w.Workers[t.Identifier] = wk
-	if wk.State == Idle && scope.Is(t, ticket.InProgress) {
+	if wk.State == Idle && (scope.Is(t, ticket.InProgress) || scope.Is(t, ticket.NeedsHuman)) {
 		if rec, ok := stops.Read(src.StateDir, wk.TreePath, wk.Session); ok {
 			w.Stops[t.Identifier] = rec
 		}
 	}
-	if wk.State != NoWorker && (scope.Is(t, ticket.InProgress) || scope.Is(t, ticket.InReview)) {
+	if wk.State != NoWorker && (scope.Is(t, ticket.InProgress) || scope.Is(t, ticket.InReview) || scope.Is(t, ticket.NeedsHuman)) {
 		w.readSession(src.Multiplexer.Name(), src.StateDir, t.Identifier, wk)
 	}
 }

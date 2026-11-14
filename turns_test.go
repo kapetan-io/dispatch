@@ -157,7 +157,21 @@ func TestRulesReadTurnsOfOnlyTheCurrentSession(t *testing.T) {
 	assert.Equal(t, []string{"ENG-1: turns idle of 1"}, d.Linear.Comments())
 }
 
-func TestRulesReadTurnsAsUnknownForATicketThatIsNeitherInProgressNorInReview(t *testing.T) {
+func TestRulesReadTurnsAsUnknownForATicketThatIsNeitherInProgressNorInReviewNorNeedsHuman(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: rule(`
+whenever({ name: "turns", each: "ticket", if: (t) => t.status === "todo",
+  then: (t, ctx) => ctx.ticket.queueComment(t, known(() => ctx.worker.of(t).turns) ? "known" : "unknown", { once: ["turns", t.id] }) });`)})
+	d.Linear.Tickets(ticket("ENG-1", "Todo", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.Workers.Stop("ENG-1", stopTasks{})
+
+	d.Tick()
+
+	assert.Equal(t, []string{"ENG-1: unknown"}, d.Linear.Comments())
+}
+
+func TestRulesReadTurnsOfAWorkerOnANeedsHumanTicket(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(`
 whenever({ name: "turns", each: "ticket", if: (t) => t.status === "needs_human",
@@ -168,7 +182,7 @@ whenever({ name: "turns", each: "ticket", if: (t) => t.status === "needs_human",
 
 	d.Tick()
 
-	assert.Equal(t, []string{"ENG-1: unknown"}, d.Linear.Comments())
+	assert.Equal(t, []string{"ENG-1: known"}, d.Linear.Comments())
 }
 
 func TestTurnsEndedBeforeDispatchStartsAreReadAtItsFirstTick(t *testing.T) {
