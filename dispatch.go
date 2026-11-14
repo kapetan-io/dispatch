@@ -163,7 +163,8 @@ const usage = `usage: dispatch run
                Exits 1 while dispatch run holds the lock
   tell         send text to the ticket's worker as a message to its session, through the running loop; fails
                with nothing sent when the worker is blocked, reports no status, has no session id yet or its
-               session is not open. With --turn <at>, where at is the time dispatch turn printed, it
+               session is not open. With --turn <at>, where at is the time dispatch turn printed, as RFC 3339
+               with milliseconds (2026-11-14T06:40:00.123Z), it
                delivers at most once for that turn, and the checks run in this order: today's refusals
                (exit 1); a repeat of the same turn prints "already told" and sends nothing (exit 0); no
                turn that ended at <at> (exit 1); the worker moved past the turn, because its session took
