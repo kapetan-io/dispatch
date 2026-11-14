@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -124,6 +125,7 @@ const usage = `usage: dispatch run
        dispatch replay [--from TIME] [--to TIME] [--rules DIR]
        dispatch state reset [--quiet]
        dispatch tell <ticket> "<text>"
+       dispatch tell <ticket> --turn <at> "<text>"
        dispatch turn <ticket> [--json]
        dispatch ticket create|show|list|move|comment|edit|statuses
        dispatch rules init|check|test [dir]
@@ -161,7 +163,12 @@ const usage = `usage: dispatch run
                Exits 1 while dispatch run holds the lock
   tell         send text to the ticket's worker as a message to its session, through the running loop; fails
                with nothing sent when the worker is blocked, reports no status, has no session id yet or its
-               session is not open
+               session is not open. With --turn <at>, where at is the time dispatch turn printed, it
+               delivers at most once for that turn, and the checks run in this order: today's refusals
+               (exit 1); a repeat of the same turn prints "already told" and sends nothing (exit 0); no
+               turn that ended at <at> (exit 1); the worker moved past the turn, because its session took
+               a message after it or ended a later turn (exit 1); the worker is working, or its harness
+               can't say whether it took a message (exit 1); otherwise it prints "told <ticket>"
   turn         print the turn the ticket's worker waits at and its closing message, through the running
                loop, and never wait. Plain output is the line "<ticket> turn <at> ended <time>", where at is the
                turn's end in epoch milliseconds and time is the same instant in RFC 3339, then the message as the worker wrote it.
@@ -250,11 +257,19 @@ func Run(ctx context.Context, args []string, opts Options) error {
 	case "rules":
 		return rulesCommand(ctx, opts, args[1:])
 	case "tell":
-		if len(args) != 3 {
-			_, _ = fmt.Fprintln(opts.Stderr, usage)
-			return errors.New(`tell takes a ticket and the text to send`)
+		switch {
+		case len(args) == 3:
+			return tellCommand(ctx, opts, loop.Request{Op: loop.OpTell, Ticket: args[1], Text: args[2]})
+		case len(args) == 5 && args[2] == "--turn":
+			at, err := strconv.ParseInt(args[3], 10, 64)
+			if err != nil {
+				_, _ = fmt.Fprintln(opts.Stderr, usage)
+				return fmt.Errorf("tell --turn takes the time the turn ended in milliseconds, as dispatch turn prints it, not %q", args[3])
+			}
+			return tellCommand(ctx, opts, loop.Request{Op: loop.OpTellTurn, Ticket: args[1], Turn: at, Text: args[4]})
 		}
-		return tellCommand(ctx, opts, args[1], args[2])
+		_, _ = fmt.Fprintln(opts.Stderr, usage)
+		return errors.New(`tell takes a ticket and the text to send, or a ticket, --turn, the time the turn ended and the text to send`)
 	case "turn":
 		ticket, asJSON, ok := explainArgs(args[1:])
 		if !ok {
