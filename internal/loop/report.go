@@ -125,15 +125,18 @@ func (l *Loop) nameStoppedPane(tree string) {
 	}
 }
 
-// onPrompt stores a command a worker's session took, with who typed it, where the next
-// read finds it. A message that is not a command is only a wake. Take answers one message per
-// send, so a person who types the same text afterward reads as a person.
+// onPrompt stores a message a worker's session took where the next read finds it: a command with
+// who typed it, any other message with its time alone. Take answers one message per send, so a
+// person who types the same text afterward reads as a person.
 func (l *Loop) onPrompt(p *sessionlog.Prompt) Response {
 	if p == nil || p.Tree == "" || p.Session == "" {
 		return Response{Code: CodeFailed, Error: "a prompt report needs a tree and a session"}
 	}
 	cmd, ok := sessionlog.ParseCommand(p.Text)
 	if !ok {
+		if err := sessionlog.AppendMessage(l.o.StateDir, p.Tree, p.Session, sessionlog.Message{At: p.At}); err != nil {
+			return Response{Code: CodeFailed, Error: err.Error()}
+		}
 		return Response{}
 	}
 	cmd.At, cmd.By = p.At, sessionlog.ByPerson

@@ -1,5 +1,5 @@
 // Package sessionlog keeps the file of what one worker session did, one line
-// for each command it took and each turn it ended. The running dispatch appends to it from the
+// for each command or other message it took and each turn it ended. The running dispatch appends to it from the
 // hooks' reports and only the world reads it, so a rule sees all of the session and not just
 // the latest turn.
 package sessionlog
@@ -50,15 +50,41 @@ type Command struct {
 	By  Sender `json:"by"`
 }
 
-// Log holds a session's commands and turns, oldest first. Neither is ever nil, so they encode as [] and not null.
+// Message is a non-command message the session took. The log keeps only when, because what a
+// person typed is not dispatch's to store.
+type Message struct {
+	// At is when the session took the message, in milliseconds since the epoch.
+	At int64 `json:"at"`
+}
+
+// Log holds a session's commands, other messages and turns, oldest first. None is ever nil, so they encode as [] and not null.
 type Log struct {
 	Commands []Command `json:"commands"`
+	// Messages holds only the messages that are not commands.
+	Messages []Message `json:"messages"`
 	Turns    []Turn    `json:"turns"`
+}
+
+// TookMessageAfter reports whether the session took a command or any other message after at, in
+// milliseconds since the epoch.
+func (l Log) TookMessageAfter(at int64) bool {
+	for _, c := range l.Commands {
+		if c.At > at {
+			return true
+		}
+	}
+	for _, m := range l.Messages {
+		if m.At > at {
+			return true
+		}
+	}
+	return false
 }
 
 // line is one event in the file.
 type line struct {
 	Command *Command `json:"command,omitempty"`
+	Message *Message `json:"message,omitempty"`
 	Turn    *Turn    `json:"turn,omitempty"`
 }
 
@@ -126,6 +152,11 @@ func AppendCommand(stateDir, tree, session string, c Command) error {
 	return appendLine(stateDir, tree, session, line{Command: &c}, "the command")
 }
 
+// AppendMessage adds a message that is not a command to the log of session in the tree.
+func AppendMessage(stateDir, tree, session string, m Message) error {
+	return appendLine(stateDir, tree, session, line{Message: &m}, "the message")
+}
+
 func appendLine(stateDir, tree, session string, l line, what string) error {
 	b, err := json.Marshal(l)
 	if err != nil {
@@ -160,7 +191,7 @@ func appendLine(stateDir, tree, session string, l line, what string) error {
 // would pass for a shorter one. The exception is a last line with no newline,
 // which is a write still in progress.
 func Read(stateDir, tree, session string) (Log, error) {
-	log := Log{Commands: []Command{}, Turns: []Turn{}}
+	log := Log{Commands: []Command{}, Messages: []Message{}, Turns: []Turn{}}
 	b, err := os.ReadFile(file(stateDir, tree, session))
 	if errors.Is(err, fs.ErrNotExist) {
 		return log, nil
@@ -179,6 +210,9 @@ func Read(stateDir, tree, session string) (Log, error) {
 		}
 		if l.Command != nil {
 			log.Commands = append(log.Commands, *l.Command)
+		}
+		if l.Message != nil {
+			log.Messages = append(log.Messages, *l.Message)
 		}
 		if l.Turn != nil {
 			log.Turns = append(log.Turns, *l.Turn)

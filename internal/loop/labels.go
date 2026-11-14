@@ -10,6 +10,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/executor"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
+	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -172,8 +173,10 @@ func (l *Loop) workspaceEmoji(w world.Worker, pr pullrequest.PullRequest, openAs
 		return emojiBusy
 	}
 	stop, ok := stops.Read(l.o.Sources.StateDir, w.TreePath, w.Session)
+	// A log that can't be read leaves the Stop alone to decide, as the world does.
+	log, _ := sessionlog.Read(l.o.Sources.StateDir, w.TreePath, w.Session)
 	switch {
-	case ok && stop.Busy(l.clock.Now()):
+	case ok && stop.InTurn(log, l.clock.Now()):
 		return emojiBusy
 	case pr.ChecksRunning:
 		return emojiChecksRunning

@@ -34,7 +34,7 @@ whenever({
 });
 
 // Once per stretch of idling, when the worker's workspace turns 💤. waiting follows the label's
-// own Stop-record test, for In Progress tickets, so the message and the label agree there. It tells followers and never types into the worker.
+// own Stop-record and session-log test, so a message typed after the Stop silences the notice as it clears the label there. It tells followers and never types into the worker.
 whenever({
   name: "notify-idle",
   each: "ticket",

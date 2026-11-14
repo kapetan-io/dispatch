@@ -12,6 +12,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
+	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/ticket"
@@ -476,13 +477,15 @@ func (s *State) leasedUnknown(w world.World, r *record) {
 
 const (
 	noWorkerSession = "the ticket has no worker, so no session took any commands or ended any turns"
-	sessionNotRead  = "commands and turns are read only for the worker of an In Progress or In Review ticket"
+	sessionNotRead  = "commands and turns are read only for the worker of an In Progress, In Review or Needs Human ticket"
 )
 
 // sessionFacts are what a worker's current Claude session did.
 type sessionFacts struct {
 	commands Fact[[]Command]
 	turns    Fact[[]Turn]
+	// log is the session log as read, the zero Log when it was not.
+	log sessionlog.Log
 }
 
 func unreadSession(reason string) sessionFacts {
@@ -510,7 +513,7 @@ func (s *State) sessionOf(w world.World, ticket string) sessionFacts {
 		turns[i] = Turn{At: t.At, Running: t.Running}
 	}
 	at := s.ms()
-	return sessionFacts{commands: Known(commands, at), turns: Known(turns, at)}
+	return sessionFacts{commands: Known(commands, at), turns: Known(turns, at), log: log}
 }
 
 func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop stops.Record, session sessionFacts) {
@@ -548,7 +551,7 @@ func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop sto
 		if stop.Reported && !stop.At.IsZero() {
 			lastStop.At = stop.At.UnixMilli()
 			rec.Busy = Known(stop.Busy(s.Now), at)
-			rec.Waiting = Known(wk.UnconfirmedSince == 0 && !stop.Busy(s.Now), at)
+			rec.Waiting = Known(wk.UnconfirmedSince == 0 && !stop.InTurn(session.log, s.Now), at)
 		} else {
 			fallback = true
 		}

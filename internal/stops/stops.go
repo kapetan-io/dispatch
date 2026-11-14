@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/treekey"
 )
 
@@ -37,6 +38,14 @@ type Record struct {
 // this Stop, and is still within BusyExpiry of it.
 func (r Record) Busy(now time.Time) bool {
 	return r.Reported && r.Running > 0 && now.Sub(r.At) < BusyExpiry
+}
+
+// InTurn reports whether the worker is in a turn by what dispatch holds on disk: its latest Stop
+// listed a background task still running within BusyExpiry, or its session took a message after
+// that Stop. Only a reported Stop can say so, since a worker with no Stop record is not known to
+// have paused. The label and the world's waiting fact both ask it, so they never disagree.
+func (r Record) InTurn(log sessionlog.Log, now time.Time) bool {
+	return r.Busy(now) || (r.Reported && log.TookMessageAfter(r.At.UnixMilli()))
 }
 
 // Dir is where a state directory keeps its records.

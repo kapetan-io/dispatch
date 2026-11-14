@@ -23,7 +23,7 @@ type Log struct {
 }
 
 // Note records that text is about to be sent to the Claude in tree. Text that is not a command is
-// not kept, because the hook never reports it.
+// not kept, because the loop matches only commands against it.
 func (l *Log) Note(tree, text string) {
 	if l == nil {
 		return

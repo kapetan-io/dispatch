@@ -27,14 +27,14 @@ The first line that fits wins.
 4. The worker is working, or dispatch sent it a nudge and no read has yet seen it working or blocked: 🟢.
 5. The PR is ready and the worker is idle or gone: ⏳ if the repo opens drafts, the PR has left draft and its head isn't approved, 🔀 if the same PR is approved, otherwise 👀. "Approved" is what `auto_merge` counts, so a repo's `approval_checks` that haven't passed keep the PR at ⏳.
 6. The worker's Claude session is gone, or its launch isn't confirmed: 🟡 if the PR's checks are running, otherwise 🟢.
-7. The worker is idle and its last Stop (the Claude Code hook that records when a turn ended) lists a background task still running, and that Stop is under 60 minutes old: 🟢.
+7. The worker is idle and its last Stop (the Claude Code hook that records when a turn ended) lists a background task still running and is under 60 minutes old, or its session took a message after that Stop: 🟢. A message is anything typed to the worker or sent by dispatch, so 💤 clears when you type, before herdr reads the worker as working.
 8. The PR's checks are running: 🟡.
 9. The worker has no Stop record, or its Stop didn't say what was running: 🟢. Nothing proves it is waiting.
 10. Otherwise: 💤.
 
 A PR that dispatch could not read leaves a 🟢, 👀, ⏳, 🔀, 🟡 or 💤 label as it is until the next read.
 
-The Stop record comes from the plugin's Stop hook (`dispatch record-stop`). The plugin's Notification and UserPromptSubmit hooks run `dispatch wake`, which asks the running loop to read the multiplexer and the pools again and run a cycle. That is not a resync, so nothing that failed is retried and no PR is read again unless a worker just went idle. Claude Code raises an `idle_prompt` Notification about 60 seconds after a turn ends with nobody typing, so 💤 shows within about a minute of the worker going idle. Without a running loop the label moves at the next resync. A worker dispatch just nudged shows 🟢 until a read sees it working or blocked, or the next resync. A read that still sees it idle keeps the 🟢, so a second nudge cannot go out before Claude takes the first.
+The Stop record comes from the plugin's Stop hook (`dispatch record-stop`). The plugin's Notification and UserPromptSubmit hooks run `dispatch wake`, which asks the running loop to read the multiplexer and the pools again and run a cycle. That is not a resync, so nothing that failed is retried and no PR is read again unless a worker just went idle. Every non-empty prompt the hook sees is written to the session log as a command or a plain message, and a worker whose session took one after its latest Stop is in a turn: its `waiting` fact is false, on a Needs Human ticket as well as an In Progress one. Claude Code raises an `idle_prompt` Notification about 60 seconds after a turn ends with nobody typing, so 💤 shows within about a minute of the worker going idle. Without a running loop the label moves at the next resync. A worker dispatch just nudged shows 🟢 until a read sees it working or blocked, or the next resync. A read that still sees it idle keeps the 🟢, so a second nudge cannot go out before Claude takes the first.
 
 Under Rex the loop also listens to Rex's event stream. A worker's status change, its Claude exiting and its tab closing each make the loop read only that worker's pane, so 💤 and the idle and blocked notices show within moments, with no Notification and no full read. A stream that ends prints `dispatch: the worker stream ended: <reason>; workers update at each resync until it reopens` to stderr, after the time like the other stderr lines. The loop reopens it at the next resync, including one `dispatch tick` forces. The herdr TUI and the Herdr app have no stream and behave as before.
 
@@ -82,7 +82,7 @@ dispatch reads the PR only when the worker is idle or gone.
 | Gone | n/a | checks running | 🟡 | Nothing |
 | Gone | n/a | anything else | 🟢 | Relaunches the worker for a PR that needs work or an unseen review thread |
 
-The Stop record column above is what the emoji label reads, for a worker in any status. The `busy` and `lastStop` facts rules read come from the Stop record only for an idle worker on an In Progress ticket, so for an In Review worker `busy` is false and `lastStop` is when dispatch first saw it idle.
+The Stop record column above is what the emoji label reads, for a worker in any status. The `busy` and `lastStop` facts rules read come from the Stop record only for an idle worker on an In Progress or Needs Human ticket, so for an In Review worker `busy` is false and `lastStop` is when dispatch first saw it idle.
 
 A PR that waits on its approvers still nudges its worker for a failed check, a merge conflict, changes requested or new activity.
 
