@@ -258,6 +258,7 @@ func TestTickNotifiesOnceWhenATicketEntersNeedsHuman(t *testing.T) {
 	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
 	for range 3 {
 		d.Tick()
+		d.Advance(5 * time.Minute)
 	}
 
 	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())
@@ -423,6 +424,7 @@ func TestTickNotifiesForNeedsHumanWhateverTheWorkerIs(t *testing.T) {
 
 			for range 3 {
 				d.Tick()
+				d.Advance(5 * time.Minute)
 			}
 
 			assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())
@@ -438,10 +440,10 @@ func TestTickNotifiesEachTimeATicketReentersNeedsHuman(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Workers.Running("ENG-1", "working")
 
-	for _, status := range []string{"Needs Human", "In Progress", "Needs Human", "Needs Human"} {
+	for _, status := range []string{"Needs Human", "Needs Human", "In Progress", "Needs Human", "Needs Human"} {
 		d.Linear.Tickets(ticket("ENG-1", status, "dispatch"))
 		d.Tick()
-		d.Advance(time.Minute)
+		d.Advance(6 * time.Minute)
 	}
 
 	assert.Len(t, d.Followed.Told(), 2)
@@ -597,6 +599,7 @@ func TestTickNotifiesWhenAReviewTicketEntersNeedsHuman(t *testing.T) {
 	d.Linear.Tickets(withLabel(ticket("ENG-1", "Needs Human", "dispatch"), "design-review"))
 	for range 3 {
 		d.Tick()
+		d.Advance(5 * time.Minute)
 	}
 
 	assert.Equal(t, []string{"ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())

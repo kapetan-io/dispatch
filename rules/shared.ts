@@ -1,4 +1,4 @@
-import { known, minutes } from "dispatch";
+import { minutes } from "dispatch";
 import type { Ticket, PR, Ctx, Receipt, Seen, Once } from "dispatch";
 
 // A worker gets launch_failure_limit failed launches in a row (a failed lease or git switch
@@ -141,13 +141,9 @@ export const relaunches = (t: Ticket, head: string, ctx: Ctx) =>
 
 // Moves the ticket to Needs Human and comments why. The receipt keeps the two steps
 // apart, so retry-escalation-comment can finish a comment that failed after the move.
-// notify-needs-human leaves a design ticket alone (a review ticket it covers), so the notice for one dispatch moved itself
-// follows the move. The list is ordered, so a move that fails announces nothing.
-export const escalate = (t: Ticket, ctx: Ctx, why: string, once: Once) => {
-  const move = ctx.ticket.queueEscalate(t, why, { once });
-  return !known(() => t.labels) || skill(t) !== "design" ? move
-    : [move, ctx.notify.queueSend(t, `${t.id} is in Needs Human: ${t.title}`, { once: ["needs-human-escalated", ...once], reason: "entered Needs Human" })];
-};
+// notify-needs-human announces the move once the ticket is in the new status.
+export const escalate = (t: Ticket, ctx: Ctx, why: string, once: Once) =>
+  ctx.ticket.queueEscalate(t, why, { once });
 
 // Retries of a base-moved refusal, and the pause before each.
 const MERGE_RETRIES = 5;

@@ -1,18 +1,20 @@
-import { whenever, known, minutes } from "dispatch";
+import { whenever, minutes } from "dispatch";
 import type { PR } from "dispatch";
-import { nudgeable, skill, heard, finalMergeRefusal } from "./shared";
+import { nudgeable, heard, finalMergeRefusal } from "./shared";
 
-// Notifications go to macOS and to every session following the ticket. A design
-// worker waits on you by design, so its ticket doesn't notify. A review does.
-// A ticket whose labels were cut short still notifies from Needs Human.
+// Notifications go to every session following the ticket, design tickets included.
 // A notification that fails is sent again at the next resync while its rule still
 // wants it.
 
-// Once per stretch in Needs Human.
+// Once per stretch in Needs Human. A worker still in a turn holds the notice until it
+// pauses, so the notice doesn't beat the question it is about; the hold ends after 5 minutes
+// so a lost Stop report never silences it. With no worker there is nothing to wait for.
+const HOLD = minutes(5);
 whenever({
   name: "notify-needs-human",
   each: "ticket",
-  if:   (t) => t.status === "needs_human" && !(known(() => t.labels) && skill(t) === "design"),
+  if:   (t, ctx) => t.status === "needs_human"
+           && (ctx.worker.of(t).state === "none" || ctx.worker.of(t).waiting || ctx.now - t.statusSince >= HOLD),
   then: (t, ctx) => ctx.notify.queueSend(t, `${t.id} is in Needs Human: ${t.title}`, { once: ["needs-human", t.statusSince], reason: "entered Needs Human" }),
 });
 
@@ -22,7 +24,7 @@ whenever({
   name: "notify-blocked",
   each: "ticket",
   if:   (t, ctx) => (t.status === "in_progress" || t.status === "in_review") && !t.hasChildren
-           && skill(t) !== "design" && ctx.worker.of(t).state === "blocked",
+           && ctx.worker.of(t).state === "blocked",
   then: (t, ctx) => {
     const w = ctx.worker.of(t);
     // A reminder period of 0 means a notice in every cycle, so the key changes with each one.
@@ -38,8 +40,7 @@ whenever({
 whenever({
   name: "notify-idle",
   each: "ticket",
-  if:   (t, ctx) => t.status === "in_progress" && !t.hasChildren
-           && !(known(() => t.labels) && skill(t) === "design") && ctx.worker.of(t).waiting,
+  if:   (t, ctx) => t.status === "in_progress" && !t.hasChildren && ctx.worker.of(t).waiting,
   then: (t, ctx) => ctx.notify.queueSend(t, `${t.id}'s worker is idle with nothing running: ${t.title}`,
            { once: ["idle", ctx.worker.of(t).idleSince!], reason: "worker is idle" }),
 });

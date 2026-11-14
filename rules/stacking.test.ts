@@ -252,7 +252,7 @@ scenario(rules, "nudge-pr-activity's receipt satisfies nudge-stacked-activity", 
 });
 
 scenario(rules, "a stacked ticket in Needs Human is not told to restack", s => {
-  s.given(ticket("ENG-3", { ...restackOwed, status: "needs_human" }), worker("ENG-3", "idle"));
+  s.given(ticket("ENG-3", { ...restackOwed, status: "needs_human" }), worker("ENG-3", "idle", { lastStop: 0 }));
   s.expect([["notify-needs-human", "notify", "ENG-3"]]);
 });
 

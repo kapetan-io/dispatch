@@ -76,6 +76,7 @@ scenario(rules, "teardown-clean-tree returns the tree of a Needs Human ticket wh
 scenario(rules, "teardown-clean-tree keeps the tree of a Needs Human ticket while its worker waits on you", s => {
   s.given(ticket("ENG-1", { status: "needs_human", optedIn: true, repo: "dispatch" }), worker("ENG-1", "blocked"),
           tree("/trees/ENG-1", { holder: "ENG-1", trackedChanges: true }));
+  s.advance(5 * 60 * 1000);
   s.expect([["notify-needs-human", "notify", "ENG-1"]]);
 });
 
