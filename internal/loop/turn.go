@@ -101,7 +101,7 @@ func (l *Loop) tellTurn(r request) error {
 	}
 	closing, ok := stops.ReadClosing(dir, wk.TreePath, wk.Session, at)
 	if !ok {
-		return refuse(working, ticket)
+		return refuse("%s's worker has no closing message for turn %d; nothing sent", ticket, at)
 	}
 	took, known := l.harnessTookMessage(wk, closing)
 	if !known {

@@ -3,6 +3,7 @@ package dispatch_test
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -278,5 +279,21 @@ func TestTellTurnSendsNothingWhenAnEarlierRunCrashedAfterRecordingTheAttempt(t *
 
 	require.NoError(t, res.Err)
 	assert.Contains(t, res.Stdout, "already told")
+	assert.Empty(t, d.Workers.Received("ENG-1"))
+}
+
+func TestTellTurnNamesAMissingClosingMessage(t *testing.T) {
+	t.Parallel()
+	d, at, _ := askedWorker(t)
+	// The Stop's closing message file is gone while its record stays (unreachable from the CLI: a
+	// failed write or a hand-deleted file).
+	for _, file := range closingFiles(t, d.state) {
+		require.NoError(t, os.Remove(file))
+	}
+
+	res := d.Run("tell", "ENG-1", "--turn", at, "yes")
+
+	require.ErrorContains(t, res.Err, fmt.Sprintf("ENG-1's worker has no closing message for turn %s; nothing sent", at))
+	assert.Equal(t, 1, res.Code)
 	assert.Empty(t, d.Workers.Received("ENG-1"))
 }
