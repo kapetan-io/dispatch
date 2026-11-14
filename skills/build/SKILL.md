@@ -28,7 +28,7 @@ You report through the ticket's status and comments, using the Linear tools in y
 
 ## Steps
 
-1. **Orient.** Read the ticket, its comments, and the design it cites.
+1. **Orient.** Read the ticket, its comments, and the design it cites, including any "Changes from build" section, which overrides the sentences it names.
    - **Intent.** State the ticket's intent in a sentence: the problem it solves and the outcome wanted. Do it before you check a deliverable against it. The thinner the ticket's due diligence, as a senior developer would judge it, the less you trust its criteria.
    - **A deliverable that doesn't serve the intent** is a mismatch. Work out whether the ticket still delivers its intent without it.
      - If it does, note the mismatch on the ticket and go on without it.
@@ -71,7 +71,7 @@ When `filed by` is not `you`, a rule filed the ticket and its title, description
 The design is what the next agent trusts, so a divergence it doesn't mention gets "fixed" back. Divergences come from the build itself, from a requirement the design missed and from review fixes alike. Record each one as you make it, not at the end, in the same words everywhere:
 
 - **Update the design when you can.** A design file in the repo is yours to edit. Change the sentence that is now wrong, so the design describes what ships.
-- **Otherwise add a "Changes from build (<ticket>)" section to the copy agents read.** That is the repo's design file when it has one, such as a banner or a section at the top. A design that lives in a Linear document, or that the user owns, is the user's to edit, so leave it and say so on the ticket.
+- **Otherwise add a "Changes from build (<ticket>)" section to the copy agents read.** That is the repo's design file when it has one, such as a banner or a section at the top. A blueprint, the Linear document on a feature ticket, gets that section at its end, after the Decision Log, added by patch: load `dispatch:blueprint` and follow its patch rules. Never rewrite a sentence above it, since the user approved those words. Any other Linear document, or a design the user owns, is theirs to edit, so leave it and say so on the ticket.
 - **Always comment the same list on the ticket and in the PR.** Each entry gives what the design said, what shipped, why, and whether the design was updated or only noted. Start the comment `## Changes from build`.
 - **Product-level divergences go to the user first.** A change to behavior the user approved, to a public contract or to scope is not yours to record and move on from. Ask, as the Rules say.
 
