@@ -395,7 +395,9 @@ func TestTickNotifiesOnceWhenAPRNudgeEscalationReachesNeedsHuman(t *testing.T) {
 	}
 
 	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
-	for range 3 {
+	require.NoError(t, d.TickAfterASecond())
+	d.Advance(5 * time.Minute)
+	for range 2 {
 		require.NoError(t, d.TickAfterASecond())
 	}
 

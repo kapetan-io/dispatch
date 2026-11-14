@@ -147,7 +147,7 @@ func TestTickShowsAnIdleWorkerAsSoonAsItsTurnEnds(t *testing.T) {
 		label string
 		told  []string
 	}{
-		{label: "design"},
+		{label: "design", told: []string{"ENG-1's worker is idle with nothing running: ticket ENG-1"}},
 		{label: "design-review", told: []string{"ENG-1's worker is idle with nothing running: ticket ENG-1"}},
 	} {
 		t.Run(test.label, func(t *testing.T) {

@@ -581,7 +581,7 @@ func TestTickNeverNudgesOrEscalatesADesignWorker(t *testing.T) {
 	d.Workers.Running("ENG-1", "idle")
 
 	for range 8 {
-		assert.Empty(t, d.Tick())
+		d.Tick()
 		d.Advance(3 * time.Hour)
 	}
 
@@ -590,12 +590,15 @@ func TestTickNeverNudgesOrEscalatesADesignWorker(t *testing.T) {
 	d.Linear.Tickets(withComment(designTicket("ENG-1", "In Progress"), comment1))
 	for _, status := range []string{"idle", "blocked"} {
 		d.Workers.SetStatus("ENG-1", status)
-		assert.Empty(t, d.Tick())
+		d.Tick()
 		d.Advance(3 * time.Hour)
 	}
 
+	assert.Equal(t, []string{
+		"ENG-1 is waiting on your answer in its workspace",
+		"ENG-1 is waiting on your answer in its workspace",
+	}, d.Followed.Told())
 	assert.Empty(t, d.Workers.Received("ENG-1"))
-	assert.Empty(t, d.Followed.Told())
 	assert.Empty(t, d.Linear.Changes())
 	assert.Empty(t, d.Workers.Launched())
 	assert.Empty(t, d.Workers.Closed())

@@ -12,12 +12,28 @@ scenario(rules, "notify-needs-human notifies once per stretch in Needs Human", s
   s.expect([]);
   s.see(ticket("ENG-1", { status: "in_progress" }), worker("ENG-1", "working"));
   s.see(ticket("ENG-1", { status: "needs_human" }));
+  s.advance(5 * 60 * 1000);
   s.expect([["notify-needs-human", "notify", "ENG-1"]]);
 });
 
-scenario(rules, "notify-needs-human is silent for a design ticket", s => {
+scenario(rules, "notify-needs-human notifies for a design ticket", s => {
   s.given(ticket("ENG-1", { status: "needs_human", labels: ["design"] }));
+  s.expect([["notify-needs-human", "notify", "ENG-1"]]);
+});
+
+scenario(rules, "notify-needs-human waits while the worker has not paused", s => {
+  s.given(ticket("ENG-1", { status: "needs_human", labels: ["design"] }), worker("ENG-1", "working"));
   s.expect([]);
+  s.see(worker("ENG-1", "idle", { lastStop: 0 }));
+  s.expect([["notify-needs-human", "notify", "ENG-1"]]);
+});
+
+scenario(rules, "notify-needs-human notifies once the worker has been in a turn for 5 minutes", s => {
+  s.given(ticket("ENG-1", { status: "needs_human", labels: ["design"] }), worker("ENG-1", "working"));
+  s.advance(4 * 60 * 1000);
+  s.expect([]);
+  s.advance(2 * 60 * 1000);
+  s.expect([["notify-needs-human", "notify", "ENG-1"]]);
 });
 
 scenario(rules, "notify-needs-human notifies for a design-review ticket", s => {
@@ -60,12 +76,12 @@ scenario(rules, "notify-blocked notifies for a blocked worker on a ticket in rev
   s.expect([["notify-blocked", "notify", "ENG-1"]]);
 });
 
-scenario(rules, "notify-blocked is silent for a design worker", s => {
+scenario(rules, "notify-blocked notifies for a design worker", s => {
   s.given(ticket("ENG-1", { ...build, labels: ["design"] }), worker("ENG-1", "blocked"));
-  s.expect([]);
+  s.expect([["notify-blocked", "notify", "ENG-1"]]);
 });
 
-scenario(rules, "notify-blocked notifies for a design-review worker only as a review", s => {
+scenario(rules, "notify-blocked notifies for a design-review worker", s => {
   s.given(ticket("ENG-1", { ...build, labels: ["design-review"] }), worker("ENG-1", "blocked"));
   s.expect([["notify-blocked", "notify", "ENG-1"]]);
 });
@@ -254,9 +270,9 @@ scenario(rules, "notify-idle is silent for a worker whose kickoff is unconfirmed
   s.expect([]);
 });
 
-scenario(rules, "notify-idle is silent for a design ticket", s => {
+scenario(rules, "notify-idle notifies for a design ticket", s => {
   s.given(ticket("ENG-1", { ...build, labels: ["design"] }), worker("ENG-1", "idle", { lastStop: 0 }));
-  s.expect([]);
+  s.expect([["notify-idle", "notify", "ENG-1"]]);
 });
 
 scenario(rules, "notify-idle still notifies when the labels were cut short", s => {

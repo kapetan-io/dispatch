@@ -194,12 +194,14 @@ scenario(rules, "escalate-truncated-labels leaves a parent alone, because a pare
   s.expect([]);
 });
 
-scenario(rules, "escalating a design ticket announces it, because notify-needs-human leaves design tickets alone", s => {
+scenario(rules, "escalating a design ticket notifies once, from notify-needs-human", s => {
   s.given(ticket("ENG-1", { ...build, labels: ["design"] }));
   s.land("launch", "ENG-1", { outcome: "failed", detail: "x" });
   s.land("launch", "ENG-1", { outcome: "failed", detail: "x" });
-  s.expect([["escalate-launch-failures", "escalate", "ENG-1"]]);   // the notice waits for the move
+  s.expect([["escalate-launch-failures", "escalate", "ENG-1"]]);
   s.land("escalate", "ENG-1");
-  s.see(ticket("ENG-1", { status: "needs_human" }));
-  s.expect([]);   // the loop runs the notice from the escalate receipt, so the rule wants nothing more
+  s.see(ticket("ENG-1", { status: "needs_human", labels: ["design"] }));
+  s.expect([["notify-needs-human", "notify", "ENG-1"]]);
+  s.land("notify", "ENG-1");
+  s.expect([]);
 });

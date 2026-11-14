@@ -165,6 +165,8 @@ func TestTickMessagesFollowersAboutNeedsHumanAndBlockedWorkers(t *testing.T) {
 			require.NoError(t, d.Run("watch", "ENG-1").Err)
 
 			d.Tick()
+			d.Advance(5 * time.Minute)
+			d.Tick()
 
 			got := next(t, lines)
 			assert.Contains(t, got, test.want)
@@ -669,6 +671,8 @@ func TestTickKeepsAFollowerWhoseDeliveryFailedWithAWriteError(t *testing.T) {
 	assert.NotContains(t, d.LoopStderr(), "dropped session")
 
 	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
+	d.Tick()
+	d.Advance(5 * time.Minute)
 	d.Tick()
 
 	assert.Len(t, d.Followed.Told(), 1)

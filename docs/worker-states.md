@@ -15,7 +15,7 @@ Each worker's workspace is labeled `<emoji> <ticket>`, and the emoji says who th
 | 🔴 | You | Needs Human, or the worker is blocked on a question popup |
 | ⏸️ | Nobody | A Todo child of an In Progress parent, which keeps its tree, with a workspace still open |
 
-💤 changes the label and tells the sessions following the ticket once each time it appears (the `notify-idle` rule, In Progress tickets only, `design` tickets send nothing). It sends nothing to the worker and no reminder, and it goes back to 🟢 within seconds of you typing into the window. That depends on herdr already reporting the worker as working when the hook fires. Otherwise 💤 stays until the next Notification or resync.
+💤 changes the label and tells the sessions following the ticket once each time it appears (the `notify-idle` rule, In Progress tickets only, `design` tickets included). It sends nothing to the worker and no reminder, and it goes back to 🟢 within seconds of you typing into the window. That depends on herdr already reporting the worker as working when the hook fires. Otherwise 💤 stays until the next Notification or resync.
 
 ## How the label is chosen
 
@@ -51,7 +51,7 @@ A worker can report no status, as Claude does while it shows a startup dialog. I
 | Working | any | 🟢 | Nothing |
 | Idle | none, or without the task list | 🟢 | Nothing |
 | Idle | a task still running, under 60 minutes old | 🟢 | Nothing. After 60 minutes it counts as stopped, so the next row applies |
-| Idle | stopped, nothing running | 💤 | Tells the sessions following the ticket once, unless it is a `design` ticket. No nudge, nothing sent to the worker |
+| Idle | stopped, nothing running | 💤 | Tells the sessions following the ticket once. No nudge, nothing sent to the worker |
 | Idle, unconfirmed | any | 🟢 | After 5 minutes, closes the workspace and relaunches the worker. The closes count toward `launch_failure_limit` |
 | Blocked on a popup | any | 🔴 | Notifies on the first cycle and every `blocked_renotify_minutes`. Never nudges, never moves the ticket |
 | Gone | n/a | 🟢 | Relaunches the worker. A launch a rule asked to stack on another ticket's PR starts a new branch at that PR's head and records it, and its receipt says `stacked on <ticket> at <short head> (<branch>)`. A relaunch never changes the record |
@@ -92,11 +92,11 @@ An idle In Review worker whose PR gains a review or comment gets the activity nu
 
 | Ticket | Worker | Emoji | What dispatch does |
 |---|---|---|---|
-| Needs Human | any | 🔴 | Notifies once on entering the status. A `design` ticket doesn't notify |
+| Needs Human | any | 🔴 | Notifies once on entering the status, a `design` ticket included. While the worker has not paused (it is working, has no Stop record, or took a message after its last Stop) the notice waits for it to pause or for 5 minutes after the status began, whichever comes first. A worker blocked on a popup is held too. With no worker it notifies at once |
 | Paused (Backlog or Todo) | gone | none | Returns the tree, discarding uncommitted changes. A Todo child of an In Progress parent keeps its tree and shows ⏸️ |
 | Paused | live | unchanged | Closes the workspace, then ⏸️ |
 
-A `design` or `design-review` worker is never nudged, and a `design` ticket sends no notification for a blocked popup, for Needs Human or for going idle. Its label follows the same lines as a build worker's, and 💤 is how you see that a design is waiting on you.
+A `design` or `design-review` worker is never nudged, and its ticket notifies like any other for a blocked popup, for Needs Human and for going idle. Its label follows the same lines as a build worker's, and 💤 is how you see that a design is waiting on you.
 
 ## What dispatch no longer does
 
