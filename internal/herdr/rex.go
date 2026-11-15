@@ -211,10 +211,19 @@ func repoSession(sessions []rexSession, label string) (rexSession, bool) {
 
 // rexProcess is what a block reports of its program.
 type rexProcess struct {
-	LastExit   *rexExit `json:"last_exit"`
+	LastExit *rexExit `json:"last_exit"`
+	// Child is the process the block started, such as login.
+	Child *struct {
+		PID int `json:"pid"`
+	} `json:"child"`
 	Foreground *struct {
+		PID   int    `json:"pid"`
 		Argv0 string `json:"argv0"`
 	} `json:"foreground"`
+	// Ancestors are the processes between the foreground process and the block, nearest first, ending with Child.
+	Ancestors []struct {
+		PID int `json:"pid"`
+	} `json:"ancestors"`
 }
 
 // rexExit is how a block's program ended.

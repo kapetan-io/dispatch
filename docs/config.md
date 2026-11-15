@@ -181,6 +181,30 @@ delete_empty_sessions = false
 
 Rex has to be open. Dispatch never starts it, and a command that needs it exits saying "Rex is not running". It finds `rex` on PATH, then in `/Applications/Rex Beta.app`. Each repo gets a Rex session named for the folder of its main checkout, and each worker is a block in a window of that session. A close ends the worker and, unless `delete_empty_sessions` is on, leaves the session.
 
+### Resuming your own Claude sessions after a Rex restart
+
+A Rex restart brings every pane back as a shell and drops the Claude that ran in it. The plugin's hooks keep a pane record for each Claude session you run in a Rex pane, and `dispatch rex restore` types `cd '<directory>' && claude --resume <session id>` into each pane that is back at its prompt. It needs no `[plugins.rex]` table and no `dispatch run`, only the plugin's hooks and an open Rex.
+
+```
+$ dispatch rex restore
+resumed       dispatch / Dev Manager  e30fe6b1-6f5c-4c4e-9d1e-2b7a4f0c9a11
+busy          dispatch / logs
+gone          session:01a1…/block:77c2…  run: cd '/Users/you/src/api' && claude --resume 0732e497-…
+```
+
+| Line | Meaning |
+|---|---|
+| `resumed` | The line was typed and a program took the pane. |
+| `would resume` | What `--dry-run` prints in place of typing. |
+| `idle` | The record was written under the running Rex server, so the session ended without a restart. Nothing is typed, and the line to run by hand is printed. |
+| `busy` | The pane is running something, so nothing is typed. |
+| `worker` | The pane is now a worker's, which dispatch resumes itself. |
+| `gone` | The pane no longer exists. The line to run by hand is printed and the record is removed. |
+| `skipped` | The record is unreadable, or its directory holds a `'` or a `\` and cannot be quoted the same way in every shell. |
+| `failed`, `not started` | Rex refused the typing, or the pane was still at its prompt 15 seconds later. The command exits 1. |
+
+Running it twice, or with no restart, types nothing. Quitting a session with `/exit` or Ctrl-D removes its record, so restore never brings back a conversation you closed. A session started before the hooks were installed has no record until its next turn ends. Only Claude sessions are resumed, and a `claude -p` run is recorded like any other.
+
 ## `[plugins.local]`
 
 Local tickets are tickets kept in dispatch's own database, beside Linear's. Writing the table, even empty, turns them on. Without it dispatch creates and opens no database, and a `dispatch ticket` verb on a local ticket exits 1 saying local tickets are off. `create linear` and `edit` of a Linear ticket still work.

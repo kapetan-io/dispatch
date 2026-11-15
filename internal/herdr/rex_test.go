@@ -60,6 +60,8 @@ type standInBlock struct {
 	ID, Label string
 	// Argv0 is the foreground program, "" when the block has none.
 	Argv0 string
+	// AtPrompt makes the foreground program the block's own shell and not a program the shell runs.
+	AtPrompt bool
 	// Args is what followed the program in the block's command.
 	Args     []string
 	LastExit bool
@@ -449,8 +451,16 @@ func (s *standInRex) blockMethod(raw []byte) (any, error) {
 		if b.LastExit {
 			reply["last_exit"] = map[string]any{"exit_code": b.ExitCode, "error": fmt.Sprintf("exit status %d", b.ExitCode)}
 		}
-		if b.Argv0 != "" {
-			reply["foreground"] = map[string]string{"argv0": b.Argv0}
+		// A block's child is login (pid 1) and its shell is pid 2. A program the shell runs is pid 3.
+		reply["child"] = map[string]int{"pid": 1}
+		switch {
+		case b.Argv0 == "":
+		case b.AtPrompt:
+			reply["foreground"] = map[string]any{"pid": 2, "argv0": b.Argv0}
+			reply["ancestors"] = []map[string]int{{"pid": 1}}
+		default:
+			reply["foreground"] = map[string]any{"pid": 3, "argv0": b.Argv0}
+			reply["ancestors"] = []map[string]int{{"pid": 2}, {"pid": 1}}
 		}
 		return reply, nil
 	case "size":

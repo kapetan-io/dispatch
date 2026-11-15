@@ -98,6 +98,9 @@ type Options struct {
 	// RexSocket names the Rex server's socket, for tests that must stay off the user's own Rex
 	// server. Unset, rex picks its server as it always does.
 	RexSocket string
+	// RexPanes is the user's panes on the Rex server, which the pane record hooks and
+	// `dispatch rex restore` read and type into. Defaults to the installed rex.
+	RexPanes RexPanes
 	// RulesDir overrides [dispatch].rules, so tests run the repo's rules/ directory.
 	RulesDir string
 	// RuleTimeout cuts off a rule call on Clock. Zero means 1 second for
@@ -135,6 +138,9 @@ const usage = `usage: dispatch run
        dispatch launch <ticket> <branch> [--base REF] [--model NAME | --harness harness.NAME] [--kickoff TEXT] [--title TEXT]
        dispatch claude-shim [CLAUDE ARGS]
        dispatch record-stop
+       dispatch record-start
+       dispatch record-end
+       dispatch rex restore [--dry-run]
        dispatch wake
        dispatch watch <ticket>
        dispatch unwatch <ticket>
@@ -225,6 +231,20 @@ const usage = `usage: dispatch run
                when no dispatch runs, when none of them is set or the terminal is unlisted or runs
                no harness dispatch has an adapter for, and outside a worktree of a repo listed under [repos]. The
                plugin's Stop hook runs it
+  record-start read a SessionStart hook's JSON on stdin and write the pane record of the Rex pane the
+               session runs in (REX_SESSION with REX_BLOCK): the session, its directory and the
+               Rex server's instance. Does nothing outside Rex, in a worker, or when Rex does not
+               answer. The plugin's SessionStart hook runs it, and record-stop writes the same
+               record for a pane that has none or names another session
+  record-end   read a SessionEnd hook's JSON on stdin and remove the pane record when it names the
+               ending session and the user quit it. The plugin's SessionEnd hook runs it
+  rex restore [--dry-run]
+               after a Rex restart, resume each recorded Claude session in the pane it ran in, by
+               typing "cd <dir> && claude --resume <session>" into each recorded pane that is at
+               its shell prompt and whose record is older than the running Rex server. Prints one
+               line per pane record. Leaves alone a pane that runs a program or holds a worker,
+               and for a pane Rex did not bring back prints the line to run by hand and drops the
+               record. --dry-run prints the same and changes nothing. Needs no [plugins.rex]
   wake         read a Notification or UserPromptSubmit hook's JSON on stdin and ask the running loop
                to read the multiplexer again and run a cycle without waiting for it, so the worker's workspace
                label follows within seconds. Finds the session's harness from the terminal the hook
@@ -302,6 +322,12 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		return wakeLoop(ctx, opts)
 	case "record-stop":
 		return recordStop(ctx, opts)
+	case "record-start":
+		return recordStart(ctx, opts)
+	case "record-end":
+		return recordEnd(opts)
+	case "rex":
+		return rexCommand(ctx, opts, args[1:])
 	case "watch", "unwatch":
 		if len(args) != 2 {
 			_, _ = fmt.Fprintln(opts.Stderr, usage)
@@ -332,6 +358,9 @@ func withDefaults(o Options) Options {
 	}
 	if o.StateDir == "" {
 		o.StateDir = o.Env.ExpandHome("~/.local/state/dispatch")
+	}
+	if o.RexPanes == nil {
+		o.RexPanes = herdr.NewRex(o.StateDir).WithSocket(o.RexSocket).WithEnv(o.Env)
 	}
 	if o.Linear == nil {
 		o.Linear = func(key string) linear.Workspace { return linear.NewClient(linear.DefaultURL, key) }

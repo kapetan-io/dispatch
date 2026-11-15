@@ -118,6 +118,33 @@ func (ClaudeCode) Stop(input []byte) (sessionlog.Stop, string, bool) {
 	return report, in.CWD, true
 }
 
+// Started reads the session and working directory from Claude Code's SessionStart hook input. A
+// Stop hook's input carries the same two fields, so it reads that too.
+func (ClaudeCode) Started(input []byte) (session, cwd string, ok bool) {
+	var in struct {
+		SessionID string `json:"session_id"`
+		CWD       string `json:"cwd"`
+	}
+	if json.Unmarshal(input, &in) != nil || in.SessionID == "" {
+		return "", "", false
+	}
+	return in.SessionID, in.CWD, true
+}
+
+// Ended reads Claude Code's SessionEnd hook input. quit is true when the user ended the session
+// themselves, by leaving the prompt or logging out, and false for every other reason, such as a
+// /clear or the terminal going away under it.
+func (ClaudeCode) Ended(input []byte) (session string, quit, ok bool) {
+	var in struct {
+		SessionID string `json:"session_id"`
+		Reason    string `json:"reason"`
+	}
+	if json.Unmarshal(input, &in) != nil || in.SessionID == "" {
+		return "", false, false
+	}
+	return in.SessionID, in.Reason == "prompt_input_exit" || in.Reason == "logout", true
+}
+
 // TookMessageAfter reads the transcript at the path the Stop hook reported. Only user and assistant
 // entries carry the conversation: after a Stop Claude appends only stop_hook_summary, last-prompt
 // and cost-state entries, so a user entry stamped after the turn ended is a message the session took.

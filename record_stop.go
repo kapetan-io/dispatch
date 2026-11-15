@@ -26,6 +26,8 @@ func recordStop(ctx context.Context, opts Options) error {
 	// One budget covers the multiplexer lookup and the report, so the hook never holds a turn longer than stopTimeout on them.
 	askCtx, cancel := clock.WithTimeout(ctx, opts.Clock, "record-stop", stopTimeout)
 	defer cancel()
+	// Before the harness lookup, which finds only a worker's terminal and so ends here for a pane of the user's.
+	recordPane(askCtx, opts, input, false)
 	harness, ok := reportingHarness(askCtx, opts)
 	if !ok {
 		return nil

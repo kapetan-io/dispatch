@@ -29,18 +29,9 @@ func (r *Rex) StartWorker(ctx context.Context, w Worker) (Started, error) {
 	}
 	var started Started
 	err = r.withStructure(ctx, func() error {
-		var status struct {
-			Instance string `json:"instance_id"`
-		}
-		if err := r.api(ctx, "", "server.status", nil, &status); err != nil {
+		instance, err := r.Instance(ctx)
+		if err != nil {
 			return err
-		}
-		if status.Instance == "" {
-			return errors.New("rex server.status named no instance id, which the worker label needs")
-		}
-		instance := status.Instance
-		if len(instance) > instanceLen {
-			instance = instance[:instanceLen]
 		}
 		sessions, err := r.sessions(ctx)
 		if err != nil {

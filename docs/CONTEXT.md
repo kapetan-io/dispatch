@@ -185,6 +185,10 @@ _Avoid_: workspace, project, Rex session (any session, the user's included). Els
 The file lock `rex.lock` in dispatch's state directory, held while dispatch changes Rex sessions, windows or worker blocks, so two launches on one tree leave one worker.
 _Avoid_: start lock, mutex
 
+**Pane record**:
+The file `panes/<Rex session id>/<block id>.json` in dispatch's state directory, naming the Claude session running in one of the user's own Rex panes, its working directory and the Rex server process it was written under. The plugin's SessionStart and Stop hooks write it, the SessionEnd hook removes it when the user quits the session, and `dispatch rex restore` reads it to resume the session in the same pane after a Rex restart. A worker's pane has none, because its **Worker label** already holds its session.
+_Avoid_: snapshot (the world written at the head of a history segment), saved session, restore file
+
 **Worker**:
 The ticket's place on a tree it holds: the tree, the workspace showing that tree, and the harness session running there now, if any. Only a session of a harness dispatch has an adapter for counts; an agent of another kind a person opened in the workspace, such as a Pi, is ignored. Sessions come and go inside it: a relaunch keeps the same worker with a new session, and the worker lasts as long as the ticket holds the tree. A ticket that holds trees in two repos has a worker on each. The worker's state is its session's: `working`, `idle`, `blocked`, or `none` when no session runs there. A rule that looks up a ticket that holds no tree gets a worker record with state `none`, though there is no worker. Some messages use "worker" for the session: "has no worker" and "gone" mean the state `none`, and "a worker is running" means a session runs there.
 _Avoid_: agent (herdr's word for any terminal agent, kept inside the herdr adapter; dispatch's word is harness), runner, executor, session (a session is one harness run inside the worker)
