@@ -113,8 +113,12 @@ const (
 
 // TicketCall is one `dispatch ticket` verb.
 type TicketCall struct {
-	Verb   string              `json:"verb"`
-	ID     string              `json:"id,omitempty"`
+	Verb string `json:"verb"`
+	ID   string `json:"id,omitempty"`
+	// System is the ticket system create files in, as typed: "" when the command gave none.
+	System string `json:"system,omitempty"`
+	// Team is the Linear team key create linear files on.
+	Team   string              `json:"team,omitempty"`
 	Draft  *localticket.Draft  `json:"draft,omitempty"`
 	Edit   *localticket.Edit   `json:"edit,omitempty"`
 	Status string              `json:"status,omitempty"` // move's status name

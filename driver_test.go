@@ -254,6 +254,7 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 	d.tools.Linear.Now = d.Clock.Now
 	require.NoError(t, os.MkdirAll(d.Repo, 0o755))
 	d.addRepo("dispatch", d.Repo)
+	d.tools.Linear.AddLabel("dispatch", "repo")
 	d.Linear, d.Workers, d.Trees = &Linear{d: d}, &Workers{d: d}, &Trees{d: d}
 	d.GitHub, d.Followed, d.Services = &GitHub{d: d}, &Followed{d: d}, &Services{d: d}
 	if opts.Config != "" {
@@ -957,6 +958,29 @@ type Linear struct{ d *Dispatch }
 
 // Tickets seeds the tickets that are started and assigned to the key's owner.
 func (l *Linear) Tickets(tickets ...fakeTicket) { l.d.tickets(tickets...) }
+
+// Issue is the ticket the workspace holds under this identifier, filed through dispatch or seeded.
+func (l *Linear) Issue(id string) fakeTicket {
+	l.d.t.Helper()
+	for _, issue := range l.d.tools.Linear.Issues() {
+		if issue.Identifier == id {
+			return issue
+		}
+	}
+	require.Failf(l.d.t, "no such ticket", "Linear holds no %s", id)
+	return fakeTicket{}
+}
+
+// Descriptions lists the description writes Linear accepted, as "ENG-1: <description>".
+func (l *Linear) Descriptions() []string {
+	var out []string
+	for _, c := range l.d.linear.mutations() {
+		if c.Kind == lineartest.Describe {
+			out = append(out, strings.TrimPrefix(c.TicketID, "uuid-")+": "+c.Body)
+		}
+	}
+	return out
+}
 
 // AcceptKey makes Linear reject every key but key from now on.
 func (l *Linear) AcceptKey(key string) { l.d.linear.AcceptKey(key) }

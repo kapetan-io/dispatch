@@ -38,6 +38,15 @@ type Workspace interface {
 	// StateID returns the id of the named workflow status on a team, or NoTeam
 	// when the key matches no team.
 	StateID(ctx context.Context, team, name string) (string, error)
+	// CreateTicket files a ticket assigned to the key's owner and returns its identifier. It
+	// refuses a team, status or label that doesn't exist and creates none of them.
+	CreateTicket(ctx context.Context, t NewTicket) (identifier string, err error)
+	// ManagedDescription returns the id and description of the ticket named by identifier, or
+	// an error matching ErrNotManaged when it isn't assigned to the key's owner, doesn't carry
+	// label, or is outside teams.
+	ManagedDescription(ctx context.Context, label string, teams []string, identifier string) (Described, error)
+	// SetDescription replaces a ticket's description.
+	SetDescription(ctx context.Context, ticketID, description string) error
 	// Move sets a ticket's status.
 	Move(ctx context.Context, ticketID, stateID string) error
 	// Comment adds a comment to a ticket.
@@ -222,7 +231,7 @@ func (n issueNode) ticket() ticket.Ticket {
 		HasChildren:       len(n.Children.Nodes) > 0,
 		LabelsTruncated:   n.Labels.PageInfo.HasNextPage,
 		BlockersTruncated: n.InverseRelations.PageInfo.HasNextPage,
-		Attributes:        attributesIn(n.Description),
+		Attributes:        AttributesIn(n.Description),
 	}
 	for _, r := range n.InverseRelations.Nodes {
 		if r.Type == "blocks" {
@@ -242,14 +251,14 @@ func (n issueNode) ticket() ticket.Ticket {
 	return t
 }
 
-// attributesIn returns the key-value pairs under the description's
+// AttributesIn returns the key-value pairs under the description's
 // level-2 "## Attributes" heading (any case), which runs to the next heading
 // or the end. A heading is hashes then a space, so "#42: x" is a pair. Each
 // line splits on its first colon and both sides are trimmed; a line with no
 // colon or a blank key is skipped, a later duplicate key wins and a list
 // marker stays in the key. It returns nil, not an empty map, when there is no
 // pair, so the rules' default of {} applies.
-func attributesIn(description string) map[string]string {
+func AttributesIn(description string) map[string]string {
 	var attrs map[string]string
 	in := false
 	for _, line := range strings.Split(description, "\n") {
@@ -618,4 +627,202 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// LabelRef names a label to put on a new ticket. A Group restricts the match to labels in that
+// label group.
+type LabelRef struct{ Name, Group string }
+
+// NewTicket is a ticket to file. Team is a team key, Status a workflow status name, and label
+// names match ignoring case, as Linear does.
+type NewTicket struct {
+	Team        string
+	Title       string
+	Description string
+	Status      string
+	Labels      []LabelRef
+}
+
+// Described is a ticket's Linear id and description.
+type Described struct {
+	ID          string
+	Description string
+}
+
+// ErrNotManaged matches the error for a ticket dispatch doesn't manage.
+var ErrNotManaged = errors.New("dispatch doesn't manage this ticket")
+
+// NotManaged is the error for a ticket that is not assigned to the key's owner or lacks label.
+func NotManaged(identifier, label string) error {
+	return fmt.Errorf("%s: %w: it must be assigned to the owner of dispatch's Linear API key and carry the %q label", identifier, ErrNotManaged, label)
+}
+
+// NoLabel is the error for a label the team and workspace lack.
+func NoLabel(team string, ref LabelRef) error {
+	if ref.Group != "" {
+		return fmt.Errorf("team %s has no %q label in the %q label group", team, ref.Name, ref.Group)
+	}
+	return fmt.Errorf("team %s has no %q label", team, ref.Name)
+}
+
+const filingContext = `query FilingContext($team: String!) {
+  viewer { id }
+  teams(first: 1, filter: {key: {eq: $team}}) { nodes { id key states(first: 250) { nodes { id name } } } }
+  issueLabels(first: 250, filter: {or: [{team: {key: {eq: $team}}}, {team: {null: true}}]}) {
+    nodes { id name parent { name } }
+    pageInfo { hasNextPage }
+  }
+}`
+
+const createTicket = `mutation CreateTicket($input: IssueCreateInput!) {
+  issueCreate(input: $input) { success issue { identifier } }
+}`
+
+// CreateTicket files a ticket assigned to the key's owner.
+func (c *Client) CreateTicket(ctx context.Context, t NewTicket) (string, error) {
+	var found struct {
+		Viewer struct {
+			ID string `json:"id"`
+		} `json:"viewer"`
+		Teams struct {
+			Nodes []struct {
+				ID     string `json:"id"`
+				Key    string `json:"key"`
+				States struct {
+					Nodes []struct {
+						ID   string `json:"id"`
+						Name string `json:"name"`
+					} `json:"nodes"`
+				} `json:"states"`
+			} `json:"nodes"`
+		} `json:"teams"`
+		IssueLabels struct {
+			Nodes []struct {
+				ID     string `json:"id"`
+				Name   string `json:"name"`
+				Parent *struct {
+					Name string `json:"name"`
+				} `json:"parent"`
+			} `json:"nodes"`
+			PageInfo struct {
+				HasNextPage bool `json:"hasNextPage"`
+			} `json:"pageInfo"`
+		} `json:"issueLabels"`
+	}
+	if err := c.do(ctx, "FilingContext", filingContext, map[string]any{"team": t.Team}, &found); err != nil {
+		return "", err
+	}
+	if len(found.Teams.Nodes) == 0 || found.Teams.Nodes[0].Key != t.Team {
+		return "", NoTeam(t.Team)
+	}
+	team := found.Teams.Nodes[0]
+	input := map[string]any{"teamId": team.ID, "title": t.Title, "assigneeId": found.Viewer.ID}
+	if t.Description != "" {
+		input["description"] = t.Description
+	}
+	stateID := ""
+	for _, s := range team.States.Nodes {
+		if s.Name == t.Status {
+			stateID = s.ID
+		}
+	}
+	if stateID == "" {
+		return "", NoStatus(t.Team, t.Status)
+	}
+	input["stateId"] = stateID
+	labelIDs := []string{}
+	for _, ref := range t.Labels {
+		id := ""
+		for _, l := range found.IssueLabels.Nodes {
+			if strings.EqualFold(l.Name, ref.Name) && (ref.Group == "" || (l.Parent != nil && strings.EqualFold(l.Parent.Name, ref.Group))) {
+				id = l.ID
+				break
+			}
+		}
+		if id == "" && found.IssueLabels.PageInfo.HasNextPage {
+			return "", fmt.Errorf("team %s has more labels than fit on one page, so dispatch can't tell whether %q exists", t.Team, ref.Name)
+		}
+		if id == "" {
+			return "", NoLabel(t.Team, ref)
+		}
+		labelIDs = append(labelIDs, id)
+	}
+	input["labelIds"] = labelIDs
+	var out struct {
+		IssueCreate struct {
+			Success bool `json:"success"`
+			Issue   struct {
+				Identifier string `json:"identifier"`
+			} `json:"issue"`
+		} `json:"issueCreate"`
+	}
+	if err := c.do(ctx, "CreateTicket", createTicket, map[string]any{"input": input}, &out); err != nil {
+		return "", err
+	}
+	if !out.IssueCreate.Success || out.IssueCreate.Issue.Identifier == "" {
+		return "", Unsuccessful("CreateTicket", t.Title)
+	}
+	return out.IssueCreate.Issue.Identifier, nil
+}
+
+const managedDescription = `query ManagedDescription($team: String!, $number: Float!) {
+  viewer { id }
+  issues(first: 1, includeArchived: true, filter: {team: {key: {eq: $team}}, number: {eq: $number}}) {
+    nodes {
+      id description
+      team { key }
+      assignee { id }
+      labels(first: 25) { nodes { name } pageInfo { hasNextPage } }
+    }
+  }
+}`
+
+// ManagedDescription returns the id and description of the ticket named by identifier when the
+// key's owner is its assignee and it carries label.
+func (c *Client) ManagedDescription(ctx context.Context, label string, teams []string, identifier string) (Described, error) {
+	team, number, ok := SplitIdentifier(identifier)
+	if !ok || !contains(teams, team) {
+		return Described{}, NotManaged(identifier, label)
+	}
+	var resp struct {
+		Viewer struct {
+			ID string `json:"id"`
+		} `json:"viewer"`
+		Issues struct {
+			Nodes []issueNode `json:"nodes"`
+		} `json:"issues"`
+	}
+	if err := c.do(ctx, "ManagedDescription", managedDescription, map[string]any{"team": team, "number": number}, &resp); err != nil {
+		return Described{}, err
+	}
+	if len(resp.Issues.Nodes) == 0 {
+		return Described{}, NotManaged(identifier, label)
+	}
+	n := resp.Issues.Nodes[0]
+	// A ticket with more labels than one page may carry the label on a later page.
+	t := n.ticket()
+	if n.Assignee == nil || n.Assignee.ID != resp.Viewer.ID || !(t.HasLabel(label) || t.LabelsTruncated) {
+		return Described{}, NotManaged(identifier, label)
+	}
+	return Described{ID: n.ID, Description: n.Description}, nil
+}
+
+const setDescription = `mutation SetDescription($id: String!, $description: String!) {
+  issueUpdate(id: $id, input: {description: $description}) { success }
+}`
+
+// SetDescription replaces a ticket's description.
+func (c *Client) SetDescription(ctx context.Context, ticketID, description string) error {
+	var out struct {
+		IssueUpdate struct {
+			Success bool `json:"success"`
+		} `json:"issueUpdate"`
+	}
+	if err := c.do(ctx, "SetDescription", setDescription, map[string]any{"id": ticketID, "description": description}, &out); err != nil {
+		return err
+	}
+	if !out.IssueUpdate.Success {
+		return Unsuccessful("SetDescription", ticketID)
+	}
+	return nil
 }

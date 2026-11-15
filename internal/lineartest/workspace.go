@@ -29,6 +29,10 @@ const (
 const (
 	Move    = "move"
 	Comment = "comment"
+	// Create is a filed ticket, whose TicketID is its identifier. Describe is a description
+	// write, whose Body is the new description.
+	Create   = "create"
+	Describe = "describe"
 )
 
 // Issue is one ticket in the workspace.
@@ -38,6 +42,9 @@ type Issue struct {
 	Assignee string
 	// Parent is the identifier of the ticket's parent, if it has one.
 	Parent string
+	// Description is the ticket's text. When set, Attributes are read from its "## Attributes"
+	// section, as Linear's client reads them.
+	Description string
 	// Archived hides the ticket from every read except LeasedTickets, which
 	// asks Linear for archived tickets too.
 	Archived bool
@@ -67,6 +74,8 @@ type Workspace struct {
 	Now func() time.Time
 
 	mu      sync.Mutex
+	labels  []ticket.Label
+	filed   int
 	viewer  linear.Viewer
 	key     string
 	team    string
@@ -92,6 +101,7 @@ func New(j *journal.Journal) *Workspace {
 			{"In Review", "started"}, {"Needs Human", "started"},
 			{"Done", "completed"}, {"Canceled", "canceled"}, {"Duplicate", "canceled"},
 		},
+		labels: []ticket.Label{{Name: "ai"}, {Name: "Feature"}, {Name: "Bug"}},
 		calls:  map[string]int{},
 		failed: map[string]bool{},
 	}
@@ -119,6 +129,13 @@ func (w *Workspace) AcceptKey(key string) {
 	w.key = key
 }
 
+// AddLabel gives the workspace a label, in a label group when group is not empty.
+func (w *Workspace) AddLabel(name, group string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.labels = append(w.labels, ticket.Label{Name: name, Group: group})
+}
+
 // AddState gives the team a workflow status of the given Linear type.
 func (w *Workspace) AddState(name, stateType string) {
 	w.mu.Lock()
@@ -142,6 +159,18 @@ func (w *Workspace) Seed(issues ...Issue) {
 		}
 	}
 	w.issues = slices.Clone(issues)
+	for i := range w.issues {
+		if w.issues[i].Description != "" {
+			w.issues[i].Attributes = linear.AttributesIn(w.issues[i].Description)
+		}
+	}
+}
+
+// Issues returns the tickets in the workspace, including the ones filed through CreateTicket.
+func (w *Workspace) Issues() []Issue {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return slices.Clone(w.issues)
 }
 
 // Changes lists the moves and comments the workspace accepted, in order.
@@ -183,6 +212,9 @@ const (
 	OnChildren = "ParentChildren"
 	OnMove     = "MoveTicket"
 	OnComment  = "CommentTicket"
+	OnCreate   = "CreateTicket"
+	OnDescribe = "ManagedDescription"
+	OnSetText  = "SetDescription"
 	// OnUnsuccessfulMove and OnUnsuccessfulComment are not operations. They make
 	// a move or comment that reaches Linear come back with success:false, and
 	// CallsTo does not count them.
@@ -410,5 +442,71 @@ func (s *session) Comment(_ context.Context, ticketID, body string) error {
 	s.w.issues[ticket].LastComment = s.w.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 	s.w.changes = append(s.w.changes, Change{Kind: Comment, TicketID: ticketID, Body: body})
 	s.w.journal.Record("linear", "comment", ticketID, body)
+	return nil
+}
+
+func (s *session) CreateTicket(_ context.Context, t linear.NewTicket) (string, error) {
+	if err := s.request(OnCreate); err != nil {
+		return "", err
+	}
+	defer s.w.mu.Unlock()
+	if t.Team != s.w.team {
+		return "", linear.NoTeam(t.Team)
+	}
+	if s.w.stateOf(t.Status) == nil {
+		return "", linear.NoStatus(t.Team, t.Status)
+	}
+	var labels []ticket.Label
+	for _, ref := range t.Labels {
+		i := slices.IndexFunc(s.w.labels, func(l ticket.Label) bool {
+			return strings.EqualFold(l.Name, ref.Name) && (ref.Group == "" || strings.EqualFold(l.Group, ref.Group))
+		})
+		if i < 0 {
+			return "", linear.NoLabel(t.Team, ref)
+		}
+		labels = append(labels, s.w.labels[i])
+	}
+	s.w.filed++
+	id := fmt.Sprintf("%s-%d", s.w.team, 900+s.w.filed)
+	issue := Issue{
+		Ticket:      ticket.Ticket{ID: "filed-" + id, Identifier: id, Title: t.Title, Status: t.Status, Team: t.Team, Labels: labels, Attributes: linear.AttributesIn(t.Description)},
+		Assignee:    s.w.viewer.ID,
+		Description: t.Description,
+	}
+	s.w.issues = append(s.w.issues, issue)
+	s.w.changes = append(s.w.changes, Change{Kind: Create, TicketID: id, Body: t.Description})
+	s.w.journal.Record("linear", "create", id, t.Title)
+	return id, nil
+}
+
+func (s *session) ManagedDescription(_ context.Context, label string, teams []string, identifier string) (linear.Described, error) {
+	if _, _, ok := linear.SplitIdentifier(identifier); !ok {
+		return linear.Described{}, linear.NotManaged(identifier, label)
+	}
+	if err := s.request(OnDescribe); err != nil {
+		return linear.Described{}, err
+	}
+	defer s.w.mu.Unlock()
+	for _, issue := range s.w.issues {
+		if issue.Identifier == identifier && issue.Assignee == s.w.viewer.ID && issue.HasLabel(label) && slices.Contains(teams, issue.Team) {
+			return linear.Described{ID: issue.ID, Description: issue.Description}, nil
+		}
+	}
+	return linear.Described{}, linear.NotManaged(identifier, label)
+}
+
+func (s *session) SetDescription(_ context.Context, ticketID, description string) error {
+	if err := s.request(OnSetText); err != nil {
+		return err
+	}
+	defer s.w.mu.Unlock()
+	i := s.w.find(ticketID)
+	if i < 0 {
+		return notFound("SetDescription", "Issue")
+	}
+	s.w.issues[i].Description = description
+	s.w.issues[i].Attributes = linear.AttributesIn(description)
+	s.w.changes = append(s.w.changes, Change{Kind: Describe, TicketID: ticketID, Body: description})
+	s.w.journal.Record("linear", "describe", ticketID, description)
 	return nil
 }

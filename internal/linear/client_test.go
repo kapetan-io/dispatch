@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -579,5 +580,213 @@ func TestClientGivesNoAttributesToADescriptionWithoutTheSection(t *testing.T) {
 	require.Len(t, found, 3)
 	for _, f := range found {
 		assert.Nil(t, f.Attributes)
+	}
+}
+
+func filingAnswer() map[string]any {
+	return map[string]any{
+		"viewer": map[string]string{"id": "u1"},
+		"teams": page(map[string]any{
+			"id": "team-1", "key": "ENG",
+			"states": page(map[string]string{"id": "s-todo", "name": "Todo"}, map[string]string{"id": "s-back", "name": "Backlog"}),
+		}),
+		"issueLabels": page(
+			map[string]any{"id": "l-ai", "name": "ai"},
+			map[string]any{"id": "l-repo", "name": "dispatch", "parent": map[string]string{"name": "repo"}},
+			map[string]any{"id": "l-other", "name": "dispatch", "parent": map[string]string{"name": "area"}},
+			map[string]any{"id": "l-feat", "name": "Feature"},
+		),
+	}
+}
+
+func TestClientCreatesATicketWithTheIdsItResolved(t *testing.T) {
+	w := newWire(t)
+	w.answers["FilingContext"] = filingAnswer()
+	w.answers["CreateTicket"] = map[string]any{"issueCreate": map[string]any{"success": true, "issue": map[string]string{"identifier": "ENG-812"}}}
+
+	id, err := w.client().CreateTicket(context.Background(), linear.NewTicket{
+		Team: "ENG", Title: "Retry", Description: "text", Status: "Todo",
+		Labels: []linear.LabelRef{{Name: "AI"}, {Name: "dispatch", Group: "repo"}, {Name: "feature"}},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "ENG-812", id)
+	assert.Equal(t, "ENG", w.variables["FilingContext"]["team"])
+	assert.Equal(t, map[string]any{
+		"teamId": "team-1", "title": "Retry", "description": "text", "assigneeId": "u1", "stateId": "s-todo",
+		"labelIds": []any{"l-ai", "l-repo", "l-feat"},
+	}, w.variables["CreateTicket"]["input"])
+}
+
+func TestClientCreatesNothingForATeamStatusOrLabelThatDoesNotExist(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		ticket linear.NewTicket
+		want   string
+	}{
+		{name: "Team", ticket: linear.NewTicket{Team: "OPS", Status: "Todo"}, want: "team OPS not found"},
+		{name: "Status", ticket: linear.NewTicket{Team: "ENG", Status: "Nope"}, want: `team ENG has no "Nope" status`},
+		{name: "Label", ticket: linear.NewTicket{Team: "ENG", Status: "Todo", Labels: []linear.LabelRef{{Name: "ghost"}}}, want: `team ENG has no "ghost" label`},
+		{name: "LabelGroup", ticket: linear.NewTicket{Team: "ENG", Status: "Todo", Labels: []linear.LabelRef{{Name: "ai", Group: "repo"}}}, want: `no "ai" label in the "repo" label group`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			w := newWire(t)
+			answer := filingAnswer()
+			if test.name == "Team" {
+				answer["teams"] = page()
+			}
+			w.answers["FilingContext"] = answer
+
+			_, err := w.client().CreateTicket(context.Background(), test.ticket)
+
+			require.ErrorContains(t, err, test.want)
+			assert.NotContains(t, w.queries, "CreateTicket")
+		})
+	}
+}
+
+func TestClientReadsTheDescriptionOfATicketItManages(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		assignee string
+		labels   []string
+		managed  bool
+	}{
+		{name: "Managed", assignee: "u1", labels: []string{"ai"}, managed: true},
+		{name: "AssignedElsewhere", assignee: "u2", labels: []string{"ai"}},
+		{name: "Unassigned", labels: []string{"ai"}},
+		{name: "NoAILabel", assignee: "u1", labels: []string{"Feature"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			w := newWire(t)
+			n := node("ENG-1", test.assignee, test.labels...)
+			n["description"] = "text"
+			w.answers["ManagedDescription"] = map[string]any{"viewer": map[string]string{"id": "u1"}, "issues": page(n)}
+
+			got, err := w.client().ManagedDescription(context.Background(), "ai", []string{"ENG"}, "ENG-1")
+
+			if !test.managed {
+				require.ErrorIs(t, err, linear.ErrNotManaged)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, linear.Described{ID: "id-ENG-1", Description: "text"}, got)
+			assert.Equal(t, map[string]any{"team": "ENG", "number": float64(1)}, w.variables["ManagedDescription"])
+		})
+	}
+}
+
+func TestClientDoesNotAskLinearAboutATicketOutsideTheTeamsOrWithNoNumber(t *testing.T) {
+	w := newWire(t)
+
+	for _, id := range []string{"OPS-1", "garbage", "ENG-0"} {
+		_, err := w.client().ManagedDescription(context.Background(), "ai", []string{"ENG"}, id)
+
+		require.ErrorIs(t, err, linear.ErrNotManaged)
+	}
+	assert.Empty(t, w.queries)
+}
+
+func TestClientWritesADescription(t *testing.T) {
+	w := newWire(t)
+	w.answers["SetDescription"] = map[string]any{"issueUpdate": map[string]bool{"success": true}}
+
+	require.NoError(t, w.client().SetDescription(context.Background(), "id-1", "new text"))
+
+	assert.Equal(t, map[string]any{"id": "id-1", "description": "new text"}, w.variables["SetDescription"])
+
+	w.answers["SetDescription"] = map[string]any{"issueUpdate": map[string]bool{"success": false}}
+	require.ErrorContains(t, w.client().SetDescription(context.Background(), "id-1", "x"), "success=false")
+}
+
+func TestWithAttributesChangesOnlyTheAttributesSection(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		text  string
+		set   map[string]string
+		unset []string
+		want  string
+	}{
+		{name: "NoSectionAddsOne", text: "Body.", set: map[string]string{"model": "opus"}, want: "Body.\n\n## Attributes\nmodel: opus\n"},
+		{name: "EmptyDescription", set: map[string]string{"model": "opus"}, want: "## Attributes\nmodel: opus\n"},
+		{name: "NewKeysSortAfterExisting", text: "## Attributes\nz: 1\n", set: map[string]string{"b": "2", "a": "3"}, want: "## Attributes\nz: 1\na: 3\nb: 2\n"},
+		{name: "ReplacesAValueInPlace", text: "A\n\n## attributes\nmodel: sonnet\nowner: ada\n\n## Notes\nx\n", set: map[string]string{"model": "opus"}, want: "A\n\n## attributes\nmodel: opus\nowner: ada\n\n## Notes\nx\n"},
+		{name: "KeepsLinesWithoutAColon", text: "## Attributes\nfree text\nmodel: a\n", unset: []string{"model"}, want: "## Attributes\nfree text\n"},
+		{name: "UnsettingTheLastDropsTheSection", text: "A\n\n## Attributes\nmodel: a\n\n## Notes\nx\n", unset: []string{"model"}, want: "A\n\n## Notes\nx\n"},
+		{name: "SectionAtTheEndWithoutNewline", text: "A\n## Attributes\nmodel: a", set: map[string]string{"model": "b"}, want: "A\n## Attributes\nmodel: b"},
+		{name: "ValueWithColonsIsKept", text: "A", set: map[string]string{"url": "http://x:80"}, want: "A\n\n## Attributes\nurl: http://x:80\n"},
+		{name: "AHeadingInsideTheTextIsNotTheSection", text: "## Attributesx\nmodel: a\n", set: map[string]string{"model": "b"}, want: "## Attributesx\nmodel: a\n\n## Attributes\nmodel: b\n"},
+		{name: "NothingToDoLeavesTheText", text: "A\n", unset: []string{"missing"}, want: "A\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := linear.WithAttributes(test.text, test.set, test.unset)
+
+			require.NoError(t, err)
+			assert.Equal(t, test.want, got)
+			for k, v := range test.set {
+				assert.Equal(t, v, linear.AttributesIn(got)[k])
+			}
+		})
+	}
+}
+
+func TestWithAttributesRefusesAKeyOrValueTheSectionCannotHold(t *testing.T) {
+	for _, set := range []map[string]string{{"a:b": "1"}, {"": "1"}, {"a\nb": "1"}, {"#a": "1"}, {" a": "1"}, {"a": "x\ny"}} {
+		_, err := linear.WithAttributes("A", set, nil)
+
+		require.Error(t, err)
+	}
+}
+
+func TestWithAttributesAgreesWithAttributesInOnTextThePlainCasesSkip(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		text  string
+		set   map[string]string
+		unset []string
+	}{
+		{name: "EmptyValue", text: "A", set: map[string]string{"model": ""}},
+		{name: "ValueWithSurroundingSpaces", text: "A", set: map[string]string{"model": " opus "}},
+		{name: "WindowsLineEndings", text: "A\r\n\r\n## Attributes\r\nmodel: a\r\n\r\n## Notes\r\nx\r\n", set: map[string]string{"model": "b"}},
+		{name: "HeadingIsTheLastLine", text: "A\n## Attributes", set: map[string]string{"model": "b"}},
+		{name: "DuplicateKeyInTheSection", text: "## Attributes\nmodel: a\nmodel: c\n", set: map[string]string{"model": "b"}},
+		{name: "UnsetKeyWrittenWithSpaces", text: "## Attributes\n  model : a\n", unset: []string{"model"}},
+		{name: "SubheadingEndsTheSection", text: "## Attributes\nmodel: a\n### Detail\nx: 1\n", set: map[string]string{"effort": "high"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := linear.WithAttributes(test.text, test.set, test.unset)
+
+			require.NoError(t, err)
+			read := linear.AttributesIn(got)
+			for k, v := range test.set {
+				if !slices.Contains(test.unset, k) {
+					assert.Equal(t, strings.TrimSpace(v), read[k])
+				}
+			}
+			for _, k := range test.unset {
+				if _, set := test.set[k]; !set {
+					assert.NotContains(t, read, k)
+				}
+			}
+		})
+	}
+}
+
+func TestWithAttributesRefusesWhatItCannotWriteWithoutGuessing(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		text  string
+		set   map[string]string
+		unset []string
+		want  string
+	}{
+		{name: "TwoAttributesSections", text: "## Attributes\nmodel: a\n\n## Attributes\nmodel: z\n", set: map[string]string{"model": "b"}, want: "two ## Attributes sections"},
+		{name: "SetAndUnsetTheSameKey", text: "## Attributes\nmodel: a\n", set: map[string]string{"model": "b"}, unset: []string{"model"}, want: "both set and unset"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := linear.WithAttributes(test.text, test.set, test.unset)
+
+			require.ErrorContains(t, err, test.want)
+		})
 	}
 }

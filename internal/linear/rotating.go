@@ -89,6 +89,36 @@ func (k *RotatingKey) StateID(ctx context.Context, team, name string) (string, e
 	return out, err
 }
 
+func (k *RotatingKey) CreateTicket(ctx context.Context, t NewTicket) (string, error) {
+	ws, err := k.Workspace(ctx)
+	if err != nil {
+		return "", err
+	}
+	out, err := ws.CreateTicket(ctx, t)
+	k.rotated(err)
+	return out, err
+}
+
+func (k *RotatingKey) ManagedDescription(ctx context.Context, label string, teams []string, identifier string) (Described, error) {
+	ws, err := k.Workspace(ctx)
+	if err != nil {
+		return Described{}, err
+	}
+	out, err := ws.ManagedDescription(ctx, label, teams, identifier)
+	k.rotated(err)
+	return out, err
+}
+
+func (k *RotatingKey) SetDescription(ctx context.Context, ticketID, description string) error {
+	ws, err := k.Workspace(ctx)
+	if err != nil {
+		return err
+	}
+	err = ws.SetDescription(ctx, ticketID, description)
+	k.rotated(err)
+	return err
+}
+
 func (k *RotatingKey) Move(ctx context.Context, ticketID, stateID string) error {
 	ws, err := k.Workspace(ctx)
 	if err != nil {

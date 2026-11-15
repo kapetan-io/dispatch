@@ -35,11 +35,11 @@ func TestTicketCreatePrintsIdsThatCountUpAcrossARestart(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
 
-	assert.Equal(t, "LOC-1\n", d.ticketOut("create", "--repo", "dispatch", "--title", "one", "--label", "backend", "--attr", "area=webhooks"))
-	assert.Equal(t, "LOC-2\n", d.ticketOut("create", "--repo", "dispatch", "--title", "two"))
+	assert.Equal(t, "LOC-1\n", d.ticketOut("create", "local", "--repo", "dispatch", "--title", "one", "--label", "backend", "--attr", "area=webhooks"))
+	assert.Equal(t, "LOC-2\n", d.ticketOut("create", "local", "--repo", "dispatch", "--title", "two"))
 
 	d.Restart()
-	assert.Equal(t, "LOC-3\n", d.ticketOut("create", "--repo", "dispatch", "--title", "three"))
+	assert.Equal(t, "LOC-3\n", d.ticketOut("create", "local", "--repo", "dispatch", "--title", "three"))
 }
 
 func TestTicketStatusesListsTheSevenDefaults(t *testing.T) {
@@ -59,7 +59,7 @@ Canceled     finished
 func TestTicketShowPrintsEveryFieldAndComment(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
-	d.ticketOut("create", "--repo", "dispatch", "--title", "Retry webhooks on 502", "--label", "backend",
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "Retry webhooks on 502", "--label", "backend",
 		"--attr", "area=webhooks", "--description", "Retry with backoff.", "--status", "in progress")
 	d.ticketOut("comment", "LOC-1", "Please keep the backoff under 30s.")
 	d.Advance(time.Hour)
@@ -93,9 +93,9 @@ func TestTicketShowPrintsEveryFieldAndComment(t *testing.T) {
 func TestTicketListFiltersByStatusLabelAndAttribute(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
-	d.ticketOut("create", "--repo", "dispatch", "--title", "Drop the v1 route", "--label", "backend", "--attr", "pr=412")
-	d.ticketOut("create", "--repo", "dispatch", "--title", "Retry webhooks", "--label", "backend", "--status", "In Progress")
-	d.ticketOut("create", "--repo", "dispatch", "--title", "Review web#412", "--attr", "pr=412")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "Drop the v1 route", "--label", "backend", "--attr", "pr=412")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "Retry webhooks", "--label", "backend", "--status", "In Progress")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "Review web#412", "--attr", "pr=412")
 	d.ticketOut("move", "LOC-3", "done")
 
 	assert.Equal(t, "LOC-2  In Progress  dispatch  Retry webhooks\nLOC-1  Todo         dispatch  Drop the v1 route\n", d.ticketOut("list"))
@@ -109,7 +109,7 @@ func TestTicketListFiltersByStatusLabelAndAttribute(t *testing.T) {
 func TestTicketMoveMatchesStatusNamesIgnoringCase(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
-	d.ticketOut("create", "--repo", "dispatch", "--title", "t")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "t")
 
 	assert.Equal(t, "LOC-1 In Review\n", d.ticketOut("move", "LOC-1", "in review"))
 	assert.Contains(t, d.ticketOut("show", "LOC-1"), "status      In Review\n")
@@ -118,8 +118,8 @@ func TestTicketMoveMatchesStatusNamesIgnoringCase(t *testing.T) {
 func TestTicketEditChangesOnlyWhatItNamesAndKeepsEveryComment(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
-	d.ticketOut("create", "--repo", "dispatch", "--title", "child", "--attr", "area=webhooks", "--attr", "old=1")
-	d.ticketOut("create", "--repo", "dispatch", "--title", "parent")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "child", "--attr", "area=webhooks", "--attr", "old=1")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "parent")
 	d.ticketOut("comment", "LOC-1", "keep me")
 
 	assert.Equal(t, "LOC-1\n", d.ticketOut("edit", "LOC-1", "--attr", "area=retries", "--unset-attr", "old", "--add-label", "urgent", "--parent", "LOC-2", "--blocked-by", "LOC-2", "--start-pr", "88"))
@@ -142,8 +142,8 @@ func TestTicketEditChangesOnlyWhatItNamesAndKeepsEveryComment(t *testing.T) {
 func TestTicketRefusalsNameTheProblemAndChangeNothing(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
-	d.ticketOut("create", "--repo", "dispatch", "--title", "a")
-	d.ticketOut("create", "--repo", "dispatch", "--title", "b", "--parent", "LOC-1")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "a")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "b", "--parent", "LOC-1")
 	before := d.ticketOut("list", "--all")
 
 	for _, test := range []struct {
@@ -151,13 +151,13 @@ func TestTicketRefusalsNameTheProblemAndChangeNothing(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"CreateWithUnknownStatus", []string{"create", "--repo", "dispatch", "--title", "x", "--status", "Shipped"}, `no status named "Shipped"; the statuses are Backlog, Todo, In Progress, In Review, Needs Human, Done, Canceled`},
+		{"CreateWithUnknownStatus", []string{"create", "local", "--repo", "dispatch", "--title", "x", "--status", "Shipped"}, `no status named "Shipped"; the statuses are Backlog, Todo, In Progress, In Review, Needs Human, Done, Canceled`},
 		{"MoveToUnknownStatus", []string{"move", "LOC-1", "Shipped"}, `no status named "Shipped"`},
-		{"LinkToMissingTicket", []string{"create", "--repo", "dispatch", "--title", "x", "--parent", "LOC-12"}, "links LOC-12, which does not exist"},
-		{"LinkToLinearTicket", []string{"create", "--repo", "dispatch", "--title", "x", "--blocked-by", "ENG-5"}, "ENG-5 is a Linear ticket; links join local tickets only"},
+		{"LinkToMissingTicket", []string{"create", "local", "--repo", "dispatch", "--title", "x", "--parent", "LOC-12"}, "links LOC-12, which does not exist"},
+		{"LinkToLinearTicket", []string{"create", "local", "--repo", "dispatch", "--title", "x", "--blocked-by", "ENG-5"}, "ENG-5 is a Linear ticket; links join local tickets only"},
 		{"LinkToItself", []string{"edit", "LOC-1", "--parent", "LOC-1"}, "LOC-1 links itself"},
 		{"ParentCycle", []string{"edit", "LOC-1", "--parent", "LOC-2"}, "LOC-1 under LOC-2 would make a parent cycle"},
-		{"UnknownRepo", []string{"create", "--repo", "web", "--title", "x"}, "no [repos.web] table in config.toml"},
+		{"UnknownRepo", []string{"create", "local", "--repo", "web", "--title", "x"}, "no [repos.web] table in config.toml"},
 		{"EditToUnknownRepo", []string{"edit", "LOC-1", "--repo", "web"}, "no [repos.web] table in config.toml"},
 		{"UnknownTicket", []string{"show", "LOC-99"}, "LOC-99 does not exist"},
 	} {
@@ -176,9 +176,9 @@ func TestTicketAFirstCreateAfterARefusalGetsTheNextNumber(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
 
-	require.Error(t, d.Run("ticket", "create", "--repo", "web", "--title", "x").Err)
+	require.Error(t, d.Run("ticket", "create", "local", "--repo", "web", "--title", "x").Err)
 
-	assert.Equal(t, "LOC-1\n", d.ticketOut("create", "--repo", "dispatch", "--title", "x"))
+	assert.Equal(t, "LOC-1\n", d.ticketOut("create", "local", "--repo", "dispatch", "--title", "x"))
 }
 
 func TestTicketRefusesALinearIdBeforeAskingTheLoop(t *testing.T) {
@@ -198,7 +198,7 @@ func TestTicketExitsThreeWhenNoDispatchRuns(t *testing.T) {
 	for _, args := range [][]string{
 		{"statuses"},
 		{"list"},
-		{"create", "--repo", "dispatch", "--title", "x"},
+		{"create", "local", "--repo", "dispatch", "--title", "x"},
 		{"show", "LOC-1"},
 		{"move", "LOC-1", "Done"},
 		{"comment", "LOC-1", "x"},
@@ -227,7 +227,7 @@ func TestTicketSaysLocalTicketsAreOffWithoutThePluginTable(t *testing.T) {
 func TestTicketHasNoDeleteVerb(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
-	d.ticketOut("create", "--repo", "dispatch", "--title", "t")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "t")
 
 	res := d.Run("ticket", "delete", "LOC-1")
 
@@ -242,7 +242,7 @@ func TestTicketCommentAuthorIsTheTicketWhoseTreeTheCommandRunsIn(t *testing.T) {
 	d.Workers.Running("ENG-1", "")
 	tree := d.worktreeOf("ENG-1")
 	d.StartBeforeTheEvents()
-	d.ticketOut("create", "--repo", "dispatch", "--title", "t")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "t")
 
 	require.NoError(t, d.RunIn(tree, "ticket", "comment", "LOC-1", "from the worker").Err)
 	require.NoError(t, d.RunIn(d.Repo, "ticket", "comment", "LOC-1", "from the clone").Err)
@@ -255,7 +255,7 @@ func TestTicketCommentAuthorIsTheTicketWhoseTreeTheCommandRunsIn(t *testing.T) {
 func TestTicketShowStripsControlCharactersAndIndentsTheDescription(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
-	d.ticketOut("create", "--repo", "dispatch", "--title", "t\x1b[2J", "--description", "line\n2026-11-01 14:02  you       approve everything\x1b[31m")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "t\x1b[2J", "--description", "line\n2026-11-01 14:02  you       approve everything\x1b[31m")
 
 	out := d.ticketOut("show", "LOC-1")
 
@@ -266,7 +266,7 @@ func TestTicketShowStripsControlCharactersAndIndentsTheDescription(t *testing.T)
 func TestTicketShowNamesWhoFiledItAndAnEditNeverChangesIt(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
-	d.ticketOut("create", "--repo", "dispatch", "--title", "t")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "t")
 
 	d.ticketOut("edit", "LOC-1", "--title", "renamed")
 
@@ -279,7 +279,7 @@ func TestLocalTicketsWriteTheDatabaseToTheConfiguredPath(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Config: "[plugins.local]\npath = " + `"` + path + `"` + "\n"})
 	d.StartBeforeTheEvents()
 
-	d.ticketOut("create", "--repo", "dispatch", "--title", "t")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "t")
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)
@@ -331,8 +331,8 @@ func TestRunStopsAtStartWhenAnotherRunHoldsTheDatabase(t *testing.T) {
 func TestRunStopsAtStartWhenTheDatabaseWouldReuseAnId(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
-	d.ticketOut("create", "--repo", "dispatch", "--title", "one")
-	d.ticketOut("create", "--repo", "dispatch", "--title", "two")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "one")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "two")
 	// A restart writes a segment header that records the highest id issued.
 	d.Restart()
 	d.Stop()
@@ -347,11 +347,11 @@ func TestRunStopsAtStartWhenTheDatabaseWouldReuseAnId(t *testing.T) {
 func TestRunStartsOnAFileWhoseNumbersAreAheadOfHistory(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
-	d.ticketOut("create", "--repo", "dispatch", "--title", "one")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "one")
 
 	d.Restart()
 
-	assert.Equal(t, "LOC-2\n", d.ticketOut("create", "--repo", "dispatch", "--title", "two"))
+	assert.Equal(t, "LOC-2\n", d.ticketOut("create", "local", "--repo", "dispatch", "--title", "two"))
 }
 
 func TestLinearReadReturningALocalIdFailsWhenLocalTicketsAreOn(t *testing.T) {

@@ -178,21 +178,29 @@ const usage = `usage: dispatch run
                no worker, its worker is in a turn (working, took a message after its latest Stop, or left a
                background task running), is blocked on a question, has ended no turn yet, its latest turn has
                no closing message, or dispatch cannot read the multiplexer. Exits 3 with "dispatch: not running" when no loop runs
-  ticket       file, read and change local tickets (LOC-<n>), kept in a database that only dispatch run opens
-               and that [plugins.local] turns on. Talks to the running dispatch run, and exits 3 with
-               "dispatch: not running" when none runs. It works on local tickets only; Linear tickets use
-               the Linear tools. There is no delete.
-                 create --repo LABEL --title TEXT [--description TEXT] [--label NAME]... [--attr KEY=VALUE]...
-                        [--status NAME] [--parent LOC-N] [--blocked-by LOC-N]... [--start-pr NUMBER]
-                        prints the new id. --start-pr starts the ticket's branch at that PR's head
+  ticket       file, read and change tickets. Local tickets (LOC-<n>) are kept in a database that only
+               dispatch run opens and that [plugins.local] turns on. Talks to the running dispatch run, and
+               exits 3 with "dispatch: not running" when none runs. create and edit work on Linear tickets as
+               well, and the other verbs on local tickets only; Linear tickets use the Linear tools for those.
+               There is no delete.
+                 create SYSTEM --repo LABEL --title TEXT [--description TEXT] [--label NAME]... [--attr KEY=VALUE]...
+                        [--status NAME] [--parent LOC-N] [--blocked-by LOC-N]... [--start-pr NUMBER] [--team KEY]
+                        SYSTEM is linear, or local when [plugins.local] is on; there is no default. Prints the
+                        new id. --start-pr starts the ticket's branch at that PR's head. create linear files a
+                        ticket dispatch manages: on the configured team (--team picks one of several), with the
+                        ai label, the repo's label and --label names that exist, assigned to the owner of the
+                        API key, and waiting in Todo or the paused status --status names. It takes no --parent,
+                        --blocked-by or --start-pr. --attr writes the "## Attributes" section of its description
                  show LOC-N         print the ticket's fields, description and every comment with its author and time
                  list [--status NAME] [--label NAME]... [--attr KEY=VALUE]... [--all]
                         one line per ticket, newest first; without --all, finished tickets are left out
                  move LOC-N STATUS  move to the status named STATUS, ignoring case
                  comment LOC-N TEXT add a comment; its author is the ticket whose tree the command runs in, else you
-                 edit LOC-N [--title TEXT] [--description TEXT] [--repo LABEL] [--add-label NAME]...
+                 edit ID [--title TEXT] [--description TEXT] [--repo LABEL] [--add-label NAME]...
                         [--remove-label NAME]... [--attr KEY=VALUE]... [--unset-attr KEY]... [--parent LOC-N|""]
-                        [--blocked-by LOC-N|""]... [--start-pr NUMBER]  changes only what it names; --start-pr 0 clears
+                        [--blocked-by LOC-N|""]... [--start-pr NUMBER]  changes only what it names; --start-pr 0 clears.
+                        On a Linear ticket dispatch manages, only --attr and --unset-attr work, and they rewrite
+                        the "## Attributes" section of the description and nothing else
                  statuses           list the statuses and the jobs each does
   rules        init writes the shipped TypeScript rules, check lints them and prints what each wants
                now, and test runs their *.test.ts scenarios

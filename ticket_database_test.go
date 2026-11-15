@@ -139,7 +139,7 @@ func TestTicketSaysLocalTicketsAreOffForEveryVerb(t *testing.T) {
 	for _, args := range [][]string{
 		{"statuses"},
 		{"list"},
-		{"create", "--repo", "dispatch", "--title", "x"},
+		{"create", "local", "--repo", "dispatch", "--title", "x"},
 		{"show", "LOC-1"},
 		{"move", "LOC-1", "Done"},
 		{"comment", "LOC-1", "x"},
@@ -170,8 +170,8 @@ func TestRunWithoutThePluginTableRecordsNoLocalTicketsInHistory(t *testing.T) {
 func TestTicketRefusalsLeaveEveryTicketAsItWas(t *testing.T) {
 	t.Parallel()
 	d := localDispatch(t)
-	d.ticketOut("create", "--repo", "dispatch", "--title", "a", "--label", "backend", "--attr", "area=webhooks")
-	d.ticketOut("create", "--repo", "dispatch", "--title", "b", "--parent", "LOC-1")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "a", "--label", "backend", "--attr", "area=webhooks")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "b", "--parent", "LOC-1")
 	d.ticketOut("comment", "LOC-2", "keep me")
 	showAll := func() string { return d.ticketOut("show", "LOC-1") + d.ticketOut("show", "LOC-2") }
 	before := showAll()
@@ -203,7 +203,7 @@ func TestTicketEditLeavesTheWorkersCommentAsWritten(t *testing.T) {
 	d.Workers.Running("ENG-1", "")
 	tree := d.worktreeOf("ENG-1")
 	d.StartBeforeTheEvents()
-	d.ticketOut("create", "--repo", "dispatch", "--title", "t")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "t")
 	require.NoError(t, d.RunIn(tree, "ticket", "comment", "LOC-1", "from the worker").Err)
 	comments := func() []string {
 		lines := strings.Split(d.ticketOut("show", "LOC-1"), "\n")
@@ -263,7 +263,7 @@ func TestRunStopsAtStartWhenALeaseNamesAnIdTheDatabaseWouldReuse(t *testing.T) {
 	d.Workers.Running("LOC-5", "")
 	d.worktreeOf("LOC-5")
 	d.StartBeforeTheEvents()
-	d.ticketOut("create", "--repo", "dispatch", "--title", "one")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "one")
 	d.Tick()
 	d.Stop()
 

@@ -1,35 +1,35 @@
 ---
 name: ticket
-description: Use when creating or rewriting a Linear ticket, or a local ticket when `[plugins.local]` is on, in a repo dispatch manages, whether asked or filing one yourself. Sets labels, assignee, status and body so dispatch picks the ticket up, and starts the design skill instead of a build for a `design` ticket.
+description: Use when creating or rewriting a Linear ticket, or a local ticket when `[plugins.local]` is on, in a repo dispatch manages, whether asked or filing one yourself. Files it with `dispatch ticket create <system>` so dispatch picks the ticket up, writes the body, and starts the design skill instead of a build for a `design` ticket.
 ---
 
 # Write a dispatch ticket
 
 The dispatcher manages only tickets assigned to the owner of its Linear API key that carry the AI label, and it starts a worker only after the user moves the ticket to In Progress. A ticket written any other way is ignored or started without approval. The body is read by a worker with no memory of this conversation, and by the user, who may not have seen the code in weeks.
 
-## Local tickets
+## Filing
 
-When config.toml has a `[plugins.local]` table, a ticket can be kept in dispatch's own database instead of Linear. File one only when the user asks for a local ticket. Everything else is a Linear ticket, written as below.
+`dispatch ticket create <system>` files the ticket and prints its id. The system is `linear`, or `local` when config.toml has a `[plugins.local]` table, and there is no default. File a local ticket only when the user asks for one.
 
 ```console
-$ dispatch ticket create --repo dispatch --title "Retry webhooks on 502" --label backend --attr area=webhooks --description "…"
+$ dispatch ticket create linear --repo dispatch --title "Retry webhooks on 502" --label Feature --attr model=opus --description "…"
+ENG-812
+$ dispatch ticket create local --repo dispatch --title "Retry webhooks on 502" --attr model=opus --description "…"
 LOC-7
 ```
 
-`--repo` is a `[repos.<label>]` name. A local ticket needs no AI label, assignee or paused status, so skip the Fields rules for those, `dispatch linear-viewer` and the checklist at the end. It starts in the status with the `todo` job unless `--status` names another, and moving it to In Progress starts a worker, except on one labeled `design` or `design-review`. Write the description in the body sections below. `--attr key=value` sets an attribute, a searchable pair beside the labels. `--parent` and `--blocked-by` take `LOC-` ids only. `dispatch ticket statuses` lists the statuses. `dispatch run` must be running, or the command exits 3 with `dispatch: not running`.
+`--repo` is a `[repos.<label>]` name from `~/.config/dispatch/config.toml`. If the file is missing or lacks the repo's table, dispatch does not manage the repo: write the body and title with the Linear tools, add no AI or repo label and skip the checklist.
 
-## Read the config first
+`create linear` puts the ticket where dispatch manages it: the configured team (`--team KEY` when config.toml lists several), the AI label, the repo's label, assigned to the owner of the API key, waiting in Todo. `--label` adds a label that exists and fails otherwise. `--status` takes another paused status. `--parent`, `--blocked-by` and `--start-pr` are refused for Linear, so to file a child, create it and set its parent with the Linear tools afterwards.
 
-Read `~/.config/dispatch/config.toml` for `linear.teams`, `linear.ai_label`, `linear.repo_label_group`, `linear.statuses.paused`, `linear.statuses.in_progress` and the `[repos.<label>]` tables. Hardcode none of them. Omitted keys take dispatch's defaults (`teams = ["ENG"]`, `ai_label = "ai"`, `repo_label_group = "repo"`, `paused = ["Backlog", "Todo"]`).
+`create local` starts in the status with the `todo` job, and moving it to In Progress starts a worker. `--parent` and `--blocked-by` take `LOC-` ids. `dispatch ticket statuses` lists the statuses.
 
-If the file is missing or this repo has no `[repos.<label>]` table, dispatch does not manage it. Write the body, title and a type label, but add no AI or repo label, skip the assignee and status rules, and skip the checklist.
+`dispatch run` must be running, or the command exits 3 with `dispatch: not running`.
 
 ## Fields
 
-- **Team.** With one configured team, use it. With several, use the team of recent tickets carrying this repo's label, and ask the user if there are none.
-- **Labels.** An idea or feature whose design isn't settled gets `design`, the AI label and this repo's label, and waits in Backlog. Moving it to In Progress starts the design skill. A design review is a child of the feature ticket labeled `design-review`, the AI label and this repo's label, never `design`, in Todo. Moving it to In Progress starts a review worker on the next tick. The design skill makes that move itself when the user chooses review. Otherwise apply the AI label, this repo's label from the `repo_label_group` group, and a type label (Bug, Feature) if the team has one. The `[repos.<label>]` table name is the label's name and its `path` is the clone. Expand a leading `~` and compare it with `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`, since a worktree's own path never matches. Never create a label, because the workspace may belong to someone else. If a needed label is missing, don't create the ticket and tell the user which one. Label names match ignoring case, because Linear allows no two that differ only in case, so an existing `Design` is the `design` label, not a missing one.
-- **Assignee.** The owner of dispatch's Linear API key, the only person the dispatcher manages tickets for. Run `dispatch linear-viewer`, which prints that user's `id` and `name` as JSON, and assign that user by id. If it fails, don't create the ticket. Report the error. Don't use the Linear connector's `me` or a hardcoded name.
-- **Status.** The `Todo` entry of `linear.statuses.paused`, or its `Backlog` entry for a `design` ticket. If the list is empty or lacks the entry you need, don't guess. Don't create the ticket, and ask which paused status new tickets should wait in. The ticket waits until the user moves it to `in_progress`, so never create it there or move it there unless told to. To convert a ticket that is already In Progress, first move it to the paused status chosen above, then add the AI label in a later save, because an In Progress ticket that carries the AI label starts a worker. After you do move one, run `dispatch tick` and report whether its worker started, since otherwise it waits for the dispatcher's timer.
+- **Labels.** An idea or feature whose design isn't settled gets `--label design` and `--status Backlog`. Moving it to In Progress starts the design skill. A design review is a child of the feature ticket labeled `design-review`, never `design`, in Todo. Moving it to In Progress starts a review worker on the next tick. The design skill makes that move itself when the user chooses review. Add a type label (Bug, Feature) if the team has one.
+- **Status.** The ticket waits until the user moves it to `in_progress`, so never move it there unless told to. To convert a ticket that is already In Progress, first move it to a paused status, then assign it to the user `dispatch linear-viewer` prints and add the AI label in a later save, because an In Progress ticket that carries the AI label starts a worker. After you do move one, run `dispatch tick` and report whether its worker started, since otherwise it waits for the dispatcher's timer.
 - **Title.** One plain phrase saying what changes, at most 50 characters and without the repo or tool name, which the repo label already carries. Shorten by dropping detail the body carries, not by abbreviating words.
 
 ## Body
@@ -46,7 +46,7 @@ Use these sections in this order.
 4. **Not decided here (ask, don't assume).** Product behavior, public contract, security default and ADR questions are the user's. Sort each one, including any the review below turns up. If this conversation has the facts the user needs to answer it, ask the user before you save and write the answer into the ticket as theirs ("the user wants X"). Otherwise list it here, which means one of three things: answering needs research you can't do now, no user is present (a worker breaking down its own ticket), or the user chose not to decide it. With none listed, write "Nothing open". Don't write a guess as if it were settled. A `design` or `design-review` ticket keeps its questions for the design session.
 5. **Notes for the worker.** Anything that saves time, such as an example ticket in the same format, a trap you hit, a binary it must not touch, or a suggested approach labelled as one.
 
-To set an attribute on a Linear ticket, add an `## Attributes` section to the body with one plain `key: value` line per attribute, no bullets. On a local ticket, pass `--attr key=value` to `dispatch ticket create`. To set the model this ticket's worker runs on, set the attribute `model` to a model name, such as `model: opus` or `--attr model=opus`.
+Set an attribute with `--attr key=value` on `create`, and change one later with `dispatch ticket edit <id> --attr key=value` or remove it with `--unset-attr key`, on either system. `edit` of a Linear ticket rewrites only its `## Attributes` section. To set the model this ticket's worker runs on, set the attribute `model` to a model name, such as `--attr model=opus`.
 
 A worker files a bug it found outside its own ticket's change with a last line `Found by: <the worker's ticket>`, which tells a managing session that picks tickets up to start it. No one else writes that line.
 
@@ -89,4 +89,3 @@ Review again only if you changed what the ticket asks for, not for wording. Tell
 - Confirm each "Not decided" entry needs research, has no one to ask, or was declined, and that you asked every other call.
 - Re-read In plain English as the user would. If it needs the code open to make sense, rewrite it.
 - On a ticket that touches a skill, confirm Notes for the worker carries each skill instruction listed above.
-- Confirm the ticket has the team, AI label, repo label, assignee and paused status. A missing one means the dispatcher never sees it or sees it too soon. A `design` ticket waits in Backlog on purpose, and the user moves it to In Progress to start the design skill.

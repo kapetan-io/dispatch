@@ -1,13 +1,17 @@
 package loop
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/kapetan-io/dispatch/internal/history"
+	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/localticket"
 	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -18,11 +22,27 @@ const LocalOff = "local tickets are off: config.toml has no [plugins.local] tabl
 
 // onTicket answers a `dispatch ticket` verb on the loop goroutine.
 func (l *Loop) onTicket(call *TicketCall) Response {
-	if l.local == nil {
-		return Response{Code: CodeFailed, Error: LocalOff}
-	}
 	if call == nil {
 		return Response{Code: CodeFailed, Error: "a ticket request needs a call"}
+	}
+	if call.Verb == VerbCreate && call.System != ticket.SystemLinear && call.System != ticket.SystemLocal {
+		return Response{Code: CodeFailed, Error: "create takes a ticket system first: " + l.systemNames()}
+	}
+	createsOnLinear := call.Verb == VerbCreate && call.System == ticket.SystemLinear
+	editsOnLinear := call.Verb == VerbEdit && ticket.SystemOf(call.ID) == ticket.SystemLinear
+	if createsOnLinear || editsOnLinear {
+		lines, err := l.linearVerb(call)
+		if err != nil {
+			return Response{Code: CodeFailed, Error: err.Error()}
+		}
+		l.readAgain(world.FromLinear)
+		return Response{Lines: lines}
+	}
+	if call.Team != "" && call.System != ticket.SystemLinear {
+		return Response{Code: CodeFailed, Error: "--team applies to create linear only"}
+	}
+	if l.local == nil {
+		return Response{Code: CodeFailed, Error: LocalOff}
 	}
 	if call.Verb == VerbTracked {
 		snap, err := l.local.Listing()
@@ -40,6 +60,61 @@ func (l *Loop) onTicket(call *TicketCall) Response {
 		l.readAgain(world.FromLocalTickets)
 	}
 	return Response{Lines: lines}
+}
+
+// systemNames lists the ticket systems create can file in.
+func (l *Loop) systemNames() string {
+	if l.local == nil {
+		return ticket.SystemLinear
+	}
+	return ticket.SystemLinear + " or " + ticket.SystemLocal
+}
+
+// linearTimeout bounds a Linear write made for a `dispatch ticket` request, which runs on the loop goroutine.
+const linearTimeout = 30 * time.Second
+
+// linearVerb files a Linear ticket or edits the attributes of a managed one.
+func (l *Loop) linearVerb(c *TicketCall) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), linearTimeout)
+	defer cancel()
+	cfg := l.o.Config.Plugins.Linear
+	filing := linear.Filing{Teams: cfg.Teams, AILabel: cfg.AILabel, RepoLabelGroup: cfg.RepoLabelGroup, Todo: cfg.Statuses.Todo, Paused: cfg.Statuses.Paused}
+	switch c.Verb {
+	case VerbCreate:
+		d := c.Draft
+		if d == nil {
+			return nil, errors.New("create needs a draft")
+		}
+		switch {
+		case d.Parent != "":
+			return nil, errors.New("create linear does not take --parent yet")
+		case len(d.BlockedBy) > 0:
+			return nil, errors.New("create linear does not take --blocked-by yet")
+		case d.StartPR != 0:
+			return nil, errors.New("create linear does not take --start-pr yet")
+		}
+		repo, _, ok := l.o.Config.Repos.Find(d.Repo)
+		if !ok {
+			return nil, fmt.Errorf("--repo %q is not a [repos.<label>] table in config.toml, so dispatch does not manage it", d.Repo)
+		}
+		id, err := linear.File(ctx, l.o.Sources.Linear, filing, linear.Request{
+			Team: strings.ToUpper(c.Team), Repo: repo, Title: d.Title, Description: d.Description, Status: d.Status, Labels: d.Labels, Attributes: d.Attributes,
+		})
+		return []string{id}, err
+	case VerbEdit:
+		e := c.Edit
+		if e == nil {
+			return nil, errors.New("edit needs changes")
+		}
+		if e.Title != nil || e.Description != nil || e.Repo != nil || e.Parent != nil || e.BlockedBy != nil || e.StartPR != nil || len(e.AddLabels) > 0 || len(e.RemoveLabels) > 0 {
+			return nil, fmt.Errorf("edit changes only attributes (--attr, --unset-attr) on %s, a Linear ticket", c.ID)
+		}
+		if len(e.SetAttributes) == 0 && len(e.UnsetAttributes) == 0 {
+			return nil, errors.New("edit needs --attr or --unset-attr")
+		}
+		return []string{c.ID}, linear.EditAttributes(ctx, l.o.Sources.Linear, filing, c.ID, e.SetAttributes, e.UnsetAttributes)
+	}
+	return nil, fmt.Errorf("%s works on local tickets only", c.Verb)
 }
 
 func (l *Loop) ticketVerb(c *TicketCall) ([]string, error) {

@@ -131,10 +131,10 @@ func TestTickSearchFiltersLocalTicketsAndFindsFinishedOnes(t *testing.T) {
       { once: ["found"] });
   } });`)})
 			d.StartBeforeTheEvents()
-			d.ticketOut("create", "--repo", "dispatch", "--title", "one", "--label", "review", "--attr", "area=webhooks")
-			d.ticketOut("create", "--repo", "dispatch", "--title", "two", "--attr", "area=billing", "--status", "Done")
-			d.ticketOut("create", "--repo", "dispatch", "--title", "three")
-			d.ticketOut("create", "--repo", "dispatch", "--title", "go", "--attr", "go=1")
+			d.ticketOut("create", "local", "--repo", "dispatch", "--title", "one", "--label", "review", "--attr", "area=webhooks")
+			d.ticketOut("create", "local", "--repo", "dispatch", "--title", "two", "--attr", "area=billing", "--status", "Done")
+			d.ticketOut("create", "local", "--repo", "dispatch", "--title", "three")
+			d.ticketOut("create", "local", "--repo", "dispatch", "--title", "go", "--attr", "go=1")
 
 			d.Tick()
 
@@ -246,7 +246,7 @@ func TestTickGivesACLICreateAndARulesCreateInTheSameCycleDifferentIds(t *testing
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		results[0] = d.Run("ticket", "create", "--repo", "dispatch", "--title", "by hand")
+		results[0] = d.Run("ticket", "create", "local", "--repo", "dispatch", "--title", "by hand")
 	}()
 	go func() {
 		defer wg.Done()
@@ -286,7 +286,7 @@ func TestTickEndsARuleCreateOrEditThatBreaksTheStoresChecksRefusedAndChangesNoth
 			d := newDispatch(t, dispatchOptions{Config: localOn, Rules: rule(`whenever({ name: "bad", each: "ticket", if: (t) => t.system === "local" && t.id === "LOC-1",
   then: (t, ctx) => ` + test.then + ` });`)})
 			d.StartBeforeTheEvents()
-			d.ticketOut("create", "--repo", "dispatch", "--title", "first", "--attr", "k=v")
+			d.ticketOut("create", "local", "--repo", "dispatch", "--title", "first", "--attr", "k=v")
 			before := d.ticketOut("show", "LOC-1")
 
 			// A refused receipt makes the tick exit nonzero, depending on when the receipt ends.
@@ -324,7 +324,7 @@ func TestTickEditsALocalTicketARuleNames(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{Config: localOn, Rules: rule(`whenever({ name: "tidy", each: "ticket", if: (t) => t.system === "local" && !t.attributes.tidy,
   then: (t, ctx) => ctx.ticket.queueEdit(t, { title: "Tidied", addLabels: ["seen"], setAttributes: { tidy: "yes" }, unsetAttributes: ["k"], startPR: 12 }, { once: ["tidy", t.id] }) });`)})
 	d.StartBeforeTheEvents()
-	d.ticketOut("create", "--repo", "dispatch", "--title", "first", "--attr", "k=v")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "first", "--attr", "k=v")
 
 	d.Tick()
 
@@ -467,8 +467,8 @@ func TestTickEndsARuleEditThatLinksTicketsWrongRefusedAndChangesNothing(t *testi
 			d := newDispatch(t, dispatchOptions{Config: localOn, Rules: rule(`whenever({ name: "bad", each: "ticket", if: (t) => t.system === "local" && t.id === "LOC-1",
   then: (t, ctx) => ctx.ticket.queueEdit(t, ` + test.changes + `, { once: ["bad"] }) });`)})
 			d.StartBeforeTheEvents()
-			d.ticketOut("create", "--repo", "dispatch", "--title", "first")
-			d.ticketOut("create", "--repo", "dispatch", "--title", "second", "--parent", "LOC-1")
+			d.ticketOut("create", "local", "--repo", "dispatch", "--title", "first")
+			d.ticketOut("create", "local", "--repo", "dispatch", "--title", "second", "--parent", "LOC-1")
 			first, second := d.ticketOut("show", "LOC-1"), d.ticketOut("show", "LOC-2")
 
 			// A refused receipt makes the tick exit nonzero, depending on when the receipt ends.
@@ -554,7 +554,7 @@ func TestStateResetQuietRecordsTheCommentASearchFindingATicketWants(t *testing.T
     return ctx.ticket.queueComment(t, "a review ticket exists", { once: ["note", t.id] });
   } });`)})
 	d.StartBeforeTheEvents()
-	d.ticketOut("create", "--repo", "dispatch", "--title", "Review", "--attr", "pr=acme/api#7")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "Review", "--attr", "pr=acme/api#7")
 	d.Stop()
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
@@ -571,7 +571,7 @@ func TestRulesCheckAnswersASearchFromTheLocalTickets(t *testing.T) {
     if (ctx.ticket.search({ attributes: { pr: "acme/api#7" } }).length > 0) throw new Error("found the review ticket");
   } });`)})
 	d.StartBeforeTheEvents()
-	d.ticketOut("create", "--repo", "dispatch", "--title", "Review", "--attr", "pr=acme/api#7")
+	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "Review", "--attr", "pr=acme/api#7")
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	res := d.Run("rules", "check")
