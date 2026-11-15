@@ -85,6 +85,10 @@ type Workspace struct {
 	reads   [][]string
 	calls   map[string]int
 	failed  map[string]bool
+	// holds are the operations whose calls wait until the hold's channel closes, and held counts
+	// the calls waiting on each.
+	holds map[string]chan struct{}
+	held  map[string]int
 }
 
 // New returns a workspace for the Ada Lovelace account, which accepts Key and
@@ -104,6 +108,8 @@ func New(j *journal.Journal) *Workspace {
 		labels: []ticket.Label{{Name: "ai"}, {Name: "Feature"}, {Name: "Bug"}},
 		calls:  map[string]int{},
 		failed: map[string]bool{},
+		holds:  map[string]chan struct{}{},
+		held:   map[string]int{},
 	}
 }
 
@@ -230,6 +236,34 @@ func (w *Workspace) FailOn(operation string, on bool) {
 	w.failed[operation] = on
 }
 
+// Hold makes every call to the operation wait, after Calls counts it, until release runs or the call's
+// context ends, as a slow or unreachable Linear does. A call whose context ends first fails with
+// the context's error and changes nothing.
+func (w *Workspace) Hold(operation string) (release func()) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	gate := make(chan struct{})
+	w.holds[operation] = gate
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			w.mu.Lock()
+			defer w.mu.Unlock()
+			if w.holds[operation] == gate {
+				delete(w.holds, operation)
+			}
+			close(gate)
+		})
+	}
+}
+
+// Held counts the calls to the operation waiting on a Hold.
+func (w *Workspace) Held(operation string) int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.held[operation]
+}
+
 func (w *Workspace) stateOf(name string) *State {
 	for i := range w.states {
 		if w.states[i].Name == name {
@@ -265,13 +299,27 @@ func (s *session) Usage() linear.Stats {
 	return linear.Stats{Calls: s.calls, RequestsRemaining: RequestsRemaining, RequestsLimit: RequestsLimit}
 }
 
-// request counts the call, as the real client does for every attempt, then
+// request counts the call, as the real client does for every attempt, waits out a Hold, then
 // fails it when the key is wrong or the operation has been made to fail. It
 // returns with the workspace locked on success.
-func (s *session) request(operation string) error {
+func (s *session) request(ctx context.Context, operation string) error {
 	s.w.mu.Lock()
 	s.w.calls[operation]++
 	s.calls++
+	if gate := s.w.holds[operation]; gate != nil {
+		s.w.held[operation]++
+		s.w.mu.Unlock()
+		select {
+		case <-gate:
+		case <-ctx.Done():
+		}
+		s.w.mu.Lock()
+		s.w.held[operation]--
+		if err := ctx.Err(); err != nil {
+			s.w.mu.Unlock()
+			return fmt.Errorf("linear %s: %w", operation, err)
+		}
+	}
 	if s.key != s.w.key {
 		s.w.mu.Unlock()
 		return fmt.Errorf("linear %s: HTTP 401: %w", operation, linear.ErrUnauthorized)
@@ -288,16 +336,16 @@ func notFound(operation, entity string) error {
 	return fmt.Errorf("linear %s: Entity not found: %s - Could not find referenced %s.", operation, entity, entity)
 }
 
-func (s *session) Viewer(context.Context) (linear.Viewer, error) {
-	if err := s.request("Viewer"); err != nil {
+func (s *session) Viewer(ctx context.Context) (linear.Viewer, error) {
+	if err := s.request(ctx, "Viewer"); err != nil {
 		return linear.Viewer{}, err
 	}
 	defer s.w.mu.Unlock()
 	return s.w.viewer, nil
 }
 
-func (s *session) ManagedTickets(_ context.Context, label string, teams []string) ([]ticket.Ticket, error) {
-	if err := s.request(OnManaged); err != nil {
+func (s *session) ManagedTickets(ctx context.Context, label string, teams []string) ([]ticket.Ticket, error) {
+	if err := s.request(ctx, OnManaged); err != nil {
 		return nil, err
 	}
 	defer s.w.mu.Unlock()
@@ -319,7 +367,7 @@ func (s *session) ManagedTickets(_ context.Context, label string, teams []string
 	return found, nil
 }
 
-func (s *session) LeasedTickets(_ context.Context, label string, teams, identifiers []string) ([]ticket.Ticket, error) {
+func (s *session) LeasedTickets(ctx context.Context, label string, teams, identifiers []string) ([]ticket.Ticket, error) {
 	var asked []string
 	for _, id := range identifiers {
 		if team, _, ok := linear.SplitIdentifier(id); ok && slices.Contains(teams, team) {
@@ -329,7 +377,7 @@ func (s *session) LeasedTickets(_ context.Context, label string, teams, identifi
 	if len(asked) == 0 {
 		return nil, nil
 	}
-	if err := s.request(OnLeased); err != nil {
+	if err := s.request(ctx, OnLeased); err != nil {
 		return nil, err
 	}
 	defer s.w.mu.Unlock()
@@ -356,11 +404,11 @@ func (s *session) LeasedTickets(_ context.Context, label string, teams, identifi
 	return found, nil
 }
 
-func (s *session) ParentChildren(_ context.Context, parents []string) (map[string][]ticket.Ticket, error) {
+func (s *session) ParentChildren(ctx context.Context, parents []string) (map[string][]ticket.Ticket, error) {
 	if len(parents) == 0 {
 		return nil, nil
 	}
-	if err := s.request(OnChildren); err != nil {
+	if err := s.request(ctx, OnChildren); err != nil {
 		return nil, err
 	}
 	defer s.w.mu.Unlock()
@@ -391,8 +439,8 @@ func (s *session) ParentChildren(_ context.Context, parents []string) (map[strin
 	return children, nil
 }
 
-func (s *session) StateID(_ context.Context, team, name string) (string, error) {
-	if err := s.request("TeamStates"); err != nil {
+func (s *session) StateID(ctx context.Context, team, name string) (string, error) {
+	if err := s.request(ctx, "TeamStates"); err != nil {
 		return "", err
 	}
 	defer s.w.mu.Unlock()
@@ -405,8 +453,8 @@ func (s *session) StateID(_ context.Context, team, name string) (string, error) 
 	return StateID(name), nil
 }
 
-func (s *session) Move(_ context.Context, ticketID, stateID string) error {
-	if err := s.request(OnMove); err != nil {
+func (s *session) Move(ctx context.Context, ticketID, stateID string) error {
+	if err := s.request(ctx, OnMove); err != nil {
 		return err
 	}
 	defer s.w.mu.Unlock()
@@ -427,8 +475,8 @@ func (s *session) Move(_ context.Context, ticketID, stateID string) error {
 	return nil
 }
 
-func (s *session) Comment(_ context.Context, ticketID, body string) error {
-	if err := s.request(OnComment); err != nil {
+func (s *session) Comment(ctx context.Context, ticketID, body string) error {
+	if err := s.request(ctx, OnComment); err != nil {
 		return err
 	}
 	defer s.w.mu.Unlock()
@@ -445,8 +493,8 @@ func (s *session) Comment(_ context.Context, ticketID, body string) error {
 	return nil
 }
 
-func (s *session) CreateTicket(_ context.Context, t linear.NewTicket) (string, error) {
-	if err := s.request(OnCreate); err != nil {
+func (s *session) CreateTicket(ctx context.Context, t linear.NewTicket) (string, error) {
+	if err := s.request(ctx, OnCreate); err != nil {
 		return "", err
 	}
 	defer s.w.mu.Unlock()
@@ -479,11 +527,11 @@ func (s *session) CreateTicket(_ context.Context, t linear.NewTicket) (string, e
 	return id, nil
 }
 
-func (s *session) ManagedDescription(_ context.Context, label string, teams []string, identifier string) (linear.Described, error) {
+func (s *session) ManagedDescription(ctx context.Context, label string, teams []string, identifier string) (linear.Described, error) {
 	if _, _, ok := linear.SplitIdentifier(identifier); !ok {
 		return linear.Described{}, linear.NotManaged(identifier, label)
 	}
-	if err := s.request(OnDescribe); err != nil {
+	if err := s.request(ctx, OnDescribe); err != nil {
 		return linear.Described{}, err
 	}
 	defer s.w.mu.Unlock()
@@ -495,8 +543,8 @@ func (s *session) ManagedDescription(_ context.Context, label string, teams []st
 	return linear.Described{}, linear.NotManaged(identifier, label)
 }
 
-func (s *session) SetDescription(_ context.Context, ticketID, description string) error {
-	if err := s.request(OnSetText); err != nil {
+func (s *session) SetDescription(ctx context.Context, ticketID, description string) error {
+	if err := s.request(ctx, OnSetText); err != nil {
 		return err
 	}
 	defer s.w.mu.Unlock()
