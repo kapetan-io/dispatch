@@ -282,6 +282,11 @@ func newDispatch(t *testing.T, opts dispatchOptions) *Dispatch {
 	}
 	d.Home = t.TempDir()
 	d.env = environment.Process().With("HOME", d.Home).With("LINEAR_API_KEY", "").With("HERDR_PANE_ID", hookPane)
+	// A dispatch build worker's shell sets these, so a test that runs inside one would otherwise
+	// see a worker's pane or a Rex pane it never asked for. A test that wants one sets it.
+	for _, name := range []string{"AUTONOMOUS_WORKER", "REX_SESSION", "REX_BLOCK", "HC_TERMINAL_ID", "DISPATCH_PLUGIN_ROOT", "CLAUDE_CODE_SESSION_ID"} {
+		d.env = d.env.With(name, "")
+	}
 	for _, name := range slices.Sorted(maps.Keys(opts.Env)) {
 		if name == "HOME" {
 			d.Home = opts.Env[name]
