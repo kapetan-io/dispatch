@@ -14,6 +14,7 @@ You report through the ticket's status and comments, using the Linear tools in y
 ## Rules
 
 - **Decide how, never what.** Product behavior or scope, the shape or conventions of a public contract, security defaults, and superseding an ADR go to the user as a question, which the manage session may answer with a `## Decision` comment. Everything else is yours to decide; note those calls on the ticket. A wrong call on any of these can ship and go unnoticed for weeks.
+- **A bug outside your change gets its own ticket.** Fix a bug in your own change in the PR. For one outside it, file a ticket with `dispatch:ticket` whose body ends `Found by: <your ticket>`, link it in the PR, and keep to your ticket's scope.
 - **Work autonomously.** Ask only what you can't settle yourself.
   - Config defaults, names and how to build it are your calls, and so is any question the ticket leaves open that isn't one of the four above. Pick what you would recommend, note it and why on the ticket, and keep going.
   - Before asking anything, read the design, the code and the docs, and try it: run the tests, the tool or the eval the question is about. Ask only when what's left is one of the four calls and the design doesn't already answer it. A ticket that says "ask" doesn't change this.
