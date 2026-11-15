@@ -78,7 +78,7 @@ func (l *Loop) onRequest(r request) error {
 	case OpTyped:
 		r.reply <- l.onTyped(r.Typed)
 	case OpTicket:
-		r.reply <- l.onTicket(r.Call)
+		l.onTicket(r.Call, r.reply)
 	case OpWatch, OpUnwatch:
 		r.reply <- l.onFollow(r)
 	default:

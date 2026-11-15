@@ -2,6 +2,7 @@ package dispatch_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -259,4 +260,132 @@ func TestTicketEditOfALinearTicketNeedsAnAttributeToChange(t *testing.T) {
 	res := d.Run("ticket", "edit", "ENG-1")
 
 	require.ErrorContains(t, res.Err, "edit needs --attr or --unset-attr")
+}
+
+// within waits up to ten seconds for a command started with later, and fails the test when it is
+// still running, so a loop that stalls fails the test instead of hanging it.
+func within[T any](t *testing.T, wait func() T) T {
+	t.Helper()
+	done := make(chan T, 1)
+	go func() { done <- wait() }()
+	select {
+	case v := <-done:
+		return v
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "the command did not return in 10 seconds")
+		var zero T
+		return zero
+	}
+}
+
+func TestTickIsAnsweredWhileACreateLinearWaitsOnLinear(t *testing.T) {
+	t.Parallel()
+	d := linearDispatch(t, "")
+	release := d.tools.Linear.Hold(lineartest.OnCreate)
+	defer release()
+	create := later(func() Result { return d.Run("ticket", "create", "linear", "--repo", "dispatch", "--title", "x") })
+	require.Eventually(t, func() bool { return d.tools.Linear.Held(lineartest.OnCreate) == 1 }, 10*time.Second, time.Millisecond)
+
+	tick := within(t, later(func() Result { return d.Run("tick") }))
+
+	require.NoError(t, tick.Err)
+	assert.Equal(t, 1, d.tools.Linear.Held(lineartest.OnCreate))
+	release()
+	res := within(t, create)
+	require.NoError(t, res.Err)
+	assert.Equal(t, "ENG-901\n", res.Stdout)
+}
+
+func TestAWorkerEventIsActedOnWhileAnEditWaitsOnLinear(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Config: "[rules]\nnudge_limit = 10\n"})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+	d.Workers.Running("ENG-2", "working")
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "FAILURE", mergeable: "MERGEABLE"})
+	d.StartBeforeTheEvents()
+	d.settleLoop()
+	release := d.tools.Linear.Hold(lineartest.OnDescribe)
+	defer release()
+	edit := later(func() Result { return d.Run("ticket", "edit", "ENG-2", "--attr", "model=opus") })
+	require.Eventually(t, func() bool { return d.tools.Linear.Held(lineartest.OnDescribe) == 1 }, 10*time.Second, time.Millisecond)
+
+	d.Workers.SetStatus("ENG-1", "idle")
+	d.Workers.Stop("ENG-1", stopTasks{})
+	require.NoError(t, d.Hook("wake", d.Workers.StopInput("ENG-1", stopTasks{})).Err)
+
+	require.Eventually(t, func() bool { return len(d.Workers.Received("ENG-1")) == 1 }, 10*time.Second, time.Millisecond)
+	assert.Equal(t, 1, d.tools.Linear.Held(lineartest.OnDescribe))
+	release()
+	require.NoError(t, within(t, edit).Err)
+}
+
+func TestTwoEditsOfOneLinearTicketAtOnceBothLand(t *testing.T) {
+	t.Parallel()
+	d := linearDispatch(t, "")
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	release := d.tools.Linear.Hold(lineartest.OnDescribe)
+	defer release()
+	first := later(func() Result { return d.Run("ticket", "edit", "ENG-1", "--attr", "model=opus") })
+	second := later(func() Result { return d.Run("ticket", "edit", "ENG-1", "--attr", "effort=high") })
+	require.Eventually(t, func() bool { return d.tools.Linear.Held(lineartest.OnDescribe) == 1 }, 10*time.Second, time.Millisecond)
+
+	// The second edit reads the description only after the first has written it.
+	assert.Never(t, func() bool { return d.tools.Linear.Held(lineartest.OnDescribe) > 1 }, 200*time.Millisecond, time.Millisecond)
+	release()
+
+	require.NoError(t, within(t, first).Err)
+	require.NoError(t, within(t, second).Err)
+	assert.Equal(t, map[string]string{"model": "opus", "effort": "high"}, d.Linear.Issue("ENG-1").Attributes)
+}
+
+func TestStoppingDispatchAnswersTheLinearWritesItWasWaitingOn(t *testing.T) {
+	t.Parallel()
+	d := linearDispatch(t, "")
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	releaseEdits := d.tools.Linear.Hold(lineartest.OnDescribe)
+	defer releaseEdits()
+	releaseCreates := d.tools.Linear.Hold(lineartest.OnCreate)
+	defer releaseCreates()
+	create := later(func() Result { return d.Run("ticket", "create", "linear", "--repo", "dispatch", "--title", "x") })
+	first := later(func() Result { return d.Run("ticket", "edit", "ENG-1", "--attr", "model=opus") })
+	second := later(func() Result { return d.Run("ticket", "edit", "ENG-1", "--attr", "effort=high") })
+	require.Eventually(t, func() bool {
+		return d.tools.Linear.Held(lineartest.OnCreate) == 1 && d.tools.Linear.Held(lineartest.OnDescribe) == 1
+	}, 10*time.Second, time.Millisecond)
+	assert.Never(t, func() bool { return d.tools.Linear.Held(lineartest.OnDescribe) > 1 }, 200*time.Millisecond, time.Millisecond)
+
+	d.Stop()
+
+	// Each answer is Linear's own, so dispatch waited for the writes before it stopped.
+	for _, wait := range []func() Result{create, first, second} {
+		assert.ErrorContains(t, within(t, wait).Err, "context canceled")
+	}
+	assert.Empty(t, d.tools.Linear.Changes())
+}
+
+func TestAFailedLinearWriteIsReportedAndLinearIsNotReadAgain(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name      string
+		operation string
+		args      []string
+	}{
+		{name: "Create", operation: lineartest.OnCreate, args: []string{"create", "linear", "--repo", "dispatch", "--title", "x"}},
+		{name: "Edit", operation: lineartest.OnSetText, args: []string{"edit", "ENG-1", "--attr", "model=opus"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			d := linearDispatch(t, "")
+			d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+			d.settleLoop()
+			d.tools.Linear.FailOn(test.operation, true)
+			before := d.tools.Linear.CallsTo(lineartest.OnManaged)
+
+			res := d.Run(append([]string{"ticket"}, test.args...)...)
+			d.settleLoop()
+
+			require.ErrorContains(t, res.Err, "HTTP 500")
+			assert.Equal(t, before, d.tools.Linear.CallsTo(lineartest.OnManaged))
+		})
+	}
 }

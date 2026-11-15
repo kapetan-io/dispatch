@@ -20,23 +20,26 @@ import (
 // LocalOff is what a ticket request gets from a dispatch that started without a [plugins.local] table.
 const LocalOff = "local tickets are off: config.toml has no [plugins.local] table"
 
-// onTicket answers a `dispatch ticket` verb on the loop goroutine.
-func (l *Loop) onTicket(call *TicketCall) Response {
+// onTicket answers a `dispatch ticket` verb. A verb that writes to Linear is answered once the
+// write ends off the loop goroutine, every other verb before onTicket returns.
+func (l *Loop) onTicket(call *TicketCall, reply chan Response) {
 	if call == nil {
-		return Response{Code: CodeFailed, Error: "a ticket request needs a call"}
-	}
-	if call.Verb == VerbCreate && call.System != ticket.SystemLinear && call.System != ticket.SystemLocal {
-		return Response{Code: CodeFailed, Error: "create takes a ticket system first: " + l.systemNames()}
+		reply <- Response{Code: CodeFailed, Error: "a ticket request needs a call"}
+		return
 	}
 	createsOnLinear := call.Verb == VerbCreate && call.System == ticket.SystemLinear
 	editsOnLinear := call.Verb == VerbEdit && ticket.SystemOf(call.ID) == ticket.SystemLinear
 	if createsOnLinear || editsOnLinear {
-		lines, err := l.linearVerb(call)
-		if err != nil {
-			return Response{Code: CodeFailed, Error: err.Error()}
-		}
-		l.readAgain(world.FromLinear)
-		return Response{Lines: lines}
+		l.startLinear(call, reply)
+		return
+	}
+	reply <- l.localTicket(call)
+}
+
+// localTicket answers a `dispatch ticket` verb that makes no Linear request.
+func (l *Loop) localTicket(call *TicketCall) Response {
+	if call.Verb == VerbCreate && call.System != ticket.SystemLinear && call.System != ticket.SystemLocal {
+		return Response{Code: CodeFailed, Error: "create takes a ticket system first: " + l.systemNames()}
 	}
 	if call.Team != "" && call.System != ticket.SystemLinear {
 		return Response{Code: CodeFailed, Error: "--team applies to create linear only"}
@@ -70,51 +73,133 @@ func (l *Loop) systemNames() string {
 	return ticket.SystemLinear + " or " + ticket.SystemLocal
 }
 
-// linearTimeout bounds a Linear write made for a `dispatch ticket` request, which runs on the loop goroutine.
+// linearTimeout bounds a Linear write made for a `dispatch ticket` request. An edit's limit starts
+// when it reaches Linear, after the edits of the same ticket ahead of it.
 const linearTimeout = 30 * time.Second
 
-// linearVerb files a Linear ticket or edits the attributes of a managed one.
-func (l *Loop) linearVerb(c *TicketCall) ([]string, error) {
-	ctx, cancel := context.WithTimeout(l.runCtx, linearTimeout)
-	defer cancel()
+// linearWrite is a Linear write a `dispatch ticket` request asked for. edits is the Linear ticket
+// an edit changes, as team and number, empty for a create.
+type linearWrite struct {
+	edits string
+	run   func(context.Context) ([]string, error)
+	reply chan Response
+}
+
+// linearDone is a Linear write that ended off the loop goroutine.
+type linearDone struct {
+	write linearWrite
+	lines []string
+	err   error
+}
+
+// startLinear makes the Linear write a request asks for off the loop goroutine. An edit waits behind
+// a running edit of the same ticket, because each reads the description and writes it back whole.
+func (l *Loop) startLinear(c *TicketCall, reply chan Response) {
+	w, err := l.linearWriteOf(c)
+	if err != nil {
+		reply <- Response{Code: CodeFailed, Error: err.Error()}
+		return
+	}
+	w.reply = reply
+	if w.edits != "" {
+		if waiting, running := l.editing[w.edits]; running {
+			l.editing[w.edits] = append(waiting, w)
+			return
+		}
+		// Present with no edits waiting means one is running.
+		l.editing[w.edits] = nil
+	}
+	l.runLinear(w)
+}
+
+func (l *Loop) runLinear(w linearWrite) {
+	l.writing++
+	go func() {
+		ctx, cancel := context.WithTimeout(l.runCtx, linearTimeout)
+		defer cancel()
+		lines, err := w.run(ctx)
+		select {
+		case l.inbox <- linearDone{write: w, lines: lines, err: err}:
+		case <-l.stopped:
+		}
+	}()
+}
+
+// onLinear answers the request whose Linear write ended, after asking for Linear to be read again
+// when the write landed, and starts the next edit of the same ticket.
+func (l *Loop) onLinear(m linearDone) {
+	l.writing--
+	if m.err != nil {
+		m.write.reply <- Response{Code: CodeFailed, Error: m.err.Error()}
+	} else {
+		l.readAgain(world.FromLinear)
+		m.write.reply <- Response{Lines: m.lines}
+	}
+	if m.write.edits == "" {
+		return
+	}
+	// A stopping loop starts the waiting edits too, and they fail at once on its ended context.
+	waiting := l.editing[m.write.edits]
+	if len(waiting) == 0 {
+		delete(l.editing, m.write.edits)
+		return
+	}
+	l.editing[m.write.edits] = waiting[1:]
+	l.runLinear(waiting[0])
+}
+
+// linearWriteOf checks a request to file a Linear ticket or edit the attributes of a managed one, and
+// returns the Linear write it asks for. The checks make no network call.
+func (l *Loop) linearWriteOf(c *TicketCall) (linearWrite, error) {
 	cfg := l.o.Config.Plugins.Linear
 	filing := linear.Filing{Teams: cfg.Teams, AILabel: cfg.AILabel, RepoLabelGroup: cfg.RepoLabelGroup, Todo: cfg.Statuses.Todo, Paused: cfg.Statuses.Paused}
+	ws := l.o.Sources.Linear
 	switch c.Verb {
 	case VerbCreate:
 		d := c.Draft
 		if d == nil {
-			return nil, errors.New("create needs a draft")
+			return linearWrite{}, errors.New("create needs a draft")
 		}
 		switch {
 		case d.Parent != "":
-			return nil, errors.New("create linear does not take --parent yet")
+			return linearWrite{}, errors.New("create linear does not take --parent yet")
 		case len(d.BlockedBy) > 0:
-			return nil, errors.New("create linear does not take --blocked-by yet")
+			return linearWrite{}, errors.New("create linear does not take --blocked-by yet")
 		case d.StartPR != 0:
-			return nil, errors.New("create linear does not take --start-pr yet")
+			return linearWrite{}, errors.New("create linear does not take --start-pr yet")
 		}
 		repo, _, ok := l.o.Config.Repos.Find(d.Repo)
 		if !ok {
-			return nil, fmt.Errorf("--repo %q is not a [repos.<label>] table in config.toml, so dispatch does not manage it", d.Repo)
+			return linearWrite{}, fmt.Errorf("--repo %q is not a [repos.<label>] table in config.toml, so dispatch does not manage it", d.Repo)
 		}
-		id, err := linear.File(ctx, l.o.Sources.Linear, filing, linear.Request{
+		r := linear.Request{
 			Team: strings.ToUpper(c.Team), Repo: repo, Title: d.Title, Description: d.Description, Status: d.Status, Labels: d.Labels, Attributes: d.Attributes,
-		})
-		return []string{id}, err
+		}
+		return linearWrite{run: func(ctx context.Context) ([]string, error) {
+			id, err := linear.File(ctx, ws, filing, r)
+			return []string{id}, err
+		}}, nil
 	case VerbEdit:
 		e := c.Edit
 		if e == nil {
-			return nil, errors.New("edit needs changes")
+			return linearWrite{}, errors.New("edit needs changes")
 		}
 		if e.Title != nil || e.Description != nil || e.Repo != nil || e.Parent != nil || e.BlockedBy != nil || e.StartPR != nil || len(e.AddLabels) > 0 || len(e.RemoveLabels) > 0 {
-			return nil, fmt.Errorf("edit changes only attributes (--attr, --unset-attr) on %s, a Linear ticket", c.ID)
+			return linearWrite{}, fmt.Errorf("edit changes only attributes (--attr, --unset-attr) on %s, a Linear ticket", c.ID)
 		}
 		if len(e.SetAttributes) == 0 && len(e.UnsetAttributes) == 0 {
-			return nil, errors.New("edit needs --attr or --unset-attr")
+			return linearWrite{}, errors.New("edit needs --attr or --unset-attr")
 		}
-		return []string{c.ID}, linear.EditAttributes(ctx, l.o.Sources.Linear, filing, c.ID, e.SetAttributes, e.UnsetAttributes)
+		team, number, ok := linear.SplitIdentifier(c.ID)
+		if !ok {
+			return linearWrite{}, linear.NotManaged(c.ID, cfg.AILabel)
+		}
+		id, set, unset := c.ID, e.SetAttributes, e.UnsetAttributes
+		return linearWrite{edits: fmt.Sprintf("%s-%d", strings.ToUpper(team), number), run: func(ctx context.Context) ([]string, error) {
+			return []string{id}, linear.EditAttributes(ctx, ws, filing, id, set, unset)
+		}}, nil
 	}
-	return nil, fmt.Errorf("%s works on local tickets only", c.Verb)
+	return linearWrite{}, fmt.Errorf("%s works on local tickets only", c.Verb)
 }
 
 func (l *Loop) ticketVerb(c *TicketCall) ([]string, error) {

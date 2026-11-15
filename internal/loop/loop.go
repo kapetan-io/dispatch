@@ -111,6 +111,11 @@ type Loop struct {
 	renaming map[string]string
 	renames  int
 
+	// writing counts the Linear writes for `dispatch ticket` requests running off the loop. editing
+	// holds each Linear ticket an edit is running on, with the edits of it waiting their turn.
+	writing int
+	editing map[string][]linearWrite
+
 	// nextResync is when the resync timer is due. An event that finds the clock past it
 	// means the machine slept through the resync.
 	nextResync time.Time
@@ -220,7 +225,7 @@ func New(o Options) *Loop {
 		stream: stream, named: map[string]bool{},
 		o: o, clock: o.Clock, scope: world.ScopeOf(o.Config),
 		inbox: make(chan any, 256), stopped: make(chan struct{}), flights: map[string]*flight{}, launching: map[string]bool{}, threw: map[string]bool{}, threwTold: map[string]bool{},
-		renaming: map[string]string{},
+		renaming: map[string]string{}, editing: map[string][]linearWrite{},
 	}
 }
 
@@ -330,7 +335,7 @@ func (l *Loop) fatal(err error) {
 	}
 }
 
-// drain waits for the actions in flight, up to their deadlines, then stops.
+// drain waits for the actions and Linear writes in flight, up to their deadlines, then stops.
 func (l *Loop) drain() error {
 	l.closeStream()
 	for _, w := range l.waiters {
@@ -345,10 +350,12 @@ func (l *Loop) drain() error {
 	}
 	l.afterRead = nil
 	deadline := time.After(executor.DefaultDeadline + 5*time.Second)
-	for len(l.flights) > 0 || l.reading {
+	for len(l.flights) > 0 || l.reading || l.writing > 0 {
 		select {
 		case m := <-l.inbox:
 			switch m := m.(type) {
+			case linearDone:
+				l.onLinear(m)
 			case actionDone:
 				if err := l.onAction(m); err != nil {
 					return err
@@ -478,6 +485,9 @@ func (l *Loop) handle(m any) error {
 	case renameDone:
 		l.renames--
 		l.renameWorkspaces()
+		return nil
+	case linearDone:
+		l.onLinear(m)
 		return nil
 	case toldDone:
 		l.telling--
@@ -786,7 +796,8 @@ func (l *Loop) settle() error {
 	return nil
 }
 
-// busy is true while anything is queued, pending or in flight.
+// busy is true while anything is queued, pending or in flight. A Linear write for a `dispatch ticket`
+// request is left out, so a tick or settle is answered while one waits on Linear.
 func (l *Loop) busy() bool {
 	return len(l.inbox) > 0 || l.reading || l.pending != 0 || len(l.named) > 0 || l.cycleDue || len(l.flights) > 0 || l.renames > 0 || l.telling > 0
 }
