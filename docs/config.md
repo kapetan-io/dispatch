@@ -183,7 +183,7 @@ Rex has to be open. Dispatch never starts it, and a command that needs it exits 
 
 ## `[plugins.local]`
 
-Local tickets are tickets kept in dispatch's own database, beside Linear's. Writing the table, even empty, turns them on. Without it dispatch creates and opens no database, and `dispatch ticket` exits 1 saying local tickets are off.
+Local tickets are tickets kept in dispatch's own database, beside Linear's. Writing the table, even empty, turns them on. Without it dispatch creates and opens no database, and a `dispatch ticket` verb on a local ticket exits 1 saying local tickets are off. `create linear` and `edit` of a Linear ticket still work.
 
 ```toml
 [plugins.local]
@@ -194,10 +194,10 @@ Local tickets are tickets kept in dispatch's own database, beside Linear's. Writ
 |---|---|---|
 | `path` | `tickets.db` in the state directory | The database file. A leading `~` is expanded. The first `dispatch run` creates it with mode 0600. Rules never see this setting in `ctx.config`. |
 
-With `dispatch run` going, file a ticket for a configured repo and start it. `create` prints the new id, and a ticket starts in the status that does `todo`:
+With `dispatch run` going, file a ticket for a configured repo and start it. `create` takes the ticket system first, here `local`, and prints the new id. A ticket starts in the status that does `todo`:
 
 ```
-$ dispatch ticket create --repo dispatch --title "Retry webhooks on 502"
+$ dispatch ticket create local --repo dispatch --title "Retry webhooks on 502"
 LOC-1
 $ dispatch ticket show LOC-1
 LOC-1 Retry webhooks on 502
@@ -231,6 +231,8 @@ The shipped rules then launch a worker on that branch at the next resync. `dispa
 | `teams` | `["ENG"]` | Team keys dispatch manages. A ticket in another team is ignored, and a promoted child must be in one of these. |
 | `ai_label` | `ai` | The label that opts a ticket in. dispatch touches only tickets assigned to the owner of the API key that carry it. |
 | `repo_label_group` | `repo` | The Linear label group whose labels name a ticket's repo. A ticket's repo label must match a `[repos.<label>]` table, ignoring case. |
+
+`dispatch ticket create linear` files a ticket these settings make dispatch manage. It goes on the one team in `teams`, or on the team `--team KEY` names when `teams` lists several (without `--team` it fails and names them). It carries the `ai_label`, the `--repo` label from the `repo_label_group` group, and each `--label` name that exists, matched ignoring case. A label that doesn't exist fails the command, and dispatch never creates one. It is assigned to the owner of the API key and waits in `Todo`, or in the status `--status` names, which must be one of `statuses.paused`. `--attr key=value` writes the ticket's `## Attributes` section. `dispatch ticket edit ID --attr key=value --unset-attr key` rewrites only that section of a Linear ticket's description, and refuses a ticket that isn't assigned to the key's owner or lacks the `ai_label`. If a person saves the description between dispatch reading it and writing it, that save is lost.
 
 ## `[plugins.linear.statuses]`
 

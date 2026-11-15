@@ -15,7 +15,7 @@ import (
 const ticketHintText = "This repo is managed by dispatch. Before you create or rewrite a Linear ticket, load the dispatch:ticket skill and use it instead of linear-create, whether the user asked for the ticket or you are filing it yourself."
 
 // localHintText is added when [plugins.local] is on, so a Linear-only setup sees ticketHintText alone.
-const localHintText = " A local ticket (id LOC-<n>) is filed with `dispatch ticket create` and read with `dispatch ticket show`, never the Linear tools."
+const localHintText = " A local ticket (id LOC-<n>) is filed with `dispatch ticket create` naming the system `local`, and read with `dispatch ticket show`, never the Linear tools."
 
 // ticketHint runs as a SessionStart hook. With a long skill list Claude Code
 // shows some skills by name only, so the dispatch:ticket description alone

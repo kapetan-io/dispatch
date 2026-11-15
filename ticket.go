@@ -53,22 +53,28 @@ func ticketCommand(ctx context.Context, opts Options, args []string) error {
 			return fmt.Errorf("ticket %s takes a ticket id such as LOC-3", verb)
 		}
 		call.ID, args = strings.ToUpper(args[0]), args[1:]
-		if ticket.SystemOf(call.ID) != ticket.SystemLocal {
+		if ticket.SystemOf(call.ID) != ticket.SystemLocal && verb != loop.VerbEdit {
 			return fmt.Errorf("%s is a Linear ticket; use the Linear tools", call.ID)
+		}
+	case loop.VerbCreate:
+		// The system comes before the flags, and the loop says which systems it reads.
+		if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+			call.System, args = strings.ToLower(args[0]), args[1:]
 		}
 	}
 
 	var (
-		repo, title, description, status, parent *string
-		labels, attrs, blockers                  repeated
-		startPR                                  *int
-		all                                      *bool
-		addLabels, removeLabels, unsetAttrs      repeated
+		repo, title, description, status, parent, team *string
+		labels, attrs, blockers                        repeated
+		startPR                                        *int
+		all                                            *bool
+		addLabels, removeLabels, unsetAttrs            repeated
 	)
 	switch verb {
 	case loop.VerbCreate:
 		repo, title, description = fs.String("repo", "", "the [repos.<label>] label of the ticket's repo"), fs.String("title", "", "the title"), fs.String("description", "", "the description")
-		status, parent = fs.String("status", "", "the status to start in; defaults to the status doing todo"), fs.String("parent", "", "the parent ticket, LOC-<n>")
+		status, parent = fs.String("status", "", "the status to start in; defaults to the status doing todo, or Todo on Linear"), fs.String("parent", "", "the parent ticket, LOC-<n>")
+		team = fs.String("team", "", "create linear only: the Linear team key; needed when config.toml lists several")
 		fs.Var(&labels, "label", "a label; repeatable")
 		fs.Var(&attrs, "attr", "KEY=VALUE; repeatable")
 		fs.Var(&blockers, "blocked-by", "a ticket that blocks this one, LOC-<n>; repeatable")
@@ -121,13 +127,14 @@ func ticketCommand(ctx context.Context, opts Options, args []string) error {
 		if err := want(0); err != nil {
 			return err
 		}
-		if *repo == "" || *title == "" {
+		if call.System != "" && (*repo == "" || *title == "") {
 			return errors.New("ticket create needs --repo and --title")
 		}
 		attributes, err := pairs(attrs)
 		if err != nil {
 			return err
 		}
+		call.Team = *team
 		call.Draft = &localticket.Draft{
 			Title: *title, Description: *description, Repo: *repo, Status: *status, Labels: labels, Attributes: attributes,
 			Parent: *parent, BlockedBy: blockers, StartPR: *startPR,

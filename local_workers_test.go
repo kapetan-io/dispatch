@@ -15,7 +15,7 @@ import (
 // fileLocal files a local ticket titled "work" in the dispatch repo, so its branch is loc-<n>-work.
 func (d *Dispatch) fileLocal(status string, args ...string) string {
 	d.t.Helper()
-	out := d.ticketOut(append([]string{"create", "--repo", "dispatch", "--title", "work", "--status", status}, args...)...)
+	out := d.ticketOut(append([]string{"create", "local", "--repo", "dispatch", "--title", "work", "--status", status}, args...)...)
 	return strings.TrimSpace(out)
 }
 

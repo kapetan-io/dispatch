@@ -16,7 +16,7 @@ The user is a developer who owns the tickets, repos and rules dispatch runs. The
 
 ### Capabilities
 
-**Hand a ticket to a worker.** The user moves an `ai` ticket, or a local ticket made with `dispatch ticket create`, to In Progress. Dispatch leases a tree, starts a worker on it and moves the ticket on as the pull request progresses.
+**Hand a ticket to a worker.** The user moves an `ai` ticket, or a local ticket made with `dispatch ticket create local`, to In Progress. Dispatch leases a tree, starts a worker on it and moves the ticket on as the pull request progresses.
 
 **Design a feature first.** A `design` ticket moved to In Progress starts a design conversation that ends in a blueprint and build tickets. Dispatch then starts the children in order and closes the parent when they finish.
 
@@ -302,7 +302,7 @@ The latest turn end of each worker session, from the harness's report through `d
 _Avoid_: stop file, turn (the session log keeps every turn)
 
 **Ticket system**:
-Where tickets come from and are written back: Linear, or dispatch's own local tickets. A ticket's id says which: `LOC-` starts a local ticket's.
+Where tickets come from and are written back: Linear, or dispatch's own local tickets. A ticket's id says which: `LOC-` starts a local ticket's. `dispatch ticket create` takes the system's plugin name (`linear` or `local`) first, because a new ticket has no id yet, and every other verb finds the system from the id.
 _Avoid_: source (what the world reads), tracker
 
 **Local ticket**:
@@ -310,7 +310,7 @@ A ticket in dispatch's own database, id `LOC-<n>`, which only the holder of `dis
 _Avoid_: internal ticket, offline ticket
 
 **Attribute**:
-A key-value pair on a ticket, beside its labels, that a rule reads as `t.attributes`. A local ticket stores them and `dispatch ticket list --attr` matches them. A Linear ticket writes them in its description, one `key: value` per line under an `## Attributes` heading.
+A key-value pair on a ticket, beside its labels, that a rule reads as `t.attributes`. A local ticket stores them and `dispatch ticket list --attr` matches them. A Linear ticket writes them in its description, one `key: value` per line under an `## Attributes` heading. `dispatch ticket create <system> --attr` and `dispatch ticket edit <id> --attr` set them on either system.
 _Avoid_: field, property (both name a fact), metadata, tag
 
 **Start PR**:
