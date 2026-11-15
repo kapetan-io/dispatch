@@ -39,8 +39,6 @@ Read `references/reviewer-prompt.md` and fill in the template with:
 2. The blueprint path, the glossary and code paths, and the fixed decisions
 3. The review rubric from `references/rubric.md`
 
-The same filled template goes to all reviewers, so every model applies the same rubric.
-
 ## Step 4, Synthesize
 
 As results come back, build a unified picture:

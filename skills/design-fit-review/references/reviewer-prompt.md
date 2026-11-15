@@ -52,11 +52,11 @@ For each finding, provide:
 ## What to Avoid
 
 - Restating what the design does without identifying a problem
-- Praising the design. You're an adversary, not a cheerleader. If you find nothing wrong, say "no findings" and stop.
+- Praising the design. If you find nothing wrong, say "no findings" and stop.
 
 ## Output
 
-Return your findings as a structured list. If you have zero findings, say so. An empty review is a valid outcome.
+Return your findings as a structured list. If you have zero findings, say so.
 
 ```
 ## New things

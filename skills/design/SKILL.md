@@ -42,9 +42,9 @@ Load `dispatch:converse` and `dispatch:blueprint` with the Skill tool. Open a to
 
 ## The discussion
 
-Ask in plain chat, one question at a time. Never use the AskUserQuestion tool. The dispatcher never nudges a design session, and a picker squeezes out the context and recommendation the user needs after stepping away.
+Ask in plain chat, one question at a time. Never use the AskUserQuestion tool. A picker squeezes out the context and recommendation the user needs after stepping away.
 
-In each question, say what is being decided and why you need it, then give your recommendation.
+In each question, say what is being decided and why you need it.
 
 Work the product half first, then the technical half, because the technical design exists to satisfy the product intent. When an answer in one half settles a question in the other, record it and move on.
 
@@ -103,8 +103,6 @@ Compare viable candidates on interface depth. Prefer the design that hides more 
 
 Arena returns one synthesized design package. The synthesis decision populates the rationale's "Synthesis decision" section.
 
-Starting a design means the work deserves one, so the arena always runs. Take its result directly, because the user approves the contract sketch below and should not be asked twice.
-
 ## Agree on the contract sketch
 
 The arena's Usage section is the first draft of the contract sketch: the surface a consumer or a test binds to. Show the user the sketch and a short note of what was considered and why it lost and the tradeoffs the sketch accepts, not the candidate documents. Put each item in the rationale's Open questions and risks to the user as its own question and log the answer, since nothing else reads that section. Ask the user to approve the sketch and the note.
@@ -132,7 +130,7 @@ Write it with `dispatch:blueprint`. Copy each rejected shape with why it lost, a
 
 ## Audit the transcript
 
-Have a sub-agent compare the blueprint with this session's transcript, and tell it to use the nearest `docs/CONTEXT.md` terms and the words the code already uses, coin no labels such as step codes, define any term in neither, and follow `dispatch:principle-verify-dont-assume` (check the claims it relies on, quote file:line, label what it didn't read as a guess). The sub-agent's job is to list each user decision as PRESENT, SUPERSEDED, CHANGED or MISSING against the blueprint and its decision log, with the user's words and time, and each decision the blueprint makes on architecture, a consumer-facing contract or a dependency that is in neither the transcript nor the decision log.
+Have a sub-agent compare the blueprint with this session's transcript, with the language instructions Phase A gives the sub-agent that lists should and must sentences. The sub-agent's job is to list each user decision as PRESENT, SUPERSEDED, CHANGED or MISSING against the blueprint and its decision log, with the user's words and time, and each decision the blueprint makes on architecture, a consumer-facing contract or a dependency that is in neither the transcript nor the decision log.
 
 Using the report from the audit sub-agent, fix confirmed gaps, and ask the user where the answer isn't clear. A decision fix goes in its section and the decision log. Log an unlogged decision the audit lists as "agent assumed", or ask the user when it changes what they approved. Then offer an ADR for each logged decision that passes the ADR test in `dispatch:blueprint`, logging each offer and answer. Then load `dispatch:principle-confidence-from-many-perspectives` with the Skill tool and apply it to the design before you ask the user to approve it, so a low answer can still change the design.
 
@@ -140,7 +138,7 @@ Using the report from the audit sub-agent, fix confirmed gaps, and ask the user 
 
 After the user approves the design, upload the experiments worth keeping and the Phase A grounding file to the feature ticket as attachments, unless already attached, so build workers can get them, then ask whether it gets a review. Recommend one when the design looks larger than one PR or changes a public contract, because only the review checks the formal spec against the blueprint.
 
-- **No review.** First give a fresh sub-agent only the blueprint, written to a scratchpad file, the glossary path, the ADR file list and the Phase 6 prompt from `dispatch:design-review`, run as one reader, with the language instructions the transcript audit gets, then fix what it names, asking the user about any fix that changes what they approved. Load `dispatch:breakdown` with the Skill tool and follow it on the feature ticket. It sizes the design, files the build tickets, and asks whether to start the work or hold it.
+- **No review.** First give a fresh sub-agent only the blueprint, written to a scratchpad file, the glossary path, the ADR file list and the Phase 6 prompt from `dispatch:design-review`, run as one reader, with the language instructions Phase A gives the sub-agent that lists should and must sentences, then fix what it names, asking the user about any fix that changes what they approved. Load `dispatch:breakdown` with the Skill tool and follow it on the feature ticket.
 - **Review.** File a child of the feature ticket labeled `ai`, `design-review` and the repo label, never `design`, assigned to the owner of dispatch's Linear API key, with `dispatch:ticket`. Its body links the blueprint. Move it to In Progress and run `dispatch tick`. The next tick launches the review worker, which reviews the blueprint with the user and then runs `dispatch:breakdown`.
 
 If you end with nothing filed, move the feature ticket to Backlog, since an In Progress `design` ticket with no children gets a new design worker.

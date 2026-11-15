@@ -9,7 +9,7 @@ You run in the review worker for one `design-review` ticket, a child of the feat
 
 ## Goal
 
-Make the blueprint **buildable**: an engineer can build the right feature from it without getting stuck on ambiguous contracts, contradictions, missing decisions or unverifiable acceptance criteria, and without the technical half drifting from the product intent. A goal-validation agent confirms this, not a count of findings. The review does not pursue completeness or polish.
+Make the blueprint **buildable**: an engineer can build the right feature from it without getting stuck on ambiguous contracts, contradictions, missing decisions or unverifiable acceptance criteria, and without the technical half drifting from the product intent. The review does not pursue completeness or polish.
 
 ## Steps
 
@@ -20,8 +20,8 @@ Make the blueprint **buildable**: an engineer can build the right feature from i
 2. **Pre-work**, below.
 3. **The loop**, Phases 1 to 6, at most 5 rounds.
 4. **Five rounds without PASS.** List the remaining blockers in chat, comment one line on the review ticket that you stopped after five rounds, move it to Needs Human, file nothing and stop.
-5. **ADR audit.** When the repo has `docs/adr/`, run `dispatch:design-adr-audit` on the blueprint. A fix it causes always gets one more Phase 6 run, even when round 5 already passed, since an unvalidated fix could break the blueprint. Run it after step 6, which shares it. That run counts as a round, and if it fails with all 5 used, follow step 4 without a further round. Ask its closing question in chat.
-6. **Fit review.** Run `dispatch:design-fit-review` on the blueprint. Apply its Act On fixes and log each as "agent assumed". Show the verdict in the closing comment, and ask only about a fix that changes product behavior, a public contract or scope. If step 5 or this step changed the blueprint, run Phase 6 once more after both. That run counts as a round, as in step 5.
+5. **ADR audit.** When the repo has `docs/adr/`, run `dispatch:design-adr-audit` on the blueprint. A fix it causes gets the Phase 6 run in step 6, even when round 5 already passed. Ask its closing question in chat.
+6. **Fit review.** Run `dispatch:design-fit-review` on the blueprint. Apply its Act On fixes and log each as "agent assumed". Show the verdict in the closing comment, and ask only about a fix that changes product behavior, a public contract or scope. If step 5 or this step changed the blueprint, run Phase 6 once more after both, since an unvalidated fix could break the blueprint. That run counts as a round, and if it fails with all 5 used, follow step 4 without a further round.
 7. **End steps**, below.
 8. **Break down.** Invoke `dispatch:breakdown` on the feature ticket.
 9. **Finish.** After the user answers start or hold, comment a summary on the review ticket that says how to start held work, then move it to Done. You never move the review to Done before `design` is off on "start now". A crash between the two leaves the review In Progress, and step 1 finishes it. Open the comment with the final summary:
@@ -57,7 +57,7 @@ All sub-agents are foreground, use `model: "sonnet"` unless a phase names anothe
 
 Prompt: you are reviewing a Blueprint, one document holding a feature's product definition and technical design. Find gaps, inconsistencies and ambiguities that would force product or implementation decisions during the build, and places where the technical half does not satisfy the product intent. Give it the blueprint path, the glossary path, the ADR file list, the coverage map, the pre-work findings, the round number, and in round 2+ the prior fixes, the deferred list and the blockers.
 
-Each finding has a category, half (Product, Technical, Stories, Cross-half), priority, section, evidence, issue and suggested fix, plus authoritativeness for drift. Priorities are P0 (blocks the build), P1 (forces a decision an engineer shouldn't make alone) and P2 (polish). File nothing below P2.
+Each finding has a category, half (Product, Technical, Stories, Cross-half), priority, section, evidence, issue and suggested fix, plus authoritativeness for drift. Priorities are P0 (blocks the build), P1 (forces a decision an engineer shouldn't make alone) and P2 (polish).
 
 **Buildability gate.** File a finding only if an engineer reading just the blueprint and the ADRs could get stuck, build the wrong thing, or make an irreversible mistake. A blueprint fixes intent, contracts and decisions, not implementation detail.
 
@@ -79,7 +79,7 @@ Give it the findings, the blueprint path, the glossary path, the ADR list and th
 
 ## Phase 3: Skeptic agent
 
-Skip when Phase 2 confirmed nothing. Give the confirmed findings and the blueprint path to an agent that tries to disprove each, reading the blueprint itself and verifying every quote. Verdicts are **Upheld**, **Downgraded to false positive**, **Downgraded to clarification**, or **Dismissed as implementation detail**. Its tests are buildability (would an engineer get stuck?), requirement tracing (does the product half require this?), not-a-tutorial (does it ask for how rather than what?) and diminishing returns (does it lengthen the document without removing an ambiguity?). It rejects broader language as the explicit criterion *Missing correctness criterion* asks for. It downgrades inflated priorities and misquotes, and upholds what is genuinely correct. A blocker Phase 6 named stays P0 and is refuted only by quoting the passage that answers it, never by the buildability test.
+Skip when Phase 2 confirmed nothing. Give the confirmed findings and the blueprint path to an agent that tries to disprove each, reading the blueprint itself and verifying every quote. Verdicts are **Upheld**, **Downgraded to false positive**, **Downgraded to clarification**, or **Dismissed as implementation detail**. Its tests are buildability (would an engineer get stuck?), requirement tracing (does the product half require this?), not-a-tutorial (does it ask for how rather than what?) and diminishing returns (does it lengthen the document without removing an ambiguity?). It downgrades inflated priorities and misquotes, and upholds what is genuinely correct. It rejects broader language as the explicit criterion *Missing correctness criterion* asks for. A blocker Phase 6 named stays P0 and is refuted only by quoting the passage that answers it, never by the buildability test.
 
 ## Phase 4: Fix proposal agent
 
@@ -87,7 +87,7 @@ Drop false positives, implementation details, and any P2 finding outside the aut
 
 **auto-apply** (no product or design decision, no new scope): stale soft flags; implementation leakage; drift where the code is authoritative and the design does not rest on what differs; a product/technical inconsistency the technical half resolved in the only reasonable way; clear-cut criterion or story corrections the blueprint already specifies. Never auto-apply anything that adds requirements, features, segments or integrations, or narrows product scope.
 
-**surface-to-user**: gaps, inconsistencies, ADR conflicts, scope ambiguity, implicit assumptions, open questions, correctness gaps, ambiguous implementation decisions, missing testing surfaces or failure modes, invariant findings, domain boundary leaks, criterion or story findings needing judgment, drift where authority is unclear or the design rests on what differs, an inconsistency where it is unclear which side is right, and every needs-clarification verdict.
+**surface-to-user**: gaps, inconsistencies, ADR conflicts, scope ambiguity, implicit assumptions, open questions, correctness gaps, ambiguous implementation decisions, missing testing surfaces or failure modes, invariant findings, domain boundary leaks, ambiguous unset settings (the fix renames or adds a setting), criterion or story findings needing judgment, drift where authority is unclear or the design rests on what differs, an inconsistency where it is unclear which side is right, and every needs-clarification verdict.
 
 ## Phase 5: Apply and ask
 
@@ -105,6 +105,6 @@ It answers **VERDICT: PASS or FAIL**, one line per criterion, and on FAIL at mos
 
 After the loop, read the document once more to confirm every resolved finding landed, and apply any that did not. Add nothing for dismissed findings.
 
-1. **Glossary.** Update the blueprint's `Glossary changes` section as `dispatch:blueprint` says. Your tree is discarded, so `dispatch:breakdown` hands the section to the first piece to commit.
+1. **Glossary.** Update the blueprint's `Glossary changes` section as `dispatch:blueprint` says.
 2. **ADRs.** Offer an ADR for a logged decision that passes the ADR test in `dispatch:blueprint`. Don't re-offer ones already offered. For each the user approves, add it to the blueprint as `dispatch:blueprint` says.
-3. **Contract.** If the blueprint defines or changes a consumer-facing contract, check its spec document on the feature ticket against `dispatch:blueprint`. If `duh` is on PATH, run `duh lint` on the spec until it passes, patching the result back and reading it back before the next lint. A design with no such surface skips this.
+3. **Contract.** If the blueprint defines or changes a consumer-facing contract, check its spec document on the feature ticket against `dispatch:blueprint`. If `duh` is on PATH, run `duh lint` on the spec until it passes, patching the result back and reading it back before the next lint.
