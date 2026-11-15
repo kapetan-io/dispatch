@@ -59,7 +59,7 @@ func ticketCommand(ctx context.Context, opts Options, args []string) error {
 	case loop.VerbCreate:
 		// The system comes before the flags, and the loop says which systems it reads.
 		if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-			call.System, args = args[0], args[1:]
+			call.System, args = strings.ToLower(args[0]), args[1:]
 		}
 	}
 

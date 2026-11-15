@@ -244,6 +244,13 @@ func TestTicketCreateLinearMatchesRepoAndTeamIgnoringCase(t *testing.T) {
 	assert.Contains(t, d.Linear.Issue("ENG-901").Labels, tkt.Label{Name: "dispatch", Group: "repo"})
 }
 
+func TestTicketCreateLinearTakesTheSystemInAnyCase(t *testing.T) {
+	t.Parallel()
+	d := linearDispatch(t, "")
+
+	assert.Equal(t, "ENG-901\n", d.ticketOut("create", "Linear", "--repo", "dispatch", "--title", "x"))
+}
+
 func TestTicketEditOfALinearTicketNeedsAnAttributeToChange(t *testing.T) {
 	t.Parallel()
 	d := linearDispatch(t, "")

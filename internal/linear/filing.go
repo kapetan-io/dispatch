@@ -42,8 +42,10 @@ func File(ctx context.Context, ws Workspace, f Filing, r Request) (string, error
 		team = f.Teams[0]
 	case team == "":
 		return "", fmt.Errorf("create linear needs --team, one of %s", strings.Join(f.Teams, ", "))
-	case !slices.Contains(f.Teams, team):
-		return "", fmt.Errorf("team %s is not one dispatch reads; the configured teams are %s", team, strings.Join(f.Teams, ", "))
+	default:
+		if !slices.ContainsFunc(f.Teams, func(t string) bool { return strings.EqualFold(t, team) }) {
+			return "", fmt.Errorf("team %s is not one dispatch reads; the configured teams are %s", team, strings.Join(f.Teams, ", "))
+		}
 	}
 	status := r.Status
 	if status == "" {
@@ -171,8 +173,11 @@ func WithAttributes(description string, set map[string]string, unset []string) (
 		}
 		return out + "## Attributes\n" + strings.Join(kept, "\n") + "\n", nil
 	case len(kept) == 0:
-		out := append(slices.Clone(lines[:start]), lines[end:]...)
-		return strings.TrimRight(strings.Join(out, "\n"), "\n") + trailer(description), nil
+		out := strings.TrimRight(strings.Join(append(slices.Clone(lines[:start]), lines[end:]...), "\n"), "\n")
+		if out == "" {
+			return "", nil
+		}
+		return out + trailer(description), nil
 	}
 	out := append(slices.Clone(lines[:start+1]), kept...)
 	if end < len(lines) || strings.HasSuffix(description, "\n") {

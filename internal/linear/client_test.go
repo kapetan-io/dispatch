@@ -713,6 +713,7 @@ func TestWithAttributesChangesOnlyTheAttributesSection(t *testing.T) {
 		{name: "ReplacesAValueInPlace", text: "A\n\n## attributes\nmodel: sonnet\nowner: ada\n\n## Notes\nx\n", set: map[string]string{"model": "opus"}, want: "A\n\n## attributes\nmodel: opus\nowner: ada\n\n## Notes\nx\n"},
 		{name: "KeepsLinesWithoutAColon", text: "## Attributes\nfree text\nmodel: a\n", unset: []string{"model"}, want: "## Attributes\nfree text\n"},
 		{name: "UnsettingTheLastDropsTheSection", text: "A\n\n## Attributes\nmodel: a\n\n## Notes\nx\n", unset: []string{"model"}, want: "A\n\n## Notes\nx\n"},
+		{name: "UnsettingTheLastKeyOfASectionAloneLeavesNothing", text: "## Attributes\nmodel: a\n", unset: []string{"model"}, want: ""},
 		{name: "SectionAtTheEndWithoutNewline", text: "A\n## Attributes\nmodel: a", set: map[string]string{"model": "b"}, want: "A\n## Attributes\nmodel: b"},
 		{name: "ValueWithColonsIsKept", text: "A", set: map[string]string{"url": "http://x:80"}, want: "A\n\n## Attributes\nurl: http://x:80\n"},
 		{name: "AHeadingInsideTheTextIsNotTheSection", text: "## Attributesx\nmodel: a\n", set: map[string]string{"model": "b"}, want: "## Attributesx\nmodel: a\n\n## Attributes\nmodel: b\n"},

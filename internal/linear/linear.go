@@ -652,9 +652,10 @@ type Described struct {
 // ErrNotManaged matches the error for a ticket dispatch doesn't manage.
 var ErrNotManaged = errors.New("dispatch doesn't manage this ticket")
 
-// NotManaged is the error for a ticket that is not assigned to the key's owner or lacks label.
+// NotManaged is the error for a ticket on a team dispatch doesn't read, or one that is not assigned
+// to the key's owner or lacks label.
 func NotManaged(identifier, label string) error {
-	return fmt.Errorf("%s: %w: it must be assigned to the owner of dispatch's Linear API key and carry the %q label", identifier, ErrNotManaged, label)
+	return fmt.Errorf("%s: %w: it must be on a team dispatch reads, assigned to the owner of dispatch's Linear API key, and carry the %q label", identifier, ErrNotManaged, label)
 }
 
 // NoLabel is the error for a label the team and workspace lack.

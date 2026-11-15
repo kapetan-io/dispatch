@@ -18,7 +18,7 @@ $ dispatch ticket create local --repo dispatch --title "Retry webhooks on 502" -
 LOC-7
 ```
 
-`--repo` is a `[repos.<label>]` name from `~/.config/dispatch/config.toml`. If the file is missing or lacks the repo's table, dispatch does not manage the repo: write the body and title with the Linear tools, add no AI or repo label and skip the checklist.
+`--repo` is a `[repos.<label>]` name from `~/.config/dispatch/config.toml`. With several tables, pick the one whose `path` (expand a leading `~`) equals `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`, since a worktree's own path never matches. If the file is missing or lacks the repo's table, dispatch does not manage the repo: write the body and title with the Linear tools, add no AI or repo label and skip the checklist.
 
 `create linear` puts the ticket where dispatch manages it: the configured team (`--team KEY` when config.toml lists several), the AI label, the repo's label, assigned to the owner of the API key, waiting in Todo. `--label` adds a label that exists and fails otherwise. `--status` takes another paused status. `--parent`, `--blocked-by` and `--start-pr` are refused for Linear, so to file a child, create it and set its parent with the Linear tools afterwards.
 

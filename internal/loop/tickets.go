@@ -75,7 +75,7 @@ const linearTimeout = 30 * time.Second
 
 // linearVerb files a Linear ticket or edits the attributes of a managed one.
 func (l *Loop) linearVerb(c *TicketCall) ([]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), linearTimeout)
+	ctx, cancel := context.WithTimeout(l.runCtx, linearTimeout)
 	defer cancel()
 	cfg := l.o.Config.Plugins.Linear
 	filing := linear.Filing{Teams: cfg.Teams, AILabel: cfg.AILabel, RepoLabelGroup: cfg.RepoLabelGroup, Todo: cfg.Statuses.Todo, Paused: cfg.Statuses.Paused}
