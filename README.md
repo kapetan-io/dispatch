@@ -2,40 +2,23 @@
 
 A general-purpose, event-driven reconcile loop for agents, packaged as a Claude Code plugin.
 
-You approve a ticket by moving it to In Progress: a Linear ticket assigned to you that carries the `ai` label and a repo label, or a local ticket. Dispatch leases a tree for it (a git worktree from the repo's treehouse pool), starts a worker on that tree (a Claude Code session in its own terminal) and keeps the worker on the ticket until its pull request is ready, telling you when the ticket waits on you. After every event it reads from your ticket system, GitHub, the multiplexer (the program that runs the workers' terminals) and treehouse, TypeScript rules you can edit decide what it does next.
+Create a ticket and move it to In Progress. Dispatch notices, starts a worker on it in its own git worktree, and tells you when the pull request is ready for your review. While the worker runs, dispatch nudges it about review comments and failing checks, and it calls you only when the ticket needs a decision that is yours. You keep the product calls and the merge.
 
 The Purpose section of [docs/CONTEXT.md](docs/CONTEXT.md#purpose) says what stays yours, the tradeoffs dispatch makes and what you can do with it.
 
-## Running it
+## Supported
 
-Clone this repo to `~/Development/dispatch`, where workers load the plugin from by default. A clone elsewhere needs `plugin_root` set to it in the table of the multiplexer you pick below, and `cd` to your clone in place of `~/Development/dispatch` in the commands here. Then:
+| Multiplexers, where workers run | Ticket systems |
+| --- | --- |
+| [herdr](docs/config.md#pluginsherdr) terminal UI | [Linear](docs/config.md#pluginslinear) |
+| [Herdr app](docs/config.md#pluginsherdr) | [Local tickets](docs/config.md#pluginslocal), kept in dispatch's own database |
+| [Rex](docs/config.md#pluginsrex) | |
 
-```sh
-cd ~/Development/dispatch && make install
-dispatch run
-```
+## Make it yours
 
-`dispatch run` reads `~/.config/dispatch/config.toml`. Each repo dispatch works in needs a `[repos.<label>]` table, and the [config reference](docs/config.md) lists every setting.
+Every decision dispatch makes, from when to start a worker to when to nudge it, notify you or escalate, lives in a TypeScript rule you can read and edit. Dispatch supplies the facts and the actions, and the rules decide what to do with them, so changing how dispatch behaves means editing a rule, not forking Go. `dispatch rules check` runs your rules once against what your sources say right now, `dispatch rules test` runs the tests you write for them, and `dispatch explain <ticket>` shows which rule did what and why.
 
-Workers run in one of three multiplexers, and the config picks which.
-
-| Multiplexer | Config | Section |
-| --- | --- | --- |
-| herdr terminal UI | `[plugins.herdr]` with `host = "tui"`, the default | [`[plugins.herdr]`](docs/config.md#pluginsherdr) |
-| Herdr app, over herdr-core | `[plugins.herdr]` with `host = "app"` | [`[plugins.herdr]`](docs/config.md#pluginsherdr) |
-| Rex | `[plugins.rex]`, even empty | [`[plugins.rex]`](docs/config.md#pluginsrex) |
-
-Where `dispatch run` itself runs is a separate choice. Any terminal works, and so does its own Herdr app space:
-
-```sh
-herdr-app do space.new --name Dispatch --folder ~/Development/dispatch --tab dispatch --argv '["dispatch","run"]'
-```
-
-Tickets come from Linear, set up under [`[plugins.linear]`](docs/config.md#pluginslinear), and from dispatch's own local ticket database when you write [`[plugins.local]`](docs/config.md#pluginslocal). `dispatch ticket create linear` or `dispatch ticket create local` files one, and the `dispatch:ticket` skill writes it for you.
-
-Under Rex, `dispatch rex restore` resumes your own Claude sessions after a Rex restart, and [docs/config.md](docs/config.md#having-rex-run-the-restore-when-its-server-starts) shows how to have Rex run it each time its server starts.
-
-`dispatch` with no arguments lists every command.
+Each tool dispatch talks to is a plugin you turn on in `config.toml`: the ticket systems, the multiplexer, GitHub, treehouse and notifications. Rules can also call any HTTP service you name in the config, so your workflow can reach whatever else your team uses.
 
 ## Docs
 
