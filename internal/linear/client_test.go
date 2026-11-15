@@ -533,3 +533,51 @@ func TestClientAsksForManagedTicketsIgnoringTheCaseOfTheLabel(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, w.queries["ManagedTickets"], "name: {eqIgnoreCase: $label}")
 }
+
+func TestClientReadsAttributesFromTheDescriptionOnEveryRead(t *testing.T) {
+	const description = "Intro\n\n## attributes\n\nmodel: opus\n  effort :  high \nno colon here\n: blank key\nurl: https://x/y\n#42: not a heading\n\n## Notes\nmodel: ignored\n"
+	want := map[string]string{"model": "opus", "effort": "high", "url": "https://x/y", "#42": "not a heading"}
+	w := newWire(t)
+	managed, leased, child := node("ENG-1", "u1", "ai"), node("ENG-2", "u1", "ai"), node("ENG-3", "u1")
+	for _, n := range []map[string]any{managed, leased, child} {
+		n["description"] = description
+	}
+	child["parent"] = map[string]string{"identifier": "ENG-9"}
+	w.answers["ManagedTickets"] = map[string]any{"viewer": map[string]any{"assignedIssues": page(managed)}}
+	w.answers["LeasedTickets"] = map[string]any{"viewer": map[string]string{"id": "u1"}, "issues": page(leased)}
+	w.answers["ParentChildren"] = map[string]any{"viewer": map[string]string{"id": "u1"}, "issues": page(child)}
+
+	found, err := w.client().ManagedTickets(context.Background(), "ai", []string{"ENG"})
+	require.NoError(t, err)
+	require.Len(t, found, 1)
+	assert.Equal(t, want, found[0].Attributes)
+	assert.Contains(t, w.queries["ManagedTickets"], "description")
+
+	found, err = w.client().LeasedTickets(context.Background(), "ai", []string{"ENG"}, []string{"ENG-2"})
+	require.NoError(t, err)
+	require.Len(t, found, 1)
+	assert.Equal(t, want, found[0].Attributes)
+	assert.Contains(t, w.queries["LeasedTickets"], "description")
+
+	children, err := w.client().ParentChildren(context.Background(), []string{"id9"})
+	require.NoError(t, err)
+	require.Len(t, children["ENG-9"], 1)
+	assert.Equal(t, want, children["ENG-9"][0].Attributes)
+	assert.Contains(t, w.queries["ParentChildren"], "description")
+}
+
+func TestClientGivesNoAttributesToADescriptionWithoutTheSection(t *testing.T) {
+	w := newWire(t)
+	plain, empty := node("ENG-1", "u1", "ai"), node("ENG-2", "u1", "ai")
+	plain["description"] = "model: opus\n## Attributesx\nmodel: opus"
+	empty["description"] = "## Attributes\n\n## Next\nmodel: opus"
+	w.answers["ManagedTickets"] = map[string]any{"viewer": map[string]any{"assignedIssues": page(plain, empty, node("ENG-3", "u1", "ai"))}}
+
+	found, err := w.client().ManagedTickets(context.Background(), "ai", []string{"ENG"})
+
+	require.NoError(t, err)
+	require.Len(t, found, 3)
+	for _, f := range found {
+		assert.Nil(t, f.Attributes)
+	}
+}

@@ -34,7 +34,8 @@ type Ticket struct {
 	BlockersTruncated bool
 	// Repo is a local ticket's own [repos.<label>] table. A Linear ticket names its repo in a label.
 	Repo string `json:",omitempty"`
-	// Attributes are a local ticket's key-value pairs.
+	// Attributes are the ticket's key-value pairs. A local ticket stores them; a
+	// Linear ticket's come from the "## Attributes" section of its description.
 	Attributes map[string]string `json:",omitempty"`
 	// StatusAt is when a local ticket entered its current status, in CreatedAt's form.
 	StatusAt string `json:",omitempty"`

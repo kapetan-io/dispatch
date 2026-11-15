@@ -96,7 +96,7 @@ _Avoid_: review claim (a claim asserts something to check)
 - The **drift check** runs the scenarios against the **real adapter** only, and does not run Linear's.
 - Every ticket belongs to exactly one **Ticket system**, and its id's prefix says which.
 - A **Local ticket** has one status, and each status carries any number of **Jobs**. `todo`, `in_progress`, `in_review`, `needs_human`, `close_parent` and `blocker_done` each belong to exactly one status, `finished` and `paused` to any number.
-- A **Local ticket** has any number of **Attributes** and at most one **Start PR**.
+- A **Ticket** has any number of **Attributes**. A **Local ticket** has at most one **Start PR**.
 - A **Start PR** is never its ticket's PR and writes no **Stack record**.
 - The local ticket store is not a **Port**: it has no **Tool fake**, and tests run it on a temp file.
 - A **Stacked ticket** has exactly one **Stack parent** and one **Stack record** until a **Restack** removes the record.
@@ -310,7 +310,7 @@ A ticket in dispatch's own database, id `LOC-<n>`, which only the holder of `dis
 _Avoid_: internal ticket, offline ticket
 
 **Attribute**:
-A key-value pair on a local ticket, beside its labels, that `dispatch ticket list --attr` matches.
+A key-value pair on a ticket, beside its labels, that a rule reads as `t.attributes`. A local ticket stores them and `dispatch ticket list --attr` matches them. A Linear ticket writes them in its description, one `key: value` per line under an `## Attributes` heading.
 _Avoid_: field, property (both name a fact), metadata, tag
 
 **Start PR**:

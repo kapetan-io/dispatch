@@ -15,6 +15,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kapetan-io/dispatch/internal/treehouse"
 )
 
 const commentWithStatusSince = `whenever({ name: "since", each: "ticket", if: (t) => t.system === "local" && t.status === "needs_human",
@@ -77,4 +79,73 @@ func TestTickRulesReadTheSystemAndAttributesOfALocalTicket(t *testing.T) {
 
 	assert.Contains(t, d.ticketOut("show", "LOC-1"), "seen")
 	assert.NotContains(t, d.ticketOut("show", "LOC-2"), "seen")
+}
+
+const commentOnAttribute = `whenever({ name: "ask", each: "ticket", if: (t) => t.attributes.model === "opus",
+  then: (t, ctx) => ctx.ticket.queueComment(t, "seen", { once: ["ask", t.id] }) });`
+
+func TestTickRulesReadTheAttributesOfALinearTicket(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig, Rules: rule(commentOnAttribute)})
+	withModel := ticket("ENG-1", "In Progress", "dispatch")
+	withModel.Attributes = map[string]string{"model": "opus"}
+	d.Linear.Tickets(withModel, ticket("ENG-2", "In Progress", "dispatch"))
+
+	d.Tick()
+
+	assert.Equal(t, []string{"ENG-1: seen"}, d.Linear.Comments())
+}
+
+const commentOnNoAttributes = `whenever({ name: "bare", each: "ticket", if: (t) => Object.keys(t.attributes).length === 0,
+  then: (t, ctx) => ctx.ticket.queueComment(t, "bare", { once: ["bare", t.id] }) });`
+
+func TestTickRulesReadNoAttributesAsAnEmptyRecordOnEitherSystem(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Config: localOn + shippedRulesConfig, Rules: rule(commentOnNoAttributes)})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.StartBeforeTheEvents()
+	d.fileLocal("Todo")
+
+	d.Tick()
+
+	assert.Contains(t, d.Linear.Comments(), "ENG-1: bare")
+	assert.Contains(t, d.ticketOut("show", "LOC-1"), "bare")
+}
+
+func TestTickRulesReadTheAttributesOfALinearLeaseHolderThatIsNoLongerManaged(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig, Rules: rule(commentOnAttribute)})
+	done := ticket("ENG-2", "Done", "dispatch")
+	done.Attributes = map[string]string{"model": "opus"}
+	d.Linear.Tickets(done)
+	d.tools.Treehouse.Clear(d.Repo)
+	d.tools.Treehouse.Seed(d.Repo, treehouse.Tree{Path: d.dir + "/a", Status: "leased", LeaseHolder: "ENG-2"})
+
+	d.Tick()
+
+	assert.Equal(t, []string{"ENG-2: seen"}, d.Linear.Comments())
+}
+
+func TestRulesTestGivesALinearTicketAttributes(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: map[string]string{
+		"dispatch.ts": `import { whenever } from "dispatch";
+whenever({ name: "greet", each: "ticket", if: (t) => t.attributes.model === "opus",
+  then: (t, ctx) => ctx.worker.queueNudge(t, "hello", { once: ["greet", t.id] }) });`,
+		"greet.test.ts": `import { scenario, ticket, rulesFrom } from "dispatch/testing";
+const rules = rulesFrom("./dispatch");
+scenario(rules, "opus", s => {
+  s.given(ticket("ENG-1", { status: "in_progress", attributes: { model: "opus" } }));
+  s.expect([["greet", "nudge", "ENG-1"]]);
+});
+scenario(rules, "none", s => {
+  s.given(ticket("ENG-1", { status: "in_progress" }));
+  s.expect([]);
+});`,
+	}})
+
+	res := d.Run("rules", "test")
+
+	require.NoError(t, res.Err)
+	assert.Contains(t, res.Stdout, "ok   greet.test.ts: opus")
 }

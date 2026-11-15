@@ -216,7 +216,7 @@ func (s *scenario) applyTicket(id string, fields map[string]any) {
 			t.Blockers = append(t.Blockers, ticket.Blocker{Identifier: bid, Status: s.statusName(bid, status), Abandoned: abandoned})
 		}
 	}
-	if attrs, ok := fields["attributes"].(map[string]any); ok && ticket.SystemOf(id) == ticket.SystemLocal {
+	if attrs, ok := fields["attributes"].(map[string]any); ok {
 		t.Attributes = map[string]string{}
 		for k, v := range attrs {
 			t.Attributes[k] = fmt.Sprint(v)
