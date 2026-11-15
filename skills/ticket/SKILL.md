@@ -47,7 +47,7 @@ Use these sections in this order.
 4. **Not decided here (ask, don't assume).** Product behavior, public contract, security default and ADR questions are the user's. Sort each one, including any the review below turns up. If this conversation has the facts the user needs to answer it, ask the user before you save and write the answer into the ticket as theirs ("the user wants X"). Otherwise list it here, which means one of three things: answering needs research you can't do now, no user is present (a worker breaking down its own ticket), or the user chose not to decide it. With none listed, write "Nothing open". Don't write a guess as if it were settled. A `design` or `design-review` ticket keeps its questions for the design session.
 5. **Notes for the worker.** Anything that saves time, such as an example ticket in the same format, a trap you hit, a binary it must not touch, or a suggested approach labelled as one.
 
-Set an attribute with `--attr key=value` on `create`, and change one later with `dispatch ticket edit <id> --attr key=value` or remove it with `--unset-attr key`, on either system. `edit` of a Linear ticket rewrites only its `## Attributes` section.
+Set an attribute with `--attr key=value` on `create`, and change one later with `dispatch ticket edit <id> --attr key=value` or remove it with `--unset-attr key`, on either system.
 
 A worker files a bug it found outside its own ticket's change with a last line `Found by: <the worker's ticket>`, which tells a managing session that picks tickets up to start it. No one else writes that line.
 
