@@ -209,11 +209,11 @@ func (s *State) ticketRecord(t ticket.Ticket) *record {
 		Finished:    Known(statuses.Has(t.Status, ticket.Finished), at),
 		Paused:      Known(statuses.Has(t.Status, ticket.Paused), at),
 	}
-	if local {
+	// nil means the ticket has none, which keeps the {} above.
+	if t.Attributes != nil {
 		rec.Attributes = Known(maps.Clone(t.Attributes), at)
-		if rec.Attributes.Value == nil {
-			rec.Attributes = Known(map[string]string{}, at)
-		}
+	}
+	if local {
 		if since, err := time.Parse(time.RFC3339Nano, t.StatusAt); err == nil {
 			rec.StatusSince = Known(since.UnixMilli(), at)
 		}

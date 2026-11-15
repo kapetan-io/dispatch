@@ -138,7 +138,7 @@ const managedTickets = `query ManagedTickets($label: String!, $teams: [String!],
   viewer {
     assignedIssues(first: $first, filter: {labels: {name: {eqIgnoreCase: $label}}, state: {type: {eq: "started"}}, team: {key: {in: $teams}}}) {
       nodes {
-        id identifier title url branchName createdAt
+        id identifier title description url branchName createdAt
         state { name }
         team { key }
         labels(first: 25) { nodes { name parent { name } } pageInfo { hasNextPage } }
@@ -153,12 +153,13 @@ const managedTickets = `query ManagedTickets($label: String!, $teams: [String!],
 
 // issueNode is the shape of one issue in the ticket queries.
 type issueNode struct {
-	ID         string `json:"id"`
-	Identifier string `json:"identifier"`
-	Title      string `json:"title"`
-	URL        string `json:"url"`
-	BranchName string `json:"branchName"`
-	State      struct {
+	ID          string `json:"id"`
+	Identifier  string `json:"identifier"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	URL         string `json:"url"`
+	BranchName  string `json:"branchName"`
+	State       struct {
 		Name string `json:"name"`
 	} `json:"state"`
 	Team struct {
@@ -221,6 +222,7 @@ func (n issueNode) ticket() ticket.Ticket {
 		HasChildren:       len(n.Children.Nodes) > 0,
 		LabelsTruncated:   n.Labels.PageInfo.HasNextPage,
 		BlockersTruncated: n.InverseRelations.PageInfo.HasNextPage,
+		Attributes:        attributesIn(n.Description),
 	}
 	for _, r := range n.InverseRelations.Nodes {
 		if r.Type == "blocks" {
@@ -238,6 +240,35 @@ func (n issueNode) ticket() ticket.Ticket {
 		t.Labels = append(t.Labels, label)
 	}
 	return t
+}
+
+// attributesIn returns the key-value pairs under the description's
+// level-2 "## Attributes" heading (any case), which runs to the next heading
+// or the end. A heading is hashes then a space, so "#42: x" is a pair. Each
+// line splits on its first colon and both sides are trimmed; a line with no
+// colon or a blank key is skipped, a later duplicate key wins and a list
+// marker stays in the key. It returns nil, not an empty map, when there is no
+// pair, so the rules' default of {} applies.
+func attributesIn(description string) map[string]string {
+	var attrs map[string]string
+	in := false
+	for _, line := range strings.Split(description, "\n") {
+		line = strings.TrimSpace(line)
+		if hashes := len(line) - len(strings.TrimLeft(line, "#")); hashes > 0 && hashes < len(line) && line[hashes] == ' ' {
+			in = hashes == 2 && strings.EqualFold(strings.TrimSpace(line[hashes:]), "attributes")
+			continue
+		}
+		key, value, ok := strings.Cut(line, ":")
+		key = strings.TrimSpace(key)
+		if !in || !ok || key == "" {
+			continue
+		}
+		if attrs == nil {
+			attrs = map[string]string{}
+		}
+		attrs[key] = strings.TrimSpace(value)
+	}
+	return attrs
 }
 
 // ManagedTickets returns the started tickets assigned to the key's owner that
@@ -276,7 +307,7 @@ const leasedTickets = `query LeasedTickets($filter: IssueFilter!, $first: Int!) 
   viewer { id }
   issues(first: $first, includeArchived: true, filter: $filter) {
     nodes {
-      id identifier title url branchName
+      id identifier title description url branchName
       state { name }
       team { key }
       assignee { id }
@@ -345,7 +376,7 @@ const parentChildren = `query ParentChildren($parents: [ID!], $first: Int!) {
   viewer { id }
   issues(first: $first, filter: {parent: {id: {in: $parents}}}) {
     nodes {
-      id identifier title branchName createdAt
+      id identifier title description branchName createdAt
       state { name }
       team { key }
       assignee { id }

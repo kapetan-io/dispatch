@@ -73,7 +73,7 @@ declare module "dispatch" {
     readonly stack: Stack | undefined;
     /** The ticket system the ticket comes from. */
     readonly system: "linear" | "local";
-    /** A local ticket's key-value pairs; {} for a Linear ticket. */
+    /** The ticket's key-value pairs, {} when it has none. A local ticket stores them; a Linear ticket writes them as one key: value line each under an ## Attributes heading in its description. */
     readonly attributes: Readonly<Record<string, string>>;
     /** The job key (todo, in_progress, in_review or needs_human) when the ticket's status does one of those jobs, otherwise the status name as the ticket system spells it. */
     readonly status: string;
