@@ -1,20 +1,55 @@
 # dispatch
 
-An autonomous build workflow for Claude Code, packaged as a Claude Code plugin.
+A general-purpose, event-driven reconcile loop for agents, packaged as a Claude Code plugin.
 
-You design a feature with Claude in an interactive session. An autonomous review then checks the design and splits it into small Linear build tickets. Once you approve, a dispatcher, running in a terminal you keep open and re-reading its sources every 5 minutes, leases a tree for each ticket and starts Claude in it, and each worker carries its ticket to a merged pull request.
+You approve a ticket by moving it to In Progress: a Linear ticket assigned to you that carries the `ai` label and a repo label, or a local ticket. Dispatch leases a tree for it (a git worktree from the repo's treehouse pool), starts a worker on that tree (a Claude Code session in its own terminal) and keeps the worker on the ticket until its pull request is ready, telling you when the ticket waits on you. After every event it reads from your ticket system, GitHub, the multiplexer (the program that runs the workers' terminals) and treehouse, TypeScript rules you can edit decide what it does next.
 
-## Status
+The Purpose section of [docs/CONTEXT.md](docs/CONTEXT.md#purpose) says what stays yours, the tradeoffs dispatch makes and what you can do with it.
 
-The dispatcher works end to end today. `dispatch run` is a reconcile loop: it keeps what it knows of Linear, GitHub, herdr and treehouse in memory, runs the TypeScript [rules](docs/rules.md) after each event, and records what it did in a ledger kept in history files. It launches a worker for each ticket you move to In Progress, labels each worker's window by who its ticket is waiting on, nudges workers about PRs that need work, escalates to Needs Human with a notification, starts a parent ticket's children in order and closes the parent, and tears down finished trees. The `dispatch:build` skill carries a ticket to an open PR, and `dispatch:ticket` writes tickets the dispatcher picks up. Besides Linear, dispatch can keep tickets in its own database, filed with `dispatch ticket create local` as shown under [`[plugins.local]`](docs/config.md#pluginslocal).
+## Running it
 
-The [config reference](docs/config.md) lists every setting, and [rules](docs/rules.md) covers `dispatch rules`, which lints and tests the TypeScript rules that make its decisions.
+Clone this repo to `~/Development/dispatch`, where workers load the plugin from by default. A clone elsewhere needs `plugin_root` set to it in the table of the multiplexer you pick below, and `cd` to your clone in place of `~/Development/dispatch` in the commands here. Then:
+
+```sh
+cd ~/Development/dispatch && make install
+dispatch run
+```
+
+`dispatch run` reads `~/.config/dispatch/config.toml`. Each repo dispatch works in needs a `[repos.<label>]` table, and the [config reference](docs/config.md) lists every setting.
+
+Workers run in one of three multiplexers, and the config picks which.
+
+| Multiplexer | Config | Section |
+| --- | --- | --- |
+| herdr terminal UI | `[plugins.herdr]` with `host = "tui"`, the default | [`[plugins.herdr]`](docs/config.md#pluginsherdr) |
+| Herdr app, over herdr-core | `[plugins.herdr]` with `host = "app"` | [`[plugins.herdr]`](docs/config.md#pluginsherdr) |
+| Rex | `[plugins.rex]`, even empty | [`[plugins.rex]`](docs/config.md#pluginsrex) |
+
+Where `dispatch run` itself runs is a separate choice. Any terminal works, and so does its own Herdr app space:
+
+```sh
+herdr-app do space.new --name Dispatch --folder ~/Development/dispatch --tab dispatch --argv '["dispatch","run"]'
+```
+
+Tickets come from Linear, set up under [`[plugins.linear]`](docs/config.md#pluginslinear), and from dispatch's own local ticket database when you write [`[plugins.local]`](docs/config.md#pluginslocal). `dispatch ticket create linear` or `dispatch ticket create local` files one, and the `dispatch:ticket` skill writes it for you.
+
+Under Rex, `dispatch rex restore` resumes your own Claude sessions after a Rex restart, and [docs/config.md](docs/config.md#having-rex-run-the-restore-when-its-server-starts) shows how to have Rex run it each time its server starts.
+
+`dispatch` with no arguments lists every command.
+
+## Docs
+
+- [docs/config.md](docs/config.md) lists every setting in `config.toml`, with its default and what it does.
+- [docs/rules.md](docs/rules.md) explains how to write, lint and test the rules, and how to switch a shipped rule off for a class of records.
+- [docs/worker-states.md](docs/worker-states.md) lists every state a worker can be in, the emoji its label shows, and what dispatch does about it.
+- [docs/CONTEXT.md](docs/CONTEXT.md) states what dispatch is for and defines the terms the code, tests and docs use.
+- [docs/adr/](docs/adr/) holds the architecture decisions, one numbered file each.
 
 ## Layout
 
 - `.claude-plugin/plugin.json` is the plugin manifest. Skills live in `skills/`, one folder each, and the `description` in each `SKILL.md` says what it does. `bin/` holds scripts on the session PATH, and `hooks/` holds the plugin's hooks.
 - `cmd/` and `internal/` hold the `dispatch` Go CLI.
-- `docs/` holds the [config reference](docs/config.md) and the [rules guide](docs/rules.md). `rules/` holds the shipped TypeScript rules. `evals/` holds the skill eval suites, one folder per skill.
+- `rules/` holds the shipped TypeScript rules. `evals/` holds the skill eval suites, one folder per skill.
 
 ## Development
 
@@ -32,21 +67,6 @@ claude --plugin-dir ~/Development/dispatch --settings '{"crossSessionInbound":"a
 | `make test-slow` | The whole suite plus the tests tagged `tests_slow`. |
 | `make test-race` | The fast suite under the race detector, for an occasional check. |
 | `make test-drift` | The drift checks against the installed tools. CI does not run it. |
+| `make test-claude` | Worker scenarios against a real, logged-in Claude on the Herdr app host. Spends Haiku turns, and CI does not run it. |
 | `make test-report` | The speed report of tests over budget, tagged slow tests included. |
 | `make ci` | What CI runs: vet, the whole suite with the slow tests, and shellcheck. |
-
-## Running the dispatcher
-
-```sh
-cd ~/Development/dispatch && make install
-dispatch run
-```
-
-Workers run in the herdr terminal UI by default. To run them in the Herdr app instead, set `host = "app"` under `[plugins.herdr]`. The [`host` row](docs/config.md#pluginsherdr) says what that needs (`hc` on PATH, and `herdr-app` to name each worker's space).
-
-Where `dispatch run` itself runs is a separate choice from `host`. To start it in its own Herdr app space:
-
-```sh
-herdr-app do space.new --name Dispatch --folder ~/Development/dispatch --tab dispatch --argv '["dispatch","run"]'
-```
-

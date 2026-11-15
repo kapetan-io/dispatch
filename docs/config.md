@@ -205,6 +205,39 @@ gone          session:01a1…/block:77c2…  run: cd '/Users/you/src/api' && cla
 
 Running it twice, or with no restart, types nothing. Quitting a session with `/exit` or Ctrl-D removes its record, so restore never brings back a conversation you closed. A session started before the hooks were installed has no record until its next turn ends. Only Claude sessions are resumed, and a `claude -p` run is recorded like any other.
 
+### Having Rex run the restore when its server starts
+
+Rex runs its config file, `init.lua`, each time its server starts, and a `rex.exec` call at the top level of that file runs a program. The file is `REX_CONFIG` when that variable is set, and otherwise `rex/init.lua` under `$XDG_CONFIG_HOME`, or `~/.config/rex/init.lua` (`rex config --help` gives the rules). Create the file if it is missing, and add this at its top level:
+
+```lua
+-- ~/.config/rex/init.lua
+-- When the server loads this file, resume the Claude sessions that ran in Rex panes.
+rex.exec({"/bin/sh", "-c", [[
+  ( sleep 5
+    { date; /Users/you/go/bin/dispatch rex restore; echo "exit=$?"; } >> "$HOME/.local/state/dispatch/rex-restore.log" 2>&1
+  ) </dev/null >/dev/null 2>&1 &
+]]})
+```
+
+Replace `/Users/you/go/bin/dispatch` with the output of `command -v dispatch`. The Rex server's PATH may not hold the folder `make install` puts `dispatch` in, so the file names the binary by its full path.
+
+The shell waits 5 seconds in the background so the server can bring its sessions back first, and so loading the file does not wait on the restore. Inside `init.lua`, `rex.after`, `rex.every` and `rex.sleep` do not exist (they exist only in `rex do` scripts), so the wait is the shell's `sleep`. Five seconds was enough on the one restart this was tried on, with the Rex app on macOS, and Rex does not promise its sessions are back by then. A wait that is too short shows in the log as `busy` lines for panes that had not reached their prompt, which a later `dispatch rex restore` resumes, or as `gone` lines for panes that had not come back, whose records the restore removes. To resume a `gone` session, run its printed `run:` line by hand once the pane is back, and raise the wait.
+
+Each run appends the date, the restore's output and `exit=<code>` to `~/.local/state/dispatch/rex-restore.log`, in dispatch's state directory, which `dispatch run` or the plugin's hooks create. A good entry after a restart looks like this:
+
+```
+Mon Jan  5 09:30:12 UTC 2026
+resumed       dispatch / Dev Manager  e30fe6b1-6f5c-4c4e-9d1e-2b7a4f0c9a11
+resumed       api / main  3c9d2a71-8e4b-4f10-a6d2-5b7e9c1f0a33
+exit=0
+```
+
+A load with no restart types nothing and ends with `exit=0`. `exit=1` follows a `failed` or `not started` line, or a `dispatch: …` error such as Rex not answering yet, and `exit=127` means the shell found no `dispatch` at the path you wrote.
+
+Rex loads the file at other times too, and each load runs the restore. `rex config reload` and `rex config check` both load it, and the restore then types `claude --resume` into each pane at its prompt whose record was written before the running server started. A record written under the running server prints `idle` and types nothing, so a reload soon after a restore that resumed everything types nothing either.
+
+`dispatch run` does not come back after a Rex restart when it ran in a Rex pane, and the restore does not start it, because it resumes only Claude sessions. Start `dispatch run` again yourself. Workers are not resumed by this file either; `dispatch run` resumes them.
+
 ## `[plugins.local]`
 
 Local tickets are tickets kept in dispatch's own database, beside Linear's. Writing the table, even empty, turns them on. Without it dispatch creates and opens no database, and a `dispatch ticket` verb on a local ticket exits 1 saying local tickets are off. `create linear` and `edit` of a Linear ticket still work.

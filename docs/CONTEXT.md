@@ -1,6 +1,6 @@
 # Context
 
-Terms dispatch's tests and docs use for the tools it drives. herdr is the terminal workspace manager whose workspaces show each worker's tree, and treehouse keeps the pools of trees that tickets lease.
+Terms dispatch's tests and docs use for the tools it drives. The multiplexer, the herdr TUI, the Herdr app or Rex, runs each worker's terminal and shows its tree, and treehouse keeps the pools of trees that tickets lease.
 
 ## Purpose
 
@@ -59,7 +59,7 @@ One situation run against both a tool fake and the real adapter, which must give
 _Avoid_: shared test, conformance test
 
 **Drift check**:
-The contract scenarios run under `-tags drift` against the installed herdr and treehouse, in a throwaway `dispatch-drift-*` session and pool, and against the installed `hc` on a scratch core (own `HC_SESSION`, scratch XDG paths, a `/tmp` socket), never the user's core. It never touches a GitHub or Linear account. It also runs the drift tests that have no fake to compare: the flags dispatch passes to gh against the installed gh's `--help`, and the launcher's commands against the installed tools. Two launcher drift tests (internal/launcher/commands_drift_test.go) launch a worker on a real, logged-in Claude and check that the kickoff and slash nudges record as sent by dispatch, one in a throwaway herdr session and one with `[plugins.herdr] host = "app"` on a scratch core. The app run also checks that the Worker label `dispatch.session` is the session id in Claude's transcript and that the worker's Stop reached its Stop record; a hook that cannot find its terminal through `HC_TERMINAL_ID` shows up as a timeout waiting for the worker's first turn. It also checks that the hooks' environment names the scratch core. Each spends a few short Claude turns.
+The contract scenarios run under `-tags drift` against the installed herdr and treehouse, in a throwaway `dispatch-drift-*` session and pool, against the installed `hc` on a scratch core (own `HC_SESSION`, scratch XDG paths, a `/tmp` socket), never the user's core, and against the installed Rex on a scratch Rex server. It never touches a GitHub or Linear account. It also runs the drift tests that have no fake to compare: the flags dispatch passes to gh against the installed gh's `--help`, and the launcher's commands against the installed tools. Two launcher drift tests (internal/launcher/commands_drift_test.go) launch a worker on a real, logged-in Claude and check that the kickoff and slash nudges record as sent by dispatch, one in a throwaway herdr session and one with `[plugins.herdr] host = "app"` on a scratch core. The app run also checks that the Worker label `dispatch.session` is the session id in Claude's transcript and that the worker's Stop reached its Stop record; a hook that cannot find its terminal through `HC_TERMINAL_ID` shows up as a timeout waiting for the worker's first turn. It also checks that the hooks' environment names the scratch core. Each spends a few short Claude turns.
 _Avoid_: integration test, live test
 
 **Stand-in claude**:
@@ -126,7 +126,7 @@ Anything telling dispatch something changed: a source read that differs from wha
 _Avoid_: notification (a notification tells a follower), trigger
 
 **Resync**:
-The 5-minute event that re-reads every source (Linear, local tickets, GitHub, the GitHub inbox while a rule runs over it, herdr, treehouse and Stop records) and runs a cycle. It is the only clock rules wait on, so a wait ends up to 5 minutes after its deadline.
+The 5-minute event that re-reads every source (Linear, local tickets, GitHub, the GitHub inbox while a rule runs over it, the multiplexer, treehouse and Stop records) and runs a cycle. It is the only clock rules wait on, so a wait ends up to 5 minutes after its deadline.
 _Avoid_: tick (`dispatch tick` forces one early), poll interval
 
 **Ledger**:
@@ -146,7 +146,7 @@ A message to a worker that starts with `/name`, as the session took it, recorded
 _Avoid_: prompt, message (both include text that isn't a command), skill (a skill the model loads by itself is not a command)
 
 **Turn**:
-One reply a worker's session finished, ending in a Stop, with whether a background task was still running. A turn is named by the time it ended. A worker is in a turn while herdr reads it working, its session has taken a message since its latest Stop, or that Stop left a background task running.
+One reply a worker's session finished, ending in a Stop, with whether a background task was still running. A turn is named by the time it ended. A worker is in a turn while the multiplexer reads it working, its session has taken a message since its latest Stop, or that Stop left a background task running.
 _Avoid_: stop (a Stop record keeps only the latest turn)
 
 **Closing message**:
@@ -206,7 +206,7 @@ A `[harness.<name>]` table in `config.toml`, named everywhere as `harness.<name>
 _Avoid_: profile, role (a role is only which of `worker` / `design` a ticket's launch reads)
 
 **Program** (herdr):
-What herdr runs in a worker's new tab, as a harness describes it: a name for messages, the herdr agent kind, arguments, directories put ahead of PATH, tab environment, and the startup screens (dialogs to answer, the unrun launch command, the output that shows it ran, the ready input box) and the session id the launch chose, which each adapter passes with the harness's session flag (Claude: `--session-id`), and the flag that resumes an earlier session (Claude: `--resume`), which Core uses after a herdr-core restart.
+What the multiplexer runs in a worker's new tab, as a harness describes it: a name for messages, the herdr agent kind, arguments, directories put ahead of PATH, tab environment, and the startup screens (dialogs to answer, the unrun launch command, the output that shows it ran, the ready input box) and the session id the launch chose, which each adapter passes with the harness's session flag (Claude: `--session-id`), and the flag that resumes an earlier session (Claude: `--resume`), which Core uses after a herdr-core restart and the Rex adapter uses when it starts a worker on a tree it did not just lease, and that tree's worker block dates from an earlier Rex server and its program has not exited.
 _Avoid_: command line, launch spec
 
 **Launch**:
@@ -242,7 +242,7 @@ Moving a stacked ticket's own commits onto the default branch after its stack pa
 _Avoid_: rebase (the git step), retarget (one step of it)
 
 **Nudge**:
-Text dispatch delivers to a worker's session as a message through its harness, never typed into the pane. A nudge that fails sent nothing. A rule's nudge is wanted again at the next cycle, and a failed `dispatch tell` is reported to its caller. Dispatch sends no nudge to a blocked session, to one whose status herdr reports as unknown, or to a worker whose session id herdr does not report yet.
+Text dispatch delivers to a worker's session as a message through its harness, never typed into the pane. A nudge that fails sent nothing. A rule's nudge is wanted again at the next cycle, and a failed `dispatch tell` is reported to its caller. Dispatch sends no nudge to a blocked session, to one whose status the multiplexer reports as unknown, or to a worker whose session id the multiplexer does not report yet.
 _Avoid_: notification (that goes to you), prompt
 
 **Close**:

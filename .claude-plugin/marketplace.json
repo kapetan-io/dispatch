@@ -7,7 +7,7 @@
     {
       "name": "dispatch",
       "source": "./",
-      "description": "An autonomous build workflow for Claude Code. Design a feature with you, then build approved Linear tickets into merged pull requests."
+      "description": "A general-purpose, event-driven reconcile loop for agents. Move a ticket to In Progress and dispatch keeps a worker on it until its pull request is ready, deciding each step with rules you edit."
     }
   ]
 }
