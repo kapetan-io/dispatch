@@ -2,7 +2,7 @@
 
 A general-purpose, event-driven reconcile loop for agents, packaged as a Claude Code plugin.
 
-Create a ticket and move it to In Progress. Dispatch notices, starts a worker on it in its own git worktree, and tells you when the pull request is ready for your review. While the worker runs, dispatch nudges it about review comments and failing checks, and it calls you only when the ticket needs a decision that is yours. You keep the product calls and the merge.
+Move a ticket to In Progress and get back to your day. Dispatch puts an agent on it and keeps that agent working until the pull request is ready for your review. It chases the review comments and failing checks so you don't have to, and it interrupts you only for the calls that are yours to make. You decide what ships. You stop babysitting agents.
 
 The Purpose section of [docs/CONTEXT.md](docs/CONTEXT.md#purpose) says what stays yours, the tradeoffs dispatch makes and what you can do with it.
 
