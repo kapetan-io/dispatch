@@ -14,11 +14,29 @@ The Purpose section of [docs/CONTEXT.md](docs/CONTEXT.md#purpose) says what stay
 | [Herdr app](docs/config.md#pluginsherdr) | [Local tickets](docs/config.md#pluginslocal), kept in dispatch's own database |
 | [Rex](docs/config.md#pluginsrex) | |
 
-## Make it yours
+## Customizable
 
-Every decision dispatch makes, from when to start a worker to when to nudge it, notify you or escalate, lives in a TypeScript rule you can read and edit. Dispatch supplies the facts and the actions, and the rules decide what to do with them, so changing how dispatch behaves means editing a rule, not forking Go. `dispatch rules check` runs your rules once against what your sources say right now, `dispatch rules test` runs the tests you write for them, and `dispatch explain <ticket>` shows which rule did what and why.
+Dispatch is event-driven. Every change it sees, a ticket moving, a check failing, an agent going quiet, runs your rules, and your rules orchestrate the workflow. Your workflow is not a dispatch feature request.
 
-Each tool dispatch talks to is a plugin you turn on in `config.toml`: the ticket systems, the multiplexer, GitHub, treehouse and notifications. Rules can also call any HTTP service you name in the config, so your workflow can reach whatever else your team uses.
+### Rules in TypeScript
+
+The workflow is TypeScript you own. Change when agents start, when they get nudged, when you get pulled in, all without touching Go. Lint your rules and test them against the live world before they run, and ask dispatch why any ticket moved the way it did.
+
+### Plugins
+
+Ticket systems, multiplexers, GitHub and notifications are plugins, and you switch each one on in config. Each sits behind a small interface of its own, so supporting a new ticket system or multiplexer means writing one adapter, not rewriting dispatch.
+
+### Any HTTP service
+
+Rules can call any HTTP service you name in config, with dispatch holding the token. Your workflow can reach Sentry, your deploy system or anything else your team runs.
+
+### One config file
+
+A single `config.toml` holds your repos, your plugins and the knobs your rules read, and dispatch refuses a typo instead of guessing.
+
+### It tells you
+
+When a ticket is ready for review, needs you, or goes idle, dispatch messages the Claude sessions following it. You hear about it where you already work.
 
 ## Docs
 
