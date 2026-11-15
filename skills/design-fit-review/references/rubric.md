@@ -6,7 +6,7 @@ Review the design through whichever lenses are relevant. Not every lens applies 
 
 Is the design fixing the actual problem or papering over a symptom?
 
-Answering this often requires looking beyond the files the design touches. Read the surrounding code (callers, callees, type definitions, sibling modules) and understand the architecture the change lives in. Use the tools available to you (Read, Grep, Glob) to explore. Follow the call chain. Read the types. Understand why the code exists before judging whether the change addresses the right layer.
+Answering this often requires looking beyond the files the design touches. Read the surrounding code (callers, callees, type definitions, sibling modules) and understand the architecture the change lives in. Follow the call chain. Read the types. Understand why the code exists before judging whether the change addresses the right layer.
 
 - If you see a workaround, ask: why is the workaround needed? What would a proper fix look like?
 - A fix in module A that should really be a fix in module B's contract
@@ -37,7 +37,7 @@ Is the complexity justified by what the design accomplishes?
 - Obsolete compatibility paths kept alive for transitional stability that's no longer needed. If the migration is done, delete the scaffolding
 - Does the user experience justify the complexity? Every feature, control, and option should earn its place. Half-finished features are worse than missing ones.
 
-Simpler is better unless simpler is wrong. Three lines of duplication beat a premature abstraction.
+Simpler is better unless simpler is wrong.
 
 ## Structure
 

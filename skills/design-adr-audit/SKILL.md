@@ -7,7 +7,7 @@ description: "Audit a blueprint against the repository's Accepted ADRs to find w
 
 Decide whether a plan violates or contradicts any **Accepted** Architecture Decision Record in force. The plan is usually a blueprint, and the audit judges design intent, so there may be no code yet. `design-review` checks the design against itself; this checks it against the binding decisions around it, so a contradiction surfaces as a design fix and not a mid-build surprise.
 
-This is **read-only**. You never edit the plan, the ADRs or code. Acting on findings is a follow-up the user approves.
+This is **read-only**. You never edit the plan, the ADRs or code.
 
 ## 1. Resolve the plan
 
@@ -21,7 +21,7 @@ Find the ADR directories with `find . -type d -name adr -not -path '*/node_modul
 - The owning service's ADRs (`services/<svc>/docs/adr/`) bind that service. Include them.
 - Another service's ADRs bind the plan only through a shared contract. Include them only then, and say so.
 
-State the scope before dispatching. Only Accepted ADRs are enforceable, and each agent checks the status.
+State the scope before dispatching.
 
 ## 3. Partition and dispatch
 
