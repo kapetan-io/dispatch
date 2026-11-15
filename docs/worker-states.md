@@ -1,6 +1,6 @@
 # Worker states
 
-Each worker's workspace is labeled `<emoji> <ticket>`, and the emoji says who the ticket is waiting on. This page is the one place that lists every state a worker can be in, the emoji it shows, and what dispatch does about it: whether it nudges the worker, notifies you or escalates the ticket. Read it when you use dispatch, and before you change a rule that nudges, notifies or escalates.
+Each worker's workspace is labeled `<emoji> <ticket>` (under Rex its window, `<emoji> <ticket> <title>`), and the emoji says who the ticket is waiting on. This page is the one place that lists every state a worker can be in, the emoji it shows, and what dispatch does about it: whether it nudges the worker, notifies you or escalates the ticket. Read it when you use dispatch, and before you change a rule that nudges, notifies or escalates.
 
 ## The emoji
 
@@ -15,7 +15,7 @@ Each worker's workspace is labeled `<emoji> <ticket>`, and the emoji says who th
 | 🔴 | You | Needs Human, or the worker is blocked on a question popup |
 | ⏸️ | Nobody | A Todo child of an In Progress parent, which keeps its tree, with a workspace still open |
 
-💤 changes the label and tells the sessions following the ticket once each time it appears (the `notify-idle` rule, In Progress tickets only, `design` tickets included). It sends nothing to the worker and no reminder, and it goes back to 🟢 within seconds of you typing into the window. That depends on herdr already reporting the worker as working when the hook fires. Otherwise 💤 stays until the next Notification or resync.
+💤 changes the label and tells the sessions following the ticket once each time it appears (the `notify-idle` rule, In Progress tickets only, `design` tickets included). It sends nothing to the worker and no reminder, and it goes back to 🟢 within seconds of you typing into the window. That depends on the multiplexer already reporting the worker as working when the hook fires. Otherwise 💤 stays until the next Notification or resync.
 
 ## How the label is chosen
 
@@ -27,7 +27,7 @@ The first line that fits wins.
 4. The worker is working, or dispatch sent it a nudge and no read has yet seen it working or blocked: 🟢.
 5. The PR is ready and the worker is idle or gone: ⏳ if the repo opens drafts, the PR has left draft and its head isn't approved, 🔀 if the same PR is approved, otherwise 👀. "Approved" is what `auto_merge` counts, so a repo's `approval_checks` that haven't passed keep the PR at ⏳.
 6. The worker's Claude session is gone, or its launch isn't confirmed: 🟡 if the PR's checks are running, otherwise 🟢.
-7. The worker is idle and its last Stop (the Claude Code hook that records when a turn ended) lists a background task still running and is under 60 minutes old, or its session took a message after that Stop: 🟢. A message is anything typed to the worker or sent by dispatch, so 💤 clears when you type, before herdr reads the worker as working.
+7. The worker is idle and its last Stop (the Claude Code hook that records when a turn ended) lists a background task still running and is under 60 minutes old, or its session took a message after that Stop: 🟢. A message is anything typed to the worker or sent by dispatch, so 💤 clears when you type, before the multiplexer reads the worker as working.
 8. The PR's checks are running: 🟡.
 9. The worker has no Stop record, or its Stop didn't say what was running: 🟢. Nothing proves it is waiting.
 10. Otherwise: 💤.
@@ -102,4 +102,4 @@ A `design` or `design-review` worker is never nudged, and its ticket notifies li
 
 Dispatch used to type a stall nudge into an idle In Progress worker, and to notify you on every 6th stall nudge and once when a nudge went unanswered for an hour. Both are gone. The stall nudge could land on top of a question the worker had just asked and read as the answer. Without it, nothing prompts a worker that stopped In Progress without moving its ticket, and 💤 is how you see it. Going 💤 sends one message to the sessions following the ticket, which only tells them and never sends the worker anything.
 
-A build worker asks you its questions in chat, not through the question popup. A popup it still opens is handled as before: herdr reports the worker blocked, the sessions following the ticket get the notification, and the label is 🔴.
+A build worker asks you its questions in chat, not through the question popup. A popup it still opens is handled as before: the multiplexer reports the worker blocked, the sessions following the ticket get the notification, and the label is 🔴.
