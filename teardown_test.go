@@ -1112,12 +1112,15 @@ func TestTickKeepsATreeThatGainedANestedRepoAfterTheCycleDecidedToReturnIt(t *te
 
 	// While the nested repository stays, the tree is not returned however many ticks follow.
 	// One comment says what the return would discard, and one says why the tree is still leased.
+	// Both are posted in the same cycle, each from its own action, so they land in either order.
+	// Sorted, "The dispatcher is returning" comes before "The dispatcher kept".
 	d.Advance(time.Second)
 	d.Tick()
 	assert.Empty(t, d.Trees.Returned())
 	assert.DirExists(t, filepath.Join(path, "nested"))
 	comments := d.Linear.Comments()
 	require.Len(t, comments, 2)
+	slices.Sort(comments)
 	assert.Contains(t, comments[0], "It discards untracked files (nested/).")
 	assert.Contains(t, comments[1], "kept this ticket's tree leased, because untracked nested/")
 

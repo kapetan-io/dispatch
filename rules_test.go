@@ -1226,6 +1226,9 @@ func TestAGetThatOutlastsTheThenBudgetHoldsTheRuleInsteadOfThrowing(t *testing.T
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	checked := later(func() Result { return d.Run("rules", "check") })
+	// The get's deadline exists before the request is sent, so expiring it on sight can
+	// cancel the get before it reaches the service.
+	require.Eventually(t, func() bool { return len(sentry.Requests()) == 1 }, 20*time.Second, time.Millisecond)
 	d.Expire("rule slow http.get")
 	res := checked()
 
