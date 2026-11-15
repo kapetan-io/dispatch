@@ -39,8 +39,9 @@ export const launchAs = (t: Ticket, ctx: Ctx): { harness?: string; model?: strin
   // || skips an empty string, which a role key treats as unset.
   const harness = (label && repos[label][role]) || (role in rules ? rules[role] as string : undefined);
   const model = `${role}_model` in rules ? rules[`${role}_model`] as string : role === "worker" ? "sonnet" : "opus";
-  // || skips an empty attribute, which counts as unset.
-  const target = t.attributes.model ? { model: t.attributes.model } : harness ? { harness } : { model };
+  // A local ticket keeps the value as typed, so a blank or padded model is trimmed, and a blank one counts as unset.
+  const own = t.attributes.model?.trim();
+  const target = own ? { model: own } : harness ? { harness } : { model };
   return role === "worker" ? target : { ...target, kickoff: `/dispatch:${skill(t)} ${t.id}` };
 };
 

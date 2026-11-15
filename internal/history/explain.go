@@ -281,9 +281,9 @@ func (t *tracing) decisions(c Cycle) []decision {
 			once := e.Once.String()
 			line := ExplainLine{Decision: "wants", Kind: e.Kind, Once: once}
 			text := fmt.Sprintf("wants %s once %s", e.Kind, once)
-			if model, ok := e.Options["model"].(string); ok && e.Kind == "launch" {
+			if model, ok := e.Options["model"].(string); ok {
 				line.Model, text = model, text+" on model "+model
-			} else if harness, ok := e.Options["harness"].(string); ok && e.Kind == "launch" {
+			} else if harness, ok := e.Options["harness"].(string); ok {
 				line.Harness, text = harness, text+" on "+harness
 			}
 			add(e.Rule, text, line)

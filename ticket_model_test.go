@@ -2,6 +2,7 @@ package dispatch_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,6 +20,40 @@ func TestTickLaunchesALocalTicketOnItsModelAttribute(t *testing.T) {
 		d.Repo + " LOC-1 loc-1-work --model opus",
 		d.Repo + " LOC-2 loc-2-work --model sonnet",
 	}, d.Workers.Launched())
+}
+
+func TestTickIgnoresABlankModelAttributeAndTrimsAPaddedOne(t *testing.T) {
+	t.Parallel()
+	d := localDispatch(t)
+	d.fileLocal("In Progress", "--attr", "model= ")
+	d.fileLocal("In Progress", "--attr", "model= opus")
+
+	d.Tick()
+
+	assert.ElementsMatch(t, []string{
+		d.Repo + " LOC-1 loc-1-work --model sonnet",
+		d.Repo + " LOC-2 loc-2-work --model opus",
+	}, d.Workers.Launched())
+}
+
+func TestTickRelaunchesAGoneWorkerOnItsModelAttribute(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	withModel := ticket("ENG-1", "In Review", "dispatch")
+	withModel.Attributes = map[string]string{"model": "opus"}
+	d.Linear.Tickets(withModel)
+	d.Workers.Running("ENG-1", "idle")
+	pr := cleanPR("a1")
+	d.GitHub.PullRequest("ENG-1", pr)
+	d.Tick()
+	d.Advance(time.Second)
+	d.Workers.Gone("ENG-1")
+	pr.threads = []activity{{"", time2, "alice", "", ""}}
+	d.GitHub.PullRequest("ENG-1", pr)
+
+	d.Tick()
+
+	assert.Equal(t, []string{d.Repo + " ENG-1 thrawn01/eng-1 --model opus"}, d.Workers.Launched())
 }
 
 func TestTickLaunchesALinearTicketOnItsModelAttributeInsteadOfTheRepoTable(t *testing.T) {
