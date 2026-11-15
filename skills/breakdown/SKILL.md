@@ -28,7 +28,7 @@ A design that fits one PR gets exactly one build ticket.
 
 ## Start or hold
 
-First report each build ticket's model, as `dispatch:ticket` says. Then ask whether to start the work now or hold it, with your recommendation first. Nothing starts before they answer.
+First tell the user each build ticket's model. Then ask whether to start the work now or hold it, with your recommendation first. Nothing starts before they answer.
 
 - **Hold.** Leave `design` on the parent and the children in Todo. Tell the user to ask any session to "start <parent>'s work".
 - **Start.** Move the parent to In Progress if it isn't, then remove `design`, then run `dispatch tick`. A parent with children never gets a worker, so this launches nothing itself. The parent is now an ordinary parent. The dispatcher promotes the first piece in that tick's cycle, the later pieces as their blockers reach Done, and closes the parent when every child is finished. Removing `design` is the start, so never do it before the user chooses.

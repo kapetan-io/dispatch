@@ -31,7 +31,7 @@ LOC-7
 - **Labels.** An idea or feature whose design isn't settled gets `--label design` and `--status Backlog`. Moving it to In Progress starts the design skill. A design review is a child of the feature ticket labeled `design-review`, never `design`, in Todo. Moving it to In Progress starts a review worker on the next tick. The design skill makes that move itself when the user chooses review. Add a type label (Bug, Feature) if the team has one.
 - **Status.** The ticket waits until the user moves it to `in_progress`, so never move it there unless told to. To convert a ticket that is already In Progress, first move it to a paused status, then assign it to the user `dispatch linear-viewer` prints and add the AI label in a later save, because an In Progress ticket that carries the AI label starts a worker. After you do move one, run `dispatch tick` and report whether its worker started, since otherwise it waits for the dispatcher's timer.
 - **Title.** One plain phrase saying what changes, at most 50 characters and without the repo or tool name, which the repo label already carries. Shorten by dropping detail the body carries, not by abbreviating words.
-- **Model.** On a build ticket, set `--attr model=<name>` (`fable`, `opus` or `sonnet`) to the model that suits its work, since you know the work better than the config does. Tell the user each ticket's model before any work starts, so they can change it first.
+- **Model.** On a build ticket, set `--attr model=<name>` (`fable`, `opus` or `sonnet`) to the model that suits its work.
 
 ## Body
 
@@ -89,5 +89,5 @@ Review again only if you changed what the ticket asks for, not for wording. Tell
 - Unless it's a `design` or `design-review` ticket, confirm the review ran and each finding landed in the ticket or was set aside with evidence.
 - Confirm each "Not decided" entry needs research, has no one to ask, or was declined, and that you asked every other call.
 - Re-read In plain English as the user would. If it needs the code open to make sense, rewrite it.
-- On a build ticket, confirm you chose its model and told the user.
+- On a build ticket, confirm you chose its model.
 - On a ticket that touches a skill, confirm Notes for the worker carries each skill instruction listed above.
