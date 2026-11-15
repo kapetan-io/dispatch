@@ -31,6 +31,7 @@ LOC-7
 - **Labels.** An idea or feature whose design isn't settled gets `--label design` and `--status Backlog`. Moving it to In Progress starts the design skill. A design review is a child of the feature ticket labeled `design-review`, never `design`, in Todo. Moving it to In Progress starts a review worker on the next tick. The design skill makes that move itself when the user chooses review. Add a type label (Bug, Feature) if the team has one.
 - **Status.** The ticket waits until the user moves it to `in_progress`, so never move it there unless told to. To convert a ticket that is already In Progress, first move it to a paused status, then assign it to the user `dispatch linear-viewer` prints and add the AI label in a later save, because an In Progress ticket that carries the AI label starts a worker. After you do move one, run `dispatch tick` and report whether its worker started, since otherwise it waits for the dispatcher's timer.
 - **Title.** One plain phrase saying what changes, at most 50 characters and without the repo or tool name, which the repo label already carries. Shorten by dropping detail the body carries, not by abbreviating words.
+- **Model.** On a build ticket, set `--attr model=<name>` (`fable`, `opus` or `sonnet`) to the model that suits its work.
 
 ## Body
 
@@ -46,7 +47,7 @@ Use these sections in this order.
 4. **Not decided here (ask, don't assume).** Product behavior, public contract, security default and ADR questions are the user's. Sort each one, including any the review below turns up. If this conversation has the facts the user needs to answer it, ask the user before you save and write the answer into the ticket as theirs ("the user wants X"). Otherwise list it here, which means one of three things: answering needs research you can't do now, no user is present (a worker breaking down its own ticket), or the user chose not to decide it. With none listed, write "Nothing open". Don't write a guess as if it were settled. A `design` or `design-review` ticket keeps its questions for the design session.
 5. **Notes for the worker.** Anything that saves time, such as an example ticket in the same format, a trap you hit, a binary it must not touch, or a suggested approach labelled as one.
 
-Set an attribute with `--attr key=value` on `create`, and change one later with `dispatch ticket edit <id> --attr key=value` or remove it with `--unset-attr key`, on either system. `edit` of a Linear ticket rewrites only its `## Attributes` section. To set the model this ticket's worker runs on, set the attribute `model` to a model name, such as `--attr model=opus`.
+Set an attribute with `--attr key=value` on `create`, and change one later with `dispatch ticket edit <id> --attr key=value` or remove it with `--unset-attr key`, on either system.
 
 A worker files a bug it found outside its own ticket's change with a last line `Found by: <the worker's ticket>`, which tells a managing session that picks tickets up to start it. No one else writes that line.
 
@@ -88,4 +89,5 @@ Review again only if you changed what the ticket asks for, not for wording. Tell
 - Unless it's a `design` or `design-review` ticket, confirm the review ran and each finding landed in the ticket or was set aside with evidence.
 - Confirm each "Not decided" entry needs research, has no one to ask, or was declined, and that you asked every other call.
 - Re-read In plain English as the user would. If it needs the code open to make sense, rewrite it.
+- On a build ticket, confirm you chose its model.
 - On a ticket that touches a skill, confirm Notes for the worker carries each skill instruction listed above.
