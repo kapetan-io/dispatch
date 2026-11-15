@@ -24,6 +24,7 @@ export const skill = (t: Ticket) =>
 
 // What a ticket's worker starts on, and its first command. A repo's worker / design key beats
 // [rules], and with neither set the worker runs Claude Code on worker_model / design_model.
+// A ticket's own model attribute beats all of those, for a build worker and a design session alike.
 // A build worker gets no kickoff, so the launcher types /dispatch:build <ticket>.
 // Those two models fall back to sonnet and opus (config.DefaultWorkerModel and
 // DefaultDesignModel) so a config without them still launches.
@@ -38,7 +39,9 @@ export const launchAs = (t: Ticket, ctx: Ctx): { harness?: string; model?: strin
   // || skips an empty string, which a role key treats as unset.
   const harness = (label && repos[label][role]) || (role in rules ? rules[role] as string : undefined);
   const model = `${role}_model` in rules ? rules[`${role}_model`] as string : role === "worker" ? "sonnet" : "opus";
-  const target = harness ? { harness } : { model };
+  // A local ticket keeps the value as typed, so a blank or padded model is trimmed, and a blank one counts as unset.
+  const own = t.attributes.model?.trim();
+  const target = own ? { model: own } : harness ? { harness } : { model };
   return role === "worker" ? target : { ...target, kickoff: `/dispatch:${skill(t)} ${t.id}` };
 };
 

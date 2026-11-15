@@ -66,9 +66,12 @@ type ExplainLine struct {
 	// State is attempted, or the receipt's outcome.
 	State string `json:"state,omitempty"`
 	// Once is the once key as the text form prints it.
-	Once   string `json:"once,omitempty"`
-	Detail string `json:"detail,omitempty"`
-	Reset  bool   `json:"reset,omitempty"`
+	Once string `json:"once,omitempty"`
+	// Model and Harness are what a launch wanted to run on, one of the two.
+	Model   string `json:"model,omitempty"`
+	Harness string `json:"harness,omitempty"`
+	Detail  string `json:"detail,omitempty"`
+	Reset   bool   `json:"reset,omitempty"`
 	// Read is what the rule read, as the text form prints it after "read".
 	Read    []string `json:"read,omitempty"`
 	Service string   `json:"service,omitempty"`
@@ -276,7 +279,14 @@ func (t *tracing) decisions(c Cycle) []decision {
 	for _, e := range c.Wants {
 		if e.Subject == t.ticket {
 			once := e.Once.String()
-			add(e.Rule, fmt.Sprintf("wants %s once %s", e.Kind, once), ExplainLine{Decision: "wants", Kind: e.Kind, Once: once})
+			line := ExplainLine{Decision: "wants", Kind: e.Kind, Once: once}
+			text := fmt.Sprintf("wants %s once %s", e.Kind, once)
+			if model, ok := e.Options["model"].(string); ok {
+				line.Model, text = model, text+" on model "+model
+			} else if harness, ok := e.Options["harness"].(string); ok {
+				line.Harness, text = harness, text+" on "+harness
+			}
+			add(e.Rule, text, line)
 		}
 	}
 	for _, e := range c.Waiting {
