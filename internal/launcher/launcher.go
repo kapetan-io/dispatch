@@ -78,7 +78,12 @@ type Result struct {
 	Workspace string `json:"workspace,omitempty"`
 	Pane      string `json:"pane,omitempty"`
 	Agent     string `json:"agent,omitempty"`
-	Kickoff   string `json:"kickoff,omitempty"`
+	// Kickoff is what the launch typed into the worker: the kickoff, or the carry-on message when
+	// Resumed is true.
+	Kickoff string `json:"kickoff,omitempty"`
+	// Resumed is true when the worker resumed a session that already took this kickoff, so the
+	// launch typed the carry-on message in place of the kickoff.
+	Resumed bool `json:"resumed,omitempty"`
 	// Stacked is true only when this launch wrote the stack record. A relaunch, or a launch on a
 	// branch that already exists, leaves it false.
 	Stacked bool `json:"stacked,omitempty"`

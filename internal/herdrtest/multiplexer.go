@@ -66,6 +66,7 @@ type Multiplexer struct {
 	live        int               // how many streams have named their first panes
 	multiplexer string            // what Multiplexer returns, "herdr" when unset
 	later       map[string]string // pane to the status Read applies, and streams, after it took its snapshot
+	resumable   map[string]string // tree to the session LoseTerminals ended there, which the next StartWorker resumes
 }
 
 // sink is one stream Changes holds open.
@@ -95,7 +96,7 @@ func (h *Multiplexer) killed() error {
 
 // New returns an empty Multiplexer that records its calls in j.
 func New(j *journal.Journal) *Multiplexer {
-	return &Multiplexer{journal: j, failures: map[string]error{}, names: map[string]string{}, later: map[string]string{}}
+	return &Multiplexer{journal: j, failures: map[string]error{}, names: map[string]string{}, later: map[string]string{}, resumable: map[string]string{}}
 }
 
 // NameMultiplexer sets the name Multiplexer returns, so a test sees the messages built for Rex.
@@ -189,6 +190,28 @@ func (h *Multiplexer) ExitAgent(pane string) {
 	h.agents = slices.DeleteFunc(h.agents, func(a herdr.Agent) bool { return a.PaneID == pane })
 	h.mu.Unlock()
 	h.notify(pane)
+}
+
+// LoseTerminals ends every worker's program as a multiplexer restart does, keeping its pane. The
+// next StartWorker on a tree that held one resumes its session unless the lease is fresh, as the
+// Rex and Herdr app adapters do.
+func (h *Multiplexer) LoseTerminals() {
+	h.mu.Lock()
+	lost := make([]string, 0, len(h.agents))
+	for _, a := range h.agents {
+		for i := len(h.workers) - 1; i >= 0; i-- {
+			if h.workers[i].Workspace == a.WorkspaceID && a.Session != "" {
+				h.resumable[h.workers[i].Dir] = a.Session
+				break
+			}
+		}
+		lost = append(lost, a.PaneID)
+	}
+	h.agents = nil
+	h.mu.Unlock()
+	for _, pane := range lost {
+		h.notify(pane)
+	}
 }
 
 // Changed makes the stream name pane, whether or not it holds a worker or exists.
@@ -481,6 +504,8 @@ func (h *Multiplexer) CloseWorkspace(ctx context.Context, id string) error {
 			gone = append(gone, p.ID)
 		}
 	}
+	// Closing removes the terminals, so nothing is left there to resume.
+	delete(h.resumable, h.workspaces[i].CheckoutPath)
 	h.workspaces = slices.Delete(h.workspaces, i, i+1)
 	h.tabs = slices.DeleteFunc(h.tabs, func(t herdr.Tab) bool { return t.WorkspaceID == id })
 	h.panes = slices.DeleteFunc(h.panes, func(p herdr.Pane) bool { return p.WorkspaceID == id })

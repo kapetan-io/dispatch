@@ -140,8 +140,9 @@ type launch struct {
 	repo      string
 	tree      string
 	workspace string
-	// prior is the kickoff record the row held before this launch wrote its own, which a launch
-	// that types nothing puts back.
+	// prior is the kickoff record the row held before this launch wrote its own. A launch that
+	// types nothing puts it back, and kickoffOrCarryOn reads it to tell whether a resumed session
+	// already took this kickoff.
 	prior *workers.Kickoff
 	// fresh is set when this run took the lease, as opposed to finding one from
 	// an earlier run.
@@ -207,7 +208,10 @@ func (l *launch) run(ctx context.Context) Result {
 		l.restoreKickoff()
 		return r
 	}
-	if err := l.opts.Workers.RecordSession(req.Ticket, req.Repo, started.Session); err != nil {
+	// A record this launch leaves open must still say a resumed session ran the kickoff, or the
+	// next resume would type it again, so the session and that fact are written together.
+	text, resumed := l.kickoffOrCarryOn(started.Session)
+	if err := l.opts.Workers.RecordSession(req.Ticket, req.Repo, started.Session, resumed); err != nil {
 		// The session got no kickoff, so closing its workspace loses no work.
 		if l.opts.Multiplexer.CloseWorkspace(context.WithoutCancel(ctx), l.workspace) == nil {
 			l.restoreKickoff()
@@ -215,11 +219,11 @@ func (l *launch) run(ctx context.Context) Result {
 		return Result{Status: StatusWorkerRowFailed, Detail: err.Error(), Workspace: l.workspace, Pane: started.Pane, Worktree: l.tree}
 	}
 	l.opts.Typed.Clear(l.tree)
-	l.opts.Typed.Note(l.tree, req.Kickoff)
+	l.opts.Typed.Note(l.tree, text)
 
 	// An unconfirmed kickoff closes the workspace. Left open, its idle program
 	// would look like a live worker, and no cycle would retry or escalate.
-	if err := l.opts.Multiplexer.Kickoff(ctx, started.Pane, req.Kickoff, req.Program.Startup); err != nil {
+	if err := l.opts.Multiplexer.Kickoff(ctx, started.Pane, text, req.Program.Startup); err != nil {
 		// When the close fails the idle session is still there, and the open record stays so a
 		// later cycle closes it.
 		if l.opts.Multiplexer.CloseWorkspace(context.WithoutCancel(ctx), l.workspace) == nil {
@@ -261,8 +265,32 @@ func (l *launch) run(ctx context.Context) Result {
 	}
 	return Result{
 		Status: StatusOK, Ticket: req.Ticket, Branch: req.Branch, Worktree: l.tree,
-		Workspace: l.workspace, Pane: started.Pane, Agent: started.Agent, Kickoff: req.Kickoff, Stacked: l.stacked,
+		Workspace: l.workspace, Pane: started.Pane, Agent: started.Agent, Kickoff: text, Resumed: resumed, Stacked: l.stacked,
 	}
+}
+
+// carryOn is the carry-on message, typed in place of the kickoff into a resumed session that
+// already took it, because typing the kickoff again tells the worker to start the job it is in the
+// middle of.
+const carryOn = "Dispatch restarted your terminal and resumed this conversation. Carry on from where you stopped."
+
+// kickoffOrCarryOn is the text to type into session, and whether it is the carry-on message. It is
+// the carry-on message when the kickoff record the row held before this launch names this session
+// and this same kickoff, and that kickoff ran: the record is closed, is marked taken, or has a Stop
+// of the session after it. A kickoff that differs, such as a restack, tells the
+// session something new, so it is typed.
+func (l *launch) kickoffOrCarryOn(session string) (string, bool) {
+	k := l.prior
+	if session == "" || k == nil || k.Session != session || k.Text != l.req.Kickoff {
+		return l.req.Kickoff, false
+	}
+	// An open record may be a kickoff that never reached the session, so only a Stop of that
+	// session after it shows it ran. An unreadable Stop counts as no Stop here, because retyping
+	// the kickoff costs less than a worker that never started its job.
+	if k.Open && !k.Taken && !l.stoppedSince(session, k.At) {
+		return l.req.Kickoff, false
+	}
+	return carryOn, true
 }
 
 // beginKickoff writes the kickoff record, open, before the harness starts. A launch killed
@@ -286,30 +314,27 @@ func (l *launch) beginKickoff(ctx context.Context) (Result, bool) {
 // restoreKickoff puts back the record the row held, for a launch that typed nothing: a session
 // that took its kickoff keeps the record of the launch that started it.
 func (l *launch) restoreKickoff() {
-	// A session an earlier launch left without its kickoff is still without it, and the open
-	// record dates the wait from now. A Stop later than the earlier record shows its kickoff
-	// ran, so that record goes back with its own time.
+	// An open record with no Stop since means the session never ran what the earlier launch typed,
+	// so the record goes back open and dates the wait from now. A later Stop shows that text ran,
+	// so the record goes back with its own time.
 	kickoff := l.prior
-	if l.prior != nil && l.prior.Open && !l.stoppedSince(l.prior.At) {
-		kickoff = &workers.Kickoff{Text: l.prior.Text, At: l.opts.Clock.Now().UnixMilli(), Open: true, Session: l.prior.Session}
+	if l.prior != nil && l.prior.Open && !l.stoppedSince("", l.prior.At) {
+		kickoff = &workers.Kickoff{Text: l.prior.Text, At: l.opts.Clock.Now().UnixMilli(), Open: true, Session: l.prior.Session, Taken: l.prior.Taken}
 	}
 	if err := l.opts.Workers.SetKickoff(l.req.Ticket, l.req.Repo, kickoff); err != nil && !errors.Is(err, workers.ErrNoRow) {
 		l.log("%v", err)
 	}
 }
 
-// stoppedSince reports whether the worker in the tree recorded a Stop after the time, in milliseconds.
-func (l *launch) stoppedSince(at int64) bool {
+// stoppedSince reports whether the worker in the tree recorded a Stop of session after the time, in
+// milliseconds. An empty session counts a Stop of any session.
+func (l *launch) stoppedSince(session string, at int64) bool {
 	worker, _, err := l.opts.Workers.OnTree(l.tree)
 	if err != nil {
 		return false
 	}
-	for _, stop := range worker.Stops {
-		if stop.At.UnixMilli() > at {
-			return true
-		}
-	}
-	return false
+	stop, ok := worker.Stop(session)
+	return ok && stop.At.UnixMilli() > at
 }
 
 // deleteKickoff removes the record of a kickoff that failed to type, once its workspace is closed.
