@@ -481,7 +481,7 @@ func (s *scenario) world() world.World {
 			if rec, ok := m.stops[id]; ok && w.Workers[id].State == world.Idle {
 				w.Stops[id] = rec
 			}
-			if w.Workers[id].State != world.NoWorker && (scope.Is(*t, ticket.InProgress) || scope.Is(*t, ticket.InReview)) {
+			if w.Workers[id].State != world.NoWorker && (scope.Is(*t, ticket.InProgress) || scope.Is(*t, ticket.InReview) || scope.Is(*t, ticket.NeedsHuman)) {
 				if reason, ok := m.sessionUnread[id]; ok {
 					w.SessionErrs[id] = errors.New(reason)
 				} else if log, ok := m.sessions[id]; ok {
