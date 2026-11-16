@@ -39,14 +39,15 @@ var ErrNoRow = errors.New("no worker row")
 // ErrTreeTaken means another worker row names the tree.
 var ErrTreeTaken = errors.New("another worker row names the tree")
 
-// Kickoff is a worker's kickoff record: what dispatch last typed to start the worker and the
-// session it typed it into. It stays until the return.
+// Kickoff is a worker's kickoff record: the kickoff dispatch last sent to start the worker and the
+// session it went to. A launch that resumed a session which already took it typed the carry-on
+// message instead, and the record still holds the kickoff. It stays until the return.
 type Kickoff struct {
 	Text string `json:"text"`
 	// At is when the launch that typed it began, in milliseconds since the epoch.
 	At int64 `json:"at"`
-	// Open is true from before the harness starts until the launch has typed the kickoff, so only
-	// a launch that died in between leaves it true.
+	// Open is true from before the harness starts until the launch has typed the kickoff or the
+	// carry-on message, so only a launch that died in between leaves it true.
 	Open bool `json:"open,omitempty"`
 	// Session is the session the kickoff was typed into. Empty means it is not known.
 	Session string `json:"session,omitempty"`
@@ -341,21 +342,12 @@ func (s *Store) SetKickoff(ticket, repo string, k *Kickoff) error {
 	})
 }
 
-// RecordSession records the session the kickoff is typed into.
-func (s *Store) RecordSession(ticket, repo, session string) error {
+// RecordSession records the session the kickoff is typed into, and whether that session took the
+// kickoff in an earlier launch.
+func (s *Store) RecordSession(ticket, repo, session string, taken bool) error {
 	return s.change(ticket, repo, func(_ *bolt.Tx, row *Row) error {
 		if row.Kickoff != nil {
-			row.Kickoff.Session = session
-		}
-		return nil
-	})
-}
-
-// RecordTaken marks the kickoff record as taken by its session in an earlier launch.
-func (s *Store) RecordTaken(ticket, repo string) error {
-	return s.change(ticket, repo, func(_ *bolt.Tx, row *Row) error {
-		if row.Kickoff != nil {
-			row.Kickoff.Taken = true
+			row.Kickoff.Session, row.Kickoff.Taken = session, taken
 		}
 		return nil
 	})

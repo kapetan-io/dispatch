@@ -291,3 +291,35 @@ func TestASecondResumeAfterAnUnconfirmedCarryOnMessageTypesItAgain(t *testing.T)
 	require.Len(t, snap.Agents, 1)
 	assert.Equal(t, session, snap.Agents[0].Session)
 }
+
+// A launch whose harness fails to start puts back the record it found, which still says the
+// resumed session ran the kickoff, so the resume after it types the carry-on message.
+func TestAResumeAfterAFailedStartKeepsTheKickoffTaken(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	d.StartBeforeTheEvents()
+	require.NoError(t, d.launch("ENG-1", "br-eng-1").err)
+	d.fakes().Multiplexer.LoseTerminals()
+	d.fakes().Multiplexer.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
+	d.fakes().Multiplexer.Fail(herdrtest.OpCloseWorkspace, fmt.Errorf("herdr workspace close failed"))
+	d.Clock.Advance(time.Minute)
+	require.Equal(t, "injection_unconfirmed", d.launch("ENG-1", "br-eng-1").result["status"])
+	d.fakes().Multiplexer.Fail(herdrtest.OpKickoff, nil)
+	d.fakes().Multiplexer.LoseTerminals()
+	d.fakes().Multiplexer.Fail(herdrtest.OpStartAgent, fmt.Errorf("herdr agent start failed"))
+	d.Clock.Advance(time.Minute)
+	require.Equal(t, "agent_start_failed", d.launch("ENG-1", "br-eng-1").result["status"])
+	kickoff, found := d.kickoffRecord("ENG-1")
+	require.True(t, found)
+	require.True(t, kickoff.Open)
+	require.True(t, kickoff.Taken)
+	d.fakes().Multiplexer.Fail(herdrtest.OpStartAgent, nil)
+	d.fakes().Multiplexer.Fail(herdrtest.OpCloseWorkspace, nil)
+	d.Clock.Advance(time.Minute)
+
+	out := d.launch("ENG-1", "br-eng-1")
+
+	require.NoError(t, out.err)
+	assert.Equal(t, carryOnMessage, kickedText(d, 1))
+}

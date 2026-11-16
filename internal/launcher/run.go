@@ -208,20 +208,15 @@ func (l *launch) run(ctx context.Context) Result {
 		l.restoreKickoff()
 		return r
 	}
-	if err := l.opts.Workers.RecordSession(req.Ticket, req.Repo, started.Session); err != nil {
+	// A record this launch leaves open must still say a resumed session ran the kickoff, or the
+	// next resume would type it again, so the session and that fact are written together.
+	text, resumed := l.kickoffOrCarryOn(started.Session)
+	if err := l.opts.Workers.RecordSession(req.Ticket, req.Repo, started.Session, resumed); err != nil {
 		// The session got no kickoff, so closing its workspace loses no work.
 		if l.opts.Multiplexer.CloseWorkspace(context.WithoutCancel(ctx), l.workspace) == nil {
 			l.restoreKickoff()
 		}
 		return Result{Status: StatusWorkerRowFailed, Detail: err.Error(), Workspace: l.workspace, Pane: started.Pane, Worktree: l.tree}
-	}
-	text, resumed := l.kickoffOrCarryOn(started.Session)
-	if resumed {
-		// A record left open by this launch must still say the session ran the kickoff, or the
-		// next resume would type it again.
-		if err := l.opts.Workers.RecordTaken(req.Ticket, req.Repo); err != nil {
-			l.log("%v", err)
-		}
 	}
 	l.opts.Typed.Clear(l.tree)
 	l.opts.Typed.Note(l.tree, text)
@@ -319,12 +314,12 @@ func (l *launch) beginKickoff(ctx context.Context) (Result, bool) {
 // restoreKickoff puts back the record the row held, for a launch that typed nothing: a session
 // that took its kickoff keeps the record of the launch that started it.
 func (l *launch) restoreKickoff() {
-	// A session an earlier launch left without its kickoff is still without it, and the open
-	// record dates the wait from now. A Stop later than the earlier record shows its kickoff
-	// ran, so that record goes back with its own time.
+	// A session an earlier launch left without what it typed is still without it, and the open
+	// record dates the wait from now. A Stop later than the earlier record shows it ran, so that
+	// record goes back with its own time.
 	kickoff := l.prior
 	if l.prior != nil && l.prior.Open && !l.stoppedSince("", l.prior.At) {
-		kickoff = &workers.Kickoff{Text: l.prior.Text, At: l.opts.Clock.Now().UnixMilli(), Open: true, Session: l.prior.Session}
+		kickoff = &workers.Kickoff{Text: l.prior.Text, At: l.opts.Clock.Now().UnixMilli(), Open: true, Session: l.prior.Session, Taken: l.prior.Taken}
 	}
 	if err := l.opts.Workers.SetKickoff(l.req.Ticket, l.req.Repo, kickoff); err != nil && !errors.Is(err, workers.ErrNoRow) {
 		l.log("%v", err)
