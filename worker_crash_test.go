@@ -110,7 +110,7 @@ func TestARelaunchLeavesATreeWithCommitsNoBranchHoldsAsItIs(t *testing.T) {
 	d.StartBeforeTheEvents()
 	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
 	d.recordWorker("ENG-1", d.Repo, tree)
-	hintGit(t, tree, "commit", "-q", "--allow-empty", "-m", "the worker's own")
+	hintGit(t, tree, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "the worker's own")
 
 	out := d.launch("ENG-1", "br-eng-1")
 
