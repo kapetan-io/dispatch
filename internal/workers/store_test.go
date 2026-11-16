@@ -106,7 +106,7 @@ func TestDeletingAWorkerRowDeletesItsRecords(t *testing.T) {
 // Package exception: a rule about the source tree, which no command line shows. Only the packages
 // that own a part of dispatch.db open bbolt, so every write goes through an owner's checks.
 func TestOnlyTheDatabasesOwnersImportBbolt(t *testing.T) {
-	owners := []string{"internal/dispatchdb", "internal/localticket", "internal/workers"}
+	owners := []string{"internal/dispatchdb", "internal/localticket", "internal/ticketbranch", "internal/workers"}
 	root := filepath.Join("..", "..")
 
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/launcher"
+	"github.com/kapetan-io/dispatch/internal/ticketbranch"
 	"github.com/kapetan-io/dispatch/internal/workers"
 )
 
@@ -26,10 +27,10 @@ func pluginRoot(opts Options) (string, error) {
 	return cfg.Plugins.PluginRoot(), nil
 }
 
-// launcherFor is the launcher a launch action goes through, which is Options.Launcher
-// when a test or caller set one. It writes the worker row in rows before each step. typed is told
-// the kickoff, so the prompt hook can tell it from a person's message.
-func launcherFor(opts Options, root string, rows *workers.Store, typed launcher.Typing) launcher.Launcher {
+// launcherFor is the launcher a launch action goes through, which is Options.Launcher when a test
+// or caller set one. It writes the branch row in branches and the worker row in rows before each
+// step, and tells typed the kickoff, so the prompt hook can tell it from a person's message.
+func launcherFor(opts Options, root string, rows *workers.Store, branches *ticketbranch.Store, typed launcher.Typing) launcher.Launcher {
 	if opts.Launcher != nil {
 		return opts.Launcher
 	}
@@ -39,6 +40,7 @@ func launcherFor(opts Options, root string, rows *workers.Store, typed launcher.
 		Treehouse:   opts.Treehouse,
 		Pace:        opts.LaunchPace,
 		Workers:     rows,
+		Branches:    branches,
 		Typed:       typed,
 	}
 	lo.Clock, lo.Env = opts.Clock, opts.Env

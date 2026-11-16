@@ -13,8 +13,8 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
-	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/ticket"
+	"github.com/kapetan-io/dispatch/internal/ticketbranch"
 	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
@@ -136,7 +136,7 @@ type State struct {
 	localUnread  string
 	// stacks holds each repo label's stack records, and stacksUnread the reason a repo's
 	// could not be read.
-	stacks       map[string]stackrecord.Records
+	stacks       map[string]ticketbranch.Records
 	stacksUnread map[string]string
 	// prRead holds the tickets whose PR dispatch looked for this cycle, so a ticket in it
 	// with no PR record has none, and one outside it is unknown.

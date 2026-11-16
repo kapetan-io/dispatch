@@ -13,7 +13,8 @@ import (
 )
 
 // launchCalls is how many counted calls one launch makes: the commits to dispatch.db and the
-// calls that lease, open, start and type.
+// calls that lease, open, start and type, then the resync after it, which clears the branch row's
+// "not created yet" mark.
 func launchCalls(t *testing.T) int {
 	t.Helper()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(launchRule)})
@@ -27,7 +28,7 @@ func launchCalls(t *testing.T) int {
 func TestALaunchKilledBetweenAnyTwoStepsLeavesOneWorkerOnOneTreeAfterARestart(t *testing.T) {
 	t.Parallel()
 	calls := launchCalls(t)
-	require.Equal(t, 9, calls)
+	require.Equal(t, 11, calls)
 
 	for at := 1; at <= calls; at++ {
 		t.Run("KilledAtCall"+strconv.Itoa(at), func(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/lock"
 	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/kapetan-io/dispatch/internal/ticket"
+	"github.com/kapetan-io/dispatch/internal/ticketbranch"
 	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
@@ -33,6 +34,9 @@ type database struct {
 	// are imported, so a worker is still found by its lease.
 	Rows     workers.Snapshot
 	Recorded bool
+	// Branches are the branch rows, nil when there is no dispatch.db to read them from, which reads
+	// every repo's stack records as unread.
+	Branches *ticketbranch.Snapshot
 }
 
 // into gives a world read the tickets and worker rows d holds.
@@ -43,6 +47,9 @@ func (d database) into(src *world.Sources) {
 	}
 	if d.Recorded {
 		src.Workers = d.Rows
+	}
+	if d.Branches != nil {
+		src.Branches = *d.Branches
 	}
 }
 
@@ -67,6 +74,11 @@ func readOnlyDatabase(cfg config.Config, opts Options) (database, error) {
 		if found.Rows, err = workers.New(file).Snapshot(); err != nil {
 			return found, err
 		}
+		branches, err := ticketbranch.New(file).Snapshot()
+		if err != nil {
+			return found, err
+		}
+		found.Branches = &branches
 		// A start that renamed the file and died before its first read imported nothing, and
 		// until the import the leases say where the workers are.
 		found.Recorded = true
@@ -116,7 +128,7 @@ func trackedDatabase(ctx context.Context, opts Options, cfg config.Config) (data
 		if cfg.Plugins.Local.On && resp.Tracked == nil {
 			return database{}, errors.New("the running dispatch started with local tickets off; restart it to read local tickets")
 		}
-		found := database{Rows: resp.Rows, Recorded: true}
+		found := database{Rows: resp.Rows, Recorded: true, Branches: resp.Branches}
 		if cfg.Plugins.Local.On {
 			found.Local = resp.Tracked
 		}

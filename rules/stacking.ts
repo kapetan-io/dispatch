@@ -40,7 +40,7 @@ const RESTACK = (t: Ticket) => {
     `4. On a conflict, run git rebase --abort, push nothing, and move this ticket to Needs Human with a comment naming the conflicting files.`,
     `5. git push --force-with-lease origin ${t.branch}. If the push is refused, stop and move this ticket to Needs Human with a comment saying why.`,
     `6. Point the PR at the default branch with gh pr edit --repo <repo> --base <default>. If this branch has no PR yet, open one with gh pr create --repo <repo> --base <default>.`,
-    `7. Remove the stack record: git config --unset branch.${t.branch}.dispatchStackParent and git config --unset branch.${t.branch}.dispatchStackForkPoint.`,
+    `7. End the stack record: "\${DISPATCH_BIN:-dispatch}" ticket branch ${t.id} --unstack. If it says dispatch is not running, move this ticket to Needs Human with a comment saying the stack record is still there, and stop.`,
     `8. Then follow whatever this repo's own instructions say to do after a restack (a project skill, CLAUDE.md, or wherever it keeps them). Skip this step when they say nothing.`,
   ].join("\n");
 };

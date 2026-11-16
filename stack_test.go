@@ -61,23 +61,25 @@ func stackedPair(t *testing.T, d *Dispatch, extra ...func(*tkt.Ticket)) string {
 	return head
 }
 
-func gitConfig(t *testing.T, dir, key string) string {
+// dispatchKeys is every git config key an earlier dispatch kept under a branch of the clone at dir,
+// which an import unsets.
+func dispatchKeys(t *testing.T, dir string) string {
 	t.Helper()
-	out, _ := exec.Command("git", "-C", dir, "config", "--get", key).Output()
+	out, _ := exec.Command("git", "-C", dir, "config", "--get-regexp", `^branch\..*\.dispatch`).Output()
 	return strings.TrimSpace(string(out))
 }
 
 func TestARuleLaunchesATicketOnAnotherTicketsPRHead(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule)})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule + reportRule)})
 	head := stackedPair(t, d)
 
 	d.Tick()
 
 	assert.Equal(t, "thrawn01/eng-2", branchIn(t, d.Repo+"/../tree"))
 	assert.Equal(t, head, revParse(t, filepath.Join(filepath.Dir(d.Repo), "tree"), "HEAD"))
-	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
-	assert.Equal(t, head, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))
+	assert.Equal(t, "stack ENG-1@"+head+" branch thrawn01/eng-2", lastReadingOf(d, "ENG-2"))
+	assert.Empty(t, dispatchKeys(t, d.Repo))
 	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-2 --base thrawn01/eng-1"}, d.fakes().Multiplexer.Kicked())
 	launches := d.receiptsOfKind("ENG-2", "launch")
 	require.Len(t, launches, 1)
@@ -107,17 +109,18 @@ func TestATicketWithNoStackRecordReadsItAsUndefined(t *testing.T) {
 
 func TestARelaunchNeverChangesTheStackRecord(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule)})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule + reportRule)})
 	stackedPair(t, d)
-	// The branch exists with a record from an earlier launch, so this launch is a relaunch.
+	// The branch exists with a record an earlier dispatch kept in git config, which the first start
+	// imports, so this launch is a relaunch.
 	hintGit(t, d.Repo, "branch", "thrawn01/eng-2", "main")
 	hintGit(t, d.Repo, "config", "branch.thrawn01/eng-2.dispatchStackParent", "ENG-9")
 	hintGit(t, d.Repo, "config", "branch.thrawn01/eng-2.dispatchStackForkPoint", "0123456789abcdef0123456789abcdef01234567")
 
 	d.Tick()
 
-	assert.Equal(t, "ENG-9", gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
-	assert.Equal(t, "0123456789abcdef0123456789abcdef01234567", gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))
+	assert.Equal(t, "stack ENG-9@0123456789abcdef0123456789abcdef01234567 branch thrawn01/eng-2", lastReadingOf(d, "ENG-2"))
+	assert.Empty(t, dispatchKeys(t, d.Repo))
 	launches := d.receiptsOfKind("ENG-2", "launch")
 	require.Len(t, launches, 1)
 	assert.Equal(t, "ok: workspace w2", launches[0].Detail)
@@ -125,19 +128,18 @@ func TestARelaunchNeverChangesTheStackRecord(t *testing.T) {
 
 func TestALaunchOnAnExistingBranchWritesNoStackRecord(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule)})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule + reportRule)})
 	stackedPair(t, d)
 	hintGit(t, d.Repo, "branch", "thrawn01/eng-2", "main")
 
 	d.Tick()
 
-	assert.Empty(t, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
-	assert.Empty(t, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))
+	assert.Equal(t, "stack none branch thrawn01/eng-2", lastReadingOf(d, "ENG-2"))
 }
 
 func TestAStackedLaunchWhoseHeadIsMissingFailsAndLeavesNoRecord(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule)})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule + reportRule)})
 	stackedPair(t, d)
 	d.GitHub.PullRequest("ENG-1", prState{head: "0123456789abcdef0123456789abcdef01234567", mergeable: "MERGEABLE"})
 
@@ -148,8 +150,7 @@ func TestAStackedLaunchWhoseHeadIsMissingFailsAndLeavesNoRecord(t *testing.T) {
 	require.Len(t, launches, 1)
 	assert.Equal(t, "failed", launches[0].State)
 	assert.Contains(t, launches[0].Detail, "switch_failed")
-	assert.Empty(t, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
-	assert.Empty(t, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))
+	assert.Equal(t, "stack none branch thrawn01/eng-2", lastReadingOf(d, "ENG-2"))
 }
 
 func TestAPartialStackRecordReadsAsUnknown(t *testing.T) {
@@ -163,6 +164,7 @@ func TestAPartialStackRecordReadsAsUnknown(t *testing.T) {
 	d.Tick()
 
 	assert.Equal(t, "stack unknown", lastReadingOf(d, "ENG-2"))
+	assert.Contains(t, d.LoopErr(), "dispatch: dispatch is not imported: branch thrawn01/eng-2 has half a stack record (only dispatchStackParent). Run `git -C "+d.Repo+" config --unset branch.thrawn01/eng-2.dispatchStackParent`, or set the other key.")
 }
 
 func TestAStackRecordThatCannotBeReadReadsAsUnknown(t *testing.T) {
@@ -178,19 +180,19 @@ func TestAStackRecordThatCannotBeReadReadsAsUnknown(t *testing.T) {
 	assert.Equal(t, "stack unknown", lastReadingOf(d, "ENG-2"))
 }
 
-func TestAStackedLaunchWhoseRecordCannotBeWrittenFailsAndCreatesNoBranch(t *testing.T) {
+func TestAStackedLaunchWhoseBranchRowCannotBeWrittenFailsAndLeasesNothing(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule)})
+	d.StartBeforeTheEvents()
 	stackedPair(t, d)
-	// A held lock on the clone's config makes `git config` refuse to write.
-	require.NoError(t, os.WriteFile(filepath.Join(d.Repo, ".git", "config.lock"), nil, 0o644))
+	// Call 1 of a launch writes the worker row and call 2 the branch row.
+	d.fakes().Kill.ThrowAt(2)
 
 	res := d.Run("tick")
 
-	require.ErrorContains(t, res.Err, "stack_record_failed")
-	assert.Len(t, d.Trees.Returned(), 1)
+	require.ErrorContains(t, res.Err, "branch_row_failed")
+	assert.Empty(t, d.leasedTo("ENG-2"))
 	assert.Equal(t, "failed", d.receiptsOfKind("ENG-2", "launch")[0].State)
-	assert.Empty(t, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
 	out, _ := exec.Command("git", "-C", d.Repo, "branch", "--list", "thrawn01/eng-2").Output()
 	assert.Empty(t, strings.TrimSpace(string(out)))
 }
@@ -309,7 +311,7 @@ func TestAStackedLaunchWhoseSwitchFailsReturnsTheLease(t *testing.T) {
 
 func TestAStackedLaunchWhoseSwitchFailsAfterCreatingTheBranchKeepsTheRecord(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule)})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule + reportRule)})
 	head := stackedPair(t, d)
 	// A held lock on the tree's HEAD makes git create the branch and then fail to move onto it.
 	require.NoError(t, os.WriteFile(filepath.Join(d.Repo, ".git", "worktrees", "tree", "HEAD.lock"), nil, 0o644))
@@ -318,6 +320,5 @@ func TestAStackedLaunchWhoseSwitchFailsAfterCreatingTheBranchKeepsTheRecord(t *t
 
 	require.ErrorContains(t, res.Err, "switch_failed")
 	assert.Equal(t, head, revParse(t, d.Repo, "thrawn01/eng-2"))
-	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
-	assert.Equal(t, head, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))
+	assert.Equal(t, "stack ENG-1@"+head+" branch thrawn01/eng-2", lastReadingOf(d, "ENG-2"))
 }

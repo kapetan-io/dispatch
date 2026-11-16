@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -14,8 +15,8 @@ import (
 	"github.com/kapetan-io/dispatch/internal/inbox"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
-	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/ticket"
+	"github.com/kapetan-io/dispatch/internal/ticketbranch"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -57,7 +58,7 @@ func full() world.World {
 		MergedPRs:       map[string]pullrequest.MergedPR{"LOC-2": {Number: 9, URL: "https://github.com/acme/widgets/pull/9", Head: "def", MergedAt: time.UnixMilli(1760450300000).UTC()}},
 		UnreadRepos:     map[string]bool{"tiger": true},
 		Nudged:          map[string]bool{"ENG-1": true},
-		StackRecords:    map[string]stackrecord.Records{"tiger": {Whole: map[string]stackrecord.Record{"eng-1": {Parent: "ENG-2", ForkPoint: "abc"}}, Partial: map[string]bool{"eng-7": true}}},
+		StackRecords:    map[string]ticketbranch.Records{"tiger": {Whole: map[string]ticketbranch.Record{"eng-1": {Parent: "ENG-2", ForkPoint: "abc"}}, Partial: map[string]bool{"eng-7": true}}},
 		StackErrs:       map[string]error{"lion": errors.New("stack records unread")},
 		Inbox:           []inbox.Item{{ID: "24986796502", Reason: "review_requested", Unread: true, UpdatedAt: "2026-10-31T09:16:46Z", RepoName: "acme/widgets", SubjectType: "PullRequest", Title: "Fix the retry loop", APIURL: "https://api.github.com/repos/acme/widgets/pulls/7"}},
 		InboxErr:        errors.New("gh: HTTP 502"),
@@ -74,8 +75,13 @@ func full() world.World {
 // Package exception: codec round trip over every field of World, which a CLI scenario would cover only by accident.
 func TestWorldSurvivesBeingWrittenToHistory(t *testing.T) {
 	before := full()
+	// The clones' branch listings decide only what the resync does to branch rows, so history
+	// leaves them out.
+	unwritten := []string{"Listings", "ListingErrs"}
 	for i, f := range reflect.VisibleFields(reflect.TypeFor[world.World]()) {
-		require.False(t, reflect.ValueOf(before).Field(i).IsZero(), f.Name)
+		if !slices.Contains(unwritten, f.Name) {
+			require.False(t, reflect.ValueOf(before).Field(i).IsZero(), f.Name)
+		}
 	}
 
 	b, err := json.Marshal(before)

@@ -176,7 +176,7 @@ func rulesCheck(ctx context.Context, opts Options, arg string) error {
 	if err != nil {
 		return err
 	}
-	src := sources(opts, cfg, lin, loaded, nil)
+	src := sources(opts, cfg, lin, loaded, nil, nil)
 	src.Tolerant = true
 	db, err := trackedDatabase(ctx, opts, cfg)
 	if err != nil {

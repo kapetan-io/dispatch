@@ -68,14 +68,15 @@ func TestALaunchRecordsTheKickoffItTypedAndTheSessionThatReceivedIt(t *testing.T
 	assert.Len(t, d.fakes().Multiplexer.Started(), 1)
 }
 
-// Call 3 of a launch is the write that records the leased tree, so a launch killed there leaves a
-// lease its ticket holds and a worker row with no tree.
+// Call 4 of a launch is the write that records the leased tree, after the worker row, the branch
+// row and the lease, so a launch killed there leaves a lease its ticket holds and a worker row with
+// no tree.
 func TestATreeLeasedByAKilledLaunchIsRecordedInItsWorkerRowByTheNextPoolRead(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(launchRule)})
 	tree := d.Trees.Pooled()
 	d.StartBeforeTheEvents()
-	d.fakes().Kill.ThrowAt(3)
+	d.fakes().Kill.ThrowAt(4)
 	require.Error(t, d.launch("ENG-1", "br-eng-1").err)
 	d.fakes().Kill.ThrowAt(0)
 	require.Equal(t, []string{tree}, d.leasedTo("ENG-1"))
@@ -92,14 +93,14 @@ func TestATreeLeasedByAKilledLaunchIsRecordedInItsWorkerRowByTheNextPoolRead(t *
 	assert.Len(t, d.launchesEnded("ENG-1"), 1)
 }
 
-// Call 2 of a launch is the lease, so a launch killed there leaves a worker row with no tree and
+// Call 3 of a launch is the lease, so a launch killed there leaves a worker row with no tree and
 // no lease.
 func TestAWorkerRowWithNoTreeAndNoLeaseIsKeptUntilItsTicketIsFinished(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(launchRule)})
 	d.Trees.Pooled()
 	d.StartBeforeTheEvents()
-	d.fakes().Kill.ThrowAt(2)
+	d.fakes().Kill.ThrowAt(3)
 	require.Error(t, d.launch("ENG-1", "br-eng-1").err)
 	d.fakes().Kill.ThrowAt(0)
 	require.Empty(t, d.leasedTo("ENG-1"))

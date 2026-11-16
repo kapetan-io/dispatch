@@ -42,7 +42,7 @@ func TestTickNudgesAnIdleWorkerWhoseLinearBranchWasCutShort(t *testing.T) {
 
 	assert.Equal(t, []string{prPrompt("a failed check")}, d.Workers.Received("ENG-1"))
 	assert.Contains(t, d.prReads(), fullBranch)
-	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch."+fullBranch+".dispatchTicket"))
+	assert.Empty(t, dispatchKeys(t, d.Repo))
 }
 
 func TestTickFindsThePRWhenTheTicketWasRetitledAfterItsBranchWasPushed(t *testing.T) {
@@ -149,7 +149,7 @@ const inReviewBranchRule = `
 whenever({ name: "branch", each: "ticket", if: (t) => t.id === "ENG-1" && t.status === "in_review",
   then: (t, ctx) => ctx.ticket.queueComment(t, "branch " + t.branch, { once: ["branch", t.branch] }) });`
 
-func TestARuleReadsTheBranchTheTicketIsKeyedToAsItsBranchAcrossLinearReads(t *testing.T) {
+func TestARuleReadsTheBranchTheBranchRowNamesAsItsBranchAcrossLinearReads(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Rules: rule(inReviewBranchRule)})
 	d.Linear.Tickets(cut("ENG-1", "In Review"))
@@ -223,7 +223,7 @@ func TestAStackedTicketKeepsItsStackRecordWhenLinearsNameForItDrifts(t *testing.
 
 func TestATicketStackedOnOneWhoseLinearNameDriftedLaunchesFromItsRealBranch(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule + launchRule)})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule + launchRule + reportRule)})
 	tree := d.Trees.Pooled()
 	remote := filepath.Join(filepath.Dir(d.Repo), "remote.git")
 	hintGit(t, filepath.Dir(d.Repo), "init", "-q", "--bare", remote)
@@ -244,27 +244,37 @@ func TestATicketStackedOnOneWhoseLinearNameDriftedLaunchesFromItsRealBranch(t *t
 	d.Tick()
 
 	assert.Contains(t, d.fakes().Multiplexer.Kicked()[len(d.fakes().Multiplexer.Kicked())-1], "/dispatch:build ENG-2 --base "+prBranch("ENG-1"))
-	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
-	assert.Equal(t, head, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))
+	assert.Equal(t, "stack ENG-1@"+head+" branch thrawn01/eng-2", lastReadingOf(d, "ENG-2"))
 }
 
-func TestALaunchKeysItsBranchAndGitMovesTheKeyWhenAWorkerRenamesTheBranch(t *testing.T) {
+func TestATicketWhoseBranchAWorkerRenamedReadsTheNameDispatchTicketBranchRecords(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(inReviewBranchRule + launchRule)})
 	tree := d.Trees.Pooled()
 	d.launch("ENG-1", prBranch("ENG-1"))
-	require.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch."+prBranch("ENG-1")+".dispatchTicket"))
 	d.Trees.Git(tree, "branch", "-m", fullBranch)
+	d.Trees.Git(tree, "checkout", "-q", "--detach")
+	require.NoError(t, d.fakes().Multiplexer.CloseWorkspace(context.Background(), "w2"))
+	require.NoError(t, d.fakes().Treehouse.Return(context.Background(), d.Repo, tree, "ENG-1"))
 	d.Linear.Tickets(cut("ENG-1", "In Review"))
+	d.GitHub.PullRequestsOn("ENG-1", fullBranch)
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "SUCCESS", mergeable: "MERGEABLE"})
+	d.Tick()
+	require.Equal(t, []string{prBranch("ENG-1")}, d.prReads())
+	require.Equal(t, "branch "+prBranch("ENG-1"), lastReadingOf(d, "ENG-1"))
+	require.Contains(t, d.LoopErr(), "dispatch: ENG-1's branch "+prBranch("ENG-1")+" in dispatch is gone; dispatch will not launch ENG-1 until `dispatch ticket branch ENG-1 <name>` names its branch.")
 
+	res := d.Run("ticket", "branch", "ENG-1", fullBranch)
 	d.Tick()
 
-	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch."+fullBranch+".dispatchTicket"))
-	assert.Empty(t, gitConfig(t, d.Repo, "branch."+prBranch("ENG-1")+".dispatchTicket"))
+	require.NoError(t, res.Err)
+	assert.Equal(t, "ENG-1: branch "+fullBranch+" in dispatch\n", res.Stdout)
 	assert.Equal(t, "branch "+fullBranch, lastReadingOf(d, "ENG-1"))
+	assert.Contains(t, d.prReads(), fullBranch)
+	assert.Empty(t, dispatchKeys(t, d.Repo))
 }
 
-func TestATicketBranchKeyOnADeletedBranchIsIgnored(t *testing.T) {
+func TestARecordedBranchThatWasDeletedStaysTheTicketsBranch(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(inReviewBranchRule + launchRule)})
 	tree := d.Trees.Pooled()
@@ -275,22 +285,26 @@ func TestATicketBranchKeyOnADeletedBranchIsIgnored(t *testing.T) {
 
 	d.Tick()
 
-	assert.Equal(t, "branch thrawn01/eng-1-cut", lastReadingOf(d, "ENG-1"))
-	assert.Empty(t, gitConfig(t, d.Repo, "branch."+prBranch("ENG-1")+".dispatchTicket"))
+	assert.Equal(t, "branch "+prBranch("ENG-1"), lastReadingOf(d, "ENG-1"))
+	assert.Contains(t, d.LoopErr(), "dispatch: ENG-1's branch "+prBranch("ENG-1")+" in dispatch is gone;")
 }
 
-func TestALaunchOntoABranchKeyedToAnotherTicketFailsAndReturnsTheLease(t *testing.T) {
+func TestALaunchOntoABranchRecordedForAnotherTicketFailsAndLeasesNothing(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
-	tree := d.Trees.Pooled()
-	d.launch("ENG-1", prBranch("ENG-1"))
-	d.Trees.Git(tree, "checkout", "-q", "--detach")
-	require.NoError(t, d.fakes().Multiplexer.CloseWorkspace(context.Background(), "w2"))
-	require.NoError(t, d.fakes().Treehouse.Return(context.Background(), d.Repo, tree, "ENG-1"))
-	d.Linear.Tickets()
+	relaunchable(t, d)
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Tick()
+	before, _ := d.recordedStops()
 
 	out := d.launch("ENG-2", prBranch("ENG-1"))
 
 	assert.Equal(t, "branch_taken", out.result["status"])
-	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch."+prBranch("ENG-1")+".dispatchTicket"))
+	assert.Equal(t, "branch "+prBranch("ENG-1")+" in dispatch belongs to ENG-1, not ENG-2; nothing was leased. `dispatch ticket branch <ticket> <name>` records another branch for either ticket", out.result["detail"])
+	assert.Empty(t, d.leasedTo("ENG-2"))
+	after, _ := d.recordedStops()
+	assert.Equal(t, before, after)
+	res := d.Run("ticket", "branch", "ENG-1")
+	require.NoError(t, res.Err)
+	assert.Equal(t, "ENG-1: branch "+prBranch("ENG-1")+" in dispatch\n", res.Stdout)
 }

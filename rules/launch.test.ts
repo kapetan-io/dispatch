@@ -107,7 +107,7 @@ scenario(rules, "a failed lease or git switch never counts toward the failure li
   s.land("launch", "ENG-1", { outcome: "failed", detail: "switch_failed: git switch to b failed" });
   s.land("launch", "ENG-1", { outcome: "failed", detail: "pool_error: treehouse status failed" });
   s.expect([["launch-worker", "launch", "ENG-1"]]);
-  s.land("launch", "ENG-1", { outcome: "failed", detail: "stack_record_failed: stack record for b failed" });
+  s.land("launch", "ENG-1", { outcome: "failed", detail: "branch_missing: branch b of ENG-1 is in neither /src/app nor origin" });
   s.expect([["escalate-launch-failures", "escalate", "ENG-1"]]);
 });
 
@@ -117,7 +117,7 @@ scenario(rules, "a launch that failed after dispatch was asked to stop never cou
   s.land("launch", "ENG-1", { outcome: "failed", detail: "interrupted: injection_unconfirmed" });
   s.land("launch", "ENG-1", { outcome: "failed", detail: "pool_error: treehouse status failed" });
   s.expect([["launch-worker", "launch", "ENG-1"]]);
-  s.land("launch", "ENG-1", { outcome: "failed", detail: "stack_record_failed: stack record for b failed" });
+  s.land("launch", "ENG-1", { outcome: "failed", detail: "branch_missing: branch b of ENG-1 is in neither /src/app nor origin" });
   s.expect([["escalate-launch-failures", "escalate", "ENG-1"]]);
 });
 

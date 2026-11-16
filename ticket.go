@@ -39,7 +39,7 @@ func pairs(args []string) (map[string]string, error) {
 func ticketCommand(ctx context.Context, opts Options, args []string) error {
 	if len(args) == 0 {
 		_, _ = fmt.Fprintln(opts.Stderr, usage)
-		return errors.New("ticket takes a verb: create, show, list, move, comment, edit or statuses")
+		return errors.New("ticket takes a verb: create, show, list, move, comment, edit, statuses or branch")
 	}
 	verb, args := args[0], args[1:]
 	fs := flag.NewFlagSet("ticket "+verb, flag.ContinueOnError)
@@ -48,12 +48,12 @@ func ticketCommand(ctx context.Context, opts Options, args []string) error {
 
 	// Verbs that name a ticket take its id first, so the flags after it still parse.
 	switch verb {
-	case loop.VerbShow, loop.VerbMove, loop.VerbComment, loop.VerbEdit:
+	case loop.VerbShow, loop.VerbMove, loop.VerbComment, loop.VerbEdit, loop.VerbBranch:
 		if len(args) == 0 {
 			return fmt.Errorf("ticket %s takes a ticket id such as LOC-3", verb)
 		}
 		call.ID, args = strings.ToUpper(args[0]), args[1:]
-		if ticket.SystemOf(call.ID) != ticket.SystemLocal && verb != loop.VerbEdit {
+		if ticket.SystemOf(call.ID) != ticket.SystemLocal && verb != loop.VerbEdit && verb != loop.VerbBranch {
 			return fmt.Errorf("%s is a Linear ticket; use the Linear tools", call.ID)
 		}
 	case loop.VerbCreate:
@@ -67,7 +67,7 @@ func ticketCommand(ctx context.Context, opts Options, args []string) error {
 		repo, title, description, status, parent, team *string
 		labels, attrs, blockers                        repeated
 		startPR                                        *int
-		all                                            *bool
+		all, unstack                                   *bool
 		addLabels, removeLabels, unsetAttrs            repeated
 	)
 	switch verb {
@@ -93,6 +93,8 @@ func ticketCommand(ctx context.Context, opts Options, args []string) error {
 		parent = fs.String("parent", "", `the parent ticket, LOC-<n>; "" clears`)
 		fs.Var(&blockers, "blocked-by", `replaces the blockers with this one, LOC-<n>; repeatable; "" clears`)
 		startPR = fs.Int("start-pr", 0, "a PR in the ticket's repo; 0 clears")
+	case loop.VerbBranch:
+		unstack = fs.Bool("unstack", false, "end the ticket's stack record")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -112,6 +114,16 @@ func ticketCommand(ctx context.Context, opts Options, args []string) error {
 		if err := want(0); err != nil {
 			return err
 		}
+	case loop.VerbBranch:
+		switch {
+		case *unstack && len(rest) > 0:
+			return errors.New("ticket branch --unstack takes no branch name")
+		case len(rest) > 1:
+			return fmt.Errorf("ticket branch takes at most one branch name, got %d", len(rest))
+		case len(rest) == 1:
+			call.Branch = rest[0]
+		}
+		call.Unstack = *unstack
 	case loop.VerbMove:
 		if err := want(1); err != nil {
 			return err
