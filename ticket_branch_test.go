@@ -2,6 +2,7 @@ package dispatch_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -425,7 +426,8 @@ func TestTicketBranchChangesNothingBeforeTheRepoIsImported(t *testing.T) {
 	d.Advance(time.Minute)
 	d.Tick()
 	assert.Equal(t, "stack ENG-1@0123456789abcdef0123456789abcdef01234567 branch thrawn01/eng-2-new", lastReadingOf(d, "ENG-2"))
-	assert.Empty(t, dispatchKeys(t, d.Repo))
+	// No ticket's branch is other, so its keys stay.
+	assert.Equal(t, "branch.other.dispatchstackparent ENG-9\nbranch.other.dispatchstackforkpoint 0123456789abcdef0123456789abcdef01234567", dispatchKeys(t, d.Repo))
 }
 
 func TestATicketReadsItsPROnTheBranchItsGitConfigKeyNamesWhileTheImportWaits(t *testing.T) {
@@ -443,4 +445,168 @@ func TestATicketReadsItsPROnTheBranchItsGitConfigKeyNamesWhileTheImportWaits(t *
 	require.Contains(t, d.LoopErr(), "dispatch: dispatch is not imported: branch other has half a stack record")
 	assert.Equal(t, "branch "+fullBranch, lastReadingOf(d, "ENG-1"))
 	assert.Contains(t, d.prReads(), fullBranch)
+}
+
+func TestAFirstStartHoldsARepoWhereTwoBranchesNameOneTicket(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: rule(reportRule)})
+	d.Trees.Pooled()
+	d.Linear.Tickets(ticket("ENG-2", "In Progress", "dispatch"))
+	// `git branch -c` copies a branch's config section, ticket key included.
+	hintGit(t, d.Repo, "branch", "thrawn01/eng-2", "main")
+	hintGit(t, d.Repo, "config", "branch.thrawn01/eng-2.dispatchTicket", "ENG-2")
+	hintGit(t, d.Repo, "branch", "-c", "thrawn01/eng-2", "thrawn01/eng-2-copy")
+
+	d.Tick()
+
+	assert.Contains(t, d.LoopErr(), "dispatch: dispatch is not imported: branches thrawn01/eng-2 and thrawn01/eng-2-copy both name ENG-2 in their dispatchTicket key.")
+	assert.Equal(t, "stack unknown", lastReadingOf(d, "ENG-2"))
+	assert.Contains(t, dispatchKeys(t, d.Repo), "branch.thrawn01/eng-2.dispatchticket ENG-2")
+	assert.Contains(t, dispatchKeys(t, d.Repo), "branch.thrawn01/eng-2-copy.dispatchticket ENG-2")
+}
+
+func TestAFirstStartKeepsTheStackKeysOfABranchNoTicketMatched(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Trees.Pooled()
+	d.Linear.Tickets(ticket("ENG-2", "In Progress", "dispatch"))
+	// Two branches start with ENG-2's id and no tree ENG-2 holds has either, so neither is its branch.
+	hintGit(t, d.Repo, "branch", "thrawn01/eng-2", "main")
+	hintGit(t, d.Repo, "branch", "thrawn01/eng-2-other", "main")
+	hintGit(t, d.Repo, "config", "branch.thrawn01/eng-2.dispatchStackParent", "ENG-1")
+	hintGit(t, d.Repo, "config", "branch.thrawn01/eng-2.dispatchStackForkPoint", "0123456789abcdef0123456789abcdef01234567")
+
+	d.Tick()
+
+	assert.Contains(t, d.LoopErr(), "dispatch: dispatch imported no row for branch thrawn01/eng-2, so its dispatch keys stay in git config: no tracked ticket's branch matched it.")
+	assert.Contains(t, dispatchKeys(t, d.Repo), "branch.thrawn01/eng-2.dispatchstackparent ENG-1")
+	assert.Equal(t, "ENG-2: no branch recorded in dispatch\n", d.Run("ticket", "branch", "ENG-2").Stdout)
+}
+
+func TestAFirstStartKeepsTheTicketKeyOfABranchNotInTheClone(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Trees.Pooled()
+	d.Linear.Tickets(ticket("ENG-3", "In Progress", "dispatch"))
+	hintGit(t, d.Repo, "config", "branch.thrawn01/eng-3.dispatchTicket", "ENG-3")
+
+	d.Tick()
+
+	assert.Contains(t, d.LoopErr(), "dispatch: dispatch imported no row for branch thrawn01/eng-3, so its dispatch keys stay in git config: it is not a local branch of the clone.")
+	assert.Equal(t, "branch.thrawn01/eng-3.dispatchticket ENG-3", dispatchKeys(t, d.Repo))
+}
+
+// stalledOrigin gives the clone an origin that answers the launch's first call, which reads its
+// default branch, and hangs on the next, the fetch of the ticket's branch. It returns the file that
+// call touches once it has started.
+func stalledOrigin(t *testing.T, d *Dispatch) string {
+	t.Helper()
+	dir := t.TempDir()
+	remote, started, script := filepath.Join(dir, "origin.git"), filepath.Join(dir, "fetching"), filepath.Join(dir, "upload-pack")
+	hintGit(t, d.Repo, "init", "-q", "--bare", remote)
+	hintGit(t, d.Repo, "remote", "add", "origin", remote)
+	// The script lets go of dispatch's stderr, so a killed fetch does not wait on its sleep.
+	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
+exec 2>/dev/null
+calls=$(cat "`+dir+`/calls" 2>/dev/null || echo 0)
+echo $((calls + 1)) > "`+dir+`/calls"
+if [ "$calls" -ge 1 ]; then
+  touch "`+started+`"
+  sleep 20
+fi
+exec git-upload-pack "$@"
+`), 0o755))
+	hintGit(t, d.Repo, "config", "remote.origin.uploadpack", script)
+	return started
+}
+
+func TestALaunchWhoseFetchOutlivesItsDeadlineFailsWithoutCounting(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	relaunchable(t, d)
+	started := stalledOrigin(t, d)
+
+	ticked := later(func() Result { return d.Run("tick") })
+	require.Eventually(t, func() bool { _, err := os.Stat(started); return err == nil }, 20*time.Second, time.Millisecond)
+	d.Expire("launch ENG-1")
+	res := ticked()
+
+	require.ErrorContains(t, res.Err, "ENG-1 launch failed: branch_unchecked: the check for branch "+prBranch("ENG-1")+" of ENG-1 did not finish before the launch's deadline; nothing was leased")
+	assert.Equal(t, "ENG-1: branch "+prBranch("ENG-1")+" in dispatch\n", d.Run("ticket", "branch", "ENG-1").Stdout)
+}
+
+func TestAFirstLaunchWhoseFetchOutlivesItsDeadlineRecordsNoBranch(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	started := stalledOrigin(t, d)
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	ticked := later(func() Result { return d.Run("tick") })
+	require.Eventually(t, func() bool { _, err := os.Stat(started); return err == nil }, 20*time.Second, time.Millisecond)
+	d.Expire("launch ENG-1")
+	res := ticked()
+
+	require.ErrorContains(t, res.Err, "ENG-1 launch failed: branch_unchecked")
+	assert.Equal(t, "ENG-1: no branch recorded in dispatch\n", d.Run("ticket", "branch", "ENG-1").Stdout)
+}
+
+func TestNamingABranchForARowMarkedNotCreatedEndsItsStackRecord(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule + reportRule)})
+	stackedPair(t, d)
+	d.fakes().Treehouse.FailLease(errors.New("no tree for you"))
+	// The stacked launch writes ENG-2's row with its stack record, then fails at the lease, so
+	// thrawn01/eng-2 is never created.
+	require.ErrorContains(t, d.Run("tick").Err, "ENG-2 launch failed: lease_failed")
+	// Work on ENG-2 happened on a branch that never forked from ENG-1's PR.
+	hintGit(t, d.Repo, "branch", "thrawn01/eng-2-elsewhere", "main")
+
+	res := d.Run("ticket", "branch", "ENG-2", "thrawn01/eng-2-elsewhere")
+	d.Advance(time.Minute)
+	d.Run("tick")
+
+	require.NoError(t, res.Err)
+	assert.Equal(t, "stack none branch thrawn01/eng-2-elsewhere", lastReadingOf(d, "ENG-2"))
+}
+
+// narrowOrigin gives the clone an origin holding the branch, fetched with the refspec of a
+// single-branch clone, which covers only main.
+func narrowOrigin(t *testing.T, d *Dispatch, branch string) {
+	t.Helper()
+	remote := filepath.Join(t.TempDir(), "origin.git")
+	hintGit(t, d.Repo, "init", "-q", "--bare", remote)
+	hintGit(t, d.Repo, "remote", "add", "origin", remote)
+	hintGit(t, d.Repo, "push", "-q", "origin", "main", branch)
+	hintGit(t, d.Repo, "config", "remote.origin.fetch", "+refs/heads/main:refs/remotes/origin/main")
+	hintGit(t, d.Repo, "update-ref", "-d", "refs/remotes/origin/"+branch)
+}
+
+func TestTicketBranchRecordsABranchOnlyOriginHasInASingleBranchClone(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Trees.Pooled()
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	hintGit(t, d.Repo, "branch", "thrawn01/eng-1-pushed", "main")
+	narrowOrigin(t, d, "thrawn01/eng-1-pushed")
+	hintGit(t, d.Repo, "branch", "-D", "thrawn01/eng-1-pushed")
+	d.Tick()
+
+	res := d.Run("ticket", "branch", "ENG-1", "thrawn01/eng-1-pushed")
+
+	require.NoError(t, res.Err)
+	assert.Equal(t, "ENG-1: branch thrawn01/eng-1-pushed in dispatch\n", res.Stdout)
+}
+
+func TestARelaunchFindsItsBranchOnOriginInASingleBranchClone(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	relaunchable(t, d)
+	narrowOrigin(t, d, prBranch("ENG-1"))
+	hintGit(t, d.Repo, "branch", "-D", prBranch("ENG-1"))
+
+	res := d.Run("tick")
+
+	require.NoError(t, res.Err)
+	assert.Equal(t, "ENG-1: branch "+prBranch("ENG-1")+" in dispatch\n", d.Run("ticket", "branch", "ENG-1").Stdout)
 }

@@ -35,6 +35,10 @@ const (
 	// in the clone nor on origin. Only a person can say where the work went, so it counts toward
 	// launch_failure_limit and its detail names the command that records the new name.
 	StatusBranchMissing = "branch_missing"
+	// StatusBranchUnchecked is a launch whose deadline passed before it could tell whether the
+	// ticket's branch exists. Nothing is known to be wrong, so it never counts toward
+	// launch_failure_limit, and the next resync launches again.
+	StatusBranchUnchecked = "branch_unchecked"
 	// StatusBranchRowFailed is a launch that could not read or write the ticket's branch row. It
 	// counts toward launch_failure_limit, as a worker row that cannot be written does.
 	StatusBranchRowFailed      = "branch_row_failed"
@@ -432,6 +436,10 @@ func (l *launch) claimBranch(ctx context.Context) (bool, Result, bool) {
 		req.Branch = row.Name
 	}
 	existed := l.trackBranch(ctx)
+	if ctx.Err() != nil {
+		// A fetch or show-ref cut short reads as a missing branch, which is not what happened.
+		return false, Result{Status: StatusBranchUnchecked, Detail: fmt.Sprintf("the check for branch %s of %s did not finish before the launch's deadline; nothing was leased", req.Branch, req.Ticket)}, false
+	}
 	if found && !existed && !row.Uncreated {
 		return false, Result{Status: StatusBranchMissing, Detail: fmt.Sprintf("branch %s of %s is in neither %s nor origin; `dispatch ticket branch %s <name>` records the branch its work is on", req.Branch, req.Ticket, l.repo, req.Ticket)}, false
 	}
@@ -466,12 +474,17 @@ func (l *launch) claimBranch(ctx context.Context) (bool, Result, bool) {
 // creating a local tracking branch for one that exists only there.
 func (l *launch) trackBranch(ctx context.Context) bool {
 	b := l.req.Branch
-	_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", b)
+	// The refspec names the remote-tracking ref, which a clone fetching only some branches, as a
+	// single-branch clone does, would not write.
+	_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", "+refs/heads/"+b+":refs/remotes/origin/"+b)
 	if _, err := l.git(ctx, l.repo, "show-ref", "--verify", "--quiet", "refs/heads/"+b); err == nil {
 		return true
 	}
 	if _, err := l.git(ctx, l.repo, "show-ref", "--verify", "--quiet", "refs/remotes/origin/"+b); err == nil {
-		_, _ = l.git(ctx, l.repo, "branch", "--track", b, "origin/"+b)
+		if _, err := l.git(ctx, l.repo, "branch", "--track", b, "origin/"+b); err != nil {
+			// git sets no upstream outside the fetch refspec, so the branch starts untracked there.
+			_, _ = l.git(ctx, l.repo, "branch", "--no-track", b, "origin/"+b)
+		}
 		return true
 	}
 	return false

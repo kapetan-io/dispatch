@@ -92,12 +92,52 @@ func (l *Loop) importBranches(label string, warn bool) (imported, named bool) {
 		}
 		return false, false
 	}
+	if shared := sharedTicketKeys(keys.Tickets); len(shared) > 0 {
+		if warn {
+			for _, branches := range shared {
+				_, _ = fmt.Fprintf(l.o.Err, "dispatch: %s is not imported: branches %s both name %s in their dispatchTicket key. Run `git -C %s config --unset branch.<name>.dispatchTicket` on each branch that is not %s's.\n",
+					label, strings.Join(branches, " and "), keys.Tickets[branches[0]], dir, keys.Tickets[branches[0]])
+			}
+		}
+		return false, false
+	}
 	rows := l.namedBranches(label, keys, local)
-	if err := l.o.Branches.Import(label, rows, keys.Branches, l.clock.Now()); err != nil {
+	written, err := l.o.Branches.Import(label, rows, l.clock.Now())
+	if err != nil {
 		_, _ = fmt.Fprintf(l.o.Err, "%s dispatch: while importing the branches of %s: %v\n", l.clock.Now().Format(time.TimeOnly), label, err)
 		return false, false
 	}
+	for _, branch := range keys.Branches {
+		if slices.Contains(written, branch) {
+			continue
+		}
+		why := "no tracked ticket's branch matched it"
+		switch _, ok := local[branch]; {
+		case !ok:
+			why = "it is not a local branch of the clone"
+		case keys.Tickets[branch] != "":
+			why = "its ticket already has a branch row, or another ticket's row names the branch"
+		}
+		_, _ = fmt.Fprintf(l.o.Err, "dispatch: %s imported no row for branch %s, so its dispatch keys stay in git config: %s.\n", label, branch, why)
+	}
 	return true, slices.ContainsFunc(rows, l.namesAnotherBranch)
+}
+
+// sharedTicketKeys lists, for each ticket whose key is on more than one branch, those branches.
+// Which of them carries the ticket's work is the person's call, so the import does not pick one.
+func sharedTicketKeys(tickets map[string]string) [][]string {
+	byTicket := map[string][]string{}
+	for _, branch := range slices.Sorted(maps.Keys(tickets)) {
+		id := strings.ToUpper(tickets[branch])
+		byTicket[id] = append(byTicket[id], branch)
+	}
+	var shared [][]string
+	for _, id := range slices.Sorted(maps.Keys(byTicket)) {
+		if len(byTicket[id]) > 1 {
+			shared = append(shared, byTicket[id])
+		}
+	}
+	return shared
 }
 
 // namesAnotherBranch reports whether the row names a branch other than the one the ticket system
@@ -271,7 +311,8 @@ func (l *Loop) nameBranch(id, repo, name string, reply chan Response) {
 		// The wait for the clone gets its own deadline, so a long launch cannot cut the fetch short.
 		ctx, cancel := context.WithTimeout(l.runCtx, world.ReadDeadline)
 		defer cancel()
-		_ = env.Command(ctx, "git", "-C", dir, "fetch", "--no-tags", "origin", name).Run()
+		// The refspec names the remote-tracking ref, which a single-branch clone would not write.
+		_ = env.Command(ctx, "git", "-C", dir, "fetch", "--no-tags", "origin", "+refs/heads/"+name+":refs/remotes/origin/"+name).Run()
 		local := env.Command(ctx, "git", "-C", dir, "show-ref", "--verify", "--quiet", "refs/heads/"+name).Run()
 		remote := env.Command(ctx, "git", "-C", dir, "show-ref", "--verify", "--quiet", "refs/remotes/origin/"+name).Run()
 		switch {

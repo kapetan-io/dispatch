@@ -115,7 +115,8 @@ export const UNCONFIRMED_CLOSE = "close-unconfirmed";
 
 // The launch failures since the last launch that worked or found the pool full, or since
 // the escalation they caused, newest first, so fixing the problem and moving the ticket
-// back starts over. A failed treehouse lease or git switch never counts, nor does a launch
+// back starts over. A failed treehouse lease or git switch never counts, nor does a launch whose
+// deadline passed before it could tell whether the ticket's branch exists (branch_unchecked), nor a launch
 // that failed after dispatch was asked to stop (its detail starts "interrupted: "). The resync
 // launches again and dispatch run prints each failure, so a person sees it without the ticket stopping.
 // Launches and In Review relaunches count alike. Closing a Claude whose launch died before
@@ -128,7 +129,7 @@ export const launchFailureList = (t: Ticket, ctx: Ctx) => {
   return r.slice(0, reset < 0 ? r.length : reset)
     .filter(x => x.kind === "close" ? x.outcome === "done"
       : x.outcome === "failed" && x.detail !== "crashed" && !x.detail.startsWith("interrupted: ")
-        && !/^(lease_failed|switch_failed)\b/.test(x.detail));
+        && !/^(lease_failed|switch_failed|branch_unchecked)\b/.test(x.detail));
 };
 export const launchFailures = (t: Ticket, ctx: Ctx) => launchFailureList(t, ctx).length;
 

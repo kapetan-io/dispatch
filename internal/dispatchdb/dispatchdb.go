@@ -24,8 +24,10 @@ const (
 	Name = "dispatch.db"
 	// OldName is the local ticket database an earlier dispatch kept, which the first start renames.
 	OldName = "tickets.db"
-	// version is the format this dispatch writes. A file with a higher one is refused.
-	version = 1
+	// version is the format this dispatch writes. A file with a higher one is refused. Format 2
+	// holds branch rows and has unset the git config keys format 1 still read, so a dispatch that
+	// reads only format 1 refuses it instead of running with no branches or stacks.
+	version = 2
 	// defaultLockTimeout is how long an open waits for a file another process holds.
 	defaultLockTimeout = 5 * time.Second
 )
@@ -183,12 +185,13 @@ func (f *File) Bolt() *bolt.DB { return f.db }
 // commit. The local ticket store writes through Bolt.
 func (f *File) Update(write func(tx *bolt.Tx) error) error {
 	return f.db.Update(func(tx *bolt.Tx) error {
-		// The first write stamps the format version.
+		// The first write stamps the format version, raising a lower one, since the open refused
+		// a higher one.
 		meta, err := tx.CreateBucketIfNotExists(metaBucket)
 		if err != nil {
 			return err
 		}
-		if meta.Get(versionKey) == nil {
+		if string(meta.Get(versionKey)) != strconv.Itoa(version) {
 			if err := meta.Put(versionKey, []byte(strconv.Itoa(version))); err != nil {
 				return err
 			}

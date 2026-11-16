@@ -248,7 +248,8 @@ func (s *Store) Record(ticket, repo string, row Row) error {
 }
 
 // Rename records name as the ticket's branch in the repo, which a caller has seen exists. The
-// stack record stays. A ticket with no row gets one. It fails with ErrTaken when another ticket's
+// stack record stays, except on a row marked not created, whose stack record says where a branch
+// that was never forked would have started. A ticket with no row gets one. It fails with ErrTaken when another ticket's
 // row names the branch.
 func (s *Store) Rename(ticket, repo, name string) error {
 	return s.file.Update(func(tx *bolt.Tx) error {
@@ -258,6 +259,9 @@ func (s *Store) Rename(ticket, repo, name string) error {
 		row, _, err := get(tx, ticket, repo)
 		if err != nil {
 			return err
+		}
+		if row.Uncreated {
+			row.Stack = nil
 		}
 		row.Name, row.Uncreated = name, false
 		return put(tx, ticket, repo, row)
@@ -378,10 +382,12 @@ func planOf(tx *bolt.Tx, listings []Listing, busy func(string) bool, untracked f
 }
 
 // Import adds, once for the repo, the rows found in its clone's git config, each only where the
-// ticket has no row and no other row names the branch, and writes the repo's marker with the
-// branches whose keys are still to be unset, in the same transaction. A second import adds nothing.
-func (s *Store) Import(repo string, rows []Branch, unset []string, at time.Time) error {
-	return s.file.Update(func(tx *bolt.Tx) error {
+// ticket has no row and no other row names the branch, and returns the branches it wrote a row
+// for. Only their keys go on the repo's marker to be unset, written in the same transaction, since
+// the keys of any other branch are the one copy of what they say. A second import adds nothing.
+func (s *Store) Import(repo string, rows []Branch, at time.Time) (written []string, err error) {
+	err = s.file.Update(func(tx *bolt.Tx) error {
+		written = nil
 		m, err := dispatchdb.ReadMarker(tx, repo)
 		if err != nil || m.Branches != 0 {
 			return err
@@ -401,9 +407,11 @@ func (s *Store) Import(repo string, rows []Branch, unset []string, at time.Time)
 			if err := put(tx, b.Ticket, repo, b.Row); err != nil {
 				return err
 			}
+			written = append(written, b.Row.Name)
 		}
-		return dispatchdb.MarkBranchesImported(tx, repo, at, unset)
+		return dispatchdb.MarkBranchesImported(tx, repo, at, written)
 	})
+	return written, err
 }
 
 // Imported reports whether the repo's branches were imported.
