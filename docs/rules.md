@@ -198,7 +198,7 @@ whenever({
 ```
 
 - `state` is unchanged, so an asking worker reads `idle`, and a rule that acts on `state === "idle"` acts on it too. Dispatch reports the fact and rewrites none, so a rule that must leave an asking worker alone reads `asking`, or an [exemption](#taking-an-action-away-for-some-tickets) takes its action away. `an-asking-worker-hears-one-notice` in `asks.ts` takes away the notifications whose once key starts with `idle`, `ready`, `draft-ready` or `approved-ready`, so followers hear of the ask and not that the worker is idle or its PR is ready.
-- A worker that ran `dispatch ask` and is still in its turn is not asking yet. Neither is one dispatch just nudged, nor one whose launch is unconfirmed. The workspace shows 🔴 exactly while `asking` is true.
+- A worker that ran `dispatch ask` and is still in its turn is not asking yet. Neither is one dispatch just nudged, nor one whose launch is unconfirmed. While `asking` is true the workspace shows 🔴.
 - `askedAt` keeps its value after the ask ends and across a restart, so a once key on it acts once per ask. A second ask after an answer has a new time. It is undefined for a session that never asked.
 - Both are read for a worker on an In Progress, In Review or Needs Human ticket. While the session's record can't be read, or the multiplexer reports no session, `asking` is false and `askedAt` undefined, never unknown. A relaunched worker's new session has asked nothing.
 - No ticket moves for an ask. The worker's ticket keeps its status, and the worker keeps its place under `max_in_progress`.

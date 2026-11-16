@@ -44,7 +44,7 @@ A worker can report no status, as Claude does while it shows a startup dialog. I
 
 ## Every combination
 
-"Gone" means the workspace exists and the worker's Claude session is gone (the state `none`). "Unconfirmed" means the launch's first instruction hasn't run yet. A ticket with no workspace has nothing to label. The tests in `labels_test.go` cover each row.
+"Gone" means the workspace exists and the worker's Claude session is gone (the state `none`). "Unconfirmed" means the launch's first instruction hasn't run yet. A ticket with no workspace has nothing to label. The tests in `labels_test.go` cover each row, and `ask_test.go` the asking rows.
 
 ### In Progress
 
@@ -67,7 +67,7 @@ dispatch reads the PR only when the worker is idle or gone.
 |---|---|---|---|---|
 | Working | any | not read | 🟢 | Nothing |
 | Blocked on a popup | any | not read | 🔴 | Notifies as in In Progress |
-| Idle, asking | any | any | 🔴 | Tells the sessions following the ticket once per ask, as in In Progress. No "PR is ready for review" or "approved and ready to merge" notification while it asks; it goes out once the ask ends and the worker is idle |
+| Idle, asking | any | any | 🔴 | Tells the sessions following the ticket once per ask, as in In Progress. No "PR is ready for review" or "approved and ready to merge" notification while it asks; it goes out once the ask ends and the worker is idle. PR nudges and `auto_merge` act as for any idle worker, and a nudge is a message, so it ends the ask |
 | Idle | none | ready | 👀, ⏳ or 🔀 | 👀 notifies once per head commit. ⏳ says nothing. 🔀 notifies once per head commit that the PR is approved, unless `auto_merge` will merge it |
 | Idle | none | checks running | 🟡 | Nothing about the label. Nudges for a failed check, changes requested or a merge conflict |
 | Idle | none | none, or not ready with no check running | 🟢 | Nothing about the label. Nudges for a failed check, changes requested or a merge conflict |
@@ -120,4 +120,4 @@ The ask ends when the session takes a message, typed in its window or sent by `d
 
 `dispatch ask` run while `dispatch run` is down prints `dispatch: not running`, exits 3 and records nothing. The worker shows 💤 or its PR label as it would without the ask.
 
-A ticket in Needs Human shows 🔴 from its status and notifies with `notify-needs-human`, whether or not its worker asked. Needs Human is the status dispatch moves a ticket to when it escalates by itself.
+A ticket in Needs Human, moved there by dispatch or by its worker, shows 🔴 and notifies with `notify-needs-human`, whether or not its worker asked.

@@ -9,9 +9,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 )
 
-// errNotAWorker is what `dispatch ask` says outside a worker's tree, or with no harness session.
-var errNotAWorker = errors.New("ask runs inside a dispatch worker's session")
-
 // askCommand records that the worker session it runs in needs the user. It names no ticket: the
 // tree comes from the working directory and the session from the harness, and the running dispatch
 // keeps the ask in that session's log. Only the log of the tree's worker is read, so an ask from
@@ -23,11 +20,11 @@ func askCommand(ctx context.Context, opts Options, args []string) error {
 	}
 	tree, ok := workerTree(ctx, opts, opts.Dir)
 	if !ok {
-		return errNotAWorker
+		return loop.ErrNotAWorker
 	}
 	_, session, err := opts.Harnesses.Follower(opts.Env)
 	if err != nil {
-		return errNotAWorker
+		return loop.ErrNotAWorker
 	}
 	report := sessionlog.AskReport{Tree: tree, Session: session, At: opts.Clock.Now().UnixMilli()}
 	resp, err := loop.Ask(ctx, opts.StateDir, loop.Request{Op: loop.OpAsk, Ask: &report})

@@ -157,13 +157,14 @@ func (l *Loop) onAsk(a *sessionlog.AskReport) Response {
 		return Response{Code: CodeFailed, Error: "an ask report needs a tree and a session"}
 	}
 	// As with a Stop, an ask from a tree no worker row names, or from before the row was made,
-	// belongs to no current worker, and would reach a log the tree's return cleared.
+	// belongs to no current worker, and would reach a log the tree's return cleared. Unlike a
+	// Stop's hook, the worker reads the answer, so it hears that nothing was recorded.
 	wk, ok, err := l.o.Workers.OnTree(a.Tree)
 	if err != nil {
 		return Response{Code: CodeFailed, Error: err.Error()}
 	}
 	if !ok || a.At < wk.Row.Since {
-		return Response{}
+		return Response{Code: CodeFailed, Error: ErrNotAWorker.Error()}
 	}
 	log, err := sessionlog.Read(l.o.StateDir, a.Tree, a.Session)
 	if err != nil {

@@ -1,6 +1,7 @@
 package dispatch_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -212,15 +213,12 @@ func TestAskRefusesToRunOutsideAWorkerSession(t *testing.T) {
 		name    string
 		session string
 		dir     func(d *Dispatch) string
-		args    []string
 		wantErr string
 	}{
 		{name: "NoSession", session: "", dir: func(d *Dispatch) string { return d.worktreeOf("ENG-1") },
 			wantErr: "ask runs inside a dispatch worker's session"},
 		{name: "OutsideAWorkerTree", session: "worker", dir: func(d *Dispatch) string { return d.Repo },
 			wantErr: "ask runs inside a dispatch worker's session"},
-		{name: "AnArgument", session: "worker", dir: func(d *Dispatch) string { return d.worktreeOf("ENG-1") },
-			args: []string{"ENG-1"}, wantErr: "ask takes no arguments"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -230,7 +228,7 @@ func TestAskRefusesToRunOutsideAWorkerSession(t *testing.T) {
 			dir := test.dir(d)
 			d.Tick()
 
-			res := d.askAs(test.session, dir, true, test.args...)
+			res := d.askAs(test.session, dir, true)
 
 			require.EqualError(t, res.Err, test.wantErr)
 			assert.Equal(t, 1, res.Code)
@@ -351,13 +349,14 @@ whenever({
 `)})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.Workers.Running("ENG-1", "working")
+	asked := d.Clock.Now()
 	require.NoError(t, d.Workers.Ask("ENG-1").Err)
 	d.Workers.Stop("ENG-1", stopTasks{})
 	d.Workers.SetStatus("ENG-1", "idle")
 
 	d.Tick()
 
-	assert.Equal(t, []string{"asked at 1791547200000"}, d.Followed.Told())
+	assert.Equal(t, []string{fmt.Sprint("asked at ", asked.UnixMilli())}, d.Followed.Told())
 }
 
 // The command does not check that its session is the tree's worker, and only the worker's log is read.
@@ -386,7 +385,9 @@ func TestAskWithAnArgumentPrintsTheUsageThatListsAsk(t *testing.T) {
 	res := d.askAs(workerSession("ENG-1"), d.worktreeOf("ENG-1"), true, "ENG-1")
 
 	require.EqualError(t, res.Err, "ask takes no arguments")
+	assert.Equal(t, 1, res.Code)
 	assert.Contains(t, res.Stderr, "       dispatch ask\n")
+	assert.NoDirExists(t, d.sessionLogs())
 }
 
 func TestAnAskingWorkerWhoseTicketMovesToNeedsHumanShowsRedAndNotifiesFollowersOfIt(t *testing.T) {
