@@ -26,7 +26,7 @@ The user is a developer who owns the tickets, repos and rules dispatch runs. The
 
 **Keep pull requests moving.** Dispatch nudges an idle worker about review comments and failing checks and escalates when nudges don't help. In a repo with `auto_merge` on, it merges an approved, ready pull request.
 
-**Change what dispatch decides.** `dispatch rules init`, `check` and `test` write, lint and test the TypeScript rules that make every decision, and `exempt` switches a shipped rule off for a class of records.
+**Change what dispatch decides.** `dispatch rules init`, `check` and `test` write, lint and test the TypeScript rules that make every decision, and `exempt` switches a shipped rule off, or holds an action, for a class of records.
 
 **Ask why it acted.** `dispatch cycle`, `dispatch explain <ticket>` and `dispatch replay` show what each cycle read, what it wanted and how each action came out.
 
@@ -158,8 +158,16 @@ The `## Decision` comment a manager posts on the ticket that asked, naming the t
 _Avoid_: answer, reply
 
 **Session log**:
-The file of one worker session's commands, other messages (each only its time) and turns, appended by the running dispatch from the hooks' reports and read by the world.
+The file of one worker session's commands, other messages (each only its time, and whether it is a task notice), asks (each only its time) and turns, appended by the running dispatch from the hooks' reports and read by the world.
 _Avoid_: transcript (Claude's own file), history (dispatch's segments)
+
+**Ask**:
+A worker's statement, made by running `dispatch ask`, that it needs the user. The worker is asking from when it is next idle until its session takes a message from a person or from dispatch, or ends. It moves no ticket.
+_Avoid_: Needs Human (the status dispatch moves a ticket to when it escalates), blocked (a question popup)
+
+**Task notice**:
+A message a session takes because one of its own background tasks finished. It starts a turn and ends no ask.
+_Avoid_: message (a task notice is one, but nobody sent it)
 
 **Send record**:
 The text of a slash command dispatch is about to send to a worker's session (a nudge) or type into its pane (a kickoff), kept so the session log can tell dispatch's commands from a person's.
@@ -190,7 +198,7 @@ The file `panes/<Rex session id>/<block id>.json` in dispatch's state directory,
 _Avoid_: snapshot (the world written at the head of a history segment), saved session, restore file
 
 **Worker**:
-The ticket's place on a tree it holds: the tree, the workspace showing that tree, and the harness session running there now, if any. Only a session of a harness dispatch has an adapter for counts; an agent of another kind a person opened in the workspace, such as a Pi, is ignored. Sessions come and go inside it: a relaunch keeps the same worker with a new session, and the worker lasts as long as the ticket holds the tree. A ticket that holds trees in two repos has a worker on each. The worker's state is its session's: `working`, `idle`, `blocked`, or `none` when no session runs there. A rule that looks up a ticket that holds no tree gets a worker record with state `none`, though there is no worker. Some messages use "worker" for the session: "has no worker" and "gone" mean the state `none`, and "a worker is running" means a session runs there.
+The ticket's place on a tree it holds: the tree, the workspace showing that tree, and the harness session running there now, if any. Only a session of a harness dispatch has an adapter for counts; an agent of another kind a person opened in the workspace, such as a Pi, is ignored. Sessions come and go inside it: a relaunch keeps the same worker with a new session, and the worker lasts as long as the ticket holds the tree. A ticket that holds trees in two repos has a worker on each. The worker's state is its session's: `working`, `idle`, `blocked`, or `none` when no session runs there. A worker can also be asking (see **Ask**), which is a fact beside its state and not a state. A rule that looks up a ticket that holds no tree gets a worker record with state `none`, though there is no worker. Some messages use "worker" for the session: "has no worker" and "gone" mean the state `none`, and "a worker is running" means a session runs there.
 _Avoid_: agent (herdr's word for any terminal agent, kept inside the herdr adapter; dispatch's word is harness), runner, executor, session (a session is one harness run inside the worker)
 
 **Tree**:
