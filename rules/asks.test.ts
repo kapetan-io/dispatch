@@ -104,7 +104,7 @@ scenario(rules, "an asking worker is not escalated for ignoring PR nudges", s =>
   s.expectExempt("nudge-pr-needs-work", "ENG-1", "an-asking-worker-is-left-alone", "escalate");
 });
 
-scenario(rules, "an asking worker's approved PR is not merged, and the merged notice after it waits on nothing", s => {
+scenario(rules, "an asking worker's approved PR is not merged, and the approved-and-merged notice goes with the merge", s => {
   s.config({ repos: { dispatch: { autoMerge: true } } });
   s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { asked: -1000 }), pr("ENG-1", approved));
   s.expect([["notify-asked", "notify", "ENG-1"]]);

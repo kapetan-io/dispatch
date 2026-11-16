@@ -7,8 +7,8 @@ type Prompt struct {
 	// At is when the session took the message, in milliseconds.
 	At   int64  `json:"at"`
 	Text string `json:"text"`
-	// Task is true when the harness reads the message as a task notice, one its session's own
-	// background task sent. A loop older than the field ignores it, and the notice ends an ask.
+	// Task is true when the harness reads the message as a task notice. A dispatch run older than
+	// this field drops it and logs the notice as a message, which ends an ask.
 	Task bool `json:"task,omitempty"`
 }
 

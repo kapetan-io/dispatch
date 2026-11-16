@@ -197,7 +197,7 @@ scenario(rules, "a worker whose turn end is lost is nudged 15 minutes after its 
   s.expect([["nudge-pr-needs-work", "nudge", "ENG-1"]]);
 });
 
-scenario(rules, "a task notice holds no nudge", s => {
+scenario(rules, "a task notice does not hold back nudges the way a message does", s => {
   s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { messages: [{ at: -1000, task: true }] }), pr("ENG-1", failing));
   s.expect([["nudge-pr-needs-work", "nudge", "ENG-1"]]);
 });

@@ -180,7 +180,7 @@ whenever({
 - `at` is when Claude took the message. A message typed while Claude is working waits for the turn to end, so its `at` follows that turn's end.
 - Check the ticket's status before reading it, as the example does, for the reason given under turns above. It is empty for a session that has taken no commands, and unknown when the multiplexer reports no session, the session's record can't be read, or the ticket is in another status. A half line in the session's record makes `commands` and `turns` unknown for the rest of that session.
 - A relaunched worker's new Claude session, or one after `/clear`, reads an empty list. A worker the app host resumed after a herdr-core restart, or a worker dispatch restarted with `claude --resume` after a Rex restart, keeps its session, so it keeps its list. The list survives a restart and `dispatch state reset`, but a command taken while dispatch was not running is missing from it. `dispatch explain` and `dispatch replay` show and reproduce what a decision read. In `rules test`, `worker("ENG-1", "idle", { commands: [{ name: "merge-it", args: "42", at: 1000, by: "person" }] })` sets them.
-- The plugin's `UserPromptSubmit` hook runs `dispatch wake`, which reports every non-empty prompt, a command or a plain message, to the running dispatch without waiting for it, and never blocks, delays, adds text to or fails a prompt, whatever goes wrong. With no dispatch running, or one that is stuck, the report is dropped and the command never appears. A plain message is kept in the session log as its time alone, and `messageAt` reads the latest one (see [Reading whether a worker asked](#reading-whether-a-worker-asked)). It also ends the worker's pause: `waiting` reads false for a worker whose session took a command or a message after its latest Stop.
+- The plugin's `UserPromptSubmit` hook runs `dispatch wake`, which reports every non-empty prompt, a command or a plain message, to the running dispatch without waiting for it, and never blocks, delays, adds text to or fails a prompt, whatever goes wrong. With no dispatch running, or one that is stuck, the report is dropped and the command never appears. A plain message is kept in the session log as its time and whether it is a task notice, and `messageAt` reads the latest one (see [Reading whether a worker asked](#reading-whether-a-worker-asked)). It also ends the worker's pause: `waiting` reads false for a worker whose session took a command or a message after its latest Stop.
 
 ## Reading whether a worker asked
 
@@ -206,7 +206,7 @@ whenever({
 - `ctx.worker.of(t).messageAt` is when the session took its latest command or other message, typed or sent by dispatch, in milliseconds since the epoch. A task notice does not count. It is undefined for a session that took none, and, like `askedAt`, undefined rather than unknown while the session's record can't be read.
 - In `rules test`, `worker("ENG-1", "idle", { asked: -1000 })` gives the session an ask a second before the scenario starts, `messages: [{ at: 1000 }]` a plain message after it, which ends the ask, and `messages: [{ at: 1000, task: true }]` a task notice, which does not.
 
-Two exemptions by action hold the same list, `HELD_ACTIONS` in `rules/shared.ts`: every nudge, every merge, and the `pr-ignored` escalation for ignoring PR nudges, whichever rule queued them.
+Two exemptions take the same actions away, the list `HELD_ACTIONS` in `rules/shared.ts`: every nudge, every merge, and the `pr-ignored` escalation for ignoring PR nudges, whichever rule queued them.
 
 ```ts
 // rules/asks.ts
@@ -218,9 +218,9 @@ exempt({ name: "a-worker-finishes-its-message-first", each: "ticket", actions: H
          if: (t, ctx) => onLastMessage(t, ctx) });
 ```
 
-- The first holds them while the worker asks. The shipped nudge and merge rules (`nudge-pr-activity`, `nudge-pr-needs-work`, the restack nudges in `stacking.ts`, `auto-merge`) still test `state === "idle"`, and a comment above each names the exemptions that hold it. A rule of your own that nudges or merges is held the same way without knowing of asks, and `dispatch rules check` ends its line with `exempt for ENG-4 by an-asking-worker-is-left-alone`.
+- The first holds them while the worker asks. The shipped nudge and merge rules (`nudge-pr-activity`, `nudge-pr-needs-work`, `nudge-restack` and `nudge-stacked-activity` in `stacking.ts`, `auto-merge`) test `state === "idle"` and not `asking`, and a comment above each names the exemptions that hold it. A rule of your own that nudges or merges is held the same way without knowing of asks, and `dispatch rules check` ends its line with `exempt for ENG-4 by an-asking-worker-is-left-alone`.
 - The second holds them for any idle worker still on the last message it took, whether or not it asked. `onLastMessage` in `shared.ts` is true while `state` is `idle`, `messageAt` is under `MESSAGE_HOLD` (15 minutes) old, and no turn in `turns` ended after `messageAt`. So the hold ends when the worker ends its turn, or 15 minutes after the message when that turn end is lost. Edit `MESSAGE_HOLD` to change the limit.
-- Neither reads anything that is unknown while the session's record can't be read, so then neither holds anything and nudges and merges go on as before.
+- Neither reads anything that is unknown while the session's record can't be read, so then neither holds anything and nudges and merges go on as for any idle worker.
 - `dispatch tell` reads no exemption, so it always delivers.
 
 ## Creating and editing local tickets

@@ -22,7 +22,7 @@ type Subject struct {
 	// PromptInput is what the program's own hook hands dispatch when text was typed into
 	// the session. Empty text is a session that went idle.
 	PromptInput func(session, dir, text string) []byte
-	// TaskNotice is the text the program types into its session when one of the session's own
+	// TaskNotice is the prompt text the program's hook reports when one of the session's own
 	// background tasks finishes.
 	TaskNotice string
 	// StopSaying is StopInput for a turn that ended with the closing message said and the

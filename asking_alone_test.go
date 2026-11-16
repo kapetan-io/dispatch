@@ -6,11 +6,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/kapetan-io/dispatch/internal/harnesstest"
 )
 
-const taskNotice = harnesstest.TaskNotice + "\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>"
+// taskNotice is what Claude Code hands a session when one of its own background tasks finishes.
+const taskNotice = "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>"
 
 // askingInReview is an In Review worker that ran `dispatch ask` and stopped, on a PR in the given
 // state, seen by one tick.
@@ -229,6 +228,7 @@ whenever({
 	assert.Empty(t, d.Workers.Received("ENG-1"))
 	assert.Equal(t, "w-ENG-1|🔴 ENG-1", d.Workers.lastRename(t))
 	assert.Contains(t, res.Stdout, "exempt for ENG-1 by an-asking-worker-is-left-alone")
+	assert.Regexp(t, `an-asking-worker-is-left-alone\s+exempt\s+ticket\s+exempts nudge, merge, escalate \(pr-ignored\)`, res.Stdout)
 }
 
 func TestAnIdleInReviewWorkerThatTookAMessageIsLeftAloneUntilItsTurnEnds(t *testing.T) {
@@ -269,4 +269,114 @@ func TestAnIdleInReviewWorkerThatTookAMessageIsLeftAloneUntilItsTurnEnds(t *test
 			assert.Equal(t, test.want, test.done(d))
 		})
 	}
+}
+
+func TestAnAskingStackedWorkerIsNotToldToRestack(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		ask  bool
+		want int
+	}{
+		{name: "NotAsking", want: 1},
+		{name: "Asking", ask: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, importStacking)})
+			d.Trees.Pooled()
+			hintGit(t, d.Repo, "config", "branch.thrawn01/eng-2.dispatchStackParent", "ENG-1")
+			hintGit(t, d.Repo, "config", "branch.thrawn01/eng-2.dispatchStackForkPoint", "0123456789abcdef0123456789abcdef01234567")
+			d.Linear.Tickets(ticket("ENG-2", "In Review", "dispatch"))
+			d.Workers.Running("ENG-2", "working")
+			d.GitHub.PullRequest("ENG-2", cleanPR("b1"))
+			if test.ask {
+				require.NoError(t, d.Workers.Ask("ENG-2").Err)
+			}
+			d.Workers.Stop("ENG-2", stopTasks{})
+			d.Workers.SetStatus("ENG-2", "idle")
+
+			d.Tick()
+			for range 3 {
+				d.Advance(5 * time.Minute)
+				d.Tick()
+			}
+
+			received := d.Workers.Received("ENG-2")
+			require.Len(t, received, test.want)
+			for _, text := range received {
+				assert.Contains(t, text, "ENG-1, the ticket this one is stacked on")
+			}
+			assert.Empty(t, d.Linear.Moves())
+		})
+	}
+}
+
+func TestATaskNoticeLeavesTheAskOpenAndHoldsThePRNudge(t *testing.T) {
+	t.Parallel()
+	d := askingInReview(t, "", failingPR("a1"))
+
+	d.Advance(time.Minute)
+	d.Workers.Say("ENG-1", taskNotice)
+	d.Workers.SetStatus("ENG-1", "working")
+	d.Tick()
+	d.Advance(time.Minute)
+	d.Workers.Stop("ENG-1", stopTasks{})
+	d.Workers.SetStatus("ENG-1", "idle")
+	d.Tick()
+	for range 3 {
+		d.Advance(5 * time.Minute)
+		d.Tick()
+	}
+
+	assert.Equal(t, "w-ENG-1|🔴 ENG-1", d.Workers.lastRename(t))
+	assert.Equal(t, []string{askedNotice}, d.Followed.Told())
+	assert.Empty(t, d.Workers.Received("ENG-1"))
+}
+
+// Unreachable from the CLI: only a writer that died mid-line leaves a hole in a session log.
+func TestAnAskingWorkerWhoseSessionLogCantBeReadIsNudgedAndMerged(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name     string
+		settings string
+		pr       prState
+		done     func(d *Dispatch) []string
+		want     []string
+	}{
+		{name: "Nudge", pr: failingPR("a1"), done: func(d *Dispatch) []string { return d.Workers.Received("ENG-1") },
+			want: []string{prPrompt("a failed check")}},
+		{name: "Merge", settings: autoMergeSetting, pr: approvedPR("a1"), done: func(d *Dispatch) []string { return d.GitHub.Merged() },
+			want: []string{mergeCall1}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			d := newDispatch(t, dispatchOptions{RepoSettings: test.settings})
+			d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+			d.Workers.Running("ENG-1", "working")
+			d.GitHub.PullRequest("ENG-1", test.pr)
+			require.NoError(t, d.Workers.Ask("ENG-1").Err)
+			d.CorruptSessionLog("not json\n")
+			d.Workers.Stop("ENG-1", stopTasks{})
+			d.Workers.SetStatus("ENG-1", "idle")
+
+			d.Tick()
+
+			assert.NotEqual(t, "w-ENG-1|🔴 ENG-1", d.Workers.lastRename(t))
+			assert.Equal(t, test.want, test.done(d))
+		})
+	}
+}
+
+// A worker herdr reports no session for can't be nudged at all, so only the merge is checked.
+func TestAnAskingWorkerHerdrReportsNoSessionForHasItsApprovedPRMerged(t *testing.T) {
+	t.Parallel()
+	d := askingInReview(t, autoMergeSetting, approvedPR("a1"))
+	require.Empty(t, d.GitHub.Merged())
+
+	d.Workers.SetSession("ENG-1", "")
+	d.Advance(time.Second)
+	d.Tick()
+
+	assert.Equal(t, []string{mergeCall1}, d.GitHub.Merged())
 }

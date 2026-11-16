@@ -44,7 +44,7 @@ A worker can report no status, as Claude does while it shows a startup dialog. I
 
 ## Every combination
 
-"Gone" means the workspace exists and the worker's Claude session is gone (the state `none`). "Unconfirmed" means the launch's first instruction hasn't run yet. A ticket with no workspace has nothing to label. The tests in `labels_test.go` cover each row, and `ask_test.go` the asking rows.
+"Gone" means the workspace exists and the worker's Claude session is gone (the state `none`). "Unconfirmed" means the launch's first instruction hasn't run yet. A ticket with no workspace has nothing to label. The tests in `labels_test.go` cover each row, and `ask_test.go` and `asking_alone_test.go` the asking rows.
 
 ### In Progress
 
@@ -92,6 +92,8 @@ A PR that waits on its approvers still nudges its worker for a failed check, a m
 
 An idle In Review worker whose PR gains a review or comment gets the activity nudge once per new item.
 
+None of these nudges reaches a worker that is asking, or one still on a message it took, as [Asking with `dispatch ask`](#asking-with-dispatch-ask) describes.
+
 ### Other statuses
 
 | Ticket | Worker | Emoji | What dispatch does |
@@ -116,7 +118,7 @@ A worker that needs your answer runs `dispatch ask`, says why in chat and ends i
 dispatch event (worker asked a question): ENG-12's worker asked a question in its workspace: <title> Ticket: <url>
 ```
 
-The ask ends when the session takes a message, typed in its window or sent by `dispatch tell`, or when the session ends. A worker that asks again after your answer shows 🔴 again and sends a second message. Running `dispatch ask` twice before your answer records one ask and sends one message. A restart of `dispatch run` keeps the 🔴 and sends no second message, because the ask is in the session log and the message's once key is in the ledger. A worker whose session ends while it asks is gone, and the rules relaunch it into a new session with nothing asked.
+The ask ends when the session takes a message, typed in its window or sent by `dispatch tell` (a task notice doesn't count, see below), or when the session ends. A worker that asks again after your answer shows 🔴 again and sends a second message. Running `dispatch ask` twice before your answer records one ask and sends one message. A restart of `dispatch run` keeps the 🔴 and sends no second message, because the ask is in the session log and the message's once key is in the ledger. A worker whose session ends while it asks is gone, and the rules relaunch it into a new session with nothing asked.
 
 `dispatch ask` run while `dispatch run` is down prints `dispatch: not running`, exits 3 and records nothing. The worker shows 💤 or its PR label as it would without the ask.
 
@@ -124,8 +126,8 @@ A ticket in Needs Human, whoever moved it there, shows 🔴 and notifies with `n
 
 While a worker asks, the shipped rules leave it alone: no PR nudge, no restack nudge, no escalation for ignoring PR nudges, and no merge under `auto_merge`. The exemption `an-asking-worker-is-left-alone` in `rules/asks.ts` takes those actions away whichever rule queued them, your own rules included. `dispatch tell`, with or without `--turn`, still delivers, since it is you answering.
 
-A worker's own finished background task does not end its ask. Claude Code hands the session a task notice, a message that opens with `<task-notification>`, and the worker shows 🟢 while it handles it, then 🔴 again when it stops, with no second message to followers.
+A worker's own finished background task does not end its ask. Claude Code hands the session a task notice, a message that opens with `<task-notification>`, and the worker shows 🟢 while it handles it, then 🔴 again when it stops, with no second message to followers. That handling ends a turn of its own, so `dispatch tell <ticket> --turn <at>` for the turn that asked is refused as moved past. `dispatch turn` prints the new turn's time.
 
-Any idle worker that took a message, an answer to its ask or anything else you typed or `dispatch tell` sent, is left alone the same way until it ends the turn that message started, or until 15 minutes after the message when that turn end never arrives. The exemption is `a-worker-finishes-its-message-first` in `rules/nudges.ts`, and the 15 minutes is `MESSAGE_HOLD` in `rules/shared.ts`. So nothing lands on top of your answer while the multiplexer still reads the pane idle, and a PR that still needs work is nudged again after the worker's next stop.
+Any idle worker that took a message, an answer to its ask or anything else you typed or `dispatch tell` sent, is left alone the same way until it ends the turn that message started, or until 15 minutes after the message when that turn end never arrives. The exemption is `a-worker-finishes-its-message-first` in `rules/nudges.ts`, and the 15 minutes is `MESSAGE_HOLD` in `rules/shared.ts`. So nothing lands on top of your answer while the multiplexer still reads the pane idle, and a PR that still needs work is nudged again once that turn ends.
 
-While the session log can't be read, neither exemption holds anything, and nudges and merges go on as for any idle worker. An asking worker that is nudged then asks again.
+While the session log can't be read, neither exemption holds anything, and nudges and merges go on as for any idle worker. A nudge sent then is a message, so it ends the ask, and the worker shows 🔴 again only once it runs `dispatch ask` again and its session log can be read.

@@ -126,7 +126,7 @@ func (l *Loop) nameStoppedPane(tree string) {
 }
 
 // onPrompt stores a message a worker's session took where the next read finds it: a command with
-// who typed it, any other message with its time alone. Take answers one message per send, so a
+// who typed it, any other message with its time and whether it is a task notice. Take answers one message per send, so a
 // person who types the same text afterward reads as a person.
 func (l *Loop) onPrompt(p *sessionlog.Prompt) Response {
 	if p == nil || p.Tree == "" || p.Session == "" {

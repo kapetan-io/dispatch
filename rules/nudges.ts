@@ -30,7 +30,7 @@ whenever({
 });
 
 // Held by an-asking-worker-is-left-alone (asks.ts) and a-worker-finishes-its-message-first above,
-// the escalation too.
+// and its pr-ignored escalation is held too.
 // Every 5 minutes while the worker sits idle on a PR that needs work, then escalates.
 // The key carries the head, the idle stretch and the period, so a push or the worker
 // going back to work starts the nudges over. A nudged worker shows as working until the

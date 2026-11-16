@@ -50,13 +50,13 @@ type Command struct {
 	By  Sender `json:"by"`
 }
 
-// Message is a non-command message the session took. The log keeps only when, because what a
-// person typed is not dispatch's to store.
+// Message is a non-command message the session took. The log keeps only when it was taken and
+// whether it was a task notice, because what a person typed is not dispatch's to store.
 type Message struct {
 	// At is when the session took the message, in milliseconds since the epoch.
 	At int64 `json:"at"`
 	// Task is true for a task notice: the session's own background task finished, and nobody sent
-	// it. Written only when true, so a log from before the mark reads every message as sent.
+	// it. Omitted when false, so a log without the field reads every message as one someone sent.
 	Task bool `json:"task,omitempty"`
 }
 
