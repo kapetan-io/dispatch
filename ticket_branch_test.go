@@ -496,27 +496,31 @@ func TestAFirstStartKeepsTheTicketKeyOfABranchNotInTheClone(t *testing.T) {
 	assert.Equal(t, "branch.thrawn01/eng-3.dispatchticket ENG-3", dispatchKeys(t, d.Repo))
 }
 
-// stalledOrigin gives the clone an origin that answers the launch's first call, which reads its
-// default branch, and hangs on the next, the fetch of the ticket's branch. It returns the file that
-// call touches once it has started.
-func stalledOrigin(t *testing.T, d *Dispatch) string {
+// stalledFetch gives the clone an origin and puts a git on the PATH of dispatch's commands that
+// stalls the fetch checking a ticket's branch, the one fetch naming a +refs/heads/ refspec, and
+// runs every other command with the real git. It returns the file that appears once the fetch
+// has started. The loop stops, so the next tick starts one whose commands see the PATH.
+func stalledFetch(t *testing.T, d *Dispatch) string {
 	t.Helper()
+	real, err := exec.LookPath("git")
+	require.NoError(t, err)
 	dir := t.TempDir()
-	remote, started, script := filepath.Join(dir, "origin.git"), filepath.Join(dir, "fetching"), filepath.Join(dir, "upload-pack")
+	remote, started := filepath.Join(dir, "origin.git"), filepath.Join(dir, "fetching")
 	hintGit(t, d.Repo, "init", "-q", "--bare", remote)
 	hintGit(t, d.Repo, "remote", "add", "origin", remote)
-	// The script lets go of dispatch's stderr, so a killed fetch does not wait on its sleep.
-	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
-exec 2>/dev/null
-calls=$(cat "`+dir+`/calls" 2>/dev/null || echo 0)
-echo $((calls + 1)) > "`+dir+`/calls"
-if [ "$calls" -ge 1 ]; then
+	bin := filepath.Join(dir, "bin")
+	require.NoError(t, os.Mkdir(bin, 0o755))
+	// The sleep replaces the shell and lets go of dispatch's output, so the deadline's kill ends it.
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "git"), []byte(`#!/bin/sh
+case " $* " in
+*" fetch "*" +refs/heads/"*)
   touch "`+started+`"
-  sleep 20
-fi
-exec git-upload-pack "$@"
+  exec sleep 20 >/dev/null 2>&1 ;;
+esac
+exec "`+real+`" "$@"
 `), 0o755))
-	hintGit(t, d.Repo, "config", "remote.origin.uploadpack", script)
+	d.env = d.env.With("PATH", bin+string(os.PathListSeparator)+d.env.Get("PATH"))
+	d.Stop()
 	return started
 }
 
@@ -524,7 +528,7 @@ func TestALaunchWhoseFetchOutlivesItsDeadlineFailsWithoutCounting(t *testing.T) 
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	relaunchable(t, d)
-	started := stalledOrigin(t, d)
+	started := stalledFetch(t, d)
 
 	ticked := later(func() Result { return d.Run("tick") })
 	require.Eventually(t, func() bool { _, err := os.Stat(started); return err == nil }, 20*time.Second, time.Millisecond)
@@ -539,7 +543,7 @@ func TestAFirstLaunchWhoseFetchOutlivesItsDeadlineRecordsNoBranch(t *testing.T) 
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
-	started := stalledOrigin(t, d)
+	started := stalledFetch(t, d)
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 
 	ticked := later(func() Result { return d.Run("tick") })
