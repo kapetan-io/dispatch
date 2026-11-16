@@ -202,6 +202,12 @@ func (d *Dispatch) startOnTerminal() (screen func() string, stop func() error) {
 	opts.Stdout, opts.Stderr = terminal, &syncBuffer{}
 	done := make(chan error, 1)
 	go func() { done <- dispatch.Run(ctx, []string{"run"}, opts) }()
+	// A test that fails before calling stop still ends its run and closes the terminal.
+	d.t.Cleanup(func() {
+		cancel()
+		_ = terminal.Close()
+		_ = control.Close()
+	})
 	stop = func() error {
 		cancel()
 		err := <-done
@@ -258,6 +264,8 @@ func TestRunPrintsTheLogoAndTheSourcesItWillReadBeforeTheLinearKeyArrives(t *tes
 	gate := filepath.Join(dir, "gate")
 	command, counter := keyScript(t, dir, "while [ ! -f "+gate+" ]; do sleep 0.01; done\necho test-key")
 	d := newDispatch(t, dispatchOptions{Key: configuredKey, Config: "[plugins.linear]\napi_key_command = \"" + command + "\"\n"})
+	// A test that fails before opening the gate must not leave the key command looping.
+	t.Cleanup(func() { _ = os.WriteFile(gate, nil, 0o600) })
 	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
 
 	screen, stop := d.startOnTerminal()
@@ -353,4 +361,19 @@ func TestRunShowsEveryConfiguredRepo(t *testing.T) {
 	repos := regexp.MustCompile(`(?m)^REPOS    (.*)$`).FindStringSubmatch(out)
 	require.Len(t, repos, 2)
 	assert.ElementsMatch(t, []string{"dispatch", "webapp", "api"}, strings.Split(repos[1], "  "))
+}
+
+func TestRunShowsTheLabelAnInReviewWorkerKeepsWhileItsPRCannotBeRead(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.Workers.Stop("ENG-1", stopTasks{})
+	// An earlier run read the PR as ready for review, and this start can't read it.
+	require.NoError(t, d.Tools().Multiplexer.RenameWorkspace(context.Background(), "w-ENG-1", "👀 ENG-1"))
+	d.GitHub.FailRead(errors.New("exit status 1"))
+
+	out := d.RunOnTerminal()
+
+	assert.Contains(t, out, "👀 ENG-1  ticket ENG-1\n")
 }
