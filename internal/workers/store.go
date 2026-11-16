@@ -50,6 +50,10 @@ type Kickoff struct {
 	Open bool `json:"open,omitempty"`
 	// Session is the session the kickoff was typed into. Empty means it is not known.
 	Session string `json:"session,omitempty"`
+	// Taken is true when Session took this kickoff before the launch that wrote the record, which
+	// resumed the session and typed the carry-on message instead. An open record then waits only on
+	// that message, and a later resume of the session still knows the kickoff ran.
+	Taken bool `json:"taken,omitempty"`
 }
 
 // Row is what dispatch records about one worker.
@@ -342,6 +346,16 @@ func (s *Store) RecordSession(ticket, repo, session string) error {
 	return s.change(ticket, repo, func(_ *bolt.Tx, row *Row) error {
 		if row.Kickoff != nil {
 			row.Kickoff.Session = session
+		}
+		return nil
+	})
+}
+
+// RecordTaken marks the kickoff record as taken by its session in an earlier launch.
+func (s *Store) RecordTaken(ticket, repo string) error {
+	return s.change(ticket, repo, func(_ *bolt.Tx, row *Row) error {
+		if row.Kickoff != nil {
+			row.Kickoff.Taken = true
 		}
 		return nil
 	})

@@ -200,7 +200,7 @@ func (h *Multiplexer) LoseTerminals() {
 	lost := make([]string, 0, len(h.agents))
 	for _, a := range h.agents {
 		for i := len(h.workers) - 1; i >= 0; i-- {
-			if h.workers[i].Workspace == a.WorkspaceID {
+			if h.workers[i].Workspace == a.WorkspaceID && a.Session != "" {
 				h.resumable[h.workers[i].Dir] = a.Session
 				break
 			}
@@ -504,6 +504,8 @@ func (h *Multiplexer) CloseWorkspace(ctx context.Context, id string) error {
 			gone = append(gone, p.ID)
 		}
 	}
+	// Closing removes the terminals, so nothing is left there to resume.
+	delete(h.resumable, h.workspaces[i].CheckoutPath)
 	h.workspaces = slices.Delete(h.workspaces, i, i+1)
 	h.tabs = slices.DeleteFunc(h.tabs, func(t herdr.Tab) bool { return t.WorkspaceID == id })
 	h.panes = slices.DeleteFunc(h.panes, func(p herdr.Pane) bool { return p.WorkspaceID == id })

@@ -14,10 +14,10 @@ import (
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
 )
 
-// resumeMessage is what a launch types into a resumed session that already took its kickoff.
-const resumeMessage = "Dispatch restarted your terminal and resumed this conversation. Carry on from where you stopped."
+// carryOnMessage is what a launch types into a resumed session that already took its kickoff.
+const carryOnMessage = "Dispatch restarted your terminal and resumed this conversation. Carry on from where you stopped."
 
-// kickedText is the text the nth kickoff typed, oldest first.
+// kickedText is the nth text a launch typed and saw running, oldest first.
 func kickedText(d *Dispatch, n int) string {
 	d.t.Helper()
 	kicked := d.fakes().Multiplexer.Kicked()
@@ -26,7 +26,7 @@ func kickedText(d *Dispatch, n int) string {
 	return text
 }
 
-func TestARelaunchThatResumesTheSessionTypesTheResumeMessageInPlaceOfTheKickoff(t *testing.T) {
+func TestARelaunchThatResumesTheSessionTypesTheCarryOnMessageInPlaceOfTheKickoff(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
@@ -40,9 +40,9 @@ func TestARelaunchThatResumesTheSessionTypesTheResumeMessageInPlaceOfTheKickoff(
 
 	require.NoError(t, out.err)
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Contains(t, out.result["detail"], ", resumed its session without retyping the kickoff")
+	assert.Contains(t, out.result["detail"], ", resumed the worker's session without retyping the kickoff")
 	require.Len(t, d.fakes().Multiplexer.Kicked(), 2)
-	assert.Equal(t, resumeMessage, kickedText(d, 1))
+	assert.Equal(t, carryOnMessage, kickedText(d, 1))
 	snap, err := d.fakes().Multiplexer.Read(context.Background())
 	require.NoError(t, err)
 	require.Len(t, snap.Agents, 1)
@@ -59,7 +59,7 @@ func TestARelaunchThatResumesTheSessionTypesTheResumeMessageInPlaceOfTheKickoff(
 	d.Clock.Advance(time.Minute)
 	require.NoError(t, d.launch("ENG-1", "br-eng-1").err)
 
-	assert.Equal(t, resumeMessage, kickedText(d, 2))
+	assert.Equal(t, carryOnMessage, kickedText(d, 2))
 }
 
 // A resumed session whose kickoff was typed but never confirmed may not hold it, so it is typed
@@ -72,7 +72,7 @@ func TestARelaunchThatResumesASessionWhoseKickoffIsStillOpen(t *testing.T) {
 		want    string
 	}{
 		{"TypesTheKickoffAgain", false, "/dispatch:build ENG-1"},
-		{"TypesTheResumeMessageAfterAStopOfThatSession", true, resumeMessage},
+		{"TypesTheCarryOnMessageAfterAStopOfThatSession", true, carryOnMessage},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -162,7 +162,7 @@ func TestARelaunchThatResumesTheSessionTypesAKickoffItWasNeverSent(t *testing.T)
 	assert.Equal(t, session, kickoff.Session)
 }
 
-func TestAResumedWorkerThatNeverShowsTheResumeMessageRunningIsClosed(t *testing.T) {
+func TestAResumedWorkerThatNeverShowsTheCarryOnMessageRunningIsClosed(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	d.Trees.Pooled()
@@ -176,4 +176,118 @@ func TestAResumedWorkerThatNeverShowsTheResumeMessageRunningIsClosed(t *testing.
 
 	assert.Equal(t, "injection_unconfirmed", out.result["status"])
 	assert.Equal(t, []string{"w2"}, d.fakes().Multiplexer.ClosedWorkspaces())
+}
+
+func TestARelaunchThatResumesASessionWithNoKickoffRecordTypesTheKickoff(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.StartBeforeTheEvents()
+	require.NoError(t, d.launch("ENG-1", "br-eng-1").err)
+	session := d.fakes().Multiplexer.Started()[0].Program.Session
+	d.forgetKickoff(tree)
+	d.fakes().Multiplexer.LoseTerminals()
+	d.Clock.Advance(time.Minute)
+
+	out := d.launch("ENG-1", "br-eng-1")
+
+	require.NoError(t, out.err)
+	assert.NotContains(t, out.result["detail"], "resumed")
+	assert.Equal(t, "/dispatch:build ENG-1", kickedText(d, 1))
+	snap, err := d.fakes().Multiplexer.Read(context.Background())
+	require.NoError(t, err)
+	require.Len(t, snap.Agents, 1)
+	assert.Equal(t, session, snap.Agents[0].Session)
+}
+
+// The resumed session's Stops from before the relaunch say nothing of the carry-on message, so only
+// a Stop of that session after it confirms the worker; until then close-unconfirmed-worker
+// applies to it as to a new session.
+func TestAResumedWorkerWhoseCarryOnMessageIsUnconfirmed(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		stopped bool
+		closed  []string
+	}{
+		{"IsClosedDespiteAnEarlierStopOfItsSession", false, []string{"w2"}},
+		{"IsKeptOnceItsSessionStops", true, nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+			tree := d.Trees.Pooled()
+			d.StartBeforeTheEvents()
+			require.NoError(t, d.launch("ENG-1", "br-eng-1").err)
+			session := d.fakes().Multiplexer.Started()[0].Program.Session
+			stop := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"background_tasks":[]}`, session, tree)
+			require.NoError(t, d.Hook("record-stop", stop).Err)
+			d.fakes().Multiplexer.LoseTerminals()
+			// The carry-on message never shows as running and the workspace will not close, so the
+			// resumed session stays with its kickoff record open.
+			d.fakes().Multiplexer.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
+			d.fakes().Multiplexer.Fail(herdrtest.OpCloseWorkspace, fmt.Errorf("herdr workspace close failed"))
+			d.Clock.Advance(time.Minute)
+			out := d.launch("ENG-1", "br-eng-1")
+			require.Equal(t, "injection_unconfirmed", out.result["status"])
+			attempts := d.tools.Calls("herdr", "kickoff")
+			require.Len(t, attempts, 2)
+			_, typed, _ := strings.Cut(attempts[1], "|")
+			require.Equal(t, carryOnMessage, typed)
+			kickoff, found := d.kickoffRecord("ENG-1")
+			require.True(t, found)
+			require.True(t, kickoff.Open)
+			require.Equal(t, session, kickoff.Session)
+			d.fakes().Multiplexer.Fail(herdrtest.OpKickoff, nil)
+			d.fakes().Multiplexer.Fail(herdrtest.OpCloseWorkspace, nil)
+			if test.stopped {
+				snap, err := d.fakes().Multiplexer.Read(context.Background())
+				require.NoError(t, err)
+				require.Len(t, snap.Agents, 1)
+				// The restart ended the hooks' pane too, so the Stop runs in the resumed worker's.
+				restore := d.FromPane(snap.Agents[0].PaneID)
+				d.Clock.Advance(time.Second)
+				require.NoError(t, d.Hook("record-stop", stop).Err)
+				restore()
+			}
+
+			d.Advance(10 * time.Minute)
+			d.Tick()
+
+			assert.Equal(t, test.closed, d.fakes().Multiplexer.ClosedWorkspaces())
+		})
+	}
+}
+
+// A resumed launch whose carry-on message is never confirmed leaves an open kickoff record dated
+// after every Stop of the session. The session still took the kickoff, so the next resume of it
+// types the carry-on message again.
+func TestASecondResumeAfterAnUnconfirmedCarryOnMessageTypesItAgain(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d.Trees.Pooled()
+	d.StartBeforeTheEvents()
+	require.NoError(t, d.launch("ENG-1", "br-eng-1").err)
+	session := d.fakes().Multiplexer.Started()[0].Program.Session
+	d.fakes().Multiplexer.LoseTerminals()
+	d.fakes().Multiplexer.Fail(herdrtest.OpKickoff, herdr.ErrKickoffUnconfirmed)
+	d.fakes().Multiplexer.Fail(herdrtest.OpCloseWorkspace, fmt.Errorf("herdr workspace close failed"))
+	d.Clock.Advance(time.Minute)
+	require.Equal(t, "injection_unconfirmed", d.launch("ENG-1", "br-eng-1").result["status"])
+	kickoff, found := d.kickoffRecord("ENG-1")
+	require.True(t, found)
+	require.True(t, kickoff.Open)
+	d.fakes().Multiplexer.Fail(herdrtest.OpKickoff, nil)
+	d.fakes().Multiplexer.Fail(herdrtest.OpCloseWorkspace, nil)
+	d.fakes().Multiplexer.LoseTerminals()
+	d.Clock.Advance(time.Minute)
+
+	out := d.launch("ENG-1", "br-eng-1")
+
+	require.NoError(t, out.err)
+	assert.Equal(t, carryOnMessage, kickedText(d, 1))
+	snap, err := d.fakes().Multiplexer.Read(context.Background())
+	require.NoError(t, err)
+	require.Len(t, snap.Agents, 1)
+	assert.Equal(t, session, snap.Agents[0].Session)
 }

@@ -3273,6 +3273,19 @@ func (d *Dispatch) launchRecord(tree string) (at time.Time, held bool) {
 	return at, held
 }
 
+// forgetKickoff deletes the kickoff record from the worker row on tree, as a row written before
+// dispatch kept kickoff records holds none (unreachable from the CLI: every launch writes one).
+func (d *Dispatch) forgetKickoff(tree string) {
+	d.t.Helper()
+	d.database(func(file *dispatchdb.File) {
+		rows := workers.New(file)
+		worker, found, err := rows.OnTree(tree)
+		require.NoError(d.t, err)
+		require.True(d.t, found)
+		require.NoError(d.t, rows.SetKickoff(worker.Ticket, worker.Repo, nil))
+	})
+}
+
 // kickoffRecord is the kickoff record in the ticket's worker row, which no command prints: it is
 // kept for the code that decides what a resumed worker is sent.
 func (d *Dispatch) kickoffRecord(ticket string) (kickoff workers.Kickoff, found bool) {

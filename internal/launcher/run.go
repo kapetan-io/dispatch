@@ -140,8 +140,9 @@ type launch struct {
 	repo      string
 	tree      string
 	workspace string
-	// prior is the kickoff record the row held before this launch wrote its own, which a launch
-	// that types nothing puts back.
+	// prior is the kickoff record the row held before this launch wrote its own. A launch that
+	// types nothing puts it back, and kickoffOrCarryOn reads it to tell whether a resumed session
+	// already took this kickoff.
 	prior *workers.Kickoff
 	// fresh is set when this run took the lease, as opposed to finding one from
 	// an earlier run.
@@ -214,7 +215,14 @@ func (l *launch) run(ctx context.Context) Result {
 		}
 		return Result{Status: StatusWorkerRowFailed, Detail: err.Error(), Workspace: l.workspace, Pane: started.Pane, Worktree: l.tree}
 	}
-	text := l.message(started.Session)
+	text, resumed := l.kickoffOrCarryOn(started.Session)
+	if resumed {
+		// A record left open by this launch must still say the session ran the kickoff, or the
+		// next resume would type it again.
+		if err := l.opts.Workers.RecordTaken(req.Ticket, req.Repo); err != nil {
+			l.log("%v", err)
+		}
+	}
 	l.opts.Typed.Clear(l.tree)
 	l.opts.Typed.Note(l.tree, text)
 
@@ -262,26 +270,32 @@ func (l *launch) run(ctx context.Context) Result {
 	}
 	return Result{
 		Status: StatusOK, Ticket: req.Ticket, Branch: req.Branch, Worktree: l.tree,
-		Workspace: l.workspace, Pane: started.Pane, Agent: started.Agent, Kickoff: text, Resumed: text == resumed, Stacked: l.stacked,
+		Workspace: l.workspace, Pane: started.Pane, Agent: started.Agent, Kickoff: text, Resumed: resumed, Stacked: l.stacked,
 	}
 }
 
-// resumed is typed in place of the kickoff into a resumed session that already took it, because
-// typing the kickoff again tells the worker to start the job it is in the middle of.
-const resumed = "Dispatch restarted your terminal and resumed this conversation. Carry on from where you stopped."
+// carryOn is the carry-on message, typed in place of the kickoff into a resumed session that
+// already took it, because typing the kickoff again tells the worker to start the job it is in the
+// middle of.
+const carryOn = "Dispatch restarted your terminal and resumed this conversation. Carry on from where you stopped."
 
-// message is what the session is typed: resumed when the kickoff record the row held before this
-// launch shows this session already took this same kickoff, and the kickoff otherwise. A kickoff
-// that differs, such as a restack, tells the session something new, so it is typed.
-func (l *launch) message(session string) string {
+// kickoffOrCarryOn is the text to type into session, and whether it is the carry-on message. It is
+// the carry-on message when the kickoff record the row held before this launch names this session
+// and this same kickoff, and that kickoff ran: the record is closed, is marked taken, or has a Stop
+// of the session after it. A kickoff that differs, such as a restack, tells the
+// session something new, so it is typed.
+func (l *launch) kickoffOrCarryOn(session string) (string, bool) {
 	k := l.prior
 	if session == "" || k == nil || k.Session != session || k.Text != l.req.Kickoff {
-		return l.req.Kickoff
+		return l.req.Kickoff, false
 	}
-	if k.Open && !l.stoppedSince(session, k.At) {
-		return l.req.Kickoff
+	// An open record may be a kickoff that never reached the session, so only a Stop of that
+	// session after it shows it ran. An unreadable Stop counts as no Stop here, because retyping
+	// the kickoff costs less than a worker that never started its job.
+	if k.Open && !k.Taken && !l.stoppedSince(session, k.At) {
+		return l.req.Kickoff, false
 	}
-	return resumed
+	return carryOn, true
 }
 
 // beginKickoff writes the kickoff record, open, before the harness starts. A launch killed
