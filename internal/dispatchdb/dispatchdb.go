@@ -94,7 +94,8 @@ func Open(o Options) (*File, error) {
 		return nil, err
 	}
 	f := &File{db: db, path: path, commit: o.BeforeCommit}
-	// Opening writes nothing, so a start that is refused leaves the file as it found it.
+	// Opening writes nothing, so a start that is refused leaves the file's contents as it found
+	// them. A tickets.db renamed above keeps its new name, which the next start reads.
 	if err := db.View(func(tx *bolt.Tx) error { return checkVersion(tx, path) }); err != nil {
 		_ = db.Close()
 		return nil, unusable(path, err)

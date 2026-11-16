@@ -156,7 +156,12 @@ func (e *Executor) WhyNotLaunch(w rules.Want, wd world.World) string {
 		}
 		// Until the repo's running workers have their rows, a launch could start a second
 		// worker for a ticket that has one.
-		if done, err := e.Workers.Imported(repo); repo != "" && err == nil && !done {
+		done, err := e.Workers.Imported(repo)
+		switch {
+		case repo == "":
+		case err != nil:
+			return "whether the workers of " + repo + " are imported could not be read: " + err.Error()
+		case !done:
 			return "the workers of " + repo + " are not imported yet"
 		}
 	}

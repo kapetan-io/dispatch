@@ -3101,6 +3101,20 @@ func (d *Dispatch) database(use func(file *dispatchdb.File)) {
 	use(file)
 }
 
+// garbleImportMarker makes the repo's import marker unreadable, as a damaged file would.
+func (d *Dispatch) garbleImportMarker(label string) {
+	d.t.Helper()
+	d.database(func(file *dispatchdb.File) {
+		require.NoError(d.t, file.Bolt().Update(func(tx *bolt.Tx) error {
+			bucket, err := tx.CreateBucketIfNotExists([]byte("imported"))
+			if err != nil {
+				return err
+			}
+			return bucket.Put([]byte(label), []byte("not json"))
+		}))
+	})
+}
+
 // labelOf is the config label of the repo whose clone is at dir.
 func (d *Dispatch) labelOf(dir string) string {
 	for _, repo := range d.repos {

@@ -283,3 +283,40 @@ whenever({ name: "has-worker", each: "ticket", if: (t, ctx) => ctx.worker.of(t).
 	require.NoError(t, stopped.Err)
 	assert.Regexp(t, `has-worker +whenever +ticket +.*ENG-2`, stopped.Stdout)
 }
+
+// The row and the pool can spell one tree two ways, through a symlink such as /tmp on macOS.
+func TestAWorkerIsFoundWhenItsRowSpellsTheTreeThroughASymlink(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig, Rules: rule(`
+whenever({ name: "has-worker", each: "ticket", if: (t, ctx) => ctx.worker.of(t).state !== "none",
+  then: (t, ctx) => ctx.ticket.queueComment(t, "has a worker", { once: ["has-worker", t.id] }) });`)})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.StartBeforeTheEvents()
+	tree := d.Trees.PathOf("ENG-1")
+	require.NoError(t, os.MkdirAll(tree, 0o755))
+	d.unrecordedWorker(d.Repo, "ENG-1", tree, "w-ENG-1", "idle")
+	alias := filepath.Join(d.dir, "alias")
+	require.NoError(t, os.Symlink(tree, alias))
+	d.recordWorker("ENG-1", d.Repo, alias)
+
+	d.Tick()
+
+	assert.Equal(t, []string{"ENG-1: has a worker"}, d.Linear.Comments())
+	assert.Empty(t, d.Workers.Launched())
+}
+
+// A marker that cannot be read does not show the repo's running workers have rows, so a launch
+// there could start a second harness in a live tree.
+func TestALaunchWaitsWhileTheImportMarkerCannotBeRead(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.garbleImportMarker("dispatch")
+	d.StartBeforeTheEvents()
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+
+	d.Run("tick")
+
+	assert.Empty(t, d.Workers.Launched())
+	assert.Empty(t, d.launchesEnded("ENG-1"))
+	assert.Contains(t, d.loopErr(), "dispatch: not launching ENG-1: whether the workers of dispatch are imported could not be read: ")
+}

@@ -133,7 +133,7 @@ path = "~/Development/dispatch"
 worker = "harness.claude-opus"
 ```
 
-The shipped rules launch a build worker on the ticket's `model` attribute when it has one, else on the table that `[repos.<label>].worker` names, else the one `[rules].worker` names, else Claude Code with `worker_model`. Design workers do the same with `design` and `design_model`. A rule can also pass `harness: "harness.<name>"` to `queueLaunch`, and `dispatch launch --harness harness.<name>` launches on a table. Rules never read the tables, only the names.
+The shipped rules launch a build worker on the ticket's `model` attribute when it has one, else on the table that `[repos.<label>].worker` names, else the one `[rules].worker` names, else Claude Code with `worker_model`. Design workers do the same with `design` and `design_model`. A rule can also pass `harness: "harness.<name>"` to `queueLaunch`. Rules never read the tables, only the names.
 
 The load fails, naming the key or table, when a `worker` or `design` key isn't of the form `harness.<name>`, names a table the file lacks, or when a table has a missing or unknown `kind` or a missing `model`:
 

@@ -5,6 +5,7 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/treekey"
 	"github.com/kapetan-io/dispatch/internal/workers"
 )
 
@@ -70,8 +71,12 @@ func (w World) workersIn(ticket string, snap herdr.Snapshot) []Worker {
 	rows := w.Rows.Of(ticket)
 	var all []Worker
 	for _, t := range w.Trees {
-		named := slices.ContainsFunc(rows, func(row workers.Worker) bool { return row.Row.Tree == t.Path })
-		if t.LeaseHolder == ticket && named {
+		if t.LeaseHolder != ticket {
+			continue
+		}
+		// The resync matches a row to a lease by the resolved path, so two spellings of one tree
+		// are one tree here too.
+		if slices.ContainsFunc(rows, func(row workers.Worker) bool { return treekey.Of(row.Row.Tree) == treekey.Of(t.Path) }) {
 			all = append(all, onTree(t, snap))
 		}
 	}
