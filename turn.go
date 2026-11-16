@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/kapetan-io/dispatch/internal/loop"
-	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/workers"
 )
 
 // turnCommand prints the turn a ticket's worker waits at and its closing message, read through
@@ -34,8 +34,8 @@ func turnCommand(ctx context.Context, opts Options, ticket string, asJSON bool) 
 			At      string `json:"at"`
 			Message string `json:"message"`
 			Cut     bool   `json:"cut"`
-		}{ticket, stops.FormatTurnTime(resp.Turn.At), resp.Turn.Message, resp.Turn.Cut})
+		}{ticket, workers.FormatTurnTime(resp.Turn.At), resp.Turn.Message, resp.Turn.Cut})
 	}
-	_, err = fmt.Fprintf(opts.Stdout, "%s turn %s\n%s", ticket, stops.FormatTurnTime(resp.Turn.At), resp.Turn.Message)
+	_, err = fmt.Fprintf(opts.Stdout, "%s turn %s\n%s", ticket, workers.FormatTurnTime(resp.Turn.At), resp.Turn.Message)
 	return err
 }

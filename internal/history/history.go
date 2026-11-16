@@ -428,6 +428,9 @@ const (
 	EventStart  = "dispatch.start"
 	EventResync = "dispatch.resync"
 	EventTick   = "dispatch.tick"
+	// EventWorkerGone is written when a worker row is deleted because its tree no longer holds the
+	// ticket's lease. Its subject is the ticket and its data the ticket, repo, tree and why.
+	EventWorkerGone = "worker_gone"
 )
 
 // IsResync is true for an event after which the dispatcher read every source again.

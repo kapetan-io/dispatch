@@ -197,16 +197,16 @@ func resetState(ctx context.Context, opts Options, quiet bool) error {
 		mem, resync = st.Memory, st.Resync
 	}
 	header := history.Header{Why: "reset", Config: string(text), Started: at.UnixMilli(), At: at.UnixMilli()}
-	local, err := readOnlyLocal(cfg, opts)
+	db, err := readOnlyDatabase(cfg, opts)
 	if err != nil {
 		return err
 	}
-	if local != nil {
-		header.LocalHighest = local.Highest
+	if db.Local != nil {
+		header.LocalHighest = db.Local.Highest
 	}
 	var receipts []ledger.Receipt
 	if quiet {
-		if receipts, mem, err = quietReceipts(ctx, opts, cfg, mem, at, resync, local); err != nil {
+		if receipts, mem, err = quietReceipts(ctx, opts, cfg, mem, at, resync, db); err != nil {
 			return err
 		}
 	}
@@ -232,7 +232,7 @@ var quietKinds = []string{"nudge", "notify", "comment", "post"}
 // quietReceipts runs the first cycle over an empty ledger and returns a Done receipt for each message
 // it wants, with the memory that cycle leaves, because a message's once key can hold a time that
 // memory first saw.
-func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *world.Memory, at time.Time, resync int, local *localticket.Listing) ([]ledger.Receipt, *world.Memory, error) {
+func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *world.Memory, at time.Time, resync int, db database) ([]ledger.Receipt, *world.Memory, error) {
 	opts = withMultiplexer(opts, cfg, nil)
 	loaded, err := loadRules(opts, cfg)
 	if err != nil {
@@ -242,12 +242,10 @@ func quietReceipts(ctx context.Context, opts Options, cfg config.Config, mem *wo
 	if _, err := lin.Workspace(ctx); err != nil {
 		return nil, nil, err
 	}
-	src := sources(opts, cfg, lin, loaded)
+	src := sources(opts, cfg, lin, loaded, nil)
 	src.Tolerant, src.Resilient = true, true
-	// A nil *Listing assigned directly would make src.Local a non-nil interface.
-	if local != nil {
-		src.Local = local
-	}
+	db.into(&src)
+	local := db.Local
 	wd, err := world.Read(ctx, src, world.ScopeOf(cfg), at)
 	if err != nil {
 		return nil, nil, err

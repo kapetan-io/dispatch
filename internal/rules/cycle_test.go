@@ -13,9 +13,9 @@ import (
 	"github.com/kapetan-io/dispatch/internal/config"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
-	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -24,7 +24,7 @@ import (
 func busyWorld(cfg config.Config, now time.Time) world.World {
 	st := cfg.Plugins.Linear.Statuses
 	w := world.World{
-		At: now, Workers: map[string]world.Worker{}, Stops: map[string]stops.Record{}, Leases: map[string][]world.Worker{},
+		At: now, Workers: map[string]world.Worker{}, Stops: map[string]workers.Record{}, Leases: map[string][]world.Worker{},
 		Leased: map[string]bool{}, Children: map[string][]ticket.Ticket{}, Unfinished: map[string]string{},
 		Work: map[string]treehouse.Work{}, CheckErrors: map[string]error{}, Untracked: map[string][]string{},
 		PRs: map[string]pullrequest.PullRequest{}, PRReadFailed: map[string]bool{},

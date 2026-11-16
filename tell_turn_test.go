@@ -3,7 +3,6 @@ package dispatch_test
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -284,11 +283,9 @@ func TestTellTurnSendsNothingWhenAnEarlierRunCrashedAfterRecordingTheAttempt(t *
 func TestTellTurnNamesAMissingClosingMessage(t *testing.T) {
 	t.Parallel()
 	d, at, _ := askedWorker(t)
-	// The Stop's closing message file is gone while its record stays (unreachable from the CLI: a
-	// failed write or a hand-deleted file).
-	for _, file := range closingFiles(t, d.state) {
-		require.NoError(t, os.Remove(file))
-	}
+	// The Stop's closing message is gone while its record stays (unreachable from the CLI: a
+	// database edited by hand).
+	require.Len(t, d.closings(true), 1)
 
 	res := d.Run("tell", "ENG-1", "--turn", at, "yes")
 

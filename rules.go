@@ -176,16 +176,14 @@ func rulesCheck(ctx context.Context, opts Options, arg string) error {
 	if err != nil {
 		return err
 	}
-	src := sources(opts, cfg, lin, loaded)
+	src := sources(opts, cfg, lin, loaded, nil)
 	src.Tolerant = true
-	snap, err := trackedLocal(ctx, opts, cfg)
+	db, err := trackedDatabase(ctx, opts, cfg)
 	if err != nil {
 		return err
 	}
-	// A nil *Listing assigned directly would make src.Local a non-nil interface.
-	if snap != nil {
-		src.Local = snap
-	}
+	db.into(&src)
+	snap := db.Local
 	w, err := world.Read(ctx, src, world.ScopeOf(cfg), opts.Clock.Now())
 	if err != nil {
 		return err

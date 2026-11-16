@@ -11,7 +11,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
-	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
@@ -31,7 +30,7 @@ const (
 type rename struct{ id, label string }
 
 func workerOf(wd world.World, ticket string) string {
-	return string(world.FindWorker(ticket, wd.Trees, wd.Snapshot).State)
+	return string(wd.WorkerOf(ticket).State)
 }
 
 func label(emoji string, t ticket.Ticket) string { return herdr.WorkspaceLabel(emoji, t.Identifier) }
@@ -216,7 +215,7 @@ func (l *Loop) workspaceEmoji(w world.Worker, pr pullrequest.PullRequest, openAs
 		}
 		return emojiBusy
 	}
-	stop, ok := stops.Read(l.o.Sources.StateDir, w.TreePath, w.Session)
+	stop, ok := l.rowOn(w.TreePath).Stop(w.Session)
 	// A log that can't be read leaves the Stop alone to decide, as the world does.
 	log, _ := sessionlog.Read(l.o.Sources.StateDir, w.TreePath, w.Session)
 	switch {

@@ -322,7 +322,7 @@ func TestCoreStartWorkerRunsTheProgramLabelledForItsTree(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, herdr.Started{Pane: "t7", Agent: started.Agent}, started)
+	assert.Equal(t, herdr.Started{Pane: "t7", Agent: started.Agent, Session: "11111111-2222-4333-8444-555555555555"}, started)
 	assert.Regexp(t, `^dw-[0-9a-f]{24}$`, started.Agent)
 	runs := calls.Params(t, "terminal.run")
 	require.Len(t, runs, 1)

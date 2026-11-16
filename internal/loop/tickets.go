@@ -44,15 +44,11 @@ func (l *Loop) localTicket(call *TicketCall) Response {
 	if call.Team != "" && call.System != ticket.SystemLinear {
 		return Response{Code: CodeFailed, Error: "--team applies to create linear only"}
 	}
+	if call.Verb == VerbTracked {
+		return l.tracked()
+	}
 	if l.local == nil {
 		return Response{Code: CodeFailed, Error: LocalOff}
-	}
-	if call.Verb == VerbTracked {
-		snap, err := l.local.Listing()
-		if err != nil {
-			return Response{Code: CodeFailed, Error: err.Error()}
-		}
-		return Response{Tracked: &snap}
 	}
 	lines, err := l.ticketVerb(call)
 	if err != nil {
@@ -306,4 +302,22 @@ func (l *Loop) openLocal(seg history.Segment, st history.State, loaded bool) err
 		l.o.Executor.UseLocal(store)
 	}
 	return nil
+}
+
+// tracked answers VerbTracked with the worker rows, and with the local tickets when they are on.
+func (l *Loop) tracked() Response {
+	rows, err := l.o.Workers.Snapshot()
+	if err != nil {
+		return Response{Code: CodeFailed, Error: err.Error()}
+	}
+	resp := Response{Rows: rows}
+	if l.local == nil {
+		return resp
+	}
+	snap, err := l.local.Listing()
+	if err != nil {
+		return Response{Code: CodeFailed, Error: err.Error()}
+	}
+	resp.Tracked = &snap
+	return resp
 }

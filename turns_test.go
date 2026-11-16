@@ -391,7 +391,7 @@ func TestAStopReportedAfterTheReturnDoesNotMakeTheNextSessionBusy(t *testing.T) 
 	d.Tick()
 
 	assert.Equal(t, []string{"ENG-2: busy false"}, d.Linear.Comments())
-	assert.Empty(t, closingFiles(t, d.state))
+	assert.Empty(t, d.closings(false))
 }
 
 func TestAStopFromASessionStartedAfterTheReturnStillMakesItBusy(t *testing.T) {
@@ -406,10 +406,10 @@ func TestAStopFromASessionStartedAfterTheReturnStillMakesItBusy(t *testing.T) {
 
 	// The next session's Stop is later than the return.
 	d.Advance(time.Minute)
-	d.Workers.StopFrom("next", "ENG-1", stopTasks{Running: 1})
 	d.Linear.Tickets(ticket("ENG-2", "In Progress", "dispatch"))
 	d.Workers.RunningIn("ENG-2", tree, "idle")
 	d.Workers.SetSession("ENG-2", "next")
+	d.Workers.StopFrom("next", "ENG-1", stopTasks{Running: 1})
 	d.Tick()
 
 	assert.Equal(t, []string{"ENG-2: busy true"}, d.Linear.Comments())

@@ -14,9 +14,9 @@ import (
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
-	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -49,7 +49,7 @@ type scenarioModel struct {
 	order   []string
 	parent  map[string]string
 	workers map[string]*world.Worker
-	stops   map[string]stops.Record
+	stops   map[string]workers.Record
 	// sessions are the commands a worker's session took and the turns it ended, and sessionUnread the
 	// workers whose session record can't be read, with the reason.
 	sessions      map[string]sessionlog.Log
@@ -67,7 +67,7 @@ type scenarioModel struct {
 func newModel() *scenarioModel {
 	return &scenarioModel{
 		tickets: map[string]*ticket.Ticket{}, parent: map[string]string{}, workers: map[string]*world.Worker{},
-		stops: map[string]stops.Record{}, sessions: map[string]sessionlog.Log{}, sessionUnread: map[string]string{}, prs: map[string]*pullrequest.PullRequest{}, merged: map[string]pullrequest.MergedPR{}, stacks: map[string]stackrecord.Record{}, stamps: map[string]*stamp{},
+		stops: map[string]workers.Record{}, sessions: map[string]sessionlog.Log{}, sessionUnread: map[string]string{}, prs: map[string]*pullrequest.PullRequest{}, merged: map[string]pullrequest.MergedPR{}, stacks: map[string]stackrecord.Record{}, stamps: map[string]*stamp{},
 	}
 }
 
@@ -319,7 +319,7 @@ func (s *scenario) applyWorker(id, state string, fields map[string]any) {
 	if v, ok := fields["lastStop"]; ok {
 		at := scenarioStart.UnixMilli() + toInt(v)
 		busy, _ := boolean(fields, "busy")
-		rec := stops.Record{At: time.UnixMilli(at), Reported: true}
+		rec := workers.Record{At: time.UnixMilli(at), Reported: true}
 		if busy {
 			rec.Running = 1
 		}
@@ -444,7 +444,7 @@ func (s *scenario) world() world.World {
 	scope := world.ScopeOf(cfg)
 	scope.Local = ticket.DefaultStatuses()
 	w := world.World{
-		At: s.now, LocalStatuses: scope.Local, Workers: map[string]world.Worker{}, Stops: map[string]stops.Record{},
+		At: s.now, LocalStatuses: scope.Local, Workers: map[string]world.Worker{}, Stops: map[string]workers.Record{},
 		Sessions: map[string]sessionlog.Log{}, SessionErrs: map[string]error{},
 		Leases: map[string][]world.Worker{}, Leased: map[string]bool{}, Children: map[string][]ticket.Ticket{},
 		Unfinished: map[string]string{}, Work: map[string]treehouse.Work{}, CheckErrors: map[string]error{},

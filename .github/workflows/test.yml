@@ -39,7 +39,6 @@ jobs:
               - 'testdata/**'
               - '.claude-plugin/**'
               - 'hooks/hooks.json'
-              - 'bin/dispatch-launch'
               - 'scripts/shims/claude'
               - '.github/workflows/**'
 

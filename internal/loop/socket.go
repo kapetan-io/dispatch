@@ -9,8 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/kapetan-io/dispatch/internal/launcher"
 )
 
 // SocketName is the loop's socket inside the state directory.
@@ -139,20 +137,4 @@ func Send(ctx context.Context, stateDir string, req Request) error {
 	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(time.Second))
 	return json.NewEncoder(conn).Encode(req)
-}
-
-// Typing returns the notes of a launch that runs apart from the loop over stateDir, which tell
-// the running loop what the launch types. They are dropped when no loop runs, as the hooks'
-// reports are, because nothing then reads either.
-func Typing(stateDir string) launcher.Typing { return typing(stateDir) }
-
-type typing string
-
-func (t typing) Note(tree, text string) { t.ask(Typed{Tree: tree, Text: text}) }
-func (t typing) Clear(tree string)      { t.ask(Typed{Tree: tree, Clear: true}) }
-
-func (t typing) ask(note Typed) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	_, _ = Ask(ctx, string(t), Request{Op: OpTyped, Typed: &note})
 }

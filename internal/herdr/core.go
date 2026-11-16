@@ -434,7 +434,7 @@ func (c *Core) StartWorker(ctx context.Context, w Worker) (Started, error) {
 	if err != nil {
 		return Started{}, err
 	}
-	return Started{Pane: run.Address, Agent: name}, nil
+	return Started{Pane: run.Address, Agent: name, Session: session}, nil
 }
 
 // find is the absolute path of the program's executable, looked up in its shim directories

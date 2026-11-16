@@ -2,8 +2,6 @@ package dispatch_test
 
 import (
 	"os"
-	"os/exec"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -33,31 +31,6 @@ func TestConfigRejectsAHostThatIsNeitherTuiNorApp(t *testing.T) {
 	}
 }
 
-func TestLaunchUnderTheAppHostWithNoHcNamesTheReadError(t *testing.T) {
-	t.Parallel()
-	bin := t.TempDir()
-	git, err := exec.LookPath("git")
-	require.NoError(t, err)
-	require.NoError(t, os.Symlink(git, filepath.Join(bin, "git")))
-	d := newDispatch(t, dispatchOptions{
-		Launcher:  builtinLauncher,
-		RealHerdr: true,
-		Config:    "[plugins.herdr]\nhost = \"app\"\n",
-		Env:       map[string]string{"DISPATCH_PLUGIN_ROOT": "/plugin", "DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT": "0", "PATH": bin},
-	})
-	d.Trees.Pooled()
-
-	launched := later(func() launchOutput { return d.launch("ENG-1", "thrawn01/eng-1") })
-	assert.Equal(t, time.Nanosecond, d.Deadline("launch preflight"))
-	d.Expire("launch preflight")
-	out := launched()
-
-	assert.Equal(t, "herdr_unavailable", out.result["status"])
-	assert.Contains(t, out.result["detail"], "herdr server not answering")
-	assert.Contains(t, out.result["detail"], `"hc"`)
-	assert.Empty(t, d.fakes().Calls("treehouse", "lease"))
-}
-
 func TestLaunchReportsAlreadyRunningWhenHerdrFindsASessionOnTheTree(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
@@ -76,13 +49,15 @@ func TestARefusedLaunchKeepsTheKickoffRecordAndDatesItFromItsOwnStart(t *testing
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
-	markLaunch(t, d.state, tree, d.Clock.Now().Add(-10*time.Minute))
+	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
+	d.recordWorker("ENG-1", d.Repo, tree)
+	d.markLaunch(tree, d.Clock.Now().Add(-10*time.Minute))
 	d.fakes().Multiplexer.Fail(herdrtest.OpStartTab, herdr.ErrSessionRunning)
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	require.Equal(t, "already_running", out.result["status"])
-	at, held := launchRecord(d.state, tree)
+	at, held := d.launchRecord(tree)
 	assert.True(t, held)
 	assert.Equal(t, d.Clock.Now().UnixMilli(), at.UnixMilli())
 }
@@ -96,7 +71,7 @@ func TestARefusedLaunchLeavesNoKickoffRecordBesideAHealthyWorker(t *testing.T) {
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	require.Equal(t, "already_running", out.result["status"])
-	_, held := launchRecord(d.state, tree)
+	_, held := d.launchRecord(tree)
 	assert.False(t, held)
 }
 
@@ -104,12 +79,14 @@ func TestALaunchThatStartsClaudeReleasesARecordAnEarlierLaunchLeft(t *testing.T)
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
-	markLaunch(t, d.state, tree, d.Clock.Now().Add(-time.Second))
+	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
+	d.recordWorker("ENG-1", d.Repo, tree)
+	d.markLaunch(tree, d.Clock.Now().Add(-time.Second))
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	require.Equal(t, "ok", out.result["status"])
-	_, held := launchRecord(d.state, tree)
+	_, held := d.launchRecord(tree)
 	assert.False(t, held)
 }
 
@@ -301,4 +278,25 @@ func TestANudgeToAWorkerThatReportsNoStatusLeavesNoSendForAPersonsCommandToMatch
 	d.Tick()
 
 	assert.Equal(t, "commands merge-it|42|false|person of 1", lastReading(t, d))
+}
+
+// A Stop later than the open record shows its kickoff ran, so a refused launch leaves the
+// record's time alone, and the worker does not read as waiting for a kickoff again.
+func TestARefusedLaunchKeepsTheTimeOfAKickoffRecordAStopConfirmed(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	tree := d.Trees.Pooled()
+	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
+	d.recordWorker("ENG-1", d.Repo, tree)
+	began := d.Clock.Now().Add(-10 * time.Minute)
+	d.markLaunch(tree, began)
+	d.StartBeforeTheEvents()
+	require.NoError(t, d.Hook("record-stop", `{"hook_event_name":"Stop","session_id":"s1","cwd":"`+tree+`"}`).Err)
+	d.fakes().Multiplexer.Fail(herdrtest.OpStartTab, herdr.ErrSessionRunning)
+
+	out := d.launch("ENG-1", "thrawn01/eng-1")
+
+	require.Equal(t, "already_running", out.result["status"])
+	at, _ := d.launchRecord(tree)
+	assert.Equal(t, began.UnixMilli(), at.UnixMilli())
 }

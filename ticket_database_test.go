@@ -47,7 +47,7 @@ func defaultStatuses() []dbStatus {
 }
 
 // databasePath is where dispatch keeps the local ticket database when [plugins.local] sets no path.
-func (d *Dispatch) databasePath() string { return filepath.Join(d.state, "tickets.db") }
+func (d *Dispatch) databasePath() string { return filepath.Join(d.state, "dispatch.db") }
 
 // writeDatabase writes the file the way a tool outside dispatch would, before dispatch run starts.
 func (d *Dispatch) writeDatabase(statuses []dbStatus, tickets map[uint64]string) {
@@ -150,7 +150,11 @@ func TestTicketSaysLocalTicketsAreOffForEveryVerb(t *testing.T) {
 		assert.Equal(t, 1, res.Code)
 		require.EqualError(t, res.Err, "local tickets are off: config.toml has no [plugins.local] table")
 	}
-	assert.NoFileExists(t, d.databasePath())
+	d.Stop()
+	for key := range d.databaseContents() {
+		bucket, _, _ := strings.Cut(key, "/")
+		assert.NotContains(t, []string{"statuses", "tickets", "comments"}, bucket)
+	}
 }
 
 func TestRunWithoutThePluginTableRecordsNoLocalTicketsInHistory(t *testing.T) {
@@ -332,4 +336,27 @@ func TestRunStopsAtStartOnStatusesThatShareOrLackAJob(t *testing.T) {
 			assert.Equal(t, before, d.databaseContents())
 		})
 	}
+}
+
+func TestRunRefusesToStartOnADatabaseANewerDispatchWrote(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	require.NoError(t, os.MkdirAll(d.state, 0o700))
+	db, err := bolt.Open(d.databasePath(), 0o600, nil)
+	require.NoError(t, err)
+	require.NoError(t, db.Update(func(tx *bolt.Tx) error {
+		meta, err := tx.CreateBucketIfNotExists([]byte("meta"))
+		if err != nil {
+			return err
+		}
+		return meta.Put([]byte("version"), []byte("99"))
+	}))
+	require.NoError(t, db.Close())
+	before := d.databaseContents()
+
+	err = d.startLoop(dispatch.Options{})
+
+	require.ErrorContains(t, err, d.databasePath())
+	require.ErrorContains(t, err, "written by a newer dispatch (format 99")
+	assert.Equal(t, before, d.databaseContents())
 }

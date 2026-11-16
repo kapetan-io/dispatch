@@ -223,7 +223,7 @@ func TestAStackedTicketKeepsItsStackRecordWhenLinearsNameForItDrifts(t *testing.
 
 func TestATicketStackedOnOneWhoseLinearNameDriftedLaunchesFromItsRealBranch(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule)})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(stackRule + launchRule)})
 	tree := d.Trees.Pooled()
 	remote := filepath.Join(filepath.Dir(d.Repo), "remote.git")
 	hintGit(t, filepath.Dir(d.Repo), "init", "-q", "--bare", remote)
@@ -250,7 +250,7 @@ func TestATicketStackedOnOneWhoseLinearNameDriftedLaunchesFromItsRealBranch(t *t
 
 func TestALaunchKeysItsBranchAndGitMovesTheKeyWhenAWorkerRenamesTheBranch(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(inReviewBranchRule)})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(inReviewBranchRule + launchRule)})
 	tree := d.Trees.Pooled()
 	d.launch("ENG-1", prBranch("ENG-1"))
 	require.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch."+prBranch("ENG-1")+".dispatchTicket"))
@@ -266,7 +266,7 @@ func TestALaunchKeysItsBranchAndGitMovesTheKeyWhenAWorkerRenamesTheBranch(t *tes
 
 func TestATicketBranchKeyOnADeletedBranchIsIgnored(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(inReviewBranchRule)})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(inReviewBranchRule + launchRule)})
 	tree := d.Trees.Pooled()
 	d.launch("ENG-1", prBranch("ENG-1"))
 	d.Trees.Git(tree, "checkout", "-q", "--detach")
@@ -287,6 +287,7 @@ func TestALaunchOntoABranchKeyedToAnotherTicketFailsAndReturnsTheLease(t *testin
 	d.Trees.Git(tree, "checkout", "-q", "--detach")
 	require.NoError(t, d.fakes().Multiplexer.CloseWorkspace(context.Background(), "w2"))
 	require.NoError(t, d.fakes().Treehouse.Return(context.Background(), d.Repo, tree, "ENG-1"))
+	d.Linear.Tickets()
 
 	out := d.launch("ENG-2", prBranch("ENG-1"))
 

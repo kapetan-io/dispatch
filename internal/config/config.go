@@ -129,8 +129,8 @@ type Notify struct{}
 type Local struct {
 	// On is true when config.toml has a [plugins.local] table, empty or not.
 	On bool `toml:"-" ctx:"-"`
-	// Path is the database file. Unset means tickets.db in the state directory. ctx.config leaves
-	// it out, since no rule needs to know where the file is.
+	// Path is refused. The local tickets are in dispatch.db in the state directory, and a config
+	// that sets Path fails with what to do, because a file there would be ignored silently.
 	Path string `toml:"path" ctx:"-"`
 }
 

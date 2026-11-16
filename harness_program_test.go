@@ -19,10 +19,10 @@ model = "tiny"
 
 func TestLaunchStartsTheProgramOfAHarnessKindThatIsNotClaude(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, FakeHarness: true, Config: fakeTable})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, FakeHarness: true, Config: fakeTable + "[rules]\nworker = \"harness.fake-fast\"\n"})
 	d.Trees.Pooled()
 
-	out := d.launch("ENG-1", "thrawn01/eng-1", "--harness", "harness.fake-fast")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
 	require.Len(t, d.fakes().Multiplexer.Started(), 1)
@@ -53,11 +53,11 @@ func TestTickLaunchesTheProgramOfAHarnessKindThatIsNotClaude(t *testing.T) {
 
 func TestLaunchNamesTheProgramInTheReasonItNeverStarted(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, FakeHarness: true, Config: fakeTable})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, FakeHarness: true, Config: fakeTable + "[rules]\nworker = \"harness.fake-fast\"\n"})
 	d.Trees.Pooled()
 	d.fakes().Multiplexer.Fail(herdrtest.OpKickoff, herdr.ErrNeverStarted)
 
-	out := d.launch("ENG-1", "thrawn01/eng-1", "--harness", "harness.fake-fast")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "injection_unconfirmed", out.result["status"])
 	assert.Contains(t, out.result["detail"], "Fake never started, because its launch command still showed at the shell prompt after Enter was pressed on it")

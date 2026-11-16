@@ -190,47 +190,14 @@ func TestRulesCannotReadTheHarnessTables(t *testing.T) {
 
 func TestLaunchStartsTheWorkerOnTheModelOfTheHarnessTable(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Config: harnessTables})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Config: harnessTables + "[rules]\nworker = \"harness.claude-opus\"\n"})
 	d.Trees.Pooled()
 
-	out := d.launch("ENG-1", "thrawn01/eng-1", "--harness", "harness.claude-opus")
+	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
 	require.Len(t, d.fakes().Multiplexer.Started(), 1)
 	assert.Equal(t, "opus", modelOf(d.fakes().Multiplexer.Started()[0].Program))
-}
-
-func TestLaunchRefusesHarnessAndModelTogether(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Config: harnessTables})
-	d.Trees.Pooled()
-
-	out := d.launch("ENG-1", "thrawn01/eng-1", "--harness", "harness.claude-opus", "--model", "opus")
-
-	assert.Equal(t, "usage_error", out.result["status"])
-	assert.Contains(t, out.result["detail"], "--harness and --model together")
-	assert.Empty(t, d.fakes().Multiplexer.Started())
-}
-
-func TestLaunchRefusesAHarnessThatNamesNoTable(t *testing.T) {
-	t.Parallel()
-	for _, test := range []struct {
-		name, harness, want string
-	}{
-		{"MissingTable", "harness.nope", "harness.nope has no [harness.nope] table"},
-		{"NoPrefix", "opus", `"opus" must be "harness.<name>"`},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Config: harnessTables})
-			d.Trees.Pooled()
-
-			out := d.launch("ENG-1", "thrawn01/eng-1", "--harness", test.harness)
-
-			assert.Equal(t, "usage_error", out.result["status"])
-			assert.Contains(t, out.result["detail"], test.want)
-			assert.Empty(t, d.fakes().Multiplexer.Started())
-		})
-	}
 }
 
 func TestRepoSettingsPrintsNothingForAnUnsetWorkerAndDesign(t *testing.T) {

@@ -15,10 +15,10 @@ import (
 	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
-	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/typed"
+	"github.com/kapetan-io/dispatch/internal/workers"
 )
 
 // Statuses Run reports besides the ones in launcher.go.
@@ -36,6 +36,9 @@ const (
 	StatusAgentStartFailed       = "agent_start_failed"
 	StatusInjectionUnconfirmed   = "injection_unconfirmed"
 	StatusProgramExited          = "program_exited"
+	// StatusWorkerRowFailed is a launch that could not write the ticket's worker row. It counts
+	// toward launch_failure_limit, because a database that cannot be written is not fixed by waiting.
+	StatusWorkerRowFailed = "worker_row_failed"
 )
 
 // Typing is where a launch notes what it types into the worker, so the prompt hook can tell
@@ -58,9 +61,9 @@ type Options struct {
 	Treehouse treehouse.Pool
 	// Stderr receives progress. Defaults to discarding it.
 	Stderr io.Writer
-	// StateDir is where a launch records that its kickoff is unconfirmed, so a
-	// tick can find a session the launch died on. Empty records nothing.
-	StateDir string
+	// Workers holds the worker row a launch writes before each step it takes, so a launch that
+	// dies is found by the next one. Required.
+	Workers *workers.Store
 	// Clock stamps a launch's kickoff record, which the rules compare with the loop's clock,
 	// and runs the preflight deadline. Defaults to the wall clock.
 	Clock clock.Clock
@@ -137,13 +140,9 @@ type launch struct {
 	repo      string
 	tree      string
 	workspace string
-	// markID is the id this launch holds its kickoffs record under, so it never releases
-	// the record of a launch that replaced it.
-	markID string
-	// markAt is when the launch began, which a claimed record carries.
-	markAt time.Time
-	// workspaceOpen is set when a failed kickoff could not close the workspace.
-	workspaceOpen bool
+	// prior is the kickoff record the row held before this launch wrote its own, which a launch
+	// that types nothing puts back.
+	prior *workers.Kickoff
 	// fresh is set when this run took the lease, as opposed to finding one from
 	// an earlier run.
 	fresh bool
@@ -152,13 +151,12 @@ type launch struct {
 }
 
 func (l *launch) log(format string, args ...any) {
-	_, _ = fmt.Fprintf(l.opts.Stderr, "dispatch launch: "+format+"\n", args...)
+	_, _ = fmt.Fprintf(l.opts.Stderr, "launch: "+format+"\n", args...)
 }
 
 func (l *launch) run(ctx context.Context) Result {
 	req := &l.req
 	if req.Ticket == "" || req.Branch == "" {
-		l.log("usage: dispatch launch <TICKET> <BRANCH> [--base REF] [--model NAME | --harness harness.NAME] [--kickoff TEXT] [--title TEXT]")
 		return Result{Status: StatusUsageError, Detail: "TICKET and BRANCH are required"}
 	}
 	// Without it the worker starts with no dispatch plugin and no shims.
@@ -201,21 +199,31 @@ func (l *launch) run(ctx context.Context) Result {
 	if r, ok := l.openWorkspace(ctx); !ok {
 		return r
 	}
-	l.beginKickoff()
-	defer l.clearKickoff()
-	started, r, ok := l.startWorker(ctx, workerName)
-	if !ok {
+	if r, ok := l.beginKickoff(ctx); !ok {
 		return r
 	}
-	l.claimKickoff()
+	started, r, ok := l.startWorker(ctx, workerName)
+	if !ok {
+		l.restoreKickoff()
+		return r
+	}
+	if err := l.opts.Workers.RecordSession(req.Ticket, req.Repo, started.Session); err != nil {
+		// The session got no kickoff, so closing its workspace loses no work.
+		if l.opts.Multiplexer.CloseWorkspace(context.WithoutCancel(ctx), l.workspace) == nil {
+			l.restoreKickoff()
+		}
+		return Result{Status: StatusWorkerRowFailed, Detail: err.Error(), Workspace: l.workspace, Pane: started.Pane, Worktree: l.tree}
+	}
 	l.opts.Typed.Clear(l.tree)
 	l.opts.Typed.Note(l.tree, req.Kickoff)
 
 	// An unconfirmed kickoff closes the workspace. Left open, its idle program
 	// would look like a live worker, and no cycle would retry or escalate.
 	if err := l.opts.Multiplexer.Kickoff(ctx, started.Pane, req.Kickoff, req.Program.Startup); err != nil {
-		if l.opts.Multiplexer.CloseWorkspace(context.WithoutCancel(ctx), l.workspace) != nil {
-			l.workspaceOpen = true
+		// When the close fails the idle session is still there, and the open record stays so a
+		// later cycle closes it.
+		if l.opts.Multiplexer.CloseWorkspace(context.WithoutCancel(ctx), l.workspace) == nil {
+			l.deleteKickoff()
 		}
 		l.opts.Typed.Clear(l.tree)
 		program, name := req.Program.Name, l.opts.Multiplexer.Name()
@@ -243,9 +251,13 @@ func (l *launch) run(ctx context.Context) Result {
 		}
 		return Result{
 			Status:    StatusInjectionUnconfirmed,
-			Detail:    detail + " never showed the kickoff running, so the workspace was closed and the next resync retries. Record the screens with DISPATCH_LAUNCH_TRACE (`dispatch launch`).",
+			Detail:    detail + " never showed the kickoff running, so the workspace was closed and the next resync retries. Record the screens by starting `dispatch run` with DISPATCH_LAUNCH_TRACE=<file>.",
 			Workspace: l.workspace, Pane: started.Pane, Worktree: l.tree,
 		}
+	}
+	// The kickoff ran, so a record left open by a failed write is closed by the worker's first Stop.
+	if err := l.opts.Workers.CloseKickoff(req.Ticket, req.Repo); err != nil {
+		l.log("%v", err)
 	}
 	return Result{
 		Status: StatusOK, Ticket: req.Ticket, Branch: req.Branch, Worktree: l.tree,
@@ -253,44 +265,57 @@ func (l *launch) run(ctx context.Context) Result {
 	}
 }
 
-// beginKickoff marks the launch unconfirmed until it returns. A launch killed
-// before then leaves the mark, which is how a later tick knows the session in
-// this tree never got its kickoff. A record already there is shared, not replaced,
-// so a launch that the multiplexer refuses cannot erase the winner's.
-func (l *launch) beginKickoff() {
-	if l.opts.StateDir == "" {
-		return
+// beginKickoff writes the kickoff record, open, before the harness starts. A launch killed
+// before it types leaves the record open, which is how a later cycle knows the session in this
+// tree never got its kickoff.
+func (l *launch) beginKickoff(ctx context.Context) (Result, bool) {
+	prior, err := l.opts.Workers.KickoffOf(l.req.Ticket, l.req.Repo)
+	if err == nil {
+		l.prior = prior
+		err = l.opts.Workers.SetKickoff(l.req.Ticket, l.req.Repo, &workers.Kickoff{
+			Text: l.req.Kickoff, At: l.opts.Clock.Now().UnixMilli(), Open: true,
+		})
 	}
-	l.markAt = l.opts.Clock.Now()
-	id, err := kickoffs.MarkUnlessHeld(l.opts.StateDir, l.tree, l.markAt)
 	if err != nil {
-		l.log("%v", err)
-		return
+		l.giveBack(ctx)
+		return Result{Status: StatusWorkerRowFailed, Detail: err.Error(), Workspace: l.workspace, Worktree: l.tree}, false
 	}
-	l.markID = id
+	return Result{}, true
 }
 
-// claimKickoff makes the record this launch's alone. Under the app host herdr starts one session
-// per tree, so a launch that got this far won and any other owner lost or died. Under the TUI two
-// racing launches both get here, and the last claim replaces the first.
-func (l *launch) claimKickoff() {
-	if l.opts.StateDir == "" {
-		return
+// restoreKickoff puts back the record the row held, for a launch that typed nothing: a session
+// that took its kickoff keeps the record of the launch that started it.
+func (l *launch) restoreKickoff() {
+	// A session an earlier launch left without its kickoff is still without it, and the open
+	// record dates the wait from now. A Stop later than the earlier record shows its kickoff
+	// ran, so that record goes back with its own time.
+	kickoff := l.prior
+	if l.prior != nil && l.prior.Open && !l.stoppedSince(l.prior.At) {
+		kickoff = &workers.Kickoff{Text: l.prior.Text, At: l.opts.Clock.Now().UnixMilli(), Open: true, Session: l.prior.Session}
 	}
-	id, err := kickoffs.Mark(l.opts.StateDir, l.tree, l.markAt)
-	if err != nil {
+	if err := l.opts.Workers.SetKickoff(l.req.Ticket, l.req.Repo, kickoff); err != nil && !errors.Is(err, workers.ErrNoRow) {
 		l.log("%v", err)
-		return
 	}
-	l.markID = id
 }
 
-// clearKickoff runs on every return, because a launch that reports its own failure has
-// already closed its workspace. When that close failed, the idle session is still there, and
-// the mark stays so a later cycle closes it.
-func (l *launch) clearKickoff() {
-	if l.opts.StateDir != "" && !l.workspaceOpen {
-		kickoffs.Release(l.opts.StateDir, l.tree, l.markID)
+// stoppedSince reports whether the worker in the tree recorded a Stop after the time, in milliseconds.
+func (l *launch) stoppedSince(at int64) bool {
+	worker, _, err := l.opts.Workers.OnTree(l.tree)
+	if err != nil {
+		return false
+	}
+	for _, stop := range worker.Stops {
+		if stop.At.UnixMilli() > at {
+			return true
+		}
+	}
+	return false
+}
+
+// deleteKickoff removes the record of a kickoff that failed to type, once its workspace is closed.
+func (l *launch) deleteKickoff() {
+	if err := l.opts.Workers.SetKickoff(l.req.Ticket, l.req.Repo, nil); err != nil && !errors.Is(err, workers.ErrNoRow) {
+		l.log("%v", err)
 	}
 }
 
@@ -344,7 +369,17 @@ func (l *launch) fetchAndLease(ctx context.Context) (Result, bool) {
 		return Result{Status: StatusPoolError, Detail: detail}, false
 	}
 	defer done()
-	return l.leaseTree(ctx, l.trackBranch(ctx))
+	existed := l.trackBranch(ctx)
+	if res := l.lease(ctx); res.Status != "" {
+		return res, false
+	}
+	// The row names the tree before anything is done in it, so a launch that dies here is
+	// found by the next one and its tree can be returned.
+	if err := l.opts.Workers.RecordTree(l.req.Ticket, l.req.Repo, l.tree); err != nil {
+		l.giveBack(ctx)
+		return Result{Status: StatusWorkerRowFailed, Detail: err.Error(), Worktree: l.tree}, false
+	}
+	return l.checkout(ctx, existed)
 }
 
 // trackBranch reports whether the branch already exists, locally or on origin,
@@ -381,18 +416,11 @@ func (l *launch) adoptKeyed(ctx context.Context) {
 	}
 }
 
-// leaseTree reuses the tree already holding this ticket's lease, so a relaunch
+// lease reuses the tree already holding this ticket's lease, so a relaunch
 // resumes in place. A tree is never adopted just for having the branch checked
 // out, since it could be the user's own clone or a pool tree treehouse may hand
 // to someone else. If the branch is checked out elsewhere, the switch fails
 // loudly. A failure is reported as it is. The next resync launches again.
-func (l *launch) leaseTree(ctx context.Context, existed bool) (Result, bool) {
-	if res := l.lease(ctx); res.Status != "" {
-		return res, false
-	}
-	return l.checkout(ctx, existed)
-}
-
 func (l *launch) lease(ctx context.Context) Result {
 	req := l.req
 	trees, err := l.opts.Treehouse.Trees(ctx, l.repo)
@@ -426,13 +454,31 @@ func (l *launch) lease(ctx context.Context) Result {
 	return Result{}
 }
 
-// checkout puts the leased tree on the ticket's branch. The lease goes back to the pool when
+// checkout puts the leased tree on the ticket's branch. A lease this launch took goes back to the pool when
 // that fails.
 func (l *launch) checkout(ctx context.Context, existed bool) (Result, bool) {
-	// A lease from an earlier run is already on its branch.
-	if !l.fresh {
+	if l.fresh {
+		return l.switchTree(ctx, existed)
+	}
+	// A lease from an earlier run is already on its branch, unless that run died between leasing
+	// the tree and switching it. Such a tree is as the pool handed it out, so until it is on the
+	// branch the lease is treated as this launch's own and goes back when the switch fails.
+	unused, err := l.unused(ctx)
+	if err != nil {
+		return Result{Status: StatusWorkerRowFailed, Detail: err.Error(), Worktree: l.tree}, false
+	}
+	if !unused {
 		return Result{}, true
 	}
+	l.fresh = true
+	r, ok := l.switchTree(ctx, existed)
+	l.fresh = false
+	return r, ok
+}
+
+// switchTree switches the tree to the ticket's branch, creating the branch when it is new, and
+// claims the branch for the ticket.
+func (l *launch) switchTree(ctx context.Context, existed bool) (Result, bool) {
 	req := l.req
 	from := ""
 	if !existed {
@@ -483,7 +529,7 @@ func (l *launch) checkout(ctx context.Context, existed bool) (Result, bool) {
 		_ = stackrecord.Clear(context.WithoutCancel(ctx), l.opts.Env, l.repo, req.Branch)
 	}
 	l.clearIndexLock(ctx)
-	l.returnLease(ctx)
+	l.giveBack(ctx)
 	return Result{Status: StatusSwitchFailed, Detail: fmt.Sprintf("git switch to %s%s failed in leased tree %s (lease returned): %s", req.Branch, from, l.tree, said)}, false
 }
 
@@ -501,9 +547,9 @@ func (l *launch) keyBranch(ctx context.Context) (Result, bool) {
 	switch owner := recs.Tickets[req.Branch]; {
 	case strings.EqualFold(owner, req.Ticket):
 	case owner != "":
-		l.log("branch %s belongs to %s, returning the lease", req.Branch, owner)
-		l.returnLease(ctx)
-		return Result{Status: StatusBranchTaken, Detail: fmt.Sprintf("branch %s belongs to %s, not %s (lease returned); `git config --unset branch.%s.dispatchTicket` in %s hands it over", req.Branch, owner, req.Ticket, req.Branch, l.repo)}, false
+		l.log("branch %s belongs to %s (%s)", req.Branch, owner, l.leaseFate())
+		l.giveBack(ctx)
+		return Result{Status: StatusBranchTaken, Detail: fmt.Sprintf("branch %s belongs to %s, not %s (%s); `git config --unset branch.%s.dispatchTicket` in %s hands it over", req.Branch, owner, req.Ticket, l.leaseFate(), req.Branch, l.repo)}, false
 	default:
 		if err := stackrecord.WriteTicket(ctx, l.opts.Env, l.repo, req.Branch, req.Ticket); err != nil {
 			l.log("%v", err)
@@ -514,7 +560,7 @@ func (l *launch) keyBranch(ctx context.Context) (Result, bool) {
 
 // clearIndexLock removes the index.lock a git switch killed by the launch deadline leaves in the
 // tree's git directory. Neither git clean nor treehouse return touches it, so the next worker in
-// the tree could not commit. Only a tree this launch just leased reaches here, so no worker's git
+// the tree could not commit. Only a tree no worker has run in reaches here, so no worker's git
 // can hold the lock.
 func (l *launch) clearIndexLock(ctx context.Context) {
 	ctx = context.WithoutCancel(ctx)
@@ -533,7 +579,7 @@ func (l *launch) clearIndexLock(ctx context.Context) {
 
 // writeStackRecord fetches the stack parent's branch so the fork point is present locally, then
 // records the stack parent and the fork point. It is not retried, since git waits out a lock on the
-// clone's config itself. A failed write returns the lease like a failed switch.
+// clone's config itself. A failed write returns a lease this launch took, like a failed switch.
 func (l *launch) writeStackRecord(ctx context.Context) (Result, bool) {
 	req := l.req
 	// The head may already be local, and the switch that follows fails loudly when it is not.
@@ -541,8 +587,8 @@ func (l *launch) writeStackRecord(ctx context.Context) (Result, bool) {
 	rec := stackrecord.Record{Parent: req.Stack.Ticket, ForkPoint: req.Stack.Head}
 	if err := stackrecord.Write(ctx, l.opts.Env, l.repo, req.Branch, rec); err != nil {
 		l.log("%v", err)
-		l.returnLease(ctx)
-		return Result{Status: StatusStackRecordFailed, Detail: fmt.Sprintf("stack record for %s failed in %s (lease returned): %v", req.Branch, l.repo, err)}, false
+		l.giveBack(ctx)
+		return Result{Status: StatusStackRecordFailed, Detail: fmt.Sprintf("stack record for %s failed in %s (%s): %v", req.Branch, l.repo, l.leaseFate(), err)}, false
 	}
 	l.stacked = true
 	return Result{}, true
@@ -604,6 +650,48 @@ func (l *launch) leaseFailure(ctx context.Context, leaseErr string) Result {
 	return Result{Status: StatusLeaseFailed, Detail: fmt.Sprintf("treehouse lease failed but the pool is not exhausted (%d of %d available, max_trees=%d; holders: %s). treehouse stderr: %s", avail, len(trees), limit, list, leaseErr)}
 }
 
+// unused reports whether the tree is as the pool handed it out, so that nothing a worker made is
+// in it: no kickoff record says a harness started here, HEAD is detached at a commit some branch
+// or remote holds, no git operation is stopped part way and no file is changed or untracked.
+func (l *launch) unused(ctx context.Context) (bool, error) {
+	head, err := l.git(ctx, l.tree, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil || strings.TrimSpace(head) != "HEAD" || l.midOperation(ctx) {
+		return false, nil
+	}
+	if ran, err := l.opts.Workers.KickoffOf(l.req.Ticket, l.req.Repo); err != nil || ran != nil {
+		return false, err
+	}
+	held, err := l.git(ctx, l.tree, "for-each-ref", "--count=1", "--contains", "HEAD")
+	if err != nil || strings.TrimSpace(held) == "" {
+		return false, nil
+	}
+	changed, err := l.git(ctx, l.tree, "status", "--porcelain")
+	return err == nil && strings.TrimSpace(changed) == "", nil
+}
+
+// midOperation reports whether git stopped part way through a rebase, merge, cherry-pick, revert
+// or bisect in the tree, which a tree fresh from the pool never has.
+func (l *launch) midOperation(ctx context.Context) bool {
+	dir, err := l.git(ctx, l.tree, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return false
+	}
+	for _, name := range []string{"rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG"} {
+		if _, err := os.Stat(filepath.Join(strings.TrimSpace(dir), name)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// leaseFate says in a failure's detail what giveBack did with the lease.
+func (l *launch) leaseFate() string {
+	if l.fresh {
+		return "lease returned"
+	}
+	return "lease kept"
+}
+
 // giveBack closes the workspace and returns the lease when this run took the
 // lease, so a failed launch holds no pool slot. Any session in the workspace
 // has not been given the kickoff yet, so closing it loses no work. A lease
@@ -623,13 +711,21 @@ func (l *launch) giveBack(ctx context.Context) {
 		return
 	}
 	l.log("returning the lease on %s", l.tree)
-	l.returnLease(ctx)
+	if !l.returnLease(ctx) {
+		return
+	}
+	// The row stays, with no tree, for the next launch to reuse.
+	if err := l.opts.Workers.ForgetTree(l.req.Ticket, l.req.Repo); err != nil && !errors.Is(err, workers.ErrNoRow) {
+		l.log("%v", err)
+	}
 }
 
-func (l *launch) returnLease(ctx context.Context) {
+func (l *launch) returnLease(ctx context.Context) bool {
 	if err := l.opts.Treehouse.Return(context.WithoutCancel(ctx), l.repo, l.tree, l.req.Ticket); err != nil {
 		l.log("while returning %s to the pool: %v", l.tree, err)
+		return false
 	}
+	return true
 }
 
 func (l *launch) openWorkspace(ctx context.Context) (Result, bool) {

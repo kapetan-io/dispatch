@@ -21,6 +21,7 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/dispatchdb"
 	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/herdr"
@@ -32,8 +33,8 @@ import (
 	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
-	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -83,8 +84,7 @@ type Options struct {
 	// Launcher starts the workers. Defaults to leasing a tree from Treehouse and
 	// starting the worker in the multiplexer.
 	Launcher launcher.Launcher
-	// Dir is the working directory of the command. It is where `dispatch launch` looks for the
-	// target repo, where ticket-hint and repo-settings find the repo they are in, what a relative
+	// Dir is the working directory of the command. It is where ticket-hint and repo-settings find the repo they are in, what a relative
 	// rules directory is relative to, and the directory every child process starts in.
 	// Defaults to the process's working directory.
 	Dir string
@@ -109,6 +109,8 @@ type Options struct {
 	// LocalLockTimeout is how long `dispatch run` waits for a local ticket database another process
 	// holds. Defaults to 5 seconds.
 	LocalLockTimeout time.Duration
+	// Database holds the test-only hooks of dispatch.db. Zero in production.
+	Database dispatchdb.Hooks
 	// LaunchTimeout is how long a launch may take before it is given up on, 25 seconds by default and
 	// not counting time spent waiting behind another launch into the same repo,
 	// and ActionTimeout how long every other action may take, 1 minute by default.
@@ -135,7 +137,6 @@ const usage = `usage: dispatch run
        dispatch ticket-hint
        dispatch repo-settings
        dispatch linear-viewer
-       dispatch launch <ticket> <branch> [--base REF] [--model NAME | --harness harness.NAME] [--kickoff TEXT] [--title TEXT]
        dispatch claude-shim [CLAUDE ARGS]
        dispatch record-stop
        dispatch record-start
@@ -218,9 +219,6 @@ const usage = `usage: dispatch run
                elsewhere
   linear-viewer  print the id and name of the Linear user who owns dispatch's API key, as one JSON
                object, found the way run finds the key
-  launch       lease a tree, open a workspace, start Claude there and type --kickoff, which
-               defaults to "/dispatch:build <ticket>". Run it from inside the repo. Prints one
-               JSON result and exits 0 only when its Claude session is running
   claude-shim  run the real claude with the plugin, the cross-session setting and, for a worker's Claude session,
                the worker flags added. Claude subcommands and print runs pass through. The claude
                shim in scripts/shims runs it
@@ -290,7 +288,7 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		case len(args) == 3:
 			return tellCommand(ctx, opts, loop.Request{Op: loop.OpTell, Ticket: args[1], Text: args[2]})
 		case len(args) == 5 && args[2] == "--turn":
-			at, err := stops.ParseTurnTime(args[3])
+			at, err := workers.ParseTurnTime(args[3])
 			if err != nil {
 				_, _ = fmt.Fprintln(opts.Stderr, usage)
 				return fmt.Errorf("tell --turn takes the time the turn ended as dispatch turn prints it, such as 2026-11-14T06:40:00.123Z, not %q", args[3])
@@ -314,8 +312,6 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		return repoSettings(ctx, opts)
 	case "linear-viewer":
 		return linearViewer(ctx, opts)
-	case "launch":
-		return launchWorker(ctx, opts, args[1:])
 	case "claude-shim":
 		return claudeShim(opts, args[1:])
 	case "wake":
@@ -500,15 +496,25 @@ func (o Options) abs(path string) string {
 
 // loadConfig reads the config, accepting the harness kinds dispatch drives.
 func loadConfig(opts Options) (config.Config, error) {
-	return config.Load(opts.ConfigPath, opts.Env, opts.Harnesses.Kinds())
+	cfg, err := config.Load(opts.ConfigPath, opts.Env, opts.Harnesses.Kinds())
+	// The local tickets live in dispatch.db, and a file at the path the key names would be ignored silently.
+	if err == nil && cfg.Plugins.Local.Path != "" {
+		return config.Config{}, fmt.Errorf("while reading config %s: [plugins.local] path is gone: move %s to %s, then remove the key",
+			opts.ConfigPath, cfg.Plugins.Local.Path, dispatchdb.Path(opts.StateDir))
+	}
+	return cfg, err
 }
 
 // sources are the tools one read goes through. The inbox is wired only while a loaded rule runs
 // over it, so an owner with no inbox rule makes no gh call for it and a failing gh login costs them nothing.
-func sources(opts Options, cfg config.Config, lin linear.Workspace, loaded *rules.Rules) world.Sources {
+func sources(opts Options, cfg config.Config, lin linear.Workspace, loaded *rules.Rules, rows *workers.Store) world.Sources {
 	src := world.Sources{
 		Linear: lin, Multiplexer: opts.Multiplexer, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
 		Env: opts.Env, StateDir: opts.StateDir, Stderr: opts.Stderr,
+	}
+	// A nil *Store assigned directly would make src.Workers a non-nil interface.
+	if rows != nil {
+		src.Workers = rows
 	}
 	src.LocalOn = cfg.Plugins.Local.On
 	if loaded.RunsOver("inbox") {

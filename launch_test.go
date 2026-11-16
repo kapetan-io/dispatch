@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -32,20 +31,14 @@ var launchEnv = map[string]string{"DISPATCH_PLUGIN_ROOT": "/plugin", "DISPATCH_L
 
 func TestLaunchStartsAWorkerTypedTheBuildKickoff(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Config: "[plugins.herdr]\nplugin_root = \"/plugin\"\n"})
 	tree := d.Trees.Pooled()
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
-	assert.True(t, strings.HasPrefix(out.raw, `{"status":"ok"`))
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, "ENG-1", out.result["ticket"])
-	assert.Equal(t, "thrawn01/eng-1", out.result["branch"])
-	assert.Equal(t, tree, out.result["worktree"])
+	assert.NoError(t, out.err)
 	assert.Equal(t, "w2", out.result["workspace"])
-	assert.Equal(t, "w2:p2", out.result["pane"])
-	assert.Equal(t, "eng-1", out.result["agent"])
-	assert.Equal(t, "/dispatch:build ENG-1", out.result["kickoff"])
 	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-1"}, d.fakes().Multiplexer.Kicked())
 	assert.Equal(t, "thrawn01/eng-1", branchIn(t, tree))
 	require.Len(t, d.fakes().Multiplexer.Started(), 1)
@@ -71,37 +64,12 @@ func TestLaunchLabelsTheTabWithTheTicketAndTitle(t *testing.T) {
 	assert.Equal(t, "ENG-1 Fix the thing", d.fakes().Multiplexer.Started()[0].Label)
 }
 
-func TestLaunchTypesTheKickoffItIsGiven(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
-	d.Trees.Pooled()
-
-	out := d.launch("ENG-1", "thrawn01/eng-1", "--model", "opus", "--kickoff", "/dispatch:design ENG-1")
-
-	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, "/dispatch:design ENG-1", out.result["kickoff"])
-	assert.Equal(t, []string{"w2:p2|/dispatch:design ENG-1"}, d.fakes().Multiplexer.Kicked())
-	require.Len(t, d.fakes().Multiplexer.Started(), 1)
-	assert.Equal(t, "opus", modelOf(d.fakes().Multiplexer.Started()[0].Program))
-}
-
-func TestLaunchStartsNewBranchesFromTheBase(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
-	tree := d.Trees.Pooled()
-	hintGit(t, d.Repo, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "second")
-	hintGit(t, d.Repo, "branch", "release", "HEAD~1")
-
-	out := d.launch("ENG-1", "thrawn01/eng-1", "--base", "release")
-
-	assert.Equal(t, "ok", out.result["status"])
-	assert.Equal(t, revParse(t, d.Repo, "release"), revParse(t, tree, "HEAD"))
-}
-
 func TestLaunchReportsAWorkerThatIsAlreadyRunning(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
+	// The lease and the session were started by hand while dispatch ran, so no worker row names them.
+	d.Tick()
 	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
 	d.fakes().Multiplexer.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: tree})
 	d.fakes().Multiplexer.AddAgent(herdr.Agent{Kind: "claude", Status: "working", PaneID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
@@ -109,8 +77,6 @@ func TestLaunchReportsAWorkerThatIsAlreadyRunning(t *testing.T) {
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "already_running", out.result["status"])
-	assert.Equal(t, "w3", out.result["workspace"])
-	assert.Equal(t, "w3:p2", out.result["pane"])
 	assert.Empty(t, d.fakes().Multiplexer.Kicked())
 	assert.Empty(t, d.fakes().Multiplexer.Started())
 	assert.Empty(t, d.fakes().Calls("treehouse", "lease"))
@@ -131,7 +97,7 @@ func TestLaunchReusesTheLeaseOfAnEarlierRun(t *testing.T) {
 	assert.False(t, d.fakes().Multiplexer.Started()[0].FreshLease)
 }
 
-func TestLaunchReportsAPoolReadThatFailsAndTheNextLaunchReusesTheLease(t *testing.T) {
+func TestLaunchWaitsOutAPoolReadThatFailsAndTheNextLaunchReusesTheLease(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
 	tree := d.Trees.Pooled()
@@ -140,7 +106,8 @@ func TestLaunchReportsAPoolReadThatFailsAndTheNextLaunchReusesTheLease(t *testin
 
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
-	assert.Equal(t, "pool_error", out.result["status"])
+	// The worker is unknown while the pool is unread, so no launch runs.
+	assert.Empty(t, out.result["status"])
 	assert.Empty(t, d.fakes().Calls("treehouse", "lease"))
 
 	out = d.launch("ENG-1", "thrawn01/eng-1")
@@ -156,53 +123,15 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name   string
-		dir    string
 		setup  func(d *Dispatch)
-		args   []string
 		status string
 		detail string
-		// expire is the deadline the clock passes while the launch runs.
-		expire string
 	}{
-		{
-			name:   "NoArguments",
-			args:   []string{},
-			status: "usage_error",
-			detail: "TICKET and BRANCH are required",
-		},
-		{
-			name:   "UnknownFlag",
-			args:   []string{"ENG-1", "b", "--nope"},
-			status: "usage_error",
-			detail: "flag provided but not defined: -nope",
-		},
-		{
-			name:   "UnknownArgument",
-			args:   []string{"ENG-1", "b", "stray"},
-			status: "usage_error",
-			detail: "unknown argument: stray",
-		},
-		{
-			name:   "NotARepo",
-			dir:    t.TempDir(),
-			args:   []string{"ENG-1", "b"},
-			status: "not_a_repo",
-			detail: "run from inside the target repo",
-		},
 		{
 			name:   "NotPooled",
 			setup:  func(d *Dispatch) { require.NoError(t, os.Remove(filepath.Join(d.Repo, "treehouse.toml"))) },
-			args:   []string{"ENG-1", "b"},
 			status: "not_pooled",
 			detail: "has no treehouse.toml",
-		},
-		{
-			name:   "HerdrUnavailable",
-			setup:  func(d *Dispatch) { d.fakes().Multiplexer.Fail(herdrtest.OpRead, errors.New("server not running")) },
-			args:   []string{"ENG-1", "b"},
-			status: "herdr_unavailable",
-			detail: "herdr server not answering: server not running",
-			expire: "launch preflight",
 		},
 		{
 			name: "PoolExhausted",
@@ -215,7 +144,6 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 					treehouse.Tree{Path: "/t/4", Status: "leased"},
 				)
 			},
-			args:   []string{"ENG-1", "b"},
 			status: "pool_exhausted",
 			detail: "all 4/4 pool trees are taken: ENG-7 (leased), ENG-8 (leased), ENG-9 (leased), ? (leased)",
 		},
@@ -224,7 +152,6 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 			setup: func(d *Dispatch) {
 				d.fakes().Treehouse.FailLease(errors.New("no tree for you"))
 			},
-			args:   []string{"ENG-1", "b"},
 			status: "lease_failed",
 			detail: "treehouse lease failed but the pool is not exhausted (1 of 1 available, max_trees=4; holders: ). treehouse stderr: no tree for you",
 		},
@@ -241,7 +168,6 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 				)
 				d.fakes().Treehouse.FailLease(errors.New("cannot create a worktree"))
 			},
-			args:   []string{"ENG-1", "b"},
 			status: "lease_failed",
 			detail: "the pool is not exhausted (0 of 3 available, max_trees=4",
 		},
@@ -250,7 +176,6 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 			setup: func(d *Dispatch) {
 				d.fakes().Treehouse.FailLease(fmt.Errorf("%w: {}", treehouse.ErrNoPath))
 			},
-			args:   []string{"ENG-1", "b"},
 			status: "pool_error",
 			detail: "lease succeeded but treehouse JSON had no path",
 		},
@@ -261,7 +186,6 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 				d.fakes().Treehouse.Clear(d.Repo)
 				d.fakes().Treehouse.Seed(d.Repo, treehouse.Tree{Path: "/t/1", Status: "leased", LeaseHolder: "ENG-7"})
 			},
-			args:   []string{"ENG-1", "b"},
 			status: "lease_failed",
 			detail: "the pool is not exhausted (0 of 1 available, max_trees=-1",
 		},
@@ -272,33 +196,15 @@ func TestLaunchReportsWhyItCouldNotStart(t *testing.T) {
 			if test.setup != nil {
 				test.setup(d)
 			}
-			dir := d.Repo
-			if test.dir != "" {
-				dir = test.dir
-			}
 
-			launched := later(func() launchOutput { return d.launchIn(dir, test.args...) })
-			if test.expire != "" {
-				d.Expire(test.expire)
-			}
-			out := launched()
+			out := d.launch("ENG-1", "b")
 
 			assert.Equal(t, test.status, out.result["status"])
-			assert.Contains(t, out.result["detail"], test.detail)
+			// A full pool's receipt holds the status alone, and the line dispatch run prints names the holders.
+			assert.Contains(t, out.result["detail"]+d.loopOut(), test.detail)
 			assert.Error(t, out.err)
 		})
 	}
-}
-
-func TestLaunchNamesTheBaseWhenANewBranchWillNotCheckOut(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
-	d.Trees.Pooled()
-
-	out := d.launch("ENG-1", "thrawn01/eng-1", "--base", "nosuch")
-
-	assert.Equal(t, "switch_failed", out.result["status"])
-	assert.Contains(t, out.result["detail"], "from nosuch")
 }
 
 func TestLaunchReturnsALeaseWhenTheBranchWillNotCheckOut(t *testing.T) {
@@ -399,7 +305,6 @@ func TestLaunchGivesBackTheLeaseWhenTheAgentWillNotStart(t *testing.T) {
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "agent_start_failed", out.result["status"])
-	assert.Equal(t, "w2:p2", out.result["pane"])
 	assert.Equal(t, []string{"w2"}, d.fakes().Multiplexer.ClosedWorkspaces())
 	assert.Equal(t, []string{d.Repo + "|" + tree + "|ENG-1"}, d.Trees.Returned())
 	assert.Empty(t, d.fakes().Multiplexer.Kicked())
@@ -416,7 +321,9 @@ func TestLaunchNamesARelaunchedWorkerApartFromItsPredecessor(t *testing.T) {
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "ok", out.result["status"])
-	assert.Regexp(t, `^eng-1-r\d+$`, out.result["agent"])
+	require.Len(t, d.fakes().Multiplexer.Kicked(), 1)
+	pane, _, _ := strings.Cut(d.fakes().Multiplexer.Kicked()[0], "|")
+	assert.Regexp(t, `^eng-1-r\d+$`, d.fakes().Multiplexer.NameOf(pane))
 }
 
 func TestLaunchClosesTheWorkspaceWhenTheKickoffNeverRuns(t *testing.T) {
@@ -500,44 +407,6 @@ func TestLaunchReportsEnterNotSentWhenHerdrRefusesTheKey(t *testing.T) {
 	assert.Equal(t, "injection_unconfirmed", out.result["status"])
 	assert.Contains(t, out.result["detail"], "could not send Enter")
 	assert.NotContains(t, out.result["detail"], "after Enter was pressed")
-}
-
-func TestLaunchExitsCleanlyOnlyWhenTheWorkerIsRunning(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
-	tree := d.Trees.Pooled()
-	ok := d.launch("ENG-1", "thrawn01/eng-1")
-	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
-
-	running := d.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "ok", ok.result["status"])
-	assert.NoError(t, ok.err)
-	assert.Equal(t, "already_running", running.result["status"])
-	assert.NoError(t, running.err)
-}
-
-func TestLaunchPutsStatusFirstInEveryResult(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
-	tree := d.Trees.Pooled()
-	d.fakes().Multiplexer.Fail(herdrtest.OpOpenWorkspace, errors.New("herdr worktree open failed"))
-
-	out := d.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "workspace_failed", out.result["status"])
-	assert.True(t, strings.HasPrefix(out.raw, `{"status":"workspace_failed"`))
-	assert.Equal(t, tree, out.result["worktree"])
-}
-
-func TestLaunchAcceptsTheNoFocusFlag(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
-	d.Trees.Pooled()
-
-	out := d.launch("ENG-1", "thrawn01/eng-1", "--no-focus")
-
-	assert.Equal(t, "ok", out.result["status"])
 }
 
 func TestLaunchChecksOutAnExistingLocalBranch(t *testing.T) {
@@ -662,20 +531,6 @@ func TestLaunchSkipsAnUnpushedCheckedOutBranchWhenChoosingTheBase(t *testing.T) 
 	assert.Equal(t, revParse(t, remote, "refs/heads/main"), revParse(t, tree, "HEAD"))
 }
 
-func TestLaunchOpensTheWorkspaceFromTheMainCheckout(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
-	tree := d.Trees.Pooled()
-	require.NoError(t, os.WriteFile(filepath.Join(tree, "treehouse.toml"), []byte("max_trees = 4\n"), 0o644))
-
-	out := d.launchIn(tree, "ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "ok", out.result["status"])
-	resolved, err := filepath.EvalSymlinks(d.Repo)
-	require.NoError(t, err)
-	assert.Equal(t, []herdr.NewWorkspace{{Repo: resolved, Path: tree, Label: "ENG-1"}}, d.fakes().Multiplexer.Opened())
-}
-
 func TestLaunchReusesAWorkspaceThatHasNoClaudePane(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
@@ -713,55 +568,6 @@ func TestTickLaunchesWithTheBuiltInLauncher(t *testing.T) {
 	assert.Equal(t, tree, d.fakes().Multiplexer.Opened()[0].Path)
 }
 
-func TestLaunchTakesFlagsBeforeAndBetweenTheTicketAndBranch(t *testing.T) {
-	t.Parallel()
-	for _, args := range [][]string{
-		{"--model", "opus", "ENG-1", "thrawn01/eng-1"},
-		{"ENG-1", "--model", "opus", "thrawn01/eng-1"},
-	} {
-		d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
-		d.Trees.Pooled()
-
-		out := d.launchIn(d.Repo, args...)
-
-		assert.Equal(t, "ok", out.result["status"])
-		assert.Equal(t, "thrawn01/eng-1", out.result["branch"])
-		require.Len(t, d.fakes().Multiplexer.Started(), 1)
-		assert.Equal(t, "opus", modelOf(d.fakes().Multiplexer.Started()[0].Program))
-	}
-}
-
-func TestLaunchGivesUpAtOnceWhenThePreflightTimeoutIsZero(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Launcher: builtinLauncher, Env: map[string]string{"DISPATCH_PLUGIN_ROOT": "/plugin", "DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT": "0"}})
-	d.Trees.Pooled()
-	d.fakes().Multiplexer.Fail(herdrtest.OpRead, errors.New("server not running"))
-
-	launched := later(func() launchOutput { return d.launch("ENG-1", "thrawn01/eng-1") })
-	assert.Equal(t, time.Nanosecond, d.Deadline("launch preflight"))
-	d.Expire("launch preflight")
-	out := launched()
-
-	assert.Equal(t, "herdr_unavailable", out.result["status"])
-	assert.Empty(t, d.fakes().Calls("treehouse", "lease"))
-}
-
-func TestLaunchRefusesAnEmptyPluginRoot(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{
-		Launcher: builtinLauncher,
-		Env:      map[string]string{"DISPATCH_PLUGIN_ROOT": "", "DISPATCH_LAUNCH_PREFLIGHT_TIMEOUT": "1"},
-		Config:   "[plugins.herdr]\nplugin_root = \"\"\n",
-	})
-	d.Trees.Pooled()
-
-	out := d.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "usage_error", out.result["status"])
-	assert.Contains(t, out.result["detail"], "no plugin root")
-	assert.Empty(t, d.fakes().Multiplexer.Started())
-}
-
 func TestTickRefusesAnEmptyPluginRoot(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Launcher: builtinLauncher, Config: "[plugins.herdr]\nplugin_root = \"\"\n"})
@@ -776,25 +582,6 @@ func TestTickRefusesAnEmptyPluginRoot(t *testing.T) {
 	require.Len(t, launched, 1)
 	assert.Equal(t, "failed", launched[0].State)
 	assert.Contains(t, launched[0].Detail, "no plugin root")
-}
-
-func TestLaunchWrapperNamesThePluginRootForTheGoLauncher(t *testing.T) {
-	t.Parallel()
-	bin := buildDispatch(t)
-	wrapper, err := filepath.Abs("bin/dispatch-launch")
-	require.NoError(t, err)
-	home := t.TempDir()
-
-	// The root check runs before any git, herdr or treehouse call, so a plain
-	// directory shows whether the wrapper set the root without touching either tool.
-	cmd := exec.Command(wrapper, "ENG-1", "thrawn01/eng-1")
-	cmd.Dir = t.TempDir()
-	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "HOME="+home, "XDG_CONFIG_HOME="+home, "DISPATCH_PLUGIN_ROOT=")
-	stdout, _ := cmd.Output()
-
-	var result map[string]string
-	require.NoError(t, json.Unmarshal(stdout, &result))
-	assert.Equal(t, "not_a_repo", result["status"])
 }
 
 func TestClaudeShimRestoresWorkerFlagsWithoutAName(t *testing.T) {
@@ -1126,19 +913,15 @@ func TestLaunchesIntoOneRepoTakeTurnsLeasing(t *testing.T) {
 	d.fakes().Treehouse.AddTree(d.Repo, second)
 	d.fakes().Treehouse.HoldLeases(100 * time.Millisecond)
 
-	var wg sync.WaitGroup
-	results := make([]launchOutput, 2)
-	for i, ticket := range []string{"ENG-1", "ENG-2"} {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			results[i] = d.launch(ticket, "thrawn01/"+strings.ToLower(ticket))
-		}()
-	}
-	wg.Wait()
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
 
-	assert.Equal(t, "ok", results[0].result["status"])
-	assert.Equal(t, "ok", results[1].result["status"])
+	d.Tick()
+
+	for _, id := range []string{"ENG-1", "ENG-2"} {
+		launched := d.receiptsOfKind(id, "launch")
+		require.Len(t, launched, 1)
+		assert.Equal(t, "done", launched[0].State)
+	}
 	assert.Equal(t, 1, d.fakes().Treehouse.PeakLeasing(d.Repo))
 }
 
@@ -1253,39 +1036,102 @@ func TestLaunchesIntoDifferentReposLeaseTogether(t *testing.T) {
 	hintGit(t, other, "worktree", "add", "-q", "--detach", otherTree)
 	d.fakes().Treehouse.AddTree(other, otherTree)
 	d.fakes().Treehouse.AwaitLeases(2)
+	d.addRepo("other", other)
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "other"))
 
-	var wg sync.WaitGroup
-	for i, dir := range []string{d.Repo, other} {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			out := d.launchIn(dir, fmt.Sprintf("ENG-%d", i+1), fmt.Sprintf("thrawn01/eng-%d", i+1))
-			assert.NoError(t, out.err)
-		}()
+	d.Tick()
+
+	for _, id := range []string{"ENG-1", "ENG-2"} {
+		launched := d.receiptsOfKind(id, "launch")
+		require.Len(t, launched, 1)
+		assert.Equal(t, "done", launched[0].State)
 	}
-	wg.Wait()
 
 	assert.Equal(t, 2, d.fakes().Treehouse.PeakLeasingAnywhere())
 }
 
+// launchRule launches every In Progress ticket that has no worker, for a test whose own rules
+// stand in for the shipped ones and which still needs a worker launched.
+const launchRule = `
+whenever({ name: "launch", each: "ticket",
+  if: (t, ctx) => t.status === "in_progress" && ctx.worker.of(t).state === "none",
+  then: (t, ctx) => ctx.worker.queueLaunch(t, { once: ["launch", t.id] }) });`
+
+// launchOutput is how one launch action ended, read from its receipt.
 type launchOutput struct {
-	raw    string
+	// result holds "status" (the receipt detail's first word, such as ok or lease_failed),
+	// "detail" (the rest), for a started worker "workspace", and for a running one "worktree",
+	// the tree its worker row names.
 	result map[string]string
-	err    error
+	// err is set unless a worker is running when the launch ends.
+	err error
 }
 
-// launch runs `dispatch launch` from the dispatch repo.
+// launch has the running dispatch launch the ticket in the dispatch repo.
 func (d *Dispatch) launch(ticket, branch string, flags ...string) launchOutput {
 	d.t.Helper()
 	return d.launchIn(d.Repo, append([]string{ticket, branch}, flags...)...)
 }
 
+// launchIn puts the ticket In Progress on the branch, in the repo whose clone is dir, and ticks, so
+// the shipped launch rule queues a launch action. It returns how that launch ended. The one flag
+// is --title, the ticket's title, which is empty without it.
 func (d *Dispatch) launchIn(dir string, args ...string) launchOutput {
 	d.t.Helper()
-	res := d.RunIn(dir, append([]string{"launch"}, args...)...)
-	out := launchOutput{raw: res.Stdout, err: res.Err}
-	require.NoError(d.t, json.Unmarshal([]byte(res.Stdout), &out.result))
+	require.GreaterOrEqual(d.t, len(args), 2)
+	issue := ticket(args[0], "In Progress", d.labelOf(dir))
+	issue.Branch, issue.Title = args[1], ""
+	switch flags := args[2:]; {
+	case len(flags) == 2 && flags[0] == "--title":
+		issue.Title = flags[1]
+	default:
+		require.Empty(d.t, flags)
+	}
+	before := len(d.launchesEnded(issue.Identifier))
+	others := slices.DeleteFunc(d.tools.Linear.Issues(), func(held fakeTicket) bool { return held.Identifier == issue.Identifier })
+	d.Linear.Tickets(append(others, issue)...)
+
+	d.Run("tick")
+
+	ended := d.launchesEnded(issue.Identifier)
+	out := launchOutput{result: map[string]string{}}
+	if len(ended) == before {
+		out.err = errors.New("no launch ran")
+		return out
+	}
+	last := ended[len(ended)-1]
+	status, detail, _ := strings.Cut(last.Detail, ": ")
+	out.result["status"], out.result["detail"] = status, detail
+	if workspace, ok := strings.CutPrefix(detail, "workspace "); ok && status == "ok" {
+		out.result["workspace"], _, _ = strings.Cut(workspace, ",")
+	}
+	if last.State != "done" {
+		out.err = errors.New("launch " + status)
+		return out
+	}
+	out.result["worktree"] = d.recordedTree(issue.Identifier)
 	return out
+}
+
+// launchesEnded is every launch of the ticket that has ended, oldest first. Receipts folds the
+// tries of one once key into one, and a launch that failed is tried again under the same key.
+func (d *Dispatch) launchesEnded(ticket string) []Receipt {
+	d.t.Helper()
+	res := d.Run("explain", ticket, "--json")
+	if res.Err != nil {
+		return nil
+	}
+	var ended []Receipt
+	for _, text := range strings.Split(res.Stdout, "\n") {
+		var line struct{ Type, Kind, State, Detail string }
+		if text == "" || json.Unmarshal([]byte(text), &line) != nil {
+			continue
+		}
+		if line.Type == "receipt" && line.Kind == "launch" && line.State != "attempted" {
+			ended = append(ended, Receipt{Kind: line.Kind, State: line.State, Detail: line.Detail})
+		}
+	}
+	return ended
 }
 
 // fakes is the herdr and treehouse fakes a launch scenario seeds and reads back.
@@ -1361,20 +1207,6 @@ func TestLaunchLeasesOnceAndTheNextLaunchSucceedsWhenTreehouseFailsOnce(t *testi
 	assert.Equal(t, 2, d.calls("treehouse", "lease"))
 }
 
-func TestLaunchReportsAPoolItCannotRead(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
-	d.Trees.Pooled()
-	d.fakes().Treehouse.FailTrees(errors.New("exit status 1 (db locked)"))
-
-	out := d.launch("ENG-1", "thrawn01/eng-1")
-
-	assert.Equal(t, "pool_error", out.result["status"])
-	assert.Contains(t, out.result["detail"], "while running treehouse status in")
-	assert.Contains(t, out.result["detail"], "db locked")
-	assert.Equal(t, 0, d.calls("treehouse", "lease"))
-}
-
 func TestLaunchSwitchesOnceAndTheNextLaunchSucceedsWhenGitRefusesTheBranchOnce(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
@@ -1412,18 +1244,6 @@ func TestLaunchReturnsATreeWithoutTheIndexLockACutOffSwitchLeft(t *testing.T) {
 	gitDir, err := exec.Command("git", "-C", tree, "rev-parse", "--absolute-git-dir").Output()
 	require.NoError(t, err)
 	assert.NoFileExists(t, filepath.Join(strings.TrimSpace(string(gitDir)), "index.lock"))
-}
-
-func TestLaunchCarriesGitsMessageWhenTheCheckoutFails(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher})
-	d.Trees.Pooled()
-
-	out := d.launch("ENG-1", "thrawn01/eng-1", "--base", "nosuch")
-
-	assert.Equal(t, "switch_failed", out.result["status"])
-	assert.Contains(t, out.result["detail"], "(lease returned): fatal: invalid reference: origin/nosuch")
-	assert.Contains(t, out.result["detail"], "invalid reference: nosuch")
 }
 
 func revParseName(t *testing.T, dir string) string {
@@ -1483,17 +1303,17 @@ func TestRecordStopFromAnotherClaudeSessionInAWorkersTreeDoesNotCountAsTheWorker
 		want  string
 		turns []string
 	}{
-		{"WorkersOwnSession", false, "💤", []string{"ENG-1: turns  of 0", "ENG-1: turns idle of 1"}},
-		{"StrangerSession", true, "🟢", []string{"ENG-1: turns  of 0"}},
+		{"WorkersOwnSession", false, "💤", []string{"ENG-1: turns unknown", "ENG-1: turns  of 0", "ENG-1: turns idle of 1"}},
+		{"StrangerSession", true, "🟢", []string{"ENG-1: turns unknown", "ENG-1: turns  of 0"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(turnsRule)})
+			d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: rule(turnsRule + launchRule)})
 			d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 			tree := d.Trees.Pooled()
 			out := d.launch("ENG-1", "thrawn01/eng-1")
 			require.Equal(t, "ok", out.result["status"])
 			session := d.fakes().Multiplexer.Started()[0].Program.Session
-			pane := out.result["pane"]
+			pane, _, _ := strings.Cut(d.fakes().Multiplexer.Kicked()[0], "|")
 			d.fakes().Multiplexer.SetStatus(pane, "idle")
 			d.StartBeforeTheEvents()
 			defer d.FromPane(pane)()

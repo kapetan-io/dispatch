@@ -10,9 +10,9 @@ import (
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
-	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/workers"
 )
 
 // worldRecord is World as history writes it. A read's errors become their text, which is
@@ -29,7 +29,7 @@ type worldRecord struct {
 	Trees           []treeRecord                       `json:"trees,omitempty"`
 	PoolErrs        map[string]string                  `json:"poolErrs,omitempty"`
 	Workers         map[string]Worker                  `json:"workers,omitempty"`
-	Stops           map[string]stops.Record            `json:"stops,omitempty"`
+	Stops           map[string]workers.Record          `json:"stops,omitempty"`
 	Sessions        map[string]sessionlog.Log          `json:"sessions,omitempty"`
 	SessionErrs     map[string]string                  `json:"sessionErrs,omitempty"`
 	LeaseHolders    []ticket.Ticket                    `json:"leaseHolders,omitempty"`
@@ -58,6 +58,10 @@ type worldRecord struct {
 	InboxReadAt time.Time         `json:"inboxReadAt,omitzero"`
 	Remotes     map[string]string `json:"remotes,omitempty"`
 	RemoteErrs  map[string]string `json:"remoteErrs,omitempty"`
+	// Rows and Recorded are absent from history written before dispatch kept worker rows, and a
+	// replay of it finds a worker by its lease, as that dispatch did.
+	Rows     workers.Snapshot `json:"rows,omitempty"`
+	Recorded bool             `json:"recorded,omitempty"`
 }
 
 // treeRecord adds the clone directory that treehouse.Tree's own JSON leaves out.
@@ -77,6 +81,7 @@ func (w World) MarshalJSON() ([]byte, error) {
 		StackRecords: w.StackRecords, StackErrs: errTexts(w.StackErrs),
 		Inbox: w.Inbox, InboxErr: errText(w.InboxErr), InboxReadAt: w.InboxReadAt,
 		Remotes: w.Remotes, RemoteErrs: errTexts(w.RemoteErrs),
+		Rows: w.Rows, Recorded: w.Recorded,
 	}
 	for _, t := range w.Trees {
 		r.Trees = append(r.Trees, treeRecord{Tree: t, RepoDir: t.RepoDir})
@@ -99,6 +104,7 @@ func (w *World) UnmarshalJSON(b []byte) error {
 		StackRecords: r.StackRecords, StackErrs: asErrors(r.StackErrs),
 		Inbox: r.Inbox, InboxErr: asError(r.InboxErr), InboxReadAt: r.InboxReadAt,
 		Remotes: r.Remotes, RemoteErrs: asErrors(r.RemoteErrs),
+		Rows: r.Rows, Recorded: r.Recorded,
 	}
 	for _, t := range r.Trees {
 		t.Tree.RepoDir = t.RepoDir

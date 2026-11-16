@@ -14,8 +14,8 @@ import (
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
-	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/ticket"
+	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -405,7 +405,7 @@ func FromWorld(w world.World, cfg config.Config, led *ledger.Ledger, viewer stri
 			if i > 0 {
 				id += "@" + wk.TreePath
 			}
-			s.workerRecord(w, id, wk, stops.Record{}, unreadSession(sessionNotRead))
+			s.workerRecord(w, id, wk, workers.Record{}, unreadSession(sessionNotRead))
 		}
 	}
 	for holder := range w.Leased {
@@ -441,13 +441,13 @@ func (s *State) unreadReason(id string) string {
 func (s *State) addIdleWorkers(w world.World) {
 	for _, t := range slices.Clone(s.kinds["ticket"]) {
 		if _, ok := s.workers[t.id]; !ok {
-			s.workerRecord(w, t.id, world.Worker{State: world.NoWorker}, stops.Record{}, unreadSession(noWorkerSession))
+			s.workerRecord(w, t.id, world.Worker{State: world.NoWorker}, workers.Record{}, unreadSession(noWorkerSession))
 			s.workers[t.id].hidden = true
 		}
 	}
 	for _, tree := range slices.Clone(s.kinds["tree"]) {
 		if _, ok := s.workersByTree[tree.id]; !ok {
-			s.workerRecord(w, "tree:"+tree.id, world.Worker{State: world.NoWorker, TreePath: tree.id}, stops.Record{}, unreadSession(noWorkerSession))
+			s.workerRecord(w, "tree:"+tree.id, world.Worker{State: world.NoWorker, TreePath: tree.id}, workers.Record{}, unreadSession(noWorkerSession))
 			s.workersByTree[tree.id].hidden = true
 		}
 	}
@@ -516,7 +516,7 @@ func (s *State) sessionOf(w world.World, ticket string) sessionFacts {
 	return sessionFacts{commands: Known(commands, at), turns: Known(turns, at), log: log}
 }
 
-func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop stops.Record, session sessionFacts) {
+func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop workers.Record, session sessionFacts) {
 	at := s.ms()
 	subject := strings.SplitN(id, "@", 2)[0]
 	rec := &Worker{

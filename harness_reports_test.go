@@ -123,6 +123,8 @@ func TestLaunchReportsAWorkerWhoseSessionIsOfARegisteredHarnessKind(t *testing.T
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, FakeHarness: true})
 	tree := d.Trees.Pooled()
+	// The lease and the session were started by hand while dispatch ran, so no worker row names them.
+	d.Tick()
 	d.fakes().Treehouse.MoveLease(tree, "ENG-1")
 	d.fakes().Multiplexer.AddWorkspace(herdr.Workspace{ID: "w3", CheckoutPath: tree})
 	d.fakes().Multiplexer.AddAgent(herdr.Agent{Kind: "fake", Status: "working", PaneID: "w3:p2", TabID: "w3:t1", WorkspaceID: "w3"})
@@ -130,7 +132,6 @@ func TestLaunchReportsAWorkerWhoseSessionIsOfARegisteredHarnessKind(t *testing.T
 	out := d.launch("ENG-1", "thrawn01/eng-1")
 
 	assert.Equal(t, "already_running", out.result["status"])
-	assert.Equal(t, "w3:p2", out.result["pane"])
 	assert.Empty(t, d.fakes().Multiplexer.Started())
 }
 

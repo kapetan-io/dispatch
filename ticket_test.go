@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	bolt "go.etcd.io/bbolt"
 
 	"github.com/kapetan-io/dispatch"
 	tkt "github.com/kapetan-io/dispatch/internal/ticket"
@@ -273,18 +274,16 @@ func TestTicketShowNamesWhoFiledItAndAnEditNeverChangesIt(t *testing.T) {
 	assert.Contains(t, d.ticketOut("show", "LOC-1"), "filed by    you\n")
 }
 
-func TestLocalTicketsWriteTheDatabaseToTheConfiguredPath(t *testing.T) {
+func TestRunRefusesThePathKeyAndSaysWhereTheFileGoes(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "elsewhere", "tickets.db")
 	d := newDispatch(t, dispatchOptions{Config: "[plugins.local]\npath = " + `"` + path + `"` + "\n"})
-	d.StartBeforeTheEvents()
 
-	d.ticketOut("create", "local", "--repo", "dispatch", "--title", "t")
+	err := d.startLoop(dispatch.Options{})
 
-	info, err := os.Stat(path)
-	require.NoError(t, err)
-	assert.Equal(t, "-rw-------", info.Mode().String())
-	assert.NoFileExists(t, filepath.Join(d.state, "tickets.db"))
+	require.ErrorContains(t, err, "[plugins.local] path is gone: move "+path+" to "+filepath.Join(d.state, "dispatch.db")+", then remove the key")
+	assert.NoFileExists(t, path)
+	assert.NoFileExists(t, filepath.Join(d.state, "dispatch.db"))
 }
 
 func TestLocalTicketsRefuseAnUnknownKeyInThePluginTable(t *testing.T) {
@@ -296,36 +295,39 @@ func TestLocalTicketsRefuseAnUnknownKeyInThePluginTable(t *testing.T) {
 	require.ErrorContains(t, err, "unknown setting plugins.local.statuses")
 }
 
-func TestRunMakesNoDatabaseWithoutThePluginTable(t *testing.T) {
+func TestRunKeepsNoLocalTicketsWithoutThePluginTable(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
 	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
 	d.StartBeforeTheEvents()
 
 	d.Tick()
+	d.Stop()
 
+	// dispatch.db holds the worker rows, and nothing of a local ticket.
 	assert.NoFileExists(t, filepath.Join(d.state, "tickets.db"))
-	entries, err := os.ReadDir(d.state)
-	require.NoError(t, err)
-	for _, e := range entries {
-		assert.NotContains(t, e.Name(), ".db")
+	for key := range d.databaseContents() {
+		bucket, _, _ := strings.Cut(key, "/")
+		assert.NotContains(t, []string{"statuses", "tickets", "comments"}, bucket)
 	}
 }
 
-func TestRunStopsAtStartWhenAnotherRunHoldsTheDatabase(t *testing.T) {
+func TestRunStopsAtStartWhenAnotherProcessHoldsTheDatabase(t *testing.T) {
 	t.Parallel()
-	shared := "[plugins.local]\npath = \"" + filepath.Join(t.TempDir(), "shared.db") + "\"\n"
-	first := newDispatch(t, dispatchOptions{Config: shared})
-	first.StartBeforeTheEvents()
-	second := newDispatch(t, dispatchOptions{Config: shared})
+	d := localDispatch(t)
+	d.ticketOut("statuses")
+	d.Stop()
+	// Another program has the file open, which dispatch.lock does not stop.
+	held, err := bolt.Open(d.databasePath(), 0o600, nil)
+	require.NoError(t, err)
+	defer func() { _ = held.Close() }()
 
 	began := time.Now()
-	err := second.startLoop(dispatch.Options{LocalLockTimeout: 200 * time.Millisecond})
+	err = d.startLoop(dispatch.Options{LocalLockTimeout: 200 * time.Millisecond})
 
-	require.ErrorContains(t, err, "shared.db")
+	require.ErrorContains(t, err, "dispatch.db")
 	require.ErrorContains(t, err, "held by another process")
 	assert.Less(t, time.Since(began), 10*time.Second)
-	assert.Contains(t, first.ticketOut("statuses"), "Backlog")
 }
 
 func TestRunStopsAtStartWhenTheDatabaseWouldReuseAnId(t *testing.T) {
@@ -336,12 +338,12 @@ func TestRunStopsAtStartWhenTheDatabaseWouldReuseAnId(t *testing.T) {
 	// A restart writes a segment header that records the highest id issued.
 	d.Restart()
 	d.Stop()
-	require.NoError(t, os.Remove(filepath.Join(d.state, "tickets.db")))
+	require.NoError(t, os.Remove(filepath.Join(d.state, "dispatch.db")))
 
 	err := d.startLoop(dispatch.Options{})
 
 	require.ErrorContains(t, err, "LOC-2")
-	require.ErrorContains(t, err, filepath.Join(d.state, "tickets.db"))
+	require.ErrorContains(t, err, filepath.Join(d.state, "dispatch.db"))
 }
 
 func TestRunStartsOnAFileWhoseNumbersAreAheadOfHistory(t *testing.T) {

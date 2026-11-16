@@ -13,6 +13,7 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/dispatchdb"
 	"github.com/kapetan-io/dispatch/internal/executor"
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
@@ -22,6 +23,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/startscreen"
 	"github.com/kapetan-io/dispatch/internal/typed"
+	"github.com/kapetan-io/dispatch/internal/workers"
 )
 
 // Clock is the loop's timers, the deadlines on the work dispatch starts, and the ingest time
@@ -128,20 +130,27 @@ func runCommand(ctx context.Context, opts Options) error {
 	if err != nil {
 		_, _ = fmt.Fprintf(opts.Stderr, "dispatch: while asking Linear who owns the key: %v\n", err)
 	}
+	// The database opens before anything acts, so a file dispatch cannot use stops the start.
+	file, err := dispatchdb.Open(dispatchdb.Options{StateDir: opts.StateDir, LockTimeout: opts.LocalLockTimeout, Warn: opts.Stderr, Hooks: opts.Database})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+	rows := workers.New(file)
 	services := servicesFor(opts, cfg)
 	sent := &typed.Log{}
-	local := localOptions(opts, cfg)
+	local := localOptions(opts, cfg, file)
 	exec := executor.New(executor.Env{
 		Config: cfg, Systems: executor.Systems{Linear: linear.System{
 			Workspace: func() linear.Workspace { return lin }, AILabel: cfg.Plugins.Linear.AILabel, Teams: cfg.Plugins.Linear.Teams, Statuses: cfg.Plugins.Linear.Statuses.Table(),
 		}}, Multiplexer: opts.Multiplexer, Treehouse: opts.Treehouse,
-		PullRequests: opts.PullRequests, Launcher: launcherFor(opts, cfg.Plugins.PluginRoot(), nil, sent), Harnesses: opts.Harnesses, Followers: opts.Followers,
+		PullRequests: opts.PullRequests, Launcher: launcherFor(opts, cfg.Plugins.PluginRoot(), rows, sent), Harnesses: opts.Harnesses, Followers: opts.Followers,
 		Environment: opts.Env, StateDir: opts.StateDir, Stderr: opts.Stderr, LaunchDeadline: opts.LaunchTimeout, Deadline: opts.ActionTimeout,
-		HTTP: services, Typed: sent, Clock: opts.Clock,
+		HTTP: services, Typed: sent, Clock: opts.Clock, Workers: rows,
 	})
 	return loop.New(loop.Options{
 		Config: cfg, ConfigText: string(text), StateDir: opts.StateDir, Rules: loaded, Clock: opts.Clock,
-		Sources:  sources(opts, cfg, lin, loaded),
+		Sources: sources(opts, cfg, lin, loaded, rows), Workers: rows,
 		Executor: exec, Typed: sent, HTTP: services, Multiplexer: opts.Multiplexer, Usage: lin.Usage,
 		Viewer: viewer.Name, Out: opts.Stdout, Err: opts.Stderr, Local: local, Screen: screen,
 	}).Run(ctx)

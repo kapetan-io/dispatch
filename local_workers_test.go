@@ -224,7 +224,7 @@ func TestTickKeepsWorkingOnLinearTicketsWhileLocalTicketsCannotBeRead(t *testing
 // dispatch could, so the next read of local tickets fails.
 func (d *Dispatch) corruptLocalDatabase() {
 	d.t.Helper()
-	path := filepath.Join(d.state, "tickets.db")
+	path := filepath.Join(d.state, "dispatch.db")
 	raw, err := os.ReadFile(path)
 	require.NoError(d.t, err)
 	file, err := os.OpenFile(path, os.O_WRONLY, 0)

@@ -16,6 +16,9 @@ func (h *Multiplexer) OpenWorkspace(ctx context.Context, w herdr.NewWorkspace) (
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	if err := h.killed(); err != nil {
+		return "", err
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if err := h.failures[OpOpenWorkspace]; err != nil {
@@ -51,6 +54,9 @@ func (h *Multiplexer) StartWorker(ctx context.Context, w herdr.Worker) (herdr.St
 	if err := ctx.Err(); err != nil {
 		return herdr.Started{}, err
 	}
+	if err := h.killed(); err != nil {
+		return herdr.Started{}, err
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.workspaceAt(w.Workspace) < 0 {
@@ -80,12 +86,15 @@ func (h *Multiplexer) StartWorker(ctx context.Context, w herdr.Worker) (herdr.St
 	h.agents = append(h.agents, herdr.Agent{Kind: w.Program.AgentKind, Status: "idle", PaneID: pane, TabID: tab, WorkspaceID: w.Workspace, Session: w.Program.Session})
 	h.names[pane] = name
 	h.workers = append(h.workers, w)
-	return herdr.Started{Pane: pane, Agent: name}, nil
+	return herdr.Started{Pane: pane, Agent: name, Session: w.Program.Session}, nil
 }
 
 func (h *Multiplexer) Kickoff(ctx context.Context, pane, text string, startup herdr.Startup) error {
 	h.journal.Record("herdr", "kickoff", pane, text)
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := h.killed(); err != nil {
 		return err
 	}
 	h.mu.Lock()

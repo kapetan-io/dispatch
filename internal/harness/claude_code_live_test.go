@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kapetan-io/dispatch"
+	"github.com/kapetan-io/dispatch/internal/dispatchdb"
 	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/herdr"
@@ -30,13 +31,20 @@ import (
 	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/kapetan-io/dispatch/internal/pullrequesttest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
-	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/workers"
 )
 
 const turnTimeout = 3 * time.Minute
 
 // backgroundTask is the sleep the Stop scenario starts in the background.
 const backgroundTask = "sleep 601"
+
+// liveTicket holds the lease on the worker's tree. Dispatch stores a session's Stop only in the
+// worker row naming its tree, and no launch inside `dispatch run` makes that row here, because the
+// test starts the worker itself. The first pool read of a fresh state directory makes one for
+// every tree leased to a ticket id.
+const liveTicket = "LIVE-1"
 
 // liveWorker is a real Claude Code started the way dispatch starts a worker on the Herdr app host,
 // in a first-run folder. The app host runs the program directly, so no shell command line sits above
@@ -52,6 +60,9 @@ type liveWorker struct {
 	seenSession string
 	state       string
 	program     herdr.Program
+	// rows is the worker rows in the dispatch.db the running dispatch opened. Only one process may
+	// open the file, and no dispatch command prints a Stop record's fields or a closing message's transcript.
+	rows *workers.Store
 }
 
 // hookCall is one run of a plugin hook: the dispatch subcommand it ran and the input Claude Code gave it.
@@ -142,10 +153,12 @@ func startLiveWorker(t *testing.T) *liveWorker {
 
 	loopCtx, stop := context.WithCancel(ctx)
 	done := make(chan error, 1)
+	opened := make(chan *dispatchdb.File, 1)
 	go func() {
 		done <- dispatch.Run(loopCtx, []string{"run"}, dispatch.Options{
 			ConfigPath: config, StateDir: w.state, Multiplexer: w.core, LinearKey: lineartest.Key, Linear: lineartest.New(nil).Connect,
 			PullRequests: pullrequesttest.New(&journal.Journal{}), Stdout: os.Stderr, Stderr: os.Stderr,
+			Database: dispatchdb.Hooks{Opened: func(file *dispatchdb.File) { opened <- file }},
 		})
 	}()
 	t.Cleanup(func() {
@@ -156,6 +169,7 @@ func startLiveWorker(t *testing.T) *liveWorker {
 		resp, err := loop.Ask(ctx, w.state, loop.Request{Op: loop.OpIdle})
 		return err == nil && !resp.Busy
 	}, 30*time.Second, 50*time.Millisecond)
+	w.rows = workers.New(<-opened)
 
 	space, err := w.core.OpenWorkspace(ctx, herdr.NewWorkspace{Path: w.cwd})
 	require.NoError(t, err)
@@ -274,6 +288,15 @@ func (w *liveWorker) typeLine(t *testing.T, text string) {
 	w.session.Run(t, "send", w.pane, text)
 }
 
+// row is the worker row naming the worker's tree, with its Stop records and closing messages.
+// It is empty until the first pool read made it.
+func (w *liveWorker) row(t *testing.T) workers.Worker {
+	t.Helper()
+	row, _, err := w.rows.OnTree(w.cwd)
+	require.NoError(t, err)
+	return row
+}
+
 func (w *liveWorker) screen(t *testing.T) string {
 	t.Helper()
 	return w.session.Run(t, "read", w.pane)
@@ -323,18 +346,18 @@ func TestClaudeCodeStopHookCarriesTheSessionTheTreeAndTheBackgroundTasks(t *test
 	assert.Equal(t, 0, stop.Running)
 
 	// dispatch's own record of that Stop is what the worker's label reads.
-	var record stops.Record
+	var record workers.Record
 	require.True(t, poll(10*time.Second, func() bool {
 		var found bool
-		record, found = stops.Read(w.state, w.cwd, w.id)
+		record, found = w.row(t).Stop(w.id)
 		return found
 	}))
 	assert.True(t, record.Reported)
 	assert.False(t, record.Busy(time.Now()))
 
-	// The same Stop left the closing message beside the session's log, with the transcript path the
+	// The same Stop left the closing message in the worker row, with the transcript path the
 	// harness reads to tell whether the session took a message after it.
-	closing, found := stops.ReadClosing(w.state, w.cwd, w.id, record.At.UnixMilli())
+	closing, found := w.row(t).ClosingAt(w.id, record.At.UnixMilli())
 	require.True(t, found)
 	assert.Equal(t, stop.Message, closing.Message)
 	assert.NotEmpty(t, closing.Transcript)
@@ -346,11 +369,11 @@ func TestClaudeCodeStopHookCarriesTheSessionTheTreeAndTheBackgroundTasks(t *test
 	assert.Equal(t, 1, stop.Running)
 	require.True(t, poll(10*time.Second, func() bool {
 		var found bool
-		record, found = stops.Read(w.state, w.cwd, w.id)
+		record, found = w.row(t).Stop(w.id)
 		return found && record.Running == 1
 	}))
 	assert.True(t, record.Busy(time.Now()))
-	closing, found = stops.ReadClosing(w.state, w.cwd, w.id, record.At.UnixMilli())
+	closing, found = w.row(t).ClosingAt(w.id, record.At.UnixMilli())
 	require.True(t, found)
 	assert.Equal(t, stop.Message, closing.Message)
 	assert.Contains(t, strings.ToLower(closing.Message), "started")
@@ -362,13 +385,14 @@ func TestClaudeCodeStopHookCarriesTheSessionTheTreeAndTheBackgroundTasks(t *test
 func TestClaudeCodeTakesATypedAndADeliveredMessageAsMessagesAfterTheStop(t *testing.T) {
 	w := startLiveWorker(t)
 	claude := harness.ClaudeCode{Sessions: harness.SessionsDir(environment.Process())}
-	var closing stops.Closing
+	var closing workers.Closing
 	require.True(t, poll(time.Minute, func() bool {
-		record, found := stops.Read(w.state, w.cwd, w.id)
+		row := w.row(t)
+		record, found := row.Stop(w.id)
 		if !found {
 			return false
 		}
-		closing, found = stops.ReadClosing(w.state, w.cwd, w.id, record.At.UnixMilli())
+		closing, found = row.ClosingAt(w.id, record.At.UnixMilli())
 		return found
 	}))
 	took, err := claude.TookMessageAfter(closing.Transcript, closing.At)
@@ -455,6 +479,38 @@ func TestClaudeCodeTakesAMessageWrittenToItsMessagingSocket(t *testing.T) {
 	assert.Contains(t, got.field("prompt"), "dispatch event: reply with the word received.")
 }
 
+// TestClaudeCodeResumedWithASessionIdReportsItsStopUnderThatId fails when a Claude started with
+// `--resume <id>` reports its Stop under another session id. The worker row's kickoff record holds
+// the id dispatch chose at the launch, so a resumed worker's Stop must carry the same one.
+func TestClaudeCodeResumedWithASessionIdReportsItsStopUnderThatId(t *testing.T) {
+	w := startLiveWorker(t)
+	ctx := context.Background()
+	first := w.await(t, "record-stop", "Stop", 0, turnTimeout).field("session_id")
+	require.NotEmpty(t, first)
+
+	// A core restart ends the worker's terminal with reason server_stop, the one loss StartWorker resumes from.
+	w.session.Restart(t)
+	require.True(t, poll(10*time.Second, func() bool {
+		_, found, err := w.core.AgentAt(ctx, w.pane)
+		return err == nil && !found
+	}))
+	before := w.count(t, "record-stop", "Stop")
+	plugin, err := filepath.Abs("../..")
+	require.NoError(t, err)
+	space, err := w.core.OpenWorkspace(ctx, herdr.NewWorkspace{Path: w.cwd})
+	require.NoError(t, err)
+	started, err := w.core.StartWorker(ctx, herdr.Worker{Workspace: space, Dir: w.cwd, Label: "live", Name: "live", PluginRoot: plugin, Program: w.program})
+	require.NoError(t, err)
+	w.pane = started.Pane
+	require.NoError(t, w.core.Kickoff(ctx, w.pane, "Reply with the word resumed.", w.program.Startup))
+
+	second := w.await(t, "record-stop", "Stop", before, turnTimeout)
+	// The resumed Claude is still running, with the flag and the id on its command line.
+	require.NoError(t, exec.Command("pgrep", "-f", "--", "--resume "+first).Run())
+	assert.Equal(t, first, second.field("session_id"))
+	assert.Equal(t, w.cwd, second.field("cwd"))
+}
+
 // launcherState names what the maintainer's claude launcher points at, or its size and time when it is a file.
 func launcherState(path string) string {
 	if target, err := os.Readlink(path); err == nil {
@@ -477,26 +533,42 @@ func gone(pattern string) bool {
 	})
 }
 
-// fixedCheckout returns the same repo and linked tree on every run. Claude records trust per folder
-// in the real ~/.claude.json, so a fresh folder per run would add an entry each time. The run's
-// transcripts go when the test ends.
+// fixedCheckout returns the same repo on every run, and the tree of its treehouse pool that
+// liveTicket leases and never returns. Claude records trust per folder in the real ~/.claude.json,
+// so a fresh folder per run would add an entry each time. The run's transcripts go when the test
+// ends. It points TREEHOUSE_ROOT at the repo's pool, which the dispatch under test reads too.
 func fixedCheckout(t *testing.T) (repo, tree string) {
 	t.Helper()
 	base, err := filepath.EvalSymlinks(os.TempDir())
 	require.NoError(t, err)
 	root := filepath.Join(base, "dispatch-claude-live")
-	repo, tree = filepath.Join(root, "repo"), filepath.Join(root, "tree")
-	if _, err := os.Stat(tree); err != nil {
+	repo = filepath.Join(root, "repo")
+	t.Setenv("TREEHOUSE_ROOT", filepath.Join(root, "pool"))
+	if _, err := os.Stat(filepath.Join(repo, "treehouse.toml")); err != nil {
 		require.NoError(t, os.RemoveAll(root))
+		require.NoError(t, os.MkdirAll(repo, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(repo, "treehouse.toml"), []byte("max_trees = 1\n"), 0o644))
 		for _, args := range [][]string{
-			{"init", "-q", "-b", "main", repo},
+			{"-C", repo, "init", "-q", "-b", "main"},
 			{"-C", repo, "-c", "user.name=drift", "-c", "user.email=drift@example.com", "commit", "-q", "--allow-empty", "-m", "init"},
-			{"-C", repo, "worktree", "add", "-q", "--detach", tree},
 		} {
 			out, err := exec.Command("git", args...).CombinedOutput()
 			t.Log(string(out))
 			require.NoError(t, err)
 		}
+	}
+	pool := treehouse.NewCLI("treehouse").WithEnv(environment.Process())
+	trees, err := pool.Trees(context.Background(), repo)
+	require.NoError(t, err)
+	for _, held := range trees {
+		if held.LeaseHolder == liveTicket {
+			tree = held.Path
+		}
+	}
+	if tree == "" {
+		leased, err := pool.Lease(context.Background(), repo, liveTicket)
+		require.NoError(t, err)
+		tree = leased.Path
 	}
 	home, err := os.UserHomeDir()
 	require.NoError(t, err)
