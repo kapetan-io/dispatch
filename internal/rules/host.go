@@ -63,8 +63,29 @@ type ruleDef struct {
 	shadow      bool
 	// file is where the rule was defined, for messages.
 	order int
-	// exempts names the rules an exemption switches off.
+	// An exemption names either the rules it switches off (exempts) or the actions it takes away
+	// whichever rule wants them (actions). Both are empty for a rule.
 	exempts []string
+	actions []actionMatch
+}
+
+// actionMatch is one entry of an exemption's actions: an action's receipt name, and the topic
+// of its once key when the entry gives one.
+type actionMatch struct {
+	kind, topic string
+}
+
+// matches reports whether w is the action the entry names.
+func (m actionMatch) matches(w Want) bool {
+	return w.Receipt == m.kind && (m.topic == "" || len(w.Once) > 0 && w.Once[0] == m.topic)
+}
+
+// String writes the entry as rules check lists it, such as "escalate (pr-ignored)".
+func (m actionMatch) String() string {
+	if m.topic == "" {
+		return m.kind
+	}
+	return m.kind + " (" + m.topic + ")"
 }
 
 func (d *ruleDef) isEvent() bool { return d.event != "" }
@@ -122,15 +143,20 @@ func (r *Rules) Exemptions() []ExemptionInfo {
 	out := make([]ExemptionInfo, len(r.exemptions))
 	for i, d := range r.exemptions {
 		out[i] = ExemptionInfo{Name: d.name, Each: d.each, Rules: d.exempts}
+		for _, a := range d.actions {
+			out[i].Actions = append(out[i].Actions, a.String())
+		}
 	}
 	return out
 }
 
-// ExemptionInfo describes one loaded exemption.
+// ExemptionInfo describes one loaded exemption. It names either rules or actions.
 type ExemptionInfo struct {
 	Name  string
 	Each  string
 	Rules []string
+	// Actions lists the actions it takes away, such as "nudge" or "escalate (pr-ignored)".
+	Actions []string
 }
 
 // LoadError is a rule file that can't be loaded. It stops the start.
@@ -371,7 +397,7 @@ func (reg *registry) taken(name string) bool {
 	return slices.ContainsFunc(reg.defs, byName) || slices.ContainsFunc(reg.exemptions, byName)
 }
 
-// registerExemption records an exempt declaration, which has an if and the names of the rules it covers.
+// registerExemption records an exempt declaration, which has an if and names either the rules it stops or the actions it takes away.
 func (reg *registry) registerExemption(obj *sobek.Object, str func(string) string) {
 	name := str("name")
 	def := &ruleDef{name: name, each: str("each"), event: str("event"), order: len(reg.exemptions)}
@@ -382,7 +408,7 @@ func (reg *registry) registerExemption(obj *sobek.Object, str func(string) strin
 	}
 	switch {
 	case def.event != "":
-		reg.problem("%s: exempt takes each, not event, because it covers whenever rules only. Use each", label)
+		reg.problem("%s: exempt takes each, not event. Use each", label)
 	case def.each == "":
 		reg.problem("%s: exempt needs each, one of %s", label, strings.Join(kindNames(), ", "))
 	default:
@@ -393,24 +419,19 @@ func (reg *registry) registerExemption(obj *sobek.Object, str func(string) strin
 	if v := obj.Get("then"); v != nil && !sobek.IsUndefined(v) {
 		reg.problem("%s: exempt takes no then, because it only takes away what rules want", label)
 	}
-	var listed any
-	if v := obj.Get("rules"); v != nil {
-		listed = v.Export()
+	given := func(key string) bool {
+		v := obj.Get(key)
+		return v != nil && !sobek.IsUndefined(v) && !sobek.IsNull(v)
 	}
-	switch names := listed.(type) {
-	case []any:
-		for _, n := range names {
-			if s, ok := n.(string); ok {
-				def.exempts = append(def.exempts, s)
-				continue
-			}
-			reg.problem("%s: rules must be strings, the names of whenever rules", label)
-		}
+	switch {
+	case given("rules") && given("actions"):
+		reg.problem("%s: exempt takes rules or actions, not both. Write two exemptions", label)
+	case given("actions"):
+		reg.exemptActions(def, label, obj.Get("actions"))
+	case given("rules"):
+		reg.exemptRules(def, label, obj.Get("rules"))
 	default:
-		reg.problem("%s: rules must be a list of rule names", label)
-	}
-	if len(def.exempts) == 0 {
-		reg.problem("%s: rules is empty. List the whenever rules it covers", label)
+		reg.problem("%s: rules must be a list of rule names, or actions a list of action names. Give one of them", label)
 	}
 	fn, ok := sobek.AssertFunction(obj.Get(phaseIf))
 	if !ok {
@@ -424,6 +445,74 @@ func (reg *registry) registerExemption(obj *sobek.Object, str func(string) strin
 		reg.fns[name] = ruleFns{ifFn: fn}
 	}
 	reg.exemptions = append(reg.exemptions, def)
+}
+
+// exemptRules reads the rules form of an exemption, the names of the whenever rules it stops.
+func (reg *registry) exemptRules(def *ruleDef, label string, v sobek.Value) {
+	names, ok := v.Export().([]any)
+	if !ok {
+		reg.problem("%s: rules must be a list of rule names", label)
+		return
+	}
+	for _, n := range names {
+		if s, ok := n.(string); ok {
+			def.exempts = append(def.exempts, s)
+			continue
+		}
+		reg.problem("%s: rules must be strings, the names of whenever rules", label)
+	}
+	if len(def.exempts) == 0 {
+		reg.problem("%s: rules is empty. List the whenever rules it covers", label)
+	}
+}
+
+// exemptActions reads the actions form of an exemption, each entry an action's receipt name or { kind, topic }.
+func (reg *registry) exemptActions(def *ruleDef, label string, v sobek.Value) {
+	if def.each != "" && def.each != "ticket" {
+		reg.problem("%s: exempt with actions takes each: \"ticket\", because a want is about a ticket", label)
+	}
+	shape := fmt.Sprintf("%s: actions must be a list of action names such as \"nudge\", or { kind, topic } such as { kind: \"escalate\", topic: \"pr-ignored\" }", label)
+	entries, ok := v.Export().([]any)
+	if !ok {
+		reg.problem("%s", shape)
+		return
+	}
+	if len(entries) == 0 {
+		reg.problem("%s: actions is empty. List the actions it takes away", label)
+		return
+	}
+	for _, e := range entries {
+		var m actionMatch
+		switch e := e.(type) {
+		case string:
+			m.kind = e
+		case map[string]any:
+			kind, _ := e["kind"].(string)
+			topic, _ := e["topic"].(string)
+			if kind == "" || topic == "" || len(e) != 2 {
+				reg.problem("%s", shape)
+				continue
+			}
+			m = actionMatch{kind: kind, topic: topic}
+		default:
+			reg.problem("%s", shape)
+			continue
+		}
+		if !slices.ContainsFunc(Actions, func(a ActionSpec) bool { return a.Receipt == m.kind }) {
+			reg.problem("%s: there is no action %q. The actions are %s", label, m.kind, strings.Join(actionNames(), ", "))
+			continue
+		}
+		def.actions = append(def.actions, m)
+	}
+}
+
+// actionNames lists the name of every action a rule can queue.
+func actionNames() []string {
+	names := make([]string, len(Actions))
+	for i, a := range Actions {
+		names[i] = a.Receipt
+	}
+	return names
 }
 
 // checkExemptions reports each exemption that names a rule it can't cover, once every file has registered.

@@ -67,6 +67,7 @@ func Declarations(rules config.Rules) string {
 		fmt.Fprintf(&b, "  export interface %s {\n%s  }\n", e.TS, indentFields(structFields(e.Type, false), "    "))
 	}
 	b.WriteString("  /** The kinds of record a whenever rule can run over, as each names them. */\n  export type RecordKind = " + joinQuoted(kindNames()) + ";\n")
+	b.WriteString("  /** The actions a rule can queue, by the name their receipts carry. */\n  export type ActionKind = " + joinQuoted(actionNames()) + ";\n")
 	b.WriteString("  /** The record type of each kind. */\n  export interface RecordMap {\n")
 	for _, k := range Kinds {
 		fmt.Fprintf(&b, "    %q: %s;\n", k.Name, k.TS)
@@ -218,6 +219,14 @@ const staticDeclarations = `  /** What makes an action run once: the topic and t
     each: K;
     rules: string[];
     if: (record: RecordOf<K>, ctx: Ctx) => boolean;
+  }): void;
+  /** No rule's want of a listed action about a ticket its if is true of goes through, whichever rule queued it, and neither does a later step of the same then that waits on one. A want about a PR is about its ticket. An entry is an action's receipt name, or { kind, topic } where topic is the first element of the want's once key. It runs after the rules' then, so their reads and HTTP calls still happen. A read that is unknown holds the wants, or drops an on rule's.
+   * Use it to take a kind of action away for a class of tickets, including from rules written later, such as no nudge and no merge while a worker waits for the user. */
+  export function exempt(exemption: {
+    name: string;
+    each: "ticket";
+    actions: (ActionKind | { kind: ActionKind; topic: string })[];
+    if: (record: Ticket, ctx: Ctx) => boolean;
   }): void;
   /** True when read returns without throwing Unknown. Use it to branch on a fact that may be unknown instead of holding the rule. */
   export function known(read: () => unknown): boolean;

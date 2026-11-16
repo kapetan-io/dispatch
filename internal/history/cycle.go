@@ -48,7 +48,11 @@ func LatestCycle(dir string) ([]CycleRow, error) {
 		rows = append(rows, CycleRow{"covered", e.Subject, e.Kind, e.Rule, e.Reason + " once " + e.Once.String()})
 	}
 	for _, e := range c.Exempt {
-		rows = append(rows, CycleRow{"exempt", e.Subject, "-", e.Rule, "by " + e.Reason})
+		if e.Kind == "" {
+			rows = append(rows, CycleRow{"exempt", e.Subject, "-", e.Rule, "by " + e.Reason})
+			continue
+		}
+		rows = append(rows, CycleRow{"exempt", e.Subject, e.Kind, e.Rule, "by " + e.Reason + " once " + e.Once.String()})
 	}
 	order := map[string]int{"act": 0, "waiting": 1, "held": 2, "covered": 3, "exempt": 4}
 	slices.SortStableFunc(rows, func(a, b CycleRow) int { return order[a.State] - order[b.State] })

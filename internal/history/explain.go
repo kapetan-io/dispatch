@@ -312,7 +312,13 @@ func (t *tracing) decisions(c Cycle) []decision {
 	}
 	for _, e := range c.Exempt {
 		if e.Subject == t.ticket {
+			if e.Kind != "" {
+				once := e.Once.String()
+				add(e.Rule, fmt.Sprintf("exempt: stopped by %s, %s once %s", e.Reason, e.Kind, once), ExplainLine{Decision: "exempt", Kind: e.Kind, Once: once, Detail: e.Reason})
+				continue
+			}
 			add(e.Rule, "exempt: stopped by "+e.Reason, ExplainLine{Decision: "exempt", Detail: e.Reason})
+			// An exemption that names rules stops the rule before it reads anything, so the line shows what the exemption read.
 			out[len(out)-1].readKey = e.Reason + "/" + t.ticket
 		}
 	}

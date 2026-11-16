@@ -57,7 +57,7 @@ scenario(rules, "a crashed worker is relaunched once", s => {
 });
 ```
 
-`s.see` is a read that differs, `s.land` is an action's receipt, `s.unread` marks a source as failed, and `s.expectHeld` names a rule held for a record. `types/testing.d.ts` lists all of them.
+`s.see` is a read that differs, `s.land` is an action's receipt, `s.unread` marks a source as failed, `s.expectHeld` names a rule held for a record, and `s.expectExempt` names a rule an exemption stopped for a record. `types/testing.d.ts` lists all of them.
 
 `rulesFrom` takes several entry files and loads them as if one file imported each in order, so a scenario can test your rules with an example beside them: `rulesFrom("./dispatch", "./stacking")`.
 
@@ -74,7 +74,7 @@ whenever({
 });
 ```
 
-- `whenever` wants `then` while `if` is true, for every record of the kind in every cycle. `on` runs once per new event of a type. `exempt` switches named `whenever` rules off for the records its `if` is true of (see below).
+- `whenever` wants `then` while `if` is true, for every record of the kind in every cycle. `on` runs once per new event of a type. `exempt` switches named `whenever` rules off for the records its `if` is true of, or takes named actions away for the tickets its `if` is true of (see below).
 - Every queued action carries `once: [topic, ...values]`. The action runs once per key, so the key says what must change before it runs again.
 - `ctx.notify.queueSend` takes a `reason` option, the words the notification's followers read after `dispatch event (`. With none, the reason is the once key's topic. Following sessions key on the words the shipped rules pass, such as `PR ready for review` (see `skills/dispatch/SKILL.md`), so rewording one changes what a following session does.
 - `queueLaunch` takes `harness: "harness.<name>"` to launch on a `[harness.<name>]` table, or `model` to launch Claude Code with that model. Both together, or a `harness` that names no table, is refused with a detail naming it. With neither, the worker runs Claude Code on `worker_model`. The shipped `launchAs` (in `shared.ts`) returns the table a repo's or `[rules]`'s `worker` / `design` key names, else `worker_model` or `design_model` for the ticket's role, so a rule that spreads it gets the right one. A ticket whose `model` attribute is set wins over all of those: `launchAs` returns that model alone, so Claude Code runs it on the ticket's model, for a local ticket (`dispatch ticket create local --attr model=opus`) and for a Linear ticket (a `model: opus` line under `## Attributes`). `dispatch explain` prints the model or table a launch wanted.
@@ -89,9 +89,9 @@ whenever({
 
 ## Switching off a rule for some records
 
-A rule file can't edit another file's rule, and a second rule with the same name is a load error. `exempt` takes the named rules' wants away for the records its `if` is true of, from any file, so you don't edit a shipped rule or turn it off for every record.
+A rule file can't edit another file's rule, and a second rule with the same name is a load error. `exempt` takes away the wants of the rules or the actions it names for the records its `if` is true of, from any file, so you don't edit a shipped rule or turn it off for every record.
 
-`exempt` is the last tool to reach for when a rule acts when you don't want it to, not the first. It exists for one case, a shipped rule that is right for most records and wrong for a class of them you can name, such as the PR of a stacked ticket, which conflicts until its parent merges and has nothing for a nudge to fix. An exemption changes what a rule does without touching the rule, so a reader of the rule won't see it. Before you write one, ask in this order.
+An `exempt` that names rules is the last tool to reach for when a rule acts when you don't want it to, not the first. It exists for one case, a shipped rule that is right for most records and wrong for a class of them you can name, such as the PR of a stacked ticket, which conflicts until its parent merges and has nothing for a nudge to fix. An exemption changes what a rule does without touching the rule, so a reader of the rule won't see it. Before you write one, ask in this order.
 
 - Is the rule wrong for everyone? Fix it in the file that defines it.
 - Do you want different behavior and not less? Write a new rule.
@@ -108,12 +108,34 @@ exempt({
 });
 ```
 
-- `each` is the record kind, as in `whenever`. Every rule in `rules` must be a `whenever` rule of that kind. A rule no file defines, an `on` rule, a rule of another kind and a name a rule or exemption already has are load errors, so `rules check` fails and a run won't start.
+- With `rules`, `each` is the record kind, as in `whenever`. Every rule in `rules` must be a `whenever` rule of that kind. A rule no file defines, an `on` rule, a rule of another kind and a name a rule or exemption already has are load errors, so `rules check` fails and a run won't start.
 - For a record `if` is true of, the named rules want nothing, and they act as before for every other record. The exemption has no `then`. It takes away what a rule wants and changes no setting, so behavior a rule doesn't already have is a new rule.
 - An exemption whose `if` reads an unknown fact holds the rules it names for that record, so a guard that can't read its fact never lets a rule through. One that throws or runs out of time stops them too, and `rules check` reports the throw.
-- Each exemption runs once per record of its kind in a cycle, before the named rules' own `if`. A shadow rule an exemption stops reports no would-be action for that record, and `rules check` lists it as exempt.
+- An exemption that names rules runs once per record of its kind in a cycle, before the named rules' own `if`. A shadow rule an exemption stops reports no would-be action for that record, and `rules check` lists it as exempt.
 - `dispatch rules check` lists the exemption (`name  exempt  pr  exempts a, b`) and ends the rule's line with `exempt for ENG-4 by conflict-is-not-work`. `dispatch cycle` lists the stopped rule as `exempt`, and `dispatch explain` prints `exempt: stopped by conflict-is-not-work` for the ticket. A saved cycle with exemptions replays with no differences.
 - `pr.conflict` is true when GitHub reports the PR's merge state as conflicting. `pr.needsWork` and `pr.problem` still count a conflict, so a rule that should leave a conflict out exempts the rules that read them, as above. A saved cycle from before `pr.conflict` reads it as false.
+
+### Taking an action away for some tickets
+
+An exemption that names rules stops only those rules, so a rule written later, shipped or your own, acts on the tickets you meant to leave alone. To take a kind of action away for a class of tickets whichever rule asks for it, name actions in place of rules. This is the way to say "no nudge and no merge for these tickets", and a shipped rule file may use it to guard every rule, including ones not yet written.
+
+```ts
+import { exempt } from "dispatch";
+
+exempt({
+  name:    "leave-on-call-alone",
+  each:    "ticket",
+  actions: ["nudge", "merge", { kind: "escalate", topic: "pr-ignored" }],
+  if:      (t) => t.hasLabel("on-call"),
+});
+```
+
+- For a ticket its `if` is true of, no rule's want of a listed action about that ticket goes through, whichever rule queued it: a `whenever` or an `on` rule, from any file. A want about a PR, a worker or a tree counts as about its ticket. Every later step of the same `then` that waits on a want it took away goes too, so a rule that merges and then notifies loses both, and neither is reported as waiting.
+- An entry is an action's receipt name (`nudge`, `merge`, `escalate`, `notify` and the rest), or `{ kind, topic }`, the shape `ctx.ledger.receipts` filters by, where `topic` is the first element of the want's once key.
+- Give exactly one of `rules` and `actions`. Neither, both, an empty `actions`, an action no rule can queue, an entry of another shape, and `actions` with an `each` other than `"ticket"` are load errors that name the exemption.
+- It runs after the rules' `then`, on what they queued, so the rules' reads show in `dispatch explain` and an HTTP call a `then` makes still goes out. It runs only for a ticket some rule wants a listed action about, at most once per ticket in a cycle. A shadow rule's want it takes away is reported as exempt, not as a would-be action.
+- An `if` that reads an unknown fact holds the wants (`rules check` reports them held), or for an `on` rule drops them, as its own unknown read does. One that throws takes them away, as an exemption that names rules does for its rules.
+- `dispatch rules check` lists it as `leave-on-call-alone  exempt  ticket  exempts nudge, merge, escalate (pr-ignored)` and ends the line of each rule it took a want from with `exempt for ENG-4 by leave-on-call-alone`. `dispatch cycle` lists each want taken away as `exempt` with its action and once key, `dispatch explain` prints `exempt: stopped by leave-on-call-alone, nudge once [poke ENG-4]`, and a scenario asserts one with `s.expectExempt(rule, subject, by, receipt?)`, where `receipt` names the action and may be left out.
 
 ## Reading a worker's turns
 

@@ -156,7 +156,8 @@ type Cycle struct {
 	Waiting []Entry `json:"waiting,omitempty"`
 	Held    []Entry `json:"held,omitempty"`
 	Covered []Entry `json:"covered,omitempty"`
-	// Exempt lists the rules an exemption stopped, with the exemption's name as the reason.
+	// Exempt lists what exemptions stopped or took away, with the exemption's name as Reason. Kind and
+	// Once are the want taken away, set only by an exemption that names actions.
 	Exempt []Entry `json:"exempt,omitempty"`
 	Throws []Throw `json:"throws,omitempty"`
 	// Reads maps "rule/subject" or "exemption/subject" to what it read.
@@ -544,8 +545,12 @@ func CycleLine(now int64, why string, res rules.Result) Cycle {
 		c.Covered = append(c.Covered, Entry{Rule: cv.Rule, Subject: cv.Subject, Kind: cv.Receipt.Kind, Once: cv.Once, Reason: CoveredBy(cv.Receipt)})
 	}
 	for _, e := range res.Exempted {
-		c.Exempt = append(c.Exempt, Entry{Rule: e.Rule, Subject: e.Subject, Reason: e.Exemption})
+		c.Exempt = append(c.Exempt, Entry{Rule: e.Rule, Subject: e.Subject, Kind: e.Receipt, Once: e.Once, Reason: e.Exemption})
 		c.Reads[e.Exemption+"/"+e.Subject] = res.Reads[e.Exemption+"/"+e.Subject]
+		// An exemption that names actions runs after the rule's then, so what the rule read is kept too.
+		if e.Receipt != "" {
+			c.Reads[e.Rule+"/"+e.Subject] = res.Reads[e.Rule+"/"+e.Subject]
+		}
 	}
 	for _, t := range res.Throws {
 		c.Throws = append(c.Throws, Throw{Rule: t.Rule, Subject: t.Subject, Error: t.Error, Timeout: t.Timeout})
