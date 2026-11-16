@@ -27,6 +27,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/startscreen"
+	"github.com/kapetan-io/dispatch/internal/ticketbranch"
 	"github.com/kapetan-io/dispatch/internal/typed"
 	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -57,6 +58,8 @@ type Options struct {
 	Local *localticket.Options
 	// Workers holds the worker rows, in the dispatch.db dispatch run opened.
 	Workers *workers.Store
+	// Branches holds the branch rows, in the same file.
+	Branches *ticketbranch.Store
 	// Screen is the startup screen. run.go has printed its lines up to the sources about to be read,
 	// and the loop prints what the first read found.
 	Screen *startscreen.Screen
@@ -122,6 +125,11 @@ type Loop struct {
 	// holds each Linear ticket an edit is running on, with the edits of it waiting their turn.
 	writing int
 	editing map[string][]linearWrite
+	// branchEdits counts the branches `dispatch ticket branch` named, and naming the renames still
+	// running. A read that started before an edit, or that ends while a rename runs, may have
+	// listed the clone before the edit, so its listing is not checked against the rows.
+	branchEdits int
+	naming      int
 
 	// nextResync is when the resync timer is due. An event that finds the clock past it
 	// means the machine slept through the resync.
@@ -176,9 +184,11 @@ type flight struct {
 
 type readDone struct {
 	epoch int
-	parts world.Part
-	w     world.World
-	err   error
+	// branchEdits is the count of branch row edits when the read started.
+	branchEdits int
+	parts       world.Part
+	w           world.World
+	err         error
 	// panes are the panes a pane read asked about, none for any other read. unsettled is true when
 	// that read could not tell what changed, so the multiplexer is read in full.
 	panes     []string
@@ -365,6 +375,8 @@ func (l *Loop) drain() error {
 			switch m := m.(type) {
 			case linearDone:
 				l.onLinear(m)
+			case branchNamed:
+				l.onBranchNamed(m)
 			case actionDone:
 				if err := l.onAction(m); err != nil {
 					return err
@@ -421,18 +433,18 @@ func (l *Loop) start(ctx context.Context) error {
 		_ = l.hist.Close(false)
 		return err
 	}
-	// Tickets launched before the launcher kept a key on each branch get one now, and the PRs are read
-	// again on the branches those keys name.
-	if world.KeyBranches(ctx, l.o.Sources, l.scope, wd) > 0 {
-		if wd, err = world.Refresh(ctx, l.o.Sources, l.scope, wd, world.FromLocal|world.FromGitHub, at); err != nil {
-			_ = l.hist.Close(false)
-			return err
-		}
-	}
 	l.wd = wd
 	if err := l.resyncWorkers(true); err != nil {
 		_ = l.hist.Close(false)
 		return err
+	}
+	// An import that named the branches of tickets an earlier dispatch launched reads the PRs again
+	// on those branches before the first cycle decides from them.
+	if named := l.resyncBranches(true); named {
+		if l.wd, err = world.Refresh(ctx, l.o.Sources, l.scope, l.wd, world.FromGitHub, at); err != nil {
+			_ = l.hist.Close(false)
+			return err
+		}
 	}
 	l.tellOverflow(readDone{parts: world.Everything, w: l.wd})
 	// The loop sets nextResync once the start returns, a moment after this, so the screen's time is
@@ -507,6 +519,9 @@ func (l *Loop) handle(m any) error {
 		return nil
 	case linearDone:
 		l.onLinear(m)
+		return nil
+	case branchNamed:
+		l.onBranchNamed(m)
 		return nil
 	case toldDone:
 		l.telling--
@@ -629,7 +644,7 @@ func (l *Loop) startRead() {
 		l.startPaneRead()
 		return
 	}
-	parts, prev, epoch := l.pending, l.wd, l.nudgeEpoch
+	parts, prev, epoch, edits := l.pending, l.wd, l.nudgeEpoch, l.branchEdits
 	l.pending, l.reading, l.nudgedDuring, l.settledDuring = 0, true, nil, map[string]bool{}
 	if parts&world.FromLocal != 0 {
 		// This read starts after the changes the stream named and reads every pane they could mean.
@@ -638,7 +653,7 @@ func (l *Loop) startRead() {
 	at := l.stamp()
 	go func() {
 		w, err := world.Refresh(l.runCtx, l.o.Sources, l.scope, prev, parts, at)
-		l.inbox <- readDone{parts: parts, w: w, err: err, epoch: epoch}
+		l.inbox <- readDone{parts: parts, w: w, err: err, epoch: epoch, branchEdits: edits}
 	}()
 }
 
@@ -723,6 +738,12 @@ func (l *Loop) onRead(m readDone) error {
 	if m.parts&world.FromLocal != 0 {
 		if err := l.resyncWorkers(m.parts == world.Everything); err != nil {
 			return err
+		}
+		// The edit asked for a read of its own, which resyncs the rows.
+		if m.branchEdits == l.branchEdits && l.naming == 0 {
+			if named := l.resyncBranches(m.parts == world.Everything); named {
+				l.readAgain(world.FromGitHub)
+			}
 		}
 	}
 	// A resync that landed while this read was in flight cleared the overlay, and the read

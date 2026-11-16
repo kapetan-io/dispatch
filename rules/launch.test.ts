@@ -107,7 +107,17 @@ scenario(rules, "a failed lease or git switch never counts toward the failure li
   s.land("launch", "ENG-1", { outcome: "failed", detail: "switch_failed: git switch to b failed" });
   s.land("launch", "ENG-1", { outcome: "failed", detail: "pool_error: treehouse status failed" });
   s.expect([["launch-worker", "launch", "ENG-1"]]);
-  s.land("launch", "ENG-1", { outcome: "failed", detail: "stack_record_failed: stack record for b failed" });
+  s.land("launch", "ENG-1", { outcome: "failed", detail: "branch_missing: branch b of ENG-1 is in neither /src/app nor origin" });
+  s.expect([["escalate-launch-failures", "escalate", "ENG-1"]]);
+});
+
+scenario(rules, "a launch whose branch check did not finish never counts toward the failure limit", s => {
+  s.given(ticket("ENG-1", build));
+  s.land("launch", "ENG-1", { outcome: "failed", detail: "branch_unchecked: the check for branch b of ENG-1 did not finish before the launch's deadline; nothing was leased" });
+  s.land("launch", "ENG-1", { outcome: "failed", detail: "branch_unchecked: the check for branch b of ENG-1 did not finish before the launch's deadline; nothing was leased" });
+  s.land("launch", "ENG-1", { outcome: "failed", detail: "pool_error: treehouse status failed" });
+  s.expect([["launch-worker", "launch", "ENG-1"]]);
+  s.land("launch", "ENG-1", { outcome: "failed", detail: "branch_missing: branch b of ENG-1 is in neither /src/app nor origin" });
   s.expect([["escalate-launch-failures", "escalate", "ENG-1"]]);
 });
 
@@ -117,7 +127,7 @@ scenario(rules, "a launch that failed after dispatch was asked to stop never cou
   s.land("launch", "ENG-1", { outcome: "failed", detail: "interrupted: injection_unconfirmed" });
   s.land("launch", "ENG-1", { outcome: "failed", detail: "pool_error: treehouse status failed" });
   s.expect([["launch-worker", "launch", "ENG-1"]]);
-  s.land("launch", "ENG-1", { outcome: "failed", detail: "stack_record_failed: stack record for b failed" });
+  s.land("launch", "ENG-1", { outcome: "failed", detail: "branch_missing: branch b of ENG-1 is in neither /src/app nor origin" });
   s.expect([["escalate-launch-failures", "escalate", "ENG-1"]]);
 });
 

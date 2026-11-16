@@ -11,6 +11,7 @@ import (
 	"io"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/kapetan-io/dispatch/internal/config"
@@ -24,6 +25,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/ticket"
+	"github.com/kapetan-io/dispatch/internal/ticketbranch"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/workers"
 )
@@ -43,6 +45,9 @@ type Sources struct {
 	// Workers is where the worker rows are read from: the store dispatch run opened, or the rows a
 	// running dispatch sent. Nil reads every lease as a worker with no records, as a rule scenario does.
 	Workers WorkerRows
+	// Branches is where the branch rows are read from, the same way. Nil reads every repo's stack
+	// records as unread and every ticket on its ticket system's branch.
+	Branches BranchRows
 	// Stderr receives one line for each read that failed without stopping the read.
 	Stderr io.Writer
 	// Tolerant keeps going when the multiplexer, or every pool, can't be read, and
@@ -60,6 +65,11 @@ type Sources struct {
 // WorkerRows is the worker rows, as the open database or as a Snapshot of them.
 type WorkerRows interface {
 	Snapshot() (workers.Snapshot, error)
+}
+
+// BranchRows is the branch rows, as the open database or as a Snapshot of them.
+type BranchRows interface {
+	Snapshot() (ticketbranch.Snapshot, error)
 }
 
 // LocalTickets is the local ticket database, as the open file or as a Snapshot of it.
@@ -210,11 +220,16 @@ type World struct {
 	MergedPRs map[string]pullrequest.MergedPR
 	// UnreadRepos are the repo labels whose pool could not be read.
 	UnreadRepos map[string]bool
-	// StackRecords maps a repo label to the stack records of its clone. StackErrs holds the
-	// labels whose records could not be read, which is unknown, not empty. A refresh that skips
-	// the local read keeps the earlier ones.
-	StackRecords map[string]stackrecord.Records
+	// StackRecords maps a repo label to its branch rows, by branch: the ticket each names and its
+	// stack record. StackErrs holds the labels whose rows could not be read or are not imported yet,
+	// which is unknown, not empty. A refresh that skips the local read keeps the earlier ones.
+	StackRecords map[string]ticketbranch.Records
 	StackErrs    map[string]error
+	// Listings maps a repo label to the branches its clone has, locally or on origin as of the
+	// clone's last fetch. ListingErrs holds the labels whose clone could not be listed. Neither is
+	// in history: they decide only what the resync does to branch rows.
+	Listings    map[string]map[string]bool
+	ListingErrs map[string]error
 	// Nudged holds the tickets whose worker was sent a nudge. They show as working until a read
 	// sees the worker working or blocked, or the next resync, so nothing that waits for an idle
 	// worker acts on a worker that is already busy with the nudge.
@@ -284,7 +299,6 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 	if parts&FromLocal != 0 || prev.At.IsZero() {
 		parts |= FromLocal | FromLocalTickets
 		w.MultiplexerErr, w.PoolErrs, w.UnreadRepos, w.Trees = nil, map[string]error{}, map[string]bool{}, nil
-		w.StackRecords, w.StackErrs = map[string]stackrecord.Records{}, map[string]error{}
 		readCtx, done := bound(ctx)
 		snap, err := src.Multiplexer.Read(readCtx)
 		done()
@@ -306,16 +320,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 			}
 			w.Trees = append(w.Trees, trees...)
 		}
-		for label, repo := range scope.Repos {
-			readCtx, done := bound(ctx)
-			recs, err := stackrecord.Read(readCtx, src.Env, repo.Path)
-			done()
-			if err != nil {
-				w.StackErrs[label] = err
-				continue
-			}
-			w.StackRecords[label] = recs
-		}
+		w.readBranches(ctx, src, scope)
 		// A repo whose pool can't be read holds back only its own tickets, so one
 		// moved clone doesn't stop launches in every other repo.
 		for label, err := range readErrs {
@@ -424,6 +429,79 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		w.readInbox(ctx, src, scope, now)
 	}
 	return w, nil
+}
+
+// readBranches reads the branch rows into StackRecords and lists each clone's branches. A repo
+// whose branches are not imported yet has its rows unread, so a rule over its stack records holds.
+func (w *World) readBranches(ctx context.Context, src Sources, scope Scope) {
+	w.StackRecords, w.StackErrs = map[string]ticketbranch.Records{}, map[string]error{}
+	w.Listings, w.ListingErrs = map[string]map[string]bool{}, map[string]error{}
+	var snap ticketbranch.Snapshot
+	err := errors.New("the branch rows were not read")
+	if src.Branches != nil {
+		if snap, err = src.Branches.Snapshot(); err != nil {
+			_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the branch rows: %v\n", err)
+		}
+	}
+	for label, repo := range scope.Repos {
+		switch {
+		case err != nil:
+			w.StackErrs[label] = err
+		case !snap.Imported[label]:
+			w.StackErrs[label] = fmt.Errorf("the branches of %s are not imported yet", label)
+			// Until the import copies them, the git config keys an earlier dispatch kept still name
+			// each ticket's branch, so a repo the import waits on reads its PRs on those branches.
+			readCtx, done := bound(ctx)
+			if keys, keysErr := stackrecord.Read(readCtx, src.Env, repo.Path); keysErr == nil {
+				w.StackRecords[label] = ticketbranch.Records{Tickets: keys.Tickets}
+			}
+			done()
+		default:
+			w.StackRecords[label] = snap.Records(label)
+		}
+		readCtx, done := bound(ctx)
+		names, listErr := listBranches(readCtx, src.Env, repo.Path)
+		done()
+		if listErr != nil {
+			w.ListingErrs[label] = listErr
+			continue
+		}
+		w.Listings[label] = names
+	}
+}
+
+// listBranches is the branches of the clone at dir, local and on origin, one name each. A directory
+// that is not a git repository has none.
+func listBranches(ctx context.Context, env environment.Environment, dir string) (map[string]bool, error) {
+	out, err := env.Command(ctx, "git", "-C", dir, "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes/origin").Output()
+	if err != nil && stackrecord.NotARepo(ctx, env, dir) {
+		return map[string]bool{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list branches in %s: %w", dir, err)
+	}
+	names := map[string]bool{}
+	for line := range strings.SplitSeq(string(out), "\n") {
+		ref := strings.TrimSpace(line)
+		if name, ok := strings.CutPrefix(ref, "refs/heads/"); ok {
+			names[name] = true
+		} else if name, ok := strings.CutPrefix(ref, "refs/remotes/origin/"); ok && name != "HEAD" {
+			names[name] = true
+		}
+	}
+	return names, nil
+}
+
+// RereadBranches reads the branch rows again and puts every ticket on the branch its row names,
+// for the loop after an import or a rename wrote rows. The PRs are read again by the next read.
+func RereadBranches(ctx context.Context, src Sources, scope Scope, w World) World {
+	if src.Local != nil {
+		scope.Local = src.Local.Statuses()
+	}
+	w.readBranches(ctx, src, scope)
+	w.Tickets = w.onTicketBranches(scope, w.Tickets)
+	w.LeaseHolders = w.onTicketBranches(scope, w.LeaseHolders)
+	return w
 }
 
 // Rejoin reads the worker rows again and rebuilds every worker from them, over the trees and
@@ -622,10 +700,10 @@ func (w *World) inspectTrees(ctx context.Context, env environment.Environment, s
 	}
 }
 
-// onTicketBranches is the tickets each on the branch whose ticket branch key names it, since a
-// ticket system's read gives every ticket that system's name for the branch, which drifts from the
-// branch the worker pushed. A ticket whose repo's keys were not read, or that has no key, keeps the
-// ticket system's name.
+// onTicketBranches is the tickets each on the branch its branch row names, since a ticket system's
+// read gives every ticket that system's name for the branch, which drifts from the branch the
+// worker pushed. A ticket whose repo's rows were not read, or that has no row, keeps the ticket
+// system's name.
 func (w *World) onTicketBranches(scope Scope, tickets []ticket.Ticket) []ticket.Ticket {
 	// The previous world may still be in use, so a ticket's Branch changes on a copy.
 	tickets = slices.Clone(tickets)
@@ -639,75 +717,6 @@ func (w *World) onTicketBranches(scope Scope, tickets []ticket.Ticket) []ticket.
 		}
 	}
 	return tickets
-}
-
-// KeyBranches writes the ticket branch key on the local branch of each tracked ticket that has
-// none, which covers tickets launched before the launcher wrote keys. A ticket's branch is the one
-// local branch that starts with its id, and with several the one a tree the ticket holds has
-// checked out. A branch is never keyed from the tree alone, since a tree can hold another ticket's
-// branch. It returns how many keys it wrote, and the caller reads again when that is not zero.
-func KeyBranches(ctx context.Context, src Sources, scope Scope, w World) int {
-	branches := map[string]map[string]string{}
-	var written int
-	for _, t := range w.Tickets {
-		label, ok := scope.RepoOf(t)
-		repo, known := scope.Repos[label]
-		recs, read := w.StackRecords[label]
-		if !ok || !known || !read {
-			continue
-		}
-		if _, keyed := recs.BranchOf(t.Identifier); keyed {
-			continue
-		}
-		local, listed := branches[label]
-		if !listed {
-			readCtx, done := bound(ctx)
-			var err error
-			local, err = stackrecord.LocalBranches(readCtx, src.Env, repo.Path)
-			done()
-			if err != nil {
-				_, _ = fmt.Fprintf(src.Stderr, "dispatch: %v\n", err)
-			}
-			branches[label] = local
-		}
-		var named, held []string
-		for branch, tree := range local {
-			if _, taken := recs.Tickets[branch]; taken || !ticket.OnBranch(t.Identifier, branch) {
-				continue
-			}
-			named = append(named, branch)
-			if tree != "" && w.holder(tree) == t.Identifier {
-				held = append(held, branch)
-			}
-		}
-		if len(named) > 1 {
-			named = held
-		}
-		if len(named) != 1 {
-			continue
-		}
-		readCtx, done := bound(ctx)
-		err := stackrecord.WriteTicket(readCtx, src.Env, repo.Path, named[0], t.Identifier)
-		done()
-		if err != nil {
-			_, _ = fmt.Fprintf(src.Stderr, "dispatch: %v\n", err)
-			continue
-		}
-		// The branch is claimed, so a second ticket whose id this one's extends does not take it.
-		recs.Tickets[named[0]] = t.Identifier
-		written++
-	}
-	return written
-}
-
-// holder is the ticket that holds the lease on the tree at path, empty when none does.
-func (w World) holder(path string) string {
-	for _, tree := range w.Trees {
-		if tree.Path == path {
-			return tree.LeaseHolder
-		}
-	}
-	return ""
 }
 
 // readPRs reads the open PR of each ticket for which ReadsPR is true. A PR that

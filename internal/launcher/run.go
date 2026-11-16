@@ -15,7 +15,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/clock"
 	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/herdr"
-	"github.com/kapetan-io/dispatch/internal/stackrecord"
+	"github.com/kapetan-io/dispatch/internal/ticketbranch"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/typed"
 	"github.com/kapetan-io/dispatch/internal/workers"
@@ -30,12 +30,22 @@ const (
 	StatusNotPooled              = "not_pooled"
 	StatusLeaseFailed            = "lease_failed"
 	StatusSwitchFailed           = "switch_failed"
-	StatusStackRecordFailed      = "stack_record_failed"
 	StatusBranchTaken            = "branch_taken"
-	StatusWorkspaceFailed        = "workspace_failed"
-	StatusAgentStartFailed       = "agent_start_failed"
-	StatusInjectionUnconfirmed   = "injection_unconfirmed"
-	StatusProgramExited          = "program_exited"
+	// StatusBranchMissing is a launch refused because the ticket's recorded branch exists neither
+	// in the clone nor on origin. Only a person can say where the work went, so it counts toward
+	// launch_failure_limit and its detail names the command that records the new name.
+	StatusBranchMissing = "branch_missing"
+	// StatusBranchUnchecked is a launch whose deadline passed before it could tell whether the
+	// ticket's branch exists. Nothing is known to be wrong, so it never counts toward
+	// launch_failure_limit, and the next resync launches again.
+	StatusBranchUnchecked = "branch_unchecked"
+	// StatusBranchRowFailed is a launch that could not read or write the ticket's branch row. It
+	// counts toward launch_failure_limit, as a worker row that cannot be written does.
+	StatusBranchRowFailed      = "branch_row_failed"
+	StatusWorkspaceFailed      = "workspace_failed"
+	StatusAgentStartFailed     = "agent_start_failed"
+	StatusInjectionUnconfirmed = "injection_unconfirmed"
+	StatusProgramExited        = "program_exited"
 	// StatusWorkerRowFailed is a launch that could not write the ticket's worker row. It counts
 	// toward launch_failure_limit, because a database that cannot be written is not fixed by waiting.
 	StatusWorkerRowFailed = "worker_row_failed"
@@ -64,6 +74,9 @@ type Options struct {
 	// Workers holds the worker row a launch writes before each step it takes, so a launch that
 	// dies is found by the next one. Required.
 	Workers *workers.Store
+	// Branches holds the ticket's branch row, which a launch writes before it leases a tree.
+	// Required.
+	Branches *ticketbranch.Store
 	// Clock stamps a launch's kickoff record, which the rules compare with the loop's clock,
 	// and runs the preflight deadline. Defaults to the wall clock.
 	Clock clock.Clock
@@ -371,10 +384,7 @@ func (l *launch) preflight(ctx context.Context) (Result, bool) {
 // fetchAndLease holds the clone for every fetch a launch makes, treehouse's
 // own included, so launches into one repo queue here and then go on in parallel.
 func (l *launch) fetchAndLease(ctx context.Context) (Result, bool) {
-	clone := l.repo
-	if dir, err := l.git(ctx, l.repo, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil {
-		clone = strings.TrimSpace(dir)
-	}
+	clone := cloneOf(ctx, l.opts.Env, l.repo)
 	resume := func() {}
 	if l.req.WhileQueued != nil {
 		resume = l.req.WhileQueued()
@@ -394,7 +404,10 @@ func (l *launch) fetchAndLease(ctx context.Context) (Result, bool) {
 		return Result{Status: StatusPoolError, Detail: detail}, false
 	}
 	defer done()
-	existed := l.trackBranch(ctx)
+	existed, res, ok := l.claimBranch(ctx)
+	if !ok {
+		return res, false
+	}
 	if res := l.lease(ctx); res.Status != "" {
 		return res, false
 	}
@@ -407,38 +420,74 @@ func (l *launch) fetchAndLease(ctx context.Context) (Result, bool) {
 	return l.checkout(ctx, existed)
 }
 
+// claimBranch records the ticket's branch in its branch row before anything is leased, and
+// reports whether the branch already exists, locally or on origin, creating a local tracking
+// branch for one that exists only there. A ticket with a row launches onto the branch its row
+// names. A row whose branch is gone, and was created, is refused with branch_missing, since only
+// a person knows where the work went. A branch another ticket's row names is refused with
+// branch_taken. A stack record is written only with a branch this launch creates.
+func (l *launch) claimBranch(ctx context.Context) (bool, Result, bool) {
+	req := &l.req
+	row, found, err := l.opts.Branches.Of(req.Ticket, req.Repo)
+	if err != nil {
+		return false, Result{Status: StatusBranchRowFailed, Detail: err.Error()}, false
+	}
+	if found {
+		req.Branch = row.Name
+	}
+	existed := l.trackBranch(ctx)
+	if ctx.Err() != nil {
+		// A fetch or show-ref cut short reads as a missing branch, which is not what happened.
+		return false, Result{Status: StatusBranchUnchecked, Detail: fmt.Sprintf("the check for branch %s of %s did not finish before the launch's deadline; nothing was leased", req.Branch, req.Ticket)}, false
+	}
+	if found && !existed && !row.Uncreated {
+		return false, Result{Status: StatusBranchMissing, Detail: fmt.Sprintf("branch %s of %s is in neither %s nor origin; `dispatch ticket branch %s <name>` records the branch its work is on", req.Branch, req.Ticket, l.repo, req.Ticket)}, false
+	}
+	next := row
+	next.Name, next.Uncreated = req.Branch, !existed
+	if !existed {
+		// The stack record says where the branch this launch creates starts.
+		next.Stack = nil
+	}
+	if !existed && req.Stack != nil {
+		// The fork point must be present locally, and the switch that creates the branch fails
+		// loudly when it is not.
+		_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", req.Stack.Branch)
+		next.Stack = &ticketbranch.Record{Parent: req.Stack.Ticket, ForkPoint: req.Stack.Head}
+		l.stacked = true
+	}
+	if found && next == row {
+		return existed, Result{}, true
+	}
+	switch err := l.opts.Branches.Record(req.Ticket, req.Repo, next); {
+	case errors.Is(err, ticketbranch.ErrTaken):
+		l.stacked = false
+		return false, Result{Status: StatusBranchTaken, Detail: fmt.Sprintf("%v; nothing was leased. `dispatch ticket branch <ticket> <name>` records another branch for either ticket", err)}, false
+	case err != nil:
+		l.stacked = false
+		return false, Result{Status: StatusBranchRowFailed, Detail: err.Error()}, false
+	}
+	return existed, Result{}, true
+}
+
 // trackBranch reports whether the branch already exists, locally or on origin,
 // creating a local tracking branch for one that exists only there.
 func (l *launch) trackBranch(ctx context.Context) bool {
-	l.adoptKeyed(ctx)
 	b := l.req.Branch
-	_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", b)
+	// The refspec names the remote-tracking ref, which a clone fetching only some branches, as a
+	// single-branch clone does, would not write.
+	_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", "+refs/heads/"+b+":refs/remotes/origin/"+b)
 	if _, err := l.git(ctx, l.repo, "show-ref", "--verify", "--quiet", "refs/heads/"+b); err == nil {
 		return true
 	}
 	if _, err := l.git(ctx, l.repo, "show-ref", "--verify", "--quiet", "refs/remotes/origin/"+b); err == nil {
-		_, _ = l.git(ctx, l.repo, "branch", "--track", b, "origin/"+b)
+		if _, err := l.git(ctx, l.repo, "branch", "--track", b, "origin/"+b); err != nil {
+			// git sets no upstream outside the fetch refspec, so the branch starts untracked there.
+			_, _ = l.git(ctx, l.repo, "branch", "--no-track", b, "origin/"+b)
+		}
 		return true
 	}
 	return false
-}
-
-// adoptKeyed moves the request onto the branch keyed to the ticket when no branch has the requested
-// name. The world already names that branch, so this covers a launch whose keys the world could not
-// read. Without it the launch would start a new, empty branch beside the worker's own.
-func (l *launch) adoptKeyed(ctx context.Context) {
-	b := l.req.Branch
-	if _, err := l.git(ctx, l.repo, "show-ref", "--verify", "--quiet", "refs/heads/"+b); err == nil {
-		return
-	}
-	if _, err := l.git(ctx, l.repo, "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/"+b); err == nil {
-		return
-	}
-	recs, err := stackrecord.Read(ctx, l.opts.Env, l.repo)
-	if keyed, ok := recs.BranchOf(l.req.Ticket); err == nil && ok {
-		l.log("branch %s does not exist, so the launch uses %s, the branch keyed to the ticket", b, keyed)
-		l.req.Branch = keyed
-	}
 }
 
 // lease reuses the tree already holding this ticket's lease, so a relaunch
@@ -501,25 +550,13 @@ func (l *launch) checkout(ctx context.Context, existed bool) (Result, bool) {
 	return r, ok
 }
 
-// switchTree switches the tree to the ticket's branch, creating the branch when it is new, and
-// claims the branch for the ticket.
+// switchTree switches the tree to the ticket's branch, creating the branch when its row is marked
+// "not created yet".
 func (l *launch) switchTree(ctx context.Context, existed bool) (Result, bool) {
 	req := l.req
 	from := ""
 	if !existed {
 		from = " from " + req.Base
-	}
-	// A branch with no record reads as existing to the next launch, which never writes one, so the
-	// record goes first.
-	if !existed && req.Stack != nil {
-		if res, ok := l.writeStackRecord(ctx); !ok {
-			return res, false
-		}
-	}
-	// A switch that fails after creating the branch leaves it behind, so its stack record stays with it.
-	created := func() bool {
-		_, err := l.git(ctx, l.repo, "show-ref", "--verify", "--quiet", "refs/heads/"+req.Branch)
-		return err == nil
 	}
 	var out strings.Builder
 	var err error
@@ -542,45 +579,16 @@ func (l *launch) switchTree(ctx context.Context, existed bool) (Result, bool) {
 		}
 	}
 	if err == nil {
-		return l.keyBranch(ctx)
+		return Result{}, true
 	}
 	said := strings.Join(strings.Fields(out.String()), " ")
 	if said == "" {
 		said = err.Error()
 	}
 	l.log("checkout of %s failed in leased tree, returning the lease", req.Branch)
-	if !existed && req.Stack != nil && !created() {
-		// A leftover record would attach to whatever branch of this name is created later.
-		_ = stackrecord.Clear(context.WithoutCancel(ctx), l.opts.Env, l.repo, req.Branch)
-	}
 	l.clearIndexLock(ctx)
 	l.giveBack(ctx)
 	return Result{Status: StatusSwitchFailed, Detail: fmt.Sprintf("git switch to %s%s failed in leased tree %s (lease returned): %s", req.Branch, from, l.tree, said)}, false
-}
-
-// keyBranch writes the ticket branch key on the branch the tree was just switched to, which is how
-// every later read finds the ticket's branch whatever name its ticket system reports. A branch keyed
-// to another ticket is refused, since one branch carries one ticket's work. A key that cannot be
-// read or written is logged and the launch goes on, since the world finds the branch by the id.
-func (l *launch) keyBranch(ctx context.Context) (Result, bool) {
-	req := l.req
-	recs, err := stackrecord.Read(ctx, l.opts.Env, l.repo)
-	if err != nil {
-		l.log("%v", err)
-		return Result{}, true
-	}
-	switch owner := recs.Tickets[req.Branch]; {
-	case strings.EqualFold(owner, req.Ticket):
-	case owner != "":
-		l.log("branch %s belongs to %s (%s)", req.Branch, owner, l.leaseFate())
-		l.giveBack(ctx)
-		return Result{Status: StatusBranchTaken, Detail: fmt.Sprintf("branch %s belongs to %s, not %s (%s); `git config --unset branch.%s.dispatchTicket` in %s hands it over", req.Branch, owner, req.Ticket, l.leaseFate(), req.Branch, l.repo)}, false
-	default:
-		if err := stackrecord.WriteTicket(ctx, l.opts.Env, l.repo, req.Branch, req.Ticket); err != nil {
-			l.log("%v", err)
-		}
-	}
-	return Result{}, true
 }
 
 // clearIndexLock removes the index.lock a git switch killed by the launch deadline leaves in the
@@ -600,23 +608,6 @@ func (l *launch) clearIndexLock(ctx context.Context) {
 	case !os.IsNotExist(err):
 		l.log("could not remove %s, the next worker in this tree cannot commit: %v", lock, err)
 	}
-}
-
-// writeStackRecord fetches the stack parent's branch so the fork point is present locally, then
-// records the stack parent and the fork point. It is not retried, since git waits out a lock on the
-// clone's config itself. A failed write returns a lease this launch took, like a failed switch.
-func (l *launch) writeStackRecord(ctx context.Context) (Result, bool) {
-	req := l.req
-	// The head may already be local, and the switch that follows fails loudly when it is not.
-	_, _ = l.git(ctx, l.repo, "fetch", "--no-tags", "origin", req.Stack.Branch)
-	rec := stackrecord.Record{Parent: req.Stack.Ticket, ForkPoint: req.Stack.Head}
-	if err := stackrecord.Write(ctx, l.opts.Env, l.repo, req.Branch, rec); err != nil {
-		l.log("%v", err)
-		l.giveBack(ctx)
-		return Result{Status: StatusStackRecordFailed, Detail: fmt.Sprintf("stack record for %s failed in %s (%s): %v", req.Branch, l.repo, l.leaseFate(), err)}, false
-	}
-	l.stacked = true
-	return Result{}, true
 }
 
 var maxTrees = regexp.MustCompile(`(?m)^max_trees *= *([0-9]+)`)

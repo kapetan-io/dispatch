@@ -33,6 +33,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
+	"github.com/kapetan-io/dispatch/internal/ticketbranch"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -133,7 +134,7 @@ const usage = `usage: dispatch run
        dispatch tell <ticket> --turn <at> "<text>"
        dispatch turn <ticket> [--json]
        dispatch ask
-       dispatch ticket create|show|list|move|comment|edit|statuses
+       dispatch ticket create|show|list|move|comment|edit|statuses|branch
        dispatch rules init|check|test [dir]
        dispatch ticket-hint
        dispatch repo-settings
@@ -196,8 +197,9 @@ const usage = `usage: dispatch run
                "dispatch: not running" when no loop runs
   ticket       file, read and change tickets. Local tickets (LOC-<n>) are kept in a database that only
                dispatch run opens and that [plugins.local] turns on. Talks to the running dispatch run, and
-               exits 3 with "dispatch: not running" when none runs. create and edit work on Linear tickets as
-               well, and the other verbs on local tickets only; Linear tickets use the Linear tools for those.
+               exits 3 with "dispatch: not running" when none runs. create, edit and branch work on Linear
+               tickets as well, and the other verbs on local tickets only; Linear tickets use the Linear tools
+               for those.
                There is no delete.
                  create SYSTEM --repo LABEL --title TEXT [--description TEXT] [--label NAME]... [--attr KEY=VALUE]...
                         [--status NAME] [--parent LOC-N] [--blocked-by LOC-N]... [--start-pr NUMBER] [--team KEY]
@@ -218,6 +220,11 @@ const usage = `usage: dispatch run
                         On a Linear ticket dispatch manages, only --attr and --unset-attr work, and they rewrite
                         the "## Attributes" section of the description and nothing else
                  statuses           list the statuses and the jobs each does
+                 branch ID [NAME | --unstack]
+                        print the branch dispatch records for the ticket's work. With NAME, fetch it and record
+                        it, after a rename by hand; refused when NAME is in neither the clone nor origin or is
+                        another ticket's branch. --unstack ends the ticket's stack record, the last step of a
+                        restack. Never writes to the ticket system
   rules        init writes the shipped TypeScript rules, check lints them and prints what each wants
                now, and test runs their *.test.ts scenarios
   ticket-hint  print a reminder to use the dispatch:ticket skill when run in a repo listed under
@@ -518,7 +525,7 @@ func loadConfig(opts Options) (config.Config, error) {
 
 // sources are the tools one read goes through. The inbox is wired only while a loaded rule runs
 // over it, so an owner with no inbox rule makes no gh call for it and a failing gh login costs them nothing.
-func sources(opts Options, cfg config.Config, lin linear.Workspace, loaded *rules.Rules, rows *workers.Store) world.Sources {
+func sources(opts Options, cfg config.Config, lin linear.Workspace, loaded *rules.Rules, rows *workers.Store, branches *ticketbranch.Store) world.Sources {
 	src := world.Sources{
 		Linear: lin, Multiplexer: opts.Multiplexer, Treehouse: opts.Treehouse, PullRequests: opts.PullRequests,
 		Env: opts.Env, StateDir: opts.StateDir, Stderr: opts.Stderr,
@@ -526,6 +533,9 @@ func sources(opts Options, cfg config.Config, lin linear.Workspace, loaded *rule
 	// A nil *Store assigned directly would make src.Workers a non-nil interface.
 	if rows != nil {
 		src.Workers = rows
+	}
+	if branches != nil {
+		src.Branches = branches
 	}
 	src.LocalOn = cfg.Plugins.Local.On
 	if loaded.RunsOver("inbox") {

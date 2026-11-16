@@ -1,7 +1,9 @@
 package dispatch_test
 
 import (
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -45,8 +47,9 @@ func TestTickStartsALocalTicketsBranchAtItsStartPRHead(t *testing.T) {
 
 	assert.Equal(t, "loc-1-work", branchIn(t, tree))
 	assert.Equal(t, head, revParse(t, tree, "HEAD"))
-	assert.Empty(t, gitConfig(t, d.Repo, "branch.loc-1-work.dispatchStackParent"))
-	assert.Empty(t, gitConfig(t, d.Repo, "branch.loc-1-work.remote"))
+	assert.Empty(t, dispatchKeys(t, d.Repo))
+	out, _ := exec.Command("git", "-C", d.Repo, "config", "--get", "branch.loc-1-work.remote").Output()
+	assert.Empty(t, strings.TrimSpace(string(out)))
 }
 
 func TestTickNeverTreatsAStartPRAsTheTicketsOwnPR(t *testing.T) {

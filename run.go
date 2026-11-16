@@ -22,6 +22,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/startscreen"
+	"github.com/kapetan-io/dispatch/internal/ticketbranch"
 	"github.com/kapetan-io/dispatch/internal/typed"
 	"github.com/kapetan-io/dispatch/internal/workers"
 )
@@ -137,6 +138,7 @@ func runCommand(ctx context.Context, opts Options) error {
 	}
 	defer func() { _ = file.Close() }()
 	rows := workers.New(file)
+	branches := ticketbranch.New(file)
 	services := servicesFor(opts, cfg)
 	sent := &typed.Log{}
 	local := localOptions(opts, cfg, file)
@@ -144,13 +146,13 @@ func runCommand(ctx context.Context, opts Options) error {
 		Config: cfg, Systems: executor.Systems{Linear: linear.System{
 			Workspace: func() linear.Workspace { return lin }, AILabel: cfg.Plugins.Linear.AILabel, Teams: cfg.Plugins.Linear.Teams, Statuses: cfg.Plugins.Linear.Statuses.Table(),
 		}}, Multiplexer: opts.Multiplexer, Treehouse: opts.Treehouse,
-		PullRequests: opts.PullRequests, Launcher: launcherFor(opts, cfg.Plugins.PluginRoot(), rows, sent), Harnesses: opts.Harnesses, Followers: opts.Followers,
+		PullRequests: opts.PullRequests, Launcher: launcherFor(opts, cfg.Plugins.PluginRoot(), rows, branches, sent), Harnesses: opts.Harnesses, Followers: opts.Followers,
 		Environment: opts.Env, StateDir: opts.StateDir, Stderr: opts.Stderr, LaunchDeadline: opts.LaunchTimeout, Deadline: opts.ActionTimeout,
-		HTTP: services, Typed: sent, Clock: opts.Clock, Workers: rows,
+		HTTP: services, Typed: sent, Clock: opts.Clock, Workers: rows, Branches: branches,
 	})
 	return loop.New(loop.Options{
 		Config: cfg, ConfigText: string(text), StateDir: opts.StateDir, Rules: loaded, Clock: opts.Clock,
-		Sources: sources(opts, cfg, lin, loaded, rows), Workers: rows,
+		Sources: sources(opts, cfg, lin, loaded, rows, branches), Workers: rows, Branches: branches,
 		Executor: exec, Typed: sent, HTTP: services, Multiplexer: opts.Multiplexer, Usage: lin.Usage,
 		Viewer: viewer.Name, Out: opts.Stdout, Err: opts.Stderr, Local: local, Screen: screen,
 	}).Run(ctx)

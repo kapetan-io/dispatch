@@ -360,3 +360,32 @@ func TestRunRefusesToStartOnADatabaseANewerDispatchWrote(t *testing.T) {
 	require.ErrorContains(t, err, "written by a newer dispatch (format 99")
 	assert.Equal(t, before, d.databaseContents())
 }
+
+func TestTheFirstWriteRaisesTheFormatOfADatabaseAnEarlierDispatchWrote(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	require.NoError(t, os.MkdirAll(d.state, 0o700))
+	db, err := bolt.Open(d.databasePath(), 0o600, nil)
+	require.NoError(t, err)
+	require.NoError(t, db.Update(func(tx *bolt.Tx) error {
+		meta, err := tx.CreateBucketIfNotExists([]byte("meta"))
+		if err != nil {
+			return err
+		}
+		return meta.Put([]byte("version"), []byte("1"))
+	}))
+	require.NoError(t, db.Close())
+	d.Trees.Pooled()
+
+	d.Tick()
+	d.Stop()
+
+	// A dispatch that reads up to format 1 refuses the file from now on.
+	db, err = bolt.Open(d.databasePath(), 0o600, &bolt.Options{ReadOnly: true})
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+	require.NoError(t, db.View(func(tx *bolt.Tx) error {
+		assert.Equal(t, "2", string(tx.Bucket([]byte("meta")).Get([]byte("version"))))
+		return nil
+	}))
+}

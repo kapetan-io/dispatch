@@ -27,6 +27,10 @@ func (l *Loop) onTicket(call *TicketCall, reply chan Response) {
 		reply <- Response{Code: CodeFailed, Error: "a ticket request needs a call"}
 		return
 	}
+	if call.Verb == VerbBranch {
+		l.onBranch(call, reply)
+		return
+	}
 	createsOnLinear := call.Verb == VerbCreate && call.System == ticket.SystemLinear
 	editsOnLinear := call.Verb == VerbEdit && ticket.SystemOf(call.ID) == ticket.SystemLinear
 	if createsOnLinear || editsOnLinear {
@@ -310,7 +314,11 @@ func (l *Loop) tracked() Response {
 	if err != nil {
 		return Response{Code: CodeFailed, Error: err.Error()}
 	}
-	resp := Response{Rows: rows}
+	branches, err := l.o.Branches.Snapshot()
+	if err != nil {
+		return Response{Code: CodeFailed, Error: err.Error()}
+	}
+	resp := Response{Rows: rows, Branches: &branches}
 	if l.local == nil {
 		return resp
 	}

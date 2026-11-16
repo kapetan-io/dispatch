@@ -9,8 +9,8 @@ import (
 	"github.com/kapetan-io/dispatch/internal/inbox"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
-	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/ticket"
+	"github.com/kapetan-io/dispatch/internal/ticketbranch"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/workers"
 )
@@ -49,7 +49,7 @@ type worldRecord struct {
 	PRReadsAnswered int                                `json:"prReadsAnswered,omitempty"`
 	MergedPRs       map[string]pullrequest.MergedPR    `json:"mergedPRs,omitempty"`
 	UnreadRepos     map[string]bool                    `json:"unreadRepos,omitempty"`
-	StackRecords    map[string]stackrecord.Records     `json:"stackRecords,omitempty"`
+	StackRecords    map[string]ticketbranch.Records    `json:"stackRecords,omitempty"`
 	StackErrs       map[string]string                  `json:"stackErrs,omitempty"`
 	Nudged          map[string]bool                    `json:"nudged,omitempty"`
 	Inbox           []inbox.Item                       `json:"inbox,omitempty"`

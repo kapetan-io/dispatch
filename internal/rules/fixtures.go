@@ -13,8 +13,8 @@ import (
 	"github.com/kapetan-io/dispatch/internal/inbox"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
-	"github.com/kapetan-io/dispatch/internal/stackrecord"
 	"github.com/kapetan-io/dispatch/internal/ticket"
+	"github.com/kapetan-io/dispatch/internal/ticketbranch"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
@@ -59,7 +59,7 @@ type scenarioModel struct {
 	merged map[string]pullrequest.MergedPR
 	// stacks holds the stack record fixture of each ticket's branch. A record with only one key
 	// is partial.
-	stacks map[string]stackrecord.Record
+	stacks map[string]ticketbranch.Record
 	trees  []*treeModel
 	stamps map[string]*stamp
 }
@@ -67,7 +67,7 @@ type scenarioModel struct {
 func newModel() *scenarioModel {
 	return &scenarioModel{
 		tickets: map[string]*ticket.Ticket{}, parent: map[string]string{}, workers: map[string]*world.Worker{},
-		stops: map[string]workers.Record{}, sessions: map[string]sessionlog.Log{}, sessionUnread: map[string]string{}, prs: map[string]*pullrequest.PullRequest{}, merged: map[string]pullrequest.MergedPR{}, stacks: map[string]stackrecord.Record{}, stamps: map[string]*stamp{},
+		stops: map[string]workers.Record{}, sessions: map[string]sessionlog.Log{}, sessionUnread: map[string]string{}, prs: map[string]*pullrequest.PullRequest{}, merged: map[string]pullrequest.MergedPR{}, stacks: map[string]ticketbranch.Record{}, stamps: map[string]*stamp{},
 	}
 }
 
@@ -183,7 +183,7 @@ func (s *scenario) applyTicket(id string, fields map[string]any) {
 	if v, ok := fields["stack"].(map[string]any); ok {
 		parent, _ := str(v, "parent")
 		fork, _ := str(v, "forkPoint")
-		m.stacks[id] = stackrecord.Record{Parent: parent, ForkPoint: fork}
+		m.stacks[id] = ticketbranch.Record{Parent: parent, ForkPoint: fork}
 	}
 	if v, ok := str(fields, "createdAt"); ok {
 		t.CreatedAt = v
@@ -535,9 +535,9 @@ func (s *scenario) world() world.World {
 		}
 		w.Children[parent.Identifier] = kids
 	}
-	w.StackRecords, w.StackErrs = map[string]stackrecord.Records{}, map[string]error{}
+	w.StackRecords, w.StackErrs = map[string]ticketbranch.Records{}, map[string]error{}
 	for label := range cfg.Repos {
-		w.StackRecords[label] = stackrecord.Records{Whole: map[string]stackrecord.Record{}, Partial: map[string]bool{}}
+		w.StackRecords[label] = ticketbranch.Records{Whole: map[string]ticketbranch.Record{}, Partial: map[string]bool{}}
 	}
 	for id, rec := range m.stacks {
 		t := m.tickets[id]

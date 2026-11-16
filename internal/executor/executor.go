@@ -31,6 +31,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/ticket"
+	"github.com/kapetan-io/dispatch/internal/ticketbranch"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/typed"
 	"github.com/kapetan-io/dispatch/internal/workers"
@@ -67,6 +68,8 @@ type Env struct {
 	Stderr      io.Writer
 	// Workers holds the worker rows a launch, a close and a return write.
 	Workers *workers.Store
+	// Branches holds the branch rows, which say whether a repo's branches are imported yet.
+	Branches *ticketbranch.Store
 	// Typed is what dispatch sent or typed into workers, shared with the launcher and the loop.
 	Typed *typed.Log
 	// LaunchDeadline and Deadline override the default budgets, which run on Clock.
@@ -163,6 +166,16 @@ func (e *Executor) WhyNotLaunch(w rules.Want, wd world.World) string {
 			return "whether the workers of " + repo + " are imported could not be read: " + err.Error()
 		case !done:
 			return "the workers of " + repo + " are not imported yet"
+		}
+		// Until the repo's branches have their rows, a launch could start a new branch beside the
+		// ticket's own, or create a stacked branch whose record the import then overlooks.
+		done, err = e.Branches.Imported(repo)
+		switch {
+		case repo == "":
+		case err != nil:
+			return "whether the branches of " + repo + " are imported could not be read: " + err.Error()
+		case !done:
+			return "the branches of " + repo + " are not imported yet"
 		}
 	}
 	return ""
@@ -305,10 +318,20 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World, que
 	}
 	// The row exists before a tree is leased, so a lease the launch dies holding is the ticket's
 	// worker and not a stray lease.
-	if err := e.Workers.Ensure(t.Identifier, label, e.Clock.Now()); err != nil {
+	had, err := e.Workers.Exists(t.Identifier, label)
+	if err == nil {
+		err = e.Workers.Ensure(t.Identifier, label, e.Clock.Now())
+	}
+	if err != nil {
 		return failed("%s: %v", launcher.StatusWorkerRowFailed, err)
 	}
 	r := e.Launcher.Launch(ctx, req)
+	// A launch the branch rows refuse leases nothing and leaves every row as it was, so the worker
+	// row it made for a ticket that had none goes. A failed delete leaves a row with no tree, which
+	// the next launch reuses.
+	if !had && (r.Status == launcher.StatusBranchTaken || r.Status == launcher.StatusBranchMissing) {
+		_ = e.Workers.Delete(t.Identifier, label)
+	}
 	res := Result{Reread: world.FromLocal}
 	switch {
 	case r.Status == launcher.StatusOK:

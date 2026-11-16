@@ -205,6 +205,14 @@ _Avoid_: agent (herdr's word for any terminal agent, kept inside the herdr adapt
 The database's record of a worker: its ticket and repo, its tree, its kickoff record, its Stop records and closing messages. A resync deletes a row whose tree no longer holds the ticket's lease and writes `worker_gone` to history.
 _Avoid_: worker record (what a rule reads, built from the worker row and live reads), lease
 
+**Branch row**:
+The database's record of a ticket's branch in one repo, with its stack record when stacked. A launch writes it before it leases a tree, marked "not created yet" until a read shows the branch exists. A resync deletes the row of a gone branch once no ticket system lists its ticket.
+_Avoid_: branch binding, branch record
+
+**Import marker**:
+The database's note, per repo, that the git config keys and leases an earlier dispatch kept were copied in, with the branches whose keys are still to be unset. A repo with no marker holds its launches and reads its stack records as unknown.
+_Avoid_: migrated flag
+
 **Tree**:
 A git worktree in a repo's treehouse pool, leased or not; a rule reads which from its `leased` fact. A ticket leases one and holds it under the ticket id until it is returned.
 _Avoid_: worktree and checkout (the tools' words, used inside the tool adapters and for a plain git worktree of a repo), lease (the lease is the holding, not the tree), slot (room in the pool)
@@ -238,11 +246,11 @@ The ticket whose PR head a stacked ticket's branch started from.
 _Avoid_: parent (a Linear parent ticket), base ticket
 
 **Stack record**:
-Two keys in the repo clone's git config under the stacked ticket's branch naming the stack parent and the fork point. The launcher writes it once on a brand-new branch, and dispatch never changes it once the branch exists. Rules read it as `t.stack`.
+The stack parent and fork point, held in the stacked ticket's branch row as one value. The launcher writes it with a branch it is about to create, and the worker ends it as the last step of a restack with `dispatch ticket branch <ticket> --unstack`. Rules read it as `t.stack`.
 _Avoid_: stack state, stack metadata
 
 **Ticket branch**:
-The branch a ticket's work is on. It is named by the ticket branch key, the git config variable `branch.<name>.dispatchTicket` in the repo clone, whose value is the ticket's id. The launcher writes the key when it puts a worker on a branch, and at start dispatch writes it for a tracked ticket whose one local branch starts with its id. git moves the key when a branch is renamed and drops it when the branch is deleted. The ticket system's name for the branch is only the first guess, since Linear writes the id followed by a title that changes or gets cut short.
+The branch a ticket's work is on, named by its branch row. A launch writes the row before it creates the branch. A branch renamed or deleted by hand is not followed: dispatch warns at each resync and refuses to launch the ticket with `branch_missing` until `dispatch ticket branch <ticket> <name>` records the new name. The ticket system's name for the branch is only the first guess for a ticket with no row, since Linear writes the id followed by a title that changes or gets cut short.
 _Avoid_: launched branch
 
 **Fork point**:
@@ -322,7 +330,7 @@ Where tickets come from and are written back: Linear, or dispatch's own local ti
 _Avoid_: source (what the world reads), tracker
 
 **Local ticket**:
-A ticket in dispatch's own database `dispatch.db`, beside the worker rows, id `LOC-<n>`, which only the holder of `dispatch.lock` opens for writing. `dispatch ticket` reaches it through the running `dispatch run`; `dispatch rules check` and `dispatch state reset` read it without writing, under the lock or by asking the running `dispatch run`. Numbers count up and are never reused, and nothing deletes a ticket.
+A ticket in dispatch's own database `dispatch.db`, beside the branch and worker rows, id `LOC-<n>`, which only the holder of `dispatch.lock` opens for writing. `dispatch ticket` reaches it through the running `dispatch run`; `dispatch rules check` and `dispatch state reset` read it without writing, under the lock or by asking the running `dispatch run`. Numbers count up and are never reused, and nothing deletes a ticket.
 _Avoid_: internal ticket, offline ticket
 
 **Attribute**:

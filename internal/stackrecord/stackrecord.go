@@ -1,82 +1,54 @@
-// Package stackrecord reads, writes and clears what dispatch keeps in a repo clone's git config
-// under a branch. The stack record is two keys that name a stacked ticket's stack parent and fork
-// point, with a both-or-neither rule. The ticket branch key is one key that names the ticket whose
-// work the branch carries. This package owns the key names, so the launcher that writes them and
-// the world that reads them agree.
+// Package stackrecord reads and clears the keys an earlier dispatch kept under a branch in a repo
+// clone's git config, which the first-start import copies into branch rows (internal/ticketbranch).
+// Two keys held a stacked ticket's stack parent and fork point, both or neither, and one key named
+// the ticket whose work the branch carried. Nothing else reads them, so the package goes when the
+// import does.
 package stackrecord
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/kapetan-io/dispatch/internal/environment"
+	"github.com/kapetan-io/dispatch/internal/ticketbranch"
 )
 
 const (
 	parentKey = "dispatchStackParent"
 	forkKey   = "dispatchStackForkPoint"
-	// ticketKey names the ticket whose work the branch carries. git renames it with the branch and
-	// drops it with the branch.
 	ticketKey = "dispatchTicket"
 )
 
-// Record is where a stacked ticket's branch started and from whose PR.
-type Record struct {
-	// Parent is the stack parent's ticket id.
-	Parent string
-	// ForkPoint is the full sha the branch started at.
-	ForkPoint string
+// Keys is what one repo's git config held under its branches.
+type Keys struct {
+	Whole map[string]ticketbranch.Record
+	// Half maps a branch that has only one of the two stack record keys set to a value, to the key
+	// that is set.
+	Half map[string]string
+	// Tickets maps a local branch to the ticket its ticket branch key names. A key whose branch is
+	// gone is left out.
+	Tickets map[string]string
+	// Branches lists every branch with any of the keys, which the import unsets.
+	Branches []string
 }
 
-// Records is every stack record and ticket branch key of one repo, read in one call.
-type Records struct {
-	Whole   map[string]Record `json:"whole,omitempty"`
-	Partial map[string]bool   `json:"partial,omitempty"`
-	// Tickets maps a local branch to the ticket its ticket branch key names.
-	Tickets map[string]string `json:"tickets,omitempty"`
-}
-
-// Of is the record of branch. Partial is true when only one of its two keys is set, which
-// callers treat as unknown. A branch with no keys is neither found nor partial.
-func (r Records) Of(branch string) (rec Record, found, partial bool) {
-	if r.Partial[branch] {
-		return Record{}, false, true
-	}
-	rec, found = r.Whole[branch]
-	return rec, found, false
-}
-
-// BranchOf is the branch whose ticket branch key names id. It is false when no branch or several
-// do, since two would be a guess.
-func (r Records) BranchOf(id string) (string, bool) {
-	var found []string
-	for branch, owner := range r.Tickets {
-		if strings.EqualFold(owner, id) {
-			found = append(found, branch)
-		}
-	}
-	if len(found) != 1 {
-		return "", false
-	}
-	return found[0], true
-}
-
-// Read reads the records of the clone at repoDir. A clone with none is an empty read, and
-// only a read git itself fails is an error. A ticket branch key whose branch is gone is left out.
-func Read(ctx context.Context, env environment.Environment, repoDir string) (Records, error) {
+// Read reads the keys of the clone at repoDir. A clone with none is an empty read, and only a read
+// git itself fails is an error.
+func Read(ctx context.Context, env environment.Environment, repoDir string) (Keys, error) {
 	out, err := env.Command(ctx, "git", "-C", repoDir, "config", "--get-regexp", `^branch\..*\.dispatch(stack|ticket)`).Output()
-	recs := Records{Whole: map[string]Record{}, Partial: map[string]bool{}, Tickets: map[string]string{}}
+	keys := Keys{Whole: map[string]ticketbranch.Record{}, Half: map[string]string{}, Tickets: map[string]string{}}
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && exit.ExitCode() == 1 {
-			return recs, nil
+			return keys, nil
 		}
-		return Records{}, fmt.Errorf("read stack records in %s: %w", repoDir, err)
+		return Keys{}, fmt.Errorf("read stack records in %s: %w", repoDir, err)
 	}
-	parents, forks := map[string]string{}, map[string]string{}
+	parents, forks, seen := map[string]string{}, map[string]string{}, map[string]bool{}
 	for line := range strings.SplitSeq(string(out), "\n") {
 		key, value, _ := strings.Cut(strings.TrimSpace(line), " ")
 		// A branch name may hold dots, so only the last dot splits the variable name off.
@@ -96,40 +68,57 @@ func Read(ctx context.Context, env environment.Environment, repoDir string) (Rec
 		case strings.EqualFold(variable, forkKey):
 			forks[branch] = value
 		case strings.EqualFold(variable, ticketKey) && value != "":
-			recs.Tickets[branch] = value
+			keys.Tickets[branch] = value
+		default:
+			continue
+		}
+		if !seen[branch] {
+			seen[branch] = true
+			keys.Branches = append(keys.Branches, branch)
 		}
 	}
 	for branch, parent := range parents {
-		if fork, ok := forks[branch]; ok && parent != "" && fork != "" {
-			recs.Whole[branch] = Record{Parent: parent, ForkPoint: fork}
-		} else {
-			recs.Partial[branch] = true
+		fork, ok := forks[branch]
+		switch {
+		case ok && parent != "" && fork != "":
+			keys.Whole[branch] = ticketbranch.Record{Parent: parent, ForkPoint: fork}
+		case ok:
+			// Both keys are there and one is empty, so the other is the key that is set.
+			keys.Half[branch] = parentKey
+			if parent == "" {
+				keys.Half[branch] = forkKey
+			}
+		default:
+			keys.Half[branch] = parentKey
 		}
 	}
 	for branch := range forks {
 		if _, ok := parents[branch]; !ok {
-			recs.Partial[branch] = true
+			keys.Half[branch] = forkKey
 		}
 	}
-	if len(recs.Tickets) == 0 {
-		return recs, nil
+	if len(keys.Tickets) == 0 {
+		return keys, nil
 	}
 	local, err := LocalBranches(ctx, env, repoDir)
 	if err != nil {
-		return Records{}, err
+		return Keys{}, err
 	}
-	for branch := range recs.Tickets {
+	for branch := range keys.Tickets {
 		if _, ok := local[branch]; !ok {
-			delete(recs.Tickets, branch)
+			delete(keys.Tickets, branch)
 		}
 	}
-	return recs, nil
+	return keys, nil
 }
 
 // LocalBranches maps each local branch of the clone at repoDir to the tree that has it checked
-// out, empty when none does.
+// out, empty when none does. A directory that is not a git repository has no branches.
 func LocalBranches(ctx context.Context, env environment.Environment, repoDir string) (map[string]string, error) {
 	out, err := env.Command(ctx, "git", "-C", repoDir, "for-each-ref", "--format=%(refname:short)%09%(worktreepath)", "refs/heads").Output()
+	if err != nil && NotARepo(ctx, env, repoDir) {
+		return map[string]string{}, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("list branches in %s: %w", repoDir, err)
 	}
@@ -143,35 +132,26 @@ func LocalBranches(ctx context.Context, env environment.Environment, repoDir str
 	return branches, nil
 }
 
-// WriteTicket sets the ticket branch key of branch to id in the clone at repoDir.
-func WriteTicket(ctx context.Context, env environment.Environment, repoDir, branch, id string) error {
-	out, err := env.Command(ctx, "git", "-C", repoDir, "config", "branch."+branch+"."+ticketKey, id).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("write ticket branch key of %s: %w: %s", branch, err, strings.TrimSpace(string(out)))
+// NotARepo reports whether the directory exists and git says it is in no git repository, which is
+// a fact about the directory and not a failed read. A directory that is gone, as a moved clone's
+// is, is a failed read. git exits 128 also for a clone it refuses to read, as it does one another
+// user owns, so only its message, in the C locale, tells the two apart.
+func NotARepo(ctx context.Context, env environment.Environment, dir string) bool {
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return false
 	}
-	return nil
+	cmd := env.Command(ctx, "git", "-C", dir, "rev-parse", "--git-dir")
+	cmd.Env = append(cmd.Env, "LC_ALL=C")
+	var said strings.Builder
+	cmd.Stderr = &said
+	var exit *exec.ExitError
+	return errors.As(cmd.Run(), &exit) && exit.ExitCode() == 128 && strings.Contains(said.String(), "not a git repository")
 }
 
-// Write sets both keys of branch in the clone at repoDir. When the second key fails it tries to
-// remove the first, which fails too while the clone's config is locked, so a half record can
-// remain and reads as partial.
-func Write(ctx context.Context, env environment.Environment, repoDir, branch string, rec Record) error {
-	for i, kv := range [][2]string{{parentKey, rec.Parent}, {forkKey, rec.ForkPoint}} {
-		out, err := env.Command(ctx, "git", "-C", repoDir, "config", "branch."+branch+"."+kv[0], kv[1]).CombinedOutput()
-		if err != nil {
-			if i > 0 {
-				_ = Clear(context.WithoutCancel(ctx), env, repoDir, branch)
-			}
-			return fmt.Errorf("write stack record of %s: %w: %s", branch, err, strings.TrimSpace(string(out)))
-		}
-	}
-	return nil
-}
-
-// Clear removes both keys of branch. Keys that are already gone are not an error.
+// Clear removes every dispatch key of branch. Keys that are already gone are not an error.
 func Clear(ctx context.Context, env environment.Environment, repoDir, branch string) error {
 	var errs []error
-	for _, key := range []string{parentKey, forkKey} {
+	for _, key := range []string{parentKey, forkKey, ticketKey} {
 		err := env.Command(ctx, "git", "-C", repoDir, "config", "--unset", "branch."+branch+"."+key).Run()
 		var exit *exec.ExitError
 		// Exit 5 is git's answer for a key that was never set.

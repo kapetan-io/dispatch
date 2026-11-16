@@ -288,6 +288,17 @@ func (s *Store) Ensure(ticket, repo string, at time.Time) error {
 	})
 }
 
+// Exists reports whether the ticket has a worker row in the repo.
+func (s *Store) Exists(ticket, repo string) (bool, error) {
+	found := false
+	err := s.file.View(func(tx *bolt.Tx) error {
+		all := tx.Bucket(workersBucket)
+		found = all != nil && all.Bucket(key(ticket, repo)) != nil
+		return nil
+	})
+	return found, err
+}
+
 // RecordTree records the tree the ticket's worker runs in. It fails with ErrTreeTaken when
 // another row names the tree, because a tree holds one worker.
 func (s *Store) RecordTree(ticket, repo, tree string) error {

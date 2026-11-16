@@ -1,7 +1,7 @@
 // Package dispatchdb owns the file dispatch.db in the state directory: opening it, its version,
 // the rename of the tickets.db it replaces, the read-only open and the import marker of each repo.
-// It hands the open file to the stores that own its buckets (localticket and workers) and to
-// nothing else.
+// It hands the open file to the stores that own its buckets (localticket, ticketbranch and workers)
+// and to nothing else.
 package dispatchdb
 
 import (
@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"time"
 
@@ -23,8 +24,10 @@ const (
 	Name = "dispatch.db"
 	// OldName is the local ticket database an earlier dispatch kept, which the first start renames.
 	OldName = "tickets.db"
-	// version is the format this dispatch writes. A file with a higher one is refused.
-	version = 1
+	// version is the format this dispatch writes. A file with a higher one is refused. Format 2
+	// holds branch rows and has unset the git config keys format 1 still read, so a dispatch that
+	// reads only format 1 refuses it instead of running with no branches or stacks.
+	version = 2
 	// defaultLockTimeout is how long an open waits for a file another process holds.
 	defaultLockTimeout = 5 * time.Second
 )
@@ -182,12 +185,13 @@ func (f *File) Bolt() *bolt.DB { return f.db }
 // commit. The local ticket store writes through Bolt.
 func (f *File) Update(write func(tx *bolt.Tx) error) error {
 	return f.db.Update(func(tx *bolt.Tx) error {
-		// The first write stamps the format version.
+		// The first write stamps the format version, raising a lower one, since the open refused
+		// a higher one.
 		meta, err := tx.CreateBucketIfNotExists(metaBucket)
 		if err != nil {
 			return err
 		}
-		if meta.Get(versionKey) == nil {
+		if string(meta.Get(versionKey)) != strconv.Itoa(version) {
 			if err := meta.Put(versionKey, []byte(strconv.Itoa(version))); err != nil {
 				return err
 			}
@@ -205,10 +209,15 @@ func (f *File) Update(write func(tx *bolt.Tx) error) error {
 // View runs one read transaction.
 func (f *File) View(read func(tx *bolt.Tx) error) error { return f.db.View(read) }
 
-// imported is a repo's import marker.
-type imported struct {
+// Marker is a repo's import marker: which halves of what an earlier dispatch kept outside this
+// file were copied in, and the branches whose git config keys are still to be unset.
+type Marker struct {
 	// Workers is when the repo's workers were imported, in milliseconds since the epoch.
 	Workers int64 `json:"workers,omitempty"`
+	// Branches is when the repo's ticket branch keys and stack records were imported.
+	Branches int64 `json:"branches,omitempty"`
+	// Unset lists the branches whose dispatch keys are still in the clone's git config.
+	Unset []string `json:"unset,omitempty"`
 }
 
 // WorkersImported reports whether the repo's workers were imported from the files an earlier
@@ -216,8 +225,20 @@ type imported struct {
 func (f *File) WorkersImported(repo string) (bool, error) {
 	var done bool
 	err := f.db.View(func(tx *bolt.Tx) error {
-		m, err := readImported(tx, repo)
+		m, err := ReadMarker(tx, repo)
 		done = m.Workers != 0
+		return err
+	})
+	return done, err
+}
+
+// BranchesImported reports whether the repo's ticket branch keys and stack records were imported
+// from its clone's git config.
+func (f *File) BranchesImported(repo string) (bool, error) {
+	var done bool
+	err := f.db.View(func(tx *bolt.Tx) error {
+		m, err := ReadMarker(tx, repo)
+		done = m.Branches != 0
 		return err
 	})
 	return done, err
@@ -226,11 +247,57 @@ func (f *File) WorkersImported(repo string) (bool, error) {
 // MarkWorkersImported records, in the import's own transaction, that the repo's workers are
 // imported. A marker already there keeps its time.
 func MarkWorkersImported(tx *bolt.Tx, repo string, at time.Time) error {
-	m, err := readImported(tx, repo)
-	if err != nil || m.Workers != 0 {
+	return editMarker(tx, repo, func(m *Marker) {
+		if m.Workers == 0 {
+			m.Workers = at.UnixMilli()
+		}
+	})
+}
+
+// MarkBranchesImported records, in the import's own transaction, that the repo's branches are
+// imported and which branches still carry keys to unset. A marker already there keeps its time
+// and list.
+func MarkBranchesImported(tx *bolt.Tx, repo string, at time.Time, unset []string) error {
+	return editMarker(tx, repo, func(m *Marker) {
+		if m.Branches == 0 {
+			m.Branches, m.Unset = at.UnixMilli(), unset
+		}
+	})
+}
+
+// KeysUnset takes the branches whose keys were unset off the repo's list.
+func (f *File) KeysUnset(repo string, branches []string) error {
+	return f.Update(func(tx *bolt.Tx) error {
+		return editMarker(tx, repo, func(m *Marker) {
+			m.Unset = slices.DeleteFunc(m.Unset, func(b string) bool { return slices.Contains(branches, b) })
+		})
+	})
+}
+
+// Markers reads the import marker of every repo that has one.
+func Markers(tx *bolt.Tx) (map[string]Marker, error) {
+	found := map[string]Marker{}
+	bucket := tx.Bucket(importedBucket)
+	if bucket == nil {
+		return found, nil
+	}
+	err := bucket.ForEach(func(k, raw []byte) error {
+		var m Marker
+		if err := json.Unmarshal(raw, &m); err != nil {
+			return fmt.Errorf("the import marker of %s is not readable: %w", k, err)
+		}
+		found[string(k)] = m
+		return nil
+	})
+	return found, err
+}
+
+func editMarker(tx *bolt.Tx, repo string, edit func(*Marker)) error {
+	m, err := ReadMarker(tx, repo)
+	if err != nil {
 		return err
 	}
-	m.Workers = at.UnixMilli()
+	edit(&m)
 	raw, err := json.Marshal(m)
 	if err != nil {
 		return err
@@ -242,8 +309,9 @@ func MarkWorkersImported(tx *bolt.Tx, repo string, at time.Time) error {
 	return bucket.Put([]byte(repo), raw)
 }
 
-func readImported(tx *bolt.Tx, repo string) (imported, error) {
-	var m imported
+// ReadMarker is the repo's import marker, empty when it has none.
+func ReadMarker(tx *bolt.Tx, repo string) (Marker, error) {
+	var m Marker
 	bucket := tx.Bucket(importedBucket)
 	if bucket == nil {
 		return m, nil

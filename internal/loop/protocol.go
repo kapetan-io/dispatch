@@ -4,6 +4,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/localticket"
 	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
+	"github.com/kapetan-io/dispatch/internal/ticketbranch"
 	"github.com/kapetan-io/dispatch/internal/workers"
 )
 
@@ -79,6 +80,8 @@ type Response struct {
 	Tracked *localticket.Listing `json:"tracked,omitempty"`
 	// Rows answers VerbTracked with the worker rows, whether or not local tickets are on.
 	Rows workers.Snapshot `json:"rows,omitempty"`
+	// Branches answers VerbTracked with the branch rows.
+	Branches *ticketbranch.Snapshot `json:"branches,omitempty"`
 }
 
 // Turn is the turn a worker waits at and what it said at the end of it.
@@ -102,6 +105,8 @@ const (
 	VerbComment  = "comment"
 	VerbEdit     = "edit"
 	VerbStatuses = "statuses"
+	// VerbBranch prints or records a ticket's branch, or ends its stack record.
+	VerbBranch = "branch"
 	// VerbTracked is not a `dispatch ticket` verb. `dispatch rules check` sends it to read the tickets and worker rows of the running dispatch.
 	VerbTracked = "tracked"
 )
@@ -121,4 +126,8 @@ type TicketCall struct {
 	Filter *localticket.Filter `json:"filter,omitempty"`
 	// Tree is the worker tree the CLI ran in, "" elsewhere. It decides a comment's author.
 	Tree string `json:"tree,omitempty"`
+	// Branch is the branch name branch records, "" to print the recorded one.
+	Branch string `json:"branch,omitempty"`
+	// Unstack makes branch end the ticket's stack record.
+	Unstack bool `json:"unstack,omitempty"`
 }

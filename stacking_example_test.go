@@ -15,7 +15,7 @@ const importStacking = `import "./stacking";`
 
 func TestTheStackingExampleLaunchesATicketOnItsBlockersReadyPR(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: shippedRulesAnd(t, importStacking)})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: shippedRulesAnd(t, importStacking+reportRule)})
 	head := stackedPair(t, d)
 	d.Workers.Running("ENG-1", "idle")
 	d.GitHub.PullRequest("ENG-1", prState{head: head, checks: "SUCCESS", mergeable: "MERGEABLE"})
@@ -23,14 +23,12 @@ func TestTheStackingExampleLaunchesATicketOnItsBlockersReadyPR(t *testing.T) {
 	d.Tick()
 
 	assert.Equal(t, []string{"w2:p2|/dispatch:build ENG-2 --base thrawn01/eng-1"}, d.fakes().Multiplexer.Kicked())
-	assert.Equal(t, "ENG-1", gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
-	assert.Equal(t, head, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))
-	assert.Empty(t, d.Linear.Comments())
+	assert.Equal(t, "stack ENG-1@"+head+" branch thrawn01/eng-2", lastReadingOf(d, "ENG-2"))
 }
 
 func TestTheStackingExampleLeavesABlockerWithoutAReadyPRWaiting(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: shippedRulesAnd(t, importStacking)})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: shippedRulesAnd(t, importStacking+reportRule)})
 	head := stackedPair(t, d)
 	d.Workers.Running("ENG-1", "idle")
 	d.GitHub.PullRequest("ENG-1", prState{head: head, checks: "FAILURE", mergeable: "MERGEABLE"})
@@ -38,12 +36,13 @@ func TestTheStackingExampleLeavesABlockerWithoutAReadyPRWaiting(t *testing.T) {
 	d.Tick()
 
 	assert.Empty(t, d.fakes().Multiplexer.Kicked())
-	assert.Empty(t, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackParent"))
+	// The shipped rules also comment that ENG-2 is blocked, in either order.
+	assert.Contains(t, d.Linear.Comments(), "ENG-2: stack none branch thrawn01/eng-2")
 }
 
 func TestTheStackingExampleRelaunchesATicketThatOwesARestackWithOneLaunch(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: shippedRulesAnd(t, importStacking)})
+	d := newDispatch(t, dispatchOptions{Env: launchEnv, Launcher: builtinLauncher, Rules: shippedRulesAnd(t, importStacking+reportRule)})
 	d.Trees.Pooled()
 	const fork = "0123456789abcdef0123456789abcdef01234567"
 	hintGit(t, d.Repo, "branch", "thrawn01/eng-2", "main")
@@ -58,7 +57,9 @@ func TestTheStackingExampleRelaunchesATicketThatOwesARestackWithOneLaunch(t *tes
 	kicked := d.fakes().Multiplexer.Kicked()
 	require.Len(t, kicked, 1)
 	assert.Contains(t, kicked[0], "git rebase --onto origin/<default> "+fork)
-	assert.Equal(t, fork, gitConfig(t, d.Repo, "branch.thrawn01/eng-2.dispatchStackForkPoint"))
+	assert.Contains(t, kicked[0], "ticket branch ENG-2 --unstack")
+	assert.Equal(t, "stack ENG-1@"+fork+" branch thrawn01/eng-2", lastReadingOf(d, "ENG-2"))
+	assert.Empty(t, dispatchKeys(t, d.Repo))
 }
 
 func TestRulesTestAcceptsSeveralEntryFilesInRulesFrom(t *testing.T) {
