@@ -214,12 +214,13 @@ func (l *launch) run(ctx context.Context) Result {
 		}
 		return Result{Status: StatusWorkerRowFailed, Detail: err.Error(), Workspace: l.workspace, Pane: started.Pane, Worktree: l.tree}
 	}
+	text := l.message(started.Session)
 	l.opts.Typed.Clear(l.tree)
-	l.opts.Typed.Note(l.tree, req.Kickoff)
+	l.opts.Typed.Note(l.tree, text)
 
 	// An unconfirmed kickoff closes the workspace. Left open, its idle program
 	// would look like a live worker, and no cycle would retry or escalate.
-	if err := l.opts.Multiplexer.Kickoff(ctx, started.Pane, req.Kickoff, req.Program.Startup); err != nil {
+	if err := l.opts.Multiplexer.Kickoff(ctx, started.Pane, text, req.Program.Startup); err != nil {
 		// When the close fails the idle session is still there, and the open record stays so a
 		// later cycle closes it.
 		if l.opts.Multiplexer.CloseWorkspace(context.WithoutCancel(ctx), l.workspace) == nil {
@@ -261,8 +262,26 @@ func (l *launch) run(ctx context.Context) Result {
 	}
 	return Result{
 		Status: StatusOK, Ticket: req.Ticket, Branch: req.Branch, Worktree: l.tree,
-		Workspace: l.workspace, Pane: started.Pane, Agent: started.Agent, Kickoff: req.Kickoff, Stacked: l.stacked,
+		Workspace: l.workspace, Pane: started.Pane, Agent: started.Agent, Kickoff: text, Resumed: text == resumed, Stacked: l.stacked,
 	}
+}
+
+// resumed is typed in place of the kickoff into a resumed session that already took it, because
+// typing the kickoff again tells the worker to start the job it is in the middle of.
+const resumed = "Dispatch restarted your terminal and resumed this conversation. Carry on from where you stopped."
+
+// message is what the session is typed: resumed when the kickoff record the row held before this
+// launch shows this session already took this same kickoff, and the kickoff otherwise. A kickoff
+// that differs, such as a restack, tells the session something new, so it is typed.
+func (l *launch) message(session string) string {
+	k := l.prior
+	if session == "" || k == nil || k.Session != session || k.Text != l.req.Kickoff {
+		return l.req.Kickoff
+	}
+	if k.Open && !l.stoppedSince(session, k.At) {
+		return l.req.Kickoff
+	}
+	return resumed
 }
 
 // beginKickoff writes the kickoff record, open, before the harness starts. A launch killed
@@ -290,7 +309,7 @@ func (l *launch) restoreKickoff() {
 	// record dates the wait from now. A Stop later than the earlier record shows its kickoff
 	// ran, so that record goes back with its own time.
 	kickoff := l.prior
-	if l.prior != nil && l.prior.Open && !l.stoppedSince(l.prior.At) {
+	if l.prior != nil && l.prior.Open && !l.stoppedSince("", l.prior.At) {
 		kickoff = &workers.Kickoff{Text: l.prior.Text, At: l.opts.Clock.Now().UnixMilli(), Open: true, Session: l.prior.Session}
 	}
 	if err := l.opts.Workers.SetKickoff(l.req.Ticket, l.req.Repo, kickoff); err != nil && !errors.Is(err, workers.ErrNoRow) {
@@ -298,18 +317,15 @@ func (l *launch) restoreKickoff() {
 	}
 }
 
-// stoppedSince reports whether the worker in the tree recorded a Stop after the time, in milliseconds.
-func (l *launch) stoppedSince(at int64) bool {
+// stoppedSince reports whether the worker in the tree recorded a Stop of session after the time, in
+// milliseconds. An empty session counts a Stop of any session.
+func (l *launch) stoppedSince(session string, at int64) bool {
 	worker, _, err := l.opts.Workers.OnTree(l.tree)
 	if err != nil {
 		return false
 	}
-	for _, stop := range worker.Stops {
-		if stop.At.UnixMilli() > at {
-			return true
-		}
-	}
-	return false
+	stop, ok := worker.Stop(session)
+	return ok && stop.At.UnixMilli() > at
 }
 
 // deleteKickoff removes the record of a kickoff that failed to type, once its workspace is closed.

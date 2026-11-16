@@ -316,6 +316,9 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World, que
 		if r.Workspace != "" {
 			res.Detail = "ok: workspace " + r.Workspace
 		}
+		if r.Resumed {
+			res.Detail += ", resumed its session without retyping the kickoff"
+		}
 		if r.Stacked {
 			res.Detail += fmt.Sprintf(", stacked on %s at %s (%s)", req.Stack.Ticket, shortSHA(req.Stack.Head), req.Stack.Branch)
 		}
