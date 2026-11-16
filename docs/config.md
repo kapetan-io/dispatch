@@ -299,7 +299,7 @@ Each value is the exact name of a workflow status in your Linear team. dispatch 
 | `todo` | `Todo` | The status of a child waiting for promotion under an In Progress parent. |
 | `in_progress` | `In Progress` | A worker should be running. Moving a ticket here is how you approve it. |
 | `in_review` | `In Review` | The worker opened a PR and waits on it. |
-| `needs_human` | `Needs Human` | The worker or dispatcher needs you. Every team in `teams` must have this status in the Started category, because dispatch looks it up by name when it escalates and reads only tickets in Started statuses. |
+| `needs_human` | `Needs Human` | Dispatch escalated the ticket and needs you. A worker that needs you runs `dispatch ask` and leaves its ticket's status alone. Every team in `teams` must have this status in the Started category, because dispatch looks it up by name when it escalates and reads only tickets in Started statuses. |
 | `close_parent` | `Done` | What a parent becomes when all its children are finished. |
 | `blocker_done` | `Done` | What a blocker must reach before its child is promoted. A Canceled or Duplicate blocker moves its child to Needs Human instead. |
 | `finished` | `["Done", "Canceled", "Duplicate"]` | Statuses of a finished ticket. Its worker is stopped and its tree returned. Uncommitted changes and untracked files are discarded, and the ticket's branch and its commits stay. A parent closes when every child is in one of these. |

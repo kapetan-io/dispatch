@@ -36,7 +36,7 @@ A single `config.toml` holds your repos, your plugins and the knobs your rules r
 
 ### It tells you
 
-When a ticket is ready for review, needs you, or goes idle, dispatch messages the Claude sessions following it. You hear about it where you already work.
+When a worker asks you a question, dispatch escalates a ticket to you, a PR is ready for review, or a worker goes idle, dispatch messages the Claude sessions following it. You hear about it where you already work.
 
 ## Docs
 
@@ -69,6 +69,6 @@ claude --plugin-dir ~/Development/dispatch --settings '{"crossSessionInbound":"a
 | `make test-slow` | The whole suite plus the tests tagged `tests_slow`. |
 | `make test-race` | The fast suite under the race detector, for an occasional check. |
 | `make test-drift` | The drift checks against the installed tools. CI does not run it. |
-| `make test-claude` | Worker scenarios against a real, logged-in Claude on the Herdr app host. Spends Haiku turns, and CI does not run it. |
+| `make test-claude` | Worker scenarios against a real, logged-in Claude on the Herdr app host, including whether a worker that needs you runs `dispatch ask`. Spends Haiku turns, and CI does not run it. |
 | `make test-report` | The speed report of tests over budget, tagged slow tests included. |
 | `make ci` | What CI runs: vet, the whole suite with the slow tests, and shellcheck. |

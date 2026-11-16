@@ -59,6 +59,7 @@ type liveWorker struct {
 	trace       string
 	seenSession string
 	state       string
+	config      string
 	program     herdr.Program
 	// rows is the worker rows in the dispatch.db the running dispatch opened. Only one process may
 	// open the file, and no dispatch command prints a Stop record's fields or a closing message's transcript.
@@ -118,8 +119,10 @@ func startLiveWorker(t *testing.T) *liveWorker {
 	w.state, err = os.MkdirTemp("/tmp", "dsp")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(w.state) })
+	// Local tickets give the ask scenarios a ticket to build without a Linear account.
 	config := filepath.Join(root, "config.toml")
-	require.NoError(t, os.WriteFile(config, []byte(fmt.Sprintf("[repos.live]\npath = %q\n\n[history]\ndir = %q\n\n[plugins.herdr]\nhost = \"app\"\n", repo, filepath.Join(w.state, "events"))), 0o644))
+	w.config = config
+	require.NoError(t, os.WriteFile(config, []byte(fmt.Sprintf("[repos.live]\npath = %q\n\n[history]\ndir = %q\n\n[plugins.herdr]\nhost = \"app\"\n\n[plugins.local]\n", repo, filepath.Join(w.state, "events"))), 0o644))
 
 	build := func(pkg, dir, name string) string {
 		require.NoError(t, os.Mkdir(filepath.Join(root, dir), 0o755))
@@ -511,6 +514,133 @@ func TestClaudeCodeResumedWithASessionIdReportsItsStopUnderThatId(t *testing.T) 
 	assert.Equal(t, w.cwd, second.field("cwd"))
 }
 
+// askTimeout covers a build turn, which loads skills and reads the ticket before it asks.
+const askTimeout = 8 * time.Minute
+
+// productCallTicket is a ticket whose limit no design states, which the build skill reserves to the user.
+const productCallTicket = "## What it delivers\n\n* A failed webhook delivery is retried at most N times, then dropped.\n\nNo design says what N is, and nothing in the repo sets it."
+
+// fileTicket files a local ticket in Todo, so no rule launches a worker on it, and returns its id.
+func (w *liveWorker) fileTicket(t *testing.T, title, description string) string {
+	t.Helper()
+	var out strings.Builder
+	require.NoError(t, dispatch.Run(context.Background(), []string{"ticket", "create", "local", "--repo", "live", "--title", title, "--description", description},
+		dispatch.Options{ConfigPath: w.config, StateDir: w.state, Stdout: &out, Stderr: os.Stderr}))
+	return strings.TrimSpace(out.String())
+}
+
+func (w *liveWorker) ticketStatus(t *testing.T, id string) string {
+	t.Helper()
+	var out strings.Builder
+	require.NoError(t, dispatch.Run(context.Background(), []string{"ticket", "show", id},
+		dispatch.Options{ConfigPath: w.config, StateDir: w.state, Stdout: &out, Stderr: os.Stderr}))
+	for _, line := range strings.Split(out.String(), "\n") {
+		if rest, ok := strings.CutPrefix(line, "status"); ok {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
+}
+
+// asked waits for the worker's session log to hold an ask. The log is kept under the session id
+// `dispatch ask` read from the harness, and read here under the id the launch chose and the hooks
+// report, so finding the ask proves the two agree, which the 🔴 label relies on.
+func (w *liveWorker) asked(t *testing.T, within time.Duration) sessionlog.Log {
+	t.Helper()
+	var log sessionlog.Log
+	reached := poll(within, func() bool {
+		var err error
+		log, err = sessionlog.Read(w.state, w.cwd, w.id)
+		return err == nil && len(log.Asks) > 0
+	})
+	if !reached {
+		t.Logf("screen:\n%s", w.screen(t))
+	}
+	require.True(t, reached)
+	return log
+}
+
+// TestClaudeCodeBuildWorkerRunsDispatchAskOnATicketThatNeedsAProductCall fails when a build worker
+// that needs the user's call ends its turn without running `dispatch ask`, or moves its ticket.
+func TestClaudeCodeBuildWorkerRunsDispatchAskOnATicketThatNeedsAProductCall(t *testing.T) {
+	w := startLiveWorker(t)
+	w.status(t, "done", turnTimeout)
+	id := w.fileTicket(t, "Cap retries of failed webhook deliveries", productCallTicket)
+	stops := w.count(t, "record-stop", "Stop")
+	before, err := sessionlog.Read(w.state, w.cwd, w.id)
+	require.NoError(t, err)
+
+	w.typeLine(t, "/dispatch:build "+id)
+	log := w.asked(t, askTimeout)
+	assert.Len(t, log.Asks, 1)
+
+	// The ask ran in the turn the build started, before that turn ended. The hook log gets the Stop
+	// before the running dispatch appends its turn line, so the turn line is polled for.
+	assert.Equal(t, w.id, w.await(t, "record-stop", "Stop", stops, turnTimeout).field("session_id"))
+	require.True(t, poll(time.Minute, func() bool {
+		log, err = sessionlog.Read(w.state, w.cwd, w.id)
+		return err == nil && len(log.Turns) > len(before.Turns)
+	}))
+	assert.Greater(t, log.Turns[len(before.Turns)].At, log.Asks[0].At)
+	assert.True(t, log.AskOpen())
+	assert.Equal(t, "Todo", w.ticketStatus(t, id))
+}
+
+// TestClaudeCodeWorkerWaitingOnTheUserRunsDispatchAskWhenAPRNudgeArrives fails when a worker that
+// asked in chat without `dispatch ask` doesn't run it once a PR nudge arrives.
+func TestClaudeCodeWorkerWaitingOnTheUserRunsDispatchAskWhenAPRNudgeArrives(t *testing.T) {
+	w := startLiveWorker(t)
+	w.status(t, "done", turnTimeout)
+	id := w.fileTicket(t, "Cap retries of failed webhook deliveries", productCallTicket)
+	const pr = "https://github.com/kapetan-io/dispatch-claude-live/pull/1"
+	stops := w.count(t, "record-stop", "Stop")
+
+	// The worker's last turn asked in chat, as a worker that forgot `dispatch ask` does.
+	w.typeLine(t, "You are the dispatch build worker for "+id+", In Review with PR "+pr+". Ask me in chat whether a failed webhook delivery is retried at most 3 or 5 times, then end your turn without running any command.")
+	w.await(t, "record-stop", "Stop", stops, turnTimeout)
+	log, err := sessionlog.Read(w.state, w.cwd, w.id)
+	require.NoError(t, err)
+	require.Empty(t, log.Asks)
+	w.status(t, "done", turnTimeout)
+
+	// rules/texts.ts PR_NUDGE, the nudge for a PR that needs work.
+	w.typeLine(t, "/dispatch:pr-respond PR "+pr+" for "+id+" has a failing check. Load the dispatch:pr-respond skill with the Skill tool, then handle it, and push.")
+	w.asked(t, askTimeout)
+	assert.Equal(t, w.id, w.await(t, "record-stop", "Stop", stops+1, turnTimeout).field("session_id"))
+	// Still in Todo, where fileTicket put it: the worker asked without moving the ticket.
+	assert.Equal(t, "Todo", w.ticketStatus(t, id))
+}
+
+// TestClaudeCodeFinishedBackgroundTaskLeavesTheAskOpen fails when the message Claude Code hands a
+// session for its own finished background task stops reading as a task notice, which would end the
+// worker's ask without the user answering.
+func TestClaudeCodeFinishedBackgroundTaskLeavesTheAskOpen(t *testing.T) {
+	w := startLiveWorker(t)
+	w.status(t, "done", turnTimeout)
+
+	w.typeLine(t, "Start `sleep 20` as a background task with the Bash tool's run_in_background option. Then run the shell command `\"${DISPATCH_BIN:-dispatch}\" ask`, then reply with the word waiting and end your turn.")
+	log := w.asked(t, turnTimeout)
+	asked := log.Asks[0].At
+
+	require.True(t, poll(turnTimeout, func() bool {
+		log, err := sessionlog.Read(w.state, w.cwd, w.id)
+		if err != nil {
+			return false
+		}
+		for _, message := range log.Messages {
+			if message.Task && message.At > asked {
+				return true
+			}
+		}
+		return false
+	}))
+	w.status(t, "done", turnTimeout)
+	log, err := sessionlog.Read(w.state, w.cwd, w.id)
+	require.NoError(t, err)
+	assert.Len(t, log.Asks, 1)
+	assert.True(t, log.AskOpen())
+}
+
 // launcherState names what the maintainer's claude launcher points at, or its size and time when it is a file.
 func launcherState(path string) string {
 	if target, err := os.Readlink(path); err == nil {
@@ -570,6 +700,15 @@ func fixedCheckout(t *testing.T) (repo, tree string) {
 		require.NoError(t, err)
 		tree = leased.Path
 	}
+	// A worker may write or commit in the tree, which every run reuses.
+	head, err := exec.Command("git", "-C", tree, "rev-parse", "HEAD").Output()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		for _, args := range [][]string{{"-C", tree, "reset", "-q", "--hard", strings.TrimSpace(string(head))}, {"-C", tree, "clean", "-qfdx"}} {
+			out, err := exec.Command("git", args...).CombinedOutput()
+			assert.NoError(t, err, string(out))
+		}
+	})
 	home, err := os.UserHomeDir()
 	require.NoError(t, err)
 	// Claude names a folder's transcript directory by turning every character but letters and digits into a dash.

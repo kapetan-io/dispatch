@@ -44,7 +44,7 @@ The skill is adopted only if all hold on one attempt of 5 runs per case, 20 runs
 
 Sensitivity check, before the first run of the skill: `arms/careless.md`, 2 runs per case, must pass fewer than 40% of the non-`skill-fired` graders, pooled. If it doesn't, the graders are broken and no result is read.
 
-The bar does not change after this commit. Changing it goes to the user through Needs Human.
+The bar does not change after this commit. Changing it goes to the user, as a question the worker asks with `dispatch ask`.
 
 Not gating: cost per run and turns.
 

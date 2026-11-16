@@ -5,7 +5,7 @@ description: "Review a feature ticket's blueprint with the user, audit it agains
 
 # Review a Blueprint
 
-You run in the review worker for one `design-review` ticket, a child of the feature ticket that holds the blueprint as a Linear document. The dispatcher started you in a tree it leased, and you own the review ticket until it is Done or in Needs Human. Load `dispatch:converse` and `dispatch:blueprint` with the Skill tool first, and open a todolist for the steps below. You run unattended until a question needs the user, so ask in chat, as `dispatch:converse` says. Never run `/loop`, cron, `treehouse return`, or `dispatch tick` after your own move to Done, which would tear down the workspace you run in. The tick in `dispatch:breakdown`'s Start step runs while you are still In Progress, so it is safe. You never commit. Your tree is discarded.
+You run in the review worker for one `design-review` ticket, a child of the feature ticket that holds the blueprint as a Linear document. The dispatcher started you in a tree it leased, and you own the review ticket until it is Done. Load `dispatch:converse` and `dispatch:blueprint` with the Skill tool first, and open a todolist for the steps below. You run unattended until a question needs the user, so ask in chat, as `dispatch:converse` says. Never run `/loop`, cron, `treehouse return`, or `dispatch tick` after your own move to Done, which would tear down the workspace you run in. The tick in `dispatch:breakdown`'s Start step runs while you are still In Progress, so it is safe. You never commit. Your tree is discarded.
 
 ## Goal
 
@@ -13,13 +13,13 @@ Make the blueprint **buildable**: an engineer can build the right feature from i
 
 ## Steps
 
-1. **Orient and resume.** Read the review ticket, its comments, its parent, and the parent's documents and children. No parent or no blueprint document: say so in chat and move the ticket to Needs Human. You may be relaunched with no memory, so take the first row that is true.
+1. **Orient and resume.** Read the review ticket, its comments, its parent, and the parent's documents and children. No parent or no blueprint document: run `"${DISPATCH_BIN:-dispatch}" ask`, say so in chat and end your turn. You may be relaunched with no memory, so take the first row that is true.
    - The feature ticket lacks `design` and has children with a `Piece:` line: approval already happened, so move the review ticket to Done and stop.
    - The blueprint has a `Pieces` section: go to step 8.
    - Otherwise: step 2.
 2. **Pre-work**, below.
 3. **The loop**, Phases 1 to 6, at most 5 rounds.
-4. **Five rounds without PASS.** List the remaining blockers in chat, comment one line on the review ticket that you stopped after five rounds, move it to Needs Human, file nothing and stop.
+4. **Five rounds without PASS.** List the remaining blockers in chat, comment one line on the review ticket that you stopped after five rounds, run `"${DISPATCH_BIN:-dispatch}" ask`, file nothing and stop.
 5. **ADR audit.** When the repo has `docs/adr/`, run `dispatch:design-adr-audit` on the blueprint. A fix it causes gets the Phase 6 run in step 6, even when round 5 already passed. Ask its closing question in chat.
 6. **Fit review.** Run `dispatch:design-fit-review` on the blueprint. Apply its Act On fixes and log each as "agent assumed". Show the verdict in the closing comment, and ask only about a fix that changes product behavior, a public contract or scope. If step 5 or this step changed the blueprint, run Phase 6 once more after both, since an unvalidated fix could break the blueprint. That run counts as a round, and if it fails with all 5 used, follow step 4 without a further round.
 7. **End steps**, below.
