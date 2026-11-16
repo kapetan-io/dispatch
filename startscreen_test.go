@@ -164,8 +164,10 @@ func TestRunPrintsTheStartupScreenInATerminal(t *testing.T) {
 	assert.Contains(t, out, "🟢 ENG-1  ticket ENG-1\n")
 	assert.Contains(t, out, "🔴 ENG-2  ticket ENG-2\n")
 	assert.Contains(t, out, "   ENG-3  In Review  ticket ENG-3\n")
-	// The terminal form leaves out the start line the plain form keeps for logs.
+	// The terminal form leaves out the start line the plain form keeps for logs, and says what it
+	// restored from history on a line of its own.
 	assert.NotContains(t, out, " start: ")
+	assert.Contains(t, sgr.ReplaceAllString(out, ""), " HISTORY  0 receipts from no earlier history\n")
 }
 
 func TestRunPrintsTheStartupScreenWithoutColorUnderNoColor(t *testing.T) {
@@ -385,4 +387,20 @@ func TestRunShowsTheLabelAnInReviewWorkerKeepsWhileItsPRCannotBeRead(t *testing.
 	out := d.RunOnTerminal()
 
 	assert.Contains(t, out, "👀 ENG-1  ticket ENG-1\n")
+}
+
+func TestRunShowsWhichHistoryARestartPickedUpInATerminal(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.StartBeforeTheEvents()
+	require.Eventually(t, func() bool { return len(d.Workers.Launched()) == 1 }, 15*time.Second, 10*time.Millisecond)
+	d.Stop()
+
+	out := sgr.ReplaceAllString(d.RunOnTerminal(), "")
+
+	history := regexp.MustCompile(`(?m)^ HISTORY  (\d+) receipts? from (\S+)$`).FindStringSubmatch(out)
+	require.Len(t, history, 3)
+	assert.NotEqual(t, "0", history[1])
+	assert.NotEqual(t, "no", history[2])
 }

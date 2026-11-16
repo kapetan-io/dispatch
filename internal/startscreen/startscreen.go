@@ -187,6 +187,9 @@ type FirstRead struct {
 	Emoji map[string]string
 	// NextResync is when the next resync is due.
 	NextResync time.Time
+	// History says how many ledger receipts the start restored and from which history file. The
+	// terminal form shows it as its own line.
+	History string
 	// StartLine is the start: line dispatch has always printed, which the plain form ends with for
 	// the logs that grep it. The terminal form leaves it out, since the screen says the same.
 	StartLine string
@@ -194,6 +197,9 @@ type FirstRead struct {
 
 // Show prints what each source returned, the repos and the tracked tickets.
 func (s *Screen) Show(r FirstRead) {
+	if s.fancy {
+		s.printf("%s%s%s\n", s.indent(), s.section("HISTORY"), r.History)
+	}
 	s.printf("\n")
 	for i, src := range sourcesOf(r.Config, r.World) {
 		label := ""

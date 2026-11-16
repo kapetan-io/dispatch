@@ -430,6 +430,7 @@ func (l *Loop) start(ctx context.Context) error {
 	// at most that moment early.
 	l.o.Screen.Show(startscreen.FirstRead{
 		Config: l.o.Config, World: l.wd, Emoji: l.labelEmoji(), NextResync: l.clock.Now().Add(time.Duration(l.o.Config.Dispatch.Resync)),
+		History: fmt.Sprintf("%s from %s", count(len(l.led.Entries), "receipt"), loaded),
 		StartLine: fmt.Sprintf("%s start: %s, %s, ledger %s from %s", at.Format(time.TimeOnly), count(len(l.wd.Tickets), "tracked ticket"),
 			count(len(l.o.Rules.Defs()), "rule"), count(len(l.led.Entries), "receipt"), loaded),
 	})
