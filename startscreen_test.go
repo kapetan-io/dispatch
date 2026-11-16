@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,31 +18,17 @@ import (
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/herdrtest"
 	"github.com/kapetan-io/dispatch/internal/linear"
+	"github.com/kapetan-io/dispatch/internal/lineartest"
 )
 
 // RunOnTerminal runs `dispatch run` with its stdout on a pseudo-terminal until the startup screen
-// shows the next resync, and returns what the terminal received, with the terminal's \r\n made \n.
+// shows the next resync, and returns everything the terminal received, with \r\n made \n.
 func (d *Dispatch) RunOnTerminal() string {
 	d.t.Helper()
-	control, terminal, err := openPTY()
-	require.NoError(d.t, err)
-	defer func() { _ = control.Close() }()
-	screen := &syncBuffer{}
-	go func() { _, _ = io.Copy(screen, control) }()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	d.followers = d.freshFollowers()
-	opts := d.options(dispatch.Options{})
-	opts.Stdout, opts.Stderr = terminal, &syncBuffer{}
-	done := make(chan error, 1)
-	go func() { done <- dispatch.Run(ctx, []string{"run"}, opts) }()
-	require.Eventually(d.t, func() bool { return strings.Contains(screen.String(), "next resync") }, 15*time.Second, 10*time.Millisecond)
-	// The ticket lines follow the resync line in the same burst of writes.
-	time.Sleep(50 * time.Millisecond)
-	cancel()
-	require.NoError(d.t, <-done)
-	_ = terminal.Close()
-	return strings.ReplaceAll(screen.String(), "\r\n", "\n")
+	screen, stop := d.startOnTerminal()
+	require.Eventually(d.t, func() bool { return strings.Contains(screen(), "next resync") }, 15*time.Second, 10*time.Millisecond)
+	require.NoError(d.t, stop())
+	return screen()
 }
 
 func TestRunPrintsThePlainStartupScreenOutsideATerminal(t *testing.T) {
@@ -190,4 +179,178 @@ func TestRunPrintsTheStartupScreenWithoutColorUnderNoColor(t *testing.T) {
 	assert.Contains(t, out, "██████╗ ██╗███████╗")
 	assert.Contains(t, out, "🟢 linear     team ENG, label ai, 1 ticket\n")
 	assert.Contains(t, out, "▶ watching 1 ticket")
+}
+
+// endOfRun is what startOnTerminal writes to the terminal after the run returns.
+const endOfRun = "-- end of run --"
+
+// startOnTerminal starts `dispatch run` with its stdout on a pseudo-terminal and returns what the
+// terminal has received so far, with \r\n made \n, and what stops the run and returns its error.
+func (d *Dispatch) startOnTerminal() (screen func() string, stop func() error) {
+	d.t.Helper()
+	control, terminal, err := openPTY()
+	if errors.Is(err, errors.ErrUnsupported) {
+		d.t.Skip("no pseudo-terminal on this OS")
+	}
+	require.NoError(d.t, err)
+	received := &syncBuffer{}
+	go func() { _, _ = io.Copy(received, control) }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	d.followers = d.freshFollowers()
+	opts := d.options(dispatch.Options{})
+	opts.Stdout, opts.Stderr = terminal, &syncBuffer{}
+	done := make(chan error, 1)
+	go func() { done <- dispatch.Run(ctx, []string{"run"}, opts) }()
+	stop = func() error {
+		cancel()
+		err := <-done
+		// The terminal delivers bytes in order, so once this line arrives everything the run wrote has too.
+		_, _ = terminal.WriteString(endOfRun + "\n")
+		require.Eventually(d.t, func() bool { return strings.Contains(received.String(), endOfRun) }, 15*time.Second, time.Millisecond)
+		_ = terminal.Close()
+		_ = control.Close()
+		return err
+	}
+	screen = func() string {
+		return strings.ReplaceAll(strings.ReplaceAll(received.String(), "\r\n", "\n"), endOfRun+"\n", "")
+	}
+	return screen, stop
+}
+
+var sgr = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func TestRunFadesTheLogoFromCyanToMagentaOneStepPerColumn(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+
+	lines := strings.Split(d.RunOnTerminal(), "\n")
+
+	var plain []string
+	for _, line := range lines {
+		plain = append(plain, sgr.ReplaceAllString(line, ""))
+	}
+	top := slices.IndexFunc(plain, func(line string) bool {
+		return strings.HasPrefix(line, "  ██████╗ ██╗███████╗")
+	})
+	require.GreaterOrEqual(t, top, 0)
+	// The signal line sits under the six rows of block letters, and the tagline under it.
+	require.Greater(t, len(plain), top+7)
+	assert.Equal(t, "  ━━━━━━━━━━━●━━━━━━━━━━━━━━━●━━━━━━━━━━━━━━━━━━●━━━━━━━━━━━━▶", plain[top+6])
+	assert.Contains(t, plain[top+7], "event-driven reconcile loop for agents")
+
+	for _, row := range lines[top : top+7] {
+		cells := regexp.MustCompile(`\x1b\[38;2;(\d+;\d+;\d+)m([^\x1b])`).FindAllStringSubmatch(row, -1)
+		columns := []rune(strings.TrimPrefix(sgr.ReplaceAllString(row, ""), "  "))
+		require.Len(t, cells, len(columns))
+		assert.Equal(t, "0;210;255", cells[0][1])
+		assert.Equal(t, "230;80;220", cells[len(cells)-1][1])
+		for i := 1; i < len(cells); i++ {
+			assert.NotEqual(t, cells[i-1][1], cells[i][1])
+		}
+	}
+}
+
+func TestRunPrintsTheLogoAndTheSourcesItWillReadBeforeTheLinearKeyArrives(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	gate := filepath.Join(dir, "gate")
+	command, counter := keyScript(t, dir, "while [ ! -f "+gate+" ]; do sleep 0.01; done\necho test-key")
+	d := newDispatch(t, dispatchOptions{Key: configuredKey, Config: "[plugins.linear]\napi_key_command = \"" + command + "\"\n"})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+
+	screen, stop := d.startOnTerminal()
+	require.Eventually(t, func() bool { return runCount(t, counter) > 0 && strings.Contains(screen(), "READING") }, 15*time.Second, 10*time.Millisecond)
+	waiting := screen()
+
+	assert.Contains(t, sgr.ReplaceAllString(waiting, ""), "██████╗ ██╗███████╗")
+	assert.Contains(t, waiting, "CONFIG")
+	assert.Contains(t, sgr.ReplaceAllString(waiting, ""), "READING  linear, herdr, github, treehouse\n")
+	assert.NotContains(t, waiting, "SOURCES")
+	assert.Zero(t, d.Linear.Calls())
+
+	require.NoError(t, os.WriteFile(gate, nil, 0o600))
+	require.Eventually(t, func() bool { return strings.Contains(screen(), "next resync") }, 15*time.Second, 10*time.Millisecond)
+	require.NoError(t, stop())
+	after := screen()
+
+	// The first read's lines follow the ones already printed, and nothing moves the cursor back.
+	assert.True(t, strings.HasPrefix(after, waiting))
+	assert.NotContains(t, after, "\r")
+	assert.NotRegexp(t, regexp.MustCompile(`\x1b[^\[]|\x1b\[[0-9;?]*[^0-9;?m]`), after)
+}
+
+func TestRunNamesTheSourcesWhileTheFirstReadWaitsOnLinear(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	release := d.Tools().Linear.Hold(lineartest.OnManaged)
+	defer release()
+
+	out := &syncBuffer{}
+	ctx, cancel := context.WithCancel(context.Background())
+	d.followers = d.freshFollowers()
+	opts := d.options(dispatch.Options{})
+	opts.Stdout, opts.Stderr = out, &syncBuffer{}
+	done := make(chan error, 1)
+	go func() { done <- dispatch.Run(ctx, []string{"run"}, opts) }()
+
+	require.Eventually(t, func() bool { return d.Tools().Linear.Held(lineartest.OnManaged) > 0 }, 15*time.Second, 10*time.Millisecond)
+	assert.Contains(t, out.String(), "CONFIG   "+d.ConfigPath()+"\n")
+	assert.Contains(t, out.String(), "READING  linear, herdr, github, treehouse\n")
+	assert.NotContains(t, out.String(), "SOURCES")
+
+	release()
+	require.Eventually(t, func() bool { return strings.Contains(out.String(), " start: ") }, 15*time.Second, 10*time.Millisecond)
+	assert.Contains(t, out.String(), "SOURCES  linear     team ENG, label ai, 1 ticket\n")
+	cancel()
+	require.NoError(t, <-done)
+}
+
+func TestRunMarksAFailedSourceRedInATerminal(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Tools().Multiplexer.Fail(herdrtest.OpRead, errors.New("herdr is down"))
+
+	out := d.RunOnTerminal()
+
+	assert.Contains(t, out, "🔴 herdr")
+	assert.Regexp(t, regexp.MustCompile(`\x1b\[38;2;255;95;95m[^\x1b]*herdr is down[^\x1b]*\x1b\[0m`), out)
+	// The sources that read still show what they found.
+	assert.Contains(t, out, "🟢 linear     team ENG, label ai, 1 ticket\n")
+	assert.Contains(t, out, "🟢 treehouse")
+	assert.Contains(t, out, "   ENG-1  In Review  ticket ENG-1\n")
+}
+
+func TestRunShowsTheLogoInATerminalWhenTheStartStops(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Config: "[dispatch]\nnot_a_key = 1\n"})
+
+	screen, stop := d.startOnTerminal()
+	require.Eventually(t, func() bool { return strings.Contains(screen(), "CONFIG") }, 15*time.Second, 10*time.Millisecond)
+	err := stop()
+
+	require.ErrorContains(t, err, "not_a_key")
+	assert.Contains(t, sgr.ReplaceAllString(screen(), ""), "██████╗ ██╗███████╗")
+	assert.Contains(t, screen(), "event-driven reconcile loop for agents")
+	assert.NotContains(t, screen(), "SOURCES")
+}
+
+func TestRunShowsEveryConfiguredRepo(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.addRepo("webapp", t.TempDir())
+	d.addRepo("api", t.TempDir())
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+
+	d.StartBeforeTheEvents()
+	require.Eventually(t, func() bool { return strings.Contains(d.LoopOut(), " start: ") }, 15*time.Second, 10*time.Millisecond)
+	out := d.LoopOut()
+	d.Stop()
+
+	repos := regexp.MustCompile(`(?m)^REPOS    (.*)$`).FindStringSubmatch(out)
+	require.Len(t, repos, 2)
+	assert.ElementsMatch(t, []string{"dispatch", "webapp", "api"}, strings.Split(repos[1], "  "))
 }

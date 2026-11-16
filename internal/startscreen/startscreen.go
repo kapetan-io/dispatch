@@ -26,28 +26,14 @@ type Screen struct {
 }
 
 // New is the screen for out: the terminal form when out is a terminal, colored unless NO_COLOR is
-// set, and the plain form otherwise.
+// set, and the plain form otherwise. Only the terminal form shortens paths under HOME to ~, since a
+// log keeps the full path for whoever greps it.
 func New(out io.Writer, env environment.Environment) *Screen {
 	if !isTerminal(out) {
-		return Plain(out)
+		return &Screen{out: out}
 	}
-	return Terminal(out, env.Get("NO_COLOR") == "").WithHome(env.Get("HOME"))
+	return &Screen{out: out, fancy: true, color: env.Get("NO_COLOR") == "", home: env.Get("HOME")}
 }
-
-// Plain is the form for a file or a pipe: no logo, no emoji and no color codes.
-func Plain(out io.Writer) *Screen { return &Screen{out: out} }
-
-// Terminal is the form for a terminal, with the logo and emoji, and with color when color is true.
-func Terminal(out io.Writer, color bool) *Screen { return &Screen{out: out, fancy: true, color: color} }
-
-// WithHome shows paths under home as ~.
-func (s *Screen) WithHome(home string) *Screen {
-	s.home = home
-	return s
-}
-
-// Fancy is true for the terminal form.
-func (s *Screen) Fancy() bool { return s.fancy }
 
 // isTerminal is true when out is a character device. /dev/null is one too, and nobody reads what
 // lands there, so treating it as a terminal costs nothing.
@@ -165,29 +151,31 @@ func (s *Screen) Rules(n int) {
 // start that is waiting.
 func (s *Screen) Reading(cfg config.Config) {
 	var names []string
-	for _, src := range order(cfg) {
-		if src.on {
-			names = append(names, src.name)
+	for _, sl := range slots(cfg) {
+		if sl.on {
+			names = append(names, sl.name)
 		}
 	}
 	s.printf("%s%s%s\n", s.indent(), s.section("READING"), strings.Join(names, ", "))
 }
 
-type sourceSlot struct {
+// slot is one source the screen shows: whether this config uses it, and how its result reads.
+type slot struct {
 	name string
 	on   bool
+	read func(config.Config, world.World) source
 }
 
-// order is every source the screen shows, with whether this config uses it. Linear, GitHub and
-// treehouse have no switch, so they are always read.
-func order(cfg config.Config) []sourceSlot {
-	rex := cfg.Plugins.Host() == config.HostRex
-	host, other := sourceSlot{"herdr", true}, sourceSlot{"rex", false}
-	if rex {
-		host, other = sourceSlot{"rex", true}, sourceSlot{"herdr", false}
+// slots is every source the screen shows, in order. Linear, GitHub and treehouse have no switch,
+// so they are always read, and exactly one of herdr and Rex runs the workers.
+func slots(cfg config.Config) []slot {
+	host, other := slot{"herdr", true, multiplexerSource("herdr")}, slot{"rex", false, nil}
+	if cfg.Plugins.Host() == config.HostRex {
+		host, other = slot{"rex", true, multiplexerSource("rex")}, slot{"herdr", false, nil}
 	}
-	return []sourceSlot{
-		{"linear", true}, {"local", cfg.Plugins.Local.On}, host, {"github", true}, {"treehouse", true}, other,
+	return []slot{
+		{"linear", true, linearSource}, {"local", cfg.Plugins.Local.On, localSource}, host,
+		{"github", true, githubSource}, {"treehouse", true, treehouseSource}, other,
 	}
 }
 
@@ -199,10 +187,13 @@ type FirstRead struct {
 	Emoji map[string]string
 	// NextResync is when the next resync is due.
 	NextResync time.Time
+	// StartLine is the start: line dispatch has always printed, which the plain form ends with for
+	// the logs that grep it. The terminal form leaves it out, since the screen says the same.
+	StartLine string
 }
 
-// Read prints what each source returned, the repos, and the tracked tickets.
-func (s *Screen) Read(r FirstRead) {
+// Show prints what each source returned, the repos and the tracked tickets.
+func (s *Screen) Show(r FirstRead) {
 	s.printf("\n")
 	for i, src := range sourcesOf(r.Config, r.World) {
 		label := ""
@@ -218,6 +209,9 @@ func (s *Screen) Read(r FirstRead) {
 	s.printf("\n%s%s\n", s.indent(), s.watching(len(r.World.Tickets), r.NextResync))
 	for _, t := range r.World.Tickets {
 		s.printf("%s%s%s\n", s.indent(), s.section(""), s.ticketLine(t, r.Emoji[t.Identifier]))
+	}
+	if !s.fancy {
+		s.printf("%s\n", r.StartLine)
 	}
 }
 
@@ -266,23 +260,12 @@ func (s *Screen) sourceLine(src source) string {
 
 func sourcesOf(cfg config.Config, w world.World) []source {
 	var out []source
-	for _, slot := range order(cfg) {
-		if !slot.on {
-			out = append(out, source{name: slot.name, state: stateOff, summary: "off"})
+	for _, sl := range slots(cfg) {
+		if !sl.on {
+			out = append(out, source{name: sl.name, state: stateOff, summary: "off"})
 			continue
 		}
-		switch slot.name {
-		case "linear":
-			out = append(out, linearSource(cfg, w))
-		case "local":
-			out = append(out, localSource(w))
-		case "github":
-			out = append(out, githubSource(w))
-		case "treehouse":
-			out = append(out, treehouseSource(cfg, w))
-		default:
-			out = append(out, multiplexerSource(slot.name, w))
-		}
+		out = append(out, sl.read(cfg, w))
 	}
 	return out
 }
@@ -308,7 +291,7 @@ func linearSource(cfg config.Config, w world.World) source {
 	return source{name: "linear", summary: fmt.Sprintf("%s, label %s, %s", teams, cfg.Plugins.Linear.AILabel, count(n, "ticket"))}
 }
 
-func localSource(w world.World) source {
+func localSource(_ config.Config, w world.World) source {
 	if w.LocalErr != nil {
 		return failed("local", w.LocalErr.Error())
 	}
@@ -321,15 +304,17 @@ func localSource(w world.World) source {
 	return source{name: "local", summary: count(n, "ticket")}
 }
 
-func multiplexerSource(name string, w world.World) source {
-	if w.MultiplexerErr != nil {
-		return failed(name, w.MultiplexerErr.Error())
+func multiplexerSource(name string) func(config.Config, world.World) source {
+	return func(_ config.Config, w world.World) source {
+		if w.MultiplexerErr != nil {
+			return failed(name, w.MultiplexerErr.Error())
+		}
+		return source{name: name, summary: fmt.Sprintf("%s, %s", count(len(w.Snapshot.Workspaces), "workspace"), count(len(w.Snapshot.Agents), "agent"))}
 	}
-	return source{name: name, summary: fmt.Sprintf("%s, %s", count(len(w.Snapshot.Workspaces), "workspace"), count(len(w.Snapshot.Agents), "agent"))}
 }
 
 // githubSource reports the PRs of tracked tickets, which is all a start reads, and not every open PR.
-func githubSource(w world.World) source {
+func githubSource(_ config.Config, w world.World) source {
 	src := source{name: "github", summary: count(len(w.PRs), "pull request") + " on tracked tickets"}
 	var unread []string
 	for id := range w.PRReadFailed {
@@ -367,6 +352,7 @@ func treehouseSource(cfg config.Config, w world.World) source {
 	}
 	if len(src.errs) > 0 {
 		src.state = stateFailed
+		// With every pool unread there are no trees to count.
 		if len(src.errs) == len(cfg.Repos) {
 			src.summary = ""
 		}
