@@ -200,17 +200,26 @@ func (d *Dispatch) startOnTerminal() (screen func() string, stop func() error) {
 	d.followers = d.freshFollowers()
 	opts := d.options(dispatch.Options{})
 	opts.Stdout, opts.Stderr = terminal, &syncBuffer{}
-	done := make(chan error, 1)
-	go func() { done <- dispatch.Run(ctx, []string{"run"}, opts) }()
-	// A test that fails before calling stop still ends its run and closes the terminal.
+	var runErr error
+	done := make(chan struct{})
+	go func() {
+		runErr = dispatch.Run(ctx, []string{"run"}, opts)
+		close(done)
+	}()
+	// A test that fails before calling stop still ends its run, before its directories are removed.
 	d.t.Cleanup(func() {
 		cancel()
+		select {
+		case <-done:
+		case <-time.After(30 * time.Second):
+		}
 		_ = terminal.Close()
 		_ = control.Close()
 	})
 	stop = func() error {
 		cancel()
-		err := <-done
+		<-done
+		err := runErr
 		// The terminal delivers bytes in order, so once this line arrives everything the run wrote has too.
 		_, _ = terminal.WriteString(endOfRun + "\n")
 		require.Eventually(d.t, func() bool { return strings.Contains(received.String(), endOfRun) }, 15*time.Second, time.Millisecond)
