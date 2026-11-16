@@ -42,6 +42,7 @@ When a ticket is ready for review, needs you, or goes idle, dispatch messages th
 
 - [docs/config.md](docs/config.md) lists every setting in `config.toml`, with its default and what it does.
 - [docs/rules.md](docs/rules.md) explains how to write, lint and test the rules, and how to switch a shipped rule off for a class of records.
+- [docs/startup-screen.md](docs/startup-screen.md) shows what `dispatch run` prints while it starts, and when that output is plain text.
 - [docs/worker-states.md](docs/worker-states.md) lists every state a worker can be in, the emoji its label shows, and what dispatch does about it.
 - [docs/CONTEXT.md](docs/CONTEXT.md) states what dispatch is for and defines the terms the code, tests and docs use.
 - [docs/adr/](docs/adr/) holds the architecture decisions, one numbered file each.

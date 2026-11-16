@@ -20,6 +20,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/lock"
 	"github.com/kapetan-io/dispatch/internal/loop"
 	"github.com/kapetan-io/dispatch/internal/rules"
+	"github.com/kapetan-io/dispatch/internal/startscreen"
 	"github.com/kapetan-io/dispatch/internal/typed"
 )
 
@@ -72,6 +73,8 @@ func servicesFor(opts Options, cfg config.Config) httpservice.Services {
 // on a bad config key, rules that don't load, a lock another run holds, and a history
 // that can't be written.
 func runCommand(ctx context.Context, opts Options) error {
+	screen := startscreen.New(opts.Stdout, opts.Env)
+	screen.Begin(opts.ConfigPath)
 	cfg, err := loadConfig(opts)
 	if err != nil {
 		return err
@@ -84,6 +87,7 @@ func runCommand(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	screen.Rules(len(loaded.Defs()))
 	if err := os.MkdirAll(opts.StateDir, 0o700); err != nil {
 		return fmt.Errorf("while creating state dir: %w", err)
 	}
@@ -100,6 +104,7 @@ func runCommand(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	screen.Reading(cfg)
 	lin := linear.NewRotatingKey(func(ctx context.Context) (string, error) { return findLinearKey(ctx, opts, cfg) }, opts.Linear)
 	// No key, or a key Linear rejects, can't be fixed by waiting. A network that is down at
 	// boot can, and the loop reads Linear again at every resync.
@@ -138,7 +143,7 @@ func runCommand(ctx context.Context, opts Options) error {
 		Config: cfg, ConfigText: string(text), StateDir: opts.StateDir, Rules: loaded, Clock: opts.Clock,
 		Sources:  sources(opts, cfg, lin, loaded),
 		Executor: exec, Typed: sent, HTTP: services, Multiplexer: opts.Multiplexer, Usage: lin.Usage,
-		Viewer: viewer.Name, Out: opts.Stdout, Err: opts.Stderr, Local: local,
+		Viewer: viewer.Name, Out: opts.Stdout, Err: opts.Stderr, Local: local, Screen: screen,
 	}).Run(ctx)
 }
 

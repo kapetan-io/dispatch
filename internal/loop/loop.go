@@ -26,6 +26,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/localticket"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
+	"github.com/kapetan-io/dispatch/internal/startscreen"
 	"github.com/kapetan-io/dispatch/internal/typed"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
@@ -53,7 +54,9 @@ type Options struct {
 	// Local is how to open the local ticket database, nil when [plugins.local] is off. The loop
 	// adds the clock and the highest id history names.
 	Local *localticket.Options
-	Out   io.Writer
+	// Screen is the startup screen, which reports what the first read found.
+	Screen *startscreen.Screen
+	Out    io.Writer
 	Err   io.Writer
 }
 
@@ -422,8 +425,14 @@ func (l *Loop) start(ctx context.Context) error {
 	}
 	l.wd = wd
 	l.tellOverflow(readDone{parts: world.Everything, w: wd})
-	_, _ = fmt.Fprintf(l.o.Out, "%s start: %s, %s, ledger %s from %s\n", at.Format(time.TimeOnly), count(len(l.wd.Tickets), "tracked ticket"),
-		count(len(l.o.Rules.Defs()), "rule"), count(len(l.led.Entries), "receipt"), loaded)
+	// The loop sets nextResync once the start returns, a moment after this, so the screen's time is
+	// at most that moment early.
+	l.o.Screen.Read(startscreen.FirstRead{Config: l.o.Config, World: l.wd, Emoji: l.labelEmoji(),
+		NextResync: l.clock.Now().Add(time.Duration(l.o.Config.Dispatch.Resync))})
+	if !l.o.Screen.Fancy() {
+		_, _ = fmt.Fprintf(l.o.Out, "%s start: %s, %s, ledger %s from %s\n", at.Format(time.TimeOnly), count(len(l.wd.Tickets), "tracked ticket"),
+			count(len(l.o.Rules.Defs()), "rule"), count(len(l.led.Entries), "receipt"), loaded)
+	}
 	if err := l.cycle("start"); err != nil {
 		return err
 	}
