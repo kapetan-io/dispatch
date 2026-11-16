@@ -287,7 +287,9 @@ func sourcesOf(cfg config.Config, w world.World) []source {
 	return out
 }
 
-func failed(name string, errs ...string) source { return source{name: name, state: stateFailed, errs: errs} }
+func failed(name string, errs ...string) source {
+	return source{name: name, state: stateFailed, errs: errs}
+}
 
 func linearSource(cfg config.Config, w world.World) source {
 	if w.LinearErr != nil {

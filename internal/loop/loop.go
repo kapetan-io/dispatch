@@ -57,7 +57,7 @@ type Options struct {
 	// Screen is the startup screen, which reports what the first read found.
 	Screen *startscreen.Screen
 	Out    io.Writer
-	Err   io.Writer
+	Err    io.Writer
 }
 
 // Loop is the running reconcile loop.
