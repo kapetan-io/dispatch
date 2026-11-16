@@ -9,7 +9,7 @@ dispatch rules init            # writes to [dispatch].rules in config.toml
 dispatch rules init ~/rules    # or to a directory you name
 ```
 
-`init` writes the 27 shipped rules, their scenario tests, the generated types an editor reads, a `tsconfig.json`, a JSON schema for `config.toml`, and `config.example.toml`. It refuses to overwrite a file, so run it into an empty directory, and nothing is written when any file would collide.
+`init` writes the 28 shipped rules, their scenario tests, the generated types an editor reads, a `tsconfig.json`, a JSON schema for `config.toml`, and `config.example.toml`. It refuses to overwrite a file, so run it into an empty directory, and nothing is written when any file would collide.
 
 The rules read these keys of the `[rules]` table in `config.toml`. Copy them from `config.example.toml`. `worker_model` and `design_model` are optional, since the shipped rules fall back to `sonnet` and `opus`, and `worker` / `design` can name a harness table instead (see `docs/config.md`):
 
@@ -182,6 +182,28 @@ whenever({
 - A relaunched worker's new Claude session, or one after `/clear`, reads an empty list. A worker the app host resumed after a herdr-core restart, or a worker dispatch restarted with `claude --resume` after a Rex restart, keeps its session, so it keeps its list. The list survives a restart and `dispatch state reset`, but a command taken while dispatch was not running is missing from it. `dispatch explain` and `dispatch replay` show and reproduce what a decision read. In `rules test`, `worker("ENG-1", "idle", { commands: [{ name: "merge-it", args: "42", at: 1000, by: "person" }] })` sets them.
 - The plugin's `UserPromptSubmit` hook runs `dispatch wake`, which reports every non-empty prompt, a command or a plain message, to the running dispatch without waiting for it, and never blocks, delays, adds text to or fails a prompt, whatever goes wrong. With no dispatch running, or one that is stuck, the report is dropped and the command never appears. A plain message is kept in the session log as its time alone and appears in no fact, but it ends the worker's pause: `waiting` reads false for a worker whose session took a command or a message after its latest Stop.
 
+## Reading whether a worker asked
+
+A worker that needs the user runs `dispatch ask`, says why in chat and ends its turn. `ctx.worker.of(t).asking` is true from the first read that sees it idle after that until its session takes a message, typed or sent by dispatch, or ends. `ctx.worker.of(t).askedAt` is when the session last ran `dispatch ask`, in milliseconds since the epoch. `rules/asks.ts` holds the shipped rules about an ask:
+
+```ts
+whenever({
+  name: "notify-asked",
+  each: "ticket",
+  if:   (t, ctx) => (t.status === "in_progress" || t.status === "in_review") && !t.hasChildren
+           && ctx.worker.of(t).asking,
+  then: (t, ctx) => ctx.notify.queueSend(t, `${t.id}'s worker asked a question in its workspace: ${t.title}`,
+           { once: ["asked", ctx.worker.of(t).askedAt!], reason: "worker asked a question" }),
+});
+```
+
+- `state` is unchanged, so an asking worker reads `idle`, and a rule that acts on `state === "idle"` acts on it too. Dispatch reports the fact and rewrites none, so a rule that must leave an asking worker alone reads `asking`, or an [exemption](#taking-an-action-away-for-some-tickets) takes its action away. `an-asking-worker-hears-one-notice` in `asks.ts` takes away the notifications whose once key starts with `idle`, `ready`, `draft-ready` or `approved-ready`, so followers hear of the ask and not that the worker is idle or its PR is ready.
+- A worker that ran `dispatch ask` and is still in its turn is not asking yet. Neither is one dispatch just nudged, nor one whose launch is unconfirmed. The workspace shows 🔴 exactly while `asking` is true.
+- `askedAt` keeps its value after the ask ends and across a restart, so a once key on it acts once per ask. A second ask after an answer has a new time. It is undefined for a session that never asked.
+- Both are read for a worker on an In Progress, In Review or Needs Human ticket. While the session's record can't be read, or the multiplexer reports no session, `asking` is false and `askedAt` undefined, never unknown. A relaunched worker's new session has asked nothing.
+- No ticket moves for an ask. The worker's ticket keeps its status, and the worker keeps its place under `max_in_progress`.
+- In `rules test`, `worker("ENG-1", "idle", { asked: -1000 })` gives the session an ask a second before the scenario starts, and `messages: [{ at: 1000 }]` a plain message after it, which ends the ask.
+
 ## Creating and editing local tickets
 
 A rule that sees work arrive, such as a review request, files a local ticket for it, so a worker starts on it. Search first, so the rule files one ticket and not one per cycle:
@@ -286,7 +308,7 @@ The shipped rules stay untouched. `stacking.ts` keeps them off stacked tickets w
 | File | What it is |
 |---|---|
 | `dispatch.ts` | Imports every file that runs. |
-| `workers.ts`, `trees.ts`, `parents.ts`, `escalations.ts`, `nudges.ts`, `notices.ts`, `merge.ts` | The 27 rules, grouped by job. [Worker states](worker-states.md) lists when they nudge, notify or escalate a worker in each state, so read it before changing one. |
+| `workers.ts`, `trees.ts`, `parents.ts`, `escalations.ts`, `nudges.ts`, `notices.ts`, `asks.ts`, `merge.ts` | The 28 rules, grouped by job. [Worker states](worker-states.md) lists when they nudge, notify or escalate a worker in each state, so read it before changing one. |
 | `shared.ts`, `texts.ts` | Helpers and the nudge texts. The PR nudges start with `/dispatch:pr-respond`, the skill a worker follows on its PR. |
 | `types/dispatch.d.ts`, `types/testing.d.ts` | Generated from dispatch's Go types, and rewritten by `rules check`. They sit in `types/` because `tsc` ignores a `dispatch.d.ts` that has a `dispatch.ts` beside it. |
 | `config.schema.json` | A JSON schema for `config.toml`, generated from the same structs the loader reads. |

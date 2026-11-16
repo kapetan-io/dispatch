@@ -113,9 +113,9 @@ func (l *Loop) ticketEmoji(wd world.World, scope world.Scope, t ticket.Ticket) (
 	}
 	switch {
 	case scope.Is(t, ticket.InProgress):
-		return l.workspaceEmoji(w, pullrequest.PullRequest{}, ""), true
+		return l.workspaceEmoji(w, wd.Asking(t.Identifier), pullrequest.PullRequest{}, ""), true
 	case scope.Is(t, ticket.InReview):
-		return l.workspaceEmoji(w, wd.PRs[t.Identifier], l.repoOf(t).OpenPRAs), true
+		return l.workspaceEmoji(w, wd.Asking(t.Identifier), wd.PRs[t.Identifier], l.repoOf(t).OpenPRAs), true
 	case scope.Is(t, ticket.NeedsHuman):
 		return emojiNeedsHuman, true
 	case scope.Is(t, ticket.Paused) && w.State == world.NoWorker && heldChild(wd, scope, t):
@@ -189,13 +189,15 @@ func (l *Loop) repoOf(t ticket.Ticket) config.Repo {
 // prLabels are the labels a read PR can give an In Review worker.
 var prLabels = []string{emojiReadyForReview, emojiAwaitingApproval, emojiAwaitingMerge, emojiChecksRunning, emojiWaiting, emojiBusy}
 
-// workspaceEmoji is the label for a ticket in progress or in review. A worker with no
+// workspaceEmoji is the label for a ticket in progress or in review. A worker blocked on a
+// question popup, or asking after `dispatch ask`, waits on your answer in the workspace, which
+// comes before a ready PR. A worker with no
 // Stop record, or one whose Stop did not list its tasks, may still be busy, so it stays
 // green. A Stop that lists a running task keeps it green even while the PR's checks run.
 // A ready PR shows who it waits on once the worker is idle or gone: 👀 for you, ⏳ for
 // its approvers and 🔀 for whoever merges it. openAs is the PR's repo setting.
-func (l *Loop) workspaceEmoji(w world.Worker, pr pullrequest.PullRequest, openAs string) string {
-	if w.State == world.Blocked {
+func (l *Loop) workspaceEmoji(w world.Worker, asking bool, pr pullrequest.PullRequest, openAs string) string {
+	if w.State == world.Blocked || asking {
 		return emojiNeedsHuman
 	}
 	gone := w.State == world.NoWorker || w.State == world.Idle && w.UnconfirmedSince != 0

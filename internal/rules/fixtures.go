@@ -294,8 +294,17 @@ func (s *scenario) applyWorker(id, state string, fields map[string]any) {
 	m.workers[id] = wk
 	turns, hasTurns := fields["turns"].([]any)
 	commands, hasCommands := fields["commands"].([]any)
-	if hasTurns || hasCommands {
-		log := sessionlog.Log{Commands: []sessionlog.Command{}, Turns: []sessionlog.Turn{}}
+	messages, hasMessages := fields["messages"].([]any)
+	asked, hasAsked := fields["asked"]
+	if hasTurns || hasCommands || hasMessages || hasAsked {
+		log := sessionlog.Log{Commands: []sessionlog.Command{}, Messages: []sessionlog.Message{}, Turns: []sessionlog.Turn{}}
+		for _, item := range messages {
+			msg, _ := item.(map[string]any)
+			log.Messages = append(log.Messages, sessionlog.Message{At: scenarioStart.UnixMilli() + toInt(msg["at"])})
+		}
+		if hasAsked {
+			log.Asks = []sessionlog.Ask{{At: scenarioStart.UnixMilli() + toInt(asked)}}
+		}
 		for _, item := range turns {
 			turn, _ := item.(map[string]any)
 			running, _ := boolean(turn, "running")

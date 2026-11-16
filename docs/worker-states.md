@@ -12,7 +12,7 @@ Each worker's workspace is labeled `<emoji> <ticket>` (under Rex its window, `<e
 | ⏳ | The PR's approvers | In Review in a repo with `open_pr_as = "draft"`, the PR is ready, you have opened it and its head isn't approved. No notification |
 | 🔀 | Whoever merges | In Review in a repo with `open_pr_as = "draft"`, the PR is ready, opened and its head is approved. Dispatch merges it when `auto_merge` is on. When it is off the label waits on you, and an idle worker sends one "approved and ready to merge" notification per head |
 | 💤 | You | The worker is idle with no background task running and nothing else pending. Open its window |
-| 🔴 | You | Needs Human, or the worker is blocked on a question popup |
+| 🔴 | You | Needs Human, the worker is blocked on a question popup, or the worker ran `dispatch ask` and waits for your answer. Answer in its window |
 | ⏸️ | Nobody | A Todo child of an In Progress parent, which keeps its tree, with a workspace still open |
 
 💤 changes the label and tells the sessions following the ticket once each time it appears (the `notify-idle` rule, In Progress tickets only, `design` tickets included). It sends nothing to the worker and no reminder, and it goes back to 🟢 within seconds of you typing into the window. That depends on the multiplexer already reporting the worker as working when the hook fires. Otherwise 💤 stays until the next Notification or resync.
@@ -23,7 +23,7 @@ The first line that fits wins.
 
 1. The ticket is Needs Human: 🔴.
 2. The ticket is paused and its worker's Claude session is gone: ⏸️.
-3. The worker is blocked on a question popup: 🔴.
+3. The worker is blocked on a question popup, or is asking: 🔴. A worker is asking from the first read that sees it idle after it ran `dispatch ask` until its session takes a message, typed or sent by dispatch, or ends. It sits above the ready-PR line, so an ask shows 🔴 over 👀.
 4. The worker is working, or dispatch sent it a nudge and no read has yet seen it working or blocked: 🟢.
 5. The PR is ready and the worker is idle or gone: ⏳ if the repo opens drafts, the PR has left draft and its head isn't approved, 🔀 if the same PR is approved, otherwise 👀. "Approved" is what `auto_merge` counts, so a repo's `approval_checks` that haven't passed keep the PR at ⏳.
 6. The worker's Claude session is gone, or its launch isn't confirmed: 🟡 if the PR's checks are running, otherwise 🟢.
@@ -33,6 +33,8 @@ The first line that fits wins.
 10. Otherwise: 💤.
 
 A PR that dispatch could not read leaves a 🟢, 👀, ⏳, 🔀, 🟡 or 💤 label as it is until the next read.
+
+After the ask ends the label follows the lines above with no case of its own, so a worker you just answered shows 🟢 even before the multiplexer reads it working. Under Rex 🔴 shows moments after the turn ends; under herdr and the Herdr app it shows at Claude Code's `idle_prompt` Notification, about 60 seconds later, as 💤 does. While the session log can't be read, nothing is read as an ask and the label follows the other lines.
 
 The Stop record comes from the plugin's Stop hook (`dispatch record-stop`), which also reports the turn's closing message and the path of the harness's transcript of the session. Dispatch keeps both in a file beside the session log. `dispatch turn` prints the message only while the worker is not in a turn, and it asks the harness whether the session took a message after the Stop, so a prompt report lost while `dispatch run` was down still counts. The plugin's Notification and UserPromptSubmit hooks run `dispatch wake`, which asks the running loop to read the multiplexer and the pools again and run a cycle. That is not a resync, so nothing that failed is retried and no PR is read again unless a worker just went idle. Every non-empty prompt the hook sees is written to the session log as a command or a plain message, and a worker whose session took one after its latest Stop is in a turn: its `waiting` fact is false, on a Needs Human ticket as well as an In Progress one. Claude Code raises an `idle_prompt` Notification about 60 seconds after a turn ends with nobody typing, so 💤 shows within about a minute of the worker going idle. Without a running loop the label moves at the next resync. A worker dispatch just nudged shows 🟢 until a read sees it working or blocked, or the next resync. A read that still sees it idle keeps the 🟢, so a second nudge cannot go out before Claude takes the first.
 
@@ -52,6 +54,7 @@ A worker can report no status, as Claude does while it shows a startup dialog. I
 | Idle | none, or without the task list | 🟢 | Nothing |
 | Idle | a task still running, under 60 minutes old | 🟢 | Nothing. After 60 minutes it counts as stopped, so the next row applies |
 | Idle | stopped, nothing running | 💤 | Tells the sessions following the ticket once. No nudge, nothing sent to the worker |
+| Idle, asking | any | 🔴 | Tells the sessions following the ticket once per ask that the worker asked a question (`notify-asked`), and sends no "worker is idle" notification while it asks. Never moves the ticket, and the worker keeps its place under `max_in_progress` |
 | Idle, unconfirmed | any | 🟢 | After 5 minutes, closes the workspace and relaunches the worker. The closes count toward `launch_failure_limit` |
 | Blocked on a popup | any | 🔴 | Notifies on the first cycle and every `blocked_renotify_minutes`. Never nudges, never moves the ticket |
 | Gone | n/a | 🟢 | Relaunches the worker. A launch a rule asked to stack on another ticket's PR starts a new branch at that PR's head and records it, and its receipt says `stacked on <ticket> at <short head> (<branch>)`. A relaunch never changes the record |
@@ -64,6 +67,7 @@ dispatch reads the PR only when the worker is idle or gone.
 |---|---|---|---|---|
 | Working | any | not read | 🟢 | Nothing |
 | Blocked on a popup | any | not read | 🔴 | Notifies as in In Progress |
+| Idle, asking | any | any | 🔴 | Tells the sessions following the ticket once per ask, as in In Progress. No "PR is ready for review" or "approved and ready to merge" notification while it asks; it goes out once the ask ends and the worker is idle |
 | Idle | none | ready | 👀, ⏳ or 🔀 | 👀 notifies once per head commit. ⏳ says nothing. 🔀 notifies once per head commit that the PR is approved, unless `auto_merge` will merge it |
 | Idle | none | checks running | 🟡 | Nothing about the label. Nudges for a failed check, changes requested or a merge conflict |
 | Idle | none | none, or not ready with no check running | 🟢 | Nothing about the label. Nudges for a failed check, changes requested or a merge conflict |
@@ -103,3 +107,17 @@ A `design` or `design-review` worker is never nudged, and its ticket notifies li
 Dispatch used to type a stall nudge into an idle In Progress worker, and to notify you on every 6th stall nudge and once when a nudge went unanswered for an hour. Both are gone. The stall nudge could land on top of a question the worker had just asked and read as the answer. Without it, nothing prompts a worker that stopped In Progress without moving its ticket, and 💤 is how you see it. Going 💤 sends one message to the sessions following the ticket, which only tells them and never sends the worker anything.
 
 A build worker asks you its questions in chat, not through the question popup. A popup it still opens is handled as before: the multiplexer reports the worker blocked, the sessions following the ticket get the notification, and the label is 🔴.
+
+## Asking with `dispatch ask`
+
+A worker that needs your answer runs `dispatch ask`, says why in chat and ends its turn. Dispatch keeps the ask in the session's log and moves no ticket. Once the worker is idle its window shows 🔴, and each session following the ticket gets one message:
+
+```
+dispatch event (worker asked a question): ENG-12's worker asked a question in its workspace: <title> Ticket: <url>
+```
+
+The ask ends when the session takes a message, typed in its window or sent by `dispatch tell`, or when the session ends. A worker that asks again after your answer shows 🔴 again and sends a second message. Running `dispatch ask` twice before your answer records one ask and sends one message. A restart of `dispatch run` keeps the 🔴 and sends no second message, because the ask is in the session log and the message's once key is in the ledger. A worker whose session ends while it asks is gone, and the rules relaunch it into a new session with nothing asked.
+
+`dispatch ask` run while `dispatch run` is down prints `dispatch: not running`, exits 3 and records nothing. The worker shows 💤 or its PR label as it would without the ask.
+
+A ticket in Needs Human shows 🔴 from its status and notifies with `notify-needs-human`, whether or not its worker asked. Needs Human is the status dispatch moves a ticket to when it escalates by itself.

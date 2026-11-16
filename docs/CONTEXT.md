@@ -158,7 +158,7 @@ The `## Decision` comment a manager posts on the ticket that asked, naming the t
 _Avoid_: answer, reply
 
 **Session log**:
-The file of one worker session's commands, other messages (each only its time, and whether it is a task notice), asks (each only its time) and turns, appended by the running dispatch from the hooks' reports and read by the world.
+The file of one worker session's commands, other messages (each only its time, and whether it is a task notice), asks (each only its time) and turns, appended by the running dispatch from the hooks' reports and `dispatch ask`, and read by the world.
 _Avoid_: transcript (Claude's own file), history (dispatch's segments)
 
 **Ask**:

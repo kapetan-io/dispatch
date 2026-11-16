@@ -25,3 +25,11 @@ type Stop struct {
 	// whether the session took a message after this turn. Empty when the program gave none.
 	Transcript string `json:"transcript,omitempty"`
 }
+
+// AskReport is a `dispatch ask` run in a worker's tree, by the session that ran it.
+type AskReport struct {
+	Tree    string `json:"tree"`
+	Session string `json:"session"`
+	// At is when the command ran, in milliseconds.
+	At int64 `json:"at"`
+}

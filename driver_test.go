@@ -1572,7 +1572,7 @@ func (d *Dispatch) runWith(ctx context.Context, extra dispatch.Options, args ...
 	if len(args) > 0 && args[0] == "record-stop" && d.running == nil {
 		d.answerStopsOfAnEarlierRun()
 	}
-	if len(args) > 0 && slices.Contains([]string{"tick", "tell", "turn", "watch", "unwatch"}, args[0]) && d.running == nil {
+	if len(args) > 0 && slices.Contains([]string{"tick", "tell", "turn", "watch", "unwatch", "ask"}, args[0]) && d.running == nil {
 		if err := d.startLoop(extra); err != nil {
 			return "", "", err
 		}
@@ -3422,3 +3422,25 @@ func (d *Dispatch) SessionOf(ticket, kind, status string) string {
 	d.openWorkerSession(ticket, workerSession(ticket))
 	return id + ":p1"
 }
+
+// asksRecorded is how many asks the ticket's worker session has in its session log.
+func (w *Workers) asksRecorded(ticket string) int {
+	w.d.t.Helper()
+	return len(w.sessionLog(ticket).Asks)
+}
+
+// messagesTaken is how many plain messages the ticket's worker session has in its session log.
+func (w *Workers) messagesTaken(ticket string) int {
+	w.d.t.Helper()
+	return len(w.sessionLog(ticket).Messages)
+}
+
+func (w *Workers) sessionLog(ticket string) sessionlog.Log {
+	w.d.t.Helper()
+	log, err := sessionlog.Read(w.d.state, w.d.worktreeOf(ticket), workerSession(ticket))
+	require.NoError(w.d.t, err)
+	return log
+}
+
+// sessionLogs is the directory every session log is kept in.
+func (d *Dispatch) sessionLogs() string { return sessionlog.Dir(d.state) }

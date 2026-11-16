@@ -56,6 +56,10 @@ func (s *State) Carry(mem *world.Memory, started int64) *world.Memory {
 				if name == "inboxReadAt" && f.FieldByName("Value").IsNil() {
 					continue
 				}
+				// The same holds for a worker's ask, which history written before asks never had.
+				if name == "askedAt" && f.FieldByName("Value").IsNil() || name == "asking" && !f.FieldByName("Value").Bool() {
+					continue
+				}
 				val := f.FieldByName("Value").Interface()
 				// A comment or activity is the same one while its own time is, and
 				// the time dispatch first saw it is what the fact carries.

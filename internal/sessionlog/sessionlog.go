@@ -1,7 +1,7 @@
-// Package sessionlog keeps the file of what one worker session did, one line
-// for each command or other message it took and each turn it ended. The running dispatch appends to it from the
-// hooks' reports and only the world reads it, so a rule sees all of the session and not just
-// the latest turn.
+// Package sessionlog keeps the file of what one worker session did, one line for each command or
+// other message it took, each turn it ended and each `dispatch ask` it ran. The running dispatch
+// appends to it from the hooks' and the ask command's reports and only the world reads it, so a
+// rule sees all of the session and not just the latest turn.
 package sessionlog
 
 import (
@@ -57,12 +57,36 @@ type Message struct {
 	At int64 `json:"at"`
 }
 
-// Log holds a session's commands, other messages and turns, oldest first. None is ever nil, so they encode as [] and not null.
+// Ask is a `dispatch ask` the session ran, saying it needs the user. The log keeps only when.
+type Ask struct {
+	// At is when the command ran, in milliseconds since the epoch, by the command's clock.
+	At int64 `json:"at"`
+}
+
+// Log holds a session's commands, other messages, turns and asks, oldest first. Commands, Messages
+// and Turns are never nil, so they encode as [] and not null. Asks is left out while empty, so a
+// world saved before asks existed encodes the same.
 type Log struct {
 	Commands []Command `json:"commands"`
 	// Messages holds only the messages that are not commands.
 	Messages []Message `json:"messages"`
 	Turns    []Turn    `json:"turns"`
+	Asks     []Ask     `json:"asks,omitempty"`
+}
+
+// LatestAsk is the session's latest ask, false when it never asked.
+func (l Log) LatestAsk() (Ask, bool) {
+	if len(l.Asks) == 0 {
+		return Ask{}, false
+	}
+	return l.Asks[len(l.Asks)-1], true
+}
+
+// AskOpen reports whether the session's latest ask still waits on the user: it asked, and took no
+// command or other message after it. A message taken before the turn that asked ended counts too.
+func (l Log) AskOpen() bool {
+	ask, ok := l.LatestAsk()
+	return ok && !l.TookMessageAfter(ask.At)
 }
 
 // TookMessageAfter reports whether the session took a command or any other message after at, in
@@ -86,6 +110,7 @@ type line struct {
 	Command *Command `json:"command,omitempty"`
 	Message *Message `json:"message,omitempty"`
 	Turn    *Turn    `json:"turn,omitempty"`
+	Ask     *Ask     `json:"ask,omitempty"`
 }
 
 // ParseCommand reads a message as a slash command. A command is a / at the first byte, a name of
@@ -163,6 +188,11 @@ func AppendMessage(stateDir, tree, session string, m Message) error {
 	return appendLine(stateDir, tree, session, line{Message: &m}, "the message")
 }
 
+// AppendAsk adds an ask to the log of session in the tree.
+func AppendAsk(stateDir, tree, session string, a Ask) error {
+	return appendLine(stateDir, tree, session, line{Ask: &a}, "the ask")
+}
+
 func appendLine(stateDir, tree, session string, l line, what string) error {
 	b, err := json.Marshal(l)
 	if err != nil {
@@ -222,6 +252,9 @@ func Read(stateDir, tree, session string) (Log, error) {
 		}
 		if l.Turn != nil {
 			log.Turns = append(log.Turns, *l.Turn)
+		}
+		if l.Ask != nil {
+			log.Asks = append(log.Asks, *l.Ask)
 		}
 	}
 	return log, nil

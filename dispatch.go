@@ -132,6 +132,7 @@ const usage = `usage: dispatch run
        dispatch tell <ticket> "<text>"
        dispatch tell <ticket> --turn <at> "<text>"
        dispatch turn <ticket> [--json]
+       dispatch ask
        dispatch ticket create|show|list|move|comment|edit|statuses
        dispatch rules init|check|test [dir]
        dispatch ticket-hint
@@ -185,6 +186,14 @@ const usage = `usage: dispatch run
                no worker, its worker is in a turn (working, took a message after its latest Stop, or left a
                background task running), is blocked on a question, has ended no turn yet, its latest turn has
                no closing message, or dispatch cannot read the multiplexer. Exits 3 with "dispatch: not running" when no loop runs
+  ask          run by a worker that needs the user: tell the running dispatch this session is waiting on
+               an answer. Its workspace shows 🔴 once it is idle, until the session takes a message or
+               ends, and each follower of its ticket is told once. Moves no ticket. Prints "asked. Say
+               why in chat and end your turn." and exits 0, also when the session's ask is already
+               open, which records nothing more. Takes no arguments. Finds its tree from the working
+               directory and its session from the harness (CLAUDE_CODE_SESSION_ID for Claude Code),
+               and exits 1 outside a worktree of a repo listed under [repos] or a harness session.
+               Exits 3 with "dispatch: not running" when no loop runs
   ticket       file, read and change tickets. Local tickets (LOC-<n>) are kept in a database that only
                dispatch run opens and that [plugins.local] turns on. Talks to the running dispatch run, and
                exits 3 with "dispatch: not running" when none runs. create and edit work on Linear tickets as
@@ -304,6 +313,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 			return errors.New("turn takes a ticket")
 		}
 		return turnCommand(ctx, opts, ticket, asJSON)
+	case "ask":
+		return askCommand(ctx, opts, args[1:])
 	case "ticket":
 		return ticketCommand(ctx, opts, args[1:])
 	case "ticket-hint":
