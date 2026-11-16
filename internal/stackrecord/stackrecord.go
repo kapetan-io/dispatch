@@ -134,14 +134,18 @@ func LocalBranches(ctx context.Context, env environment.Environment, repoDir str
 
 // NotARepo reports whether the directory exists and git says it is in no git repository, which is
 // a fact about the directory and not a failed read. A directory that is gone, as a moved clone's
-// is, is a failed read.
+// is, is a failed read. git exits 128 also for a clone it refuses to read, as it does one another
+// user owns, so only its message, in the C locale, tells the two apart.
 func NotARepo(ctx context.Context, env environment.Environment, dir string) bool {
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 		return false
 	}
-	err := env.Command(ctx, "git", "-C", dir, "rev-parse", "--git-dir").Run()
+	cmd := env.Command(ctx, "git", "-C", dir, "rev-parse", "--git-dir")
+	cmd.Env = append(cmd.Env, "LC_ALL=C")
+	var said strings.Builder
+	cmd.Stderr = &said
 	var exit *exec.ExitError
-	return errors.As(err, &exit) && exit.ExitCode() == 128
+	return errors.As(cmd.Run(), &exit) && exit.ExitCode() == 128 && strings.Contains(said.String(), "not a git repository")
 }
 
 // Clear removes every dispatch key of branch. Keys that are already gone are not an error.

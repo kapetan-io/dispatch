@@ -381,18 +381,35 @@ func planOf(tx *bolt.Tx, listings []Listing, busy func(string) bool, untracked f
 	return p, err
 }
 
+// Found is what an import of one repo starts from.
+type Found struct {
+	// Rows are the rows the clone's git config keys and branch names give.
+	Rows []Branch
+	// Tickets are the tracked tickets whose repo is the one imported.
+	Tickets []string
+	// Labels are the repo labels the config has.
+	Labels []string
+}
+
 // Import adds, once for the repo, the rows found in its clone's git config, each only where the
 // ticket has no row and no other row names the branch, and returns the branches it wrote a row
 // for. Only their keys go on the repo's marker to be unset, written in the same transaction, since
 // the keys of any other branch are the one copy of what they say. A second import adds nothing.
-func (s *Store) Import(repo string, rows []Branch, at time.Time) (written []string, err error) {
+//
+// A renamed repo label leaves its rows under the old label, and the keys they came from are
+// already unset. So first, a found ticket's row under a label the config no longer has moves to
+// the repo whole, with its stack record and its "not created yet" mark, and is returned as moved.
+func (s *Store) Import(repo string, found Found, at time.Time) (written []string, moved []Branch, err error) {
 	err = s.file.Update(func(tx *bolt.Tx) error {
 		written = nil
 		m, err := dispatchdb.ReadMarker(tx, repo)
 		if err != nil || m.Branches != 0 {
 			return err
 		}
-		for _, b := range rows {
+		if moved, err = adoptOrphans(tx, repo, found); err != nil {
+			return err
+		}
+		for _, b := range found.Rows {
 			if _, found, err := get(tx, b.Ticket, repo); err != nil || found {
 				if err != nil {
 					return err
@@ -411,7 +428,42 @@ func (s *Store) Import(repo string, rows []Branch, at time.Time) (written []stri
 		}
 		return dispatchdb.MarkBranchesImported(tx, repo, at, written)
 	})
-	return written, err
+	return written, moved, err
+}
+
+// adoptOrphans moves to repo each row of a found ticket whose label the config no longer has.
+func adoptOrphans(tx *bolt.Tx, repo string, found Found) ([]Branch, error) {
+	var orphans, moved []Branch
+	err := each(tx, func(ticket, label string, row Row) error {
+		if !slices.Contains(found.Labels, label) && slices.ContainsFunc(found.Tickets, func(t string) bool { return strings.EqualFold(t, ticket) }) {
+			orphans = append(orphans, Branch{Ticket: ticket, Repo: label, Row: row})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, b := range orphans {
+		if _, found, err := get(tx, b.Ticket, repo); err != nil || found {
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if err := taken(tx, b.Ticket, repo, b.Row.Name); errors.Is(err, ErrTaken) {
+			continue
+		} else if err != nil {
+			return nil, err
+		}
+		if err := put(tx, b.Ticket, repo, b.Row); err != nil {
+			return nil, err
+		}
+		if err := tx.Bucket(branchesBucket).Delete(key(b.Ticket, b.Repo)); err != nil {
+			return nil, err
+		}
+		moved = append(moved, Branch{Ticket: b.Ticket, Repo: repo, Row: b.Row})
+	}
+	return moved, nil
 }
 
 // Imported reports whether the repo's branches were imported.

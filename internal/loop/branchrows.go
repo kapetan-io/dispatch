@@ -101,8 +101,14 @@ func (l *Loop) importBranches(label string, warn bool) (imported, named bool) {
 		}
 		return false, false
 	}
+	var tickets []string
+	for _, t := range l.wd.Tickets {
+		if repo, ok := l.scope.RepoOf(t); ok && repo == label {
+			tickets = append(tickets, t.Identifier)
+		}
+	}
 	rows := l.namedBranches(label, keys, local)
-	written, err := l.o.Branches.Import(label, rows, l.clock.Now())
+	written, moved, err := l.o.Branches.Import(label, ticketbranch.Found{Rows: rows, Tickets: tickets, Labels: l.o.Config.Repos.Labels()}, l.clock.Now())
 	if err != nil {
 		_, _ = fmt.Fprintf(l.o.Err, "%s dispatch: while importing the branches of %s: %v\n", l.clock.Now().Format(time.TimeOnly), label, err)
 		return false, false
@@ -120,7 +126,7 @@ func (l *Loop) importBranches(label string, warn bool) (imported, named bool) {
 		}
 		_, _ = fmt.Fprintf(l.o.Err, "dispatch: %s imported no row for branch %s, so its dispatch keys stay in git config: %s.\n", label, branch, why)
 	}
-	return true, slices.ContainsFunc(rows, l.namesAnotherBranch)
+	return true, slices.ContainsFunc(append(rows, moved...), l.namesAnotherBranch)
 }
 
 // sharedTicketKeys lists, for each ticket whose key is on more than one branch, those branches.

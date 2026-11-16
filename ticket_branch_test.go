@@ -610,3 +610,55 @@ func TestARelaunchFindsItsBranchOnOriginInASingleBranchClone(t *testing.T) {
 	require.NoError(t, res.Err)
 	assert.Equal(t, "ENG-1: branch "+prBranch("ENG-1")+" in dispatch\n", d.Run("ticket", "branch", "ENG-1").Stdout)
 }
+
+// A renamed repo label leaves the branch rows under the old one, and the git config keys they came
+// from are gone, so the new label's import takes them over from the clone that lists their branches.
+func TestATicketKeepsItsBranchAndStackWhenItsRepoLabelIsRenamed(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: rule(reportRule)})
+	d.Trees.Pooled()
+	const fork = "0123456789abcdef0123456789abcdef01234567"
+	hintGit(t, d.Repo, "branch", "thrawn01/eng-2-work", "main")
+	hintGit(t, d.Repo, "config", "branch.thrawn01/eng-2-work.dispatchTicket", "ENG-2")
+	hintGit(t, d.Repo, "config", "branch.thrawn01/eng-2-work.dispatchStackParent", "ENG-1")
+	hintGit(t, d.Repo, "config", "branch.thrawn01/eng-2-work.dispatchStackForkPoint", fork)
+	d.Linear.Tickets(ticket("ENG-2", "In Progress", "dispatch"))
+	d.StartBeforeTheEvents()
+	d.Tick()
+	require.Equal(t, "stack ENG-1@"+fork+" branch thrawn01/eng-2-work", lastReadingOf(d, "ENG-2"))
+	require.Empty(t, dispatchKeys(t, d.Repo))
+	d.repos[0].label = "shelf"
+	d.Linear.Tickets(ticket("ENG-2", "In Progress", "shelf"))
+	d.Restart()
+
+	d.Advance(time.Minute)
+	d.Tick()
+
+	assert.Equal(t, "ENG-2: branch thrawn01/eng-2-work in shelf\n", d.Run("ticket", "branch", "ENG-2").Stdout)
+	assert.Equal(t, "stack ENG-1@"+fork+" branch thrawn01/eng-2-work", lastReadingOf(d, "ENG-2"))
+}
+
+// git exits 128 both for a directory outside any repository and for a clone it refuses to read, as
+// it does one another user owns, so only the second must leave the rows alone.
+func TestARowOutlivesAReadOfACloneGitRefusesToRead(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Trees.Pooled()
+	hintGit(t, d.Repo, "branch", "thrawn01/eng-1-work", "main")
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Tick()
+	require.NoError(t, d.Run("ticket", "branch", "ENG-1", "thrawn01/eng-1-work").Err)
+	d.Linear.Tickets(ticket("ENG-2", "In Progress", "dispatch"))
+	d.env = d.env.With("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
+	d.Restart()
+	d.Advance(time.Minute)
+	d.Tick()
+	d.env = d.env.With("GIT_TEST_ASSUME_DIFFERENT_OWNER", "")
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"), ticket("ENG-2", "In Progress", "dispatch"))
+	d.Restart()
+
+	d.Advance(time.Minute)
+	d.Tick()
+
+	assert.Equal(t, "ENG-1: branch thrawn01/eng-1-work in dispatch\n", d.Run("ticket", "branch", "ENG-1").Stdout)
+}
