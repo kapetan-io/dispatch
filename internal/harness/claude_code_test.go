@@ -92,6 +92,7 @@ func TestClaudeCodeKeepsTheHarnessContract(t *testing.T) {
 			sessions := t.TempDir()
 			scenario.Run(t, harnesstest.Subject{
 				Harness:     harness.ClaudeCode{Sessions: sessions},
+				TaskNotice:  "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>",
 				OpenSession: func(t *testing.T) harnesstest.Session { return openInbox(t, sessions) },
 				StopInput: func(session, dir string, tasks *int) []byte {
 					in := map[string]any{"hook_event_name": "Stop", "session_id": session, "cwd": dir}

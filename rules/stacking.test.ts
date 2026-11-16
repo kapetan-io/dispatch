@@ -290,3 +290,15 @@ scenario(rules, "no-stacked-worker-on-merged-local-ticket holds the stacked laun
   s.see(pr("LOC-3", { merged: true }));
   s.expect([["finish-merged-local-ticket", "move", "LOC-3", "blocker_done"], ["notify-ready-for-review", "notify", "LOC-2"]]);
 });
+
+scenario(rules, "an asking worker is not told to restack until its ask ends", s => {
+  s.given(ticket("ENG-3", restackOwed), worker("ENG-3", "idle", { asked: -1000 }), pr("ENG-3", { head: "h1" }));
+  s.expect([["notify-asked", "notify", "ENG-3"]]);
+  s.expectExempt("nudge-restack", "ENG-3", "an-asking-worker-is-left-alone", "nudge");
+});
+
+scenario(rules, "a worker still on the message it took is not told to restack", s => {
+  s.given(ticket("ENG-3", restackOwed), worker("ENG-3", "idle", { messages: [{ at: -1000 }] }), pr("ENG-3", { head: "h1" }));
+  s.expect([]);
+  s.expectExempt("nudge-restack", "ENG-3", "a-worker-finishes-its-message-first", "nudge");
+});

@@ -57,7 +57,7 @@ func (s *State) Carry(mem *world.Memory, started int64) *world.Memory {
 					continue
 				}
 				// The same holds for a worker's ask, which history written before asks never had.
-				if name == "askedAt" && f.FieldByName("Value").IsNil() {
+				if (name == "askedAt" || name == "messageAt") && f.FieldByName("Value").IsNil() {
 					continue
 				}
 				if name == "asking" && !f.FieldByName("Value").Bool() {

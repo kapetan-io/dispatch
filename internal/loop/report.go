@@ -134,7 +134,7 @@ func (l *Loop) onPrompt(p *sessionlog.Prompt) Response {
 	}
 	cmd, ok := sessionlog.ParseCommand(p.Text)
 	if !ok {
-		if err := sessionlog.AppendMessage(l.o.StateDir, p.Tree, p.Session, sessionlog.Message{At: p.At}); err != nil {
+		if err := sessionlog.AppendMessage(l.o.StateDir, p.Tree, p.Session, sessionlog.Message{At: p.At, Task: p.Task}); err != nil {
 			return Response{Code: CodeFailed, Error: err.Error()}
 		}
 		return Response{}

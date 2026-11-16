@@ -185,6 +185,10 @@ func (ClaudeCode) TookMessageAfter(transcript string, at int64) (bool, error) {
 	}
 }
 
+// taskNotice opens the message Claude Code hands a session when one of its own background tasks
+// finishes. It arrives through UserPromptSubmit like a typed message.
+const taskNotice = "<task-notification>"
+
 // Prompt reads Claude Code's UserPromptSubmit and Notification hook input. A
 // Notification carries no prompt.
 func (ClaudeCode) Prompt(input []byte) (sessionlog.Prompt, string, bool) {
@@ -196,7 +200,7 @@ func (ClaudeCode) Prompt(input []byte) (sessionlog.Prompt, string, bool) {
 	if json.Unmarshal(input, &in) != nil {
 		return sessionlog.Prompt{}, "", false
 	}
-	return sessionlog.Prompt{Session: in.SessionID, Text: in.Prompt}, in.CWD, true
+	return sessionlog.Prompt{Session: in.SessionID, Text: in.Prompt, Task: strings.HasPrefix(in.Prompt, taskNotice)}, in.CWD, true
 }
 
 // sessionEnv names the variable Claude Code sets to the id of the session a command runs in.

@@ -55,6 +55,9 @@ type Command struct {
 type Message struct {
 	// At is when the session took the message, in milliseconds since the epoch.
 	At int64 `json:"at"`
+	// Task is true for a task notice: the session's own background task finished, and nobody sent
+	// it. Written only when true, so a log from before the mark reads every message as sent.
+	Task bool `json:"task,omitempty"`
 }
 
 // Ask is a `dispatch ask` the session ran, saying it needs the user. The log keeps only when.
@@ -84,9 +87,32 @@ func (l Log) LatestAsk() (Ask, bool) {
 
 // AskOpen reports whether the session's latest ask still waits on the user: it asked, and took no
 // command or other message after it. A message taken before the turn that asked ended counts too.
+// A task notice is no answer, so it leaves the ask open.
 func (l Log) AskOpen() bool {
 	ask, ok := l.LatestAsk()
-	return ok && !l.TookMessageAfter(ask.At)
+	if !ok {
+		return false
+	}
+	at, took := l.LatestMessage()
+	return !took || at <= ask.At
+}
+
+// LatestMessage is when the session took its latest command or other message that is not a task
+// notice, false when it took none.
+func (l Log) LatestMessage() (int64, bool) {
+	var latest int64
+	took := false
+	for _, c := range l.Commands {
+		if !took || c.At > latest {
+			latest, took = c.At, true
+		}
+	}
+	for _, m := range l.Messages {
+		if !m.Task && (!took || m.At > latest) {
+			latest, took = m.At, true
+		}
+	}
+	return latest, took
 }
 
 // TookMessageAfter reports whether the session took a command or any other message after at, in

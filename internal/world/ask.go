@@ -20,3 +20,10 @@ func (w World) AskedAt(ticket string) (int64, bool) {
 	ask, ok := w.Sessions[ticket].LatestAsk()
 	return ask.At, ok
 }
+
+// MessageAt is when the ticket's worker's current session took its latest command or other
+// message that is not a task notice, in milliseconds since the epoch. False when it took none or
+// its log was not read.
+func (w World) MessageAt(ticket string) (int64, bool) {
+	return w.Sessions[ticket].LatestMessage()
+}

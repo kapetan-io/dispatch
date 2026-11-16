@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/kapetan-io/dispatch/internal/environment"
@@ -119,6 +120,10 @@ func (*Harness) Stop(input []byte) (sessionlog.Stop, string, bool) {
 	return report, in.Where, true
 }
 
+// TaskNotice opens the text the fake reads as a task notice. It copies Claude Code's, so a test
+// that types a Claude Code task notice into a fake worker sees it marked.
+const TaskNotice = "<task-notification>"
+
 // Prompt reads the fake's typed-text input, {"sid":"s","where":"/dir","typed":"text"}.
 func (*Harness) Prompt(input []byte) (sessionlog.Prompt, string, bool) {
 	var in struct {
@@ -129,7 +134,7 @@ func (*Harness) Prompt(input []byte) (sessionlog.Prompt, string, bool) {
 	if json.Unmarshal(input, &in) != nil || in.SID == "" {
 		return sessionlog.Prompt{}, "", false
 	}
-	return sessionlog.Prompt{Session: in.SID, Text: in.Typed}, in.Where, true
+	return sessionlog.Prompt{Session: in.SID, Text: in.Typed, Task: strings.HasPrefix(in.Typed, TaskNotice)}, in.Where, true
 }
 
 // StopInput builds the fake's turn-end input for Stop.

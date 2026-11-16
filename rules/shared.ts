@@ -1,5 +1,5 @@
 import { minutes } from "dispatch";
-import type { Ticket, PR, Ctx, Receipt, Seen, Once } from "dispatch";
+import type { Ticket, PR, Ctx, Receipt, Seen, Once, ActionKind } from "dispatch";
 
 // A worker gets launch_failure_limit failed launches in a row (a failed lease or git switch
 // doesn't count), and nudge_limit nudges or relaunches per PR head,
@@ -14,6 +14,26 @@ export const prMerged = (t: Ticket, ctx: Ctx): boolean => {
   if (t.system !== "local") return false;
   const pr = ctx.pr.of(t);
   return pr !== undefined && pr.merged && pr.mergedAt > t.statusSince;
+};
+
+// What an exemption takes away from a worker that is waiting on the user or still on the last
+// message it took: every nudge, every merge, and the escalation for ignoring PR nudges, whichever
+// rule queued them. One list, so rules/asks.ts and rules/nudges.ts cannot drift apart.
+export const HELD_ACTIONS: (ActionKind | { kind: ActionKind; topic: string })[] =
+  ["nudge", "merge", { kind: "escalate", topic: "pr-ignored" }];
+
+// How long a message holds HELD_ACTIONS when the turn it started is never seen to end. A worker
+// still in that turn reads working, so this matters only for an idle pane whose turn end was lost.
+export const MESSAGE_HOLD = minutes(15);
+
+// The worker took a message and has not ended the turn it started: it is idle, its latest message
+// is under MESSAGE_HOLD old, and no turn ended after it. messageAt is undefined while the session log
+// can't be read, so turns, which are unknown then, are read only once it is defined.
+export const onLastMessage = (t: Ticket, ctx: Ctx): boolean => {
+  const w = ctx.worker.of(t);
+  const at = w.messageAt;
+  if (at === undefined || ctx.now - at >= MESSAGE_HOLD || w.state !== "idle") return false;
+  return !w.turns.some(turn => turn.at > at);
 };
 
 export const isDesign = (t: Ticket) => t.hasLabel("design") || t.hasLabel("design-review");

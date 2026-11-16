@@ -23,7 +23,7 @@ The first line that fits wins.
 
 1. The ticket is Needs Human: 🔴.
 2. The ticket is paused and its worker's Claude session is gone: ⏸️.
-3. The worker is blocked on a question popup, or is asking: 🔴. A worker is asking from the first read that sees it idle after it ran `dispatch ask` until its session takes a message, typed or sent by dispatch, or ends. It sits above the ready-PR line, so an ask shows 🔴 over 👀.
+3. The worker is blocked on a question popup, or is asking: 🔴. A worker is asking from the first read that sees it idle after it ran `dispatch ask` until its session takes a message, typed or sent by dispatch, or ends. A task notice, the message Claude Code hands the session when one of its own background tasks finishes, ends no ask. It sits above the ready-PR line, so an ask shows 🔴 over 👀.
 4. The worker is working, or dispatch sent it a nudge and no read has yet seen it working or blocked: 🟢.
 5. The PR is ready and the worker is idle or gone: ⏳ if the repo opens drafts, the PR has left draft and its head isn't approved, 🔀 if the same PR is approved, otherwise 👀. "Approved" is what `auto_merge` counts, so a repo's `approval_checks` that haven't passed keep the PR at ⏳.
 6. The worker's Claude session is gone, or its launch isn't confirmed: 🟡 if the PR's checks are running, otherwise 🟢.
@@ -54,7 +54,7 @@ A worker can report no status, as Claude does while it shows a startup dialog. I
 | Idle | none, or without the task list | 🟢 | Nothing |
 | Idle | a task still running, under 60 minutes old | 🟢 | Nothing. After 60 minutes it counts as stopped, so the next row applies |
 | Idle | stopped, nothing running | 💤 | Tells the sessions following the ticket once. No nudge, nothing sent to the worker |
-| Idle, asking | any | 🔴 | Tells the sessions following the ticket once per ask that the worker asked a question (`notify-asked`), and sends no "worker is idle" notification while it asks. Never moves the ticket, and the worker keeps its place under `max_in_progress` |
+| Idle, asking | any | 🔴 | Tells the sessions following the ticket once per ask that the worker asked a question (`notify-asked`), and sends no "worker is idle" notification while it asks. No rule nudges it (`an-asking-worker-is-left-alone`). Never moves the ticket, and the worker keeps its place under `max_in_progress` |
 | Idle, unconfirmed | any | 🟢 | After 5 minutes, closes the workspace and relaunches the worker. The closes count toward `launch_failure_limit` |
 | Blocked on a popup | any | 🔴 | Notifies on the first cycle and every `blocked_renotify_minutes`. Never nudges, never moves the ticket |
 | Gone | n/a | 🟢 | Relaunches the worker. A launch a rule asked to stack on another ticket's PR starts a new branch at that PR's head and records it, and its receipt says `stacked on <ticket> at <short head> (<branch>)`. A relaunch never changes the record |
@@ -67,7 +67,7 @@ dispatch reads the PR only when the worker is idle or gone.
 |---|---|---|---|---|
 | Working | any | not read | 🟢 | Nothing |
 | Blocked on a popup | any | not read | 🔴 | Notifies as in In Progress |
-| Idle, asking | any | any | 🔴 | Tells the sessions following the ticket once per ask, as in In Progress. No "PR is ready for review" or "approved and ready to merge" notification while it asks; it goes out once the ask ends and the worker is idle. PR nudges and `auto_merge` act as for any idle worker, and a nudge is a message, so it ends the ask |
+| Idle, asking | any | any | 🔴 | Tells the sessions following the ticket once per ask, as in In Progress. No "PR is ready for review" or "approved and ready to merge" notification while it asks; it goes out once the ask ends and the worker is idle. No PR or restack nudge, no escalation for ignoring PR nudges, and no merge under `auto_merge` while it asks (`an-asking-worker-is-left-alone`) |
 | Idle | none | ready | 👀, ⏳ or 🔀 | 👀 notifies once per head commit. ⏳ says nothing. 🔀 notifies once per head commit that the PR is approved, unless `auto_merge` will merge it |
 | Idle | none | checks running | 🟡 | Nothing about the label. Nudges for a failed check, changes requested or a merge conflict |
 | Idle | none | none, or not ready with no check running | 🟢 | Nothing about the label. Nudges for a failed check, changes requested or a merge conflict |
@@ -121,3 +121,11 @@ The ask ends when the session takes a message, typed in its window or sent by `d
 `dispatch ask` run while `dispatch run` is down prints `dispatch: not running`, exits 3 and records nothing. The worker shows 💤 or its PR label as it would without the ask.
 
 A ticket in Needs Human, whoever moved it there, shows 🔴 and notifies with `notify-needs-human`, whether or not its worker asked.
+
+While a worker asks, the shipped rules leave it alone: no PR nudge, no restack nudge, no escalation for ignoring PR nudges, and no merge under `auto_merge`. The exemption `an-asking-worker-is-left-alone` in `rules/asks.ts` takes those actions away whichever rule queued them, your own rules included. `dispatch tell`, with or without `--turn`, still delivers, since it is you answering.
+
+A worker's own finished background task does not end its ask. Claude Code hands the session a task notice, a message that opens with `<task-notification>`, and the worker shows 🟢 while it handles it, then 🔴 again when it stops, with no second message to followers.
+
+Any idle worker that took a message, an answer to its ask or anything else you typed or `dispatch tell` sent, is left alone the same way until it ends the turn that message started, or until 15 minutes after the message when that turn end never arrives. The exemption is `a-worker-finishes-its-message-first` in `rules/nudges.ts`, and the 15 minutes is `MESSAGE_HOLD` in `rules/shared.ts`. So nothing lands on top of your answer while the multiplexer still reads the pane idle, and a PR that still needs work is nudged again after the worker's next stop.
+
+While the session log can't be read, neither exemption holds anything, and nudges and merges go on as for any idle worker. An asking worker that is nudged then asks again.

@@ -22,6 +22,9 @@ type Subject struct {
 	// PromptInput is what the program's own hook hands dispatch when text was typed into
 	// the session. Empty text is a session that went idle.
 	PromptInput func(session, dir, text string) []byte
+	// TaskNotice is the text the program types into its session when one of the session's own
+	// background tasks finishes.
+	TaskNotice string
 	// StopSaying is StopInput for a turn that ended with the closing message said and the
 	// transcript named by transcript.
 	StopSaying func(session, dir, said, transcript string) []byte
@@ -161,6 +164,21 @@ var Scenarios = []Scenario{
 		assert.Equal(t, "s1", report.Session)
 		assert.Equal(t, "/work/tree", dir)
 		assert.Equal(t, typed, report.Text)
+	}},
+	{Name: "PromptOfATaskNoticeIsMarked", Run: func(t *testing.T, s Subject) {
+		report, _, ok := s.Harness.Prompt(s.PromptInput("s1", "/work/tree", s.TaskNotice))
+
+		require.True(t, ok)
+		assert.True(t, report.Task)
+		assert.Equal(t, s.TaskNotice, report.Text)
+	}},
+	{Name: "PromptOfATypedMessageIsNoTaskNotice", Run: func(t *testing.T, s Subject) {
+		for _, typed := range []string{"use the second option", "/dispatch:pr-respond", "the " + s.TaskNotice + " said done"} {
+			report, _, ok := s.Harness.Prompt(s.PromptInput("s1", "/work/tree", typed))
+
+			require.True(t, ok)
+			assert.False(t, report.Task)
+		}
 	}},
 	{Name: "PromptOfASessionThatWentIdleHasNoText", Run: func(t *testing.T, s Subject) {
 		report, _, ok := s.Harness.Prompt(s.PromptInput("s1", "/work/tree", ""))

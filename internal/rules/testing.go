@@ -45,7 +45,7 @@ func TestingDeclarations() string {
     lastStop?: number; busy?: boolean; unconfirmed?: number;
     commands?: { name: string; args?: string; cut?: boolean; at: number; by: "person" | "dispatch" }[];
     turns?: { at: number; running: boolean }[]; sessionUnread?: string;
-    messages?: { at: number }[]; asked?: number;
+    messages?: { at: number; task?: boolean }[]; asked?: number;
   }): Fixture;
   export function pool(repo: string, fields?: { free?: number; returns?: number; github?: string }): Fixture;
   export function comment(ticket: string, fields?: { body?: string; at?: string; author?: string; byDispatch?: boolean }): Fixture;

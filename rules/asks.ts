@@ -1,4 +1,5 @@
 import { whenever, exempt } from "dispatch";
+import { HELD_ACTIONS } from "./shared";
 
 // A worker that needs the user runs `dispatch ask`, and the facts asking and askedAt say so. Every
 // rule about an ask lives here. A ticket's status never changes for one.
@@ -12,6 +13,16 @@ whenever({
            && ctx.worker.of(t).asking,
   then: (t, ctx) => ctx.notify.queueSend(t, `${t.id}'s worker asked a question in its workspace: ${t.title}`,
            { once: ["asked", ctx.worker.of(t).askedAt!], reason: "worker asked a question" }),
+});
+
+// An asking worker waits on the user, so no rule nudges it, merges its PR or escalates it for
+// ignoring PR nudges, whichever rule queued it, including one written later. dispatch tell still
+// delivers. asking is false while the session log can't be read, so the actions go through then.
+exempt({
+  name:    "an-asking-worker-is-left-alone",
+  each:    "ticket",
+  actions: HELD_ACTIONS,
+  if:      (t, ctx) => ctx.worker.of(t).asking,
 });
 
 // The asked notification stands in for the idle one, and a ready PR waits for the answer. Naming
