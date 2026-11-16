@@ -171,6 +171,10 @@ declare module "dispatch" {
     readonly commands: Command[];
     /** Every turn the worker's current Claude session has ended, oldest first, for a worker on an In Progress, In Review or Needs Human ticket. Empty for a session that has ended none, and unknown when the multiplexer reports no session or the session's record can't be read. A worker relaunched in a new session starts over. */
     readonly turns: Turn[];
+    /** True while the worker waits on the user after running dispatch ask: it is idle, its launch is confirmed, dispatch has not just nudged it, and its current Claude session has taken no message since the ask, whether a slash command or any other, typed or sent by dispatch. A worker that ran it and is still in its turn is not asking yet. state is unchanged, so an asking worker reads idle. Read for a worker on an In Progress, In Review or Needs Human ticket. False when the multiplexer reports no session or the session's record can't be read, and for a session that ended. While it is true the workspace shows 🔴. */
+    readonly asking: boolean;
+    /** When the worker's current Claude session last ran dispatch ask, in milliseconds since the epoch, whether that ask is still open or a message ended it. The same after a restart, so a once key on it acts once per ask. Undefined when the session never asked, when the multiplexer reports no session or the session's record can't be read, and for a worker on a ticket that is not In Progress, In Review or Needs Human. */
+    readonly askedAt: number | undefined;
   }
   /** A tree in a repo's treehouse pool. */
   export interface Tree {

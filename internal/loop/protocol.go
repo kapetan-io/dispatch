@@ -31,6 +31,9 @@ const (
 	// OpPrompt carries a UserPromptSubmit hook's report of a message, a slash command or any other, which the loop
 	// stores and then wakes as OpWake does.
 	OpPrompt = "prompt"
+	// OpAsk carries a `dispatch ask` report, which the loop stores as the session's ask unless one
+	// is already open, and answers at once.
+	OpAsk = "ask"
 )
 
 // Exit codes a client reports for a response.
@@ -54,6 +57,8 @@ type Request struct {
 	Stop *sessionlog.Stop `json:"stop,omitempty"`
 	// Prompt is the message the session's harness reported it took.
 	Prompt *sessionlog.Prompt `json:"prompt,omitempty"`
+	// Ask is the `dispatch ask` a worker's session ran.
+	Ask *sessionlog.AskReport `json:"ask,omitempty"`
 	// Call is the verb of a ticket request.
 	Call *TicketCall `json:"call,omitempty"`
 }

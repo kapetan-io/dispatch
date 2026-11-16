@@ -294,8 +294,17 @@ func (s *scenario) applyWorker(id, state string, fields map[string]any) {
 	m.workers[id] = wk
 	turns, hasTurns := fields["turns"].([]any)
 	commands, hasCommands := fields["commands"].([]any)
-	if hasTurns || hasCommands {
-		log := sessionlog.Log{Commands: []sessionlog.Command{}, Turns: []sessionlog.Turn{}}
+	messages, hasMessages := fields["messages"].([]any)
+	asked, hasAsked := fields["asked"]
+	if hasTurns || hasCommands || hasMessages || hasAsked {
+		log := sessionlog.Log{Commands: []sessionlog.Command{}, Messages: []sessionlog.Message{}, Turns: []sessionlog.Turn{}}
+		for _, item := range messages {
+			msg, _ := item.(map[string]any)
+			log.Messages = append(log.Messages, sessionlog.Message{At: scenarioStart.UnixMilli() + toInt(msg["at"])})
+		}
+		if hasAsked {
+			log.Asks = []sessionlog.Ask{{At: scenarioStart.UnixMilli() + toInt(asked)}}
+		}
 		for _, item := range turns {
 			turn, _ := item.(map[string]any)
 			running, _ := boolean(turn, "running")
@@ -472,7 +481,7 @@ func (s *scenario) world() world.World {
 			if rec, ok := m.stops[id]; ok && w.Workers[id].State == world.Idle {
 				w.Stops[id] = rec
 			}
-			if w.Workers[id].State != world.NoWorker && (scope.Is(*t, ticket.InProgress) || scope.Is(*t, ticket.InReview)) {
+			if w.Workers[id].State != world.NoWorker && (scope.Is(*t, ticket.InProgress) || scope.Is(*t, ticket.InReview) || scope.Is(*t, ticket.NeedsHuman)) {
 				if reason, ok := m.sessionUnread[id]; ok {
 					w.SessionErrs[id] = errors.New(reason)
 				} else if log, ok := m.sessions[id]; ok {

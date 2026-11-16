@@ -75,6 +75,8 @@ func (l *Loop) onRequest(r request) error {
 	case OpPrompt:
 		r.reply <- l.onPrompt(r.Prompt)
 		l.readAgain(world.FromLocal)
+	case OpAsk:
+		r.reply <- l.onAsk(r.Ask)
 	case OpTicket:
 		l.onTicket(r.Call, r.reply)
 	case OpWatch, OpUnwatch:
@@ -142,6 +144,36 @@ func (l *Loop) onPrompt(p *sessionlog.Prompt) Response {
 		cmd.By = sessionlog.ByDispatch
 	}
 	if err := sessionlog.AppendCommand(l.o.StateDir, p.Tree, p.Session, cmd); err != nil {
+		return Response{Code: CodeFailed, Error: err.Error()}
+	}
+	return Response{}
+}
+
+// onAsk stores the ask a worker's session made, where the next read finds it. The loop is the
+// log's only writer and takes one report at a time, so an ask run again while the last is open,
+// or retried after a lost reply, finds it open and writes nothing.
+func (l *Loop) onAsk(a *sessionlog.AskReport) Response {
+	if a == nil || a.Tree == "" || a.Session == "" {
+		return Response{Code: CodeFailed, Error: "an ask report needs a tree and a session"}
+	}
+	// As with a Stop, an ask from a tree no worker row names, or from before the row was made,
+	// belongs to no current worker, and would reach a log the tree's return cleared. Unlike a
+	// Stop's hook, the worker reads the answer, so it hears that nothing was recorded.
+	wk, ok, err := l.o.Workers.OnTree(a.Tree)
+	if err != nil {
+		return Response{Code: CodeFailed, Error: err.Error()}
+	}
+	if !ok || a.At < wk.Row.Since {
+		return Response{Code: CodeFailed, Error: ErrNotAWorker.Error()}
+	}
+	log, err := sessionlog.Read(l.o.StateDir, a.Tree, a.Session)
+	if err != nil {
+		return Response{Code: CodeFailed, Error: err.Error()}
+	}
+	if log.AskOpen() {
+		return Response{}
+	}
+	if err := sessionlog.AppendAsk(l.o.StateDir, a.Tree, a.Session, sessionlog.Ask{At: a.At}); err != nil {
 		return Response{Code: CodeFailed, Error: err.Error()}
 	}
 	return Response{}

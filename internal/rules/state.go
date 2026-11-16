@@ -484,6 +484,10 @@ const (
 type sessionFacts struct {
 	commands Fact[[]Command]
 	turns    Fact[[]Turn]
+	// asking and askedAt read the world's one definition of an ask. A log that was not read
+	// holds no ask, so they are false and undefined then, never unknown.
+	asking  bool
+	askedAt *int64
 	// log is the session log as read, the zero Log when it was not.
 	log sessionlog.Log
 }
@@ -513,7 +517,11 @@ func (s *State) sessionOf(w world.World, ticket string) sessionFacts {
 		turns[i] = Turn{At: t.At, Running: t.Running}
 	}
 	at := s.ms()
-	return sessionFacts{commands: Known(commands, at), turns: Known(turns, at), log: log}
+	facts := sessionFacts{commands: Known(commands, at), turns: Known(turns, at), log: log, asking: w.Asking(ticket)}
+	if asked, ok := w.AskedAt(ticket); ok {
+		facts.askedAt = &asked
+	}
+	return facts
 }
 
 func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop workers.Record, session sessionFacts) {
@@ -526,6 +534,8 @@ func (s *State) workerRecord(w world.World, id string, wk world.Worker, stop wor
 		Waiting:   Known(false, at),
 		Commands:  session.commands,
 		Turns:     session.turns,
+		Asking:    Known(session.asking, at),
+		AskedAt:   Known(session.askedAt, at),
 		SeenAt:    Known(at, at),
 		GoneSince: Known(at, at),
 	}

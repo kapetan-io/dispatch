@@ -86,6 +86,9 @@ func serve(conn net.Conn, inbox chan<- any, stopped <-chan struct{}) {
 // ErrNotRunning means no loop answers on the state directory's socket.
 var ErrNotRunning = errors.New("dispatch: not running")
 
+// ErrNotAWorker is what `dispatch ask` hears outside a worker's tree or session.
+var ErrNotAWorker = errors.New("ask runs inside a dispatch worker's session")
+
 // Ask sends one request to the loop over stateDir and waits for its answer, or
 // until ctx ends. It returns ErrNotRunning when nothing listens.
 func Ask(ctx context.Context, stateDir string, req Request) (Response, error) {
