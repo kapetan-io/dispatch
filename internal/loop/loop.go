@@ -28,6 +28,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/startscreen"
 	"github.com/kapetan-io/dispatch/internal/typed"
+	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -51,9 +52,11 @@ type Options struct {
 	Usage func() linear.Stats
 	// Viewer names the Linear user whose tickets are tracked.
 	Viewer string
-	// Local is how to open the local ticket database, nil when [plugins.local] is off. The loop
-	// adds the clock and the highest id history names.
+	// Local is how to open the local tickets in dispatch.db, nil when [plugins.local] is off. The
+	// loop adds the clock and the highest id history names.
 	Local *localticket.Options
+	// Workers holds the worker rows, in the dispatch.db dispatch run opened.
+	Workers *workers.Store
 	// Screen is the startup screen. run.go has printed its lines up to the sources about to be read,
 	// and the loop prints what the first read found.
 	Screen *startscreen.Screen
@@ -132,6 +135,8 @@ type Loop struct {
 	nudgeEpoch int
 	// nudgedDuring holds the tickets nudged while a read was in flight.
 	nudgedDuring map[string]bool
+	// settledDuring holds the lease keys of the launches and returns that ended while a read was in flight.
+	settledDuring map[string]bool
 	// stream is the multiplexer's stream of changes, nil when it has none. streaming is true while
 	// Changes runs, and stopStream ends it.
 	stream     herdr.Stream
@@ -425,7 +430,11 @@ func (l *Loop) start(ctx context.Context) error {
 		}
 	}
 	l.wd = wd
-	l.tellOverflow(readDone{parts: world.Everything, w: wd})
+	if err := l.resyncWorkers(true); err != nil {
+		_ = l.hist.Close(false)
+		return err
+	}
+	l.tellOverflow(readDone{parts: world.Everything, w: l.wd})
 	// The loop sets nextResync once the start returns, a moment after this, so the screen's time is
 	// at most that moment early.
 	l.o.Screen.Show(startscreen.FirstRead{
@@ -621,7 +630,7 @@ func (l *Loop) startRead() {
 		return
 	}
 	parts, prev, epoch := l.pending, l.wd, l.nudgeEpoch
-	l.pending, l.reading, l.nudgedDuring = 0, true, nil
+	l.pending, l.reading, l.nudgedDuring, l.settledDuring = 0, true, nil, map[string]bool{}
 	if parts&world.FromLocal != 0 {
 		// This read starts after the changes the stream named and reads every pane they could mean.
 		clear(l.named)
@@ -711,6 +720,11 @@ func (l *Loop) onRead(m readDone) error {
 	nudged := l.wd.Nudged
 	freed := l.workersGoneIdle(l.wd, m.w)
 	l.wd = m.w
+	if m.parts&world.FromLocal != 0 {
+		if err := l.resyncWorkers(m.parts == world.Everything); err != nil {
+			return err
+		}
+	}
 	// A resync that landed while this read was in flight cleared the overlay, and the read
 	// still carries the old one.
 	if m.epoch != l.nudgeEpoch {
@@ -1078,6 +1092,11 @@ func (l *Loop) onAction(m actionDone) error {
 	delete(l.flights, f.want.Key())
 	if f.want.Receipt == "launch" {
 		delete(l.launching, f.want.Subject)
+	}
+	// A read that is out began before this action ended, so its pool may predate the lease the
+	// action took or gave back.
+	if l.reading && l.settledDuring != nil {
+		l.settledDuring[leaseKey(f.want)] = true
 	}
 	rc := f.rc
 	rc.Outcome, rc.Detail, rc.Ended, rc.Steps = res.Outcome, res.Detail, l.ingest(), res.Steps

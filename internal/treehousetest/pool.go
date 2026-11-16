@@ -38,6 +38,7 @@ type Pool struct {
 	peakLeasing  map[string]int
 	peakAll      int
 	beforeReturn func(path string)
+	beforeWrite  func() error
 }
 
 type leaseMove struct{ path, holder string }
@@ -45,6 +46,24 @@ type leaseMove struct{ path, holder string }
 // New returns an empty Pool that records its calls in j.
 func New(j *journal.Journal) *Pool {
 	return &Pool{journal: j, trees: map[string][]treehouse.Tree{}, leasing: map[string]int{}, peakLeasing: map[string]int{}}
+}
+
+// BeforeWrite runs f at the start of every Lease and Return, which fails with the error f returns.
+// The kill switch of tooltest uses it to end an action between two of its steps.
+func (p *Pool) BeforeWrite(f func() error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.beforeWrite = f
+}
+
+func (p *Pool) killed() error {
+	p.mu.Lock()
+	f := p.beforeWrite
+	p.mu.Unlock()
+	if f == nil {
+		return nil
+	}
+	return f()
 }
 
 // Seed puts trees in the pool of repoDir exactly as given, so a test can set up
@@ -239,6 +258,9 @@ func (p *Pool) Lease(ctx context.Context, repoDir, ticket string) (treehouse.Tre
 	if err := ctx.Err(); err != nil {
 		return treehouse.Tree{}, err
 	}
+	if err := p.killed(); err != nil {
+		return treehouse.Tree{}, err
+	}
 	if _, err := os.Stat(repoDir); err != nil {
 		return treehouse.Tree{}, err
 	}
@@ -308,6 +330,9 @@ func (p *Pool) Lease(ctx context.Context, repoDir, ticket string) (treehouse.Tre
 func (p *Pool) Return(ctx context.Context, repoDir, path, holder string) error {
 	p.journal.Record("treehouse", "return", repoDir, path, holder)
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := p.killed(); err != nil {
 		return err
 	}
 	p.mu.Lock()

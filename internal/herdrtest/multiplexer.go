@@ -59,6 +59,7 @@ type Multiplexer struct {
 	startups    []herdr.Startup
 	names       map[string]string // pane to the name of its agent
 	beforeClose func(workspace string)
+	beforeWrite func() error
 	slowRename  time.Duration     // how long the next RenameWorkspace waits before it lands
 	kinds       []string          // the agent kinds Read keeps, or every kind when unset
 	sinks       []*sink           // the streams Changes holds open
@@ -71,6 +72,25 @@ type Multiplexer struct {
 type sink struct {
 	changed func(pane string)
 	drop    chan error
+}
+
+// BeforeWrite runs f at the start of every OpenWorkspace, StartWorker, Kickoff and CloseWorkspace,
+// which fails with the error f returns. The kill switch of tooltest uses it to end an action
+// between two of its steps.
+func (h *Multiplexer) BeforeWrite(f func() error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.beforeWrite = f
+}
+
+func (h *Multiplexer) killed() error {
+	h.mu.Lock()
+	f := h.beforeWrite
+	h.mu.Unlock()
+	if f == nil {
+		return nil
+	}
+	return f()
 }
 
 // New returns an empty Multiplexer that records its calls in j.
@@ -137,6 +157,13 @@ func (h *Multiplexer) NameAgent(pane, name string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.names[pane] = name
+}
+
+// NameOf is the name the agent in pane was started or named with, empty when it has none.
+func (h *Multiplexer) NameOf(pane string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.names[pane]
 }
 
 // SetStatus changes the status of the agent in pane, which Read reports from
@@ -426,6 +453,9 @@ func (h *Multiplexer) RenameTab(ctx context.Context, id, label string) error {
 func (h *Multiplexer) CloseWorkspace(ctx context.Context, id string) error {
 	h.journal.Record("herdr", "close-workspace", id)
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := h.killed(); err != nil {
 		return err
 	}
 	h.mu.Lock()

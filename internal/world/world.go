@@ -18,15 +18,14 @@ import (
 	"github.com/kapetan-io/dispatch/internal/gitremote"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/inbox"
-	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/localticket"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
-	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/workers"
 )
 
 // Sources are the tools one read goes through.
@@ -39,8 +38,11 @@ type Sources struct {
 	Inbox inbox.Inbox
 	// Env is what the git commands that inspect a tree run with.
 	Env environment.Environment
-	// StateDir holds the Stop records and session logs.
+	// StateDir holds the session logs.
 	StateDir string
+	// Workers is where the worker rows are read from: the store dispatch run opened, or the rows a
+	// running dispatch sent. Nil reads every lease as a worker with no records, as a rule scenario does.
+	Workers WorkerRows
 	// Stderr receives one line for each read that failed without stopping the read.
 	Stderr io.Writer
 	// Tolerant keeps going when the multiplexer, or every pool, can't be read, and
@@ -53,6 +55,11 @@ type Sources struct {
 	LocalOn bool
 	// Local is where the local tickets are read from, nil when no database is open or read.
 	Local LocalTickets
+}
+
+// WorkerRows is the worker rows, as the open database or as a Snapshot of them.
+type WorkerRows interface {
+	Snapshot() (workers.Snapshot, error)
 }
 
 // LocalTickets is the local ticket database, as the open file or as a Snapshot of it.
@@ -145,11 +152,17 @@ type World struct {
 	// labels whose pool wasn't, and so whose tickets' workers are unknown.
 	Trees    []treehouse.Tree
 	PoolErrs map[string]error
+	// Rows are the worker rows as this read found them, without their closing messages, and
+	// Recorded is true when a database was read for them. Without one (a rule scenario, history
+	// from before dispatch kept rows, a command run before every repo's workers are imported)
+	// every lease reads as a worker.
+	Rows     workers.Snapshot
+	Recorded bool
 	// Workers maps a ticket identifier to what the lookup found.
 	Workers map[string]Worker
 	// Stops maps an In Progress or Needs Human ticket identifier to its idle worker's latest Stop.
 	// Tickets without a record are absent.
-	Stops map[string]stops.Record
+	Stops map[string]workers.Record
 	// Sessions maps an In Progress, In Review or Needs Human ticket identifier to the log of its
 	// worker's current session. SessionErrs holds the tickets whose log could not
 	// be read, which is unknown, not empty. A ticket in neither map has no worker or is
@@ -364,12 +377,9 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 				w.Leased[tree.LeaseHolder] = true
 			}
 		}
-		w.Workers, w.Stops = map[string]Worker{}, map[string]stops.Record{}
-		w.Sessions, w.SessionErrs = map[string]sessionlog.Log{}, map[string]error{}
-		for _, t := range w.Tickets {
-			w.joinWorker(src, scope, t)
+		if err := w.joinWorkers(src, scope); err != nil && !src.Tolerant {
+			return w, err
 		}
-		w.joinLeases()
 	}
 	if parts&FromLinear != 0 && w.LinearErr == nil {
 		// Only promotion and closing wait on the children, so a failed read holds
@@ -416,11 +426,50 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 	return w, nil
 }
 
-// joinWorker builds the ticket's worker from the trees and the snapshot, with its Stop record and
-// session log, so a full read and a pane read build a worker one way.
+// Rejoin reads the worker rows again and rebuilds every worker from them, over the trees and
+// panes w already holds. The loop calls it after its resync changed a row, so the cycle that
+// follows decides from the rows as they now are.
+func Rejoin(src Sources, scope Scope, w World) World {
+	if src.Local != nil {
+		scope.Local = src.Local.Statuses()
+	}
+	_ = w.joinWorkers(src, scope)
+	return w
+}
+
+// joinWorkers reads the worker rows and builds the worker of every tracked ticket and lease holder.
+func (w *World) joinWorkers(src Sources, scope Scope) error {
+	err := w.readRows(src)
+	w.Workers, w.Stops = map[string]Worker{}, map[string]workers.Record{}
+	w.Sessions, w.SessionErrs = map[string]sessionlog.Log{}, map[string]error{}
+	for _, t := range w.Tickets {
+		w.joinWorker(src, scope, t)
+	}
+	w.joinLeases()
+	return err
+}
+
+// readRows reads the worker rows. A failed read keeps the rows of the read before it, so a worker
+// does not vanish because the database could not be read once.
+func (w *World) readRows(src Sources) error {
+	if src.Workers == nil {
+		return nil
+	}
+	rows, err := src.Workers.Snapshot()
+	if err != nil {
+		_, _ = fmt.Fprintf(src.Stderr, "dispatch: while reading the worker rows: %v\n", err)
+		return err
+	}
+	w.Rows, w.Recorded = rows, true
+	return nil
+}
+
+// joinWorker builds the ticket's worker from its row, the trees and the snapshot, with its Stop
+// record and session log, so a full read and a pane read build a worker one way.
 func (w *World) joinWorker(src Sources, scope Scope, t ticket.Ticket) {
-	wk := FindWorker(t.Identifier, w.Trees, w.Snapshot)
-	if at, ok := kickoffs.Since(src.StateDir, wk.TreePath); ok && wk.State != NoWorker && !kickoffRan(src.StateDir, wk, at) {
+	wk := w.WorkerOf(t.Identifier)
+	row, _ := w.Rows.OnTree(wk.TreePath)
+	if at, ok := row.Unconfirmed(wk.Session); ok && wk.State != NoWorker {
 		wk.UnconfirmedSince = at.UnixMilli()
 		// A Claude stuck at a startup dialog after its launcher died reports no status.
 		// Reading it idle lets close-unconfirmed-worker recover it.
@@ -430,7 +479,7 @@ func (w *World) joinWorker(src Sources, scope Scope, t ticket.Ticket) {
 	}
 	w.Workers[t.Identifier] = wk
 	if wk.State == Idle && (scope.Is(t, ticket.InProgress) || scope.Is(t, ticket.NeedsHuman)) {
-		if rec, ok := stops.Read(src.StateDir, wk.TreePath, wk.Session); ok {
+		if rec, ok := row.Stop(wk.Session); ok {
 			w.Stops[t.Identifier] = rec
 		}
 	}
@@ -450,7 +499,7 @@ func copied[K comparable, V any](m map[K]V) map[K]V {
 func (w *World) joinLeases() {
 	w.Leases = map[string][]Worker{}
 	for _, t := range w.LeaseHolders {
-		w.Leases[t.Identifier] = FindWorkers(t.Identifier, w.Trees, w.Snapshot)
+		w.Leases[t.Identifier] = w.WorkersOf(t.Identifier)
 	}
 }
 
@@ -488,8 +537,10 @@ func ReadPanes(ctx context.Context, src Sources, scope Scope, prev World, panes 
 	}
 	w.Workers, w.Stops = copied(prev.Workers), copied(prev.Stops)
 	w.Sessions, w.SessionErrs = copied(prev.Sessions), copied(prev.SessionErrs)
+	// The Stop that made the pane idle may have landed since the last read.
+	_ = w.readRows(src)
 	for _, t := range w.Tickets {
-		onPanes := slices.ContainsFunc(FindWorkers(t.Identifier, w.Trees, prev.Snapshot), func(wk Worker) bool {
+		onPanes := slices.ContainsFunc(w.workersIn(t.Identifier, prev.Snapshot), func(wk Worker) bool {
 			_, named := status[wk.PaneID]
 			return named
 		})
@@ -548,7 +599,7 @@ func (w *World) inspectTrees(ctx context.Context, env environment.Environment, s
 		if !scope.Returns(t) {
 			continue
 		}
-		for _, wk := range FindWorkers(t.Identifier, w.Trees, w.Snapshot) {
+		for _, wk := range w.WorkersOf(t.Identifier) {
 			if wk.State != NoWorker && !scope.Retires(t) {
 				continue
 			}
@@ -855,19 +906,6 @@ func (s Scope) ReadsPR(t ticket.Ticket, state WorkerState) bool {
 		return false
 	}
 	return state == NoWorker || state == Idle
-}
-
-// kickoffRan reports whether the worker's session ended a turn after at, which proves its
-// kickoff ran even if the launch that marked it was killed before it said so. A Stop from
-// another session in the tree proves nothing. With no session known it falls back to the
-// newest Stop of any session. A Stop record that exists but can't
-// be read is unknown, so it counts as ran and the worker is not closed.
-func kickoffRan(stateDir string, wk Worker, at time.Time) bool {
-	if stops.Unreadable(stateDir, wk.TreePath, wk.Session) {
-		return true
-	}
-	rec, ok := stops.Read(stateDir, wk.TreePath, wk.Session)
-	return ok && rec.At.After(at)
 }
 
 // readRemotes reads the chosen remote of every configured clone. A clone whose read fails keeps its

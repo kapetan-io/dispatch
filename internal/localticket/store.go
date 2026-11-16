@@ -14,6 +14,7 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 
+	"github.com/kapetan-io/dispatch/internal/dispatchdb"
 	"github.com/kapetan-io/dispatch/internal/ticket"
 )
 
@@ -29,6 +30,10 @@ const defaultLockTimeout = 5 * time.Second
 
 // Options is what Open needs.
 type Options struct {
+	// File is the open dispatch.db, which dispatch run and the commands beside it hand in. The store
+	// then keeps its buckets in that file and leaves closing it to the caller.
+	File *dispatchdb.File
+	// Path is a file of the store's own, opened when File is nil.
 	Path string
 	// Repos are the labels of the run's [repos.<label>] tables.
 	Repos []string
@@ -43,7 +48,9 @@ type Options struct {
 
 // Store owns the database file and every write to it. It has no delete method.
 type Store struct {
-	db       *bolt.DB
+	db *bolt.DB
+	// shared is true when the file belongs to the caller, who closes it.
+	shared   bool
 	repos    []string
 	now      func() time.Time
 	statuses ticket.Statuses
@@ -65,6 +72,13 @@ func unreadable(format string, args ...any) error {
 // statuses into a file that has none, and checks the file. A file another process holds past the
 // lock timeout, or one that fails a check, is an error naming the file and the problem.
 func Open(o Options) (*Store, error) {
+	if o.File != nil {
+		s := &Store{db: o.File.Bolt(), shared: true, repos: o.Repos, now: o.Now}
+		if err := s.start(o.Highest); err != nil {
+			return nil, fmt.Errorf("local tickets in %s: %w", o.File.Path(), err)
+		}
+		return s, nil
+	}
 	timeout := o.LockTimeout
 	if timeout <= 0 {
 		timeout = defaultLockTimeout
@@ -99,6 +113,13 @@ func Open(o Options) (*Store, error) {
 // because it holds no local tickets, and the caller shows the default statuses a start would seed. A
 // file a killed first start left without statuses reads with those defaults.
 func OpenReadOnly(o Options) (*Store, error) {
+	if o.File != nil {
+		s := &Store{db: o.File.Bolt(), shared: true, repos: o.Repos, now: o.Now}
+		if err := s.load(o.Highest); err != nil {
+			return nil, fmt.Errorf("local tickets in %s: %w", o.File.Path(), err)
+		}
+		return s, nil
+	}
 	timeout := o.LockTimeout
 	if timeout <= 0 {
 		timeout = defaultLockTimeout
@@ -194,8 +215,13 @@ func (s *Store) start(highest uint64) (err error) {
 	return s.load(highest)
 }
 
-// Close releases the file.
-func (s *Store) Close() error { return s.db.Close() }
+// Close releases a file the store opened itself.
+func (s *Store) Close() error {
+	if s.shared {
+		return nil
+	}
+	return s.db.Close()
+}
 
 // Statuses are the database's statuses, in order. They are read once at Open, because dispatch never changes them.
 func (s *Store) Statuses() ticket.Statuses { return slices.Clone(s.statuses) }

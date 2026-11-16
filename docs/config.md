@@ -101,7 +101,7 @@ Your own table. Dispatch never interprets it, and a rule reads a key as `ctx.con
 | `design_model` | `opus` | The model name passed to `claude --model` for the worker of a `design` or `design-review` ticket that has no `model` attribute. The shipped rules read it only when `design` is unset, and use `opus` when the file lacks it. |
 | `worker` | none | The `harness.<name>` table build workers launch on. A repo's `worker` wins, and a ticket's `model` attribute wins over both. Unset (or `""`) means Claude Code on `worker_model`. `init` does not write it. |
 | `design` | none | The same for `design` and `design-review` workers, falling back to `design_model`, and a ticket's `model` attribute wins here too. |
-| `launch_failure_limit` | `2` | Failed launches in a row before the ticket goes to Needs Human with the launcher's error. A full treehouse pool (`pool_exhausted`) never counts. A launch tries a treehouse lease and a `git switch` once, and a failure of either (`lease_failed`, `switch_failed`) never counts. The next resync launches again, and `dispatch run` prints the error at every resync it fails ([ADR 7](adr/0007-the-resync-is-the-only-retry.md)). A launch that fails after `dispatch run` was asked to stop (Ctrl-C or SIGTERM) never counts, and `dispatch explain` shows it as `interrupted`. Otherwise a failed pool read, a lease returned without a path, a wait for another launch that was cut off and a failed stack-record write still count. Closing a Claude whose launch died before its kickoff ran counts as one failure, and so does a launch whose program exited before the kickoff ran (`program_exited`). |
+| `launch_failure_limit` | `2` | Failed launches in a row before the ticket goes to Needs Human with the launcher's error. A full treehouse pool (`pool_exhausted`) never counts. A launch tries a treehouse lease and a `git switch` once, and a failure of either (`lease_failed`, `switch_failed`) never counts. The next resync launches again, and `dispatch run` prints the error at every resync it fails ([ADR 7](adr/0007-the-resync-is-the-only-retry.md)). A launch that could not write its worker row (`worker_row_failed`) counts. A launch that fails after `dispatch run` was asked to stop (Ctrl-C or SIGTERM) never counts, and `dispatch explain` shows it as `interrupted`. Otherwise a failed pool read, a lease returned without a path, a wait for another launch that was cut off and a failed stack-record write still count. Closing a Claude whose launch died before its kickoff ran counts as one failure, and so does a launch whose program exited before the kickoff ran (`program_exited`). |
 | `nudge_limit` | `2` | PR nudges to an idle In Review worker with no push before the ticket goes to Needs Human. The count resets when a push moves the PR head, and it also caps relaunches of a gone worker that never pushes. In Progress tickets never read it, since an idle In Progress worker is never nudged. |
 | `blocked_renotify_minutes` | `15` | Minutes between notifications for a worker that stays blocked on a question, a notification can only go out in a cycle, so it can come later than the period by up to one `resync`. The first notification comes on the first cycle that sees the worker blocked. `0` notifies in every cycle while it is blocked. |
 
@@ -240,16 +240,15 @@ Rex loads the file at other times too, and each load runs the restore. `rex conf
 
 ## `[plugins.local]`
 
-Local tickets are tickets kept in dispatch's own database, beside Linear's. Writing the table, even empty, turns them on. Without it dispatch creates and opens no database, and a `dispatch ticket` verb on a local ticket exits 1 saying local tickets are off. `create linear` and `edit` of a Linear ticket still work.
+Local tickets are tickets kept in dispatch's own database, beside Linear's. Writing the table, even empty, turns them on. Without it the database holds no local tickets, and a `dispatch ticket` verb on a local ticket exits 1 saying local tickets are off. `create linear` and `edit` of a Linear ticket still work.
 
 ```toml
 [plugins.local]
-# path = "~/.local/state/dispatch/tickets.db"
 ```
 
-| Setting | Default | What it does |
-|---|---|---|
-| `path` | `tickets.db` in the state directory | The database file. A leading `~` is expanded. The first `dispatch run` creates it with mode 0600. Rules never see this setting in `ctx.config`. |
+The table has no settings. Local tickets live in `dispatch.db` in the state directory, the file that also holds the worker rows, which the first `dispatch run` creates with mode 0600. A state directory from an earlier version has `tickets.db`, and the first start renames it to `dispatch.db`.
+
+`path` is gone. A config that sets it fails to load with `[plugins.local] path is gone: move <the path it names> to <state dir>/dispatch.db, then remove the key`. Stop `dispatch run`, move the file as the message says, and remove the key.
 
 With `dispatch run` going, file a ticket for a configured repo and start it. `create` takes the ticket system first, here `local`, and prints the new id. A ticket starts in the status that does `todo`:
 
@@ -274,7 +273,7 @@ LOC-1 In Progress
 The shipped rules then launch a worker on that branch at the next resync. `dispatch ticket` reaches the database through the running `dispatch run`, so it exits 3 with `dispatch: not running` when none runs.
 
 - There is no status setting. A new database is seeded once with Backlog, Todo, In Progress, In Review, Needs Human, Done and Canceled, each with the jobs `dispatch ticket statuses` lists, and dispatch never changes them afterwards. Each of the jobs `todo`, `in_progress`, `in_review`, `needs_human`, `close_parent` and `blocker_done` must belong to exactly one status, or `dispatch run` stops at start.
-- Only the `dispatch run` that holds `dispatch.lock` opens the file, and a second `dispatch run` that points `path` at the same file stops after 5 seconds. Every other session reaches it through `dispatch ticket`. Stop `dispatch run` before copying the file.
+- Only the `dispatch run` that holds `dispatch.lock` opens the file, and a `dispatch run` that finds it held by another process stops after 5 seconds. Every other session reaches it through `dispatch ticket`. Stop `dispatch run` before copying the file.
 - `dispatch run` also stops at start when the file's next ticket number is at or below a `LOC-<n>` that history or a tree's lease names, or when the file holds a ticket in a status it lacks, a link to a missing ticket or a parent loop.
 - Linear ids that start with `LOC-` fail a Linear read while this table is on, so no Linear team may use the key `LOC`.
 - A local ticket moved to In Progress gets a worker as a Linear ticket does, under the same `max_in_progress`, and the shipped rules nudge, escalate, promote, merge and tear down its worker the same way. The shipped rules launch no worker on a local ticket labeled `design` or `design-review`. A local ticket whose PR merged into the repo's default branch moves to the status that does `blocker_done` (Done in a new database) at the next resync, from any status outside a finished one, and its tree is returned and its workspace closed. A merge from a fork, into another branch, or from before the ticket entered its current status closes nothing. A local ticket with `--start-pr N` gets a tree on its own branch at the head of the repo's PR N, a fork's PR included, fetched from `origin`. An existing branch ignores it, and a PR that does not exist fails the launch. The PR is never the ticket's own: the ticket's PR is found by its branch.

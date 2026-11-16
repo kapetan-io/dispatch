@@ -6,7 +6,7 @@ import (
 
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
-	"github.com/kapetan-io/dispatch/internal/stops"
+	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -20,7 +20,7 @@ func (l *Loop) turn(r request) Response {
 	if l.wd.MultiplexerErr != nil {
 		return refuse("%v", l.wd.MultiplexerErr)
 	}
-	wk := world.FindWorker(ticket, l.wd.Trees, l.wd.Snapshot)
+	wk := l.wd.WorkerOf(ticket)
 	inTurn := refuse("%s's worker is in a turn; nothing to read until it ends", ticket)
 	if l.o.Executor == nil {
 		return refuse("dispatch has no harnesses to ask")
@@ -34,7 +34,8 @@ func (l *Loop) turn(r request) Response {
 		return inTurn
 	}
 	dir := l.o.StateDir
-	rec, ok := stops.Read(dir, wk.TreePath, wk.Session)
+	row := l.rowOn(wk.TreePath)
+	rec, ok := row.Stop(wk.Session)
 	if !ok {
 		return refuse("%s's worker has ended no turn yet", ticket)
 	}
@@ -43,7 +44,7 @@ func (l *Loop) turn(r request) Response {
 	if rec.InTurn(log, l.clock.Now()) {
 		return inTurn
 	}
-	closing, ok := stops.ReadClosing(dir, wk.TreePath, wk.Session, rec.At.UnixMilli())
+	closing, ok := row.ClosingAt(wk.Session, rec.At.UnixMilli())
 	if !ok {
 		return refuse("%s's turn has no closing message; read its workspace", ticket)
 	}
@@ -73,23 +74,23 @@ func (l *Loop) tellTurn(r request) error {
 	}
 	once := ledger.Once{"tell-turn", ticket, at}
 	if l.led.Done(ticket, once) {
-		r.reply <- Response{Lines: []string{fmt.Sprintf("already told %s for turn %s", ticket, stops.FormatTurnTime(at))}}
+		r.reply <- Response{Lines: []string{fmt.Sprintf("already told %s for turn %s", ticket, workers.FormatTurnTime(at))}}
 		return nil
 	}
 	if l.o.Executor == nil {
 		return refuse("dispatch has no harnesses to ask")
 	}
-	wk := world.FindWorker(ticket, l.wd.Trees, l.wd.Snapshot)
-	dir := l.o.StateDir
-	rec, stopped := stops.Read(dir, wk.TreePath, wk.Session)
-	log, _ := sessionlog.Read(dir, wk.TreePath, wk.Session)
+	wk := l.wd.WorkerOf(ticket)
+	row := l.rowOn(wk.TreePath)
+	rec, stopped := row.Stop(wk.Session)
+	log, _ := sessionlog.Read(l.o.StateDir, wk.TreePath, wk.Session)
 	ended := stopped && rec.At.UnixMilli() == at
 	later := stopped && rec.At.UnixMilli() > at
 	for _, t := range log.Turns {
 		ended = ended || t.At == at
 	}
 	if !ended {
-		return refuse("%s's worker has no turn that ended at %s", ticket, stops.FormatTurnTime(at))
+		return refuse("%s's worker has no turn that ended at %s", ticket, workers.FormatTurnTime(at))
 	}
 	moved := "%s's worker has moved past that turn; nothing sent"
 	if later || log.TookMessageAfter(at) {
@@ -99,9 +100,9 @@ func (l *Loop) tellTurn(r request) error {
 	if wk.State == world.Working || (stopped && rec.At.UnixMilli() == at && rec.Busy(l.clock.Now())) {
 		return refuse(working, ticket)
 	}
-	closing, ok := stops.ReadClosing(dir, wk.TreePath, wk.Session, at)
+	closing, ok := row.ClosingAt(wk.Session, at)
 	if !ok {
-		return refuse("%s's worker has no closing message for turn %s; nothing sent", ticket, stops.FormatTurnTime(at))
+		return refuse("%s's worker has no closing message for turn %s; nothing sent", ticket, workers.FormatTurnTime(at))
 	}
 	took, known := l.harnessTookMessage(wk, closing)
 	if !known {
@@ -116,7 +117,7 @@ func (l *Loop) tellTurn(r request) error {
 // harnessTookMessage asks the worker's harness whether its session took a message after the turn
 // closing describes. A hook report lost while dispatch was down leaves no trace on disk, so the
 // harness's own record is the only witness. known is false when the harness can't say.
-func (l *Loop) harnessTookMessage(wk world.Worker, closing stops.Closing) (took, known bool) {
+func (l *Loop) harnessTookMessage(wk world.Worker, closing workers.Closing) (took, known bool) {
 	h, ok := l.o.Executor.Harnesses.ForAgent(wk.Kind)
 	if !ok {
 		return false, false

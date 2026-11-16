@@ -123,7 +123,7 @@ func (c *CLI) StartWorker(ctx context.Context, w Worker) (Started, error) {
 	}
 	c.closeAgentlessTabs(ctx, w.Workspace, pane)
 
-	started := Started{Pane: pane}
+	started := Started{Pane: pane, Session: w.Program.Session}
 	// A timed-out start may still bring the program up, so retry only into a pane
 	// that has no agent of its kind.
 	ok := c.startAgent(ctx, w, &started)

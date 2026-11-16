@@ -48,7 +48,7 @@ func trace(dir, ticket string, out io.Writer, asJSON bool) error {
 	return nil
 }
 
-// ExplainLine is one line of `dispatch explain --json`. Type is "cycle", "http" or "receipt". A field that
+// ExplainLine is one line of `dispatch explain --json`. Type is "cycle", "http", "receipt" or "worker_gone". A field that
 // doesn't apply to the line type, or holds its zero value, is left out.
 type ExplainLine struct {
 	Type string `json:"type"`
@@ -181,6 +181,12 @@ func (t *tracing) segment(seg Segment) {
 					}
 				}
 			}
+		case LineEvent:
+			var e Event
+			if json.Unmarshal(raw, &e) == nil && e.Type == EventWorkerGone && e.Subject == t.ticket {
+				t.seen = true
+				t.workerGone(e)
+			}
 		case LineReceipt:
 			var r Receipt
 			if json.Unmarshal(raw, &r) == nil && r.Subject == t.ticket {
@@ -189,6 +195,16 @@ func (t *tracing) segment(seg Segment) {
 			}
 		}
 	}
+}
+
+// workerGone prints that the ticket's worker row was deleted, and why.
+func (t *tracing) workerGone(e Event) {
+	var gone struct {
+		Why string `json:"why"`
+	}
+	_ = json.Unmarshal(e.Data, &gone)
+	t.emit(fmt.Sprintf("%s worker gone  %s", clockTime(e.Ingest), gone.Why),
+		ExplainLine{Type: EventWorkerGone, Time: time.UnixMilli(e.Ingest).UTC(), Subject: e.Subject, Detail: gone.Why})
 }
 
 // cycle prints the cycle when what it decided for the ticket differs from the cycle before, and the

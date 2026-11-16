@@ -26,9 +26,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	bolt "go.etcd.io/bbolt"
 
 	"github.com/kapetan-io/dispatch"
 	"github.com/kapetan-io/dispatch/internal/config"
+	"github.com/kapetan-io/dispatch/internal/dispatchdb"
 	"github.com/kapetan-io/dispatch/internal/environment"
 	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/harnesstest"
@@ -36,7 +38,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/history"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
 	"github.com/kapetan-io/dispatch/internal/httpservicetest"
-	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/launcher"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
@@ -46,10 +47,11 @@ import (
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/pullrequesttest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
-	"github.com/kapetan-io/dispatch/internal/stops"
 	tkt "github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/tooltest"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/treekey"
+	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -112,6 +114,8 @@ type dispatchOptions struct {
 // Dispatch is dispatch running on a machine of fakes: Linear, herdr, treehouse, GitHub and the
 // sessions that follow tickets. Tests drive it through the command line and read back what the fakes saw.
 type Dispatch struct {
+	// open is the dispatch.db the running dispatch holds, nil while none runs.
+	open     atomic.Pointer[dispatchdb.File]
 	Clock    *fakeClock
 	Linear   *Linear
 	Workers  *Workers
@@ -576,38 +580,57 @@ func (d *Dispatch) HistoryDatedAhead(by time.Duration) {
 // and has not returned (unreachable from the CLI: a test cannot kill a launch halfway).
 func (w *Workers) UnconfirmedLaunch(ticket string, at time.Time) {
 	w.d.t.Helper()
-	markLaunch(w.d.t, w.d.state, w.d.Trees.PathOf(ticket), at)
+	w.d.markLaunch(w.d.Trees.PathOf(ticket), at)
 }
 
 // CorruptStopRecords overwrites the records Stop hooks left, or only the newest one, with text
 // that is not a record (unreachable from the CLI: a disk fault the product can't inject).
 func (w *Workers) CorruptStopRecords(newestOnly bool) {
 	w.d.t.Helper()
-	records, err := filepath.Glob(filepath.Join(w.d.state, "stops", "*", "*.json"))
-	require.NoError(w.d.t, err)
-	require.NotEmpty(w.d.t, records)
-	if newestOnly {
-		require.Greater(w.d.t, len(records), 1)
-		newest, newestBody := "", ""
-		for _, record := range records {
-			body, err := os.ReadFile(record)
-			require.NoError(w.d.t, err)
-			if string(body) > newestBody {
-				newest, newestBody = record, string(body)
+	w.d.database(func(file *dispatchdb.File) {
+		require.NoError(w.d.t, file.Update(func(tx *bolt.Tx) error {
+			type record struct {
+				stops *bolt.Bucket
+				key   []byte
+				body  string
 			}
-		}
-		records = []string{newest}
-	}
-	for _, record := range records {
-		require.NoError(w.d.t, os.WriteFile(record, []byte("not json"), 0o644))
-	}
+			var records []record
+			all := tx.Bucket([]byte("workers"))
+			require.NotNil(w.d.t, all)
+			require.NoError(w.d.t, all.ForEachBucket(func(worker []byte) error {
+				stops := all.Bucket(worker).Bucket([]byte("stops"))
+				if stops == nil {
+					return nil
+				}
+				return stops.ForEach(func(key, body []byte) error {
+					records = append(records, record{stops: stops, key: slices.Clone(key), body: string(body)})
+					return nil
+				})
+			}))
+			require.NotEmpty(w.d.t, records)
+			if newestOnly {
+				require.Greater(w.d.t, len(records), 1)
+				newest := records[0]
+				for _, rec := range records {
+					if rec.body > newest.body {
+						newest = rec
+					}
+				}
+				records = []record{newest}
+			}
+			for _, rec := range records {
+				require.NoError(w.d.t, rec.stops.Put(rec.key, []byte("not json")))
+			}
+			return nil
+		}))
+	})
 }
 
 // Unconfirmed marks the ticket's tree as one whose launch never confirmed its kickoff (unreachable
 // from the CLI: a test cannot kill a launch halfway).
 func (w *Workers) Unconfirmed(ticket string) {
 	w.d.t.Helper()
-	markLaunch(w.d.t, w.d.state, w.Tree(ticket), w.d.Clock.Now())
+	w.d.markLaunch(w.Tree(ticket), w.d.Clock.Now())
 }
 
 // PathOf is where the tree of a ticket's worker is.
@@ -1585,10 +1608,11 @@ func (d *Dispatch) answerStopsOfAnEarlierRun() {
 			var req loop.Request
 			if json.NewDecoder(conn).Decode(&req) == nil && req.Op == loop.OpStop {
 				s := req.Stop
-				rec := stops.Record{At: time.UnixMilli(s.At).UTC(), Reported: s.Reported, Running: s.Running}
-				_ = stops.Write(d.state, s.Tree, s.Session, rec)
+				rec := workers.Record{At: time.UnixMilli(s.At).UTC(), Reported: s.Reported, Running: s.Running}
+				d.database(func(file *dispatchdb.File) {
+					_, _ = workers.New(file).RecordStop(s.Tree, s.Session, rec, workers.NewClosing(s.At, s.Message, s.Transcript), d.Clock.Now())
+				})
 				_ = sessionlog.AppendTurn(d.state, s.Tree, s.Session, sessionlog.Turn{At: s.At, Running: s.Running > 0})
-				_ = stops.WriteClosing(d.state, s.Tree, s.Session, stops.NewClosing(s.At, s.Message, s.Transcript))
 			}
 			_ = json.NewEncoder(conn).Encode(loop.Response{})
 			_ = conn.Close()
@@ -1656,7 +1680,13 @@ func (d *Dispatch) startLoop(extra dispatch.Options) error {
 	d.followers = d.freshFollowers()
 	opts := d.options(extra)
 	opts.Stdout, opts.Stderr = r.out, r.err
-	go func() { r.done <- dispatch.Run(ctx, []string{"run"}, opts) }()
+	opts.Database.Opened = func(file *dispatchdb.File) { d.open.Store(file) }
+	opts.Database.BeforeCommit = d.tools.Kill.Call
+	go func() {
+		err := dispatch.Run(ctx, []string{"run"}, opts)
+		d.open.Store(nil)
+		r.done <- err
+	}()
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
@@ -1970,7 +2000,30 @@ func (d *Dispatch) worker(ticket, status string) {
 
 // workerOn is worker for a tree at a chosen path and workspace id.
 func (d *Dispatch) workerOn(ticket, tree, id, status string) {
-	d.tools.Treehouse.Seed(d.Repo, treehouse.Tree{Path: tree, Status: "leased", LeaseHolder: ticket})
+	d.workerIn(d.Repo, ticket, tree, id, status)
+}
+
+// libraryRepo is a second configured repo, labeled library, for a ticket whose work spans two
+// repos. A ticket has one worker per repo, so its second worker is there.
+func (d *Dispatch) libraryRepo() string {
+	dir := filepath.Join(d.dir, "library-repo")
+	if _, err := os.Stat(dir); err != nil {
+		require.NoError(d.t, os.MkdirAll(dir, 0o755))
+		d.addRepo("library", dir)
+	}
+	return dir
+}
+
+// workerIn is workerOn for a tree of the pool of the repo whose clone is at repo.
+func (d *Dispatch) workerIn(repo, ticket, tree, id, status string) {
+	d.recordWorker(ticket, repo, tree)
+	d.unrecordedWorker(repo, ticket, tree, id, status)
+}
+
+// unrecordedWorker is a worker as a dispatch from before worker rows left it: a lease, a
+// workspace and a session, with no row in dispatch.db.
+func (d *Dispatch) unrecordedWorker(repo, ticket, tree, id, status string) {
+	d.tools.Treehouse.Seed(repo, treehouse.Tree{Path: tree, Status: "leased", LeaseHolder: ticket})
 
 	d.tools.Multiplexer.AddWorkspace(herdr.Workspace{ID: id, Label: ticket, CheckoutPath: tree})
 	if status == "" {
@@ -2937,6 +2990,7 @@ func (d *Dispatch) gitTree(ticket string) string {
 func (d *Dispatch) lease(ticket, path string) {
 	d.tools.Treehouse.Clear(d.Repo)
 	d.tools.Treehouse.Seed(d.Repo, treehouse.Tree{Path: path, Status: "leased", LeaseHolder: ticket})
+	d.recordWorker(ticket, d.Repo, path)
 }
 
 // dirty stages a new file in the tree.
@@ -3032,16 +3086,194 @@ whenever({ name: "turns", each: "ticket",
     return ctx.ticket.queueComment(t, body, { once: ["turns", t.id, body] });
   } });`
 
-// markLaunch leaves the mark a launch killed before its kickoff would leave, because a
-// test cannot kill a launch halfway.
-func markLaunch(t *testing.T, state, tree string, at time.Time) {
-	t.Helper()
-	_, err := kickoffs.Mark(state, tree, at)
-	require.NoError(t, err)
+// database hands the test dispatch.db: the file the running dispatch opened, or the file opened
+// for the call while none runs. A test uses it to state what it cannot reach from the command
+// line, such as the row a launch killed halfway would have left.
+func (d *Dispatch) database(use func(file *dispatchdb.File)) {
+	d.t.Helper()
+	if file := d.open.Load(); file != nil {
+		use(file)
+		return
+	}
+	file, err := dispatchdb.Open(dispatchdb.Options{StateDir: d.state})
+	require.NoError(d.t, err)
+	defer func() { require.NoError(d.t, file.Close()) }()
+	use(file)
+}
+
+// labelOf is the config label of the repo whose clone is at dir.
+func (d *Dispatch) labelOf(dir string) string {
+	for _, repo := range d.repos {
+		if repo.dir == dir {
+			return repo.label
+		}
+	}
+	require.Failf(d.t, "no repo", "no configured repo is at %s", dir)
+	return ""
+}
+
+// recordWorker states the worker row a launch writes for a worker the test seeds straight into
+// the fakes (unreachable from the command line: the fake launcher leases no tree).
+func (d *Dispatch) recordWorker(ticket, repo, tree string) {
+	d.t.Helper()
+	d.database(func(file *dispatchdb.File) {
+		rows := workers.New(file)
+		// A test hands a tree from one ticket to the next without a return.
+		if held, found, err := rows.OnTree(tree); err == nil && found && held.Ticket != ticket {
+			require.NoError(d.t, rows.Delete(held.Ticket, held.Repo))
+		}
+		require.NoError(d.t, rows.Ensure(ticket, d.labelOf(repo), time.UnixMilli(0)))
+		require.NoError(d.t, rows.RecordTree(ticket, d.labelOf(repo), tree))
+	})
+}
+
+// closings lists the closing messages dispatch.db holds, as worker key and session key. With drop
+// set it deletes each one, leaving its Stop record.
+func (d *Dispatch) closings(drop bool) []string {
+	d.t.Helper()
+	var found []string
+	d.database(func(file *dispatchdb.File) {
+		require.NoError(d.t, file.Update(func(tx *bolt.Tx) error {
+			all := tx.Bucket([]byte("workers"))
+			if all == nil {
+				return nil
+			}
+			return all.ForEachBucket(func(worker []byte) error {
+				messages := all.Bucket(worker).Bucket([]byte("closing"))
+				if messages == nil {
+					return nil
+				}
+				var keys [][]byte
+				err := messages.ForEach(func(key, _ []byte) error {
+					keys = append(keys, slices.Clone(key))
+					found = append(found, string(worker)+" "+string(key))
+					return nil
+				})
+				for _, key := range keys {
+					if drop && err == nil {
+						err = messages.Delete(key)
+					}
+				}
+				return err
+			})
+		}))
+	})
+	return found
+}
+
+// oldWorkerFiles writes what a dispatch from before worker rows kept in the state directory for a
+// tree: one session's Stop record, the time of the tree's last return, the open kickoff record's
+// time and the session's closing message.
+func (d *Dispatch) oldWorkerFiles(tree, session string, returned, kickoff, stop time.Time) {
+	d.t.Helper()
+	stops := filepath.Join(d.state, "stops", treekey.Of(tree))
+	require.NoError(d.t, os.MkdirAll(stops, 0o700))
+	require.NoError(d.t, os.WriteFile(filepath.Join(stops, "returned"), []byte(strconv.FormatInt(returned.UnixMilli(), 10)), 0o600))
+	raw, err := json.Marshal(workers.Record{At: stop, Reported: true})
+	require.NoError(d.t, err)
+	require.NoError(d.t, os.WriteFile(filepath.Join(stops, workers.SessionKey(session)+".json"), raw, 0o600))
+	require.NoError(d.t, os.MkdirAll(filepath.Join(d.state, "kickoffs"), 0o700))
+	require.NoError(d.t, os.WriteFile(filepath.Join(d.state, "kickoffs", treekey.Of(tree)), []byte(strconv.FormatInt(kickoff.UnixMilli(), 10)), 0o600))
+	logs := filepath.Join(sessionlog.Dir(d.state), treekey.Of(tree))
+	require.NoError(d.t, os.MkdirAll(logs, 0o700))
+	require.NoError(d.t, os.WriteFile(filepath.Join(logs, workers.SessionKey(session)+".closing"), []byte("all done"), 0o600))
+}
+
+// oldWorkerFilesLeft lists what is left of the files oldWorkerFiles wrote.
+func (d *Dispatch) oldWorkerFilesLeft() []string {
+	d.t.Helper()
+	var left []string
+	for _, pattern := range []string{"stops/*/*", "kickoffs/*", "sessions/*/*.closing"} {
+		found, err := filepath.Glob(filepath.Join(d.state, pattern))
+		require.NoError(d.t, err)
+		left = append(left, found...)
+	}
+	return left
+}
+
+// recordedStops counts the worker rows dispatch.db holds and the Stop records under them.
+func (d *Dispatch) recordedStops() (rows, stops int) {
+	d.t.Helper()
+	d.database(func(file *dispatchdb.File) {
+		found, err := workers.New(file).Snapshot()
+		require.NoError(d.t, err)
+		rows = len(found)
+		for _, worker := range found {
+			stops += len(worker.Stops) + len(worker.Unreadable)
+		}
+	})
+	return rows, stops
+}
+
+// recordedTree is the tree the ticket's worker row names, empty when it has no row or no tree.
+func (d *Dispatch) recordedTree(ticket string) string {
+	d.t.Helper()
+	var tree string
+	d.database(func(file *dispatchdb.File) {
+		rows, err := workers.New(file).Snapshot()
+		require.NoError(d.t, err)
+		for _, row := range rows.Of(ticket) {
+			tree = row.Row.Tree
+		}
+	})
+	return tree
+}
+
+// recordedRepos lists the repo label of each worker row the ticket has in dispatch.db.
+func (d *Dispatch) recordedRepos(ticket string) []string {
+	d.t.Helper()
+	var repos []string
+	d.database(func(file *dispatchdb.File) {
+		rows, err := workers.New(file).Snapshot()
+		require.NoError(d.t, err)
+		for _, row := range rows.Of(ticket) {
+			repos = append(repos, row.Repo)
+		}
+	})
+	return repos
+}
+
+// markLaunch leaves the open kickoff record a launch killed before its kickoff would leave,
+// because a test cannot kill a launch halfway.
+func (d *Dispatch) markLaunch(tree string, at time.Time) {
+	d.t.Helper()
+	d.database(func(file *dispatchdb.File) {
+		rows := workers.New(file)
+		worker, found, err := rows.OnTree(tree)
+		require.NoError(d.t, err)
+		require.True(d.t, found)
+		require.NoError(d.t, rows.SetKickoff(worker.Ticket, worker.Repo, &workers.Kickoff{At: at.UnixMilli(), Open: true}))
+	})
 }
 
 // launchRecord is when the unconfirmed launch on tree began, and whether one is on record.
-func launchRecord(state, tree string) (time.Time, bool) { return kickoffs.Since(state, tree) }
+func (d *Dispatch) launchRecord(tree string) (at time.Time, held bool) {
+	d.t.Helper()
+	d.database(func(file *dispatchdb.File) {
+		worker, found, err := workers.New(file).OnTree(tree)
+		require.NoError(d.t, err)
+		if found && worker.Row.Kickoff != nil && worker.Row.Kickoff.Open {
+			at, held = time.UnixMilli(worker.Row.Kickoff.At), true
+		}
+	})
+	return at, held
+}
+
+// kickoffRecord is the kickoff record in the ticket's worker row, which no command prints: it is
+// kept for the code that decides what a resumed worker is sent.
+func (d *Dispatch) kickoffRecord(ticket string) (kickoff workers.Kickoff, found bool) {
+	d.t.Helper()
+	d.database(func(file *dispatchdb.File) {
+		rows, err := workers.New(file).Snapshot()
+		require.NoError(d.t, err)
+		for _, row := range rows.Of(ticket) {
+			if row.Row.Kickoff != nil {
+				kickoff, found = *row.Row.Kickoff, true
+			}
+		}
+	})
+	return kickoff, found
+}
 
 var (
 	sessionListOnce sync.Once

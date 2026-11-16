@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# claude shim for dispatch workers. `dispatch launch` puts this dir first on the
+# claude shim for dispatch workers. A launch puts this dir first on the
 # worker's PATH, and herdr replays that PATH when it restarts the worker.
 bin=${DISPATCH_BIN:-dispatch}
 command -v "$bin" >/dev/null || { echo "claude shim: dispatch is not on PATH" >&2; exit 127; }

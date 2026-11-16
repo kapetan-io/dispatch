@@ -285,6 +285,9 @@ type Try [][]string
 type Started struct {
 	Pane  string
 	Agent string
+	// Session is the session id the program was started with or resumed, which the adapter
+	// chose. Empty when the program takes none.
+	Session string
 }
 
 // How long Kickoff tries: it looks at the worker up to kickoffChecks times for its input box,

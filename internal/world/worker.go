@@ -1,14 +1,18 @@
 package world
 
 import (
+	"slices"
+
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/workers"
 )
 
-// A worker is found by the join from a ticket to each tree it holds (the lease
-// holder is the ticket id), to the workspace showing that tree, to the
-// session of a registered harness that the multiplexer reports there. The multiplexer's own agent names are not used,
-// because they clear when the program exits.
+// A worker is found by the join from a ticket's worker row to the tree the row names, to the lease
+// on that tree held by the ticket, to the workspace showing that tree, to the session of a
+// registered harness that the multiplexer reports there. A row with no tree, or whose tree is not
+// leased to the ticket, is no worker, and neither is a lease no row names. The multiplexer's own
+// agent names are not used, because they clear when the program exits.
 
 // WorkerState is what the worker's session is doing. NoWorker is the saved
 // value "none": no session runs in the worker, or the ticket holds no tree.
@@ -34,8 +38,8 @@ type Worker struct {
 	Session string
 	// Kind is the agent kind the multiplexer detected there, such as "claude".
 	Kind string
-	// UnconfirmedSince is when the latest launch on this tree began, in
-	// milliseconds, while its kickoff is unconfirmed, read from the kickoffs record. Zero means the launch returned.
+	// UnconfirmedSince is when the latest launch on this tree began, in milliseconds, while its
+	// kickoff record is open and no Stop is later. Zero means the launch typed its kickoff.
 	UnconfirmedSince int64
 	// noStatus is set while the session reports no status, as Claude does at a startup dialog.
 	noStatus bool
@@ -45,18 +49,38 @@ type Worker struct {
 // no status while it shows a startup dialog.
 func (w Worker) StatusKnown() bool { return !w.noStatus }
 
-// FindWorker looks up the worker on the ticket's first tree. FindWorkers returns one for
-// every tree.
-func FindWorker(ticket string, trees []treehouse.Tree, snap herdr.Snapshot) Worker {
-	if all := FindWorkers(ticket, trees, snap); len(all) > 0 {
+// WorkerOf is the worker on the first tree the ticket's worker rows name. WorkersOf returns one
+// for every such tree.
+func (w World) WorkerOf(ticket string) Worker {
+	if all := w.WorkersOf(ticket); len(all) > 0 {
 		return all[0]
 	}
 	return Worker{State: NoWorker}
 }
 
-// FindWorkers looks up one worker for each tree the ticket holds a lease on. A
-// ticket has several when its design includes a library in another repo.
-func FindWorkers(ticket string, trees []treehouse.Tree, snap herdr.Snapshot) []Worker {
+// WorkersOf looks up one worker for each tree a worker row of the ticket names and the ticket
+// holds the lease on. A ticket has several when its design includes a library in another repo.
+func (w World) WorkersOf(ticket string) []Worker { return w.workersIn(ticket, w.Snapshot) }
+
+// workersIn is WorkersOf against a snapshot of the caller's choosing.
+func (w World) workersIn(ticket string, snap herdr.Snapshot) []Worker {
+	if !w.Recorded {
+		return workersByLease(ticket, w.Trees, snap)
+	}
+	rows := w.Rows.Of(ticket)
+	var all []Worker
+	for _, t := range w.Trees {
+		named := slices.ContainsFunc(rows, func(row workers.Worker) bool { return row.Row.Tree == t.Path })
+		if t.LeaseHolder == ticket && named {
+			all = append(all, onTree(t, snap))
+		}
+	}
+	return all
+}
+
+// workersByLease looks up one worker for each tree the ticket holds a lease on, which is how a
+// world with no worker rows, read from history written before them, finds its workers.
+func workersByLease(ticket string, trees []treehouse.Tree, snap herdr.Snapshot) []Worker {
 	var all []Worker
 	for _, t := range trees {
 		if t.LeaseHolder == ticket {

@@ -15,9 +15,9 @@ import (
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
 	"github.com/kapetan-io/dispatch/internal/stackrecord"
-	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
+	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -36,7 +36,7 @@ func full() world.World {
 		Trees:           []treehouse.Tree{{Path: "/trees/1", Status: "leased", LeaseHolder: "ENG-1", RepoDir: "/repo"}},
 		PoolErrs:        map[string]error{"tiger": errors.New("pool tiger unread")},
 		Workers:         map[string]world.Worker{"ENG-1": worker},
-		Stops:           map[string]stops.Record{"ENG-1": {At: time.UnixMilli(1760450000000).UTC(), Reported: true, Running: 2}},
+		Stops:           map[string]workers.Record{"ENG-1": {At: time.UnixMilli(1760450000000).UTC(), Reported: true, Running: 2}},
 		Sessions:        map[string]sessionlog.Log{"ENG-1": {Turns: []sessionlog.Turn{{At: 1760450000000, Running: true}}}},
 		SessionErrs:     map[string]error{"ENG-6": errors.New("session unread")},
 		LeaseHolders:    []ticket.Ticket{{Identifier: "ENG-3"}},
@@ -64,6 +64,10 @@ func full() world.World {
 		InboxReadAt:     time.UnixMilli(1760450400000).UTC(),
 		Remotes:         map[string]string{"tiger": "acme/widgets"},
 		RemoteErrs:      map[string]error{"lion": errors.New("git config failed")},
+		Rows: workers.Snapshot{{Ticket: "ENG-1", Repo: "tiger", Row: workers.Row{Where: workers.Local, Tree: "/trees/1", Since: 1760449000000,
+			Kickoff: &workers.Kickoff{Text: "/dispatch:build ENG-1", At: 1760449000000, Open: true, Session: "s1"}},
+			Stops: map[string]workers.Record{"k1": {At: time.UnixMilli(1760450000000).UTC(), Reported: true}}, Unreadable: []string{"k2"}}},
+		Recorded: true,
 	}
 }
 

@@ -31,7 +31,7 @@ func (w workLog) record(label, body string) {
 }
 
 func (w workLog) log(format string, args ...any) {
-	_, _ = fmt.Fprintf(w.progress, "dispatch launch: "+format+"\n", args...)
+	_, _ = fmt.Fprintf(w.progress, "launch: "+format+"\n", args...)
 }
 
 func (w workLog) sleep(ctx context.Context, d time.Duration) {

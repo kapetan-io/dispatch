@@ -58,9 +58,9 @@ whenever({
 // and nothing nudges it. The launcher marks a launch unconfirmed until it returns, so a
 // worker still marked after the grace period lost its launch. Only an idle worker counts.
 // A blocked one may have got its kickoff and be asking its first question, and no Stop
-// has confirmed it yet, so closing it would lose that work. A launch dispatch runs gives up
-// after 25 seconds, not counting time queued behind another launch into the repo, but one run
-// by hand can wait on herdr for about two minutes, and the grace period leaves it room. A
+// has confirmed it yet, so closing it would lose that work. A launch gives up after 25 seconds,
+// not counting time queued behind another launch into the repo, and the grace period leaves
+// it room. A
 // paused ticket's worker is closed by stop-paused-worker, and that close must not count as a
 // failed launch. Closing the workspace frees the ticket for launch-worker, and each close
 // counts toward launch_failure_limit.

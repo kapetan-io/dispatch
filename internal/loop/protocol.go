@@ -4,6 +4,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/localticket"
 	"github.com/kapetan-io/dispatch/internal/notify"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
+	"github.com/kapetan-io/dispatch/internal/workers"
 )
 
 // Operations a client asks of the running loop over its socket.
@@ -30,9 +31,6 @@ const (
 	// OpPrompt carries a UserPromptSubmit hook's report of a message, a slash command or any other, which the loop
 	// stores and then wakes as OpWake does.
 	OpPrompt = "prompt"
-	// OpTyped tells the loop dispatch is about to type text into a worker, or clears what it
-	// typed there, from a process that is not the loop.
-	OpTyped = "typed"
 )
 
 // Exit codes a client reports for a response.
@@ -56,18 +54,8 @@ type Request struct {
 	Stop *sessionlog.Stop `json:"stop,omitempty"`
 	// Prompt is the message the session's harness reported it took.
 	Prompt *sessionlog.Prompt `json:"prompt,omitempty"`
-	// Typed is what a launch typed.
-	Typed *Typed `json:"typed,omitempty"`
 	// Call is the verb of a ticket request.
 	Call *TicketCall `json:"call,omitempty"`
-}
-
-// Typed is a launch's note that it typed Text into the session in Tree, or with Clear set that
-// it closed that session.
-type Typed struct {
-	Tree  string `json:"tree"`
-	Text  string `json:"text,omitempty"`
-	Clear bool   `json:"clear,omitempty"`
 }
 
 // Response is the loop's answer. Lines are printed to stdout, one per ticket.
@@ -84,6 +72,8 @@ type Response struct {
 	Turn *Turn `json:"turn,omitempty"`
 	// Tracked answers VerbTracked, which only `dispatch rules check` sends, with every local ticket and the database's statuses.
 	Tracked *localticket.Listing `json:"tracked,omitempty"`
+	// Rows answers VerbTracked with the worker rows, whether or not local tickets are on.
+	Rows workers.Snapshot `json:"rows,omitempty"`
 }
 
 // Turn is the turn a worker waits at and what it said at the end of it.
@@ -91,7 +81,7 @@ type Turn struct {
 	// At is when the turn ended, in milliseconds since the epoch.
 	At      int64  `json:"at"`
 	Message string `json:"message"`
-	// Cut is true when the message was longer than stops.MessageLimit.
+	// Cut is true when the message was longer than workers.MessageLimit.
 	Cut bool `json:"cut"`
 }
 
@@ -107,7 +97,7 @@ const (
 	VerbComment  = "comment"
 	VerbEdit     = "edit"
 	VerbStatuses = "statuses"
-	// VerbTracked is not a `dispatch ticket` verb. `dispatch rules check` sends it to read the tickets of the running dispatch.
+	// VerbTracked is not a `dispatch ticket` verb. `dispatch rules check` sends it to read the tickets and worker rows of the running dispatch.
 	VerbTracked = "tracked"
 )
 

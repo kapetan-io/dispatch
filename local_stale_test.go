@@ -46,7 +46,7 @@ func TestTickKeepsALocalTicketsStatusSinceFromTheDatabase(t *testing.T) {
 // setLocalStatus edits the database file while dispatch is stopped, as a tool outside dispatch could.
 func (d *Dispatch) setLocalStatus(id, status string, at time.Time) {
 	d.t.Helper()
-	db, err := bolt.Open(filepath.Join(d.state, "tickets.db"), 0o600, &bolt.Options{Timeout: time.Second})
+	db, err := bolt.Open(filepath.Join(d.state, "dispatch.db"), 0o600, &bolt.Options{Timeout: time.Second})
 	require.NoError(d.t, err)
 	defer func() { _ = db.Close() }()
 	n, err := strconv.ParseUint(strings.TrimPrefix(id, "LOC-"), 10, 64)

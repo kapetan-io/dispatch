@@ -11,8 +11,8 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
-	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/treekey"
+	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -75,8 +75,6 @@ func (l *Loop) onRequest(r request) error {
 	case OpPrompt:
 		r.reply <- l.onPrompt(r.Prompt)
 		l.readAgain(world.FromLocal)
-	case OpTyped:
-		r.reply <- l.onTyped(r.Typed)
 	case OpTicket:
 		l.onTicket(r.Call, r.reply)
 	case OpWatch, OpUnwatch:
@@ -87,33 +85,24 @@ func (l *Loop) onRequest(r request) error {
 	return nil
 }
 
-// onStop stores a turn a worker's session ended, where the next read finds it. The
-// loop is the only writer, so a read never races a half-written record.
+// onStop stores a turn a worker's session ended, in its worker row, where the next read finds it.
 func (l *Loop) onStop(s *sessionlog.Stop) Response {
 	if s == nil || s.Tree == "" || s.Session == "" {
 		return Response{Code: CodeFailed, Error: "a stop report needs a tree and a session"}
 	}
-	rec := stops.Record{At: time.UnixMilli(s.At).UTC(), Reported: s.Reported, Running: s.Running}
-	// The ended session of a returned tree can report after the return. Stored, the turn would
-	// still reach the session log, which the return cleared.
-	if at, ok := stops.ReturnedAt(l.o.StateDir, s.Tree); ok && !rec.At.After(at) {
-		return Response{}
-	}
-	// A report that waited in the inbox past its hook's timeout can arrive after a newer one, and
-	// is dropped so the session's turns stay in order. A stored time ahead of the loop's clock came
-	// from a clock that has since stepped back, and must not shut out every report after it.
-	cur, ok := stops.Read(l.o.StateDir, s.Tree, s.Session)
-	if ok && rec.At.Before(cur.At) && !cur.At.After(l.clock.Now()) {
-		return Response{}
-	}
-	if err := stops.Write(l.o.StateDir, s.Tree, s.Session, rec); err != nil {
+	rec := workers.Record{At: time.UnixMilli(s.At).UTC(), Reported: s.Reported, Running: s.Running}
+	// The store drops a report for a tree no worker row names, one that ended before the row was
+	// made, and one older than the Stop it holds, so a returned tree's session log stays cleared
+	// and a session's turns stay in order.
+	kept, err := l.o.Workers.RecordStop(s.Tree, s.Session, rec, workers.NewClosing(s.At, s.Message, s.Transcript), l.clock.Now())
+	if err != nil {
 		return Response{Code: CodeFailed, Error: err.Error()}
+	}
+	if !kept {
+		return Response{}
 	}
 	turn := sessionlog.Turn{At: s.At, Running: s.Running > 0}
 	if err := sessionlog.AppendTurn(l.o.StateDir, s.Tree, s.Session, turn); err != nil {
-		return Response{Code: CodeFailed, Error: err.Error()}
-	}
-	if err := stops.WriteClosing(l.o.StateDir, s.Tree, s.Session, stops.NewClosing(s.At, s.Message, s.Transcript)); err != nil {
 		return Response{Code: CodeFailed, Error: err.Error()}
 	}
 	l.nameStoppedPane(s.Tree)
@@ -154,19 +143,6 @@ func (l *Loop) onPrompt(p *sessionlog.Prompt) Response {
 	}
 	if err := sessionlog.AppendCommand(l.o.StateDir, p.Tree, p.Session, cmd); err != nil {
 		return Response{Code: CodeFailed, Error: err.Error()}
-	}
-	return Response{}
-}
-
-// onTyped keeps the note of a launch that runs in another process.
-func (l *Loop) onTyped(t *Typed) Response {
-	if t == nil || t.Tree == "" {
-		return Response{Code: CodeFailed, Error: "a typed report needs a tree"}
-	}
-	if t.Clear {
-		l.o.Typed.Clear(t.Tree)
-	} else {
-		l.o.Typed.Note(t.Tree, t.Text)
 	}
 	return Response{}
 }
@@ -347,4 +323,11 @@ func (l *Loop) noWorker(ticket string) string {
 		msg += "; could not read the pool of " + strings.Join(unread, ", ")
 	}
 	return msg
+}
+
+// rowOn is the worker row naming the tree as the database holds it now, which is newer than the
+// world's rows when a Stop was reported since the last read. A tree no row names has no records.
+func (l *Loop) rowOn(tree string) workers.Worker {
+	row, _, _ := l.o.Workers.OnTree(tree)
+	return row
 }

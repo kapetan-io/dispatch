@@ -23,7 +23,6 @@ import (
 	"github.com/kapetan-io/dispatch/internal/harness"
 	"github.com/kapetan-io/dispatch/internal/herdr"
 	"github.com/kapetan-io/dispatch/internal/httpservice"
-	"github.com/kapetan-io/dispatch/internal/kickoffs"
 	"github.com/kapetan-io/dispatch/internal/launcher"
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/localticket"
@@ -31,10 +30,10 @@ import (
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/sessionlog"
-	"github.com/kapetan-io/dispatch/internal/stops"
 	"github.com/kapetan-io/dispatch/internal/ticket"
 	"github.com/kapetan-io/dispatch/internal/treehouse"
 	"github.com/kapetan-io/dispatch/internal/typed"
+	"github.com/kapetan-io/dispatch/internal/workers"
 	"github.com/kapetan-io/dispatch/internal/world"
 )
 
@@ -66,6 +65,8 @@ type Env struct {
 	Environment environment.Environment
 	StateDir    string
 	Stderr      io.Writer
+	// Workers holds the worker rows a launch, a close and a return write.
+	Workers *workers.Store
 	// Typed is what dispatch sent or typed into workers, shared with the launcher and the loop.
 	Typed *typed.Log
 	// LaunchDeadline and Deadline override the default budgets, which run on Clock.
@@ -144,13 +145,19 @@ func (e *Executor) WhyNotLaunch(w rules.Want, wd world.World) string {
 	if wd.MultiplexerErr != nil {
 		return e.Multiplexer.Name() + " was not read"
 	}
-	if wk := world.FindWorker(w.Subject, wd.Trees, wd.Snapshot); wk.State != world.NoWorker {
+	if wk := wd.WorkerOf(w.Subject); wk.State != world.NoWorker {
 		return "a worker is running"
 	}
 	if t, ok := ticketOf(wd, w.Subject); ok {
 		label, _ := world.ScopeOf(e.Config).RepoOf(t)
-		if repo, _, _ := e.Config.Repos.Find(label); wd.UnreadRepos[repo] {
+		repo, _, _ := e.Config.Repos.Find(label)
+		if wd.UnreadRepos[repo] {
 			return "the pool of " + repo + " was not read"
+		}
+		// Until the repo's running workers have their rows, a launch could start a second
+		// worker for a ticket that has one.
+		if done, err := e.Workers.Imported(repo); repo != "" && err == nil && !done {
+			return "the workers of " + repo + " are not imported yet"
 		}
 	}
 	return ""
@@ -253,7 +260,7 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World, que
 	}
 	cfg := e.Config
 	label, labeled := world.ScopeOf(cfg).RepoOf(t)
-	_, repo, _ := cfg.Repos.Find(label)
+	label, repo, _ := cfg.Repos.Find(label)
 	// A rule that skips hasRepo would otherwise launch in dispatch's own directory.
 	if !labeled || repo.Path == "" {
 		return Result{Outcome: ledger.Refused, Detail: t.Identifier + " has no configured repo"}
@@ -280,7 +287,7 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World, que
 	}
 	kickoff, _ := w.Options["kickoff"].(string)
 	req := launcher.Request{
-		RepoDir: repo.Path, Ticket: t.Identifier, Title: t.Title, Branch: t.Branch, StartPR: t.StartPR, Program: program, Kickoff: kickoff, WhileQueued: queued, QueueLimit: QueueDeadlines * e.deadline(w.Receipt),
+		RepoDir: repo.Path, Repo: label, Ticket: t.Identifier, Title: t.Title, Branch: t.Branch, StartPR: t.StartPR, Program: program, Kickoff: kickoff, WhileQueued: queued, QueueLimit: QueueDeadlines * e.deadline(w.Receipt),
 	}
 	if on, ok := w.Options["stackOn"].(map[string]any); ok {
 		ticket, _ := on["ticket"].(string)
@@ -290,6 +297,11 @@ func (e *Executor) launch(ctx context.Context, w rules.Want, wd world.World, que
 			return Result{Outcome: ledger.Refused, Detail: "stackOn names no PR head to start " + t.Identifier + " at"}
 		}
 		req.Stack = &launcher.Stack{Ticket: ticket, Branch: branch, Head: head}
+	}
+	// The row exists before a tree is leased, so a lease the launch dies holding is the ticket's
+	// worker and not a stray lease.
+	if err := e.Workers.Ensure(t.Identifier, label, e.Clock.Now()); err != nil {
+		return failed("%s: %v", launcher.StatusWorkerRowFailed, err)
 	}
 	r := e.Launcher.Launch(ctx, req)
 	res := Result{Reread: world.FromLocal}
@@ -324,7 +336,7 @@ func shortSHA(sha string) string {
 }
 
 func (e *Executor) nudge(ctx context.Context, w rules.Want, wd world.World) Result {
-	wk := world.FindWorker(w.Subject, wd.Trees, wd.Snapshot)
+	wk := wd.WorkerOf(w.Subject)
 	switch {
 	case wk.State == world.NoWorker:
 		return failed("%s has no worker", w.Subject)
@@ -357,10 +369,12 @@ func (e *Executor) closeWorkspace(ctx context.Context, w rules.Want) Result {
 		return failed("while closing workspace %s: %v", id, err)
 	}
 	res := Result{Outcome: ledger.Done, Reread: world.FromLocal}
-	// A closed workspace ends any launch on its tree, and a mark left behind would be read
-	// onto the next Claude there.
+	// A closed workspace ends any launch on its tree, and a record left open would be read
+	// onto the next session there.
 	if tree := w.Target["tree"]; tree != "" {
-		kickoffs.Clear(e.StateDir, tree)
+		if err := e.Workers.CloseKickoffOn(tree); err != nil {
+			return failed("closed workspace %s, but its kickoff record stays open: %v", id, err)
+		}
 		e.Typed.Clear(tree)
 	}
 	if len(w.Once) > 0 && w.Once[0] == "close-unconfirmed" {
@@ -454,6 +468,15 @@ func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World)
 		return failed("%s is not in a pool dispatch read", path)
 	}
 	res := Result{Reread: world.FromLocal}
+	// A tree no worker row names is not dispatch's to give back.
+	row, recorded, err := e.Workers.OnTree(path)
+	if err != nil {
+		return failed("%v", err)
+	}
+	if !recorded {
+		res.Outcome, res.Detail = ledger.Refused, "no worker row names "+path+", so dispatch will not return it; return it with treehouse"
+		return res
+	}
 	if id := e.workspaceOn(path, wd); id != "" {
 		if err := e.Multiplexer.CloseWorkspace(ctx, id); err != nil {
 			return failed("while closing workspace %s: %v", id, err)
@@ -499,12 +522,15 @@ func (e *Executor) returnTree(ctx context.Context, w rules.Want, wd world.World)
 		}
 		detail += ", removed untracked " + nameList(files)
 	}
+	sessionlog.Remove(e.StateDir, path)
 	if err := e.Treehouse.Return(ctx, repoDir, path, holder); err != nil {
 		return failed("while returning %s to the pool: %v", path, err)
 	}
-	stops.MarkReturned(e.StateDir, path, e.Clock.Now())
-	sessionlog.Remove(e.StateDir, path)
-	kickoffs.Clear(e.StateDir, path)
+	// A failure here leaves a row whose tree is unleased, which the next resync deletes.
+	if err := e.Workers.Delete(row.Ticket, row.Repo); err != nil {
+		res.Outcome, res.Detail = ledger.Done, detail+", but its worker row stays until the next read: "+err.Error()
+		return res
+	}
 	res.Outcome, res.Detail = ledger.Done, detail
 	return res
 }

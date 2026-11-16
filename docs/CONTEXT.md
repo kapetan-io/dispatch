@@ -150,7 +150,7 @@ One reply a worker's session finished, ending in a Stop, with whether a backgrou
 _Avoid_: stop (a Stop record keeps only the latest turn)
 
 **Closing message**:
-The last thing a worker said in a turn, as the harness reports it at the Stop. Dispatch keeps it in a file beside the session's log, cut at 64 KiB, and removes it when the tree is returned. `dispatch turn` prints it.
+The last thing a worker said in a turn, as the harness reports it at the Stop. Dispatch keeps it in the worker row, cut at 64 KiB, and deletes it with the row when the tree is returned. `dispatch turn` prints it.
 _Avoid_: transcript (Claude's own file), last message
 
 **Decision comment**:
@@ -198,8 +198,12 @@ The file `panes/<Rex session id>/<block id>.json` in dispatch's state directory,
 _Avoid_: snapshot (the world written at the head of a history segment), saved session, restore file
 
 **Worker**:
-The ticket's place on a tree it holds: the tree, the workspace showing that tree, and the harness session running there now, if any. Only a session of a harness dispatch has an adapter for counts; an agent of another kind a person opened in the workspace, such as a Pi, is ignored. Sessions come and go inside it: a relaunch keeps the same worker with a new session, and the worker lasts as long as the ticket holds the tree. A ticket that holds trees in two repos has a worker on each. The worker's state is its session's: `working`, `idle`, `blocked`, or `none` when no session runs there. A worker can also be asking (see **Ask**), which is a fact beside its state and not a state. A rule that looks up a ticket that holds no tree gets a worker record with state `none`, though there is no worker. Some messages use "worker" for the session: "has no worker" and "gone" mean the state `none`, and "a worker is running" means a session runs there.
+The ticket's place on a tree it holds: the tree, the workspace showing that tree, and the harness session running there now, if any. Only a session of a harness dispatch has an adapter for counts; an agent of another kind a person opened in the workspace, such as a Pi, is ignored. Sessions come and go inside it: a relaunch keeps the same worker with a new session, and the worker lasts as long as the ticket holds the tree. A worker row exists from the start of a launch, before the ticket holds a tree, and a row with no tree is not yet a worker to a rule. A lease no worker row names is no worker either. A ticket has one worker per repo, so a ticket that holds trees in two repos has a worker on each. The worker's state is its session's: `working`, `idle`, `blocked`, or `none` when no session runs there. A worker can also be asking (see **Ask**), which is a fact beside its state and not a state. A rule that looks up a ticket that holds no tree gets a worker record with state `none`, though there is no worker. Some messages use "worker" for the session: "has no worker" and "gone" mean the state `none`, and "a worker is running" means a session runs there.
 _Avoid_: agent (herdr's word for any terminal agent, kept inside the herdr adapter; dispatch's word is harness), runner, executor, session (a session is one harness run inside the worker)
+
+**Worker row**:
+The database's record of a worker: its ticket and repo, its tree, its kickoff record, its Stop records and closing messages. A resync deletes a row whose tree no longer holds the ticket's lease and writes `worker_gone` to history.
+_Avoid_: worker record (what a rule reads, built from the worker row and live reads), lease
 
 **Tree**:
 A git worktree in a repo's treehouse pool, leased or not; a rule reads which from its `leased` fact. A ticket leases one and holds it under the ticket id until it is returned.
@@ -218,11 +222,11 @@ What the multiplexer runs in a worker's new tab, as a harness describes it: a na
 _Avoid_: command line, launch spec
 
 **Launch**:
-A launch leases a tree for the ticket, creates the ticket's branch (at another ticket's PR head for a stacked launch, or at a local ticket's start PR head), opens a workspace, starts the harness and types the kickoff. A relaunch is a launch on a tree the ticket already holds. The launcher is the code that does it, run by the executor or by `dispatch launch`.
+A launch leases a tree for the ticket, creates the ticket's branch (at another ticket's PR head for a stacked launch, or at a local ticket's start PR head), opens a workspace, starts the harness and types the kickoff. A launch records the worker in the database before each step it takes, so a launch that dies is carried on by the next one. A relaunch is a launch on a tree the ticket already holds. The launcher is the code that does it. Only a launch action inside `dispatch run` launches, and there is no `dispatch launch` command.
 _Avoid_: spawn, start (starting the harness is one step of a launch)
 
 **Kickoff**:
-The first command a launch types into the worker's new session, `/dispatch:build <ticket>` unless the rule names another. A launch keeps a kickoff record in the state directory's `kickoffs` until the launch finishes. A kickoff record with no Stop from the worker since means the kickoff has not run, and the worker is unconfirmed.
+The first command a launch types into the worker's new session, `/dispatch:build <ticket>` unless the rule names another. The kickoff record is part of the worker row. It holds the text, the time and the session that received it, is open until its launch finishes or the workspace is closed, and is deleted at the return. An open kickoff record with no Stop since means the kickoff has not run, and the worker is unconfirmed.
 _Avoid_: initial prompt, first message
 
 **Stacked ticket**:
@@ -258,7 +262,7 @@ Closing a worker's workspace, which ends its session and keeps its tree, so a re
 _Avoid_: kill, stop (a Stop is a turn ending)
 
 **Return**:
-Giving a tree back to its treehouse pool once no worker runs in it, unless its ticket is In Progress or In Review (a relaunch resumes in the tree that holds the lease), or is a Todo child of an In Progress parent that is not a design ticket (a held tree marks the child paused on purpose). dispatch closes the workspace on the tree, deletes its untracked files, and returns it with its uncommitted changes discarded. The ticket's branch and its commits stay, pushed or not, because treehouse returns a tree by detaching HEAD. Before a return that discards anything, dispatch comments on the ticket naming the branch and what is discarded. A rule's return without `discard: true` is refused instead while the tree has uncommitted changes or commits that no remote has. Either way a return is refused when an untracked nested repository survives the deletion (git clean skips it, and a return would discard it), and the refusal's detail says why. After the return it deletes the tree's Stop records (keeping the time of the return, so a Stop that ended by then is ignored even when it is reported later), session logs and kickoff record.
+Giving a tree back to its treehouse pool once no worker runs in it, unless its ticket is In Progress or In Review (a relaunch resumes in the tree that holds the lease), or is a Todo child of an In Progress parent that is not a design ticket (a held tree marks the child paused on purpose). dispatch closes the workspace on the tree, deletes its untracked files, and returns it with its uncommitted changes discarded. The ticket's branch and its commits stay, pushed or not, because treehouse returns a tree by detaching HEAD. Before a return that discards anything, dispatch comments on the ticket naming the branch and what is discarded. A rule's return without `discard: true` is refused instead while the tree has uncommitted changes or commits that no remote has. Either way a return is refused when an untracked nested repository survives the deletion (git clean skips it, and a return would discard it), and the refusal's detail says why. A return is refused for a tree no worker row names. It deletes the tree's session logs, and after the return the worker row with its Stop records, closing messages and kickoff record. A Stop that ended before a worker row was made is ignored, so a Stop reported late never reaches the next worker in the tree.
 _Avoid_: free, delete (the untracked files are deleted, the tree is not)
 
 **Action**:
@@ -310,7 +314,7 @@ A case in a `*.test.ts` file that `dispatch rules test` runs. It sets up a world
 _Avoid_: contract scenario (a tool fake against its adapter), unit test
 
 **Stop record**:
-The latest turn end of each worker session, from the harness's report through `dispatch record-stop`, which finds the harness from the terminal the hook runs in (`HC_TERMINAL_ID` under the Herdr app, `HERDR_PANE_ID` under the herdr TUI, `REX_SESSION` with `REX_BLOCK` under Rex), saying whether background tasks were still running. A turn end at or before its tree's last return is ignored.
+The latest turn end of each worker session, from the harness's report through `dispatch record-stop`, which finds the harness from the terminal the hook runs in (`HC_TERMINAL_ID` under the Herdr app, `HERDR_PANE_ID` under the herdr TUI, `REX_SESSION` with `REX_BLOCK` under Rex), saying whether background tasks were still running. It is kept in the worker row and deleted with it at the return. A report for no worker is dropped, and a turn end from before the worker row was made is ignored.
 _Avoid_: stop file, turn (the session log keeps every turn)
 
 **Ticket system**:
@@ -318,7 +322,7 @@ Where tickets come from and are written back: Linear, or dispatch's own local ti
 _Avoid_: source (what the world reads), tracker
 
 **Local ticket**:
-A ticket in dispatch's own database, id `LOC-<n>`, which only the holder of `dispatch.lock` opens for writing. `dispatch ticket` reaches it through the running `dispatch run`; `dispatch rules check` and `dispatch state reset` read it without writing, under the lock or by asking the running `dispatch run`. Numbers count up and are never reused, and nothing deletes a ticket.
+A ticket in dispatch's own database `dispatch.db`, beside the worker rows, id `LOC-<n>`, which only the holder of `dispatch.lock` opens for writing. `dispatch ticket` reaches it through the running `dispatch run`; `dispatch rules check` and `dispatch state reset` read it without writing, under the lock or by asking the running `dispatch run`. Numbers count up and are never reused, and nothing deletes a ticket.
 _Avoid_: internal ticket, offline ticket
 
 **Attribute**:

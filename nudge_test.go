@@ -2207,14 +2207,14 @@ func TestARuleNudgeThatStartsWithASlashReadsAsSentByDispatch(t *testing.T) {
 	assert.Equal(t, "commands merge-it|42|false|dispatch of 1", lastReading(t, d))
 }
 
-func TestTheLaunchSubcommandKickoffReadsAsSentByDispatch(t *testing.T) {
+func TestTheLaunchKickoffReadsAsSentByDispatch(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{
-		Launcher: builtinLauncher, Rules: rule(commandsRule), Env: map[string]string{"DISPATCH_PLUGIN_ROOT": "/plugin"},
+		Launcher: builtinLauncher, Rules: rule(commandsRule + launchRule), Env: map[string]string{"DISPATCH_PLUGIN_ROOT": "/plugin"},
 	})
 	tree := d.Trees.Pool()
 	d.StartBeforeTheEvents()
-	require.NoError(t, d.RunIn(d.Repo, "launch", "ENG-1", "br-eng-1").Err)
+	require.NoError(t, d.launch("ENG-1", "br-eng-1").err)
 	require.Len(t, d.Workers.Kicked(), 1)
 
 	pane, _, _ := strings.Cut(d.Workers.Kicked()[0], "|")

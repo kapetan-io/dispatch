@@ -21,7 +21,9 @@ type Request struct {
 	// RepoDir is where the launch starts looking for the target repo. Defaults
 	// to the working directory.
 	RepoDir string
-	Ticket  string
+	// Repo is the label of the repo in the config, which the ticket's worker row is kept under.
+	Repo   string
+	Ticket string
 	// Title is the ticket's title. The worker's tab is labeled "<Ticket>
 	// <Title>", or just <Ticket> when it is empty.
 	Title  string
@@ -82,8 +84,7 @@ type Result struct {
 	Stacked bool `json:"stacked,omitempty"`
 }
 
-// Succeeded reports whether the launch leaves a worker running, which is when
-// `dispatch launch` exits 0.
+// Succeeded reports whether the launch leaves a worker running.
 func (r Result) Succeeded() bool {
 	return r.Status == StatusOK || r.Status == StatusAlreadyRunning
 }

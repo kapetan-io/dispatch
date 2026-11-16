@@ -256,18 +256,11 @@ func TestAReturnedTreeKeepsNoClosingMessage(t *testing.T) {
 	d := newDispatch(t, dispatchOptions{})
 	d.Workers.Running("ENG-1", "idle")
 	d.Workers.Stop("ENG-1", stopTasks{Said: "q?", Transcript: d.transcript("t1")})
-	require.Len(t, closingFiles(t, d.state), 1)
+	require.Len(t, d.closings(false), 1)
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 
 	d.Tick()
 
 	require.NotEmpty(t, d.Trees.Returned())
-	assert.Empty(t, closingFiles(t, d.state))
-}
-
-func closingFiles(t *testing.T, stateDir string) []string {
-	t.Helper()
-	files, err := filepath.Glob(filepath.Join(stateDir, "sessions", "*", "*.closing"))
-	require.NoError(t, err)
-	return files
+	assert.Empty(t, d.closings(false))
 }

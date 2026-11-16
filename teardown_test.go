@@ -416,14 +416,14 @@ func TestTickCommentsOnlyOnTheTreeWithWorkToDiscardOfATicketWithTwoTrees(t *test
 	stranded := d.Trees.Clean("library")
 	d.Trees.Dirty(stranded)
 	d.Workers.RunningAs("ENG-1", clean, "w-ENG-1", "idle")
-	d.Workers.RunningAs("ENG-1", stranded, "w-library", "idle")
+	d.Workers.RunningInLibrary("ENG-1", stranded, "w-library", "idle")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 
 	d.Tick()
 	d.Tick()
 
 	assert.ElementsMatch(t, []string{"w-ENG-1", "w-library"}, d.Workers.Closed())
-	assert.ElementsMatch(t, []string{d.Repo + "|" + clean + "|ENG-1", d.Repo + "|" + stranded + "|ENG-1"}, d.Trees.Returned())
+	assert.ElementsMatch(t, []string{d.Repo + "|" + clean + "|ENG-1", d.libraryRepo() + "|" + stranded + "|ENG-1"}, d.Trees.Returned())
 	comments := d.Linear.Comments()
 	require.Len(t, comments, 1)
 	assert.Contains(t, comments[0], stranded)
@@ -915,14 +915,14 @@ func TestTickStopsEveryWorkerOfAPausedTicketAndReturnsItsTrees(t *testing.T) {
 	first := d.Trees.Clean("ENG-1")
 	second := d.Trees.Clean("library")
 	d.Workers.RunningAs("ENG-1", first, "w-ENG-1", "working")
-	d.Workers.RunningAs("ENG-1", second, "w-library", "idle")
+	d.Workers.RunningInLibrary("ENG-1", second, "w-library", "idle")
 	d.Linear.Finished(ticket("ENG-1", "Backlog", "dispatch"))
 
 	d.Tick()
 	d.Tick()
 
 	assert.ElementsMatch(t, []string{"w-ENG-1", "w-library"}, d.Workers.Closed())
-	assert.ElementsMatch(t, []string{d.Repo + "|" + first + "|ENG-1", d.Repo + "|" + second + "|ENG-1"}, d.Trees.Returned())
+	assert.ElementsMatch(t, []string{d.Repo + "|" + first + "|ENG-1", d.libraryRepo() + "|" + second + "|ENG-1"}, d.Trees.Returned())
 }
 
 func TestTickReturnsTheTreeOfAPausedTicketWithNoWorkspace(t *testing.T) {
@@ -984,14 +984,14 @@ func TestTickPostsACommentForEachTreeWithWorkToDiscard(t *testing.T) {
 	d.Trees.Dirty(first)
 	d.Trees.Leave(second, "scratch.txt")
 	d.Workers.RunningAs("ENG-1", first, "w-ENG-1", "idle")
-	d.Workers.RunningAs("ENG-1", second, "w-library", "idle")
+	d.Workers.RunningInLibrary("ENG-1", second, "w-library", "idle")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 
 	d.Tick()
 	d.Tick()
 
 	assert.ElementsMatch(t, []string{"w-ENG-1", "w-library"}, d.Workers.Closed())
-	assert.ElementsMatch(t, []string{d.Repo + "|" + first + "|ENG-1", d.Repo + "|" + second + "|ENG-1"}, d.Trees.Returned())
+	assert.ElementsMatch(t, []string{d.Repo + "|" + first + "|ENG-1", d.libraryRepo() + "|" + second + "|ENG-1"}, d.Trees.Returned())
 	comments := d.Linear.Comments()
 	require.Len(t, comments, 2)
 	assert.Contains(t, strings.Join(comments, "\n"), "`"+first+"` to its pool")
@@ -1009,7 +1009,7 @@ func TestPlanNamesEachKeptTreeOfOneTicket(t *testing.T) {
 	d.Trees.NestRepo(first)
 	d.Trees.NestRepo(second)
 	d.Workers.RunningAs("ENG-1", first, "w-ENG-1", "idle")
-	d.Workers.RunningAs("ENG-1", second, "w-library", "idle")
+	d.Workers.RunningInLibrary("ENG-1", second, "w-library", "idle")
 	d.Linear.Finished(ticket("ENG-1", "Done", "dispatch"))
 	require.ErrorContains(t, d.Run("tick").Err, "untracked nested/")
 	d.Advance(time.Second)
@@ -1223,6 +1223,11 @@ func (t *Trees) Holder(path string) string { return t.d.tools.Treehouse.Holder(p
 // RunningAs is Running for a tree at a chosen path and a workspace with a chosen id.
 func (w *Workers) RunningAs(ticket, tree, id, status string) {
 	w.d.workerOn(ticket, tree, id, status)
+}
+
+// RunningInLibrary is RunningAs for the ticket's second worker, on a tree of the library repo.
+func (w *Workers) RunningInLibrary(ticket, tree, id, status string) {
+	w.d.workerIn(w.d.libraryRepo(), ticket, tree, id, status)
 }
 
 // FailComments makes Linear refuse comments while on is true.
