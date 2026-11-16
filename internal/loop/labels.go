@@ -191,9 +191,9 @@ var prLabels = []string{emojiReadyForReview, emojiAwaitingApproval, emojiAwaitin
 
 // workspaceEmoji is the label for a ticket in progress or in review. A worker blocked on a
 // question popup, or asking after `dispatch ask`, waits on your answer in the workspace, which
-// comes before a ready PR. A worker with no
-// Stop record, or one whose Stop did not list its tasks, may still be busy, so it stays
-// green. A Stop that lists a running task keeps it green even while the PR's checks run.
+// comes before a ready PR. A worker with no Stop record, or one whose Stop did not list its
+// tasks, may still be busy, so it stays green. A Stop that lists a running task keeps it green
+// even while the PR's checks run.
 // A ready PR shows who it waits on once the worker is idle or gone: 👀 for you, ⏳ for
 // its approvers and 🔀 for whoever merges it. openAs is the PR's repo setting.
 func (l *Loop) workspaceEmoji(w world.Worker, asking bool, pr pullrequest.PullRequest, openAs string) string {

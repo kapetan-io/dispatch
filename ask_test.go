@@ -375,3 +375,34 @@ func TestAskFromAnotherSessionInTheTreeLeavesTheWorkerAlone(t *testing.T) {
 	assert.Equal(t, "w-ENG-1|💤 ENG-1", d.Workers.lastRename(t))
 	assert.Equal(t, []string{idleNotice}, d.Followed.Told())
 }
+
+func TestAskWithAnArgumentPrintsTheUsageThatListsAsk(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+	d.Tick()
+
+	res := d.askAs(workerSession("ENG-1"), d.worktreeOf("ENG-1"), true, "ENG-1")
+
+	require.EqualError(t, res.Err, "ask takes no arguments")
+	assert.Contains(t, res.Stderr, "       dispatch ask\n")
+}
+
+func TestAnAskingWorkerWhoseTicketMovesToNeedsHumanShowsRedAndNotifiesFollowersOfIt(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "working")
+	require.NoError(t, d.Workers.Ask("ENG-1").Err)
+	d.Workers.Stop("ENG-1", stopTasks{})
+	d.Workers.SetStatus("ENG-1", "idle")
+	d.Tick()
+	require.Equal(t, []string{askedNotice}, d.Followed.Told())
+
+	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
+	d.Tick()
+
+	assert.Equal(t, "w-ENG-1|🔴 ENG-1", d.Workers.lastRename(t))
+	assert.Equal(t, []string{askedNotice, "ENG-1 is in Needs Human: ticket ENG-1"}, d.Followed.Told())
+}

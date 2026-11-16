@@ -58,3 +58,18 @@ scenario(rules, "notify-asked tells followers of an In Review worker, and the re
   s.see(worker("ENG-1", "idle", { asked: -1000, messages: [{ at: 1000 }] }));
   s.expect([["notify-ready-for-review", "notify", "ENG-1"]]);
 });
+
+scenario(rules, "notify-asked stands in for the ready notice of a draft", s => {
+  s.config({ repos: { dispatch: { openPrAs: "draft" } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { asked: -1000 }), pr("ENG-1", { ready: true, draft: true, head: "h1" }));
+  s.expect([["notify-asked", "notify", "ENG-1"]]);
+  s.expectExempt("notify-ready-for-review", "ENG-1", "an-asking-worker-hears-one-notice", "notify");
+});
+
+scenario(rules, "notify-asked stands in for the ready notice of an approved PR dispatch won't merge", s => {
+  s.config({ repos: { dispatch: { openPrAs: "draft" } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { asked: -1000 }),
+          pr("ENG-1", { ready: true, draft: false, approved: true, head: "h1" }));
+  s.expect([["notify-asked", "notify", "ENG-1"]]);
+  s.expectExempt("notify-ready-for-review", "ENG-1", "an-asking-worker-hears-one-notice", "notify");
+});
