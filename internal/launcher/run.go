@@ -314,9 +314,9 @@ func (l *launch) beginKickoff(ctx context.Context) (Result, bool) {
 // restoreKickoff puts back the record the row held, for a launch that typed nothing: a session
 // that took its kickoff keeps the record of the launch that started it.
 func (l *launch) restoreKickoff() {
-	// A session an earlier launch left without what it typed is still without it, and the open
-	// record dates the wait from now. A Stop later than the earlier record shows it ran, so that
-	// record goes back with its own time.
+	// An open record with no Stop since means the session never ran what the earlier launch typed,
+	// so the record goes back open and dates the wait from now. A later Stop shows that text ran,
+	// so the record goes back with its own time.
 	kickoff := l.prior
 	if l.prior != nil && l.prior.Open && !l.stoppedSince("", l.prior.At) {
 		kickoff = &workers.Kickoff{Text: l.prior.Text, At: l.opts.Clock.Now().UnixMilli(), Open: true, Session: l.prior.Session, Taken: l.prior.Taken}

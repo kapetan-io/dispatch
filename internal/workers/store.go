@@ -44,15 +44,16 @@ var ErrTreeTaken = errors.New("another worker row names the tree")
 // message instead, and the record still holds the kickoff. It stays until the return.
 type Kickoff struct {
 	Text string `json:"text"`
-	// At is when the launch that typed it began, in milliseconds since the epoch.
+	// At is when the launch that wrote the record began, or when a failed launch put an open record
+	// back, in milliseconds since the epoch.
 	At int64 `json:"at"`
 	// Open is true from before the harness starts until the launch has typed the kickoff or the
 	// carry-on message, so only a launch that died in between leaves it true.
 	Open bool `json:"open,omitempty"`
-	// Session is the session the kickoff was typed into. Empty means it is not known.
+	// Session is the session the kickoff went to. Empty means it is not known.
 	Session string `json:"session,omitempty"`
-	// Taken is true when Session took this kickoff before the launch that wrote the record, which
-	// resumed the session and typed the carry-on message instead. An open record then waits only on
+	// Taken is true when Session took this kickoff in a launch before the one that wrote the record,
+	// which resumed the session and typed the carry-on message instead. An open record then waits only on
 	// that message, and a later resume of the session still knows the kickoff ran.
 	Taken bool `json:"taken,omitempty"`
 }
@@ -342,8 +343,8 @@ func (s *Store) SetKickoff(ticket, repo string, k *Kickoff) error {
 	})
 }
 
-// RecordSession records the session the kickoff is typed into, and whether that session took the
-// kickoff in an earlier launch.
+// RecordSession records the session this launch types into, and whether that session took the
+// kickoff in an earlier launch, so this launch types the carry-on message.
 func (s *Store) RecordSession(ticket, repo, session string, taken bool) error {
 	return s.change(ticket, repo, func(_ *bolt.Tx, row *Row) error {
 		if row.Kickoff != nil {
