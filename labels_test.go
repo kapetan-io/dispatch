@@ -1095,3 +1095,23 @@ func TestTickReadsOpenPRAsPerRepo(t *testing.T) {
 	assert.ElementsMatch(t, []string{"w-ENG-1|⏳ ENG-1", "w-ENG-2|👀 ENG-2"}, d.Workers.Renames())
 	assert.Equal(t, []string{"ENG-2 is ready for review: " + prURL1}, d.Followed.Told())
 }
+
+func TestTickLeavesAnInReviewTabAloneWhileThePRBehindItsLabelCannotBeRead(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.Workers.Stop("ENG-1", stopTasks{})
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "SUCCESS", mergeable: "MERGEABLE", unresolved: 1})
+	d.Tick()
+	require.Equal(t, []string{"w-ENG-1:t1|ENG-1 ticket ENG-1"}, d.Workers.TabRenames())
+
+	renamed := ticket("ENG-1", "In Review", "dispatch")
+	renamed.Title = "new title"
+	d.Linear.Tickets(renamed)
+	d.GitHub.FailRead(errors.New("exit status 1"))
+	d.Advance(time.Minute)
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1:t1|ENG-1 ticket ENG-1"}, d.Workers.TabRenames())
+}

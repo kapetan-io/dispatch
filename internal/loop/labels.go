@@ -78,25 +78,12 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 			continue
 		}
 		w := wd.Workers[t.Identifier]
-		if wd.Nudged[t.Identifier] && w.State == world.Idle {
-			w.State = world.Working
+		// An unreadable PR must not change a label that came from reading it, nor the ticket's tab.
+		if _, kept := keptPRLabel(wd, scope, t, current[w.WorkspaceID]); kept {
+			continue
 		}
-		switch {
-		case scope.Is(t, ticket.InProgress):
-			add(t, w, l.workspaceEmoji(w, pullrequest.PullRequest{}, ""))
-		case scope.Is(t, ticket.InReview):
-			pr, ok := wd.PRs[t.Identifier]
-			// An unreadable PR must not change a label that came from reading it.
-			if !ok && wd.PRReadFailed[t.Identifier] && slices.ContainsFunc(prLabels, func(e string) bool {
-				return strings.HasPrefix(current[w.WorkspaceID], e)
-			}) {
-				continue
-			}
-			add(t, w, l.workspaceEmoji(w, pr, l.repoOf(t).OpenPRAs))
-		case scope.Is(t, ticket.NeedsHuman):
-			add(t, w, emojiNeedsHuman)
-		case scope.Is(t, ticket.Paused) && w.State == world.NoWorker && heldChild(wd, scope, t):
-			add(t, w, emojiPaused)
+		if emoji, ok := l.ticketEmoji(wd, scope, t); ok {
+			add(t, w, emoji)
 		}
 		if scope.Is(t, ticket.InProgress) || scope.Is(t, ticket.InReview) || scope.Is(t, ticket.NeedsHuman) {
 			if have, ok := currentTabs[w.TabID]; ok && w.TabID != "" && l.differs(w.TabID, have, tabLabel(t)) {
@@ -116,6 +103,63 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 		}
 	}
 	return workspaces, tabs
+}
+
+// ticketEmoji is the emoji t's workspace label calls for, from its status and its worker, false
+// when the status calls for no label.
+func (l *Loop) ticketEmoji(wd world.World, scope world.Scope, t ticket.Ticket) (string, bool) {
+	w := wd.Workers[t.Identifier]
+	if wd.Nudged[t.Identifier] && w.State == world.Idle {
+		w.State = world.Working
+	}
+	switch {
+	case scope.Is(t, ticket.InProgress):
+		return l.workspaceEmoji(w, pullrequest.PullRequest{}, ""), true
+	case scope.Is(t, ticket.InReview):
+		return l.workspaceEmoji(w, wd.PRs[t.Identifier], l.repoOf(t).OpenPRAs), true
+	case scope.Is(t, ticket.NeedsHuman):
+		return emojiNeedsHuman, true
+	case scope.Is(t, ticket.Paused) && w.State == world.NoWorker && heldChild(wd, scope, t):
+		return emojiPaused, true
+	}
+	return "", false
+}
+
+// keptPRLabel is the emoji of have, the label an In Review ticket's workspace shows now, when its PR
+// could not be read and have came from reading it, so the label stays as it is.
+func keptPRLabel(wd world.World, scope world.Scope, t ticket.Ticket, have string) (string, bool) {
+	if _, read := wd.PRs[t.Identifier]; read || !wd.PRReadFailed[t.Identifier] || !scope.Is(t, ticket.InReview) {
+		return "", false
+	}
+	i := slices.IndexFunc(prLabels, func(e string) bool { return strings.HasPrefix(have, e) })
+	if i < 0 {
+		return "", false
+	}
+	return prLabels[i], true
+}
+
+// labelEmoji maps each tracked ticket whose worker has a workspace to the emoji its label calls
+// for, the same emoji workspaceRenames gives it, for the startup screen.
+func (l *Loop) labelEmoji() map[string]string {
+	wd := l.wd
+	scope := wd.Scope(l.o.Config)
+	current := map[string]string{}
+	for _, ws := range wd.Snapshot.Workspaces {
+		current[ws.ID] = ws.Label
+	}
+	out := map[string]string{}
+	for _, t := range wd.Tickets {
+		w := wd.Workers[t.Identifier]
+		if t.HasChildren || wd.TicketsErrOf(t.Identifier) != nil || w.WorkspaceID == "" {
+			continue
+		}
+		if emoji, kept := keptPRLabel(wd, scope, t, current[w.WorkspaceID]); kept {
+			out[t.Identifier] = emoji
+		} else if emoji, ok := l.ticketEmoji(wd, scope, t); ok {
+			out[t.Identifier] = emoji
+		}
+	}
+	return out
 }
 
 // heldChild reports whether t is a Todo child of an In Progress parent that is not a design ticket,
