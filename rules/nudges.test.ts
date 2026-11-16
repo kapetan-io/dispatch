@@ -161,3 +161,48 @@ scenario(rules, "nudge-pr-needs-work is held when the PR could not be read", s =
   s.expect([]);
   s.expectHeld("nudge-pr-needs-work", "ENG-1");
 });
+
+scenario(rules, "a worker still on the message it took gets no PR nudge", s => {
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { messages: [{ at: -1000 }] }), pr("ENG-1", failing));
+  s.expect([]);
+  s.expectExempt("nudge-pr-needs-work", "ENG-1", "a-worker-finishes-its-message-first", "nudge");
+});
+
+scenario(rules, "a worker still on a command it took gets no PR nudge", s => {
+  s.given(ticket("ENG-1", review),
+          worker("ENG-1", "idle", { commands: [{ name: "dispatch:pr-respond", at: -1000, by: "dispatch" }] }), pr("ENG-1", failing));
+  s.expect([]);
+  s.expectExempt("nudge-pr-needs-work", "ENG-1", "a-worker-finishes-its-message-first", "nudge");
+});
+
+scenario(rules, "a worker still on the message it took gets no activity nudge", s => {
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { messages: [{ at: -1000 }] }), pr("ENG-1"));
+  s.see(pr("ENG-1", { activityAt: "10:00", activitySummary: "a review comment" }));
+  s.expect([]);
+  s.expectExempt("nudge-pr-activity", "ENG-1", "a-worker-finishes-its-message-first", "nudge");
+});
+
+scenario(rules, "a worker is nudged once the turn its message started ends", s => {
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { messages: [{ at: -2000 }], turns: [{ at: -1000, running: false }] }),
+          pr("ENG-1", failing));
+  s.expect([["nudge-pr-needs-work", "nudge", "ENG-1"]]);
+});
+
+scenario(rules, "a worker whose turn end is lost is nudged 15 minutes after its message", s => {
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { messages: [{ at: -1000 }] }), pr("ENG-1", failing));
+  s.expect([]);
+  s.advance(15 * 60 * 1000 - 1001);
+  s.expect([]);
+  s.advance(1);
+  s.expect([["nudge-pr-needs-work", "nudge", "ENG-1"]]);
+});
+
+scenario(rules, "a task notice does not hold back nudges the way a message does", s => {
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { messages: [{ at: -1000, task: true }] }), pr("ENG-1", failing));
+  s.expect([["nudge-pr-needs-work", "nudge", "ENG-1"]]);
+});
+
+scenario(rules, "a worker whose session log can't be read is nudged", s => {
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { messages: [{ at: -1000 }], sessionUnread: "broken" }), pr("ENG-1", failing));
+  s.expect([["nudge-pr-needs-work", "nudge", "ENG-1"]]);
+});

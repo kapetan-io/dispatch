@@ -300,7 +300,8 @@ func (s *scenario) applyWorker(id, state string, fields map[string]any) {
 		log := sessionlog.Log{Commands: []sessionlog.Command{}, Messages: []sessionlog.Message{}, Turns: []sessionlog.Turn{}}
 		for _, item := range messages {
 			msg, _ := item.(map[string]any)
-			log.Messages = append(log.Messages, sessionlog.Message{At: scenarioStart.UnixMilli() + toInt(msg["at"])})
+			task, _ := boolean(msg, "task")
+			log.Messages = append(log.Messages, sessionlog.Message{At: scenarioStart.UnixMilli() + toInt(msg["at"]), Task: task})
 		}
 		if hasAsked {
 			log.Asks = []sessionlog.Ask{{At: scenarioStart.UnixMilli() + toInt(asked)}}

@@ -1,5 +1,5 @@
-import { whenever, minutes } from "dispatch";
-import { nudgeable, heard, prNudges, escalate, stoppedSinceLastNudge, nudgeLimit } from "./shared";
+import { whenever, exempt, minutes } from "dispatch";
+import { nudgeable, heard, prNudges, escalate, stoppedSinceLastNudge, nudgeLimit, HELD_ACTIONS, onLastMessage } from "./shared";
 import { ACTIVITY_NUDGE, PR_NUDGE } from "./texts";
 
 // Each nudge's once key names what it told the worker, in the source's own time, such
@@ -8,6 +8,17 @@ import { ACTIVITY_NUDGE, PR_NUDGE } from "./texts";
 // owed when the dialog closes. No nudge of any kind goes out until the worker has stopped
 // since the last one (stoppedSinceLastNudge).
 
+// A worker that took a message, typed or sent by dispatch, works on it before anything else lands
+// on top: no nudge, no merge and no pr-ignored escalation until its turn ends, or MESSAGE_HOLD after
+// the message when that turn end is lost. It covers an answered ask and any other message alike.
+exempt({
+  name:    "a-worker-finishes-its-message-first",
+  each:    "ticket",
+  actions: HELD_ACTIONS,
+  if:      (t, ctx) => onLastMessage(t, ctx),
+});
+
+// Held by an-asking-worker-is-left-alone (asks.ts) and a-worker-finishes-its-message-first above.
 // Once per activity time, a GitHub time compared with GitHub times.
 whenever({
   name: "nudge-pr-activity",
@@ -18,6 +29,8 @@ whenever({
   then: (pr, ctx) => ctx.worker.queueNudge(pr.ticket, ACTIVITY_NUDGE(pr), { once: ["activity", pr.lastActivity!.at] }),
 });
 
+// Held by an-asking-worker-is-left-alone (asks.ts) and a-worker-finishes-its-message-first above,
+// and its pr-ignored escalation is held too.
 // Every 5 minutes while the worker sits idle on a PR that needs work, then escalates.
 // The key carries the head, the idle stretch and the period, so a push or the worker
 // going back to work starts the nudges over. A nudged worker shows as working until the

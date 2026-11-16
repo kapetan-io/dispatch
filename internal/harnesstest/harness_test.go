@@ -14,7 +14,8 @@ func TestFakeHarness(t *testing.T) {
 		t.Run(scenario.Name, func(t *testing.T) {
 			fake := harnesstest.New()
 			scenario.Run(t, harnesstest.Subject{
-				Harness: fake,
+				Harness:    fake,
+				TaskNotice: harnesstest.TaskNotice + "done</task-notification>",
 				OpenSession: func(*testing.T) harnesstest.Session {
 					address := fake.Open()
 					return harnesstest.Session{

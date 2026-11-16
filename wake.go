@@ -11,7 +11,7 @@ import (
 // wakeLoop runs as a Notification or UserPromptSubmit hook of any registered harness and asks the running loop for
 // a cycle, so the workspace label follows the worker within seconds. A prompt with any text
 // is reported instead: the loop stores a slash command with who typed it, and any other message
-// with its time, then wakes itself. A Notification carries no text and only wakes. It prints nothing and always succeeds, because UserPromptSubmit adds stdout to
+// with its time and whether it is a task notice, then wakes itself. A Notification carries no text and only wakes. It prints nothing and always succeeds, because UserPromptSubmit adds stdout to
 // the prompt and the hook runs in every session on the machine.
 func wakeLoop(ctx context.Context, opts Options) error {
 	input, ok := hookInput(opts)

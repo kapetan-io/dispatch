@@ -48,9 +48,10 @@ type Harness interface {
 	// means the harness cannot tell, and a caller must then act as if a message was taken.
 	TookMessageAfter(transcript string, at int64) (bool, error)
 	// Prompt parses a report that the session was typed into or went idle: session
-	// id, working directory, and the text exactly as typed, empty when the program
-	// went idle. The caller records a command when the text is one and wakes the
-	// loop otherwise. ok=false as for Stop.
+	// id, working directory, the text exactly as typed (empty when the program went
+	// idle), and Task when the text is the program's task notice, which only the
+	// adapter can recognize. The caller logs a report with text as a command or other
+	// message, and only wakes the loop for one without. ok=false as for Stop.
 	Prompt(input []byte) (report sessionlog.Prompt, dir string, ok bool)
 	// Follower reads, from the environment of a command running inside a session,
 	// the id of that session, which is the address Deliver takes. A session of another

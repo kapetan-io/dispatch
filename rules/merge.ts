@@ -1,6 +1,7 @@
 import { whenever } from "dispatch";
 import { nudgeable, heard, mergeOnce, mergeRetryPaused } from "./shared";
 
+// Held by an-asking-worker-is-left-alone (asks.ts) and a-worker-finishes-its-message-first (nudges.ts).
 // pr.autoMerge is true when the PR's repo table sets auto_merge in config.toml.
 // A draft is never merged. Once per head, so a merge GitHub refuses isn't tried again
 // until a push, except a base-moved refusal, which shared.ts retries.

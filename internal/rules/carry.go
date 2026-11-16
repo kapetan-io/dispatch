@@ -11,10 +11,13 @@ import (
 )
 
 // derivedTimes are the facts whose value is a time the facts around them decide,
-// so they follow those facts instead of being remembered themselves.
+// so they follow those facts instead of being remembered themselves. messageAt is read from the
+// session log, which the read line already carries, and remembering it would make every session in
+// history written before it replay with a difference.
 var derivedTimes = map[string]bool{
 	"statusSince": true, "previousStatus": true, "seenAt": true, "goneSince": true, "idleSince": true,
 	"blockedSince": true, "lastStop": true, "cleanSince": true, "leasedSince": true, "startedAt": true, "started": true,
+	"messageAt": true,
 }
 
 // Carry gives each fact the time dispatch first saw its value, from what mem

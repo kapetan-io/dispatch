@@ -77,6 +77,7 @@ whenever({
            { once: ["promote", c.statusSince] }),
 });
 
+// Held by an-asking-worker-is-left-alone (asks.ts) and a-worker-finishes-its-message-first (nudges.ts).
 // A worker still In Progress whose stack parent merged before it opened its PR gets the same text,
 // and step 6 opens the PR on the default branch. Once per stretch in the status. Needs Human is left
 // out, because the restack's own exits move the ticket there and would start the nudge over.
@@ -134,6 +135,7 @@ whenever({
            { once: [stackedReadyNotice(pr).topic, pr.head], reason: "PR ready, stacked" }),
 });
 
+// Held by an-asking-worker-is-left-alone (asks.ts) and a-worker-finishes-its-message-first (nudges.ts).
 // nudge-pr-activity skips a PR that needs work, and a conflict with the base counts as work. A
 // stacked PR conflicts until its restack, so this tells the idle worker about review activity
 // then. It copies nudge-pr-activity's condition and once key, and a scenario pins them.

@@ -206,3 +206,20 @@ scenario(rules, "finish-merged-local-ticket never moves a Linear ticket", s => {
   s.see(pr("ENG-1", { merged: true }));
   s.expect([]);
 });
+
+scenario(rules, "auto-merge waits while the worker is still on the message it took, and merges once its turn ends", s => {
+  s.config({ repos: { dispatch: { autoMerge: true } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { messages: [{ at: -1000 }] }), pr("ENG-1", approved));
+  s.expect([]);
+  s.expectExempt("auto-merge", "ENG-1", "a-worker-finishes-its-message-first", "merge");
+  s.see(worker("ENG-1", "idle", { messages: [{ at: -1000 }], turns: [{ at: 0, running: false }] }));
+  s.expect([["auto-merge", "merge", "ENG-1"]]);
+});
+
+scenario(rules, "auto-merge merges 15 minutes after the worker's message when its turn end is lost", s => {
+  s.config({ repos: { dispatch: { autoMerge: true } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { messages: [{ at: -1000 }] }), pr("ENG-1", approved));
+  s.expect([]);
+  s.advance(15 * 60 * 1000);
+  s.expect([["auto-merge", "merge", "ENG-1"]]);
+});
