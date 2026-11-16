@@ -352,6 +352,22 @@ func (s *scenario) object() *sobek.Object {
 		s.fail("expected %s to wait for %s, but the cycle waits on %d actions", rule, subject, len(s.last.Waiting))
 		return sobek.Undefined()
 	})
+	set("expectExempt", func(call sobek.FunctionCall) sobek.Value {
+		s.ensureCycle()
+		s.noStrayThrows()
+		rule, subject, by := call.Argument(0).String(), call.Argument(1).String(), call.Argument(2).String()
+		receipt := ""
+		if v := call.Argument(3); !sobek.IsUndefined(v) {
+			receipt = v.String()
+		}
+		for _, e := range s.last.Exempted {
+			if e.Rule == rule && e.Subject == subject && e.Exemption == by && (receipt == "" || e.Receipt == receipt) {
+				return sobek.Undefined()
+			}
+		}
+		s.fail("expected %s to be exempt for %s by %s%s, but the cycle exempted %s", rule, subject, by, receiptNote(receipt), describeExempted(s.last))
+		return sobek.Undefined()
+	})
 	set("expectThrew", func(call sobek.FunctionCall) sobek.Value {
 		s.ensureCycle()
 		rule := call.Argument(0).String()
@@ -365,6 +381,24 @@ func (s *scenario) object() *sobek.Object {
 		return sobek.Undefined()
 	})
 	return o
+}
+
+func receiptNote(receipt string) string {
+	if receipt == "" {
+		return ""
+	}
+	return " (" + receipt + ")"
+}
+
+func describeExempted(r Result) string {
+	if len(r.Exempted) == 0 {
+		return "nothing"
+	}
+	parts := make([]string, len(r.Exempted))
+	for i, e := range r.Exempted {
+		parts[i] = fmt.Sprintf("%s for %s by %s%s", e.Rule, e.Subject, e.Exemption, receiptNote(e.Receipt))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func describeHeld(r Result) string {

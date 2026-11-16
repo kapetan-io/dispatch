@@ -26,7 +26,7 @@ The user is a developer who owns the tickets, repos and rules dispatch runs. The
 
 **Keep pull requests moving.** Dispatch nudges an idle worker about review comments and failing checks and escalates when nudges don't help. In a repo with `auto_merge` on, it merges an approved, ready pull request.
 
-**Change what dispatch decides.** `dispatch rules init`, `check` and `test` write, lint and test the TypeScript rules that make every decision, and `exempt` switches a shipped rule off, or holds an action, for a class of records.
+**Change what dispatch decides.** `dispatch rules init`, `check` and `test` write, lint and test the TypeScript rules that make every decision, and `exempt` switches a shipped rule off, or takes an action away, for a class of records.
 
 **Ask why it acted.** `dispatch cycle`, `dispatch explain <ticket>` and `dispatch replay` show what each cycle read, what it wanted and how each action came out.
 

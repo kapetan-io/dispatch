@@ -43,6 +43,8 @@ declare module "dispatch/testing" {
     expect(wants: Expected[]): void;
     expectHeld(rule: string, subject: string, reason?: string): void;
     expectWaiting(rule: string, subject: string): void;
+    /** The cycle took rule's want for subject away by the exemption named by. receipt, when given, names the action taken away, for an exemption that names actions. */
+    expectExempt(rule: string, subject: string, by: string, receipt?: string): void;
     expectThrew(rule: string): void;
   }
 }

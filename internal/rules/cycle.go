@@ -47,6 +47,9 @@ type Want struct {
 	// Created is when the record's ticket was created, which orders admission.
 	Created string
 	seq     int
+	// then numbers the then call that queued the want within its cycle, so a later step finds the step
+	// before it in its own then and not in another record's.
+	then int
 }
 
 // Key is the want's once key as the ledger keeps it.
@@ -66,9 +69,13 @@ type Held struct {
 	Dropped bool
 }
 
-// Exempted is a rule an exemption stopped for a record.
+// Exempted is a rule an exemption that names rules stopped for a record, or one want an exemption that
+// names actions took away, one entry per want.
 type Exempted struct {
 	Exemption, Rule, Subject string
+	// Receipt and Once are the action taken away and its once key. Both are empty when the exemption names rules.
+	Receipt string
+	Once    ledger.Once
 }
 
 // Throw is a rule call that threw or ran out of time. It wants nothing.
@@ -91,7 +98,7 @@ type Result struct {
 	Held    []Held
 	Throws  []Throw
 	Covered []Covered
-	// Exempted lists the rules an exemption stopped, so a record they want nothing for says why.
+	// Exempted lists the rules an exemption stopped and the wants one took away, so a record they want nothing for says why.
 	Exempted []Exempted
 	// Shadow lists what rules marked shadow would have wanted.
 	Shadow []Want
@@ -122,12 +129,20 @@ func (r Result) WantsFor(rule string) []Want {
 func (r *Rules) Cycle(state *State, events []Event) Result {
 	res := Result{Reads: map[string][]string{}}
 	var fresh []Want
+	calls := 0
+	queue := func(wants []Want) {
+		calls++
+		for i := range wants {
+			wants[i].then = calls
+		}
+		fresh = append(fresh, wants...)
+	}
 	exemptions := map[string]exemption{}
 	for _, def := range r.defs {
 		if def.isEvent() {
 			for i := range events {
 				if events[i].Type == def.event {
-					fresh = append(fresh, r.evaluate(&res, state, def, nil, &events[i])...)
+					queue(r.evaluate(&res, state, def, nil, &events[i]))
 				}
 			}
 			continue
@@ -136,20 +151,85 @@ func (r *Rules) Cycle(state *State, events []Event) Result {
 			if rec.hidden || r.exempts(&res, state, exemptions, def, rec) {
 				continue
 			}
-			fresh = append(fresh, r.evaluate(&res, state, def, rec, nil)...)
+			queue(r.evaluate(&res, state, def, rec, nil))
 		}
 	}
+	fresh = r.exemptWants(&res, state, exemptions, fresh)
 	res.admit(state, r.settle(&res, state, fresh))
 	return res
 }
 
+// exemptWants takes away each want of an action an exemption names, when that exemption's if is true
+// of the want's ticket, and every later step of the same then that waits on a want it took away, so
+// none of them is reported as waiting. A hidden ticket counts too, so an if that can't read its facts
+// holds the want. An exemption that reads an unknown holds the wants and one that throws takes them
+// away, as an exemption that names rules does for its rules.
+func (r *Rules) exemptWants(res *Result, state *State, decided map[string]exemption, wants []Want) []Want {
+	gone := map[int]exemption{}
+	// goneKey maps a then call and the ledger key of a want taken away to its decision, for the steps that wait on it.
+	goneKey := map[string]exemption{}
+	stepKey := func(then int, key string) string { return strconv.Itoa(then) + "/" + key }
+	for i, w := range wants {
+		rec, ok := state.lookup("ticket", w.Subject)
+		if !ok {
+			continue
+		}
+		names := func(ex *ruleDef) bool {
+			return slices.ContainsFunc(ex.actions, func(m actionMatch) bool { return m.matches(w) })
+		}
+		if d, ok := r.decisive(res, state, decided, rec, names); ok {
+			gone[i], goneKey[stepKey(w.then, w.Key())] = d, d
+		}
+	}
+	// collect lists wants in the order they were queued, but After follows the order then returned
+	// them, so the step a want waits on can come after it here. A step whose step before it landed
+	// waits on nothing, so it stays.
+	for changed := len(gone) > 0; changed; {
+		changed = false
+		for i, w := range wants {
+			if _, ok := gone[i]; ok || w.After == "" || landed(state.Ledger, w.After) {
+				continue
+			}
+			if d, ok := goneKey[stepKey(w.then, w.After)]; ok {
+				gone[i], goneKey[stepKey(w.then, w.Key())], changed = d, d, true
+			}
+		}
+	}
+	held := map[string]bool{}
+	var out []Want
+	for i, w := range wants {
+		d, ok := gone[i]
+		if !ok {
+			out = append(out, w)
+			continue
+		}
+		switch d.state {
+		case exemptTrue:
+			res.Exempted = append(res.Exempted, Exempted{Exemption: d.by, Rule: w.Rule, Subject: w.Subject, Receipt: w.Receipt, Once: w.Once})
+		case exemptHeld:
+			if key := w.Rule + "/" + w.Subject + "/" + d.by; !held[key] {
+				held[key] = true
+				dropped := slices.ContainsFunc(r.defs, func(def *ruleDef) bool { return def.name == w.Rule && def.isEvent() })
+				res.Held = append(res.Held, Held{Rule: w.Rule, Record: w.Record, Subject: w.Subject, Reason: d.heldReason(), Reads: d.reads, Dropped: dropped})
+			}
+		case exemptThrew:
+			// decide reported the throw, and the want goes, as a rule goes when an exemption naming it throws.
+		}
+	}
+	return out
+}
+
 // exemption is what one exemption decided for one record.
 type exemption struct {
+	// by is the exemption's name.
+	by string
 	// state is exemptTrue, exemptFalse, exemptHeld (its if read an unknown) or exemptThrew.
 	state  string
 	reason string
 	reads  []string
 }
+
+func (d exemption) heldReason() string { return "exemption " + d.by + " read an unknown: " + d.reason }
 
 const (
 	exemptTrue  = "true"
@@ -160,13 +240,29 @@ const (
 
 // exempts reports whether an exemption stops def for rec, and records why. An exemption that reads an
 // unknown holds the rule and one that throws stops it, so a guard that fails never lets the rule through.
-// Each exemption runs once per record however many rules it names, and decisions are keyed by record
-// id because two records of a kind can share a subject, as two trees leased to one ticket do.
 func (r *Rules) exempts(res *Result, state *State, decided map[string]exemption, def *ruleDef, rec *record) bool {
+	names := func(ex *ruleDef) bool { return ex.each == def.each && slices.Contains(ex.exempts, def.name) }
+	d, ok := r.decisive(res, state, decided, rec, names)
+	if !ok {
+		return false
+	}
+	switch d.state {
+	case exemptTrue:
+		res.Exempted = append(res.Exempted, Exempted{Exemption: d.by, Rule: def.name, Subject: rec.subject})
+	case exemptHeld:
+		res.Held = append(res.Held, Held{Rule: def.name, Record: rec.String(), Subject: rec.subject, Reason: d.heldReason(), Reads: d.reads})
+	}
+	return true
+}
+
+// decisive runs the exemptions covers picks over rec and returns the one that decides: the first that
+// is true or threw, else the first that read an unknown. ok is false when each one is false or none covers.
+// Each exemption runs once per record in a cycle, and decisions are keyed by record id because two
+// records of a kind can share a subject, as two trees leased to one ticket do.
+func (r *Rules) decisive(res *Result, state *State, decided map[string]exemption, rec *record, covers func(*ruleDef) bool) (exemption, bool) {
 	var held *exemption
-	var heldBy string
 	for _, ex := range r.exemptions {
-		if ex.each != def.each || !slices.Contains(ex.exempts, def.name) {
+		if !covers(ex) {
 			continue
 		}
 		key := ex.name + "/" + rec.kind + "/" + rec.id
@@ -176,22 +272,18 @@ func (r *Rules) exempts(res *Result, state *State, decided map[string]exemption,
 			decided[key] = d
 		}
 		switch d.state {
-		case exemptTrue:
-			res.Exempted = append(res.Exempted, Exempted{Exemption: ex.name, Rule: def.name, Subject: rec.subject})
-			return true
-		case exemptThrew:
-			return true
+		case exemptTrue, exemptThrew:
+			return d, true
 		case exemptHeld:
 			if held == nil {
-				held, heldBy = &d, ex.name
+				held = &d
 			}
 		}
 	}
 	if held != nil {
-		res.Held = append(res.Held, Held{Rule: def.name, Record: rec.String(), Subject: rec.subject, Reason: "exemption " + heldBy + " read an unknown: " + held.reason, Reads: held.reads})
-		return true
+		return *held, true
 	}
-	return false
+	return exemption{}, false
 }
 
 // decide runs an exemption's if over rec.
@@ -201,16 +293,16 @@ func (r *Rules) decide(res *Result, state *State, ex *ruleDef, rec *record) exem
 	switch {
 	case len(c.unknown) > 0:
 		res.Reads[key] = c.reads
-		return exemption{state: exemptHeld, reason: strings.Join(unique(c.unknown), "; "), reads: c.reads}
+		return exemption{by: ex.name, state: exemptHeld, reason: strings.Join(unique(c.unknown), "; "), reads: c.reads}
 	case verdict.err != nil:
 		res.Throws = append(res.Throws, Throw{Rule: ex.name, Record: rec.String(), Subject: rec.subject, Error: verdict.err.Error(), Timeout: verdict.timeout, Phase: phaseIf})
 		res.Reads[key] = c.reads
-		return exemption{state: exemptThrew}
+		return exemption{by: ex.name, state: exemptThrew}
 	case verdict.ok:
 		res.Reads[key] = c.reads
-		return exemption{state: exemptTrue}
+		return exemption{by: ex.name, state: exemptTrue}
 	}
-	return exemption{state: exemptFalse}
+	return exemption{by: ex.name, state: exemptFalse}
 }
 
 // settle drops the wants the ledger covers and a second rule's duplicates, and

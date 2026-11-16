@@ -329,7 +329,7 @@ func printCheck(opts Options, cfg config.Config, state *rules.State, loaded *rul
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", def.Name, def.Kind(), def.Target(), desc)
 	}
 	for _, ex := range loaded.Exemptions() {
-		_, _ = fmt.Fprintf(tw, "%s\texempt\t%s\texempts %s\n", ex.Name, ex.Each, strings.Join(ex.Rules, ", "))
+		_, _ = fmt.Fprintf(tw, "%s\texempt\t%s\texempts %s\n", ex.Name, ex.Each, strings.Join(slices.Concat(ex.Rules, ex.Actions), ", "))
 	}
 }
 
@@ -344,7 +344,10 @@ func exemptSummary(result rules.Result, rule string) string {
 		if _, ok := by[e.Exemption]; !ok {
 			order = append(order, e.Exemption)
 		}
-		by[e.Exemption] = append(by[e.Exemption], e.Subject)
+		// An exemption that names actions can take away several wants of one rule for a ticket.
+		if !slices.Contains(by[e.Exemption], e.Subject) {
+			by[e.Exemption] = append(by[e.Exemption], e.Subject)
+		}
 	}
 	parts := make([]string, len(order))
 	for i, name := range order {

@@ -412,7 +412,11 @@ func cycleLines(c history.Cycle, skip map[string]bool, actionsOnly bool) []strin
 	}
 	for _, e := range c.Exempt {
 		if !skip[e.Rule+"/"+e.Subject] {
-			out = append(out, fmt.Sprintf("%s is exempt for %s by %s", e.Rule, e.Subject, e.Reason))
+			what := e.Rule
+			if e.Kind != "" {
+				what += "'s " + e.Kind + " once " + e.Once.String()
+			}
+			out = append(out, fmt.Sprintf("%s is exempt for %s by %s", what, e.Subject, e.Reason))
 		}
 	}
 	for _, t := range c.Throws {
