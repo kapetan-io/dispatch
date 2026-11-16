@@ -192,8 +192,8 @@ const usage = `usage: dispatch run
                why in chat and end your turn." and exits 0, also when the session's ask is already
                open, which records nothing more. Takes no arguments. Finds its tree from the working
                directory and its session from the harness (CLAUDE_CODE_SESSION_ID for Claude Code),
-               and exits 1 when run outside a harness session, or outside a worktree of a repo listed under [repos].
-               Exits 3 with "dispatch: not running" when no loop runs
+               and exits 1 outside a harness session or a tree a worker runs in. Exits 3 with
+               "dispatch: not running" when no loop runs
   ticket       file, read and change tickets. Local tickets (LOC-<n>) are kept in a database that only
                dispatch run opens and that [plugins.local] turns on. Talks to the running dispatch run, and
                exits 3 with "dispatch: not running" when none runs. create and edit work on Linear tickets as

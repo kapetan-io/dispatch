@@ -120,4 +120,4 @@ The ask ends when the session takes a message, typed in its window or sent by `d
 
 `dispatch ask` run while `dispatch run` is down prints `dispatch: not running`, exits 3 and records nothing. The worker shows 💤 or its PR label as it would without the ask.
 
-A ticket in Needs Human, moved there by dispatch or by its worker, shows 🔴 and notifies with `notify-needs-human`, whether or not its worker asked.
+A ticket in Needs Human, whoever moved it there, shows 🔴 and notifies with `notify-needs-human`, whether or not its worker asked.

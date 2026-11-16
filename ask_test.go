@@ -219,6 +219,8 @@ func TestAskRefusesToRunOutsideAWorkerSession(t *testing.T) {
 			wantErr: "ask runs inside a dispatch worker's session"},
 		{name: "OutsideAWorkerTree", session: "worker", dir: func(d *Dispatch) string { return d.Repo },
 			wantErr: "ask runs inside a dispatch worker's session"},
+		{name: "ATreeNoWorkerRunsIn", session: "worker-ENG-9", dir: func(d *Dispatch) string { return d.worktreeOf("ENG-9") },
+			wantErr: "ask runs inside a dispatch worker's session"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
