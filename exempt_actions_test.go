@@ -367,3 +367,26 @@ scenario(rules, "control: without the exemption chain b's notify runs after the 
 	assert.Contains(t, res.Stdout, "ok   chain.test.ts: a later step whose step before it landed stays when the exemption turns true")
 	assert.Contains(t, res.Stdout, "ok   chain.test.ts: control: without the exemption chain b's notify runs after the comment lands")
 }
+
+func TestAnExemptionByActionReportsAWantQueuedTwiceOnce(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Config: shippedRulesConfig, Rules: map[string]string{
+		"dispatch.ts": ruleHeader + `import "./hold";
+whenever({ name: "twice", each: "ticket", if: (t) => t.status === "in_progress",
+  then: (t, ctx) => {
+    ctx.worker.queueNudge(t, "x", { once: ["x"] });
+    ctx.worker.queueNudge(t, "x", { once: ["x"] });
+  } });`,
+		"hold.ts": `import { exempt } from "dispatch";
+exempt({ name: "hold-eng-1", each: "ticket", actions: ["nudge"], if: () => true });`,
+	}})
+	d.Linear.Tickets(ticket("ENG-1", "In Progress", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.Tick()
+	d.Stop()
+
+	res := d.Run("cycle")
+
+	require.NoError(t, res.Err)
+	assert.Equal(t, 1, strings.Count(res.Stdout, "by hold-eng-1 once [x]"))
+}

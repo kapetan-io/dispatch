@@ -134,7 +134,7 @@ exempt({
 - An entry is an action's receipt name (`nudge`, `merge`, `escalate`, `notify` and the rest), or `{ kind, topic }`, the shape `ctx.ledger.receipts` filters by, where `topic` is the first element of the want's once key.
 - Give exactly one of `rules` and `actions`. Neither, both, an empty `actions`, an action no rule can queue, an entry of another shape, and `actions` with an `each` other than `"ticket"` are load errors that name the exemption.
 - It runs after the rules' `then`, on what they queued, so the rules' reads show in `dispatch explain` and an HTTP call a `then` makes still goes out. It runs only for a ticket some rule wants a listed action about, at most once per ticket in a cycle. A shadow rule's want it takes away is reported as exempt, not as a would-be action.
-- An `if` that reads an unknown fact holds the wants (`rules check` reports them held), and one that throws takes them away, as an exemption that names rules does for its rules.
+- An `if` that reads an unknown fact holds the wants (`rules check` reports them held), or for an `on` rule drops them, as its own unknown read does. One that throws takes them away, as an exemption that names rules does for its rules.
 - `dispatch rules check` lists it as `leave-on-call-alone  exempt  ticket  exempts nudge, merge, escalate (pr-ignored)` and ends the line of each rule it took a want from with `exempt for ENG-4 by leave-on-call-alone`. `dispatch cycle` lists each want taken away as `exempt` with its action and once key, `dispatch explain` prints `exempt: stopped by leave-on-call-alone, nudge once [poke ENG-4]`, and a scenario asserts one with `s.expectExempt(rule, subject, by, receipt?)`, where `receipt` names the action and may be left out.
 
 ## Reading a worker's turns

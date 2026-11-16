@@ -195,7 +195,7 @@ func (r *Rules) exemptWants(res *Result, state *State, decided map[string]exempt
 			}
 		}
 	}
-	held := map[string]bool{}
+	held, exempted := map[string]bool{}, map[string]bool{}
 	var out []Want
 	for i, w := range wants {
 		d, ok := gone[i]
@@ -205,7 +205,11 @@ func (r *Rules) exemptWants(res *Result, state *State, decided map[string]exempt
 		}
 		switch d.state {
 		case exemptTrue:
-			res.Exempted = append(res.Exempted, Exempted{Exemption: d.by, Rule: w.Rule, Subject: w.Subject, Receipt: w.Receipt, Once: w.Once})
+			// settle keeps one want per key, so each rule's want taken away is reported once per key.
+			if key := d.by + "/" + w.Rule + "/" + w.Key(); !exempted[key] {
+				exempted[key] = true
+				res.Exempted = append(res.Exempted, Exempted{Exemption: d.by, Rule: w.Rule, Subject: w.Subject, Receipt: w.Receipt, Once: w.Once})
+			}
 		case exemptHeld:
 			if key := w.Rule + "/" + w.Subject + "/" + d.by; !held[key] {
 				held[key] = true
