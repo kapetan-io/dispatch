@@ -110,7 +110,7 @@ One value in the world, with the time it was first seen at that value (its `sinc
 _Avoid_: field, property
 
 **Unknown**:
-A fact whose read failed or came back cut short. A `whenever` rule that reads one holds for that record, and an `on` rule drops its event, so a failed read never counts as "no". A failed inbox read is the exception: it keeps the last good items known, because nothing else points at an inbox item. A failed read of a clone's remote follows it and keeps that clone's last good repo. A failed read of local tickets makes local ticket records unknown and leaves Linear's alone, and the reverse, because worker, tree and PR records point at tickets of both systems.
+A fact whose read failed or came back cut short, such as a PR's `ready` and `waitingOn` while GitHub is still computing whether a PR whose last read was ready merges cleanly. A `whenever` rule that reads one holds for that record, and an `on` rule drops its event, so a failed read never counts as "no". A failed inbox read is the exception: it keeps the last good items known, because nothing else points at an inbox item. A failed read of a clone's remote follows it and keeps that clone's last good repo. A failed read of local tickets makes local ticket records unknown and leaves Linear's alone, and the reverse, because worker, tree and PR records point at tickets of both systems.
 _Avoid_: missing, empty, null
 
 **Cycle**:

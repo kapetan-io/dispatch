@@ -50,7 +50,7 @@ func full() world.World {
 		Work:            map[string]treehouse.Work{"/trees/1": {Unpushed: 2, TrackedChanges: true}},
 		CheckErrors:     map[string]error{"/trees/2": errors.New("status failed")},
 		Untracked:       map[string][]string{"/trees/1": {"a.txt"}},
-		PRs:             map[string]pullrequest.PullRequest{"ENG-4": {Number: 7, Head: "abc", Problems: []string{"a failed check"}}},
+		PRs:             map[string]pullrequest.PullRequest{"ENG-4": {Number: 7, Head: "abc", Problems: []string{"a failed check"}, MergeabilityPending: true, KeptReady: true}},
 		PRReadFailed:    map[string]bool{"ENG-5": true},
 		PRRateLimited:   map[string]time.Time{"ENG-5": time.UnixMilli(1760454000000).UTC()},
 		PRNotFound:      map[string]string{"ENG-2": "thrawn01/eng-2"},

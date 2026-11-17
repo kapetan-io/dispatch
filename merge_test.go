@@ -702,6 +702,28 @@ func TestTickFindsTheWorkersPRBehindAFullPageOfForkPRs(t *testing.T) {
 	assert.Equal(t, []string{"thrawn01/eng-1", "thrawn01/eng-1.c1"}, d.GitHub.Reads()[:2])
 }
 
+func TestTickHoldsAutoMergeWhileGitHubComputesMergeability(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.Workers.Stop("ENG-1", stopTasks{})
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "SUCCESS", decision: "APPROVED", mergeable: "UNKNOWN"})
+
+	// The first read finds the PR not ready, as before.
+	d.Tick()
+	assert.Empty(t, d.GitHub.Merged())
+
+	// A later read of the same PR finds GitHub still checking, so the rule holds on the Unknown.
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	d.Tick()
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "SUCCESS", decision: "APPROVED", mergeable: "UNKNOWN"})
+	d.Tick()
+
+	assert.Empty(t, d.GitHub.Merged())
+	assert.Regexp(t, `held\s+ENG-1\s+-\s+auto-merge\s+GitHub is still checking whether the PR for ENG-1 merges cleanly`, d.Run("cycle").Stdout)
+}
+
 func TestTickReportsABranchWhoseForkPRsFillEveryPageItReads(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{RepoSettings: autoMergeSetting})

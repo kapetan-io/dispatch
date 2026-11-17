@@ -422,7 +422,7 @@ func Refresh(ctx context.Context, src Sources, scope Scope, prev World, parts Pa
 		w.inspectTrees(ctx, src.Env, scope)
 	}
 	if parts&FromGitHub != 0 || prev.At.IsZero() {
-		w.readPRs(ctx, src, scope)
+		w.readPRs(ctx, src, scope, prev.PRs)
 		w.readMergedPRs(ctx, src, scope)
 	}
 	if parts&FromInbox != 0 || prev.At.IsZero() {
@@ -721,7 +721,7 @@ func (w *World) onTicketBranches(scope Scope, tickets []ticket.Ticket) []ticket.
 
 // readPRs reads the open PR of each ticket for which ReadsPR is true. A PR that
 // can't be read is reported and left out, so it holds back only its own ticket.
-func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
+func (w *World) readPRs(ctx context.Context, src Sources, scope Scope, lastPRs map[string]pullrequest.PullRequest) {
 	w.PRReadsAnswered = 0
 	w.PRs, w.PRReadFailed, w.PRRateLimited = map[string]pullrequest.PullRequest{}, map[string]bool{}, map[string]time.Time{}
 	w.PRNotFound = map[string]string{}
@@ -740,6 +740,10 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope) {
 		}
 		w.PRReadsAnswered++
 		if found {
+			// Draft and Approved decide who a ready PR waits on, so a change in either is a real change.
+			last, had := lastPRs[t.Identifier]
+			pr.KeptReady = pr.MergeabilityPending && had && (last.Ready || last.KeptReady) &&
+				last.Head == pr.Head && last.Draft == pr.Draft && last.Approved == pr.Approved
 			w.PRs[t.Identifier] = pr
 		} else {
 			w.PRNotFound[t.Identifier] = t.Branch

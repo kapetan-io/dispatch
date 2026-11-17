@@ -893,6 +893,55 @@ func TestTickKeepsTheReadyLabelWhenThePRCannotBeRead(t *testing.T) {
 	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1"}, d.Workers.Renames())
 }
 
+func TestTickKeepsTheReadyLabelWhileGitHubComputesMergeability(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.Workers.Stop("ENG-1", stopTasks{})
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	d.Tick()
+
+	// Two reads in a row find GitHub still checking, and neither renames.
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "SUCCESS", decision: "APPROVED", mergeable: "UNKNOWN"})
+	d.Tick()
+	d.Tick()
+	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1"}, d.Workers.Renames())
+
+	// The first read where GitHub answers decides the label, 💤 and then 🟢 once the worker is nudged.
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "SUCCESS", decision: "APPROVED", mergeable: "CONFLICTING"})
+	d.Tick()
+	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1", "w-ENG-1|💤 ENG-1", "w-ENG-1|🟢 ENG-1"}, d.Workers.Renames())
+}
+
+func TestTickShowsNotReadyOnTheFirstReadWhenMergeabilityIsNotComputed(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.Workers.Stop("ENG-1", stopTasks{})
+	d.GitHub.PullRequest("ENG-1", prState{head: "a1", checks: "SUCCESS", mergeable: "UNKNOWN"})
+
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1|💤 ENG-1"}, d.Workers.Renames())
+}
+
+func TestTickDropsTheReadyLabelWhenTheHeadMovesWhileMergeabilityIsNotComputed(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+	d.Workers.Running("ENG-1", "idle")
+	d.Workers.Stop("ENG-1", stopTasks{})
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	d.Tick()
+
+	d.GitHub.PullRequest("ENG-1", prState{head: "b2", checks: "SUCCESS", mergeable: "UNKNOWN"})
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1", "w-ENG-1|💤 ENG-1"}, d.Workers.Renames())
+}
+
 func TestTickDropsTheReadyLabelWhenThePRIsClosed(t *testing.T) {
 	t.Parallel()
 	d := newDispatch(t, dispatchOptions{})
