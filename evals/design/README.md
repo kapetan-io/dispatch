@@ -27,7 +27,7 @@ Each LLM grader takes 2 of 3 judge votes.
 2. All graders pooled pass in at least 90% of runs.
 3. The control, 2 runs on the final `case.yaml`, passes fewer than 40% of the non-`skill-fired` graders, pooled. If not, the graders are broken and no result is read.
 
-Budget: 5 runs, at most 3 attempts, and `--max-cost-usd 25` on each invocation. Five runs can't show a failure rate under about 20%. If the bar isn't met by attempt 3, the ticket goes to Needs Human with the scores.
+Budget: 5 runs, at most 3 attempts, and `--max-cost-usd 25` on each invocation. Five runs can't show a failure rate under about 20%. If the bar isn't met by attempt 3, the worker asks the user with `dispatch ask`, giving the scores.
 
 Limits. One case, so the eval shows the grounding reaches the candidates and does not show the arena's design beats a single attempt. Linear's MCP isn't available in eval runs, so `why` cites git history and the decision log only.
 

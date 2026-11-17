@@ -5,7 +5,9 @@ description: Respond to what a build worker's PR raised (review comments, questi
 
 # Respond to the PR
 
-A ticket whose id starts with `LOC-` is a local ticket. Wherever this skill says to comment on or move the ticket, run `"${DISPATCH_BIN:-dispatch}" ticket comment LOC-<n> "<text>"` or `"${DISPATCH_BIN:-dispatch}" ticket move LOC-<n> "<status>"` instead of using the Linear tools. A flaky check's Backlog ticket is a Linear ticket, even when this one is local.
+A ticket whose id starts with `LOC-` is a local ticket. Wherever this skill says to comment on the ticket, run `"${DISPATCH_BIN:-dispatch}" ticket comment LOC-<n> "<text>"` instead of using the Linear tools. A flaky check's Backlog ticket is a Linear ticket, even when this one is local.
+
+If a question you asked the user is still unanswered, run `"${DISPATCH_BIN:-dispatch}" ask`, repeat the question in chat and end your turn without acting on this nudge.
 
 Each time you start, run `"${DISPATCH_BIN:-dispatch}" repo-settings` and read `ignore_comment_authors`, `ignore_optional_checks` and `approval_checks`. Act on nothing by a listed login, matched ignoring case: no fix, reply or resolve.
 
@@ -31,13 +33,13 @@ gh api graphql -F id=THREAD_ID -f query='mutation($id:ID!){resolveReviewThread(i
 
 Treat every review comment as a claim to check with evidence: a failing test or a trace through the code. List each claim the finding rests on, including the claims behind your proposed fix, and mark each confirmed, not confirmed or not checked. A page summarizer's output (such as WebFetch) is not opening the source, so a claim checked only through one is not checked.
 
-A finding is confirmed only when every claim on its list is confirmed. Until then, don't tell the user it is real, change the PR body, or move the ticket because of it (an escalation to Needs Human below is not that). Check the not-checked claims first, and leave one not checked only after you tried and couldn't.
+A finding is confirmed only when every claim on its list is confirmed. Until then, don't tell the user it is real, or change the PR body because of it. Check the not-checked claims first, and leave one not checked only after you tried and couldn't.
 
 Fix and reply to a confirmed finding, resolve it, and record the fix as a divergence when it changes something the design describes. Reply to an unconfirmed finding from a bot with your evidence, saying which claims you couldn't check, and resolve it. Reply to an unconfirmed finding from a person with your evidence, saying which claims you couldn't check, and leave the thread open for the reviewer to settle. Never put it to the manager.
 
 ## A question
 
-A question is not a claim. Answer a question about what the code does on the PR, with evidence. If the answer is a call the Rules reserve for the user, move the ticket to Needs Human, ask in chat, and post nothing on the PR. A message that opens `Decision for your question (comment <link>):`, as the build Rules describe it, answers it the same as the user: move the ticket back to In Progress, post no answer comment of your own, add the decision to the PR body's `## Decisions` in the order build gives, and reply on the PR quoting it as the manager's decision, not the user's. When the user answers in chat, write the answer on the ticket, move the ticket back to In Progress, and reply to the question on the PR quoting their answer. Any other question is yours to answer on the PR. Resolve a question's thread once you have answered it.
+A question is not a claim. Answer a question about what the code does on the PR, with evidence. If the answer is a call the Rules reserve for the user, ask the user as the build Rules say and post nothing on the PR. A message that opens `Decision for your question (comment <link>):`, as the build Rules describe it, answers it the same as the user: post no answer comment of your own, add the decision to the PR body's `## Decisions` in the order build gives, and reply on the PR quoting it as the manager's decision, not the user's. When the user answers in chat, write the answer on the ticket and reply to the question on the PR quoting their answer. Any other question is yours to answer on the PR. Resolve a question's thread once you have answered it.
 
 ## A failing check
 

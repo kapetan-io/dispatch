@@ -22,7 +22,7 @@ test-race: ## Run the fast suite under the race detector
 
 .PHONY: test-claude
 test-claude: ## Run the real Claude Code worker scenarios (needs a logged-in claude, spends Haiku turns)
-	go test -tags claude -count=1 ./internal/harness/
+	go test -tags claude -count=1 -timeout 30m ./internal/harness/
 
 .PHONY: test-drift
 test-drift: ## Check the fakes against the installed tools (CI skips this)

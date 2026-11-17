@@ -48,11 +48,11 @@ The wording is adopted only if all hold.
 3. The control and the scorer check come out as above.
 4. Confirmation rerun of the same wording, 5 runs per case on the 6 main cases and the 2 fresh cases, 40 runs. Items 1 and 2 hold again.
 
-The bar does not change after this commit. Changing it goes to the user through Needs Human.
+The bar does not change after this commit. Changing it goes to the user, as a question the worker asks with `dispatch ask`.
 
 ## Budget
 
-5 runs per case. At most 3 attempts. A cost ceiling of $60 across all runs for this ticket, with `--max-cost-usd 25` on each invocation. Five runs per case can't show a failure rate under about 20%. The baseline is the wording in the PR today, and it is attempt 1. If the bar isn't met by attempt 3 or the ceiling, the ticket goes to Needs Human with the scores.
+5 runs per case. At most 3 attempts. A cost ceiling of $60 across all runs for this ticket, with `--max-cost-usd 25` on each invocation. Five runs per case can't show a failure rate under about 20%. The baseline is the wording in the PR today, and it is attempt 1. If the bar isn't met by attempt 3 or the ceiling, the worker asks the user with `dispatch ask`, giving the scores.
 
 ## How to run
 

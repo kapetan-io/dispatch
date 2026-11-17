@@ -7,6 +7,8 @@ description: Improve a skill's wording against a frozen `claude plugin eval` sui
 
 Change one piece of wording, measure it with a suite that doesn't move, and keep or revert the change.
 
+When you ask the user in a dispatch worker, run `"${DISPATCH_BIN:-dispatch}" ask` first, then ask in chat and end your turn.
+
 The suite lives in `evals/<skill>/` at the repo root. A skill with several suites puts each in `evals/<skill>/<suite>/`. Name each case `<skill>-<scenario>` so names stay unique across suites. A suite holds `cases.json` (or `cases/`), `arms/` (each arm is the whole skill with only the wording under test replaced), `README.md`, `log.md` and `results/`. If there is no suite, build one under the same rules.
 
 Every score the log cites needs its `claude plugin eval` result JSON in `results/`, committed with the `log.md` entry that cites it. That covers the baseline, control, attempts and reruns, partial ones too. A score with no committed file doesn't count, because a later reader can't recheck it.
@@ -37,6 +39,6 @@ Change a case, answer key or grader only for a reason you can state without the 
 
 Stop when an attempt meets the bar and a rerun of the same wording, on every case including the fresh one, meets it again. A failed rerun is a result, so log it and run another attempt. Stop at the attempt budget or cost ceiling too.
 
-If the bar isn't met, leave the skill's wording unchanged and move the ticket to Needs Human (the dispatch status that waits for the user), or tell the user if there is no ticket. Say the best arm, its scores per case, what the visible failures show and what you'd try next.
+If the bar isn't met, leave the skill's wording unchanged and ask the user what to do. Say the best arm, its scores per case, what the visible failures show and what you'd try next.
 
 If it is met, put the adopted wording in the skill, name the winning arm at the top of the suite's `README.md`, and log the limits: which cases tuned the wording, which were held out, runs per case and models.

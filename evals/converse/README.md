@@ -36,7 +36,7 @@ Held out is every third case. Read its score, never its transcript. A fresh case
 4. Scorer check. The control (item 3) shows the graders fail the wrong behavior, and the first scored run shows they pass the right one. Read the control's transcripts once to confirm it failed on running the full suite, not on a harness error.
 5. Confirmation rerun of the same wording, 5 runs per case on all cases including the fresh one, meets items 1 and 2 again.
 
-The bar does not change after this commit. Changing it goes to the user through Needs Human.
+The bar does not change after this commit. Changing it goes to the user, as a question the worker asks with `dispatch ask`.
 
 ## Budget
 
