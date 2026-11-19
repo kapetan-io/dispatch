@@ -671,6 +671,14 @@ func (r *record) unknownExcept(reason string, keep ...string) {
 	}
 }
 
+// unknownOnly marks the named facts unread for reason.
+func (r *record) unknownOnly(reason string, names ...string) {
+	t := r.v.Elem().Type()
+	for _, name := range names {
+		r.v.Elem().Field(fieldIndex[t][name]).FieldByName("Unknown").SetString(reason)
+	}
+}
+
 func (s *State) prRecords(w world.World) {
 	at := s.ms()
 	scope := s.scope
@@ -715,6 +723,9 @@ func (s *State) prRecords(w world.World) {
 			rec.LastThread = Known(&Seen{At: pr.ThreadAt, SeenAt: at}, at)
 		}
 		r := newRecord("pr", t.Identifier, t.Identifier, rec)
+		if pr.KeptReady {
+			r.unknownOnly("GitHub is still checking whether the PR for "+t.Identifier+" merges cleanly", "ready", "waitingOn")
+		}
 		if failed {
 			reason := "the PR for " + t.Identifier + " could not be read"
 			if reset, limited := w.PRRateLimited[t.Identifier]; limited {

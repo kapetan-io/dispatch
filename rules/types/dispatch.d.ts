@@ -120,7 +120,7 @@ declare module "dispatch" {
     readonly draft: boolean;
     /** True when a reviewer's latest review approves the head commit and no reviewer's latest review requests changes. A push clears it, because an approval of an earlier commit doesn't count. It stays false while the repo's approval_checks are unmet, and reviews by ignore_comment_authors are skipped. */
     readonly approved: boolean;
-    /** True when the PR needs no work, has no open review thread, every check has passed (a PR with no checks counts as passed; checks named in approval_checks, and non-required checks when ignore_optional_checks is on, are left out) and GitHub says it merges cleanly. A running check, or a merge state GitHub has not computed yet, is not ready. */
+    /** True when the PR needs no work, has no open review thread, every check has passed (a PR with no checks counts as passed; checks named in approval_checks, and non-required checks when ignore_optional_checks is on, are left out) and GitHub says it merges cleanly. A running check, or a merge state GitHub has not computed yet, is not ready. Unknown while GitHub is still computing the merge state of a PR whose read just before was ready, with the same head, draft and approval, so a rule holds instead of seeing it not ready. */
     readonly ready: boolean;
     /** True when the PR has a failed check, changes requested or a merge conflict. Changes requested counts only on the head commit and not while a check is still running. An open review thread alone is not needs work. */
     readonly needsWork: boolean;
@@ -138,7 +138,7 @@ declare module "dispatch" {
     readonly openAs: "open" | "draft";
     /** True when the PR's repo table sets auto_merge. It is only that setting. The shipped auto-merge rule also needs the ticket In Review and the PR not a draft. */
     readonly autoMerge: boolean;
-    /** Who the PR waits on once it is ready. A PR that is not ready waits on nobody. In a repo that opens PRs as drafts, a PR you have opened waits on its approvers until its head is approved, then on whoever merges it. Every other ready PR waits on you. */
+    /** Who the PR waits on once it is ready. A PR that is not ready waits on nobody. It is Unknown, like ready, while GitHub is still computing the merge state of a PR whose read just before was ready. In a repo that opens PRs as drafts, a PR you have opened waits on its approvers until its head is approved, then on whoever merges it. Every other ready PR waits on you. */
     readonly waitingOn: "nobody" | "you" | "approvers" | "merge";
   }
   /** A ticket's place on a tree it holds, and the Claude session there, if any. Every ticket has one, with state none when no session runs. */

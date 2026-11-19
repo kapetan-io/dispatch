@@ -115,7 +115,10 @@ func (l *Loop) ticketEmoji(wd world.World, scope world.Scope, t ticket.Ticket) (
 	case scope.Is(t, ticket.InProgress):
 		return l.workspaceEmoji(w, wd.Asking(t.Identifier), pullrequest.PullRequest{}, ""), true
 	case scope.Is(t, ticket.InReview):
-		return l.workspaceEmoji(w, wd.Asking(t.Identifier), wd.PRs[t.Identifier], l.repoOf(t).OpenPRAs), true
+		pr := wd.PRs[t.Identifier]
+		// While GitHub is still computing a ready PR's merge state, the label is the one the PR had.
+		pr.Ready = pr.Ready || pr.KeptReady
+		return l.workspaceEmoji(w, wd.Asking(t.Identifier), pr, l.repoOf(t).OpenPRAs), true
 	case scope.Is(t, ticket.NeedsHuman):
 		return emojiNeedsHuman, true
 	case scope.Is(t, ticket.Paused) && w.State == world.NoWorker && heldChild(wd, scope, t):

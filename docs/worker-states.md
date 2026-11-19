@@ -73,7 +73,7 @@ dispatch reads the PR only when the worker is idle or gone.
 | Idle | none | none, or not ready with no check running | 🟢 | Nothing about the label. Nudges for a failed check, changes requested or a merge conflict |
 | Idle | stopped | ready | 👀, ⏳ or 🔀 | As above |
 | Idle | stopped | checks running | 🟡 | Nothing |
-| Idle | stopped | none, unresolved thread or mergeability not computed | 💤 | Nothing |
+| Idle | stopped | none, unresolved thread or mergeability not computed on a read with no ready read just before it | 💤 | Nothing |
 | Idle | stopped | failed check, changes requested or merge conflict | 💤, then 🟢 once nudged | PR nudge every 5 minutes. After `nudge_limit` nudges with no push, moves the ticket to Needs Human |
 | Idle | a task running | ready | 👀, ⏳ or 🔀 | As above |
 | Idle | a task running | anything else | 🟢 | Nudges for a PR that needs work, as above. The label stays 🟢 |
@@ -85,6 +85,8 @@ dispatch reads the PR only when the worker is idle or gone.
 | Gone | n/a | ready | 👀, ⏳ or 🔀 | Nothing. The notification waits until the worker is idle |
 | Gone | n/a | checks running | 🟡 | Nothing |
 | Gone | n/a | anything else | 🟢 | Relaunches the worker for a PR that needs work or an unseen review thread |
+
+A ready PR keeps its 👀, ⏳ or 🔀 while GitHub is still computing whether it merges cleanly after the base branch moves. It holds when the PR's last read was ready (or held the same way) and the new read has the same head, draft and approval. The `ready` and `waitingOn` facts are Unknown, so a rule holds instead of seeing a PR that is not ready. Every read that still finds GitHub computing holds again, with no time cap, and the first read where GitHub answers decides. A read with no ready read of the PR just before it (the PR's first read, one after the worker was working, a failed read, or a dispatch restart) is not held and shows 💤, as in the table.
 
 The Stop record column above is what the emoji label reads, for a worker in any status. The `busy` and `lastStop` facts rules read come from the Stop record only for an idle worker on an In Progress or Needs Human ticket, so for an In Review worker `busy` is false and `lastStop` is when dispatch first saw it idle.
 

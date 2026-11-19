@@ -93,10 +93,21 @@ type PullRequest struct {
 	// Ready means the PR needs no work, has no open review thread and nothing is still running: every check
 	// (every required one, under Rules.RequiredChecksOnly, and none named in Rules.ApprovalChecks) has passed (a PR with no checks counts as passed) and GitHub says it
 	// merges cleanly. A running check, such as a bot review still in progress,
-	// or a merge state GitHub has not computed yet, is not ready.
+	// or a merge state GitHub has not computed yet, is not ready, except that a KeptReady PR's
+	// Ready is reported Unknown.
 	Ready bool
 	// ChecksRunning means a check on the head has not finished.
 	ChecksRunning bool
+	// MergeabilityPending means GitHub has not computed whether the PR merges cleanly yet, and
+	// every other test for Ready passes. GitHub answers this way for a few minutes after the base
+	// branch moves. The read sets it.
+	MergeabilityPending bool
+	// KeptReady means the PR's last read was Ready (or itself KeptReady) with the same head,
+	// draft and approval, and this read has MergeabilityPending. Ready is false only because
+	// GitHub is still checking, so the workspace label stays and the rules see ready and
+	// waitingOn as Unknown. The world sets it, since one read can't know the last. The first
+	// read of a PR is never KeptReady.
+	KeptReady bool
 }
 
 // Waiting is who a ready PR waits on.
@@ -592,7 +603,9 @@ func Find(ctx context.Context, branch string, src Source, rules Rules) (PullRequ
 		pr.Problems = append(pr.Problems, "a merge conflict")
 	}
 	pr.ChecksRunning = checksRunning
-	pr.Ready = !pr.NeedsWork() && !pr.UnresolvedThreads && checksPassed && n.Mergeable == "MERGEABLE"
+	clean := !pr.NeedsWork() && !pr.UnresolvedThreads && checksPassed
+	pr.Ready = clean && n.Mergeable == "MERGEABLE"
+	pr.MergeabilityPending = clean && n.Mergeable == "UNKNOWN"
 	return pr, true, nil
 }
 
