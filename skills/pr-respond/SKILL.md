@@ -39,7 +39,7 @@ Fix and reply to a confirmed finding, resolve it, and record the fix as a diverg
 
 ## A question
 
-A question is not a claim. Answer a question about what the code does on the PR, with evidence. If the answer is a call the Rules reserve for the user, ask the user as the build Rules say and post nothing on the PR. A message that opens `Decision for your question (comment <link>):`, as the build Rules describe it, answers it the same as the user: post no answer comment of your own, add the decision to the PR body's `## Decisions` in the order build gives, and reply on the PR quoting it as the manager's decision, not the user's. When the user answers in chat, write the answer on the ticket and reply to the question on the PR quoting their answer. Any other question is yours to answer on the PR. Resolve a question's thread once you have answered it.
+A question is not a claim. Answer a question about what the code does on the PR, with evidence. If the answer is a call the Rules reserve for the user, ask the user as the build Rules say and post nothing on the PR. A message that opens `Decision for your question (comment <link>):`, as the build Rules describe it, answers it the same as the user: post no answer comment of your own, add the decision to the PR body's Concerns and risks in the order build gives, and reply on the PR quoting it as the manager's decision, not the user's. When the user answers in chat, write the answer on the ticket and reply to the question on the PR quoting their answer. Any other question is yours to answer on the PR. Resolve a question's thread once you have answered it.
 
 ## A failing check
 
