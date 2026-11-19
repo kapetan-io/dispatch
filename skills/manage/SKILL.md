@@ -45,7 +45,7 @@ Read the worker's workspace first. A worker sometimes answers its own question a
 
 A worker blocked on a question popup goes to the user, since `dispatch tell` sends nothing to a blocked session.
 
-On `PR activity while in Needs Human`, read the new review or comment. Treat it as the answer to the worker's question only when the comment says it is one. Otherwise handle the ticket as usual and put the comment in the Status block. Don't relay it to the worker while it waits; a build worker hears of it through its PR nudges once the ticket is back in In Review.
+On `PR activity while in Needs Human`, put the comment in the Status block. Never treat it as the answer to the worker's question or relay it to the worker.
 
 ## Answering a question
 

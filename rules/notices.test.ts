@@ -367,13 +367,39 @@ scenario(rules, "a review that came while the ticket was in Needs Human reaches 
   s.expect([["nudge-pr-activity", "nudge", "ENG-1"]]);
 });
 
-scenario(rules, "notify-needs-human-pr-activity stays silent about activity seen before the ticket entered Needs Human", s => {
+scenario(rules, "notify-needs-human-pr-activity tells of a comment read before dispatch saw the move to Needs Human", s => {
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { asked: -1000 }), pr("ENG-1"));
+  s.land("notify", "ENG-1");
+  s.advance(1000);
+  s.see(pr("ENG-1", { activityAt: "10:00", activitySummary: "a comment by alice" }));
+  s.expect([]);
+  s.advance(1000);
+  s.see(ticket("ENG-1", needsHuman));
+  s.expect([["notify-needs-human-pr-activity", "notify", "ENG-1"]]);
+});
+
+scenario(rules, "notify-needs-human-pr-activity stays silent when the newest item goes away and an older one becomes the newest", s => {
+  needsHumanWith(s, worker("ENG-1", "idle", { lastStop: 0 }), pr("ENG-1"));
+  s.see(pr("ENG-1", { activityAt: "10:00", activitySummary: "a review by alice" }));
+  s.advance(1000);
+  s.see(pr("ENG-1", { activityAt: "11:00", activitySummary: "a review thread comment by bob" }));
+  s.expect([["notify-needs-human-pr-activity", "notify", "ENG-1"]]);
+  s.land("notify", "ENG-1");
+  s.advance(1000);
+  s.see(pr("ENG-1", { activityAt: "10:00", activitySummary: "a review by alice" }));
+  s.expect([]);
+});
+
+scenario(rules, "notify-needs-human-pr-activity stays silent about an older item after the worker was nudged about a newer one", s => {
   s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1"));
-  s.see(pr("ENG-1", { activityAt: "10:00", activitySummary: "a review by alice", problems: ["changes requested"] }));
+  s.see(pr("ENG-1", { activityAt: "10:00" }));
+  s.advance(1000);
+  s.see(pr("ENG-1", { activityAt: "11:00" }));
+  s.land("nudge", "ENG-1");
   s.advance(1000);
   s.see(ticket("ENG-1", needsHuman), worker("ENG-1", "idle", { lastStop: 1 }));
   s.land("notify", "ENG-1");
+  s.advance(1000);
+  s.see(pr("ENG-1", { activityAt: "10:00" }));
   s.expect([]);
-  s.see(pr("ENG-1", { activityAt: "11:00", activitySummary: "a comment by bob", problems: ["changes requested"] }));
-  s.expect([["notify-needs-human-pr-activity", "notify", "ENG-1"]]);
 });

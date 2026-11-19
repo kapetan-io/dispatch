@@ -227,7 +227,8 @@ type World struct {
 	StackErrs    map[string]error
 	// Listings maps a repo label to the branches its clone has, locally or on origin as of the
 	// clone's last fetch. ListingErrs holds the labels whose clone could not be listed. Neither is
-	// in history: they decide only what the resync does to branch rows.
+	// in history: they decide what the resync does to branch rows, and whether a Needs Human
+	// ticket's PR is worth reading.
 	Listings    map[string]map[string]bool
 	ListingErrs map[string]error
 	// Nudged holds the tickets whose worker was sent a nudge. They show as working until a read
@@ -727,7 +728,7 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope, lastPRs m
 	w.PRNotFound = map[string]string{}
 	for _, t := range w.Tickets {
 		settings, ok := scope.PRRepo(t, w.Workers[t.Identifier].State)
-		if !ok {
+		if !ok || w.neverPushed(scope, t) {
 			continue
 		}
 		readCtx, done := bound(ctx)
@@ -749,6 +750,19 @@ func (w *World) readPRs(ctx context.Context, src Sources, scope Scope, lastPRs m
 			w.PRNotFound[t.Identifier] = t.Branch
 		}
 	}
+}
+
+// neverPushed reports whether a Needs Human ticket's branch is missing from its clone's listing, so it
+// can have no PR. Such a ticket, escalated for a launch failure or an abandoned blocker, would
+// otherwise cost a GitHub call on every read. An unlisted clone reads the PR as before.
+func (w *World) neverPushed(scope Scope, t ticket.Ticket) bool {
+	if !scope.Is(t, ticket.NeedsHuman) {
+		return false
+	}
+	label, _ := scope.RepoOf(t)
+	name, _, _ := scope.Repos.Find(label)
+	listing, ok := w.Listings[name]
+	return ok && !listing[t.Branch]
 }
 
 // failPRRead holds the ticket's PR as unreadable, and as rate-limited when GitHub said why.
