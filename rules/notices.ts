@@ -18,6 +18,24 @@ whenever({
   then: (t, ctx) => ctx.notify.queueSend(t, `${t.id} is in Needs Human: ${t.title}`, { once: ["needs-human", t.statusSince], reason: "entered Needs Human" }),
 });
 
+// Once per activity time while the ticket is in Needs Human. Dispatch reads the PR only while the
+// worker is idle, blocked on a popup or gone, and the worker hears nothing, because a nudge would
+// make a worker with an open question ask again instead of reading the comments. Items that arrive
+// between two reads share one notice, which names the newest. Activity dispatch read while the
+// ticket was In Review, such as the review a pr-ignored escalation followed, is not news. When
+// dispatch did not read the PR just before the ticket moved to Needs Human (its worker was working
+// or blocked, the ticket came from In Progress, or it is a design ticket), it has no record of the
+// activity, so the first read notifies for the newest item, even an old one.
+whenever({
+  name: "notify-needs-human-pr-activity",
+  each: "pr",
+  if:   (pr) => !pr.closed && pr.ticket.status === "needs_human" && pr.lastActivity !== undefined
+           && pr.lastActivity.seenAt >= pr.ticket.statusSince,
+  then: (pr, ctx) => ctx.notify.queueSend(pr.ticket,
+           `${pr.ticket.id} is in Needs Human and its PR has new activity, ${pr.activitySummary}: ${pr.url}`,
+           { once: ["needs-human-activity", pr.lastActivity!.at], reason: "PR activity while in Needs Human" }),
+});
+
 // Every blocked_renotify_minutes while the worker is blocked. The key carries the period,
 // so each period is one notice.
 whenever({

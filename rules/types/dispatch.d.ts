@@ -100,7 +100,7 @@ declare module "dispatch" {
     /** True when the ticket has a label of this name, ignoring case. Reads labels, so it is unknown when the label list was cut short. */
     hasLabel(name: string): boolean;
   }
-  /** A ticket's pull request. Dispatch reads the open PR of an In Review ticket whose worker is idle or gone, when its labels were read in full, it has no children, it isn't a design ticket and its repo has a path, and the merged PR of an unfinished local ticket. A merged PR has approved, ready and needsWork false and empty activity. */
+  /** A ticket's pull request. Dispatch reads the open PR of an In Review ticket whose worker is idle or gone, when its labels were read in full, it has no children, it isn't a design ticket and its repo has a path, the open PR of any Needs Human ticket whose worker is not working and whose repo has a path, and the merged PR of an unfinished local ticket. A merged PR has approved, ready and needsWork false and empty activity. */
   export interface PR {
     /** The ticket the PR belongs to. */
     readonly ticket: Ticket;

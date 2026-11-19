@@ -911,14 +911,19 @@ func (s Scope) PRRepo(t ticket.Ticket, state WorkerState) (config.Repo, bool) {
 	return settings, ok && settings.Path != ""
 }
 
-// ReadsPR reports whether the dispatcher uses this In Review ticket's PR.
-// Working and blocked workers are skipped so their PRs cost no call, and so are
-// tickets whose labels or children make it unsure they are build tickets.
+// ReadsPR reports whether the dispatcher reads this ticket's PR. A working worker's PR is never
+// read, so it costs no call. An In Review ticket's PR is read while its worker is idle or gone, and
+// only for a ticket known to be a build ticket, since the nudge and merge rules act on it. A Needs
+// Human ticket's PR is read for any ticket, design tickets included, so followers hear of new
+// reviews and comments.
 func (s Scope) ReadsPR(t ticket.Ticket, state WorkerState) bool {
-	if !s.Is(t, ticket.InReview) || t.LabelsTruncated || t.HasChildren || !NotDesign(t) {
-		return false
+	switch {
+	case s.Is(t, ticket.NeedsHuman):
+		return state != Working
+	case s.Is(t, ticket.InReview):
+		return !t.LabelsTruncated && !t.HasChildren && NotDesign(t) && (state == NoWorker || state == Idle)
 	}
-	return state == NoWorker || state == Idle
+	return false
 }
 
 // readRemotes reads the chosen remote of every configured clone. A clone whose read fails keeps its

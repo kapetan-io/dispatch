@@ -29,7 +29,7 @@ var typeDocs = map[reflect.Type]string{
 	reflect.TypeFor[Stack]():      "Where a stacked ticket's branch started.",
 	reflect.TypeFor[Ticket]():     "A ticket dispatch tracks, from Linear or from the local ticket database. Every fact is read-only, and reading one whose read failed throws Unknown.",
 	reflect.TypeFor[Worker]():     "A ticket's place on a tree it holds, and the Claude session there, if any. Every ticket has one, with state none when no session runs.",
-	reflect.TypeFor[PR]():         "A ticket's pull request. Dispatch reads the open PR of an In Review ticket whose worker is idle or gone, when its labels were read in full, it has no children, it isn't a design ticket and its repo has a path, and the merged PR of an unfinished local ticket. A merged PR has approved, ready and needsWork false and empty activity.",
+	reflect.TypeFor[PR]():         "A ticket's pull request. Dispatch reads the open PR of an In Review ticket whose worker is idle or gone, when its labels were read in full, it has no children, it isn't a design ticket and its repo has a path, the open PR of any Needs Human ticket whose worker is not working and whose repo has a path, and the merged PR of an unfinished local ticket. A merged PR has approved, ready and needsWork false and empty activity.",
 	reflect.TypeFor[Tree]():       "A tree in a repo's treehouse pool.",
 	reflect.TypeFor[Escalation](): "A ticket's move to Needs Human and the comment that explains it, one for each escalate receipt in the ledger.",
 	reflect.TypeFor[Dispatch]():   "Dispatch itself, so a rule can run once per cycle.",

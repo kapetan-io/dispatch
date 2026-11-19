@@ -100,9 +100,11 @@ None of these nudges reaches a worker that is asking, or one still on a message 
 
 | Ticket | Worker | Emoji | What dispatch does |
 |---|---|---|---|
-| Needs Human | any | 🔴 | Notifies once on entering the status, a `design` ticket included. While the worker has not paused (it is working, has no Stop record, or took a message after its last Stop) the notice waits for it to pause or for 5 minutes after the status began, whichever comes first. A worker blocked on a popup is held too. With no worker it notifies at once |
+| Needs Human | any | 🔴 | Notifies once on entering the status, a `design` ticket included. While the worker has not paused (it is working, has no Stop record, or took a message after its last Stop) the notice waits for it to pause or for 5 minutes after the status began, whichever comes first. A worker blocked on a popup is held too. With no worker it notifies at once. Also tells followers of new reviews and comments on its PR (below) |
 | Paused (Backlog or Todo) | gone | none | Returns the tree, discarding uncommitted changes. A Todo child of an In Progress parent keeps its tree and shows ⏸️ |
 | Paused | live | unchanged | Closes the workspace, then ⏸️ |
+
+While a Needs Human worker is idle, blocked on a popup or gone, dispatch reads the ticket's PR, a `design` ticket's too, and `notify-needs-human-pr-activity` tells followers of each new review or comment (reason `PR activity while in Needs Human`), naming the newest when several arrive between reads. Activity dispatch read while the ticket was In Review, such as the review before a `pr-ignored` escalation, sends nothing. A PR dispatch did not read just before the ticket moved to Needs Human, because its worker was working or blocked, the ticket came from In Progress, or it is a `design` ticket, notifies once at the first read, for its newest item even when that item is old. The worker is told nothing while the ticket is in Needs Human, and failed checks and merge conflicts are not reported. Back in In Review, a build worker hears of the activity through its PR nudges, and a `design` worker is never nudged.
 
 A `design` or `design-review` worker is never nudged, and its ticket notifies like any other for a blocked popup, for Needs Human and for going idle. Its label follows the same lines as a build worker's, and 💤 is how you see that a design is waiting on you.
 
