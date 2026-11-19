@@ -11,6 +11,8 @@ If a question you asked the user is still unanswered, run `"${DISPATCH_BIN:-disp
 
 Each time you start, run `"${DISPATCH_BIN:-dispatch}" repo-settings` and read `ignore_comment_authors`, `ignore_optional_checks` and `approval_checks`. Act on nothing by a listed login, matched ignoring case: no fix, reply or resolve.
 
+Load `dispatch:pr-description` with the Skill tool before you change the PR body, so it keeps the four headings that skill gives.
+
 Name the repo on every `gh` command (`--repo owner/name`, or a `repos/owner/name/...` path for `gh api`; the queries below pass `owner` and `name` themselves), because in a clone with two remotes `gh` picks the wrong one. Take `owner/name` from the PR's own URL.
 
 Read all the feedback. Conversation comments, review bodies and comments on lines of code (review threads) are three separate lists, and `gh pr view --comments` misses the code comments. This query returns all three, with the thread ids:
@@ -39,7 +41,7 @@ Fix and reply to a confirmed finding, resolve it, and record the fix as a diverg
 
 ## A question
 
-A question is not a claim. Answer a question about what the code does on the PR, with evidence. If the answer is a call the Rules reserve for the user, ask the user as the build Rules say and post nothing on the PR. A message that opens `Decision for your question (comment <link>):`, as the build Rules describe it, answers it the same as the user: post no answer comment of your own, add the decision to the PR body's `## Decisions` in the order build gives, and reply on the PR quoting it as the manager's decision, not the user's. When the user answers in chat, write the answer on the ticket and reply to the question on the PR quoting their answer. Any other question is yours to answer on the PR. Resolve a question's thread once you have answered it.
+A question is not a claim. Answer a question about what the code does on the PR, with evidence. If the answer is a call the Rules reserve for the user, ask the user as the build Rules say and post nothing on the PR. A message that opens `Decision for your question (comment <link>):`, as the build Rules describe it, answers it the same as the user: post no answer comment of your own, add the decision to the PR body's Concerns and risks in the order build gives, and reply on the PR quoting it as the manager's decision, not the user's. When the user answers in chat, write the answer on the ticket and reply to the question on the PR quoting their answer. Any other question is yours to answer on the PR. Resolve a question's thread once you have answered it.
 
 ## A failing check
 

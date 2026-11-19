@@ -17,6 +17,6 @@ Budget: one test under 1 second, a service's whole run under 5 minutes of wall t
 
 Skipping with `testing.Short` is not a speedup, because the behavior stops being tested everywhere.
 
-**A test still over 1 second** after these fixes follows the codebase's own way of handling slow tests. Don't invent one: a new build tag, directory or runner setting can change what the build system rebuilds and reruns. When the codebase has none, leave the test as it is and name it, its time and what you tried to speed it up in the PR's Implementation section.
+**A test still over 1 second** after these fixes follows the codebase's own way of handling slow tests. Don't invent one: a new build tag, directory or runner setting can change what the build system rebuilds and reruns. When the codebase has none, leave the test as it is and name it, its time and what you tried to speed it up as a bullet under the PR body's Concerns and risks.
 
 **Check speed in a separate report, never inside the suite.** A time limit in the suite fails on a slow CI runner and would block a production fix. In dispatch, `make test-report` lists tests over 1 second and packages over 5 minutes, slowest first. It exits 0 when it finds slow tests, so file what it finds as tickets by hand.
