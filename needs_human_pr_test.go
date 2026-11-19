@@ -1,6 +1,8 @@
 package dispatch_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -146,6 +148,20 @@ func TestTickReadsNoPRForANeedsHumanTicketWhoseBranchTheCloneLacks(t *testing.T)
 	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"), ticket("ENG-2", "Needs Human", "dispatch"))
 	d.Workers.CheckedOut("ENG-1", "idle")
 	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+
+	d.Tick()
+
+	assert.Equal(t, []string{prBranch("ENG-1")}, d.GitHub.Reads())
+}
+
+func TestTickReadsTheNeedsHumanPRWhenTheCloneCannotBeListed(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{})
+	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
+	d.Workers.CheckedOut("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	// A corrupt packed-refs file fails git for-each-ref, so the clone's branches are unknown.
+	require.NoError(t, os.WriteFile(filepath.Join(d.Repo, ".git", "packed-refs"), []byte("garbage line\n"), 0o644))
 
 	d.Tick()
 
