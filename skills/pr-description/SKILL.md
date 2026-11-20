@@ -9,7 +9,7 @@ A description tells a reviewer what they are approving: why the change exists, w
 
 ## Intent
 
-One or two sentences: the problem this solves and for whom.
+A short paragraph that explains what the PR does and why, with no jargon, in the style of `dispatch:bro`, for a reviewer who saw none of the work. Say what was wrong or missing and for whom, then what the PR does about it, following the path the data takes at runtime, not the order you built it. Use the terms in the nearest `docs/CONTEXT.md` (if there is one) and the code, coin no labels, and trace the flow in the code, because a claim about it that you did not read is a guess. One example of the problem or of the data moving through the change helps when it makes the flow clear, but leave the new contract to Surfaces and Behavior changes. A terse problem statement makes the reviewer work out the change themselves.
 
 ## Surfaces
 
@@ -36,7 +36,7 @@ Write the body as exactly these four headings, in this order, every time. A revi
 
 ````markdown
 ## Intent
-{{{a few sentences: the problem and who has it. End with the ticket link when there is one.}}}
+{{{What the PR does and why, in plain language, with an example where it helps. End with the ticket link when there is one.}}}
 
 ## Surfaces
 {{{One entry per surface this PR adds or changes: a bold label (`**Endpoint**`, `**Type**`, `**Command**`, `**Schema**`, `**Event**`) and its name}}}
