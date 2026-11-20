@@ -206,7 +206,7 @@ whenever({
 - `ctx.worker.of(t).messageAt` is when the session took its latest command or other message, typed or sent by dispatch, in milliseconds since the epoch. A task notice does not count. It is undefined for a session that took none, and, like `askedAt`, undefined rather than unknown while the session's record can't be read.
 - In `rules test`, `worker("ENG-1", "idle", { asked: -1000 })` gives the session an ask a second before the scenario starts, `messages: [{ at: 1000 }]` a plain message after it, which ends the ask, and `messages: [{ at: 1000, task: true }]` a task notice, which does not.
 
-Two exemptions take these actions away, the list `HELD_ACTIONS` in `rules/shared.ts`: every nudge, every merge, and the `pr-ignored` escalation for ignoring PR nudges, whichever rule queued them.
+Two exemptions take these actions away, the list `HELD_ACTIONS` in `rules/shared.ts`: every nudge, every merge, and the `pr-ignored` escalation for ignoring PR nudges, whichever rule queued them. A third, described under the first below, takes only the merges and the escalation.
 
 ```ts
 // rules/asks.ts
