@@ -648,8 +648,9 @@ func TestCollectAgentFailuresPrintsTheSameRowsAsJSONAndMarkdown(t *testing.T) {
 
 func TestCollectAgentFailuresKeepsASessionThatReadDispatchUsage(t *testing.T) {
 	d, project := transcripts(t)
-	usage := d.Run("collect-agent-failures", "--nope")
+	usage := d.Run("no-such-command")
 	require.Error(t, usage.Err)
+	require.Contains(t, usage.Stderr, "collect-agent-failures")
 	// A session that ran dispatch wrongly got its usage text back, and its failures still count.
 	writeTranscript(t, filepath.Join(project, "33333333-9999.jsonl"),
 		bash(inWindow, "/tmp/x", "u1", "dispatch"), toolResult(inWindow, "u1", "Exit code 1\n"+usage.Stderr, true),
@@ -733,11 +734,10 @@ func TestCollectAgentFailuresIgnoresABlankDenyRule(t *testing.T) {
 
 func TestCollectAgentFailuresReadsTheRecordsOwnTime(t *testing.T) {
 	d, project := transcripts(t)
-	// The call's input holds an older timestamp ahead of the record's own, which is in the window.
+	// The call's input holds an older timestamp, which json.Marshal writes ahead of the record's
+	// own because "message" sorts before "timestamp". The record's own time is in the window.
 	nested := func(id string) map[string]any {
-		r := toolCall(inWindow, "/tmp/x", id, "Bash", map[string]any{"command": "make build"})
-		return map[string]any{"message": r["message"], "toolUseResult": map[string]any{"timestamp": beforeWeek},
-			"type": r["type"], "timestamp": r["timestamp"], "cwd": r["cwd"]}
+		return toolCall(inWindow, "/tmp/x", id, "Bash", map[string]any{"command": "make build", "timestamp": beforeWeek})
 	}
 	writeTranscript(t, filepath.Join(project, "88888888-eeee.jsonl"),
 		nested("n1"), toolResult(inWindow, "n1", "Exit code 2\nmake: *** stop", true),
