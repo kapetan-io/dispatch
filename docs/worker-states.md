@@ -94,17 +94,17 @@ A PR that waits on its approvers still nudges its worker for a failed check, a m
 
 An idle In Review worker whose PR gains a review or comment gets the activity nudge once per new item.
 
-None of these nudges reaches a worker that is asking, or one still on a message it took (a Needs Human worker is nudged about PR activity while it asks, below), as [Asking with `dispatch ask`](#asking-with-dispatch-ask) describes.
+None of these nudges reaches a worker that is asking, or one still on a message it took, as [Asking with `dispatch ask`](#asking-with-dispatch-ask) describes.
 
 ### Other statuses
 
 | Ticket | Worker | Emoji | What dispatch does |
 |---|---|---|---|
-| Needs Human | any | 🔴 | Notifies once on entering the status, a `design` ticket included. While the worker has not paused (it is working, has no Stop record, or took a message after its last Stop) the notice waits for it to pause or for 5 minutes after the status began, whichever comes first. A worker blocked on a popup is held too. With no worker it notifies at once. While its worker is idle, nudges it about each new review or comment on its PR (below) |
+| Needs Human | any | 🔴 | Notifies once on entering the status, a `design` ticket included. While the worker has not paused (it is working, has no Stop record, or took a message after its last Stop) the notice waits for it to pause or for 5 minutes after the status began, whichever comes first. A worker blocked on a popup is held too. With no worker it notifies at once |
 | Paused (Backlog or Todo) | gone | none | Returns the tree, discarding uncommitted changes. A Todo child of an In Progress parent keeps its tree and shows ⏸️ |
 | Paused | live | unchanged | Closes the workspace, then ⏸️ |
 
-While a Needs Human build worker is idle, dispatch reads its PR, and `nudge-pr-activity` nudges the worker about each new review or comment, even while it is asking, since nobody else acts on them. The worker handles the comments before repeating its question. A review or comment it was already nudged about in In Review is not sent again, and failed checks and merge conflicts draw no nudge. A `design` ticket's PR is not read.
+A Needs Human worker is nudged about new reviews and comments on its PR even while it asks, since nobody else acts on them.
 
 A `design` or `design-review` worker is never nudged, and its ticket notifies like any other for a blocked popup, for Needs Human and for going idle. Its label follows the same lines as a build worker's, and 💤 is how you see that a design is waiting on you.
 
@@ -128,7 +128,7 @@ The ask ends when the session takes a message, typed in its window or sent by `d
 
 A ticket in Needs Human, whoever moved it there, shows 🔴 and notifies with `notify-needs-human`, whether or not its worker asked.
 
-While a worker asks, the shipped rules leave it alone: no PR nudge, no restack nudge, no escalation for ignoring PR nudges, and no merge under `auto_merge`. The exemption `an-asking-worker-is-left-alone` in `rules/asks.ts` takes those actions away whichever rule queued them, your own rules included, on any ticket but a Needs Human one, whose worker is nudged about PR activity while it asks. `dispatch tell`, with or without `--turn`, still delivers, since it is you answering.
+While a worker asks, the shipped rules leave it alone: no PR nudge, no restack nudge, no escalation for ignoring PR nudges, and no merge under `auto_merge`. The exemption `an-asking-worker-is-left-alone` in `rules/asks.ts` takes those actions away whichever rule queued them, your own rules included. `dispatch tell`, with or without `--turn`, still delivers, since it is you answering.
 
 A worker's own finished background task does not end its ask. Claude Code hands the session a task notice, a message that opens with `<task-notification>`, and the worker shows 🟢 while it handles it, then 🔴 again when it stops, with no second message to followers. That handling ends a turn of its own, so `dispatch tell <ticket> --turn <at>` for the turn that asked is refused as moved past. `dispatch turn` prints the new turn's time.
 

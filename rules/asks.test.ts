@@ -142,3 +142,11 @@ scenario(rules, "an asking worker whose session log can't be read has its approv
   s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { asked: -1000, sessionUnread: "broken" }), pr("ENG-1", approved));
   s.expect([["auto-merge", "merge", "ENG-1"]]);
 });
+
+scenario(rules, "notify-asked tells followers of a question asked after the ticket moved to Needs Human", s => {
+  s.given(ticket("ENG-1", { status: "needs_human", optedIn: true, repo: "dispatch" }), worker("ENG-1", "idle", { lastStop: 0 }));
+  s.land("notify", "ENG-1");
+  s.advance(60 * 1000);
+  s.see(worker("ENG-1", "idle", { lastStop: 0, asked: 30 * 1000 }));
+  s.expect([["notify-asked", "notify", "ENG-1"]]);
+});

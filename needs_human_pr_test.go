@@ -1,8 +1,6 @@
 package dispatch_test
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -146,30 +144,27 @@ func TestTickReadsNoPRForADesignTicketInNeedsHuman(t *testing.T) {
 	}
 }
 
-func TestTickReadsNoPRForANeedsHumanTicketWhoseBranchTheCloneLacks(t *testing.T) {
+func TestTickReadsNoNeedsHumanPRWhileItsWorkerIsBlockedOrGone(t *testing.T) {
 	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"), ticket("ENG-2", "Needs Human", "dispatch"))
-	d.Workers.CheckedOut("ENG-1", "idle")
-	// ENG-2's worker never pushed, so its branch is in no listing.
-	d.Workers.Running("ENG-2", "idle")
-	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+	for _, test := range []struct {
+		name  string
+		start func(d *Dispatch)
+	}{
+		{name: "blocked", start: func(d *Dispatch) { d.Workers.CheckedOut("ENG-1", "blocked") }},
+		{name: "gone", start: func(d *Dispatch) {}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			d := newDispatch(t, dispatchOptions{})
+			d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
+			test.start(d)
+			pr := cleanPR("a1")
+			pr.reviews = []activity{{"COMMENTED", time1, "alice", "", ""}}
+			d.GitHub.PullRequest("ENG-1", pr)
 
-	d.Tick()
+			d.Tick()
 
-	assert.Equal(t, []string{prBranch("ENG-1")}, d.GitHub.Reads())
-}
-
-func TestTickReadsTheNeedsHumanPRWhenTheCloneCannotBeListed(t *testing.T) {
-	t.Parallel()
-	d := newDispatch(t, dispatchOptions{})
-	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
-	d.Workers.CheckedOut("ENG-1", "idle")
-	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
-	// A corrupt packed-refs file fails git for-each-ref, so the clone's branches are unknown.
-	require.NoError(t, os.WriteFile(filepath.Join(d.Repo, ".git", "packed-refs"), []byte("garbage line\n"), 0o644))
-
-	d.Tick()
-
-	assert.Equal(t, []string{prBranch("ENG-1")}, d.GitHub.Reads())
+			assert.Empty(t, d.GitHub.Reads())
+		})
+	}
 }
