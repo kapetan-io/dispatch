@@ -9,8 +9,7 @@ A description tells a reviewer what they are approving: why the change exists, w
 
 ## Intent
 
-One or two sentences: the problem this solves and for whom.
-
+Explain what the PR does and why, in the style of `dispatch:bro`, for a reviewer who saw none of the work.
 ## Surfaces
 
 A surface is what a consumer uses, as `dispatch:surface-testing` defines it: HTTP and gRPC endpoints, CLI commands, the exported API of a package others import, and stored data others read, such as schemas and events. Show each surface this PR adds or changes as the thing itself:
@@ -36,7 +35,7 @@ Write the body as exactly these four headings, in this order, every time. A revi
 
 ````markdown
 ## Intent
-{{{a few sentences: the problem and who has it. End with the ticket link when there is one.}}}
+{{{What the PR does and why, in plain language, with an example where it helps. End with the ticket link when there is one.}}}
 
 ## Surfaces
 {{{One entry per surface this PR adds or changes: a bold label (`**Endpoint**`, `**Type**`, `**Command**`, `**Schema**`, `**Event**`) and its name}}}
