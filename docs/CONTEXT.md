@@ -30,6 +30,8 @@ The user is a developer who owns the tickets, repos and rules dispatch runs. The
 
 **Ask why it acted.** `dispatch cycle`, `dispatch explain <ticket>` and `dispatch replay` show what each cycle read, what it wanted and how each action came out.
 
+**See where agents went wrong.** `dispatch collect-agent-failures` reads the last week of Claude Code transcripts and prints the tool calls that failed, grouped by signature, the permission denials, the denials a subagent hit and whether its final report said so, and the files one agent edited 5 or more times. It reports rows and counts and judges none of them.
+
 **Tool fake**:
 An in-process Go state model of herdr, treehouse, gh or Linear that refuses what the real tool refuses.
 _Avoid_: shell fake, mock, stub
@@ -160,6 +162,14 @@ _Avoid_: answer, reply
 **Session log**:
 The file of one worker session's commands, other messages (each only its time, and whether it is a task notice), asks (each only its time) and turns, appended by the running dispatch from the hooks' reports and `dispatch ask`, and read by the world.
 _Avoid_: transcript (Claude's own file), history (dispatch's segments)
+
+**Transcript**:
+Claude Code's own JSONL file of one session, under `~/.claude/projects/<encoded directory>/<session>.jsonl`, with each subagent's under `<session>/subagents/`. Dispatch reads transcripts for `dispatch collect-agent-failures` and never writes them.
+_Avoid_: session log (dispatch's own file of a worker session)
+
+**Agent failure**:
+A tool call whose result Claude Code marked `is_error`, or a permission denial, as `dispatch collect-agent-failures` counts it. A result that only reads like an error is not one.
+_Avoid_: error (any error text), mistake (a judgment the command does not make)
 
 **Ask**:
 A worker's statement, made by running `dispatch ask`, that it needs the user. The worker is asking from when it is next idle until its session takes a message from a person or from dispatch, or ends. It moves no ticket.
