@@ -15,9 +15,11 @@ import (
 const (
 	// failureWindow is how far back collect-agent-failures reads when --from is not given.
 	failureWindow = 7 * 24 * time.Hour
-	// patternMinerMarker is in every line the pattern miner's own session sends, whose tool
-	// failures come from reading other sessions' failures and would count them twice.
-	patternMinerMarker = "DAILY-PATTERN-MINING"
+	// patternMinerMarker marks the pattern miner's own session, which reads other sessions'
+	// transcripts, so its failures come from the mining rather than from work. It is built from
+	// two halves so that no text dispatch prints or holds, such as its usage or this file, contains
+	// it: a session that read either would otherwise be skipped.
+	patternMinerMarker = "DAILY-" + "PATTERN-MINING"
 )
 
 // collectAgentFailures is `dispatch collect-agent-failures`.
@@ -56,6 +58,9 @@ func collectAgentFailures(opts Options, args []string) error {
 	if err != nil {
 		return fmt.Errorf("reading transcripts in %s: %w", dir, err)
 	}
+	for _, why := range sessions.Unreadable {
+		_, _ = fmt.Fprintln(opts.Stderr, "dispatch: skipped", why)
+	}
 	report := agentfailure.Collect(sessions, agentfailure.ReadDenyRules(filepath.Dir(dir)), opts.Env.ExpandHome("~"))
 	if *asJSON {
 		enc := json.NewEncoder(opts.Stdout)
@@ -71,7 +76,7 @@ func collectAgentFailures(opts Options, args []string) error {
 }
 
 // parseWindowEdge is parseWhen that also takes a bare date, as the start of that day in local
-// time.
+// time, so --to 2026-11-19 ends the window as that day starts.
 func parseWindowEdge(flagName, text string, now time.Time) (time.Time, error) {
 	if t, err := time.ParseInLocation(time.DateOnly, text, now.Location()); err == nil {
 		return t, nil

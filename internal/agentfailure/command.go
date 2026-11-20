@@ -94,9 +94,10 @@ func dropHeredocBodies(cmd string) string {
 	return out.String()
 }
 
-// heredocEnd finds where a heredoc that starts at start ends: past its closing word and the
-// blanks after it on that line. The closing word is found as the first line, after the header
-// line and at least one more newline, that holds only the word.
+// heredocEnd finds where a heredoc that starts at start ends: past its closing word and any blank
+// lines after it. It follows the pattern miner's heredoc pattern, quirks included: the closing word
+// may be indented without <<-, it is looked for only after one body line, so an empty heredoc is
+// not recognized, and << inside <<< or $((1<<2)) can start one.
 func heredocEnd(cmd string, start int) (int, bool) {
 	i := start + 2
 	if i < len(cmd) && cmd[i] == '-' {
@@ -168,16 +169,18 @@ func isWordByte(b byte) bool {
 }
 
 var (
-	// wrappers run the program named after them.
+	// wrappers run the program named after them. The shell's own words that open a block (if,
+	// while, for) are not stripped, so "if git diff --quiet; then" names "if", as the pattern
+	// miner's tables do.
 	wrappers = set("env", "time", "timeout", "nohup", "sudo", "command", "xargs")
 	// subcommandTools name what they do with their first argument, or first two for gh,
-	// dispatch and herdr.
+	// dispatch and herdr. tiger is Tiger Cloud's CLI.
 	subcommandTools = set("git", "gh", "go", "make", "npm", "pnpm", "npx", "docker", "cargo", "kubectl", "uv", "brew", "task", "dispatch", "herdr", "tiger")
-	// setup is the commands that prepare for the one that does the work.
+	// setup is the commands that prepare for the one that does the work, and the words that close
+	// a block.
 	setup = set("cd", "export", "set", "source", ".", "pushd", "popd", "true", "fi", "done", "}", ")", "esac")
 
-	assignment  = regexp.MustCompile(`^[\p{L}\p{N}_]+=`)
-	defaultExec = regexp.MustCompile(`^"?\$\{[\p{L}\p{N}_]+:-([^}]+)\}"?$`)
+	assignment = regexp.MustCompile(`^[\p{L}\p{N}_]+=`)
 )
 
 func set(names ...string) map[string]bool {
@@ -189,7 +192,9 @@ func set(names ...string) map[string]bool {
 }
 
 // program is the program a simple command runs, with the subcommand for git, gh, go and the
-// like, as in "git push" or "gh pr view".
+// like, as in "git push" or "gh pr view". A program run through a variable, such as
+// "${DISPATCH_BIN:-dispatch}" ask, reads as "$", as it does in the pattern miner's tables. Flag
+// values count as subcommands, so git -c a=b commit names "git a=b".
 func program(text string) string {
 	toks := strings.Fields(strings.NewReplacer("(", " ", "{", " ").Replace(text))
 	for len(toks) > 0 && (assignment.MatchString(toks[0]) || wrappers[toks[0]] || toks[0] == "then" || toks[0] == "do" || toks[0] == "else" || toks[0] == "!") {
@@ -198,7 +203,7 @@ func program(text string) string {
 	if len(toks) == 0 {
 		return ""
 	}
-	name := strings.Trim(defaultExec.ReplaceAllString(toks[0], "$1"), `'"`)
+	name := strings.Trim(toks[0], `'"`)
 	head := []string{name[strings.LastIndex(name, "/")+1:]}
 	if subcommandTools[head[0]] {
 		args := toks[1:]
@@ -222,8 +227,8 @@ func program(text string) string {
 }
 
 // commandHead is the first program a Bash command runs past setup such as cd and export. With
-// last, it is the first stage of the last command in the list instead, whose exit status the
-// shell reports.
+// last, it is the last command in the list instead, by the program of its first pipeline stage,
+// since that command's exit status is the one the shell reports.
 func commandHead(cmd string, last bool) string {
 	cmds := splitCommands(cmd)
 	pick := ""

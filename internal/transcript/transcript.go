@@ -93,6 +93,9 @@ type Sessions struct {
 	Skipped []string
 	// Files is how many transcript files the read opened.
 	Files int
+	// Unreadable is each transcript or directory the read could not open, with why. Claude Code
+	// deletes old transcripts, so one can vanish between the listing and the read.
+	Unreadable []string
 }
 
 // Read reads every transcript under dir and keeps the records within window. A session with a
@@ -105,18 +108,17 @@ func Read(dir string, window Window, skipMarkers ...string) (Sessions, error) {
 		Reports:      map[Agent]Report{},
 		Descriptions: map[Agent]string{},
 	}
-	paths, err := transcriptFiles(dir)
-	if err != nil {
-		return s, err
-	}
+	paths, unreadable := transcriptFiles(dir)
+	s.Unreadable = unreadable
 	skipped := map[string]bool{}
 	for _, path := range paths {
 		who := identify(dir, path)
-		s.Files++
 		hit, err := s.readFile(path, who, window, skipMarkers)
 		if err != nil {
-			return s, err
+			s.Unreadable = append(s.Unreadable, err.Error())
+			continue
 		}
+		s.Files++
 		if hit {
 			skipped[who.Session] = true
 		}
@@ -126,15 +128,17 @@ func Read(dir string, window Window, skipMarkers ...string) (Sessions, error) {
 }
 
 // transcriptFiles lists the .jsonl files under dir in path order, leaving out hidden files and
-// directories. A missing dir holds no transcripts.
-func transcriptFiles(dir string) ([]string, error) {
-	var paths []string
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+// directories, and what it could not list. A missing dir holds no transcripts.
+func transcriptFiles(dir string) (paths, unreadable []string) {
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) && path == dir {
-				return filepath.SkipAll
+			if !(errors.Is(err, fs.ErrNotExist) && path == dir) {
+				unreadable = append(unreadable, err.Error())
 			}
-			return err
+			if d != nil && d.IsDir() && path != dir {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		if path != dir && strings.HasPrefix(d.Name(), ".") {
 			if d.IsDir() {
@@ -148,7 +152,7 @@ func transcriptFiles(dir string) ([]string, error) {
 		return nil
 	})
 	sort.Strings(paths)
-	return paths, err
+	return paths, unreadable
 }
 
 var agentFile = regexp.MustCompile(`agent-(\w+)\.jsonl$`)
@@ -249,16 +253,18 @@ type block struct {
 	Content   json.RawMessage `json:"content"`
 }
 
-// readLine keeps one record when it is a user or assistant record within the window. It skips a
-// line whose first timestamp falls before the window before decoding it, since most of a week's
-// transcripts on disk are older than the window.
+// readLine keeps one record when it is a user or assistant record within the window. Most lines
+// on disk predate the window, so a line with one timestamp field is checked before it is decoded.
+// A line with more may hold a nested record's time first, so it is always decoded.
 func (s *Sessions) readLine(line []byte, who Agent, window Window) {
 	i := bytes.Index(line, timestampField)
 	if i < 0 {
 		return
 	}
-	if at, ok := leadingTime(line[i+len(timestampField):]); !ok || at.Before(window.From) {
-		return
+	if bytes.Count(line, timestampField) == 1 {
+		if at, ok := leadingTime(line[i+len(timestampField):]); !ok || at.Before(window.From) {
+			return
+		}
 	}
 	if !bytes.Contains(line, userType) && !bytes.Contains(line, assistantType) {
 		return
@@ -334,7 +340,7 @@ func (s *Sessions) readUser(rec record, blocks []block) {
 			IsError:    string(bytes.TrimSpace(b.IsError)) == "true",
 			Text:       resultText(b.Content),
 			At:         rec.Timestamp,
-			DenialKind: String(rec.ToolDenialKind),
+			DenialKind: denialKind(rec.ToolDenialKind),
 		}
 		s.ResultOrder = append(s.ResultOrder, b.ToolUseID)
 	}
@@ -358,6 +364,13 @@ func resultText(content json.RawMessage) string {
 		}
 	}
 	return strings.Join(parts, "\n")
+}
+
+// denialKind is toolDenialKind when it is a string, and empty for any other value.
+func denialKind(raw json.RawMessage) string {
+	var kind string
+	_ = json.Unmarshal(raw, &kind)
+	return kind
 }
 
 // String is a JSON value as text: a string's contents, the JSON itself for any other value,
@@ -394,7 +407,6 @@ func (s *Sessions) drop(skipped map[string]bool) {
 	for who := range s.AgentCalls {
 		if skipped[who.Session] {
 			delete(s.AgentCalls, who)
-			delete(s.Reports, who)
 		}
 	}
 	for who := range s.Reports {

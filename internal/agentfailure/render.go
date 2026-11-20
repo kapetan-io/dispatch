@@ -6,7 +6,9 @@ import (
 	"strings"
 )
 
-// WriteMarkdown writes the report as Markdown tables under a heading that names the window.
+// WriteMarkdown writes the report as Markdown tables under a heading that names the window. The
+// tables keep the pattern miner's titles and numbers (1, 1b, 2a, 2b), which its later tables
+// continue from 3.
 func (r Report) WriteMarkdown(w io.Writer, from, to string) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Agent failures from %s to %s\n\n", from, to)
@@ -18,7 +20,7 @@ func (r Report) WriteMarkdown(w io.Writer, from, to string) error {
 
 	failureCols := []string{"signature", "count", "sessions", "repos", "first_seen", "last_seen", "example"}
 	section(&b, "1. Tool failures", len(r.ToolFailures), failureCols, failureCells(r.ToolFailures))
-	fmt.Fprintf(&b, "Dropped %d signatures seen once, holding %d failures.\n\n", r.DroppedSingletons.Signatures, r.DroppedSingletons.Failures)
+	fmt.Fprintf(&b, "Dropped %d signatures seen once.\n\n", r.DroppedSingletons.Signatures)
 	section(&b, "1b. Permission denials", len(r.PermissionDenials), failureCols, failureCells(r.PermissionDenials))
 
 	var denials [][]string
@@ -33,7 +35,7 @@ func (r Report) WriteMarkdown(w io.Writer, from, to string) error {
 	for _, e := range r.RepeatedEdits {
 		edits = append(edits, []string{e.Session, e.Agent, e.Repo, e.File, fmt.Sprint(e.Edits), e.First, e.Last})
 	}
-	section(&b, fmt.Sprintf("2b. Files edited %d+ times by one agent or session", RepeatedEdits), len(edits),
+	section(&b, fmt.Sprintf("2b. Files edited %d+ times by one agent or session", MinimumEdits), len(edits),
 		[]string{"session", "agent", "repo", "file", "edits", "first", "last"}, edits)
 
 	_, err := io.WriteString(w, b.String())

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/kapetan-io/dispatch/internal/transcript"
@@ -19,8 +20,10 @@ const (
 	signatureLength = 200
 )
 
-// placeholders replace, in order, the parts of an error line that differ between two runs of
-// the same failure, so the two share a signature.
+// placeholders replace the parts of an error line that differ between two runs of the same
+// failure, so the two share a signature. Order matters, since each rule sees what the earlier
+// ones left: a subagent id (a and 16 hex digits) that holds a digit is a <sha> before the <id>
+// rule sees it. The rules and their order are the pattern miner's, so the tables match its own.
 var placeholders = []struct {
 	match   *regexp.Regexp
 	replace func(string) string
@@ -40,10 +43,8 @@ var placeholders = []struct {
 	{regexp.MustCompile(`(?i)\b0x[0-9a-f]+\b`), fixed("<hex>")},
 	{regexp.MustCompile(`\b(?:toolu|agent|msg|req)_[\p{L}\p{N}_]+\b`), fixed("<id>")},
 	{regexp.MustCompile(`\ba[0-9a-f]{16}\b`), fixed("<id>")},
-	{regexp.MustCompile(`\d+(?:\.\d+)*`), fixed("<n>")},
+	{regexp.MustCompile(`\p{Nd}+(?:\.\p{Nd}+)*`), fixed("<n>")},
 }
-
-var blanks = regexp.MustCompile(`\s+`)
 
 func fixed(s string) func(string) string { return func(string) string { return s } }
 
@@ -52,8 +53,7 @@ func normalize(text string) string {
 	for _, p := range placeholders {
 		text = p.match.ReplaceAllStringFunc(text, p.replace)
 	}
-	text = shortenRuns(text)
-	return cut(strings.TrimSpace(blanks.ReplaceAllString(text, " ")), signatureLength)
+	return cut(strings.Join(strings.Fields(shortenRuns(text)), " "), signatureLength)
 }
 
 // shortenRuns turns each run of three or more of = # * - into two, so rulers of any length
@@ -87,17 +87,19 @@ func trim(text string) string {
 }
 
 var (
-	shellDiagnostic = regexp.MustCompile(`^Exit code \d+: (\(eval\)|zsh|bash|sh):`)
-	diagnostic      = regexp.MustCompile(`^(\(eval\):\d+: .*|(?:zsh|bash|sh): .*|(?:fatal|error|Error|panic|FAIL)\b.*)$`)
-	exitCode        = regexp.MustCompile(`^Exit code (\d+)$`)
-	errorTags       = regexp.MustCompile(`</?tool_use_error>`)
+	diagnostic = regexp.MustCompile(`^(\(eval\):\d+: .*|(?:zsh|bash|sh): .*|(?:fatal|error|Error|panic|FAIL)\b.*)$`)
+	exitCode   = regexp.MustCompile(`^Exit code (\d+)$`)
+	errorTags  = regexp.MustCompile(`</?tool_use_error>`)
+	// lineBreaks are the characters Python's str.splitlines breaks on. A progress meter ends its
+	// updates with a bare \r, and the diagnostic after it starts a line of its own.
+	lineBreaks = regexp.MustCompile(`\r\n|[\n\r\v\f\x1c\x1d\x1e\x{85}\x{2028}\x{2029}]`)
 )
 
 // errorSignature is how a failure's result reads in its signature: "Exit code N" with the first
 // shell or program diagnostic line after it, or else the result's first line.
 func errorSignature(head, text string) string {
 	var lines []string
-	for _, l := range strings.Split(errorTags.ReplaceAllString(text, ""), "\n") {
+	for _, l := range lineBreaks.Split(errorTags.ReplaceAllString(text, ""), -1) {
 		if l = strings.TrimSpace(l); l != "" {
 			lines = append(lines, l)
 		}
@@ -170,7 +172,7 @@ func ReadDenyRules(configDir string) DenyRules {
 			continue
 		}
 		for _, rule := range settings.Permissions.Deny {
-			if m := bashRule.FindStringSubmatch(rule); m != nil {
+			if m := bashRule.FindStringSubmatch(rule); m != nil && strings.TrimSpace(m[1]) != "" {
 				rules = append(rules, m[1])
 			}
 		}
@@ -188,7 +190,7 @@ func (d DenyRules) matching(cmd string) []string {
 		}
 		text := strings.Join(toks, " ")
 		for _, p := range d {
-			if (text == p || strings.HasPrefix(text, p+" ")) && !contains(hits, p) {
+			if (text == p || strings.HasPrefix(text, p+" ")) && !slices.Contains(hits, p) {
 				hits = append(hits, p)
 			}
 		}
@@ -205,15 +207,6 @@ func (d DenyRules) deniedCommands(cmd string) []string {
 		}
 	}
 	return out
-}
-
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
 
 // subjectKeys name what a non-Bash tool call acts on, in the order a subject prefers them.
@@ -235,8 +228,9 @@ func subject(call transcript.ToolCall) string {
 	return cut(compactJSON(call.Input), 600)
 }
 
-// compactJSON writes a JSON value with a space after each comma and colon and with no escapes
-// beyond what JSON needs, keeping the keys in the order they were written.
+// compactJSON writes a JSON value the way Python's json.dumps(ensure_ascii=False) does, which is
+// how the pattern miner wrote a call's input in its examples: a space after each comma and colon,
+// no escapes beyond what JSON needs, and the keys in the order they were written.
 func compactJSON(raw json.RawMessage) string {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
@@ -326,9 +320,14 @@ func repo(home, cwd string) string {
 	if cwd == "" {
 		return ""
 	}
-	for _, root := range []string{filepath.Join(home, ".treehouse") + "/*/*/", filepath.Join(home, "Development") + "/", home + "/"} {
-		if name, ok := firstUnder(root, cwd); ok {
-			return name
+	if rest, ok := strings.CutPrefix(cwd, filepath.Join(home, ".treehouse")+"/"); ok {
+		if m := treehouseTree.FindStringSubmatch(rest); m != nil {
+			return m[1]
+		}
+	}
+	for _, root := range []string{filepath.Join(home, "Development") + "/", home + "/"} {
+		if rest, ok := strings.CutPrefix(cwd, root); ok && rest != "" {
+			return strings.SplitN(rest, "/", 2)[0]
 		}
 	}
 	for _, tmp := range []string{"/private/tmp", "/tmp", "/private/var", "/var/folders"} {
@@ -342,25 +341,5 @@ func repo(home, cwd string) string {
 	return cwd
 }
 
+// treehouseTree is a tree's path under the treehouse root: <pool>/<number>/<repo>.
 var treehouseTree = regexp.MustCompile(`^[^/]+/\d+/([^/]+)`)
-
-// firstUnder is the first path element of cwd below root. A root ending in /*/*/ is a treehouse
-// pool root, whose trees sit at <pool>/<number>/<repo>.
-func firstUnder(root, cwd string) (string, bool) {
-	if base, ok := strings.CutSuffix(root, "*/*/"); ok {
-		rest, ok := strings.CutPrefix(cwd, base)
-		if !ok {
-			return "", false
-		}
-		m := treehouseTree.FindStringSubmatch(rest)
-		if m == nil {
-			return "", false
-		}
-		return m[1], true
-	}
-	rest, ok := strings.CutPrefix(cwd, root)
-	if !ok || rest == "" {
-		return "", false
-	}
-	return strings.SplitN(rest, "/", 2)[0], true
-}

@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	// RepeatedEdits is how many successful edits of one file by one agent make a row of the
+	// MinimumEdits is how many successful edits of one file by one agent make a row of the
 	// repeated edits table.
-	RepeatedEdits = 5
+	MinimumEdits = 5
 	// followCalls is how many of a subagent's later calls a denial row looks through for what
 	// the subagent did next.
 	followCalls = 15
@@ -23,6 +23,10 @@ const (
 
 // editTools are the tools that change a file.
 var editTools = set("Edit", "Write", "MultiEdit", "NotebookEdit")
+
+// shellDiagnostic is an error from the shell itself, such as "zsh: command not found", which
+// says nothing about the program, so these failures group under the head "(shell)".
+var shellDiagnostic = regexp.MustCompile(`^Exit code \d+: (\(eval\)|zsh|bash|sh):`)
 
 // Failure is a group of failed tool calls that share a signature.
 type Failure struct {
@@ -36,7 +40,8 @@ type Failure struct {
 	Repos     string `json:"repos"`
 	FirstSeen string `json:"first_seen"`
 	LastSeen  string `json:"last_seen"`
-	// Example is the first call of the group and its result, trimmed.
+	// Example is the group's first call as read, in transcript path order, and its result,
+	// trimmed. It need not be the call at FirstSeen.
 	Example string `json:"example"`
 }
 
@@ -49,13 +54,14 @@ type SubagentDenial struct {
 	Kind        string `json:"kind"`
 	// Denied is the denied commands of a Bash call, or what the call acted on.
 	Denied string `json:"denied"`
-	// NextActionOnSameFile is the subagent's next call, within its next 15, that named a file the
-	// denied call named and was not itself denied, with whether it failed.
+	// NextActionOnSameFile is the subagent's first call, among its next followCalls, that was not
+	// denied and named a file with the same base name as one the denied call named, with whether
+	// it failed.
 	NextActionOnSameFile string `json:"next_action_on_same_file"`
 	// ReportNamesFile is the files the denied call named that the subagent's final report
-	// names, or "no".
+	// names, joined by ", ", or "no". The "no" is the pattern miner's, in JSON as in Markdown.
 	ReportNamesFile string `json:"report_names_file"`
-	// ReportDenialWords is the words about denial the final report holds, or "no".
+	// ReportDenialWords is the words about denial the final report holds, joined by ", ", or "no".
 	ReportDenialWords string `json:"report_denial_words"`
 	// ReportSource is where the final report came from: SubagentHandback, "last text" or "none".
 	ReportSource string `json:"report_source"`
@@ -67,7 +73,8 @@ func (d SubagentDenial) Silent() bool {
 	return d.ReportNamesFile == "no" && d.ReportDenialWords == "no"
 }
 
-// RepeatedEdit is a file one agent edited RepeatedEdits or more times.
+// RepeatedEdit is a file one agent edited successfully MinimumEdits or more times. The session's
+// main thread counts as an agent, named "main".
 type RepeatedEdit struct {
 	Session string `json:"session"`
 	Agent   string `json:"agent"`
@@ -81,7 +88,6 @@ type RepeatedEdit struct {
 // Dropped counts the failure signatures seen only once, which the failures table leaves out.
 type Dropped struct {
 	Signatures int `json:"signatures"`
-	Failures   int `json:"failures"`
 }
 
 // Report is the tables built from one read of the transcripts.
@@ -102,11 +108,13 @@ type Report struct {
 // directory, against which a session's directory names its repo.
 func Collect(s transcript.Sessions, rules DenyRules, home string) Report {
 	failures, denied := failureTables(s, rules, home)
-	r := Report{PermissionDenials: denied, TranscriptFiles: s.Files}
+	// Empty tables are [] in JSON, not null, so a reader can iterate any of them.
+	r := Report{
+		ToolFailures: []Failure{}, PermissionDenials: denied, SkippedSessions: []string{}, TranscriptFiles: s.Files,
+	}
 	for _, f := range failures {
 		if f.Count == 1 {
 			r.DroppedSingletons.Signatures++
-			r.DroppedSingletons.Failures++
 			continue
 		}
 		r.ToolFailures = append(r.ToolFailures, f)
@@ -173,7 +181,7 @@ func failureTables(s transcript.Sessions, rules DenyRules, home string) (failure
 }
 
 func failureRows(groups map[string]*group) []Failure {
-	var rows []Failure
+	rows := []Failure{}
 	for _, g := range groups {
 		f := g.Failure
 		f.Sessions = len(g.sessions)
@@ -203,7 +211,9 @@ var (
 )
 
 // fileNames is the file names, base names with an extension, a call's subject names. For a
-// Bash command that a deny rule matches, only the commands the rule's program starts count.
+// Bash command with a command that starts with a deny rule's program, only those commands count.
+// It compares the program alone, not the whole rule as DenyRules.matching does, as the pattern
+// miner does.
 func fileNames(subj string, rules DenyRules) map[string]bool {
 	var denied []string
 	for _, c := range splitCommands(subj) {
@@ -246,7 +256,7 @@ func subagentDenials(s transcript.Sessions, rules DenyRules) []SubagentDenial {
 		}
 		return agents[i].Agent < agents[j].Agent
 	})
-	var rows []SubagentDenial
+	rows := []SubagentDenial{}
 	for _, who := range agents {
 		ids := s.AgentCalls[who]
 		parts := s.Reports[who]
@@ -371,9 +381,9 @@ func repeatedEdits(s transcript.Sessions, home string) []RepeatedEdit {
 		c.Edits++
 		c.First, c.Last = min(c.First, call.At), max(c.Last, call.At)
 	}
-	var rows []RepeatedEdit
+	rows := []RepeatedEdit{}
 	for _, k := range order {
-		if c := counts[k]; c.Edits >= RepeatedEdits {
+		if c := counts[k]; c.Edits >= MinimumEdits {
 			c.First, c.Last = minute(c.First), minute(c.Last)
 			rows = append(rows, *c)
 		}

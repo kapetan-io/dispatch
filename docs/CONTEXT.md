@@ -168,7 +168,7 @@ Claude Code's own JSONL file of one session, under `~/.claude/projects/<encoded 
 _Avoid_: session log (dispatch's own file of a worker session)
 
 **Agent failure**:
-A tool call whose result Claude Code marked `is_error`, or a permission denial, as `dispatch collect-agent-failures` counts it. A result that only reads like an error is not one.
+A tool call whose result Claude Code marked `is_error`, as `dispatch collect-agent-failures` counts it. A permission denial is one kind, and the command reports denials in their own table. A result that only reads like an error is not one. The command also reports files edited 5 or more times, which are successful calls, not agent failures.
 _Avoid_: error (any error text), mistake (a judgment the command does not make)
 
 **Ask**:

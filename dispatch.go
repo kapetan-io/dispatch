@@ -172,13 +172,14 @@ const usage = `usage: dispatch run
                read the Claude Code transcripts under ~/.claude/projects ($CLAUDE_CONFIG_DIR/projects
                when set) and print where agents went wrong in the window, as Markdown tables: tool
                calls whose result is an error, grouped by a signature of the tool, the program and the
-               first error line with paths, numbers and ids replaced, leaving out signatures seen once;
-               permission denials; each denial a subagent hit, with whether its final report names it
-               and what it did next; and files one agent edited 5 or more times. The window is --from
-               to --to, by default the 7 days before now. TIME is RFC 3339, "2006-01-02 15:04", "15:04"
-               today or a date such as 2026-11-13. --json prints the same rows as JSON. Leaves out
-               the pattern miner's own sessions, which hold DAILY-PATTERN-MINING. Reports rows only and
-               judges none of them
+               error's first line (or, after "Exit code N", its first diagnostic line) with paths,
+               numbers and ids replaced, leaving out signatures seen once; permission denials; each
+               denial a subagent hit, with whether its final report names it and what it did next;
+               and files one agent or session edited successfully 5 or more times. --to defaults to
+               now and --from to 7 days before --to. TIME is RFC 3339, "2006-01-02 15:04", "15:04"
+               today or a date such as 2026-11-13, which means the start of that day. --json prints
+               the same rows as JSON. Leaves out the pattern miner's own sessions, and skips a
+               transcript it cannot read with a line on stderr. Reports rows only and judges none of them
   state reset  start a new history segment with an empty ledger, keeping what the world remembers.
                With --quiet, record the messages the first cycle wants as sent, so none is repeated.
                Exits 1 while dispatch run holds the lock
