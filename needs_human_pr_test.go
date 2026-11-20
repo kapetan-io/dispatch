@@ -168,3 +168,36 @@ func TestTickReadsNoNeedsHumanPRWhileItsWorkerIsBlockedOrGone(t *testing.T) {
 		})
 	}
 }
+
+func TestARuleOfYourOwnMergesAndEscalatesNothingForAnAskingNeedsHumanWorker(t *testing.T) {
+	t.Parallel()
+	d := newDispatch(t, dispatchOptions{Rules: shippedRulesAnd(t, `
+whenever({
+  name: "merge-needs-human",
+  each: "pr",
+  if:   (pr) => pr.ticket.status === "needs_human",
+  then: (pr, ctx) => ctx.pr.queueMerge(pr, { once: ["merge-nh", pr.head] }),
+});
+whenever({
+  name: "escalate-needs-human",
+  each: "ticket",
+  if:   (t) => t.status === "needs_human",
+  then: (t, ctx) => ctx.ticket.queueEscalate(t, "still waiting", { once: ["pr-ignored", t.id] }),
+});
+`)})
+	d.StartBeforeTheEvents()
+	d.Linear.Tickets(ticket("ENG-1", "Needs Human", "dispatch"))
+	d.Workers.CheckedOut("ENG-1", "working")
+	require.NoError(t, d.Workers.Ask("ENG-1").Err)
+	d.Workers.Stop("ENG-1", stopTasks{})
+	d.Workers.SetStatus("ENG-1", "idle")
+	d.GitHub.PullRequest("ENG-1", cleanPR("a1"))
+
+	d.Tick()
+	res := d.Run("rules", "check")
+
+	assert.Empty(t, d.GitHub.Merged())
+	assert.Empty(t, d.Linear.Moves())
+	assert.Regexp(t, `merge-needs-human .*exempt for ENG-1 by no-merge-or-escalation-while-asking-in-needs-human`, res.Stdout)
+	assert.Regexp(t, `escalate-needs-human .*exempt for ENG-1 by no-merge-or-escalation-while-asking-in-needs-human`, res.Stdout)
+}

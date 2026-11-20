@@ -206,7 +206,7 @@ whenever({
 - `ctx.worker.of(t).messageAt` is when the session took its latest command or other message, typed or sent by dispatch, in milliseconds since the epoch. A task notice does not count. It is undefined for a session that took none, and, like `askedAt`, undefined rather than unknown while the session's record can't be read.
 - In `rules test`, `worker("ENG-1", "idle", { asked: -1000 })` gives the session an ask a second before the scenario starts, `messages: [{ at: 1000 }]` a plain message after it, which ends the ask, and `messages: [{ at: 1000, task: true }]` a task notice, which does not.
 
-Two exemptions take the same actions away, the list `HELD_ACTIONS` in `rules/shared.ts`: every nudge, every merge, and the `pr-ignored` escalation for ignoring PR nudges, whichever rule queued them.
+Two exemptions take these actions away, the list `HELD_ACTIONS` in `rules/shared.ts`: every nudge, every merge, and the `pr-ignored` escalation for ignoring PR nudges, whichever rule queued them.
 
 ```ts
 // rules/asks.ts
@@ -218,7 +218,7 @@ exempt({ name: "a-worker-finishes-its-message-first", each: "ticket", actions: H
          if: (t, ctx) => onLastMessage(t, ctx) });
 ```
 
-- The first holds them while the worker asks. The shipped nudge and merge rules (`nudge-pr-activity`, `nudge-pr-needs-work`, `nudge-restack` and `nudge-stacked-activity` in `stacking.ts`, `auto-merge`) test `state === "idle"` and not `asking`, and a comment above each names the exemptions that hold it. A rule of your own that nudges or merges is held the same way without knowing of asks, and `dispatch rules check` ends its line with `exempt for ENG-4 by an-asking-worker-is-left-alone`.
+- The first holds them while the worker asks, on any ticket but a Needs Human one, where `no-merge-or-escalation-while-asking-in-needs-human` holds only the merges and the escalation. The shipped nudge and merge rules (`nudge-pr-activity`, `nudge-pr-needs-work`, `nudge-restack` and `nudge-stacked-activity` in `stacking.ts`, `auto-merge`) test `state === "idle"` and not `asking`, and a comment above each names the exemptions that hold it. A rule of your own that merges, or that nudges outside Needs Human, is held the same way without knowing of asks, and `dispatch rules check` ends its line with `exempt for ENG-4 by an-asking-worker-is-left-alone`.
 - The second holds them for any idle worker still on the last message it took, whether or not it asked. `onLastMessage` in `shared.ts` is true while `state` is `idle`, `messageAt` is under `MESSAGE_HOLD` (15 minutes) old, and no turn in `turns` ended after `messageAt`. So the hold ends when the worker ends its turn, or 15 minutes after the message when that turn end is lost. Edit `MESSAGE_HOLD` to change the limit.
 - Neither reads anything that is unknown while the session's record can't be read, so then neither holds anything and nudges and merges go on as for any idle worker.
 - `dispatch tell` reads no exemption, so it always delivers.

@@ -128,7 +128,7 @@ The ask ends when the session takes a message, typed in its window or sent by `d
 
 A ticket in Needs Human, whoever moved it there, shows 🔴 and notifies with `notify-needs-human`, whether or not its worker asked.
 
-While a worker asks, the shipped rules leave it alone: no PR nudge, no restack nudge, no escalation for ignoring PR nudges, and no merge under `auto_merge`. The exemption `an-asking-worker-is-left-alone` in `rules/asks.ts` takes those actions away whichever rule queued them, your own rules included. `dispatch tell`, with or without `--turn`, still delivers, since it is you answering.
+While a worker asks, the shipped rules leave it alone: no PR nudge, no restack nudge, no escalation for ignoring PR nudges, and no merge under `auto_merge`. The exemption `an-asking-worker-is-left-alone` in `rules/asks.ts` takes those actions away whichever rule queued them. In Needs Human the nudges still go out, as above. `dispatch tell`, with or without `--turn`, still delivers, since it is you answering.
 
 A worker's own finished background task does not end its ask. Claude Code hands the session a task notice, a message that opens with `<task-notification>`, and the worker shows 🟢 while it handles it, then 🔴 again when it stops, with no second message to followers. That handling ends a turn of its own, so `dispatch tell <ticket> --turn <at>` for the turn that asked is refused as moved past. `dispatch turn` prints the new turn's time.
 
