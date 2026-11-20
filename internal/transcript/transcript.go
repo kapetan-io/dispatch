@@ -91,16 +91,18 @@ type Sessions struct {
 	Descriptions map[Agent]string
 	// Skipped is the sessions left out because a line of theirs holds a skip marker, sorted.
 	Skipped []string
-	// Files is how many transcript files the read opened.
+	// Files is how many transcript files the read read to the end.
 	Files int
-	// Unreadable is each transcript or directory the read could not open, with why. Claude Code
-	// deletes old transcripts, so one can vanish between the listing and the read.
+	// Unreadable is each transcript or directory the read could not open or finish, with why.
+	// Claude Code deletes old transcripts, so one can vanish between the listing and the read. The
+	// records read before an error are kept.
 	Unreadable []string
 }
 
 // Read reads every transcript under dir and keeps the records within window. A session with a
-// line holding any of the skip markers, at any time, is left out whole.
-func Read(dir string, window Window, skipMarkers ...string) (Sessions, error) {
+// line holding any of the skip markers, at any time, is left out whole. A file or directory it
+// cannot read is listed in Unreadable, not returned as an error.
+func Read(dir string, window Window, skipMarkers ...string) Sessions {
 	s := Sessions{
 		Calls:        map[string]ToolCall{},
 		Results:      map[string]ToolResult{},
@@ -114,17 +116,17 @@ func Read(dir string, window Window, skipMarkers ...string) (Sessions, error) {
 	for _, path := range paths {
 		who := identify(dir, path)
 		hit, err := s.readFile(path, who, window, skipMarkers)
+		if hit {
+			skipped[who.Session] = true
+		}
 		if err != nil {
 			s.Unreadable = append(s.Unreadable, err.Error())
 			continue
 		}
 		s.Files++
-		if hit {
-			skipped[who.Session] = true
-		}
 	}
 	s.drop(skipped)
-	return s, nil
+	return s
 }
 
 // transcriptFiles lists the .jsonl files under dir in path order, leaving out hidden files and

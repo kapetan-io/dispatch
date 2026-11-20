@@ -17,8 +17,8 @@ const (
 	failureWindow = 7 * 24 * time.Hour
 	// patternMinerMarker marks the pattern miner's own session, which reads other sessions'
 	// transcripts, so its failures come from the mining rather than from work. It is built from
-	// two halves so that no text dispatch prints or holds, such as its usage or this file, contains
-	// it: a session that read either would otherwise be skipped.
+	// two halves so that no source file and nothing dispatch prints, such as its usage, contains
+	// it, since a session that read either would otherwise be skipped.
 	patternMinerMarker = "DAILY-" + "PATTERN-MINING"
 )
 
@@ -54,10 +54,7 @@ func collectAgentFailures(opts Options, args []string) error {
 		return fmt.Errorf("--from %s is not before --to %s", from.Format(time.RFC3339), to.Format(time.RFC3339))
 	}
 	dir := transcript.Dir(opts.Env)
-	sessions, err := transcript.Read(dir, transcript.Window{From: from, To: to}, patternMinerMarker)
-	if err != nil {
-		return fmt.Errorf("reading transcripts in %s: %w", dir, err)
-	}
+	sessions := transcript.Read(dir, transcript.Window{From: from, To: to}, patternMinerMarker)
 	for _, why := range sessions.Unreadable {
 		_, _ = fmt.Fprintln(opts.Stderr, "dispatch: skipped", why)
 	}
