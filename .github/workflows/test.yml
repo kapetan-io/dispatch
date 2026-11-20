@@ -25,13 +25,11 @@ jobs:
       - uses: dorny/paths-filter@v3.0.2
         id: filter
         with:
-          # What the Go tests and shellcheck read, testdata/ included. Two tests
-          # in needs_human_instructions_test.go read skills/**. No test reads
-          # evals/** or CLAUDE.md.
+          # What the Go tests and shellcheck read, testdata/ included. No test
+          # reads skills/**, evals/** or CLAUDE.md.
           filters: |
             code:
               - '**/*.go'
-              - 'skills/**'
               - 'go.mod'
               - 'go.sum'
               - 'Makefile'
