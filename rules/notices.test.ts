@@ -284,3 +284,22 @@ scenario(rules, "notify-idle is silent for a working worker", s => {
   s.given(ticket("ENG-1", build), worker("ENG-1", "working"));
   s.expect([]);
 });
+
+
+scenario(rules, "notify-merge-failed does not tell again when the ticket moves to Needs Human", s => {
+  s.config({ repos: { dispatch: { autoMerge: true } } });
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { lastStop: 0 }), pr("ENG-1", { ready: true, approved: true, head: "h1" }));
+  s.land("merge", "ENG-1", { outcome: "refused", detail: "base branch policy" });
+  s.land("notify", "ENG-1");
+  s.see(ticket("ENG-1", { status: "needs_human", optedIn: true, repo: "dispatch" }));
+  s.land("notify", "ENG-1");
+  s.expect([]);
+});
+
+scenario(rules, "finish-merged-local-ticket closes a local ticket in Needs Human whose PR merged", s => {
+  s.given(ticket("LOC-1", { status: "needs_human", repo: "dispatch" }));
+  s.land("notify", "LOC-1");
+  s.advance(1000);
+  s.see(pr("LOC-1", { merged: true }));
+  s.expect([["finish-merged-local-ticket", "move", "LOC-1", "blocker_done"]]);
+});

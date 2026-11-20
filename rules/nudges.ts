@@ -18,12 +18,15 @@ exempt({
   if:      (t, ctx) => onLastMessage(t, ctx),
 });
 
-// Held by an-asking-worker-is-left-alone (asks.ts) and a-worker-finishes-its-message-first above.
-// Once per activity time, a GitHub time compared with GitHub times.
+// Held by a-worker-finishes-its-message-first above, and in In Review by an-asking-worker-is-left-alone
+// (asks.ts). Once per activity time, a GitHub time compared with GitHub times. A Needs Human worker
+// hears of each review or comment even while it asks, since nobody else acts on them, and even on a
+// PR that needs work, since no PR nudge goes out in Needs Human.
 whenever({
   name: "nudge-pr-activity",
   each: "pr",
-  if:   (pr, ctx) => !pr.closed && pr.ticket.status === "in_review" && nudgeable(pr.ticket) && !pr.needsWork
+  if:   (pr, ctx) => !pr.closed && nudgeable(pr.ticket)
+           && (pr.ticket.status === "in_review" && !pr.needsWork || pr.ticket.status === "needs_human")
            && ctx.worker.of(pr.ticket).state === "idle"
            && !heard(pr.ticket, "activity", pr.lastActivity, ctx) && stoppedSinceLastNudge(pr.ticket, ctx),
   then: (pr, ctx) => ctx.worker.queueNudge(pr.ticket, ACTIVITY_NUDGE(pr), { once: ["activity", pr.lastActivity!.at] }),

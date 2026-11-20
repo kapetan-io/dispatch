@@ -206,3 +206,109 @@ scenario(rules, "a worker whose session log can't be read is nudged", s => {
   s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { messages: [{ at: -1000 }], sessionUnread: "broken" }), pr("ENG-1", failing));
   s.expect([["nudge-pr-needs-work", "nudge", "ENG-1"]]);
 });
+
+const needsHuman = { status: "needs_human", optedIn: true, repo: "dispatch" };
+
+// The Needs Human notice is landed first, so each scenario sees only what the PR adds. A worker
+// seen no later than an item counts as having heard it, so the PR's activity comes in a later read.
+const needsHumanWith = (s, ...facts) => {
+  s.given(ticket("ENG-1", needsHuman), ...facts);
+  s.land("notify", "ENG-1");
+  s.advance(1000);
+};
+
+// A Needs Human worker's lastStop and busy come from its Stop record, so stopping again after a
+// nudge needs a Stop after it that lists no running task. Each read and landing moves the clock a
+// second, so the Stop goes 30 seconds in, well after the nudge, and the clock past it.
+const stopsAgainAfterTheNudge = (s, id: string) => {
+  s.advance(60 * 1000);
+  s.see(worker(id, "working"));
+  s.see(worker(id, "idle", { lastStop: 30 * 1000, busy: false }));
+};
+scenario(rules, "nudge-pr-activity nudges a Needs Human worker about a new review and each later one", s => {
+  needsHumanWith(s, worker("ENG-1", "idle", { lastStop: 0 }), pr("ENG-1"));
+  s.see(pr("ENG-1", { activityAt: "10:00", activitySummary: "a review by alice" }));
+  s.expect([["nudge-pr-activity", "nudge", "ENG-1"]]);
+  s.land("nudge", "ENG-1");
+  s.expect([]);
+  stopsAgainAfterTheNudge(s, "ENG-1");
+  s.advance(1000);
+  s.see(pr("ENG-1", { activityAt: "11:00", activitySummary: "a comment by bob" }));
+  s.expect([["nudge-pr-activity", "nudge", "ENG-1"]]);
+});
+
+scenario(rules, "nudge-pr-activity nudges a Needs Human worker that is asking", s => {
+  needsHumanWith(s, worker("ENG-1", "idle", { lastStop: 0, asked: -1000 }), pr("ENG-1"));
+  s.see(pr("ENG-1", { activityAt: "10:00" }));
+  s.expect([["nudge-pr-activity", "nudge", "ENG-1"]]);
+});
+
+scenario(rules, "nudge-pr-activity still leaves an asking worker alone in In Review", s => {
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { lastStop: 0, asked: -1000 }), pr("ENG-1"));
+  s.land("notify", "ENG-1");
+  s.advance(1000);
+  s.see(pr("ENG-1", { activityAt: "10:00" }));
+  s.expectExempt("nudge-pr-activity", "ENG-1", "an-asking-worker-is-left-alone");
+});
+
+scenario(rules, "nudge-pr-activity nudges about activity on a Needs Human PR that needs work, and nothing else nudges", s => {
+  needsHumanWith(s, worker("ENG-1", "idle", { lastStop: 0 }), pr("ENG-1", failing));
+  s.expect([]);
+  s.see(pr("ENG-1", { activityAt: "10:00", ...failing }));
+  s.expect([["nudge-pr-activity", "nudge", "ENG-1"]]);
+  s.land("nudge", "ENG-1");
+  stopsAgainAfterTheNudge(s, "ENG-1");
+  s.advance(60 * 60 * 1000);
+  s.expect([]);
+});
+
+scenario(rules, "nudge-pr-activity waits while a Needs Human worker is working", s => {
+  needsHumanWith(s, worker("ENG-1", "idle", { lastStop: 0 }), pr("ENG-1"));
+  s.see(worker("ENG-1", "working"), pr("ENG-1", { activityAt: "10:00" }));
+  s.expect([]);
+  s.see(worker("ENG-1", "idle", { lastStop: 1000 }));
+  s.expect([["nudge-pr-activity", "nudge", "ENG-1"]]);
+});
+
+scenario(rules, "nudge-pr-activity nudges no design worker in Needs Human", s => {
+  s.given(ticket("ENG-1", { ...needsHuman, labels: ["design"] }), worker("ENG-1", "idle", { lastStop: 0 }));
+  s.land("notify", "ENG-1");
+  s.advance(1000);
+  s.see(pr("ENG-1", { activityAt: "10:00" }));
+  s.expect([]);
+});
+
+scenario(rules, "nudge-pr-activity does not repeat in Needs Human a review the worker heard of in In Review", s => {
+  s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1"));
+  s.advance(1000);
+  s.see(pr("ENG-1", { activityAt: "10:00" }));
+  s.land("nudge", "ENG-1");
+  s.advance(1000);
+  s.see(ticket("ENG-1", needsHuman));
+  stopsAgainAfterTheNudge(s, "ENG-1");
+  s.land("notify", "ENG-1");
+  s.expect([]);
+});
+
+scenario(rules, "nudge-pr-activity stays silent when the newest item goes away and an older one becomes the newest", s => {
+  needsHumanWith(s, worker("ENG-1", "idle", { lastStop: 0 }), pr("ENG-1"));
+  s.see(pr("ENG-1", { activityAt: "10:00" }));
+  s.advance(1000);
+  s.see(pr("ENG-1", { activityAt: "11:00" }));
+  s.land("nudge", "ENG-1");
+  stopsAgainAfterTheNudge(s, "ENG-1");
+  s.advance(1000);
+  s.see(pr("ENG-1", { activityAt: "10:00" }));
+  s.expect([]);
+  s.see(pr("ENG-1", { activityAt: "12:00" }));
+  s.expect([["nudge-pr-activity", "nudge", "ENG-1"]]);
+});
+
+scenario(rules, "nudge-pr-activity does not repeat in In Review a comment the worker heard of in Needs Human", s => {
+  needsHumanWith(s, worker("ENG-1", "idle", { lastStop: 0 }), pr("ENG-1"));
+  s.see(pr("ENG-1", { activityAt: "10:00" }));
+  s.land("nudge", "ENG-1");
+  stopsAgainAfterTheNudge(s, "ENG-1");
+  s.see(ticket("ENG-1", review));
+  s.expect([]);
+});

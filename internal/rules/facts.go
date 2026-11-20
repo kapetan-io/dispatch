@@ -129,7 +129,7 @@ type Worker struct {
 	MessageAt        Fact[*int64]    `js:"messageAt" doc:"When the worker's current Claude session took its latest message, in milliseconds since the epoch: a slash command or any other message, typed or sent by dispatch. A task notice, the message a session takes when one of its own background tasks finished, does not count. Undefined when the session took none, when the multiplexer reports no session or the session's record can't be read, and for a worker on a ticket that is not In Progress, In Review or Needs Human."`
 }
 
-// PR is a ticket's pull request: the open PR of an In Review ticket, or the merged PR of a local ticket.
+// PR is a ticket's pull request: the open PR of an In Review or Needs Human ticket, or the merged PR of a local ticket.
 type PR struct {
 	Ticket          Fact[Ref]    `js:"ticket" ref:"ticket" doc:"The ticket the PR belongs to."`
 	Number          Fact[int64]  `js:"number" doc:"The PR's number in its repo."`

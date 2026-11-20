@@ -1,5 +1,4 @@
 import { whenever, minutes } from "dispatch";
-import type { PR } from "dispatch";
 import { nudgeable, heard, finalMergeRefusal } from "./shared";
 
 // Notifications go to every session following the ticket, design tickets included.
