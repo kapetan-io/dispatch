@@ -9,7 +9,7 @@ A description tells a reviewer what they are approving: why the change exists, w
 
 ## Intent
 
-Explain what the PR does and why, in the style of `dispatch:bro`, for a reviewer who saw none of the work. Leave the new contract to Surfaces and Behavior changes.
+Explain what the PR does and why, in the style of `dispatch:bro`, for a reviewer who saw none of the work. Don't repeat what Surfaces and Behavior changes show.
 
 ## Surfaces
 
