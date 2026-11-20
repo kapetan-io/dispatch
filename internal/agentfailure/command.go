@@ -3,6 +3,7 @@ package agentfailure
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // command is one simple command of a Bash string, with the separator before it: '|' for a
@@ -13,7 +14,8 @@ type command struct {
 }
 
 // splitCommands is the top-level simple commands of a Bash string. It splits on unquoted ;,
-// newline, &&, || and |, after dropping heredoc bodies, and leaves out comments.
+// newline, &&, || and |, after dropping heredoc bodies, and leaves out comments. A comment runs
+// from a # that starts a word to the end of its line, so a quote inside it opens nothing.
 func splitCommands(cmd string) []command {
 	runes := []rune(dropHeredocBodies(cmd))
 	var out []command
@@ -42,6 +44,10 @@ func splitCommands(cmd string) []command {
 		case ch == '\\':
 			cur.WriteString(string(runes[i:min(i+2, len(runes))]))
 			i++
+		case ch == '#' && (i == 0 || unicode.IsSpace(runes[i-1]) || strings.ContainsRune(";|&()", runes[i-1])):
+			for i+1 < len(runes) && runes[i+1] != '\n' {
+				i++
+			}
 		case at(i, "&&") || at(i, "||") || ch == ';' || ch == '\n' || ch == '|':
 			out = append(out, command{sep: sep, text: strings.TrimSpace(cur.String())})
 			cur.Reset()

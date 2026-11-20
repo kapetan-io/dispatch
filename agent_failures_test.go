@@ -367,6 +367,19 @@ func TestCollectAgentFailuresNamesWhatTheCallRan(t *testing.T) {
 			signature: "Bash | go vet | Exit code 1: go: cannot find main module",
 		},
 		{
+			// The apostrophe sits in a comment, so it opens no quote.
+			name: "past a comment line", tool: "Bash",
+			command:   "# don't skip the cache\ngo test ./...",
+			result:    "Exit code 1\nFAIL\tgithub.com/x/shop 0.5s",
+			signature: "Bash | go test | Exit code 1: FAIL github.com<path> <n>s",
+		},
+		{
+			name: "past a comment after a command", tool: "Bash",
+			command:   "go build ./... # it's slow\ngo vet ./...",
+			result:    "Exit code 1\ngo: cannot find main module",
+			signature: "Bash | go vet | Exit code 1: go: cannot find main module",
+		},
+		{
 			name: "git -C a directory", tool: "Bash",
 			command:   "git -C /Users/me/Development/shop push origin HEAD",
 			result:    "Exit code 1\nerror: failed to push some refs to 'github.com:x/shop.git'",
@@ -765,6 +778,28 @@ func TestCollectAgentFailuresReadsJSONWrittenWithSpaces(t *testing.T) {
 		b.WriteString(strings.ReplaceAll(string(line), "\n", "") + "\n")
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(project, "99999999-ffff.jsonl"), []byte(b.String()), 0o644))
+
+	out := collectJSON(t, d)
+
+	require.Len(t, out.ToolFailures, 1)
+	assert.Equal(t, 2, out.ToolFailures[0].Count)
+}
+
+func TestCollectAgentFailuresReadsARecordWithSomeFieldsSpaced(t *testing.T) {
+	d, project := transcripts(t)
+	require.NoError(t, os.MkdirAll(project, 0o755))
+	// The timestamp is compact and the type is spaced, so neither byte pattern speaks for the
+	// whole line.
+	var b strings.Builder
+	for _, r := range []map[string]any{
+		bash(inWindow, "/tmp/x", "s1", "make build"), toolResult(inWindow, "s1", "Exit code 2\nmake: *** stop", true),
+		bash(laterOn, "/tmp/x", "s2", "make build"), toolResult(laterOn, "s2", "Exit code 2\nmake: *** stop", true),
+	} {
+		line, err := json.Marshal(r)
+		require.NoError(t, err)
+		b.WriteString(strings.NewReplacer(`"type":"user"`, `"type": "user"`, `"type":"assistant"`, `"type": "assistant"`).Replace(string(line)) + "\n")
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(project, "99999999-eeee.jsonl"), []byte(b.String()), 0o644))
 
 	out := collectJSON(t, d)
 
