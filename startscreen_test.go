@@ -43,7 +43,7 @@ func TestRunPrintsThePlainStartupScreenOutsideATerminal(t *testing.T) {
 	d.Stop()
 
 	assert.Contains(t, out, "CONFIG   "+d.ConfigPath()+"\n")
-	assert.Contains(t, out, "RULES    29 loaded\n")
+	assert.Contains(t, out, "RULES    28 loaded\n")
 	assert.Contains(t, out, "READING  linear, herdr, github, treehouse\n")
 	assert.Contains(t, out, "SOURCES  linear     team ENG, label ai, 2 tickets\n")
 	assert.Contains(t, out, "         local      off\n")
@@ -56,7 +56,7 @@ func TestRunPrintsThePlainStartupScreenOutsideATerminal(t *testing.T) {
 	assert.Contains(t, out, "         ENG-1  In Progress  ticket ENG-1\n")
 	assert.Contains(t, out, "         ENG-2  In Review  ticket ENG-2\n")
 	// Today's start line stays for the logs that grep it.
-	assert.Contains(t, out, "start: 2 tracked tickets, 29 rules")
+	assert.Contains(t, out, "start: 2 tracked tickets, 28 rules")
 	assert.NotContains(t, out, "\x1b[")
 	assert.NotContains(t, out, "██")
 	assert.NotRegexp(t, regexp.MustCompile(`[🟢🔴⚪💤▶]`), out)
@@ -106,7 +106,7 @@ func TestRunShowsWhatItKnewWhenTheStartStops(t *testing.T) {
 		{
 			name:    "Linear refuses the key",
 			opts:    dispatchOptions{Key: configuredKey, Config: "[plugins.linear]\napi_key_command = \"echo bad\"\n"},
-			wantOut: []string{"CONFIG   ", "RULES    29 loaded\n", "READING  linear, herdr, github, treehouse\n"},
+			wantOut: []string{"CONFIG   ", "RULES    28 loaded\n", "READING  linear, herdr, github, treehouse\n"},
 			wantErr: linear.ErrUnauthorized.Error(),
 		},
 	} {

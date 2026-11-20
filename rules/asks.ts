@@ -18,11 +18,13 @@ whenever({
 // An asking worker waits on the user, so no rule nudges it, merges its PR or escalates it for
 // ignoring PR nudges, whichever rule queued it, including one written later. dispatch tell still
 // delivers. asking is false while the session log can't be read, so the actions go through then.
+// A Needs Human ticket is left out so its worker hears of reviews and comments on its PR, which
+// pr-respond has it handle before it asks again.
 exempt({
   name:    "an-asking-worker-is-left-alone",
   each:    "ticket",
   actions: HELD_ACTIONS,
-  if:      (t, ctx) => ctx.worker.of(t).asking,
+  if:      (t, ctx) => ctx.worker.of(t).asking && t.status !== "needs_human",
 });
 
 // The asked notification stands in for the idle one, and a ready PR waits for the answer. Naming

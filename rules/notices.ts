@@ -1,6 +1,5 @@
 import { whenever, minutes } from "dispatch";
-import type { PR, Ctx } from "dispatch";
-import { nudgeable, heard, told, finalMergeRefusal } from "./shared";
+import { nudgeable, heard, finalMergeRefusal } from "./shared";
 
 // Notifications go to every session following the ticket, design tickets included.
 // A notification that fails is sent again at the next resync while its rule still
@@ -16,23 +15,6 @@ whenever({
   if:   (t, ctx) => t.status === "needs_human"
            && (ctx.worker.of(t).state === "none" || ctx.worker.of(t).waiting || ctx.now - t.statusSince >= HOLD),
   then: (t, ctx) => ctx.notify.queueSend(t, `${t.id} is in Needs Human: ${t.title}`, { once: ["needs-human", t.statusSince], reason: "entered Needs Human" }),
-});
-
-// Once per activity time while the ticket is in Needs Human. The worker hears nothing, because a
-// nudge would make a worker with an open question ask again instead of reading the comments.
-// Activity is not news once the followers or the worker were told of it or of something newer,
-// which also covers an older item that becomes the newest when a newer review is dismissed.
-const toldOfNewer = (pr: PR, ctx: Ctx) =>
-  ctx.ledger.receipts(pr.ticket, { kind: ["notify", "nudge"] }).some(r => told(r)
-    && (r.once[0] === "needs-human-activity" || r.once[0] === "activity") && String(r.once[1]) >= pr.lastActivity!.at);
-whenever({
-  name: "notify-needs-human-pr-activity",
-  each: "pr",
-  if:   (pr, ctx) => !pr.closed && pr.ticket.status === "needs_human" && pr.lastActivity !== undefined
-           && !toldOfNewer(pr, ctx),
-  then: (pr, ctx) => ctx.notify.queueSend(pr.ticket,
-           `${pr.ticket.id} is in Needs Human and its PR has new activity, ${pr.activitySummary}: ${pr.url}`,
-           { once: ["needs-human-activity", pr.lastActivity!.at], reason: "PR activity while in Needs Human" }),
 });
 
 // Every blocked_renotify_minutes while the worker is blocked. The key carries the period,

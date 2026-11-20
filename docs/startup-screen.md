@@ -13,7 +13,7 @@ In a terminal the screen looks like this, with the logo in a cyan to magenta fad
   event-driven reconcile loop for agents
 
  CONFIG   ~/.config/dispatch/config.toml
- RULES    29 loaded
+ RULES    28 loaded
  READING  linear, local, rex, github, treehouse
  HISTORY  42 receipts from events-20261115T221521Z.jsonl
 
@@ -47,7 +47,7 @@ When stdout is not a terminal, such as a log file or a pipe, the screen has no l
 
 ```
 CONFIG   /Users/you/.config/dispatch/config.toml
-RULES    29 loaded
+RULES    28 loaded
 READING  linear, herdr, github, treehouse
 
 SOURCES  linear     team ENG, label ai, 2 tickets
@@ -57,7 +57,7 @@ SOURCES  linear     team ENG, label ai, 2 tickets
          ...
 WATCHING 2 tickets   next resync 16:20:21
          ENG-716  In Progress  Keep dispatch's worker records in its own database
-16:15:21 start: 2 tracked tickets, 29 rules, ledger 0 receipts from no earlier history
+16:15:21 start: 2 tracked tickets, 28 rules, ledger 0 receipts from no earlier history
 ```
 
 In a terminal with `NO_COLOR` set to anything but an empty string, the screen keeps the logo and emoji and drops the color.

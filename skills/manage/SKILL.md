@@ -45,8 +45,6 @@ Read the worker's workspace first. A worker sometimes answers its own question a
 
 A worker blocked on a question popup goes to the user, since `dispatch tell` sends nothing to a blocked session.
 
-On `PR activity while in Needs Human`, put the comment in the Status block. Never treat it as the answer to the worker's question or relay it to the worker.
-
 ## Answering a question
 
 A worker's question is named by the turn that asked it. `dispatch turn <ticket> --json` prints that turn's `at` (an RFC 3339 time such as `2026-11-14T06:40:00.123Z`), its closing message and whether it was cut, and `dispatch tell <ticket> --turn <at>` sends at most one answer per turn and refuses one the worker has moved past. Everything below is safe to repeat. Use `<dir>` for the `manage/` directory under dispatch's state directory (`~/.local/state/dispatch` by default), so it survives your restart, with one directory per turn, `<dir>/<ticket>/<at>/`, so an arena still running for an older turn never reads or answers a newer one.

@@ -926,16 +926,17 @@ func (s Scope) PRRepo(t ticket.Ticket, state WorkerState) (config.Repo, bool) {
 }
 
 // ReadsPR reports whether the dispatcher reads this ticket's PR. A working worker's PR is never
-// read, so it costs no call. An In Review ticket's PR is read while its worker is idle or gone, and
-// only for a ticket known to be a build ticket, since the nudge and merge rules act on it. A Needs
-// Human ticket's PR is read for any ticket, design tickets included, so followers hear of new
-// reviews and comments.
+// read, so it costs no call. Only a ticket known to be a build ticket has its PR read, since the
+// nudge and merge rules act on it. An In Review ticket's PR is read while its worker is idle or gone.
+// A Needs Human ticket's PR is read while its worker is idle, the only time the activity nudge can
+// reach it.
 func (s Scope) ReadsPR(t ticket.Ticket, state WorkerState) bool {
+	build := !t.LabelsTruncated && !t.HasChildren && NotDesign(t)
 	switch {
 	case s.Is(t, ticket.NeedsHuman):
-		return state != Working
+		return build && state == Idle
 	case s.Is(t, ticket.InReview):
-		return !t.LabelsTruncated && !t.HasChildren && NotDesign(t) && (state == NoWorker || state == Idle)
+		return build && (state == NoWorker || state == Idle)
 	}
 	return false
 }

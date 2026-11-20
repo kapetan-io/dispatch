@@ -56,7 +56,7 @@ func TestRulesCheckListsEveryShippedRule(t *testing.T) {
 		"comment-kept-tree", "close-parent", "promote-child", "escalate-launch-failures", "escalate-relaunch-limit",
 		"escalate-truncated-labels", "escalate-missing-repo", "escalate-abandoned-blocker", "escalate-abandoned-blocker-child",
 		"note-blocker-hold", "retry-escalation-comment", "nudge-pr-activity",
-		"nudge-pr-needs-work", "notify-needs-human", "notify-needs-human-pr-activity", "notify-blocked", "notify-ready-for-review",
+		"nudge-pr-needs-work", "notify-needs-human", "notify-blocked", "notify-ready-for-review",
 		"notify-merge-failed", "auto-merge",
 	} {
 		assert.Regexp(t, `(?m)^`+name+` +whenever `, res.Stdout)

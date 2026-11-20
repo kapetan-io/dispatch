@@ -285,68 +285,13 @@ scenario(rules, "notify-idle is silent for a working worker", s => {
   s.expect([]);
 });
 
-const needsHuman = { status: "needs_human", optedIn: true, repo: "dispatch" };
-
-// The Needs Human notice is landed first, so each scenario sees only what the PR adds.
-const needsHumanWith = (s, ...facts) => {
-  s.given(ticket("ENG-1", needsHuman), ...facts);
-  s.land("notify", "ENG-1");
-};
-
-scenario(rules, "notify-needs-human-pr-activity tells the followers of a new review and of each later one", s => {
-  needsHumanWith(s, worker("ENG-1", "idle", { lastStop: 0 }), pr("ENG-1"));
-  s.expect([]);
-  s.see(pr("ENG-1", { activityAt: "10:00", activitySummary: "a review by alice" }));
-  s.expect([["notify-needs-human-pr-activity", "notify", "ENG-1"]]);
-  s.land("notify", "ENG-1");
-  s.expect([]);
-  s.see(pr("ENG-1", { activityAt: "11:00", activitySummary: "a comment by bob" }));
-  s.expect([["notify-needs-human-pr-activity", "notify", "ENG-1"]]);
-});
-
-scenario(rules, "notify-needs-human-pr-activity tells of activity already on the PR at the first read", s => {
-  needsHumanWith(s, worker("ENG-1", "idle", { lastStop: 0 }), pr("ENG-1", { activityAt: "09:00" }));
-  s.expect([["notify-needs-human-pr-activity", "notify", "ENG-1"]]);
-});
-
-scenario(rules, "notify-needs-human-pr-activity notifies for a worker that is gone or blocked on a popup", s => {
-  needsHumanWith(s, pr("ENG-1", { activityAt: "10:00" }));
-  s.expect([["notify-needs-human-pr-activity", "notify", "ENG-1"]]);
-  s.land("notify", "ENG-1");
-  s.see(worker("ENG-1", "blocked"), pr("ENG-1", { activityAt: "11:00" }));
-  s.expect([["notify-needs-human-pr-activity", "notify", "ENG-1"]]);
-});
-
-scenario(rules, "notify-needs-human-pr-activity waits while the worker is working, then tells", s => {
-  s.given(ticket("ENG-1", needsHuman), worker("ENG-1", "working"), pr("ENG-1", { activityAt: "10:00" }));
-  s.expect([]);
-  s.see(worker("ENG-1", "idle", { lastStop: 0 }));
-  s.expect([["notify-needs-human", "notify", "ENG-1"], ["notify-needs-human-pr-activity", "notify", "ENG-1"]]);
-});
-
-scenario(rules, "notify-needs-human-pr-activity notifies for design and design-review tickets", s => {
-  s.given(ticket("ENG-1", { ...needsHuman, labels: ["design"] }), ticket("ENG-2", { ...needsHuman, labels: ["design-review"] }),
-    worker("ENG-1", "idle", { lastStop: 0 }), worker("ENG-2", "idle", { lastStop: 0 }));
-  s.land("notify", "ENG-1");
-  s.land("notify", "ENG-2");
-  s.see(pr("ENG-1", { activityAt: "10:00" }), pr("ENG-2", { activityAt: "10:00" }));
-  s.expect([["notify-needs-human-pr-activity", "notify", "ENG-1"], ["notify-needs-human-pr-activity", "notify", "ENG-2"]]);
-});
-
-scenario(rules, "notify-needs-human-pr-activity nudges no worker, even for a failed check", s => {
-  needsHumanWith(s, worker("ENG-1", "idle", { lastStop: 0 }), pr("ENG-1", { activityAt: "10:00", problems: ["a failed check"] }));
-  s.expect([["notify-needs-human-pr-activity", "notify", "ENG-1"]]);
-  s.land("notify", "ENG-1");
-  s.advance(60 * 60 * 1000);
-  s.expect([]);
-});
 
 scenario(rules, "notify-merge-failed does not tell again when the ticket moves to Needs Human", s => {
   s.config({ repos: { dispatch: { autoMerge: true } } });
   s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { lastStop: 0 }), pr("ENG-1", { ready: true, approved: true, head: "h1" }));
   s.land("merge", "ENG-1", { outcome: "refused", detail: "base branch policy" });
   s.land("notify", "ENG-1");
-  s.see(ticket("ENG-1", needsHuman));
+  s.see(ticket("ENG-1", { status: "needs_human", optedIn: true, repo: "dispatch" }));
   s.land("notify", "ENG-1");
   s.expect([]);
 });
@@ -357,49 +302,4 @@ scenario(rules, "finish-merged-local-ticket closes a local ticket in Needs Human
   s.advance(1000);
   s.see(pr("LOC-1", { merged: true }));
   s.expect([["finish-merged-local-ticket", "move", "LOC-1", "blocker_done"]]);
-});
-
-scenario(rules, "a review that came while the ticket was in Needs Human reaches the worker once the ticket is back in In Review", s => {
-  needsHumanWith(s, worker("ENG-1", "idle", { lastStop: 0 }), pr("ENG-1"));
-  s.see(pr("ENG-1", { activityAt: "10:00", activitySummary: "a review by alice" }));
-  s.land("notify", "ENG-1");
-  s.see(ticket("ENG-1", review));
-  s.expect([["nudge-pr-activity", "nudge", "ENG-1"]]);
-});
-
-scenario(rules, "notify-needs-human-pr-activity tells of a comment read before dispatch saw the move to Needs Human", s => {
-  s.given(ticket("ENG-1", review), worker("ENG-1", "idle", { asked: -1000 }), pr("ENG-1"));
-  s.land("notify", "ENG-1");
-  s.advance(1000);
-  s.see(pr("ENG-1", { activityAt: "10:00", activitySummary: "a comment by alice" }));
-  s.expect([]);
-  s.advance(1000);
-  s.see(ticket("ENG-1", needsHuman));
-  s.expect([["notify-needs-human-pr-activity", "notify", "ENG-1"]]);
-});
-
-scenario(rules, "notify-needs-human-pr-activity stays silent when the newest item goes away and an older one becomes the newest", s => {
-  needsHumanWith(s, worker("ENG-1", "idle", { lastStop: 0 }), pr("ENG-1"));
-  s.see(pr("ENG-1", { activityAt: "10:00", activitySummary: "a review by alice" }));
-  s.advance(1000);
-  s.see(pr("ENG-1", { activityAt: "11:00", activitySummary: "a review thread comment by bob" }));
-  s.expect([["notify-needs-human-pr-activity", "notify", "ENG-1"]]);
-  s.land("notify", "ENG-1");
-  s.advance(1000);
-  s.see(pr("ENG-1", { activityAt: "10:00", activitySummary: "a review by alice" }));
-  s.expect([]);
-});
-
-scenario(rules, "notify-needs-human-pr-activity stays silent about an older item after the worker was nudged about a newer one", s => {
-  s.given(ticket("ENG-1", review), worker("ENG-1", "idle"), pr("ENG-1"));
-  s.see(pr("ENG-1", { activityAt: "10:00" }));
-  s.advance(1000);
-  s.see(pr("ENG-1", { activityAt: "11:00" }));
-  s.land("nudge", "ENG-1");
-  s.advance(1000);
-  s.see(ticket("ENG-1", needsHuman), worker("ENG-1", "idle", { lastStop: 1 }));
-  s.land("notify", "ENG-1");
-  s.advance(1000);
-  s.see(pr("ENG-1", { activityAt: "10:00" }));
-  s.expect([]);
 });
