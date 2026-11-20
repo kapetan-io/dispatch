@@ -178,6 +178,7 @@ func identify(dir, path string) Agent {
 }
 
 var (
+	timestampWord  = []byte(`"timestamp"`)
 	timestampField = []byte(`"timestamp":"`)
 	userType       = []byte(`"type":"user"`)
 	assistantType  = []byte(`"type":"assistant"`)
@@ -256,20 +257,26 @@ type block struct {
 }
 
 // readLine keeps one record when it is a user or assistant record within the window. Most lines
-// on disk predate the window, so a line with one timestamp field is checked before it is decoded.
-// A line with more may hold a nested record's time first, so it is always decoded.
+// on disk predate the window or are other records, so a line in Claude Code's compact JSON is
+// checked as bytes before it is decoded: one with a single timestamp field before the window, or
+// with neither record type, is skipped. A line with more timestamp fields may hold a nested
+// record's time first, and a line written with spaces matches none of the byte patterns, so both
+// are decoded and judged by the record's own fields.
 func (s *Sessions) readLine(line []byte, who Agent, window Window) {
-	i := bytes.Index(line, timestampField)
-	if i < 0 {
+	if !bytes.Contains(line, timestampWord) {
 		return
 	}
-	if bytes.Count(line, timestampField) == 1 {
-		if at, ok := leadingTime(line[i+len(timestampField):]); !ok || at.Before(window.From) {
+	switch n := bytes.Count(line, timestampField); {
+	case n == 1:
+		i := bytes.Index(line, timestampField)
+		if at, ok := leadingTime(line[i+len(timestampField):]); ok && at.Before(window.From) {
 			return
 		}
-	}
-	if !bytes.Contains(line, userType) && !bytes.Contains(line, assistantType) {
-		return
+		fallthrough
+	case n > 1:
+		if !bytes.Contains(line, userType) && !bytes.Contains(line, assistantType) {
+			return
+		}
 	}
 	var rec record
 	if json.Unmarshal(line, &rec) != nil || (rec.Type != "user" && rec.Type != "assistant") {

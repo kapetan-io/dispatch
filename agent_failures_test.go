@@ -749,3 +749,25 @@ func TestCollectAgentFailuresReadsTheRecordsOwnTime(t *testing.T) {
 	require.Len(t, out.ToolFailures, 1)
 	assert.Equal(t, 2, out.ToolFailures[0].Count)
 }
+
+func TestCollectAgentFailuresReadsJSONWrittenWithSpaces(t *testing.T) {
+	d, project := transcripts(t)
+	require.NoError(t, os.MkdirAll(project, 0o755))
+	// Claude Code writes compact JSON, but a record with spaces after its colons is the same
+	// record.
+	var b strings.Builder
+	for _, r := range []map[string]any{
+		bash(inWindow, "/tmp/x", "s1", "make build"), toolResult(inWindow, "s1", "Exit code 2\nmake: *** stop", true),
+		bash(laterOn, "/tmp/x", "s2", "make build"), toolResult(laterOn, "s2", "Exit code 2\nmake: *** stop", true),
+	} {
+		line, err := json.MarshalIndent(r, "", "")
+		require.NoError(t, err)
+		b.WriteString(strings.ReplaceAll(string(line), "\n", "") + "\n")
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(project, "99999999-ffff.jsonl"), []byte(b.String()), 0o644))
+
+	out := collectJSON(t, d)
+
+	require.Len(t, out.ToolFailures, 1)
+	assert.Equal(t, 2, out.ToolFailures[0].Count)
+}
