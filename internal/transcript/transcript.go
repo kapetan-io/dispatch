@@ -93,6 +93,15 @@ type Sessions struct {
 	Skipped []string
 	// Files is how many transcript files the read read to the end.
 	Files int
+	// PRCreators is, for each PR URL a successful `gh pr create` printed, the agents that made
+	// that call. It is read from every record on disk, whatever the window.
+	PRCreators map[string]map[Agent]bool
+	// BranchSessions is, for each git branch a record names other than main, master and HEAD, the
+	// sessions that ran on it, read from every record on disk.
+	BranchSessions map[string]map[string]bool
+	// Oldest is the time of the oldest record on disk, zero when there is none. Claude Code
+	// deletes old transcripts, so nothing before it can be found.
+	Oldest time.Time
 	// Unreadable is each transcript or directory the read could not open or finish, with why.
 	// Claude Code deletes old transcripts, so one can vanish between the listing and the read. The
 	// records read before an error are kept.
@@ -104,18 +113,24 @@ type Sessions struct {
 // cannot read is listed in Unreadable, not returned as an error.
 func Read(dir string, window Window, skipMarkers ...string) Sessions {
 	s := Sessions{
-		Calls:        map[string]ToolCall{},
-		Results:      map[string]ToolResult{},
-		AgentCalls:   map[Agent][]string{},
-		Reports:      map[Agent]Report{},
-		Descriptions: map[Agent]string{},
+		Calls:          map[string]ToolCall{},
+		Results:        map[string]ToolResult{},
+		AgentCalls:     map[Agent][]string{},
+		Reports:        map[Agent]Report{},
+		Descriptions:   map[Agent]string{},
+		PRCreators:     map[string]map[Agent]bool{},
+		BranchSessions: map[string]map[string]bool{},
 	}
 	paths, unreadable := transcriptFiles(dir)
 	s.Unreadable = unreadable
 	skipped := map[string]bool{}
+	// prCreates is the agent that made each `gh pr create` call, by tool_use_id. Like Calls, the
+	// first file in path order that holds a call owns it, so a subagent file that repeats its
+	// parent's records never claims the parent's PR.
+	prCreates := map[string]Agent{}
 	for _, path := range paths {
 		who := identify(dir, path)
-		hit, err := s.readFile(path, who, window, skipMarkers)
+		hit, err := s.readFile(path, who, window, skipMarkers, prCreates)
 		if hit {
 			skipped[who.Session] = true
 		}
@@ -185,7 +200,7 @@ var (
 )
 
 // readFile reads one transcript and reports whether a line holds a skip marker.
-func (s *Sessions) readFile(path string, who Agent, window Window, skipMarkers []string) (bool, error) {
+func (s *Sessions) readFile(path string, who Agent, window Window, skipMarkers []string, prCreates map[string]Agent) (bool, error) {
 	if who.Agent != "" {
 		s.readDescription(path, who)
 	}
@@ -202,6 +217,7 @@ func (s *Sessions) readFile(path string, who Agent, window Window, skipMarkers [
 			if !hit && holdsAny(line, skipMarkers) {
 				hit = true
 			}
+			s.readSessionLinks(line, who, prCreates)
 			s.readLine(line, who, window)
 		}
 		if errors.Is(err, io.EOF) {
@@ -209,6 +225,69 @@ func (s *Sessions) readFile(path string, who Agent, window Window, skipMarkers [
 		}
 		if err != nil {
 			return hit, err
+		}
+	}
+}
+
+var (
+	anyTimestamp = regexp.MustCompile(`"timestamp"\s*:\s*"([^"]+)"`)
+	gitBranch    = regexp.MustCompile(`"gitBranch"\s*:\s*"([^"]+)"`)
+	// prURL takes every digit, so .../pull/12 never matches .../pull/123.
+	prURL      = regexp.MustCompile(`https://github\.com/[\w.-]+/[\w.-]+/pull/\d+`)
+	ghPRCreate = []byte("gh pr create")
+	pullPath   = []byte("/pull/")
+)
+
+// readSessionLinks reads what proves which session made a PR from any record, whatever its time:
+// the oldest record's time, the branch the record names, and the PR URLs a successful `gh pr
+// create` printed.
+func (s *Sessions) readSessionLinks(line []byte, who Agent, prCreates map[string]Agent) {
+	if !bytes.Contains(line, timestampWord) {
+		return
+	}
+	if m := anyTimestamp.FindSubmatch(line); m != nil {
+		if at, err := time.Parse(time.RFC3339Nano, string(m[1])); err == nil && (s.Oldest.IsZero() || at.Before(s.Oldest)) {
+			s.Oldest = at
+		}
+	}
+	if m := gitBranch.FindSubmatch(line); m != nil {
+		if branch := string(m[1]); branch != "HEAD" && branch != "main" && branch != "master" {
+			if s.BranchSessions[branch] == nil {
+				s.BranchSessions[branch] = map[string]bool{}
+			}
+			s.BranchSessions[branch][who.Session] = true
+		}
+	}
+	// Only a create call, or a result naming a PR after some create call was seen, can prove one.
+	if !bytes.Contains(line, ghPRCreate) && (len(prCreates) == 0 || !bytes.Contains(line, pullPath)) {
+		return
+	}
+	var rec record
+	if json.Unmarshal(line, &rec) != nil || (rec.Type != "user" && rec.Type != "assistant") {
+		return
+	}
+	var blocks []block
+	_ = json.Unmarshal(rec.Message.Content, &blocks)
+	for _, b := range blocks {
+		switch {
+		case b.Type == "tool_use":
+			var in struct {
+				Command string `json:"command"`
+			}
+			if _, seen := prCreates[b.ID]; !seen && json.Unmarshal(b.Input, &in) == nil && strings.Contains(in.Command, "gh pr create") {
+				prCreates[b.ID] = who
+			}
+		case b.Type == "tool_result" && string(bytes.TrimSpace(b.IsError)) != "true":
+			maker, ok := prCreates[b.ToolUseID]
+			if !ok {
+				continue
+			}
+			for _, url := range prURL.FindAllString(resultText(b.Content), -1) {
+				if s.PRCreators[url] == nil {
+					s.PRCreators[url] = map[Agent]bool{}
+				}
+				s.PRCreators[url][maker] = true
+			}
 		}
 	}
 }
@@ -414,6 +493,26 @@ func (s *Sessions) drop(skipped map[string]bool) {
 	for who := range s.Reports {
 		if skipped[who.Session] {
 			delete(s.Reports, who)
+		}
+	}
+	for url, agents := range s.PRCreators {
+		for who := range agents {
+			if skipped[who.Session] {
+				delete(agents, who)
+			}
+		}
+		if len(agents) == 0 {
+			delete(s.PRCreators, url)
+		}
+	}
+	for branch, sessions := range s.BranchSessions {
+		for session := range sessions {
+			if skipped[session] {
+				delete(sessions, session)
+			}
+		}
+		if len(sessions) == 0 {
+			delete(s.BranchSessions, branch)
 		}
 	}
 }

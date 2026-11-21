@@ -6,6 +6,7 @@ package pullrequest_test
 
 import (
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -27,8 +28,9 @@ func TestInstalledGHStillHasTheFlagsDispatchUses(t *testing.T) {
 		{command: []string{"pr", "merge"}, flags: []string{"--merge", "--match-head-commit"}},
 		{command: []string{"api"}, flags: []string{"--field", "--raw-field", "--jq"}},
 		{command: []string{"repo", "view"}, flags: []string{"--json", "--jq"}},
+		{command: []string{"pr", "list"}, flags: []string{"--repo", "--state", "--author", "--search", "--limit", "--json"}},
 	} {
-		t.Run(test.command[0], func(t *testing.T) {
+		t.Run(strings.Join(test.command, " "), func(t *testing.T) {
 			out, err := exec.Command(bin, append(test.command, "--help")...).CombinedOutput()
 			require.NoError(t, err, string(out))
 

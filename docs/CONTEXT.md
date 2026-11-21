@@ -30,7 +30,7 @@ The user is a developer who owns the tickets, repos and rules dispatch runs. The
 
 **Ask why it acted.** `dispatch cycle`, `dispatch explain <ticket>` and `dispatch replay` show what each cycle read, what it wanted and how each action came out.
 
-**See where agents went wrong.** `dispatch collect-agent-failures` reads the last week of Claude Code transcripts and prints the tool calls that failed, grouped by signature, the permission denials, the denials a subagent hit and whether its final report said so, and the files one agent edited 5 or more times. It reports rows and counts and judges none of them.
+**See where agents went wrong.** `dispatch collect-agent-failures` reads the last week of Claude Code transcripts and prints the tool calls that failed, grouped by signature, the permission denials, the denials a subagent hit and whether its final report said so, the files one agent edited 5 or more times, and, from the merged PRs of the configured repos, fix chains and changed existing tests, each linked to the session that made the PR. It reports rows and counts; the fix chain table filters on a stated rule and calls no chain a regression.
 
 **Tool fake**:
 An in-process Go state model of herdr, treehouse, gh or Linear that refuses what the real tool refuses.
@@ -170,6 +170,16 @@ _Avoid_: session log (dispatch's own file of a worker session)
 **Agent failure**:
 A tool call whose result Claude Code marked `is_error`, as `dispatch collect-agent-failures` counts it. A permission denial is one kind, and the command reports denials in their own table. A result that only reads like an error is not one. The command also reports files edited 5 or more times, which are successful calls, not agent failures.
 _Avoid_: error (any error text), mistake (a judgment the command does not make)
+
+**Fix chain**:
+A pair of merged PRs in one repo where the later one, merged within 30 days of the earlier one, changed lines the earlier one wrote, by `git blame` at the later PR's merge base. Lines in tests and generated files don't count. `dispatch collect-agent-failures` prints the reverts and the Bug tickets where the earlier PR wrote at least half the later PR's deleted lines, a threshold no one has validated, and `--json` keeps every pair.
+_Avoid_: regression (a judgment the command does not make)
+
+**Changed existing test**:
+A Go test function that existed at a merged PR's merge base and that the PR modified or deleted, which usually means behavior changed.
+
+**Session link**:
+The Claude Code session that made a PR: the one whose transcript holds a successful `gh pr create` that printed the PR's URL, or else the only session that ran on the PR's branch. A PR neither proves is "not proven", and one that merged before the oldest transcript record on disk is "not on disk". A commit SHA a session mentions proves nothing.
 
 **Ask**:
 A worker's statement, made by running `dispatch ask`, that it needs the user. The worker is asking from when it is next idle until its session takes a message from a person or from dispatch, or ends. It moves no ticket.
