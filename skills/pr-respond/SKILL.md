@@ -35,7 +35,7 @@ Treat every review comment as a claim to check with evidence: a failing test or 
 
 A finding is confirmed only when every claim on its list is confirmed. Until then, don't tell the user it is real, or change the PR body because of it. Check the not-checked claims first, and leave one not checked only after you tried and couldn't.
 
-Fix and reply to a confirmed finding, resolve it, and record the fix as a divergence when it changes something the design describes. A confirmed finding about ADR text changes no ADR (build's rule **Leave existing ADRs alone**): add it under Concerns and risks in the PR body instead, and say so in the reply. Reply to an unconfirmed finding from a bot with your evidence, saying which claims you couldn't check, and resolve it. Reply to an unconfirmed finding from a person with your evidence, saying which claims you couldn't check, and leave the thread open for the reviewer to settle. Never put it to the manager.
+Fix and reply to a confirmed finding, resolve it, and record the fix as a divergence when it changes something the design describes. Reply to an unconfirmed finding from a bot with your evidence, saying which claims you couldn't check, and resolve it. Reply to an unconfirmed finding from a person with your evidence, saying which claims you couldn't check, and leave the thread open for the reviewer to settle. Never put it to the manager.
 
 ## A question
 
