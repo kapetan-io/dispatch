@@ -142,6 +142,10 @@ func newChecker(root, keys, repo string) (*checker, error) {
 var adrName = regexp.MustCompile(`^(\d+)-.*\.md$`)
 
 func (r *checker) checkAll() ([]Problem, error) {
+	// A repo with no docs/adr passes, but a root that isn't there is a typo.
+	if _, err := os.Stat(r.root); err != nil {
+		return nil, err
+	}
 	entries, err := os.ReadDir(filepath.Join(r.root, adrDir))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -262,7 +266,8 @@ func (r *checker) adrExists(number string) bool {
 // references reports each link, path or history citation in line that points into the repo.
 func (r *checker) references(file, line string, add func(reason, text string)) {
 	if m := linkDefinition.FindStringSubmatch(line); m != nil {
-		if reason := r.linkTarget(file, m[1], false); reason != "" {
+		// A definition may serve an image, so it gets an image's allowance.
+		if reason := r.linkTarget(file, m[1], true); reason != "" {
 			add(reason, m[1])
 		}
 		return

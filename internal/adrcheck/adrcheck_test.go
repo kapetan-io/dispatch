@@ -303,3 +303,18 @@ func TestAPullRequestWrittenTwoWaysIsReportedOnce(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Equal(t, "docs/adr/0001-fake.md:11: cites the repo's pull requests, commits, branches or issues: \"#12\"\n", stdout)
 }
+
+func TestReferenceStyleImageBesideTheADRsIsAllowed(t *testing.T) {
+	body := "# 1. Fake\n\nDate: 2026-10-12\n\n## Status\n\nAccepted\n\n## Context\n\n![flow][diagram]\n\n[diagram]: images/flow.png\n"
+	root := repo(t, map[string]string{"0001-fake.md": body})
+	code, stdout, _ := run(t, root)
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stdout)
+}
+
+func TestMissingRootExitsTwo(t *testing.T) {
+	code, stdout, stderr := run(t, filepath.Join(t.TempDir(), "typo"), "-ticket-keys", "ENG")
+	assert.Equal(t, 2, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "typo")
+}
