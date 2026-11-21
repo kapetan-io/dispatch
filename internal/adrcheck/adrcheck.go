@@ -106,8 +106,8 @@ var (
 func newChecker(root, keys, repo string) (*checker, error) {
 	r := &checker{root: root, history: []*regexp.Regexp{
 		// #123 is how GitHub writes a pull request or issue in prose.
-		regexp.MustCompile(`(?:^|[\s(\[])(#\d+)\b`),
-		regexp.MustCompile(`\b(PR \d+|GH-\d+)\b`),
+		regexp.MustCompile("(?:^|[\\s(\\[`])(#\\d+)\\b"),
+		regexp.MustCompile(`\b(PR ?\d+|PR#\d+|GH-\d+)\b`),
 		// A commit id is cited in backticks or after the word commit, and has both
 		// digits and letters. Elsewhere a hex run is as likely a key name (ed25519),
 		// and in backticks a run of digits is a number.
@@ -131,7 +131,7 @@ func newChecker(root, keys, repo string) (*checker, error) {
 		name := regexp.QuoteMeta(repo)
 		r.history = append(r.history,
 			// A link to the repo's home page cites no history, so the path must go on.
-			regexp.MustCompile(`(?i)((?:https?://)?(?:www\.)?github\.com/`+name+`/[^\s)>\]]*[^\s)>\].,;:!?'"])`),
+			regexp.MustCompile(`(?i)((?:https?://)?(?:www\.)?github\.com/`+name+`/(?:[^\s)>\]#?][^\s)>\]]*[^\s)>\].,;:!?'"]|[^\s)>\]#?.,;:!'"]))`),
 			regexp.MustCompile(`(?i)((?:https?://)?raw\.githubusercontent\.com/`+name+`/[^\s)>\]]*[^\s)>\].,;:!?'"])`),
 			regexp.MustCompile(`(?i)\b(`+name+`#\d+)\b`),
 		)
@@ -336,7 +336,7 @@ func (r *checker) repoPath(file, token string) string {
 	}
 	path := lineSuffix.ReplaceAllString(token, "")
 	resolved := resolve(file, path, false)
-	if resolved == "" || resolved == "." || isADRPath(resolved) || resolved == adrDir {
+	if strings.Trim(path, "./") == "" || resolved == "" || isADRPath(resolved) || resolved == adrDir {
 		return ""
 	}
 	if !strings.Contains(path, "*") {
@@ -344,7 +344,7 @@ func (r *checker) repoPath(file, token string) string {
 			return token
 		}
 	}
-	if strings.Contains(path, "/") && sourceExtensions[filepath.Ext(path)] {
+	if strings.Contains(path, "/") && !strings.HasPrefix(path, "/") && sourceExtensions[filepath.Ext(path)] {
 		return token
 	}
 	return ""

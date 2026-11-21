@@ -120,6 +120,8 @@ func TestEachProblemNamesTheADRTheLineAndTheText(t *testing.T) {
 		{"file with an anchor", "See internal/rules/state.go#L10.", `:11: references a file or directory in the repo: "internal/rules/state.go#L10"`},
 		{"glob", "Every internal/rules/*.go file.", `:11: references a file or directory in the repo: "internal/rules/*.go"`},
 		{"repo root path in prose", "See /internal/rules/state.go.", `:11: references a file or directory in the repo: "/internal/rules/state.go"`},
+		{"pull request without a space", "Landed in PR#14.", `:11: cites the repo's pull requests, commits, branches or issues: "PR#14"`},
+		{"pull request in backticks", "Landed in `#12`.", `:11: cites the repo's pull requests, commits, branches or issues: "#12"`},
 		{"command path in prose", "Run `go run ./internal/rules/` to see it.", `:11: references a file or directory in the repo: "./internal/rules/"`},
 		{"path in a footnote", "[^1]: See internal/rules/ and the PR.", `:11: references a file or directory in the repo: "internal/rules/"`},
 		{"raw file link", "[raw](https://raw.githubusercontent.com/kapetan-io/dispatch/main/go.mod)", `:11: cites the repo's pull requests, commits, branches or issues: "https://raw.githubusercontent.com/kapetan-io/dispatch/main/go.mod"`},
@@ -253,6 +255,9 @@ func TestLinksToOtherADRsAndOutsideDocsStayAllowed(t *testing.T) {
 		"Limit is `1048576` bytes, split on `/` or read / write.",
 		"[readme](https://github.com/kapetan-io/dispatch#readme) and https://github.com/kapetan-io/dispatch?tab=readme-ov-file.",
 		"[the index](./) lists them.",
+		"A path starting with ../ or ./ or / is relative.",
+		"Login hooks in /etc/profile.d/x.sh run first.",
+		"https://github.com/kapetan-io/dispatch/#readme and https://github.com/kapetan-io/dispatch/?tab=readme-ov-file.",
 		"ADRs live in docs/adr and outside the repo in /etc/hosts.",
 	} {
 		t.Run(line, func(t *testing.T) {
