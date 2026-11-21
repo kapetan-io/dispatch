@@ -129,6 +129,7 @@ const usage = `usage: dispatch run
        dispatch cycle
        dispatch explain <ticket> [--json]
        dispatch replay [--from TIME] [--to TIME] [--rules DIR]
+       dispatch collect-agent-failures [--from TIME] [--to TIME] [--json]
        dispatch state reset [--quiet]
        dispatch tell <ticket> "<text>"
        dispatch tell <ticket> --turn <at> "<text>"
@@ -167,6 +168,18 @@ const usage = `usage: dispatch run
                recorded the world. A segment written before the rule vocabulary was renamed fails to
                load its recorded rules, so replay stops there and exits 1; --from a time after the
                rename starts past it, and --rules compares correctly only over segments written after it
+  collect-agent-failures
+               read the Claude Code transcripts under ~/.claude/projects ($CLAUDE_CONFIG_DIR/projects
+               when set) and print where agents went wrong in the window, as Markdown tables: tool
+               calls whose result is an error, grouped by a signature of the tool, the program and the
+               error's first line (or, after "Exit code N", its first diagnostic line) with paths,
+               numbers and ids replaced, leaving out signatures seen once; permission denials; each
+               denial a subagent hit, with whether its final report names it and what it did next;
+               and files one agent or session edited successfully 5 or more times. --to defaults to
+               now and --from to 7 days before --to. TIME is RFC 3339, "2006-01-02 15:04", "15:04"
+               today or a date such as 2026-11-13, which means the start of that day. --json prints
+               the same rows as JSON. Leaves out the pattern miner's own sessions, and skips a
+               transcript it cannot read with a line on stderr. Reports rows only and judges none of them
   state reset  start a new history segment with an empty ledger, keeping what the world remembers.
                With --quiet, record the messages the first cycle wants as sent, so none is repeated.
                Exits 1 while dispatch run holds the lock
@@ -295,6 +308,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		return explainCommand(opts, ticket, asJSON)
 	case "replay":
 		return replayCommand(opts, args[1:])
+	case "collect-agent-failures":
+		return collectAgentFailures(opts, args[1:])
 	case "state":
 		return stateCommand(ctx, opts, args[1:])
 	case "rules":
