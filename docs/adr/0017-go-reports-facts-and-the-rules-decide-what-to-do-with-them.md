@@ -20,4 +20,4 @@ Go code collects and reports facts. TypeScript rules decide what to do with thos
 - A guarantee such as "an asking worker is not nudged" belongs to the shipped rule files, and a user's edit can remove it.
 - A user's own copy of the rules is not covered until it holds the exemption.
 - A reader of a rule does not see an exemption that holds it, so the rule's comment and `dispatch rules check` name it.
-- A review of any change to `internal/rules/state.go` asks whether it rewrites a reading. The existing rewrites are debt, each removed by its own ticket.
+- A review of any change to the code that builds the rules' records asks whether it rewrites a reading. The existing rewrites are debt, each removed by its own ticket.

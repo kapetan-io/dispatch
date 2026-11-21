@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-- Users own their rules (`docs/rules.md`), and the rules make every decision. Go's own checks today only confirm that the world still matches what a rule saw (the executor's "changed in Linear since the cycle" refusal, a merge refused when the head moved).
+- Users own their rules, and the rules make every decision. Go's own checks today only confirm that the world still matches what a rule saw (the executor's "changed in Linear since the cycle" refusal, a merge refused when the head moved).
 - The first stacked tickets design put stacking policy in Go: the executor refused to merge a stacked branch, and `pr.autoMerge`, `pr.ready` and `pr.needsWork` changed meaning for stacked branches, "so a user's own merge rule can't skip it". A user who wanted different behavior could not get it by editing rules.
 - The user decided that dispatch holds no opinion on such things. Anyone who wants a behavior should be able to build it, and anyone who doesn't should be able to write rules that make it impossible.
 
