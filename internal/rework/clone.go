@@ -97,7 +97,9 @@ var hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@`)
 // changes is the files base...head changed that existed at base, in diff order, with renames
 // followed. A file the diff adds has no old side, so it is left out.
 func (c *clone) changes(ctx context.Context, base, head string) ([]fileChange, error) {
-	out, err := c.git(ctx, "diff", "--no-ext-diff", "--no-color", "-U0", "-M", "--src-prefix=a/", "--dst-prefix=b/", base+"..."+head)
+	// --inter-hunk-context=0 overrides a diff.interHunkContext setting, which would join nearby
+	// hunks and count the unchanged lines between them as changed.
+	out, err := c.git(ctx, "diff", "--no-ext-diff", "--no-color", "-U0", "--inter-hunk-context=0", "-M", "--src-prefix=a/", "--dst-prefix=b/", base+"..."+head)
 	if err != nil {
 		return nil, err
 	}
@@ -212,15 +214,17 @@ func (c *clone) lineCounts(ctx context.Context, base, head string) (added, delet
 
 var blameLine = regexp.MustCompile(`^([0-9a-f]{40}) \d+ \d+`)
 
-// blame counts, by the commit that wrote them, the lines of path at rev that hunks change.
+// blame counts, by the commit that wrote them, the lines of path at rev that hunks change. It
+// ignores a blame.ignoreRevsFile setting, which would credit lines to commits that did not write
+// them.
 func (c *clone) blame(ctx context.Context, rev, path string, hunks []hunk) map[string]int {
-	args := []string{"blame", "--porcelain"}
+	args := []string{"blame", "--porcelain", "--no-ignore-revs-file"}
 	for _, h := range hunks {
 		if h.count > 0 {
 			args = append(args, "-L", fmt.Sprintf("%d,+%d", h.start, h.count))
 		}
 	}
-	if len(args) == 2 {
+	if len(args) == 3 {
 		return nil
 	}
 	out, err := c.git(ctx, append(args, rev, "--", path)...)

@@ -797,3 +797,46 @@ func TestCollectAgentFailuresReadsTestNamesAndLinesAsGoTestDoes(t *testing.T) {
 	assert.Equal(t, "TestCart", out.ChangedTests[0].Function)
 	assert.Equal(t, 1, out.ChangedTests[0].OldLinesTouched)
 }
+
+func TestCollectAgentFailuresReadsChangedLinesWhateverTheClonesGitConfig(t *testing.T) {
+	t.Parallel()
+	d, _ := transcripts(t)
+	s := newShop(t, d)
+	s.merge(shopPR{branch: "thrawn01/eng-1-a", title: "A", files: map[string]string{"a.go": numbered("a", 5)}, at: "2026-10-02T10:00:00Z"})
+	s.merge(shopPR{branch: "thrawn01/eng-2-a", title: "A2", files: map[string]string{"a.go": numbered("b", 5)}, at: "2026-10-03T10:00:00Z"})
+	// The later PR changes lines 1 and 5 only.
+	s.merge(shopPR{branch: "thrawn01/eng-3-a", title: "A3", files: map[string]string{"a.go": replaced(replaced(numbered("b", 5), "c", 1, 1), "c", 5, 5)}, at: "2026-10-05T10:00:00Z"})
+	// Settings that would join the two hunks and credit #2's lines to #1.
+	s.git("config", "diff.interHunkContext", "5")
+	revs := filepath.Join(t.TempDir(), "ignore-revs")
+	require.NoError(t, os.WriteFile(revs, []byte(s.git("rev-parse", "thrawn01/eng-2-a")+"\n"), 0o644))
+	s.git("config", "blame.ignoreRevsFile", revs)
+
+	out := reworkOf(t, d)
+
+	got := map[string]int{}
+	for _, c := range out.FixChains {
+		got[c.LaterPR+" over "+c.EarlierPR] = c.Lines
+	}
+	assert.Equal(t, map[string]int{"shop#2 over shop#1": 5, "shop#3 over shop#2": 2}, got)
+}
+
+func TestCollectAgentFailuresTakesNoURLFromTextThatOnlyNamesGHPRCreate(t *testing.T) {
+	t.Parallel()
+	d, project := transcripts(t)
+	s := newShop(t, d)
+	s.merge(shopPR{branch: "thrawn01/eng-1-a", title: "A", files: map[string]string{"a.go": numbered("a", 4)}, at: "2026-10-03T10:00:00Z"})
+	s.merge(shopPR{branch: "thrawn01/eng-2-a", title: "A2", files: map[string]string{"a.go": numbered("b", 4)}, at: "2026-10-05T10:00:00Z"})
+	writeTranscript(t, filepath.Join(project, "eeeeeeee-5555.jsonl"),
+		bash("2026-10-01T10:00:00.000Z", "/src", "print", "printf 'run gh pr create, got %s\\n' "+shopURL+"/pull/2"),
+		toolResult("2026-10-01T10:00:01.000Z", "print", "run gh pr create, got "+shopURL+"/pull/2\n", false),
+		bash("2026-10-01T10:01:00.000Z", "/src", "made", "cd /src && GH_TOKEN=x gh pr create --fill"),
+		toolResult("2026-10-01T10:01:01.000Z", "made", shopURL+"/pull/1\n", false),
+	)
+
+	out := reworkOf(t, d)
+
+	require.Len(t, out.FixChains, 1)
+	assert.Equal(t, "not proven", out.FixChains[0].LaterSession)
+	assert.Equal(t, "eeeeeeee (gh pr create)", out.FixChains[0].EarlierSession)
+}

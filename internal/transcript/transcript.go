@@ -232,6 +232,9 @@ func (s *Sessions) readFile(path string, who Agent, window Window, skipMarkers [
 var (
 	anyTimestamp = regexp.MustCompile(`"timestamp"\s*:\s*"([^"]+)"`)
 	gitBranch    = regexp.MustCompile(`"gitBranch"\s*:\s*"([^"]+)"`)
+	// runsGHPRCreate matches gh pr create where a shell command starts: at a line's start or after
+	// ;, &, |, ( or $(, with any VAR=value before it. Text such as printf 'gh pr create' runs nothing.
+	runsGHPRCreate = regexp.MustCompile(`(?m)(?:^|[;&|(])\s*(?:\w+=\S*\s+)*gh\s+pr\s+create\b`)
 	// prURL takes every digit, so .../pull/12 never matches .../pull/123.
 	prURL      = regexp.MustCompile(`https://github\.com/[\w.-]+/[\w.-]+/pull/\d+`)
 	ghPRCreate = []byte("gh pr create")
@@ -274,7 +277,7 @@ func (s *Sessions) readSessionLinks(line []byte, who Agent, prCreates map[string
 			var in struct {
 				Command string `json:"command"`
 			}
-			if _, seen := prCreates[b.ID]; !seen && json.Unmarshal(b.Input, &in) == nil && strings.Contains(in.Command, "gh pr create") {
+			if _, seen := prCreates[b.ID]; !seen && json.Unmarshal(b.Input, &in) == nil && runsGHPRCreate.MatchString(in.Command) {
 				prCreates[b.ID] = who
 			}
 		case b.Type == "tool_result" && string(bytes.TrimSpace(b.IsError)) != "true":

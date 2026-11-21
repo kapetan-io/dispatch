@@ -4,6 +4,8 @@ package pullrequest_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,7 +27,7 @@ func TestCLIMergedHoldingAsksGitHubForTheCommitsPullRequests(t *testing.T) {
 	pr, found, err := pullrequest.NewCLI(exe).MergedHolding(context.Background(), "o/r", "c1")
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{"api repos/o/r/commits/c1/pulls"}, recorded(t, args))
+	assert.Equal(t, []string{"api repos/o/r/commits/c1/pulls?per_page=100"}, recorded(t, args))
 	require.True(t, found)
 	// The PR whose merge commit it is wins over the earlier merged PR that also holds it.
 	assert.Equal(t, pullrequest.MergedChange{MergedPR: pullrequest.MergedPR{Number: 6, URL: "https://github.com/o/r/pull/6", Head: "h6",
@@ -62,4 +64,17 @@ func TestCLIOwnMergedListsTheUsersMergedPRsOfTheWindow(t *testing.T) {
 	assert.Equal(t, []string{"pr list --repo o/r --state merged --author @me --search merged:2026-10-01..2026-10-10 --limit 1000 --json number,url,title,body,headRefName,headRefOid,baseRefOid,mergedAt"}, recorded(t, args))
 	assert.Equal(t, []pullrequest.MergedChange{{MergedPR: pullrequest.MergedPR{Number: 3, URL: "https://github.com/o/r/pull/3", Head: "h3",
 		MergedAt: time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC)}, Base: "x3", Branch: "b3", Title: "T", Body: "B"}}, prs)
+}
+
+func TestCLIMergedHoldingRefusesACommitHeldByAFullPage(t *testing.T) {
+	pulls := make([]string, pullrequest.CommitPullsLimit)
+	for i := range pulls {
+		pulls[i] = fmt.Sprintf(`{"number":%d,"html_url":"https://github.com/o/r/pull/%[1]d","title":"T","body":null,"merged_at":null,"merge_commit_sha":"m","head":{"ref":"b","sha":"h"},"base":{"sha":"x"}}`, i+1)
+	}
+	exe, _ := standIn(t, "["+strings.Join(pulls, ",")+"]", "", "0")
+
+	_, found, err := pullrequest.NewCLI(exe).MergedHolding(context.Background(), "o/r", "c1")
+
+	require.ErrorContains(t, err, "100 or more PRs hold o/r commit c1")
+	assert.False(t, found)
 }

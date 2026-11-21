@@ -20,6 +20,10 @@ type MergedChange struct {
 	Body   string
 }
 
+// CommitPullsLimit is the most PRs GitHub lists for a commit in one page. A commit held by that
+// many is refused, since the PR that merged it could be on a later page.
+const CommitPullsLimit = 100
+
 // MergedListLimit is the most PRs one OwnMerged read lists. A window with more is refused rather
 // than cut short, since a short list would hide fix chains.
 const MergedListLimit = 1000
@@ -98,6 +102,9 @@ func FindMergedHolding(ctx context.Context, src MergedChangeSource, repo, sha st
 	if err := json.Unmarshal(body, &pulls); err != nil {
 		return MergedChange{}, false, fmt.Errorf("while reading gh output for the PRs of %s commit %s: %w", repo, sha, err)
 	}
+	if len(pulls) >= CommitPullsLimit {
+		return MergedChange{}, false, fmt.Errorf("%d or more PRs hold %s commit %s, so the one that merged it may be past the first page", CommitPullsLimit, repo, sha)
+	}
 	var merged []MergedChange
 	exact := -1
 	for _, p := range pulls {
@@ -149,5 +156,5 @@ func (s cliMergedChanges) MergedList(ctx context.Context, repo string, from, to 
 }
 
 func (s cliMergedChanges) CommitPulls(ctx context.Context, repo, sha string) ([]byte, error) {
-	return s.cli.gh(ctx, "", []string{"api", fmt.Sprintf("repos/%s/commits/%s/pulls", repo, sha)})
+	return s.cli.gh(ctx, "", []string{"api", fmt.Sprintf("repos/%s/commits/%s/pulls?per_page=%d", repo, sha, CommitPullsLimit)})
 }
