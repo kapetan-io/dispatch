@@ -27,7 +27,7 @@ Then fix the groups that recur most now, one commit each. Prove each new check f
 
 ## Keep the rule table
 
-Last, keep a table in the instruction file that pairs each rule with what enforces it. When the user corrects you, fix the mistake and add the rule. If the rule was already there and nothing enforces it, that's a repeat, so fix it at the highest level in the same change. Drop a rule once its mistake can't happen.
+Last, keep a table in the instruction file that pairs each rule with what enforces it. When the user corrects you, fix the mistake and add the rule, enforced by a check from the start when a script can decide it without judgment (see `dispatch:principle-encode-lessons-in-structure`). If the rule was already there and nothing enforces it, that's a repeat, so fix it at the highest level in the same change. Drop a rule once its mistake can't happen.
 
 **Reply:** each group with its evidence, the level you picked, and why a higher level didn't work.
 

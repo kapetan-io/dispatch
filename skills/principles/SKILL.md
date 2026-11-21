@@ -13,7 +13,7 @@ Each principle is a skill of its own. Load one with the Skill tool and apply it,
 | `dispatch:principle-boundary-discipline` | Wiring validation, error handling or adapters. |
 | `dispatch:principle-the-owner-enforces-its-invariants` | Placing a validation check, constraint or consistency rule in a constructor, a store's interface, a handler, a service layer or a gateway, or reading or writing a store directly. |
 | `dispatch:principle-design-to-the-port-not-the-vendor` | Writing or changing a port's contract, adding a product or delivery mechanism behind one, naming config or terms after a product, or branching on which product or source is in use. |
-| `dispatch:principle-encode-lessons-in-structure` | A mistake just happened and you are choosing the fix, or you write the same instruction twice. |
+| `dispatch:principle-encode-lessons-in-structure` | Writing, enforcing or reviewing an instruction or convention that code, text or files must follow, including one the user states, or choosing the fix after a mistake. |
 | `dispatch:principle-laziness-protocol` | Refactoring, sizing a diff, tempted to add a layer. |
 | `dispatch:principle-make-operations-idempotent` | Commands or loops that must survive crashes and retries. |
 | `dispatch:principle-minimize-reader-load` | Code is hard to trace. |
