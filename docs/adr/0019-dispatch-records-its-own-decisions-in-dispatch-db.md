@@ -4,11 +4,11 @@ Date: 2026-11-15
 
 ## Status
 
-Accepted. Amends ADR 0006, which says dispatch keeps no id record.
+Amends ADR 0006
 
 ## Context
 
-Dispatch kept no record of a ticket's branch, stack or worker. It worked them out on every read from git, treehouse and the multiplexer, so an outage of one tool made dispatch's own decisions unknown.
+Dispatch kept no record of a ticket's branch, stack or worker. It worked them out on every read from git, treehouse and the multiplexer, so an outage of one tool made dispatch's own decisions unknown. ADR 0006 had dispatch keep no id record.
 
 ## Decision
 

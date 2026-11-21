@@ -33,6 +33,16 @@ test-drift: ## Check the fakes against the installed tools (CI skips this)
 test-report: ## Report tests over the speed budget, tagged ones included
 	@go run ./cmd/slowtests -tags tests_slow
 
+# The reusable ADR workflow runs this target from a checkout of dispatch, with
+# ADR_ROOT pointing at the calling repo. CI runs it in that workflow, not in ci.
+ADR_ROOT ?= .
+ADR_TICKET_KEYS ?= ENG,LOC
+ADR_REPO ?= kapetan-io/dispatch
+
+.PHONY: adr-check
+adr-check: ## Fail on ADRs that cite tickets, repo files or history, or break the Status and numbering rules
+	go run ./cmd/adrcheck -root "$(ADR_ROOT)" -ticket-keys "$(ADR_TICKET_KEYS)" -repo "$(ADR_REPO)"
+
 .PHONY: ci
 ci: ## Run what CI runs: vet, the whole suite, shellcheck
 	go vet ./...

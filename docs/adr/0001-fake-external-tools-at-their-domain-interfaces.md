@@ -24,7 +24,7 @@ We will fake each external tool behind a Go interface named for its domain role 
 - Root tests no longer exercise command lines or JSON parsing. Only adapter tests and the drift check cover them, and CI never runs the drift check.
 - Each tool's wire format exists once, in its real adapter.
 
-## Note, 2026-10-22: programs dispatch runs outside a port
+## Programs dispatch runs outside a port
 
 Some programs dispatch runs do not follow the Decision in full.
 
@@ -39,6 +39,6 @@ Some programs dispatch runs do not follow the Decision in full.
 
 Test tooling is outside the Decision. It runs git and other programs directly.
 
-## Note, 2026-10-30: the drift check touches installed tools only
+## The drift check touches installed tools only
 
-The drift check runs against the herdr, treehouse, gh and Claude installed on the maintainer's machine and never against a GitHub or Linear account, so a failure means a fake or an adapter drifted from an installed tool, not that an account's settings changed. Linear has a port (`linear.Workspace`), a fake (`lineartest`) and contract scenarios, but the scenarios run against the fake only; `internal/linear/client_test.go` checks the real client's GraphQL against an HTTP test server. The herdr drift test names the dispatch its workers run through `herdr.CLI.WithDispatchBin`, because the test binary that calls the adapter in-process is not a dispatch.
+The drift check runs against the herdr, treehouse, gh and Claude installed on the maintainer's machine and never against a GitHub or Linear account, so a failure means a fake or an adapter drifted from an installed tool, not that an account's settings changed. Linear has a port (`linear.Workspace`), a fake (`lineartest`) and contract scenarios, but the scenarios run against the fake only; the real client's own tests check its GraphQL against an HTTP test server. The herdr drift test names the dispatch its workers run through `herdr.CLI.WithDispatchBin`, because the test binary that calls the adapter in-process is not a dispatch.

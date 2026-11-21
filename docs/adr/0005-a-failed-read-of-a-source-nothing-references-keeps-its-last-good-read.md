@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-- When Linear can't be read, every ticket record goes unknown and rules over tickets are held (`FromWorld` in `internal/rules/state.go`). When a PR can't be read, its record goes unknown. Worker, tree, PR and escalation records point at tickets and PRs, so a stale value there would mislead rules about other records.
+- When Linear can't be read, every ticket record goes unknown and rules over tickets are held. When a PR can't be read, its record goes unknown. Worker, tree, PR and escalation records point at tickets and PRs, so a stale value there would mislead rules about other records.
 - Nothing points at an inbox item. The owner chose that a failed inbox read should change nothing: "If there was a failure, there's nothing to change. There's no reason to pause rules."
 - A design that held every inbox rule on a failed read was weighed and dropped for that reason.
 

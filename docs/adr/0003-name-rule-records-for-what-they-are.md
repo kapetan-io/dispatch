@@ -10,7 +10,7 @@ Accepted
 
 - Records, events and ctx helpers are named for the tool that reports them (`linear.ticket`, `ctx.herdr.queueNudge`, `github.check.completed`). That puts the tools ADR 0001 keeps behind ports into every rule.
 - Each action has two names: a tool kind (`herdr.nudge`) that rules and rule scenarios use, and a receipt name (`nudge`) that history writes.
-- Memory keys each fact by record kind (`linear.ticket/ENG-1/status`), and four facts hold a reference saved with the kind in its value.
+- Memory keys each fact by record kind (`linear.ticket/<id>/status`), and four facts hold a reference saved with the kind in its value.
 - Go and the shipped rules share strings no type names: Go maps once-key topics the rules pick to the words followers act on, and Go writes a "kept: " prefix into a refused return's detail that a rule strips.
 - `ctx.config` shows rules the Linear key settings (`api_key_command`, `api_key_keychain`), while it already hides `token_command`.
 
