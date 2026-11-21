@@ -1255,6 +1255,30 @@ func (g *GitHub) PullRequestMerged(ticket string, pr mergedPR) {
 	})
 }
 
+// ownPR is a PR the gh user wrote that merged into a repo, with the commits a report of merged
+// history reads.
+type ownPR struct {
+	// repo is the GitHub owner/name it merged into.
+	repo        string
+	number      int
+	branch      string
+	title, body string
+	// base is the base branch's commit when it was opened, head its head commit and merge the
+	// commit its merge made on the base branch.
+	base, head, merge string
+	at                time.Time
+}
+
+// OwnPullRequestMerged records a PR the gh user wrote that merged.
+func (g *GitHub) OwnPullRequestMerged(pr ownPR) {
+	g.d.t.Helper()
+	g.d.tools.PullRequests.RecordMerged(pullrequesttest.MergedListing{
+		Repo: pr.repo, Branch: pr.branch, Base: "main", Number: pr.number,
+		URL: fmt.Sprintf("https://github.com/%s/pull/%d", pr.repo, pr.number), Head: pr.head, MergedAt: pr.at,
+		BaseCommit: pr.base, Title: pr.title, Body: pr.body, MergeCommit: pr.merge, Commits: []string{pr.head},
+	})
+}
+
 // FailMergedReads makes the read of merged pull requests fail with err, and nil restores it.
 func (g *GitHub) FailMergedReads(err error) { g.d.tools.PullRequests.FailReadMerged(err) }
 

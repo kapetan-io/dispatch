@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -327,6 +328,18 @@ type MergedListing struct {
 	MergedAt time.Time
 	// Fork marks a PR whose head lives in a fork, which shares the branch's name by chance.
 	Fork bool
+	// Repo is the owner/name the PR merged into, which OwnMerged and MergedHolding match.
+	Repo string
+	// BaseCommit is the commit of the base branch the PR was compared against.
+	BaseCommit string
+	Title      string
+	Body       string
+	// MergeCommit is the commit the merge made, and Commits the PR's own commits. MergedHolding finds the
+	// PR by either, as GitHub lists a commit's pull requests.
+	MergeCommit string
+	Commits     []string
+	// ByOthers marks a PR someone other than the gh user wrote, which OwnMerged leaves out.
+	ByOthers bool
 }
 
 // RecordMerged adds a merged pull request to what GitHub lists for its branch.
@@ -336,11 +349,76 @@ func (r *Repository) RecordMerged(pr MergedListing) {
 	r.history = append(r.history, pr)
 }
 
-// FailReadMerged makes every ReadMerged fail with err. FailReadMerged(nil) restores normal reads.
+// FailReadMerged makes every ReadMerged, OwnMerged and MergedHolding fail with err. FailReadMerged(nil) restores normal reads.
 func (r *Repository) FailReadMerged(err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.mergedErr = err
+}
+
+// OwnMerged answers from the merged PRs the test recorded, through the real parser.
+func (r *Repository) OwnMerged(ctx context.Context, repo string, from, to time.Time) ([]pullrequest.MergedChange, error) {
+	return pullrequest.ListOwnMerged(ctx, mergedChanges{r}, repo, from, to)
+}
+
+// MergedHolding answers from the merged PRs the test recorded, through the real parser.
+func (r *Repository) MergedHolding(ctx context.Context, repo, sha string) (pullrequest.MergedChange, bool, error) {
+	return pullrequest.FindMergedHolding(ctx, mergedChanges{r}, repo, sha)
+}
+
+// mergedChanges answers in the shape gh prints: gh pr list's JSON, whose merged: search matches
+// whole days in UTC, and the REST list of a commit's pull requests.
+type mergedChanges struct{ repo *Repository }
+
+func (s mergedChanges) MergedList(ctx context.Context, repo string, from, to time.Time) ([]byte, error) {
+	r := s.repo
+	r.journal.Record("pullrequest", "own-merged", repo, from.UTC().Format(time.DateOnly), to.UTC().Format(time.DateOnly))
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.mergedErr != nil {
+		return nil, r.mergedErr
+	}
+	first, last := from.UTC().Format(time.DateOnly), to.UTC().Format(time.DateOnly)
+	nodes := []any{}
+	for _, pr := range r.history {
+		day := pr.MergedAt.UTC().Format(time.DateOnly)
+		if pr.Repo != repo || pr.ByOthers || day < first || day > last {
+			continue
+		}
+		nodes = append(nodes, map[string]any{
+			"number": pr.Number, "url": pr.URL, "title": pr.Title, "body": pr.Body, "headRefName": pr.Branch,
+			"headRefOid": pr.Head, "baseRefOid": pr.BaseCommit, "mergedAt": pr.MergedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	return json.Marshal(nodes)
+}
+
+func (s mergedChanges) CommitPulls(ctx context.Context, repo, sha string) ([]byte, error) {
+	r := s.repo
+	r.journal.Record("pullrequest", "merged-holding", repo, sha)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.mergedErr != nil {
+		return nil, r.mergedErr
+	}
+	pulls := []any{}
+	for _, pr := range r.history {
+		if pr.Repo != repo || (pr.MergeCommit != sha && !slices.Contains(pr.Commits, sha)) {
+			continue
+		}
+		pulls = append(pulls, map[string]any{
+			"number": pr.Number, "html_url": pr.URL, "title": pr.Title, "body": pr.Body,
+			"merged_at": pr.MergedAt.UTC().Format(time.RFC3339), "merge_commit_sha": pr.MergeCommit,
+			"head": map[string]any{"ref": pr.Branch, "sha": pr.Head}, "base": map[string]any{"sha": pr.BaseCommit},
+		})
+	}
+	return json.Marshal(pulls)
 }
 
 func (r *Repository) ReadMerged(ctx context.Context, repoDir string, branches []string) (map[string]pullrequest.MergedPR, error) {
