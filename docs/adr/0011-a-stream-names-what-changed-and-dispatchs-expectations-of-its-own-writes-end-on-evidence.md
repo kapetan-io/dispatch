@@ -9,7 +9,7 @@ Accepted
 ## Context
 
 - Dispatch learns about the multiplexer by reading it. Rex can also report, as it happens, which pane changed (`rex events --all --json`).
-- A Rex line for a child record says nothing about the worker's combined status, so a line cannot be applied as a fact.
+- A Rex line for a child record says nothing about the worker's combined status, so a line cannot be applied as a fact. Three independent design sketches each reached "the event names a pane, dispatch reads that pane" on their own.
 - Dispatch holds two memories of its own writes and trusts them over what the multiplexer says. The nudge mark (`World.Nudged`) shows a nudged worker as working. The rename memory (`renaming`) treats a sent rename as done "whether or not it landed". Both ended only at the resync. With reads every 5 minutes that cost little. With a stream that brings evidence in seconds, a memory that waits for the resync throws that speed away: a nudged worker that worked and went idle stayed hidden until the resync.
 
 ## Decision

@@ -4,6 +4,7 @@ Date: 2026-11-15
 
 ## Status
 
+Accepted
 Amends ADR 0006
 
 ## Context

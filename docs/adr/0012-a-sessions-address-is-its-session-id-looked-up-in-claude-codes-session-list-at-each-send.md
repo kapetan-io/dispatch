@@ -22,5 +22,5 @@ We will address every session, worker and follower alike, by its session id. The
 
 - No stored address can go stale, and a reused pid can't misroute a message.
 - Dispatch depends on an undocumented Claude Code file, read in one adapter and pinned by drift tests. A format change breaks every delivery in one place.
-- A session whose id changes in a running process (`/clear`) is unreachable on hosts that keep the launch-time id,.
+- A session whose id changes in a running process (`/clear`) is unreachable on hosts that keep the launch-time id.
 - A follower under a different `CLAUDE_CONFIG_DIR` from dispatch reads as not open.

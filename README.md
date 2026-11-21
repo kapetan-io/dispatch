@@ -71,5 +71,5 @@ claude --plugin-dir ~/Development/dispatch --settings '{"crossSessionInbound":"a
 | `make test-drift` | The drift checks against the installed tools. CI does not run it. |
 | `make test-claude` | Worker scenarios against a real, logged-in Claude on the Herdr app host, including whether a worker that needs you runs `dispatch ask`. Spends Haiku turns, and CI does not run it. |
 | `make test-report` | The speed report of tests over budget, tagged slow tests included. |
-| `make adr-check` | The ADR check: fails on an ADR in `docs/adr/` that cites a ticket, a repo file or the repo's history, or breaks the Status and numbering rules. CI runs it through `.github/workflows/adr-check.yml`, which other repos call too. |
+| `make adr-check` | The ADR check: fails on an ADR in `docs/adr/` that cites a ticket, a repo file or the repo's history, has a missing Status or one outside the allowed forms, shares its number with another ADR, or links to an ADR that doesn't exist. CI runs it through `.github/workflows/adr-check.yml`, which other repos call too. |
 | `make ci` | What CI runs: vet, the whole suite with the slow tests, and shellcheck. |

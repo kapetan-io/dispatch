@@ -44,7 +44,7 @@ Date: 2026-10-13
 ## Status
 
 Amends ADR 0001
-Superseded in part by ADR-0003
+Superseded in part by ADR-0001
 
 ## Decision
 
@@ -96,17 +96,33 @@ func TestEachProblemNamesTheADRTheLineAndTheText(t *testing.T) {
 	}{
 		{"linear ticket", "Proposed first in ENG-630.", `:11: cites a ticket: "ENG-630"`},
 		{"second team key", "A local ticket, LOC-7, asked.", `:11: cites a ticket: "LOC-7"`},
-		{"linear url", "See https://linear.app/x/issue/ENG-153/title.", `:11: cites a ticket: "ENG-153"`},
+		{"ticket id inside a URL", "See https://linear.app/x/issue/ENG-153/title.", `:11: cites a ticket: "ENG-153"`},
 		{"existing file", "The hold lives in `internal/rules/state.go`.", `:11: references a file or directory in the repo: "internal/rules/state.go"`},
 		{"existing directory", "Fakes live in internal/rules/ today.", `:11: references a file or directory in the repo: "internal/rules/"`},
 		{"existing root file", "Pinned in go.mod.", `:11: references a file or directory in the repo: "go.mod"`},
 		{"missing source file", "Moved to (`internal/email/retry.go`).", `:11: references a file or directory in the repo: "internal/email/retry.go"`},
 		{"relative link to a file", "Read [the rules](../rules.md).", `:11: references a file or directory in the repo: "../rules.md"`},
-		{"pull request url", "Landed in https://github.com/kapetan-io/dispatch/pull/223.", `:11: links to the repo's pull requests, commits, branches or issues: "https://github.com/kapetan-io/dispatch/pull/223"`},
-		{"branch link", "See [the branch](https://github.com/kapetan-io/dispatch/tree/thrawn01/x).", `:11: links to the repo's pull requests, commits, branches or issues: "https://github.com/kapetan-io/dispatch/tree/thrawn01/x"`},
-		{"pull request number", "ENG-491's merge retry (#154) stays.", `:11: cites a pull request or issue: "#154"`},
-		{"commit", "It now retries at the resync (`e01aa31`).", `:11: cites a commit: "e01aa31"`},
-		{"missing ADR link", "Builds on [ADR 9](0009-gone.md).", `:11: links to an ADR file that doesn't exist: "0009-gone.md"`},
+		{"pull request url", "Landed in https://github.com/kapetan-io/dispatch/pull/223.", `:11: cites the repo's pull requests, commits, branches or issues: "https://github.com/kapetan-io/dispatch/pull/223"`},
+		{"branch link", "See [the branch](https://github.com/kapetan-io/dispatch/tree/thrawn01/x).", `:11: cites the repo's pull requests, commits, branches or issues: "https://github.com/kapetan-io/dispatch/tree/thrawn01/x"`},
+		{"pull request number", "ENG-491's merge retry (#154) stays.", `:11: cites the repo's pull requests, commits, branches or issues: "#154"`},
+		{"commit", "It now retries at the resync (`e01aa31`).", `:11: cites the repo's pull requests, commits, branches or issues: "e01aa31"`},
+		{"missing ADR link", "Builds on [ADR 9](0009-gone.md).", `:11: links to an ADR that doesn't exist: "0009-gone.md"`},
+		{"missing ADR link through the parent", "Builds on [ADR 9](../adr/0009-gone.md).", `:11: links to an ADR that doesn't exist: "../adr/0009-gone.md"`},
+		{"commit url", "Landed in https://github.com/kapetan-io/dispatch/commit/e01aa31.", `:11: cites the repo's pull requests, commits, branches or issues: "https://github.com/kapetan-io/dispatch/commit/e01aa31"`},
+		{"issue url", "Reported in https://github.com/kapetan-io/dispatch/issues/5.", `:11: cites the repo's pull requests, commits, branches or issues: "https://github.com/kapetan-io/dispatch/issues/5"`},
+		{"repo url in other case", "Landed in https://github.com/Kapetan-IO/Dispatch/pull/5.", `:11: cites the repo's pull requests, commits, branches or issues: "https://github.com/Kapetan-IO/Dispatch/pull/5"`},
+		{"repo link without a scheme", "Landed in github.com/kapetan-io/dispatch/pull/5.", `:11: cites the repo's pull requests, commits, branches or issues: "github.com/kapetan-io/dispatch/pull/5"`},
+		{"owner and repo issue reference", "Reported in kapetan-io/dispatch#12.", `:11: cites the repo's pull requests, commits, branches or issues: "kapetan-io/dispatch#12"`},
+		{"lower-case ticket", "Asked in eng-630.", `:11: cites a ticket: "eng-630"`},
+		{"pull request in words", "Landed in PR 223.", `:11: cites the repo's pull requests, commits, branches or issues: "PR 223"`},
+		{"commit in words", "Fixed in commit e01aa31.", `:11: cites the repo's pull requests, commits, branches or issues: "e01aa31"`},
+		{"file with a line number", "See `internal/email/retry.go:42`.", `:11: references a file or directory in the repo: "internal/email/retry.go:42"`},
+		{"file with an anchor", "See internal/rules/state.go#L10.", `:11: references a file or directory in the repo: "internal/rules/state.go#L10"`},
+		{"glob", "Every internal/rules/*.go file.", `:11: references a file or directory in the repo: "internal/rules/*.go"`},
+		{"repo root path in prose", "See /internal/rules/state.go.", `:11: references a file or directory in the repo: "/internal/rules/state.go"`},
+		{"absolute link to a file", "Read [the state](/internal/rules/state.go).", `:11: references a file or directory in the repo: "/internal/rules/state.go"`},
+		{"parent path in prose", "The hold lives in ../../internal/rules/state.go today.", `:11: references a file or directory in the repo: "../../internal/rules/state.go"`},
+		{"reference link definition", "[state]: ../../internal/rules/state.go", `:11: references a file or directory in the repo: "../../internal/rules/state.go"`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			body := "# 1. Fake\n\nDate: 2026-10-12\n\n## Status\n\nAccepted\n\n## Context\n\n" + test.line + "\n"
@@ -114,7 +130,7 @@ func TestEachProblemNamesTheADRTheLineAndTheText(t *testing.T) {
 			code, stdout, stderr := run(t, root, "-ticket-keys", "ENG,LOC", "-repo", "kapetan-io/dispatch")
 			assert.Equal(t, 1, code)
 			assert.Contains(t, stdout, file+test.want)
-			assert.Contains(t, stderr, "problems")
+			assert.Contains(t, stderr, "ADR problem")
 		})
 	}
 }
@@ -129,7 +145,9 @@ func TestStatusMustBeAnAllowedForm(t *testing.T) {
 		{"prose amendment", "Accepted. Amends ADR 0006, which says dispatch keeps no id record.", `:7: has a Status outside the allowed forms: "Accepted. Amends ADR 0006, which says dispatch keeps no id record."`},
 		{"dated", "Accepted 2026-11-04", `:7: has a Status outside the allowed forms: "Accepted 2026-11-04"`},
 		{"superseded without number", "Superseded", `:7: has a Status outside the allowed forms: "Superseded"`},
-		{"empty", "", `: has an empty Status`},
+		{"empty", "", `:5: has an empty Status: "## Status"`},
+		{"names a missing ADR", "Superseded by ADR 0009", `:7: has a Status naming an ADR that doesn't exist: "Superseded by ADR 0009"`},
+		{"one bad line of two", "Accepted\nAccepted, amended", `:8: has a Status outside the allowed forms: "Accepted, amended"`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := repo(t, map[string]string{"0001-fake.md": strings.Replace(clean, "\nAccepted\n", "\n"+test.status+"\n", 1), "0002-next.md": next})
@@ -144,8 +162,9 @@ func TestStatusMustBeAnAllowedForm(t *testing.T) {
 func TestEveryAllowedStatusPasses(t *testing.T) {
 	for _, status := range []string{
 		"Proposed", "Accepted", "Rejected", "Deprecated",
-		"Superseded by ADR 0007", "Superseded by ADR-0007",
-		"Superseded in part by ADR 12", "Amends ADR 0006", "Amended by ADR-0019",
+		"Superseded by ADR 0002", "Superseded by ADR-0002",
+		"Superseded in part by ADR 2", "Amends ADR 0002", "Amended by ADR-0002",
+		"Accepted\nAmends ADR 0002",
 	} {
 		t.Run(status, func(t *testing.T) {
 			root := repo(t, map[string]string{"0001-fake.md": strings.Replace(clean, "\nAccepted\n", "\n"+status+"\n", 1), "0002-next.md": next})
@@ -199,7 +218,7 @@ func TestBadArgumentsExitTwo(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"lower-case key", []string{"-ticket-keys", "eng"}, `ticket key "eng"`},
+		{"key with a dash", []string{"-ticket-keys", "ENG-X"}, `ticket key "ENG-X"`},
 		{"repo without owner", []string{"-repo", "dispatch"}, `repo "dispatch" is not owner/name`},
 		{"stray argument", []string{"docs"}, `unexpected argument "docs"`},
 	} {
@@ -215,4 +234,53 @@ func TestRepoWithoutADRsPasses(t *testing.T) {
 	code, stdout, _ := run(t, t.TempDir(), "-ticket-keys", "ENG")
 	assert.Equal(t, 0, code)
 	assert.Empty(t, stdout)
+}
+
+func TestLinksToOtherADRsAndOutsideDocsStayAllowed(t *testing.T) {
+	for _, line := range []string{
+		"Builds on [ADR 2](./0002-next.md) and [its decision](0002-next.md#decision).",
+		"Builds on [ADR 2](../adr/0002-next.md).",
+		"Builds on docs/adr/0002-next.md.",
+		"Builds on ADR 0002, ADR-0002 and ADR 2.",
+		"Per [the Go spec](https://go.dev/ref/spec), <https://www.rfc-editor.org/rfc/rfc9110> and https://github.com/golang/go/issues/1.",
+		"SHA-256, UTF-8, ISO-8601 and ENG-team name no ticket.",
+		"Sign with ed25519 keys; deadbeef12 and 3f2b1c4d are not commits.",
+		"The project lives at https://github.com/kapetan-io/dispatch.",
+		"![flow](images/flow.png)",
+		"ADRs live in docs/adr and outside the repo in /etc/hosts.",
+	} {
+		t.Run(line, func(t *testing.T) {
+			body := "# 1. Fake\n\nDate: 2026-10-12\n\n## Status\n\nAccepted\n\n## Context\n\n" + line + "\n"
+			root := repo(t, map[string]string{"0001-fake.md": body, "0002-next.md": next})
+			code, stdout, _ := run(t, root, "-ticket-keys", "ENG,LOC", "-repo", "kapetan-io/dispatch")
+			assert.Equal(t, 0, code)
+			assert.Empty(t, stdout)
+		})
+	}
+}
+
+func TestSharedNumberFailsWhateverItsPadding(t *testing.T) {
+	root := repo(t, map[string]string{"0001-fake.md": clean, "0002-next.md": next, "2-other.md": next})
+	code, stdout, _ := run(t, root)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stdout, `docs/adr/0002-next.md:1: shares its number with another ADR: "2-other.md"`)
+	assert.Contains(t, stdout, `docs/adr/2-other.md:1: shares its number with another ADR: "0002-next.md"`)
+}
+
+// This repo's own ADRs pass the check as make adr-check runs it.
+func TestThisReposADRsPass(t *testing.T) {
+	root, err := filepath.Abs("../..")
+	require.NoError(t, err)
+	code, stdout, stderr := run(t, root, "-ticket-keys", "ENG,LOC", "-repo", "kapetan-io/dispatch")
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stdout)
+	assert.Empty(t, stderr)
+}
+
+func TestATicketInALinkIsReportedOnce(t *testing.T) {
+	body := "# 1. Fake\n\nDate: 2026-10-12\n\n## Status\n\nAccepted\n\n## Context\n\nSee [ENG-1](https://linear.app/x/issue/ENG-1/title).\n"
+	root := repo(t, map[string]string{"0001-fake.md": body})
+	code, stdout, _ := run(t, root, "-ticket-keys", "ENG")
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "docs/adr/0001-fake.md:11: cites a ticket: \"ENG-1\"\n", stdout)
 }

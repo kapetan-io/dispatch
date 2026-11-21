@@ -4,6 +4,7 @@ Date: 2026-11-01
 
 ## Status
 
+Accepted
 Amended by ADR 0019
 
 ## Context
@@ -34,4 +35,3 @@ We will add `herdr.Rex` as a third real adapter behind `herdr.Multiplexer`. Its 
 - Two dispatch runs with different state dirs don't share the lock.
 - The worker label is positional under Rex, so changing its format needs a migration of running worker blocks.
 - The Rex adapter runs the host-neutral contract scenarios; Rex-only behavior is tested in the adapter's own tests, with no new scenario set.
-
