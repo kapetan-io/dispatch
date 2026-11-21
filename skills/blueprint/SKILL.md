@@ -29,7 +29,7 @@ If the feature has an OpenAPI spec, the contract sketch (the surface a consumer 
 
 If the discussion resolved domain terms, add a `Glossary changes` section to the blueprint in the format of [CONTEXT-FORMAT.md](../design/CONTEXT-FORMAT.md), naming the `CONTEXT.md` each term belongs in. Your working tree is discarded when you finish, so the first build piece commits the terms, as `dispatch:breakdown` arranges. Keep the section current with the terms a review corrected or added.
 
-The ADR test: offer an ADR only for a decision that is hard to reverse, surprising without context, and a real trade-off. An ADR the user approved goes in as an `ADR: <title>` section in the format of the ADRs already in `docs/adr/`, unnumbered. The first piece that implements it commits it under the next free `NNNN-` number.
+The ADR test: offer an ADR only for a decision that is hard to reverse, surprising without context, and a real trade-off. If a test can prove the behavior and the reason is clear, it is not an ADR. An ADR the user approved goes in as an `ADR: <title>` section in the format of the ADRs already in `docs/adr/`, unnumbered. The first piece that implements it commits it under the next free `NNNN-` number.
 
 ## Updating a saved blueprint
 
