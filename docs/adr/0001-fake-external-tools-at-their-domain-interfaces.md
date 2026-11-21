@@ -5,6 +5,7 @@ Date: 2026-10-12
 ## Status
 
 Accepted
+Amended by ADR 0006
 
 ## Context
 

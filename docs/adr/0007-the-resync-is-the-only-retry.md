@@ -12,7 +12,7 @@ Accepted
 - The owner, turning down a retry loop: "we should not introduce retries, there is no reason too when we have the 5 minute resync cycle which acts ass a naturla place to retry" (spelling as written).
 - A failed workspace rename is tried again at the next resync, not inside the loop.
 - A merge GitHub refused because the base branch moved is retried by a rule that reads the ledger, at most 5 more times with a pause of a minute between tries (`MERGE_RETRIES` and `MERGE_RETRY_PAUSE` in the shipped rules). It takes the next cycle that sees the pause over, so nothing sleeps and tries again in place.
-- Trying a treehouse lease and a `git switch` 3 times in place, for failures whose cause was never found, hid the failure. Those launch failures also counted toward `launch_failure_limit`, so a passing flake could send a ticket to Needs Human.
+- A launch that tried a treehouse lease and a `git switch` 3 times in place, for failures whose cause was never found, hid the failure. Those launch failures also counted toward `launch_failure_limit`, so a passing flake could send a ticket to Needs Human.
 
 ## Decision
 

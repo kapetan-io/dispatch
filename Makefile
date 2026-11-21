@@ -34,7 +34,7 @@ test-report: ## Report tests over the speed budget, tagged ones included
 	@go run ./cmd/slowtests -tags tests_slow
 
 # The reusable ADR workflow runs this target from a checkout of dispatch, with
-# ADR_ROOT pointing at the calling repo. CI runs it in that workflow, not in ci.
+# ADR_ROOT pointing at the calling repo. CI runs it in that workflow, not in `make ci`.
 ADR_ROOT ?= .
 ADR_TICKET_KEYS ?= ENG,LOC
 ADR_REPO ?= kapetan-io/dispatch

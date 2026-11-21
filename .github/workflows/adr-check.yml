@@ -48,8 +48,9 @@ jobs:
         with:
           go-version-file: .dispatch/go.mod
           cache-dependency-path: .dispatch/go.sum
-      # Inputs reach the shell through the environment, never spliced into the script,
-      # and make expands its variables again, so only key characters get that far.
+      # Inputs reach the shell through the environment, never spliced into the script.
+      # make expands $(...) in command-line variables, so anything but letters,
+      # digits, commas and spaces is refused before make sees it.
       - env:
           ADR_TICKET_KEYS: ${{ inputs.ticket-keys }}
           ADR_REPO: ${{ github.repository }}

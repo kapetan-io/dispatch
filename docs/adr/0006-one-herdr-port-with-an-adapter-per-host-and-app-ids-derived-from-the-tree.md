@@ -5,6 +5,7 @@ Date: 2026-11-01
 ## Status
 
 Accepted
+Amends ADR 0001
 Amended by ADR 0019
 
 ## Context

@@ -120,6 +120,9 @@ func TestEachProblemNamesTheADRTheLineAndTheText(t *testing.T) {
 		{"file with an anchor", "See internal/rules/state.go#L10.", `:11: references a file or directory in the repo: "internal/rules/state.go#L10"`},
 		{"glob", "Every internal/rules/*.go file.", `:11: references a file or directory in the repo: "internal/rules/*.go"`},
 		{"repo root path in prose", "See /internal/rules/state.go.", `:11: references a file or directory in the repo: "/internal/rules/state.go"`},
+		{"command path in prose", "Run `go run ./internal/rules/` to see it.", `:11: references a file or directory in the repo: "./internal/rules/"`},
+		{"path in a footnote", "[^1]: See internal/rules/ and the PR.", `:11: references a file or directory in the repo: "internal/rules/"`},
+		{"raw file link", "[raw](https://raw.githubusercontent.com/kapetan-io/dispatch/main/go.mod)", `:11: cites the repo's pull requests, commits, branches or issues: "https://raw.githubusercontent.com/kapetan-io/dispatch/main/go.mod"`},
 		{"absolute link to a file", "Read [the state](/internal/rules/state.go).", `:11: references a file or directory in the repo: "/internal/rules/state.go"`},
 		{"parent path in prose", "The hold lives in ../../internal/rules/state.go today.", `:11: references a file or directory in the repo: "../../internal/rules/state.go"`},
 		{"reference link definition", "[state]: ../../internal/rules/state.go", `:11: references a file or directory in the repo: "../../internal/rules/state.go"`},
@@ -141,13 +144,13 @@ func TestStatusMustBeAnAllowedForm(t *testing.T) {
 		status string
 		want   string
 	}{
-		{"amended note", "Accepted, amended", `:7: has a Status outside the allowed forms: "Accepted, amended"`},
-		{"prose amendment", "Accepted. Amends ADR 0006, which says dispatch keeps no id record.", `:7: has a Status outside the allowed forms: "Accepted. Amends ADR 0006, which says dispatch keeps no id record."`},
-		{"dated", "Accepted 2026-11-04", `:7: has a Status outside the allowed forms: "Accepted 2026-11-04"`},
-		{"superseded without number", "Superseded", `:7: has a Status outside the allowed forms: "Superseded"`},
+		{"amended note", "Accepted, amended", `:7: has a Status outside the allowed forms (Proposed, Accepted, Rejected, Deprecated, Superseded by ADR N, Superseded in part by ADR N, Amends ADR N, Amended by ADR N): "Accepted, amended"`},
+		{"prose amendment", "Accepted. Amends ADR 0006, which says dispatch keeps no id record.", `:7: has a Status outside the allowed forms (Proposed, Accepted, Rejected, Deprecated, Superseded by ADR N, Superseded in part by ADR N, Amends ADR N, Amended by ADR N): "Accepted. Amends ADR 0006, which says dispatch keeps no id record."`},
+		{"dated", "Accepted 2026-11-04", `:7: has a Status outside the allowed forms (Proposed, Accepted, Rejected, Deprecated, Superseded by ADR N, Superseded in part by ADR N, Amends ADR N, Amended by ADR N): "Accepted 2026-11-04"`},
+		{"superseded without number", "Superseded", `:7: has a Status outside the allowed forms (Proposed, Accepted, Rejected, Deprecated, Superseded by ADR N, Superseded in part by ADR N, Amends ADR N, Amended by ADR N): "Superseded"`},
 		{"empty", "", `:5: has an empty Status: "## Status"`},
 		{"names a missing ADR", "Superseded by ADR 0009", `:7: has a Status naming an ADR that doesn't exist: "Superseded by ADR 0009"`},
-		{"one bad line of two", "Accepted\nAccepted, amended", `:8: has a Status outside the allowed forms: "Accepted, amended"`},
+		{"one bad line of two", "Accepted\nAccepted, amended", `:8: has a Status outside the allowed forms (Proposed, Accepted, Rejected, Deprecated, Superseded by ADR N, Superseded in part by ADR N, Amends ADR N, Amended by ADR N): "Accepted, amended"`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := repo(t, map[string]string{"0001-fake.md": strings.Replace(clean, "\nAccepted\n", "\n"+test.status+"\n", 1), "0002-next.md": next})
@@ -247,6 +250,9 @@ func TestLinksToOtherADRsAndOutsideDocsStayAllowed(t *testing.T) {
 		"Sign with ed25519 keys; deadbeef12 and 3f2b1c4d are not commits.",
 		"The project lives at https://github.com/kapetan-io/dispatch.",
 		"![flow](images/flow.png)",
+		"Limit is `1048576` bytes, split on `/` or read / write.",
+		"[readme](https://github.com/kapetan-io/dispatch#readme) and https://github.com/kapetan-io/dispatch?tab=readme-ov-file.",
+		"[the index](./) lists them.",
 		"ADRs live in docs/adr and outside the repo in /etc/hosts.",
 	} {
 		t.Run(line, func(t *testing.T) {
@@ -283,4 +289,12 @@ func TestATicketInALinkIsReportedOnce(t *testing.T) {
 	code, stdout, _ := run(t, root, "-ticket-keys", "ENG")
 	assert.Equal(t, 1, code)
 	assert.Equal(t, "docs/adr/0001-fake.md:11: cites a ticket: \"ENG-1\"\n", stdout)
+}
+
+func TestAPullRequestWrittenTwoWaysIsReportedOnce(t *testing.T) {
+	body := "# 1. Fake\n\nDate: 2026-10-12\n\n## Status\n\nAccepted\n\n## Context\n\nThis was PR #12.\n"
+	root := repo(t, map[string]string{"0001-fake.md": body})
+	code, stdout, _ := run(t, root)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "docs/adr/0001-fake.md:11: cites the repo's pull requests, commits, branches or issues: \"#12\"\n", stdout)
 }

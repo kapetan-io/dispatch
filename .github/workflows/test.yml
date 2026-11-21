@@ -87,8 +87,8 @@ jobs:
       - if: needs.changes.outputs.code != 'false' || github.event_name != 'pull_request'
         run: make ci
 
-  # The same reusable check other repos call, run at this pull request's own
-  # commit so a change to the check is tested before it merges.
+  # The same reusable check other repos call, run at the commit under test
+  # so a change to the check is tested before it merges.
   adr:
     uses: ./.github/workflows/adr-check.yml
     with:

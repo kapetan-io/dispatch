@@ -38,7 +38,7 @@ func (p Problem) String() string {
 }
 
 // Run checks every ADR under <root>/docs/adr and prints one line per problem. It
-// returns 0 when there is none, 1 when there is one, and 2 when it could not check.
+// returns 0 when there is none, 1 when there is at least one, and 2 when it could not check.
 func Run(ctx context.Context, args []string, opts Options) int {
 	problems, err := run(args, opts)
 	if err != nil {
@@ -49,7 +49,7 @@ func Run(ctx context.Context, args []string, opts Options) int {
 		fmt.Fprintln(opts.Stdout, p)
 	}
 	if len(problems) > 0 {
-		fmt.Fprintf(opts.Stderr, "adrcheck: %d ADR problem(s). An ADR records one decision and why for a reader years later, so it cites no tickets, repo files or history.\n", len(problems))
+		fmt.Fprintf(opts.Stderr, "adrcheck: %d ADR problem(s)\n", len(problems))
 		return 1
 	}
 	return 0
@@ -64,7 +64,7 @@ const (
 	citesRepoHistory = "cites the repo's pull requests, commits, branches or issues"
 	citesMissingADR  = "links to an ADR that doesn't exist"
 	sharesNumber     = "shares its number with another ADR"
-	badStatus        = "has a Status outside the allowed forms"
+	badStatus        = "has a Status outside the allowed forms (Proposed, Accepted, Rejected, Deprecated, Superseded by ADR N, Superseded in part by ADR N, Amends ADR N, Amended by ADR N)"
 	emptyStatus      = "has an empty Status"
 	missingStatus    = "has no Status section"
 	statusMissingADR = "has a Status naming an ADR that doesn't exist"
@@ -82,15 +82,16 @@ func run(args []string, opts Options) ([]Problem, error) {
 	if fs.NArg() > 0 {
 		return nil, fmt.Errorf("unexpected argument %q", fs.Arg(0))
 	}
-	rules, err := newADRRules(*root, *keys, *repo)
+	rules, err := newChecker(*root, *keys, *repo)
 	if err != nil {
 		return nil, err
 	}
 	return rules.checkAll()
 }
 
-// adrRules holds what the checks need to know about the repo.
-type adrRules struct {
+// checker holds what the checks need to know about the repo. checkAll fills
+// numbers before it checks any ADR.
+type checker struct {
 	root    string
 	ticket  *regexp.Regexp // nil when no ticket keys were given
 	history []*regexp.Regexp
@@ -102,15 +103,16 @@ var (
 	repoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 )
 
-func newADRRules(root, keys, repo string) (*adrRules, error) {
-	r := &adrRules{root: root, history: []*regexp.Regexp{
+func newChecker(root, keys, repo string) (*checker, error) {
+	r := &checker{root: root, history: []*regexp.Regexp{
 		// #123 is how GitHub writes a pull request or issue in prose.
 		regexp.MustCompile(`(?:^|[\s(\[])(#\d+)\b`),
-		regexp.MustCompile(`\b(PR #?\d+|GH-\d+)\b`),
-		// A commit id is cited in backticks or after the word commit. Elsewhere a hex
-		// run is as likely a key name (ed25519) or part of an id.
-		regexp.MustCompile("`([0-9a-f]{7,40})`"),
-		regexp.MustCompile(`(?i)\bcommits? ([0-9a-f]{7,40})\b`),
+		regexp.MustCompile(`\b(PR \d+|GH-\d+)\b`),
+		// A commit id is cited in backticks or after the word commit, and has both
+		// digits and letters. Elsewhere a hex run is as likely a key name (ed25519),
+		// and in backticks a run of digits is a number.
+		regexp.MustCompile("`([0-9a-f]*[a-f][0-9a-f]*)`"),
+		regexp.MustCompile(`(?i)\bcommits? ([0-9a-f]*[a-f][0-9a-f]*)\b`),
 	}}
 	var names []string
 	for _, k := range strings.FieldsFunc(keys, func(r rune) bool { return r == ',' || r == ' ' }) {
@@ -129,7 +131,8 @@ func newADRRules(root, keys, repo string) (*adrRules, error) {
 		name := regexp.QuoteMeta(repo)
 		r.history = append(r.history,
 			// A link to the repo's home page cites no history, so the path must go on.
-			regexp.MustCompile(`(?i)((?:https?://)?(?:www\.)?github\.com/`+name+`(?:/[^\s)>\]]*[^\s)>\].,;:!?'"]|[#?][^\s)>\]]*[^\s)>\].,;:!?'"]))`),
+			regexp.MustCompile(`(?i)((?:https?://)?(?:www\.)?github\.com/`+name+`/[^\s)>\]]*[^\s)>\].,;:!?'"])`),
+			regexp.MustCompile(`(?i)((?:https?://)?raw\.githubusercontent\.com/`+name+`/[^\s)>\]]*[^\s)>\].,;:!?'"])`),
 			regexp.MustCompile(`(?i)\b(`+name+`#\d+)\b`),
 		)
 	}
@@ -138,7 +141,7 @@ func newADRRules(root, keys, repo string) (*adrRules, error) {
 
 var adrName = regexp.MustCompile(`^(\d+)-.*\.md$`)
 
-func (r *adrRules) checkAll() ([]Problem, error) {
+func (r *checker) checkAll() ([]Problem, error) {
 	entries, err := os.ReadDir(filepath.Join(r.root, adrDir))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -187,9 +190,9 @@ var (
 	statusHeading  = regexp.MustCompile(`(?i)^##\s+status\s*$`)
 	allowedStatus  = regexp.MustCompile(`^(?:Proposed|Accepted|Rejected|Deprecated|(?:Superseded by|Superseded in part by|Amends|Amended by) ADR[ -](\d+))$`)
 	mdLink         = regexp.MustCompile(`\[([^\]]*)\]\(\s*<?([^)\s>]+)>?[^)]*\)`)
-	linkDefinition = regexp.MustCompile(`^\s*\[[^\]]+\]:\s*<?(\S+?)>?(?:\s|$)`)
+	linkDefinition = regexp.MustCompile(`^\s*\[[^\]^][^\]]*\]:\s*<?(\S+?)>?(?:\s|$)`)
 	urlPattern     = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://[^\s)>\]]*[^\s)>\].,;:!?'"]`)
-	// A trailing :42, :42:7 or #L10 names a line in the file.
+	// A trailing :42, :42:7 or #anchor names a place in the file.
 	lineSuffix = regexp.MustCompile(`(?::\d+)+$|#.*$`)
 )
 
@@ -202,7 +205,7 @@ var sourceExtensions = map[string]bool{
 	".sh": true, ".bash": true, ".sql": true, ".proto": true, ".scala": true, ".ex": true, ".exs": true,
 }
 
-func (r *adrRules) check(file, body string) []Problem {
+func (r *checker) check(file, body string) []Problem {
 	var problems []Problem
 	seen := map[Problem]bool{}
 	add := func(line int, reason, text string) {
@@ -251,13 +254,13 @@ func (r *adrRules) check(file, body string) []Problem {
 	return problems
 }
 
-func (r *adrRules) adrExists(number string) bool {
+func (r *checker) adrExists(number string) bool {
 	n, _ := strconv.Atoi(number)
 	return len(r.numbers[n]) > 0
 }
 
 // references reports each link, path or history citation in line that points into the repo.
-func (r *adrRules) references(file, line string, add func(reason, text string)) {
+func (r *checker) references(file, line string, add func(reason, text string)) {
 	if m := linkDefinition.FindStringSubmatch(line); m != nil {
 		if reason := r.linkTarget(file, m[1], false); reason != "" {
 			add(reason, m[1])
@@ -280,6 +283,9 @@ func (r *adrRules) references(file, line string, add func(reason, text string)) 
 	prose := rest.String()
 	for _, pattern := range r.history {
 		for _, m := range pattern.FindAllStringSubmatch(prose, -1) {
+			if isHex(m[1]) && (len(m[1]) < 7 || len(m[1]) > 40 || !strings.ContainsAny(m[1], "0123456789")) {
+				continue
+			}
 			add(citesRepoHistory, m[1])
 		}
 	}
@@ -292,7 +298,7 @@ func (r *adrRules) references(file, line string, add func(reason, text string)) 
 
 // linkTarget returns why a markdown link target is refused, or "" when it is allowed.
 // An image beside the ADRs is part of the ADR, so it is allowed.
-func (r *adrRules) linkTarget(file, target string, image bool) string {
+func (r *checker) linkTarget(file, target string, image bool) string {
 	if urlPattern.MatchString(target) || strings.HasPrefix(target, "mailto:") {
 		for _, pattern := range r.history {
 			if pattern.MatchString(target) {
@@ -312,7 +318,7 @@ func (r *adrRules) linkTarget(file, target string, image bool) string {
 		}
 		return ""
 	}
-	if image && strings.HasPrefix(resolved, adrDir+"/") {
+	if resolved == adrDir || image && strings.HasPrefix(resolved, adrDir+"/") {
 		return ""
 	}
 	return citesRepoPath
@@ -322,7 +328,7 @@ func (r *adrRules) linkTarget(file, target string, image bool) string {
 // one when it resolves to an existing file or directory other than an ADR, or when
 // it has a directory separator and a source-file extension. A bare word such as
 // "rules" is never a path, even when a directory has that name.
-func (r *adrRules) repoPath(file, token string) string {
+func (r *checker) repoPath(file, token string) string {
 	token = strings.TrimLeft(token, "`\"'([{*_")
 	token = strings.TrimRight(token, "`\"')]}*_,;:.!?")
 	if token == "" || strings.ContainsAny(token, "<>$~") || !strings.ContainsAny(token, "/.") {
@@ -330,7 +336,7 @@ func (r *adrRules) repoPath(file, token string) string {
 	}
 	path := lineSuffix.ReplaceAllString(token, "")
 	resolved := resolve(file, path, false)
-	if resolved == "" || isADRPath(resolved) || resolved == adrDir {
+	if resolved == "" || resolved == "." || isADRPath(resolved) || resolved == adrDir {
 		return ""
 	}
 	if !strings.Contains(path, "*") {
@@ -346,15 +352,15 @@ func (r *adrRules) repoPath(file, token string) string {
 
 // resolve turns a path an ADR names into a repo-relative one, or "" when it leaves
 // the repo. A path starting with / is from the repo root. A link's other targets are
-// relative to the ADR, as markdown reads them. In prose only a path starting with ./
-// or ../, or a bare ADR file name, is relative to the ADR; any other names a repo
-// file from the root.
+// relative to the ADR, as markdown reads them. In prose only a path starting with ../,
+// or a bare ADR file name, is relative to the ADR; any other, ./cmd/x included,
+// names a repo file from the root, as a command line in prose does.
 func resolve(file, path string, link bool) string {
 	var joined string
 	switch {
 	case strings.HasPrefix(path, "/"):
 		joined = strings.TrimPrefix(path, "/")
-	case link, strings.HasPrefix(path, "./"), strings.HasPrefix(path, "../"), !strings.Contains(path, "/") && isADRName(path):
+	case link, strings.HasPrefix(path, "../"), !strings.Contains(path, "/") && isADRName(path):
 		joined = filepath.Join(filepath.Dir(file), path)
 	default:
 		joined = path
@@ -370,4 +376,8 @@ func isADRName(name string) bool { return adrName.MatchString(name) }
 
 func isADRPath(path string) bool {
 	return filepath.ToSlash(filepath.Dir(path)) == adrDir && isADRName(filepath.Base(path))
+}
+
+func isHex(s string) bool {
+	return strings.Trim(s, "0123456789abcdefABCDEF") == ""
 }
