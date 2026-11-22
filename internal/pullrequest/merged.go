@@ -110,5 +110,5 @@ func (s cliMergedSource) MergedPage(ctx context.Context, branches []string) ([]b
 		fmt.Fprintf(&fields, "b%[1]d:pullRequests(headRefName:$b%[1]d,states:MERGED,first:%d,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number url headRefOid baseRefName isCrossRepository mergedAt}}\n", i, mergedPerBranch)
 	}
 	query := fmt.Sprintf("query($owner:String!,$repo:String!%s){repository(owner:$owner,name:$repo){defaultBranchRef{name}\n%s}}", decls.String(), fields.String())
-	return s.cli.graphql(ctx, s.dir, append(args, "-f", "query="+query))
+	return s.cli.gh(ctx, s.dir, append(args, "-f", "query="+query))
 }

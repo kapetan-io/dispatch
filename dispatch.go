@@ -175,11 +175,19 @@ const usage = `usage: dispatch run
                error's first line (or, after "Exit code N", its first diagnostic line) with paths,
                numbers and ids replaced, leaving out signatures seen once; permission denials; each
                denial a subagent hit, with whether its final report names it and what it did next;
-               and files one agent or session edited successfully 5 or more times. --to defaults to
-               now and --from to 7 days before --to. TIME is RFC 3339, "2006-01-02 15:04", "15:04"
-               today or a date such as 2026-11-13, which means the start of that day. --json prints
-               the same rows as JSON. Leaves out the pattern miner's own sessions, and skips a
-               transcript it cannot read with a line on stderr. Reports rows only and judges none of them
+               files one agent or session edited successfully 5 or more times; and, for the PRs the
+               gh user wrote that merged in the window into a repo the config lists, fix chains (a
+               later merged PR that changed lines an earlier merged PR wrote within 30 days, printing
+               only reverts and Bug tickets where the earlier PR wrote at least half the deleted lines)
+               and the existing Go tests each PR changed, each PR with the session whose gh pr create
+               made it, else the one session that ran on its branch, else "not proven" or "not on
+               disk". It fetches each clone and otherwise only reads it. --to defaults to now and
+               --from to 7 days before --to. TIME is RFC 3339, "2006-01-02 15:04", "15:04" today or a
+               date such as 2026-11-13, which means the start of that day. --json prints the same
+               rows as JSON, with every fix chain and whether it passes the rule. Leaves out the
+               pattern miner's own sessions, and skips a transcript it cannot read with a line on
+               stderr. Reports rows: the fix chain table filters on the rule above, and calls no
+               chain a regression
   state reset  start a new history segment with an empty ledger, keeping what the world remembers.
                With --quiet, record the messages the first cycle wants as sent, so none is repeated.
                Exits 1 while dispatch run holds the lock
@@ -309,7 +317,7 @@ func Run(ctx context.Context, args []string, opts Options) error {
 	case "replay":
 		return replayCommand(opts, args[1:])
 	case "collect-agent-failures":
-		return collectAgentFailures(opts, args[1:])
+		return collectAgentFailures(ctx, opts, args[1:])
 	case "state":
 		return stateCommand(ctx, opts, args[1:])
 	case "rules":

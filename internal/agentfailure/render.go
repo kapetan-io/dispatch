@@ -19,23 +19,23 @@ func (r Report) WriteMarkdown(w io.Writer, from, to string) error {
 	b.WriteString("\n\n")
 
 	failureCols := []string{"signature", "count", "sessions", "repos", "first_seen", "last_seen", "example"}
-	section(&b, "1. Tool failures", len(r.ToolFailures), failureCols, failureCells(r.ToolFailures))
+	Section(&b, fmt.Sprintf("1. Tool failures (%d)", len(r.ToolFailures)), failureCols, failureCells(r.ToolFailures))
 	fmt.Fprintf(&b, "Dropped %d signatures seen once.\n\n", r.DroppedSingletons.Signatures)
-	section(&b, "1b. Permission denials", len(r.PermissionDenials), failureCols, failureCells(r.PermissionDenials))
+	Section(&b, fmt.Sprintf("1b. Permission denials (%d)", len(r.PermissionDenials)), failureCols, failureCells(r.PermissionDenials))
 
 	var denials [][]string
 	for _, d := range r.SubagentDenials {
 		denials = append(denials, []string{d.Session, d.Agent, d.Description, d.Time, d.Kind, d.Denied,
 			d.NextActionOnSameFile, d.ReportNamesFile, d.ReportDenialWords, d.ReportSource})
 	}
-	section(&b, "2a. Subagent permission denials", len(denials), []string{"session", "agent", "description", "time", "kind",
+	Section(&b, fmt.Sprintf("2a. Subagent permission denials (%d)", len(denials)), []string{"session", "agent", "description", "time", "kind",
 		"denied", "next_action_on_same_file", "report_names_file", "report_denial_words", "report_source"}, denials)
 
 	var edits [][]string
 	for _, e := range r.RepeatedEdits {
 		edits = append(edits, []string{e.Session, e.Agent, e.Repo, e.File, fmt.Sprint(e.Edits), e.First, e.Last})
 	}
-	section(&b, fmt.Sprintf("2b. Files edited %d+ times by one agent or session", MinimumEdits), len(edits),
+	Section(&b, fmt.Sprintf("2b. Files edited %d+ times by one agent or session (%d)", MinimumEdits, len(edits)),
 		[]string{"session", "agent", "repo", "file", "edits", "first", "last"}, edits)
 
 	_, err := io.WriteString(w, b.String())
@@ -52,8 +52,10 @@ func failureCells(rows []Failure) [][]string {
 
 var cellEscapes = strings.NewReplacer("|", `\|`, "\n", "⏎ ")
 
-func section(b *strings.Builder, title string, count int, cols []string, rows [][]string) {
-	fmt.Fprintf(b, "## %s (%d)\n\n", title, count)
+// Section writes a Markdown table under a "## heading" line, or _none_ when rows is empty. Cells
+// have their pipes escaped and newlines shown as ⏎.
+func Section(b *strings.Builder, heading string, cols []string, rows [][]string) {
+	fmt.Fprintf(b, "## %s\n\n", heading)
 	if len(rows) == 0 {
 		b.WriteString("_none_\n\n")
 		return

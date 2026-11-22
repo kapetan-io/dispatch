@@ -31,6 +31,12 @@ type Repository interface {
 	// nothing, when the PR's head is no longer head, so a push after the
 	// approval was read is never merged unreviewed.
 	Merge(ctx context.Context, prURL, head string) error
+	// OwnMerged lists the PRs the gh user wrote that merged into repo, an owner/name, between from
+	// and to, by number.
+	OwnMerged(ctx context.Context, repo string, from, to time.Time) ([]MergedChange, error)
+	// MergedHolding finds the merged PR that brought commit sha into repo. It returns false when
+	// no merged PR holds the commit.
+	MergedHolding(ctx context.Context, repo, sha string) (MergedChange, bool, error)
 }
 
 // Rules say which of a PR's items count. The zero value judges everything as
@@ -671,7 +677,7 @@ func (s cliSource) PRPage(ctx context.Context, branch, after string) ([]byte, er
 	if after != "" {
 		args = append(args, "-f", "after="+after)
 	}
-	return s.cli.graphql(ctx, s.dir, args)
+	return s.cli.gh(ctx, s.dir, args)
 }
 
 func (s cliSource) Older(ctx context.Context, number int, kind, before string) ([]byte, error) {
@@ -679,7 +685,7 @@ func (s cliSource) Older(ctx context.Context, number int, kind, before string) (
 	if kind == kindReviews {
 		q = olderReviewsQuery
 	}
-	return s.cli.graphql(ctx, s.dir, []string{"api", "graphql",
+	return s.cli.gh(ctx, s.dir, []string{"api", "graphql",
 		"-F", "owner={owner}", "-F", "repo={repo}", "-F", fmt.Sprintf("number=%d", number),
 		"-f", "before=" + before, "-f", "query=" + q})
 }
@@ -690,12 +696,12 @@ func (s cliSource) Checks(ctx context.Context, number int) ([]byte, error) {
 
 // Checks returns gh's raw answer to the checks query for PR number.
 func (c *CLI) Checks(ctx context.Context, repoDir string, number int) ([]byte, error) {
-	return c.graphql(ctx, repoDir, []string{"api", "graphql",
+	return c.gh(ctx, repoDir, []string{"api", "graphql",
 		"-F", "owner={owner}", "-F", "repo={repo}", "-F", fmt.Sprintf("number=%d", number),
 		"-f", "query=" + checksQuery})
 }
 
-func (c *CLI) graphql(parent context.Context, dir string, args []string) ([]byte, error) {
+func (c *CLI) gh(parent context.Context, dir string, args []string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(parent, c.timeout)
 	defer cancel()
 	cmd := c.env.Command(ctx, c.bin, args...)
@@ -706,15 +712,23 @@ func (c *CLI) graphql(parent context.Context, dir string, args []string) ([]byte
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
-			wrapped := fmt.Errorf("while running gh in %s: %w: %s", dir, err, strings.TrimSpace(string(exit.Stderr)))
+			wrapped := fmt.Errorf("while running gh%s: %w: %s", where(dir), err, strings.TrimSpace(string(exit.Stderr)))
 			if stderr := string(exit.Stderr); rateLimited(string(b), stderr) {
 				return nil, &RateLimitError{Reset: c.resetOf(parent, dir, stderr), Err: wrapped}
 			}
 			return nil, wrapped
 		}
-		return nil, fmt.Errorf("while running gh in %s: %w", dir, err)
+		return nil, fmt.Errorf("while running gh%s: %w", where(dir), err)
 	}
 	return b, nil
+}
+
+// where names the directory gh ran in for an error, and nothing when it ran with no repo directory.
+func where(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	return " in " + dir
 }
 
 // Merge names the PR by URL, so gh needs no remote to resolve, and passes the
