@@ -82,11 +82,16 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           PR: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
+          # Keeps make's echoed commands out of the summary.
+          MAKEFLAGS: --silent
         run: |
           if [[ ! "$BASE_REF" =~ ^[A-Za-z0-9._/-]+$ ]]; then
             echo "base branch $BASE_REF has characters this check refuses" >&2
             exit 2
           fi
+          # The summary renders Markdown, so the report goes in a code block to keep one test per line.
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          trap 'echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"' EXIT
           make -C .dispatch changes-existing-tests \
             CHANGES_EXISTING_TESTS_ROOT="$GITHUB_WORKSPACE/repo" CHANGES_EXISTING_TESTS_BASE="origin/$BASE_REF" \
             CHANGES_EXISTING_TESTS_REPO="$REPO" CHANGES_EXISTING_TESTS_PR="$PR" | tee -a "$GITHUB_STEP_SUMMARY"

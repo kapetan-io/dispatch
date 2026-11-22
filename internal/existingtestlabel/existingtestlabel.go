@@ -99,8 +99,13 @@ func run(ctx context.Context, args []string, opts Options) error {
 	case r.ChangesExistingTests && !has:
 		// Adding a label the repo lacks creates it, which needs issues: write, more than the
 		// caller grants. Naming the fix beats GitHub's bare 403.
-		if err := gh.call(ctx, http.MethodGet, gh.repoPath+"/labels/"+url.PathEscape(Label), nil, nil); err != nil {
-			return fmt.Errorf("%w\ncreate the label once with: gh label create %s --repo %s", err, Label, *repo)
+		err := gh.call(ctx, http.MethodGet, gh.repoPath+"/labels/"+url.PathEscape(Label), nil, nil)
+		var refused statusError
+		if errors.As(err, &refused) && refused.code == http.StatusNotFound {
+			return fmt.Errorf("%s has no %s label; create it once with: gh label create %s --repo %s", *repo, Label, Label, *repo)
+		}
+		if err != nil {
+			return fmt.Errorf("reading the repo's %s label: %w", Label, err)
 		}
 		if err := gh.call(ctx, http.MethodPost, gh.issuePath+"/labels", map[string][]string{"labels": {Label}}, nil); err != nil {
 			return fmt.Errorf("adding %s: %w", Label, err)
@@ -202,10 +207,18 @@ func (g github) call(ctx context.Context, method, path string, body, out any) er
 		return err
 	}
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("%s %s: %s: %s", method, path, resp.Status, strings.TrimSpace(string(data)))
+		return statusError{code: resp.StatusCode, msg: fmt.Sprintf("%s %s: %s: %s", method, path, resp.Status, strings.TrimSpace(string(data)))}
 	}
 	if out == nil {
 		return nil
 	}
 	return json.Unmarshal(data, out)
 }
+
+// statusError is GitHub answering a REST call with a status other than 2xx.
+type statusError struct {
+	code int
+	msg  string
+}
+
+func (e statusError) Error() string { return e.msg }

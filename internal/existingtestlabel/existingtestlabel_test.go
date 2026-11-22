@@ -83,6 +83,8 @@ type issues struct {
 	token          string
 	readOnly       bool
 	repoLacksLabel bool
+	// repoLabelDown answers 502 when the repo's label is read, as GitHub does in an outage.
+	repoLabelDown bool
 }
 
 func (s *issues) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -93,6 +95,10 @@ func (s *issues) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if name, ok := strings.CutPrefix(r.URL.Path, "/repos/"+s.repo+"/labels/"); ok && r.Method == http.MethodGet {
+		if s.repoLabelDown {
+			http.Error(w, `{"message":"Server Error"}`, http.StatusBadGateway)
+			return
+		}
 		if s.repoLacksLabel || name != existingtestlabel.Label {
 			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
 			return
@@ -217,6 +223,18 @@ func TestNamesFixWhenRepoLacksLabel(t *testing.T) {
 	assert.Contains(t, got.stderr, "gh label create changes-existing-tests --repo kapetan-io/shop")
 	labels, writes := gh.state(7)
 	assert.Equal(t, []string{"ai"}, labels)
+	assert.Empty(t, writes)
+}
+
+func TestReportsRepoLabelReadFailureAsIs(t *testing.T) {
+	gh := &issues{repo: "kapetan-io/shop", token: "t0ken", labels: map[int][]string{7: {"ai"}}, repoLabelDown: true}
+
+	got := run(t, gh, module(t), changed, "")
+
+	assert.Equal(t, 2, got.code)
+	assert.Contains(t, got.stderr, "502")
+	assert.NotContains(t, got.stderr, "gh label create")
+	_, writes := gh.state(7)
 	assert.Empty(t, writes)
 }
 
