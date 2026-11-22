@@ -37,6 +37,8 @@ const (
 
 func TestMain(m *testing.M) {
 	if os.Getenv(fakeTiger) != "1" {
+		// A race-built binary sleeps 1s on exit by default, and every fake tiger is one.
+		os.Setenv("GORACE", "atexit_sleep_ms=0")
 		os.Exit(m.Run())
 	}
 	if msg := os.Getenv(fakeFail); msg != "" {
@@ -85,6 +87,9 @@ type issues struct {
 	repoLacksLabel bool
 	// repoLabelDown answers 502 when the repo's label is read, as GitHub does in an outage.
 	repoLabelDown bool
+	// removedFirst has someone else remove the label after the command reads it, so its
+	// DELETE answers 404.
+	removedFirst bool
 }
 
 func (s *issues) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -150,6 +155,9 @@ func (s *issues) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode([]any{})
 	case r.Method == http.MethodDelete && strings.HasPrefix(rest, "/"):
 		name, err := url.PathUnescape(strings.TrimPrefix(rest, "/"))
+		if s.removedFirst {
+			s.labels[n] = slices.DeleteFunc(s.labels[n], func(l string) bool { return l == name })
+		}
 		if err != nil || !slices.Contains(s.labels[n], name) {
 			http.Error(w, `{"message":"Label does not exist"}`, http.StatusNotFound)
 			return
@@ -220,7 +228,7 @@ func TestNamesFixWhenRepoLacksLabel(t *testing.T) {
 	got := run(t, gh, module(t), changed, "")
 
 	assert.Equal(t, 2, got.code)
-	assert.Contains(t, got.stderr, "gh label create changes-existing-tests --repo kapetan-io/shop")
+	assert.Contains(t, got.stderr, "someone with write access to the repo runs once: gh label create changes-existing-tests --repo kapetan-io/shop")
 	labels, writes := gh.state(7)
 	assert.Equal(t, []string{"ai"}, labels)
 	assert.Empty(t, writes)
@@ -236,6 +244,17 @@ func TestReportsRepoLabelReadFailureAsIs(t *testing.T) {
 	assert.NotContains(t, got.stderr, "gh label create")
 	_, writes := gh.state(7)
 	assert.Empty(t, writes)
+}
+
+func TestRemoveSucceedsWhenLabelAlreadyGone(t *testing.T) {
+	gh := &issues{repo: "kapetan-io/shop", token: "t0ken", labels: map[int][]string{7: {"ai", "changes-existing-tests"}}, removedFirst: true}
+
+	got := run(t, gh, module(t), unchanged, "")
+
+	require.Equal(t, 0, got.code, got.stderr)
+	labels, _ := gh.state(7)
+	assert.Equal(t, []string{"ai"}, labels)
+	assert.Contains(t, got.stdout, "removed changes-existing-tests")
 }
 
 func TestRemovesLabelOnceNoExistingTestChanges(t *testing.T) {

@@ -102,7 +102,7 @@ func run(ctx context.Context, args []string, opts Options) error {
 		err := gh.call(ctx, http.MethodGet, gh.repoPath+"/labels/"+url.PathEscape(Label), nil, nil)
 		var refused statusError
 		if errors.As(err, &refused) && refused.code == http.StatusNotFound {
-			return fmt.Errorf("%s has no %s label; create it once with: gh label create %s --repo %s", *repo, Label, Label, *repo)
+			return fmt.Errorf("%s has no %s label, and this token can't create one; someone with write access to the repo runs once: gh label create %s --repo %s", *repo, Label, Label, *repo)
 		}
 		if err != nil {
 			return fmt.Errorf("reading the repo's %s label: %w", Label, err)
@@ -112,7 +112,10 @@ func run(ctx context.Context, args []string, opts Options) error {
 		}
 		fmt.Fprintf(opts.Stdout, "added %s\n", Label)
 	case !r.ChangesExistingTests && has:
-		if err := gh.call(ctx, http.MethodDelete, gh.issuePath+"/labels/"+url.PathEscape(carried), nil, nil); err != nil {
+		err := gh.call(ctx, http.MethodDelete, gh.issuePath+"/labels/"+url.PathEscape(carried), nil, nil)
+		// A 404 means someone removed it after the read, which is the end this run wanted.
+		var refused statusError
+		if err != nil && !(errors.As(err, &refused) && refused.code == http.StatusNotFound) {
 			return fmt.Errorf("removing %s: %w", carried, err)
 		}
 		fmt.Fprintf(opts.Stdout, "removed %s\n", carried)
