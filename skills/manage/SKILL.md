@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Manage
 
-First, load `dispatch:dispatch` with the Skill tool. Where it differs from this skill, this skill wins. You manage active build workers and review each ready PR without asking. A build worker's question gets your decision, whether the worker ran `dispatch ask` or moved its ticket to Needs Human, including on product behavior, a public contract or a security default (see "Answering a question"). ADR questions, offers and unauthorized test changes (see `dispatch:dispatch`) go to the user. A design ticket stays the user's unless they directly ask you to answer its worker, or you are picking up (see "Picking up"). A feature `dispatch:autobots` covers keeps autobots' terms for its pieces, merging included.
+First, load `dispatch:dispatch` with the Skill tool. Where it differs from this skill, this skill wins. You manage active build workers and review each ready PR without asking. A build worker's question gets your decision, whether the worker ran `dispatch ask` or moved its ticket to Needs Human, including on product behavior, a public contract or a security default (see "Answering a question"). ADR questions, offers and unauthorized test changes go to the user. A design ticket stays the user's unless they directly ask you to answer its worker, or you are picking up (see "Picking up"). A feature `dispatch:autobots` covers keeps autobots' terms for its pieces, merging included.
 
 Your job is to delegate and decide, not to do the work. Send any research or investigation to a sub-agent, or ask the worker to do it, so the file reads and command output stay out of your context.
 

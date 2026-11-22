@@ -1,6 +1,6 @@
 # The decision comment
 
-The manager posts one `## Decision` comment on the ticket that asked, per turn. Build and pr-respond match only the heading, the line after it and the `Turn:` line. The comment opens with the marker line `dispatch:dispatch` asks of every manage post.
+The manager posts one `## Decision` comment on the ticket that asked, per turn. Build and pr-respond match only the heading, the line under the heading and the `Turn:` line.
 
 ```
 Posted by a dispatch manage session.
@@ -17,7 +17,7 @@ Settled by: question arena
 - ...
 ```
 
-- **First line under the heading.** Starts `Follows <file:line, ADR or the ticket's intent>:`, `Departs from <file:line or the ticket's intent>:` or `No precedent:` when nothing in the repo applies, then the decision in a sentence. Pull requests sort on it, departures first.
+- **Line under the heading.** Starts `Follows <file:line, ADR or the ticket's intent>:`, `Departs from <file:line or the ticket's intent>:` or `No precedent:` when nothing in the repo applies, then the decision in a sentence. Pull requests sort on it, departures first.
 - **`Turn:`** is the time `dispatch turn` printed, as it printed it.
 - **`Settled by:`** is `question arena`, `question arena, approval` or `the manager` (decided without an arena).
 - **Question section.** The restater's `question.md` exactly. An approval's `question.md` starts `Approval:` and holds the proposal and the ticket's intent. When the restater could not remove the worker's lean after two rewrites, add `, question still names the options` to `Settled by:`.
