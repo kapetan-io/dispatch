@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -459,11 +460,11 @@ func TestRepoLabelsItsOwnPullRequests(t *testing.T) {
 		assert.Contains(t, on["types"], "synchronize")
 	}
 	var callers []string
-	for name, job := range w.Jobs {
-		if job.Uses == "./.github/workflows/changes-existing-tests.yml" {
+	for _, name := range slices.Sorted(maps.Keys(w.Jobs)) {
+		if w.Jobs[name].Uses == "./.github/workflows/changes-existing-tests.yml" {
 			callers = append(callers, name)
-			assert.Equal(t, "write", job.Permissions["pull-requests"])
 		}
 	}
-	assert.Len(t, callers, 1)
+	require.Equal(t, []string{"changes-existing-tests"}, callers)
+	assert.Equal(t, "write", w.Jobs["changes-existing-tests"].Permissions["pull-requests"])
 }
