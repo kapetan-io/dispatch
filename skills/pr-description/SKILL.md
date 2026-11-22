@@ -25,6 +25,8 @@ A reviewer approves the contract, and prose about a contract hides the names and
 
 What a user or caller now sees differently, before and after, shown with an example rather than described: a request and its new response, or before-and-after screenshots for a UI change.
 
+List each test that existed at the merge base and that the PR modifies or deletes, and why, since that usually means behavior changed, or write "No existing test changed."
+
 ## Concerns and risks
 
 What could go wrong with the change as written, and what the reviewer should judge: a breaking change to a caller, a migration that can't be undone, a guess the author made. Say what happens on merge when it isn't obvious. Write "None." when there are none.

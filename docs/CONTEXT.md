@@ -176,7 +176,7 @@ A pair of merged PRs in one repo where the later one, merged within 30 days of t
 _Avoid_: regression (a judgment the command does not make)
 
 **Changed existing test**:
-A Go test function that existed at a merged PR's merge base and that the PR modified or deleted, which usually means behavior changed.
+A Go test function that existed at a PR's merge base and that the PR modified or deleted, which usually means behavior changed. CI labels an open PR that has one `changes-existing-tests`.
 
 **Session link**:
 The Claude Code session that made a PR: the one whose transcript holds a successful `gh pr create` that printed the PR's URL, or else the only session that ran on the PR's branch. A PR neither proves is "not proven", and one that merged before the oldest transcript record on disk is "not on disk". A commit SHA a session mentions proves nothing.
