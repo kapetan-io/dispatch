@@ -1,0 +1,85 @@
+name: changes-existing-tests
+
+# A reusable check that labels a pull request changes-existing-tests while it modifies or
+# deletes a Go test function that existed at the merge base, and removes the label once it
+# doesn't. A pull request with no such change is left as it is. A repo calls it on every
+# push to a pull request:
+#
+#   on:
+#     pull_request:
+#   jobs:
+#     changed-tests:
+#       permissions:
+#         contents: read
+#         pull-requests: write
+#       uses: kapetan-io/dispatch/.github/workflows/changes-existing-tests.yml@main
+#
+# The calling job must grant pull-requests: write. A called workflow gets no more than its
+# caller's token allows, and without it adding the label fails.
+#
+# It runs `make changed-tests-label` from a checkout of dispatch, which runs
+# `tiger changed-tests` at the root of the caller's tree. Tests in a nested module (a
+# directory below the root with its own go.mod) are not seen, and a repo with no go.mod at
+# its root is left alone. Pull requests from forks are skipped, since their token is
+# read-only. A caller that pins this file to a tag passes the same tag as dispatch-ref, so
+# the workflow and the labeler come from one version.
+on:
+  workflow_call:
+    inputs:
+      dispatch-ref:
+        description: The dispatch commit, branch or tag whose labeler runs
+        required: false
+        type: string
+        default: main
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Two quick pushes would otherwise race, and an older run could finish last and leave
+    # the label the newer head no longer earns.
+    concurrency:
+      group: changes-existing-tests-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      # The pull request's own head, not the merge commit GitHub checks out by default, so
+      # the merge base is the fork point "Files changed" compares against. tiger needs the
+      # full history to find it.
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: kapetan-io/dispatch
+          ref: ${{ inputs.dispatch-ref }}
+          path: .dispatch
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .dispatch/go.mod
+          cache-dependency-path: .dispatch/go.sum
+      # Inputs reach the shell through the environment, never spliced into the script.
+      # make expands $(...) in command-line variables, so a base branch with anything but
+      # letters, digits and . _ / - is refused before make sees it.
+      # shell: bash turns on pipefail, so a failing make fails the step despite the tee.
+      - shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          BASE_REF: ${{ github.base_ref }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [[ ! "$BASE_REF" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "base branch $BASE_REF has characters this check refuses" >&2
+            exit 2
+          fi
+          make -C .dispatch changed-tests-label \
+            CHANGED_TESTS_ROOT="$GITHUB_WORKSPACE/repo" CHANGED_TESTS_BASE="origin/$BASE_REF" \
+            CHANGED_TESTS_REPO="$REPO" CHANGED_TESTS_PR="$PR" | tee -a "$GITHUB_STEP_SUMMARY"

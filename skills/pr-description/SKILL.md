@@ -25,6 +25,8 @@ A reviewer approves the contract, and prose about a contract hides the names and
 
 What a user or caller now sees differently, before and after, shown with an example rather than described: a request and its new response, or before-and-after screenshots for a UI change.
 
+List each existing test the PR modifies or deletes, and why. A changed test means the behavior it guarded changed, and the reviewer checks each one against what the ticket asked for.
+
 ## Concerns and risks
 
 What could go wrong with the change as written, and what the reviewer should judge: a breaking change to a caller, a migration that can't be undone, a guess the author made. Say what happens on merge when it isn't obvious. Write "None." when there are none.
@@ -41,7 +43,7 @@ Write the body as exactly these four headings, in this order, every time. A revi
 {{{One entry per surface this PR adds or changes: a bold label (`**Endpoint**`, `**Type**`, `**Command**`, `**Schema**`, `**Event**`) and its name}}}
 
 ## Behavior changes
-{{{Before and after, as an example per change: request and response, command and output, or screenshots.}}}
+{{{Before and after, as an example per change: request and response, command and output, or screenshots. Then each existing test modified or deleted, and why.}}}
 
 ## Concerns and risks
 {{{A bullet per concern: what could go wrong, and what the reviewer should judge. State what happens on merge when it isn't obvious.}}}

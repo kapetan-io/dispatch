@@ -43,6 +43,18 @@ ADR_REPO ?= kapetan-io/dispatch
 adr-check: ## Fail on ADRs that cite tickets, repo files or history, or break the Status and numbering rules
 	go run ./cmd/adrcheck -root "$(ADR_ROOT)" -ticket-keys "$(ADR_TICKET_KEYS)" -repo "$(ADR_REPO)"
 
+# The reusable changes-existing-tests workflow runs this target from a checkout of dispatch,
+# with CHANGED_TESTS_ROOT pointing at the pull request's head and GITHUB_TOKEN set. It
+# installs the pinned tiger into dist/ rather than the developer's GOBIN.
+TIGER_VERSION ?= d0615aa2c6ba4072aafd3016ead6df11ca30fdc6
+CHANGED_TESTS_ROOT ?= .
+CHANGED_TESTS_BASE ?= origin/main
+
+.PHONY: changed-tests-label
+changed-tests-label: ## Label PR CHANGED_TESTS_PR in CHANGED_TESTS_REPO changes-existing-tests while it changes an existing Go test
+	GOBIN="$(CURDIR)/dist" go install github.com/kapetan-io/tiger/cmd/tiger@$(TIGER_VERSION)
+	go run ./cmd/changedtests -root "$(CHANGED_TESTS_ROOT)" -base "$(CHANGED_TESTS_BASE)" -repo "$(CHANGED_TESTS_REPO)" -pr "$(CHANGED_TESTS_PR)" -tiger "$(CURDIR)/dist/tiger"
+
 .PHONY: ci
 ci: ## Run what CI runs: vet, the whole suite, shellcheck
 	go vet ./...
