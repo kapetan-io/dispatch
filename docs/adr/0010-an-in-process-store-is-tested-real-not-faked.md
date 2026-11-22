@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-- ADR 0001 fakes external tools at their domain interfaces, and every external tool has a fake in `internal/tooltest`.
+- ADR 0001 fakes external tools at their domain interfaces, and every external tool has a fake.
 - The local ticket store is a bbolt file inside dispatch's own process. Its correctness is the invariants it checks inside each write transaction: unique ids, existing local links, no parent cycles, one status per job.
 - A fake store would re-implement every one of those checks, with nothing to show it matches the real store.
 

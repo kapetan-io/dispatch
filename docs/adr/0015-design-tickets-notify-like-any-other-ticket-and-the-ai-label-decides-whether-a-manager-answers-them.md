@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-- ENG-652 made `notify-idle`, `notify-blocked` and `notify-needs-human` skip `design` tickets, so a manager never stepped into a design the user was driving.
+- `notify-idle`, `notify-blocked` and `notify-needs-human` skipped `design` tickets, so a manager never stepped into a design the user was driving.
 - Auto mode has the manager drive designs, so it needs to hear when a design worker asks.
 
 ## Decision
