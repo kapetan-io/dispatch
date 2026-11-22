@@ -1,7 +1,7 @@
-// Package changedtests labels a pull request that modifies or deletes a Go test function
+// Package existingtestlabel labels a pull request that modifies or deletes a Go test function
 // that existed at the merge base, and removes the label once that stops being true. Which
 // tests changed comes from `tiger changed-tests`.
-package changedtests
+package existingtestlabel
 
 import (
 	"bytes"
@@ -44,16 +44,16 @@ type Options struct {
 // report and 2 when it could not tell or could not change the label.
 func Run(ctx context.Context, args []string, opts Options) int {
 	if err := run(ctx, args, opts); err != nil {
-		fmt.Fprintln(opts.Stderr, "changedtests:", err)
+		fmt.Fprintln(opts.Stderr, "existingtestlabel:", err)
 		return 2
 	}
 	return 0
 }
 
 type report struct {
-	Schema  string `json:"schema"`
-	Changes bool   `json:"changes_existing_tests"`
-	Tests   []struct {
+	Schema               string `json:"schema"`
+	ChangesExistingTests bool   `json:"changes_existing_tests"`
+	Tests                []struct {
 		Package  string `json:"package"`
 		File     string `json:"file"`
 		Function string `json:"function"`
@@ -62,7 +62,7 @@ type report struct {
 }
 
 func run(ctx context.Context, args []string, opts Options) error {
-	fs := flag.NewFlagSet("changedtests", flag.ContinueOnError)
+	fs := flag.NewFlagSet("existingtestlabel", flag.ContinueOnError)
 	fs.SetOutput(opts.Stderr)
 	root := fs.String("root", ".", "the checkout of the pull request's head")
 	base := fs.String("base", "", "the git ref the pull request merges into, such as origin/main")
@@ -89,23 +89,29 @@ func run(ctx context.Context, args []string, opts Options) error {
 		fmt.Fprintf(opts.Stdout, "%s %s.%s (%s)\n", t.Change, t.Package, t.Function, t.File)
 	}
 
-	gh := github{opts: opts, issue: fmt.Sprintf("repos/%s/issues/%d", *repo, *pr)}
-	has, err := gh.hasLabel(ctx)
+	gh := github{opts: opts, repoPath: "repos/" + *repo, issuePath: fmt.Sprintf("repos/%s/issues/%d", *repo, *pr)}
+	carried, err := gh.label(ctx)
 	if err != nil {
 		return err
 	}
+	has := carried != ""
 	switch {
-	case r.Changes && !has:
-		if err := gh.call(ctx, http.MethodPost, gh.issue+"/labels", map[string][]string{"labels": {Label}}, nil); err != nil {
+	case r.ChangesExistingTests && !has:
+		// Adding a label the repo lacks creates it, which needs issues: write, more than the
+		// caller grants. Naming the fix beats GitHub's bare 403.
+		if err := gh.call(ctx, http.MethodGet, gh.repoPath+"/labels/"+url.PathEscape(Label), nil, nil); err != nil {
+			return fmt.Errorf("%w\ncreate the label once with: gh label create %s --repo %s", err, Label, *repo)
+		}
+		if err := gh.call(ctx, http.MethodPost, gh.issuePath+"/labels", map[string][]string{"labels": {Label}}, nil); err != nil {
 			return fmt.Errorf("adding %s: %w", Label, err)
 		}
 		fmt.Fprintf(opts.Stdout, "added %s\n", Label)
-	case !r.Changes && has:
-		if err := gh.call(ctx, http.MethodDelete, gh.issue+"/labels/"+url.PathEscape(Label), nil, nil); err != nil {
-			return fmt.Errorf("removing %s: %w", Label, err)
+	case !r.ChangesExistingTests && has:
+		if err := gh.call(ctx, http.MethodDelete, gh.issuePath+"/labels/"+url.PathEscape(carried), nil, nil); err != nil {
+			return fmt.Errorf("removing %s: %w", carried, err)
 		}
-		fmt.Fprintf(opts.Stdout, "removed %s\n", Label)
-	case r.Changes:
+		fmt.Fprintf(opts.Stdout, "removed %s\n", carried)
+	case r.ChangesExistingTests:
 		fmt.Fprintf(opts.Stdout, "%s already set\n", Label)
 	default:
 		fmt.Fprintln(opts.Stdout, "no existing test changed")
@@ -130,27 +136,32 @@ func changedTests(ctx context.Context, tiger, root, base string) (report, error)
 	return r, nil
 }
 
+// github calls GitHub's REST API directly rather than through gh, so the labeler needs no gh
+// login in CI and tests fake GitHub with an HTTP server.
 type github struct {
-	opts  Options
-	issue string
+	opts      Options
+	repoPath  string
+	issuePath string
 }
 
-func (g github) hasLabel(ctx context.Context) (bool, error) {
+// label returns the name the pull request carries the label under, which GitHub matches
+// without regard to case, or "" when it doesn't carry it.
+func (g github) label(ctx context.Context) (string, error) {
 	for page := 1; ; page++ {
 		var labels []struct {
 			Name string `json:"name"`
 		}
-		path := g.issue + "/labels?per_page=100&page=" + strconv.Itoa(page)
+		path := g.issuePath + "/labels?per_page=100&page=" + strconv.Itoa(page)
 		if err := g.call(ctx, http.MethodGet, path, nil, &labels); err != nil {
-			return false, fmt.Errorf("reading labels: %w", err)
+			return "", fmt.Errorf("reading labels: %w", err)
 		}
 		for _, l := range labels {
-			if l.Name == Label {
-				return true, nil
+			if strings.EqualFold(l.Name, Label) {
+				return l.Name, nil
 			}
 		}
 		if len(labels) < 100 {
-			return false, nil
+			return "", nil
 		}
 	}
 }

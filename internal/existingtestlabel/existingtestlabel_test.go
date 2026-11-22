@@ -1,4 +1,4 @@
-package changedtests_test
+package existingtestlabel_test
 
 // No exception needed: these tests run the command line through Run, which is the tool's
 // surface. GitHub is an httptest fake of the issue labels REST API, and tiger is this test
@@ -20,18 +20,19 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/kapetan-io/dispatch/internal/changedtests"
+	"github.com/kapetan-io/dispatch/internal/existingtestlabel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 )
 
 // The fake tiger prints fakeReport when the arguments are the ones the command must pass, and
 // exits 2 with fakeFail on stderr when fakeFail is set, as tiger does when it can't report.
 const (
-	fakeTiger  = "CHANGEDTESTS_FAKE_TIGER"
-	fakeReport = "CHANGEDTESTS_FAKE_REPORT"
-	fakeFail   = "CHANGEDTESTS_FAKE_FAIL"
-	fakeArgs   = "CHANGEDTESTS_FAKE_ARGS"
+	fakeTiger  = "EXISTINGTESTLABEL_FAKE_TIGER"
+	fakeReport = "EXISTINGTESTLABEL_FAKE_REPORT"
+	fakeFail   = "EXISTINGTESTLABEL_FAKE_FAIL"
+	fakeArgs   = "EXISTINGTESTLABEL_FAKE_ARGS"
 )
 
 func TestMain(m *testing.M) {
@@ -69,15 +70,19 @@ const unchanged = `{
   "tests": []
 }`
 
-// issues fakes GitHub's labels on one repo's issues. Like GitHub, it creates a label the
-// first time one is added, answers 404 when removing a label the issue doesn't carry, and
-// pages GET results.
+// issues fakes GitHub's labels on one repo's issues. Like GitHub, it answers 404 when removing
+// a label the issue doesn't carry, and pages GET results. A readOnly token reads labels but
+// gets 403 on writes, as a workflow token without pull-requests: write does. With
+// repoLacksLabel the repo has no changes-existing-tests label yet, so reading it answers 404
+// and adding it to an issue answers 403, since creating a label needs issues: write.
 type issues struct {
-	mu     sync.Mutex
-	repo   string
-	labels map[int][]string
-	writes []string
-	token  string
+	mu             sync.Mutex
+	repo           string
+	labels         map[int][]string
+	writes         []string
+	token          string
+	readOnly       bool
+	repoLacksLabel bool
 }
 
 func (s *issues) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -87,10 +92,22 @@ func (s *issues) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
 		return
 	}
+	if name, ok := strings.CutPrefix(r.URL.Path, "/repos/"+s.repo+"/labels/"); ok && r.Method == http.MethodGet {
+		if s.repoLacksLabel || name != existingtestlabel.Label {
+			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"name": name})
+		return
+	}
 	number, rest, ok := strings.Cut(strings.TrimPrefix(r.URL.Path, "/repos/"+s.repo+"/issues/"), "/labels")
 	n, err := strconv.Atoi(number)
 	if !ok || err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	if s.readOnly && r.Method != http.MethodGet {
+		http.Error(w, `{"message":"Resource not accessible by integration"}`, http.StatusForbidden)
 		return
 	}
 	switch {
@@ -112,6 +129,10 @@ func (s *issues) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		if s.repoLacksLabel && slices.Contains(body.Labels, existingtestlabel.Label) {
+			http.Error(w, `{"message":"Resource not accessible by integration"}`, http.StatusForbidden)
 			return
 		}
 		for _, l := range body.Labels {
@@ -160,9 +181,9 @@ func run(t *testing.T, gh *issues, root, report, fail string) result {
 	t.Setenv(fakeFail, fail)
 	t.Setenv(fakeArgs, "changed-tests -C "+root+" --format json origin/main")
 	var stdout, stderr bytes.Buffer
-	code := changedtests.Run(context.Background(),
+	code := existingtestlabel.Run(context.Background(),
 		[]string{"-root", root, "-base", "origin/main", "-repo", "kapetan-io/shop", "-pr", "7", "-tiger", tiger},
-		changedtests.Options{Stdout: &stdout, Stderr: &stderr, APIURL: server.URL, Token: "t0ken"})
+		existingtestlabel.Options{Stdout: &stdout, Stderr: &stderr, APIURL: server.URL, Token: "t0ken"})
 	return result{code: code, stdout: stdout.String(), stderr: stderr.String()}
 }
 
@@ -185,6 +206,18 @@ func TestLabelsPullRequestThatChangesExistingTests(t *testing.T) {
 	assert.Contains(t, got.stdout, "modified example.com/shop/cart.TestTotal (cart/cart_test.go)")
 	assert.Contains(t, got.stdout, "deleted example.com/shop/cart.TestTax (cart/tax_test.go)")
 	assert.Contains(t, got.stdout, "added changes-existing-tests")
+}
+
+func TestNamesFixWhenRepoLacksLabel(t *testing.T) {
+	gh := &issues{repo: "kapetan-io/shop", token: "t0ken", labels: map[int][]string{7: {"ai"}}, repoLacksLabel: true}
+
+	got := run(t, gh, module(t), changed, "")
+
+	assert.Equal(t, 2, got.code)
+	assert.Contains(t, got.stderr, "gh label create changes-existing-tests --repo kapetan-io/shop")
+	labels, writes := gh.state(7)
+	assert.Equal(t, []string{"ai"}, labels)
+	assert.Empty(t, writes)
 }
 
 func TestRemovesLabelOnceNoExistingTestChanges(t *testing.T) {
@@ -219,6 +252,29 @@ func TestLeavesPullRequestAloneWhenLabelAlreadyMatches(t *testing.T) {
 			assert.Equal(t, test.labels, labels)
 			assert.Empty(t, writes)
 			assert.Contains(t, got.stdout, test.want)
+		})
+	}
+}
+
+func TestMatchesLabelWithoutRegardToCase(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		report string
+		labels []string
+		writes []string
+	}{
+		{name: "a test changed", report: changed, labels: []string{"Changes-Existing-Tests"}},
+		{name: "no test changed", report: unchanged, labels: []string{}, writes: []string{"remove Changes-Existing-Tests"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			gh := &issues{repo: "kapetan-io/shop", token: "t0ken", labels: map[int][]string{7: {"Changes-Existing-Tests"}}}
+
+			got := run(t, gh, module(t), test.report, "")
+
+			require.Equal(t, 0, got.code, got.stderr)
+			labels, writes := gh.state(7)
+			assert.Equal(t, test.labels, labels)
+			assert.Equal(t, test.writes, writes)
 		})
 	}
 }
@@ -288,9 +344,89 @@ func TestFailsWhenGitHubRefuses(t *testing.T) {
 func TestRequiresPullRequest(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
-	code := changedtests.Run(context.Background(), []string{"-base", "origin/main", "-repo", "kapetan-io/shop"},
-		changedtests.Options{Stdout: &stdout, Stderr: &stderr})
+	code := existingtestlabel.Run(context.Background(), []string{"-base", "origin/main", "-repo", "kapetan-io/shop"},
+		existingtestlabel.Options{Stdout: &stdout, Stderr: &stderr})
 
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr.String(), "-pr are required")
+}
+
+func TestFailsWhenTokenCannotWriteLabels(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		labels []string
+		report string
+	}{
+		{name: "adding", labels: []string{"ai"}, report: changed},
+		{name: "removing", labels: []string{"ai", "changes-existing-tests"}, report: unchanged},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			gh := &issues{repo: "kapetan-io/shop", token: "t0ken", readOnly: true, labels: map[int][]string{7: test.labels}}
+
+			got := run(t, gh, module(t), test.report, "")
+
+			assert.Equal(t, 2, got.code)
+			assert.Contains(t, got.stderr, "403")
+			assert.Contains(t, got.stderr, "Resource not accessible by integration")
+			labels, _ := gh.state(7)
+			assert.Equal(t, test.labels, labels)
+		})
+	}
+}
+
+// workflow is the part of a GitHub Actions workflow file these tests read.
+type workflow struct {
+	On   map[string]any `yaml:"on"`
+	Jobs map[string]struct {
+		Permissions map[string]string `yaml:"permissions"`
+		Uses        string            `yaml:"uses"`
+		With        map[string]string `yaml:"with"`
+		Steps       []struct {
+			Run string `yaml:"run"`
+		} `yaml:"steps"`
+	} `yaml:"jobs"`
+}
+
+func readWorkflow(t *testing.T, name string) (workflow, string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", name))
+	require.NoError(t, err)
+	var w workflow
+	require.NoError(t, yaml.Unmarshal(data, &w))
+	return w, string(data)
+}
+
+// The reusable workflow is what a managed repo calls, so its trigger, header and the
+// command it runs are its surface.
+func TestReusableWorkflowRunsLabelerForCaller(t *testing.T) {
+	w, text := readWorkflow(t, "changes-existing-tests.yml")
+
+	assert.Contains(t, w.On, "workflow_call")
+	header, _, ok := strings.Cut(text, "\non:")
+	require.True(t, ok)
+	assert.Contains(t, header, "must grant pull-requests: write")
+	require.Contains(t, w.Jobs, "label")
+	var runs []string
+	for _, step := range w.Jobs["label"].Steps {
+		runs = append(runs, step.Run)
+	}
+	assert.Contains(t, strings.Join(runs, "\n"), "make -C .dispatch changes-existing-tests")
+}
+
+func TestRepoLabelsItsOwnPullRequests(t *testing.T) {
+	w, _ := readWorkflow(t, "changes-existing-tests-pr.yml")
+
+	// Without types, pull_request runs on opened, synchronize (every push) and reopened.
+	require.Contains(t, w.On, "pull_request")
+	if on, ok := w.On["pull_request"].(map[string]any); ok && on["types"] != nil {
+		assert.Contains(t, on["types"], "synchronize")
+	}
+	var callers []string
+	for name, job := range w.Jobs {
+		if job.Uses == "./.github/workflows/changes-existing-tests.yml" {
+			callers = append(callers, name)
+			assert.Equal(t, "write", job.Permissions["pull-requests"])
+		}
+	}
+	assert.Len(t, callers, 1)
 }

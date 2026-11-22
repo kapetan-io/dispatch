@@ -44,16 +44,17 @@ adr-check: ## Fail on ADRs that cite tickets, repo files or history, or break th
 	go run ./cmd/adrcheck -root "$(ADR_ROOT)" -ticket-keys "$(ADR_TICKET_KEYS)" -repo "$(ADR_REPO)"
 
 # The reusable changes-existing-tests workflow runs this target from a checkout of dispatch,
-# with CHANGED_TESTS_ROOT pointing at the pull request's head and GITHUB_TOKEN set. It
-# installs the pinned tiger into dist/ rather than the developer's GOBIN.
-TIGER_VERSION ?= d0615aa2c6ba4072aafd3016ead6df11ca30fdc6
-CHANGED_TESTS_ROOT ?= .
-CHANGED_TESTS_BASE ?= origin/main
+# with CHANGES_EXISTING_TESTS_ROOT pointing at the pull request's head and GITHUB_TOKEN set.
+# tiger (github.com/kapetan-io/tiger) reports which existing Go test functions a branch
+# modified or deleted. The target installs the pinned tiger into dist/, not the developer's GOBIN.
+TIGER_REF ?= d0615aa2c6ba4072aafd3016ead6df11ca30fdc6
+CHANGES_EXISTING_TESTS_ROOT ?= .
+CHANGES_EXISTING_TESTS_BASE ?= origin/main
 
-.PHONY: changed-tests-label
-changed-tests-label: ## Label PR CHANGED_TESTS_PR in CHANGED_TESTS_REPO changes-existing-tests while it changes an existing Go test
-	GOBIN="$(CURDIR)/dist" go install github.com/kapetan-io/tiger/cmd/tiger@$(TIGER_VERSION)
-	go run ./cmd/changedtests -root "$(CHANGED_TESTS_ROOT)" -base "$(CHANGED_TESTS_BASE)" -repo "$(CHANGED_TESTS_REPO)" -pr "$(CHANGED_TESTS_PR)" -tiger "$(CURDIR)/dist/tiger"
+.PHONY: changes-existing-tests
+changes-existing-tests: ## Add or remove a PR's changes-existing-tests label to match tiger (needs CHANGES_EXISTING_TESTS_REPO, CHANGES_EXISTING_TESTS_PR, GITHUB_TOKEN)
+	GOBIN="$(CURDIR)/dist" go install github.com/kapetan-io/tiger/cmd/tiger@$(TIGER_REF)
+	go run ./cmd/existingtestlabel -root "$(CHANGES_EXISTING_TESTS_ROOT)" -base "$(CHANGES_EXISTING_TESTS_BASE)" -repo "$(CHANGES_EXISTING_TESTS_REPO)" -pr "$(CHANGES_EXISTING_TESTS_PR)" -tiger "$(CURDIR)/dist/tiger"
 
 .PHONY: ci
 ci: ## Run what CI runs: vet, the whole suite, shellcheck

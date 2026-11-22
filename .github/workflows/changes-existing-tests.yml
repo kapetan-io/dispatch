@@ -2,27 +2,30 @@ name: changes-existing-tests
 
 # A reusable check that labels a pull request changes-existing-tests while it modifies or
 # deletes a Go test function that existed at the merge base, and removes the label once it
-# doesn't. A pull request with no such change is left as it is. A repo calls it on every
-# push to a pull request:
+# doesn't. A pull request that never had such a change gets no label write. A repo calls it
+# on every push to a pull request, and on edits so a changed base branch is checked again:
 #
 #   on:
 #     pull_request:
+#       types: [opened, synchronize, reopened, edited]
 #   jobs:
-#     changed-tests:
+#     changes-existing-tests:
 #       permissions:
 #         contents: read
 #         pull-requests: write
 #       uses: kapetan-io/dispatch/.github/workflows/changes-existing-tests.yml@main
 #
-# The calling job must grant pull-requests: write. A called workflow gets no more than its
-# caller's token allows, and without it adding the label fails.
+# The calling job must grant pull-requests: write. A called workflow asking for more than its
+# caller grants does not start. That grant cannot create a label, so create it once per repo:
 #
-# It runs `make changed-tests-label` from a checkout of dispatch, which runs
+#   gh label create changes-existing-tests --repo owner/name
+#
+# It runs `make changes-existing-tests` from a checkout of dispatch, which runs
 # `tiger changed-tests` at the root of the caller's tree. Tests in a nested module (a
 # directory below the root with its own go.mod) are not seen, and a repo with no go.mod at
-# its root is left alone. Pull requests from forks are skipped, since their token is
-# read-only. A caller that pins this file to a tag passes the same tag as dispatch-ref, so
-# the workflow and the labeler come from one version.
+# its root is left alone. Pull requests from forks and from Dependabot are skipped, since
+# their token is read-only. A caller that pins this file to a tag passes the same tag as
+# dispatch-ref, so the workflow and the labeler come from one version.
 on:
   workflow_call:
     inputs:
@@ -38,7 +41,11 @@ permissions:
 
 jobs:
   label:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    # Sessions find this check by its name to wait for the label.
+    name: changes-existing-tests
+    if: >-
+      github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     # Two quick pushes would otherwise race, and an older run could finish last and leave
     # the label the newer head no longer earns.
@@ -80,6 +87,6 @@ jobs:
             echo "base branch $BASE_REF has characters this check refuses" >&2
             exit 2
           fi
-          make -C .dispatch changed-tests-label \
-            CHANGED_TESTS_ROOT="$GITHUB_WORKSPACE/repo" CHANGED_TESTS_BASE="origin/$BASE_REF" \
-            CHANGED_TESTS_REPO="$REPO" CHANGED_TESTS_PR="$PR" | tee -a "$GITHUB_STEP_SUMMARY"
+          make -C .dispatch changes-existing-tests \
+            CHANGES_EXISTING_TESTS_ROOT="$GITHUB_WORKSPACE/repo" CHANGES_EXISTING_TESTS_BASE="origin/$BASE_REF" \
+            CHANGES_EXISTING_TESTS_REPO="$REPO" CHANGES_EXISTING_TESTS_PR="$PR" | tee -a "$GITHUB_STEP_SUMMARY"

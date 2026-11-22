@@ -18,7 +18,7 @@ Run `dispatch watch` on every child, including those still in Todo, so you hear 
 - **Every 15 minutes, check that every child is moving.** No event arrives when nothing happens, so wake yourself to do it. A child may not start when it should, a worker may sit idle or stuck, a ready message may never arrive, or a merge may fail. Find out why, and fix it when the fix doesn't start held work.
 - **Stop and ask the user** in a message of its own, so it isn't lost at the end of an update, and keep working the other children, when:
   - a finding is about how the product behaves, a public contract, a security default or an ADR. Post it on the PR anyway.
-  - a review finds an existing test changed without authorization (see `dispatch:dispatch`). Post it, and don't merge the PR until the user answers, because only the user approves a test change.
+  - a review finds an unauthorized test change. Post it, and don't merge until the user answers.
   - the feature is held (the feature ticket isn't In Progress, or still has a `design` label). Starting it is the user's call.
   - a child's worker asks a question (`worker asked a question`) or a child moves to Needs Human, unless its worker is disputing your own finding. Your findings post as the user, so the worker answers the finding on the PR with its evidence and leaves the thread open, where your 15-minute check finds it. Weigh its reply and drop or re-explain the finding on the PR. When the child is in Needs Human, move it back to In Progress too.
   - a PR still has problems after 3 reviews. Ask sooner if another round isn't worth it.
