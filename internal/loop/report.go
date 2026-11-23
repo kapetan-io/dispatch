@@ -77,6 +77,10 @@ func (l *Loop) onRequest(r request) error {
 		l.readAgain(world.FromLocal)
 	case OpAsk:
 		r.reply <- l.onAsk(r.Ask)
+	case OpReviewStart, OpReviewDone:
+		r.reply <- l.onReview(r)
+		// The label reads the review at the end of a cycle, so one runs now rather than at the resync.
+		l.readAgain(world.FromLocal)
 	case OpTicket:
 		l.onTicket(r.Call, r.reply)
 	case OpWatch, OpUnwatch:
@@ -362,4 +366,22 @@ func (l *Loop) noWorker(ticket string) string {
 func (l *Loop) rowOn(tree string) workers.Worker {
 	row, _, _ := l.o.Workers.OnTree(tree)
 	return row
+}
+
+// onReview records or ends a PR review.
+func (l *Loop) onReview(r request) Response {
+	if r.Op == OpReviewStart {
+		if err := l.o.Reviews.Start(r.Ticket, r.Head, l.clock.Now()); err != nil {
+			return Response{Code: CodeFailed, Error: err.Error()}
+		}
+		return Response{}
+	}
+	found, err := l.o.Reviews.Done(r.Ticket)
+	switch {
+	case err != nil:
+		return Response{Code: CodeFailed, Error: err.Error()}
+	case !found:
+		return Response{Code: CodeFailed, Error: strings.ToUpper(r.Ticket) + " has no review"}
+	}
+	return Response{}
 }

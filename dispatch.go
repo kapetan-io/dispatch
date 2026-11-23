@@ -216,6 +216,14 @@ const usage = `usage: dispatch run
                directory and its session from the harness (CLAUDE_CODE_SESSION_ID for Claude Code),
                and exits 1 outside a harness session or a tree a worker runs in. Exits 3 with
                "dispatch: not running" when no loop runs
+  review       review start <ticket> <head> reports that this session is reviewing the ticket's PR at
+               head, 7 to 40 hex digits of its head commit, and prints "reviewing <ticket> at <head>".
+               While the PR is at that head, the start is under an hour old and the worker is gone,
+               unconfirmed, or idle with a Stop that says it is waiting, an In Review ticket's
+               workspace shows 🔍. review done <ticket> ends the ticket's review, whoever started it,
+               and prints "review of <ticket> done", or exits 1 with "dispatch: <ticket> has no
+               review". A later start replaces the earlier one. Exits 1 on bad arguments and 3 with
+               "dispatch: not running" when no loop runs, recording nothing
   ticket       file, read and change tickets. Local tickets (LOC-<n>) are kept in a database that only
                dispatch run opens and that [plugins.local] turns on. Talks to the running dispatch run, and
                exits 3 with "dispatch: not running" when none runs. create, edit and branch work on Linear
@@ -345,6 +353,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 		return turnCommand(ctx, opts, ticket, asJSON)
 	case "ask":
 		return askCommand(ctx, opts, args[1:])
+	case "review":
+		return reviewCommand(ctx, opts, args[1:])
 	case "ticket":
 		return ticketCommand(ctx, opts, args[1:])
 	case "ticket-hint":

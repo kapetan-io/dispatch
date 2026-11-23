@@ -35,6 +35,10 @@ const (
 	// OpAsk carries a `dispatch ask` report, which the loop stores as the session's ask unless one
 	// is already open, and answers at once.
 	OpAsk = "ask"
+	// OpReviewStart records that a session began a PR review of Request.Ticket at Request.Head,
+	// and OpReviewDone ends the ticket's PR review.
+	OpReviewStart = "review-start"
+	OpReviewDone  = "review-done"
 )
 
 // Exit codes a client reports for a response.
@@ -60,6 +64,8 @@ type Request struct {
 	Prompt *sessionlog.Prompt `json:"prompt,omitempty"`
 	// Ask is the `dispatch ask` a worker's session ran.
 	Ask *sessionlog.AskReport `json:"ask,omitempty"`
+	// Head is the hex prefix of the PR head OpReviewStart reviews.
+	Head string `json:"head,omitempty"`
 	// Call is the verb of a ticket request.
 	Call *TicketCall `json:"call,omitempty"`
 }

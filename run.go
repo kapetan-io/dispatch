@@ -20,6 +20,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/lock"
 	"github.com/kapetan-io/dispatch/internal/loop"
+	"github.com/kapetan-io/dispatch/internal/prreview"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/startscreen"
 	"github.com/kapetan-io/dispatch/internal/ticketbranch"
@@ -138,6 +139,7 @@ func runCommand(ctx context.Context, opts Options) error {
 	}
 	defer func() { _ = file.Close() }()
 	rows := workers.New(file)
+	reviews := prreview.New(file)
 	branches := ticketbranch.New(file)
 	services := servicesFor(opts, cfg)
 	sent := &typed.Log{}
@@ -152,7 +154,7 @@ func runCommand(ctx context.Context, opts Options) error {
 	})
 	return loop.New(loop.Options{
 		Config: cfg, ConfigText: string(text), StateDir: opts.StateDir, Rules: loaded, Clock: opts.Clock,
-		Sources: sources(opts, cfg, lin, loaded, rows, branches), Workers: rows, Branches: branches,
+		Sources: sources(opts, cfg, lin, loaded, rows, branches), Workers: rows, Branches: branches, Reviews: reviews,
 		Executor: exec, Typed: sent, HTTP: services, Multiplexer: opts.Multiplexer, Usage: lin.Usage,
 		Viewer: viewer.Name, Out: opts.Stdout, Err: opts.Stderr, Local: local, Screen: screen,
 	}).Run(ctx)

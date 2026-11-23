@@ -88,6 +88,10 @@ _Avoid_: gate, blocking check
 Draft or open, read from GitHub's `isDraft` on every resync.
 _Avoid_: PR state (GitHub's `state` is OPEN for a draft too)
 
+**PR review**:
+A session's report, made with `dispatch review start`, that it is reviewing one head of an In Review ticket's PR. It shows 🔍 until `dispatch review done`, a push, or an hour.
+_Avoid_: review alone (a GitHub review posted under the owner's login, which `pr.approved` reads)
+
 **Review question**:
 A review or comment that asks rather than claims. The worker answers a question about what the code does, and sends a question needing a product decision to the user.
 _Avoid_: review claim (a claim asserts something to check)
@@ -194,7 +198,7 @@ The text of a slash command dispatch is about to send to a worker's session (a n
 _Avoid_: ledger entry, receipt (both are in history)
 
 **Workspace emoji**:
-The first word of a worker's workspace label (under Rex, of its window label, which reads `<emoji> <ticket> <title>`). It says who the ticket is waiting on: the worker (🟢), CI (🟡), you (👀, 💤 or 🔴), a PR's approvers (⏳), whoever merges the PR (🔀, you when `auto_merge` is off), or nobody (⏸️). In a repo with `open_pr_as = "draft"`, a ready draft is 👀, and once you open it the PR is ⏳ until its head is approved and 🔀 after. `worker-states.md` lists every state, its emoji, and what dispatch does in it.
+The first word of a worker's workspace label (under Rex, of its window label, which reads `<emoji> <ticket> <title>`). It says who the ticket is waiting on: the worker (🟢), CI (🟡), you (👀, 💤 or 🔴), a session reviewing the PR (🔍, a **PR review**), a PR's approvers (⏳), whoever merges the PR (🔀, you when `auto_merge` is off), or nobody (⏸️). In a repo with `open_pr_as = "draft"`, a ready draft is 👀, and once you open it the PR is ⏳ until its head is approved and 🔀 after. `worker-states.md` lists every state, its emoji, and what dispatch does in it.
 _Avoid_: status icon, status
 
 **Workspace**:

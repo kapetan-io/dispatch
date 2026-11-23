@@ -11,6 +11,7 @@ Each worker's workspace is labeled `<emoji> <ticket>` (under Rex its window, `<e
 | 👀 | You | In Review, the PR is ready for your review (the notification also needs an idle worker) |
 | ⏳ | The PR's approvers | In Review in a repo with `open_pr_as = "draft"`, the PR is ready, you have opened it and its head isn't approved. No notification |
 | 🔀 | Whoever merges | In Review in a repo with `open_pr_as = "draft"`, the PR is ready, opened and its head is approved. Dispatch merges it when `auto_merge` is on. When it is off the label waits on you, and an idle worker sends one "approved and ready to merge" notification per head |
+| 🔍 | A session reviewing the PR | In Review, a session ran `dispatch review start` for the PR's current head under an hour ago, and the worker is idle or gone. Don't merge yet |
 | 💤 | You | The worker is idle with no background task running and nothing else pending. Open its window |
 | 🔴 | You | Needs Human, the worker is blocked on a question popup, or the worker ran `dispatch ask` and waits for your answer. Answer in its window |
 | ⏸️ | Nobody | A Todo child of an In Progress parent, which keeps its tree, with a workspace still open |
@@ -25,14 +26,15 @@ The first line that fits wins.
 2. The ticket is paused and its worker's Claude session is gone: ⏸️.
 3. The worker is blocked on a question popup, or is asking: 🔴. A worker is asking from the first read that sees it idle after it ran `dispatch ask` until its session takes a message, typed or sent by dispatch, or ends. A task notice, the message Claude Code hands the session when one of its own background tasks finishes, ends no ask. It sits above the ready-PR line, so an ask shows 🔴 over 👀.
 4. The worker is working, or dispatch sent it a nudge and no read has yet seen it working or blocked: 🟢.
-5. The PR is ready and the worker is idle or gone: ⏳ if the repo opens drafts, the PR has left draft and its head isn't approved, 🔀 if the same PR is approved, otherwise 👀. "Approved" is what `auto_merge` counts, so a repo's `approval_checks` that haven't passed keep the PR at ⏳.
-6. The worker's Claude session is gone, or its launch isn't confirmed: 🟡 if the PR's checks are running, otherwise 🟢.
-7. The worker is idle and its last Stop (the Claude Code hook that records when a turn ended) lists a background task still running and is under 60 minutes old, or its session took a message after that Stop: 🟢. A message is anything typed to the worker or sent by dispatch, so 💤 clears when you type, before the multiplexer reads the worker as working.
-8. The PR's checks are running: 🟡.
-9. The worker has no Stop record, or its Stop didn't say what was running: 🟢. Nothing proves it is waiting.
-10. Otherwise: 💤.
+5. A session is reviewing the PR (a **PR review**, see [Reviewing a PR](#reviewing-a-pr-with-dispatch-review)) and the worker is idle or gone (a worker whose launch isn't confirmed counts as gone, as on line 7): 🟢 if the worker is idle and line 8 or line 10 holds for it, otherwise 🔍. 🔍 shows whatever the PR's state.
+6. The PR is ready and the worker is idle or gone: ⏳ if the repo opens drafts, the PR has left draft and its head isn't approved, 🔀 if the same PR is approved, otherwise 👀. "Approved" is what `auto_merge` counts, so a repo's `approval_checks` that haven't passed keep the PR at ⏳.
+7. The worker's Claude session is gone, or its launch isn't confirmed: 🟡 if the PR's checks are running, otherwise 🟢.
+8. The worker is idle and its last Stop (the Claude Code hook that records when a turn ended) lists a background task still running and is under 60 minutes old, or its session took a message after that Stop: 🟢. A message is anything typed to the worker or sent by dispatch, so 💤 clears when you type, before the multiplexer reads the worker as working.
+9. The PR's checks are running: 🟡.
+10. The worker has no Stop record, or its Stop didn't say what was running: 🟢. Nothing proves it is waiting.
+11. Otherwise: 💤.
 
-A PR that dispatch could not read leaves a 🟢, 👀, ⏳, 🔀, 🟡 or 💤 label as it is until the next read.
+A PR that dispatch could not read leaves a 🟢, 👀, ⏳, 🔀, 🟡 or 💤 label as it is until the next read. A 🔍 label is worked out again with the PR as dispatch last read it, so it stays while that review applies and line 5 gives 🔍, and `done` or the hour brings back the label that PR gives. When dispatch has read no PR for the ticket since it started, 🔍 stays while the PR review is under an hour old and line 5 still gives 🔍, and otherwise the label follows the lines above as for a ticket with no PR.
 
 After the ask ends the label follows the lines above with no case of its own, so a worker you just answered shows 🟢 even before the multiplexer reads it working. Under Rex 🔴 shows moments after the turn ends; under herdr and the Herdr app it shows at Claude Code's `idle_prompt` Notification, about 60 seconds later, as 💤 does. While the session log can't be read, nothing is read as an ask and the label follows the other lines.
 
@@ -90,6 +92,8 @@ A ready PR keeps its 👀, ⏳ or 🔀 while GitHub is still computing whether i
 
 The Stop record column above is what the emoji label reads, for a worker in any status. The `busy` and `lastStop` facts rules read come from the Stop record only for an idle worker on an In Progress or Needs Human ticket, so for an In Review worker `busy` is false and `lastStop` is when dispatch first saw it idle.
 
+While a session reviews the PR, an idle or gone worker shows 🔍 in place of the Emoji column in every row above that has a PR, except that a confirmed idle worker whose Stop lists a running task and is under 60 minutes old, or whose session took a message after its Stop, shows 🟢, as does an idle worker with no Stop record or whose Stop didn't say what was running, and a worker dispatch just nudged. Working, blocked and asking workers show what the table says. Dispatch nudges, notifies and merges exactly as the table says.
+
 A PR that waits on its approvers still nudges its worker for a failed check, a merge conflict, changes requested or new activity.
 
 An idle In Review worker whose PR gains a review or comment gets the activity nudge once per new item.
@@ -135,3 +139,20 @@ A worker's own finished background task does not end its ask. Claude Code hands 
 Any idle worker that took a message, an answer to its ask or anything else you typed or `dispatch tell` sent, is left alone the same way until it ends the turn that message started, or until 15 minutes after the message when that turn end never arrives. The exemption is `a-worker-finishes-its-message-first` in `rules/nudges.ts`, and the 15 minutes is `MESSAGE_HOLD` in `rules/shared.ts`. So nothing lands on top of your answer while the multiplexer still reads the pane idle, and a PR that still needs work is nudged again once that turn ends.
 
 While the session log can't be read, neither exemption holds anything, and nudges and merges go on as for any idle worker. A nudge sent then is a message, so it ends the ask, and the worker shows 🔴 again only once it runs `dispatch ask` again and its session log can be read.
+
+## Reviewing a PR with `dispatch review`
+
+A session about to review an In Review ticket's PR reads the PR's head and reports it:
+
+```
+$ gh api repos/kapetan-io/dispatch/pulls/311 --jq .head.sha
+4f2a9c1d0b7e...
+$ dispatch review start ENG-842 4f2a9c1
+reviewing ENG-842 at 4f2a9c1
+$ dispatch review done ENG-842
+review of ENG-842 done
+```
+
+`start` takes the ticket and 7 to 40 hex digits of the head, in either case, and checks nothing else: a start on a ticket that isn't In Review, or at a head the PR has moved past, shows nothing. Any session's review counts, a later `start` replaces the earlier one, and `done` ends the ticket's review whoever started it. `done` with no review prints `dispatch: <ticket> has no review` and exits 1. Both commands exit 3 with `dispatch: not running`, recording nothing, while `dispatch run` is down.
+
+The review ends at `done`, at a push (while the PR's head doesn't start with the reported one) or an hour after `start`, at the first cycle after the hour. Both commands wake dispatch, so 🔍 shows, and leaves at `done`, within moments. A restart of `dispatch run` doesn't end it, since dispatch keeps it in dispatch.db, and the hour still counts from the start. A ticket with no PR has no head to match and shows no 🔍.

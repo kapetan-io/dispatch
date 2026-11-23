@@ -1,6 +1,6 @@
 // Package dispatchdb owns the file dispatch.db in the state directory: opening it, its version,
 // the rename of the tickets.db it replaces, the read-only open and the import marker of each repo.
-// It hands the open file to the stores that own its buckets (localticket, ticketbranch and workers)
+// It hands the open file to the stores that own its buckets (localticket, prreview, ticketbranch and workers)
 // and to nothing else.
 package dispatchdb
 
