@@ -4,7 +4,7 @@
 // allowed forms, a number another ADR already has, or a link to an ADR that doesn't
 // exist. A path with a `*` inside it is a pattern, not a file reference, and a fenced block whose
 // opening line carries the word "quoted" (```quoted) holds another repo's output, so
-// its file paths are not checked.
+// its file paths are not checked. Such a block that is never closed is reported.
 package adrcheck
 
 import (
@@ -71,6 +71,7 @@ const (
 	citesRepoPath    = "references a file or directory in the repo"
 	citesRepoHistory = "cites the repo's pull requests, commits, branches or issues"
 	citesMissingADR  = "links to an ADR that doesn't exist"
+	unclosedQuote    = "has a quoted fenced block that is never closed, so paths after it go unchecked"
 	sharesNumber     = "shares its number with another ADR"
 	badStatus        = "has a Status outside the allowed forms (Proposed, Accepted, Rejected, Deprecated, Superseded by ADR N, Superseded in part by ADR N, Supersedes in part ADR N, Amends ADR N, Amended by ADR N)"
 	emptyStatus      = "has an empty Status"
@@ -238,13 +239,15 @@ func (r *checker) check(file, body string) []Problem {
 	inStatus := false
 	var fence string // the opening run of backticks or tildes, while inside a fenced block
 	quoted := false  // the open fenced block quotes another repo's output
+	openedAt := 0    // the line that opened it
 	for i, line := range lines {
 		n := i + 1
 		trimmed := strings.TrimSpace(line)
+		inQuote := quoted // a fence's own opening line is not inside it
 		if m := fenceLine.FindStringSubmatch(trimmed); m != nil {
 			switch {
 			case fence == "":
-				fence = m[1]
+				fence, openedAt = m[1], n
 				quoted = slices.Contains(strings.Fields(m[2]), quotedMarker)
 			case m[1][0] == fence[0] && len(m[1]) >= len(fence) && strings.TrimSpace(m[2]) == "":
 				fence, quoted = "", false
@@ -272,16 +275,19 @@ func (r *checker) check(file, body string) []Problem {
 				add(n, citesTicket, m)
 			}
 		}
-		r.references(file, line, func(reason, text string) {
+		r.references(file, line, func(reason, text string, prose bool) {
 			switch {
-			case reason == citesRepoPath && quoted:
+			case reason == citesRepoPath && inQuote:
 				// Another repo's output names files that are not this repo's.
-			case reason == citesRepoPath:
+			case reason == citesRepoPath && prose:
 				addHint(n, reason, text, quotedHint)
 			default:
 				add(n, reason, text)
 			}
 		})
+	}
+	if quoted {
+		add(openedAt, unclosedQuote, strings.TrimSpace(lines[openedAt-1]))
 	}
 	switch {
 	case statusAt == 0:
@@ -298,11 +304,11 @@ func (r *checker) adrExists(number string) bool {
 }
 
 // references reports each link, path or history citation in line that points into the repo.
-func (r *checker) references(file, line string, add func(reason, text string)) {
+func (r *checker) references(file, line string, add func(reason, text string, prose bool)) {
 	if m := linkDefinition.FindStringSubmatch(line); m != nil {
 		// A definition may serve an image, so it gets an image's allowance.
 		if reason := r.linkTarget(file, m[1], true); reason != "" {
-			add(reason, m[1])
+			add(reason, m[1], false)
 		}
 		return
 	}
@@ -313,7 +319,7 @@ func (r *checker) references(file, line string, add func(reason, text string)) {
 		text, target := line[m[2]:m[3]], line[m[4]:m[5]]
 		image := m[0] > 0 && line[m[0]-1] == '!'
 		if reason := r.linkTarget(file, target, image); reason != "" {
-			add(reason, target)
+			add(reason, target, false)
 		}
 		rest.WriteString(line[last:m[0]] + " " + text + " ")
 		last = m[1]
@@ -325,12 +331,12 @@ func (r *checker) references(file, line string, add func(reason, text string)) {
 			if isHex(m[1]) && (len(m[1]) < 7 || len(m[1]) > 40 || !strings.ContainsAny(m[1], "0123456789")) {
 				continue
 			}
-			add(citesRepoHistory, m[1])
+			add(citesRepoHistory, m[1], false)
 		}
 	}
 	for _, token := range strings.Fields(urlPattern.ReplaceAllString(prose, " ")) {
 		if path := r.repoPath(file, token); path != "" {
-			add(citesRepoPath, path)
+			add(citesRepoPath, path, true)
 		}
 	}
 }

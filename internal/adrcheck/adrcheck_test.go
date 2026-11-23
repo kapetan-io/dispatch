@@ -374,6 +374,8 @@ func TestOtherFencedBlocksAndTextAfterAQuotedOneStillFail(t *testing.T) {
 		{"short closer does not close", "````quoted\n```\n````\nSee internal/email/retry.go.", `:14: references a file or directory in the repo: "internal/email/retry.go"`},
 		{"url in a quoted fence", "```quoted\nhttps://github.com/kapetan-io/dispatch/pull/1\n```", `:12: cites the repo's pull requests, commits, branches or issues: "https://github.com/kapetan-io/dispatch/pull/1"`},
 		{"emphasised path", "See **internal/email/retry.go**.", `:11: references a file or directory in the repo: "internal/email/retry.go"`},
+		{"path on a fence's opening line", "```quoted internal/email/retry.go\nother/x.go\n```", `:11: references a file or directory in the repo: "internal/email/retry.go"`},
+		{"quoted fence never closed", "```quoted\nother/x.go", ":11: has a quoted fenced block that is never closed, so paths after it go unchecked: \"```quoted\""},
 		{"ticket in a quoted fence", "```quoted\nENG-12\n```", `:12: cites a ticket: "ENG-12"`},
 		{"history in a quoted fence", "```quoted\nsee #12\n```", `:12: cites the repo's pull requests, commits, branches or issues: "#12"`},
 	} {
@@ -394,5 +396,6 @@ func TestPathFindingNamesTheWayToQuote(t *testing.T) {
 
 	root = repo(t, map[string]string{"0001-fake.md": adrWith("Read [the rules](../rules.md).")})
 	_, stdout, _ = run(t, root)
-	assert.Contains(t, stdout, "(if it is another repo's output, open its fence with ```quoted)")
+	assert.Contains(t, stdout, `references a file or directory in the repo: "../rules.md"`)
+	assert.NotContains(t, stdout, "quoted")
 }
