@@ -40,7 +40,7 @@ YOUR ADR BATCH (audit only these):
 {ADR_BATCH}
 
 SCOPE: {SCOPE_NOTE}
-Only Accepted ADRs bind. Read each status line, and honor Supersedes links. If the plan
+Only Accepted ADRs bind. Read each status line, and honor Supersedes links (`Supersedes in part ADR N` replaces only the part of ADR N that the newer ADR names). If the plan
 depends on a non-Accepted ADR in your batch, flag it.
 
 LANGUAGE: Use the nearest `docs/CONTEXT.md` terms and the words the code already uses, coin no labels such as step codes, define any term in neither, and follow `dispatch:principle-verify-dont-assume` (check the claims you rely on, quote file:line, label what you didn't read as a guess).
