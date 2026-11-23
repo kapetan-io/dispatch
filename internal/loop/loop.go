@@ -24,6 +24,7 @@ import (
 	"github.com/kapetan-io/dispatch/internal/ledger"
 	"github.com/kapetan-io/dispatch/internal/linear"
 	"github.com/kapetan-io/dispatch/internal/localticket"
+	"github.com/kapetan-io/dispatch/internal/prreview"
 	"github.com/kapetan-io/dispatch/internal/pullrequest"
 	"github.com/kapetan-io/dispatch/internal/rules"
 	"github.com/kapetan-io/dispatch/internal/startscreen"
@@ -60,6 +61,8 @@ type Options struct {
 	Workers *workers.Store
 	// Branches holds the branch rows, in the same file.
 	Branches *ticketbranch.Store
+	// Reviews holds the PR review rows, in the same file.
+	Reviews *prreview.Store
 	// Screen is the startup screen. run.go has printed its lines up to the sources about to be read,
 	// and the loop prints what the first read found.
 	Screen *startscreen.Screen

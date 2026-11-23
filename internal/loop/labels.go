@@ -23,6 +23,7 @@ const (
 	emojiAwaitingApproval = "⏳"
 	emojiAwaitingMerge    = "🔀"
 	emojiNeedsHuman       = "🔴"
+	emojiReviewing        = "🔍"
 	emojiPaused           = "⏸️"
 	emojiWaiting          = "💤"
 )
@@ -81,7 +82,7 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 		if _, kept := keptPRLabel(wd, scope, t, current[w.WorkspaceID]); kept {
 			continue
 		}
-		if emoji, ok := l.ticketEmoji(wd, scope, t); ok {
+		if emoji, ok := l.ticketEmoji(wd, scope, t, current[w.WorkspaceID]); ok {
 			add(t, w, emoji)
 		}
 		if scope.Is(t, ticket.InProgress) || scope.Is(t, ticket.InReview) || scope.Is(t, ticket.NeedsHuman) {
@@ -105,20 +106,22 @@ func (l *Loop) workspaceRenames() (workspaces, tabs []rename) {
 }
 
 // ticketEmoji is the emoji t's workspace label calls for, from its status and its worker, false
-// when the status calls for no label.
-func (l *Loop) ticketEmoji(wd world.World, scope world.Scope, t ticket.Ticket) (string, bool) {
+// when the status calls for no label. have is the label the workspace shows now.
+func (l *Loop) ticketEmoji(wd world.World, scope world.Scope, t ticket.Ticket, have string) (string, bool) {
 	w := wd.Workers[t.Identifier]
 	if wd.Nudged[t.Identifier] && w.State == world.Idle {
 		w.State = world.Working
 	}
 	switch {
 	case scope.Is(t, ticket.InProgress):
-		return l.workspaceEmoji(w, wd.Asking(t.Identifier), pullrequest.PullRequest{}, ""), true
+		return l.workspaceEmoji(w, wd.Asking(t.Identifier), pullrequest.PullRequest{}, "", false), true
 	case scope.Is(t, ticket.InReview):
-		pr := wd.PRs[t.Identifier]
+		pr, read := wd.PRs[t.Identifier]
 		// While GitHub is still computing a ready PR's merge state, the label is the one the PR had.
 		pr.Ready = pr.Ready || pr.KeptReady
-		return l.workspaceEmoji(w, wd.Asking(t.Identifier), pr, l.repoOf(t).OpenPRAs), true
+		// A PR that could not be read has no head to match, so a 🔍 it showed stays on the review's age alone.
+		kept := !read && wd.PRReadFailed[t.Identifier] && strings.HasPrefix(have, emojiReviewing)
+		return l.workspaceEmoji(w, wd.Asking(t.Identifier), pr, l.repoOf(t).OpenPRAs, l.reviewing(t, pr, read, kept)), true
 	case scope.Is(t, ticket.NeedsHuman):
 		return emojiNeedsHuman, true
 	case scope.Is(t, ticket.Paused) && w.State == world.NoWorker && heldChild(wd, scope, t):
@@ -127,8 +130,26 @@ func (l *Loop) ticketEmoji(wd world.World, scope world.Scope, t ticket.Ticket) (
 	return "", false
 }
 
+// reviewing is true when a PR review of t's PR still shows: of the head a read found and under
+// prreview.Expiry old, or under that age alone when kept says the unread PR's label is 🔍. The review
+// comes from dispatch's own row, so it can still show while GitHub can't be read.
+func (l *Loop) reviewing(t ticket.Ticket, pr pullrequest.PullRequest, read, kept bool) bool {
+	review, ok, err := l.o.Reviews.Of(t.Identifier)
+	if err != nil {
+		_, _ = fmt.Fprintf(l.o.Err, "dispatch: while reading the PR review of %s: %v\n", t.Identifier, err)
+	}
+	switch {
+	case !ok:
+		return false
+	case read:
+		return review.Covers(pr.Head, l.clock.Now())
+	}
+	return kept && review.Fresh(l.clock.Now())
+}
+
 // keptPRLabel is the emoji of have, the label an In Review ticket's workspace shows now, when its PR
-// could not be read and have came from reading it, so the label stays as it is.
+// could not be read and have came from reading it, so the label stays as it is. 🔍 is not in prLabels,
+// since whether it stays depends on the worker, so ticketEmoji decides it.
 func keptPRLabel(wd world.World, scope world.Scope, t ticket.Ticket, have string) (string, bool) {
 	if _, read := wd.PRs[t.Identifier]; read || !wd.PRReadFailed[t.Identifier] || !scope.Is(t, ticket.InReview) {
 		return "", false
@@ -157,7 +178,7 @@ func (l *Loop) labelEmoji() map[string]string {
 		}
 		if emoji, kept := keptPRLabel(wd, scope, t, current[w.WorkspaceID]); kept {
 			out[t.Identifier] = emoji
-		} else if emoji, ok := l.ticketEmoji(wd, scope, t); ok {
+		} else if emoji, ok := l.ticketEmoji(wd, scope, t, current[w.WorkspaceID]); ok {
 			out[t.Identifier] = emoji
 		}
 	}
@@ -197,14 +218,22 @@ var prLabels = []string{emojiReadyForReview, emojiAwaitingApproval, emojiAwaitin
 // comes before a ready PR. A worker with no Stop record, or one whose Stop did not list its
 // tasks, may still be busy, so it stays green. A Stop that lists a running task keeps it green
 // even while the PR's checks run.
+// A PR review shows 🔍 over every label below it once the worker is idle or gone, except 🟢 while an
+// idle worker is still in its turn.
 // A ready PR shows who it waits on once the worker is idle or gone: 👀 for you, ⏳ for
 // its approvers and 🔀 for whoever merges it. openAs is the PR's repo setting.
-func (l *Loop) workspaceEmoji(w world.Worker, asking bool, pr pullrequest.PullRequest, openAs string) string {
+func (l *Loop) workspaceEmoji(w world.Worker, asking bool, pr pullrequest.PullRequest, openAs string, reviewing bool) string {
 	if w.State == world.Blocked || asking {
 		return emojiNeedsHuman
 	}
 	gone := w.State == world.NoWorker || w.State == world.Idle && w.UnconfirmedSince != 0
 	idle := w.State == world.Idle && !gone
+	if reviewing && idle && l.inTurn(w) {
+		return emojiBusy
+	}
+	if reviewing && (idle || gone) {
+		return emojiReviewing
+	}
 	if pr.Ready && (idle || gone) {
 		switch pr.WaitingOn(openAs) {
 		case pullrequest.WaitingOnApprovers:
@@ -221,10 +250,8 @@ func (l *Loop) workspaceEmoji(w world.Worker, asking bool, pr pullrequest.PullRe
 		return emojiBusy
 	}
 	stop, ok := l.rowOn(w.TreePath).Stop(w.Session)
-	// A log that can't be read leaves the Stop alone to decide, as the world does.
-	log, _ := sessionlog.Read(l.o.Sources.StateDir, w.TreePath, w.Session)
 	switch {
-	case ok && stop.InTurn(log, l.clock.Now()):
+	case l.inTurn(w):
 		return emojiBusy
 	case pr.ChecksRunning:
 		return emojiChecksRunning
@@ -232,6 +259,15 @@ func (l *Loop) workspaceEmoji(w world.Worker, asking bool, pr pullrequest.PullRe
 		return emojiBusy
 	}
 	return emojiWaiting
+}
+
+// inTurn is true when the idle worker's last Stop lists a background task still running, or its
+// session took a message after that Stop.
+func (l *Loop) inTurn(w world.Worker) bool {
+	stop, ok := l.rowOn(w.TreePath).Stop(w.Session)
+	// A log that can't be read leaves the Stop alone to decide, as the world does.
+	log, _ := sessionlog.Read(l.o.Sources.StateDir, w.TreePath, w.Session)
+	return ok && stop.InTurn(log, l.clock.Now())
 }
 
 // renameWorkspaces fixes the labels that differ, off the loop goroutine. A failed

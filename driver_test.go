@@ -1596,7 +1596,7 @@ func (d *Dispatch) runWith(ctx context.Context, extra dispatch.Options, args ...
 	if len(args) > 0 && args[0] == "record-stop" && d.running == nil {
 		d.answerStopsOfAnEarlierRun()
 	}
-	if len(args) > 0 && slices.Contains([]string{"tick", "tell", "turn", "watch", "unwatch", "ask"}, args[0]) && d.running == nil {
+	if len(args) > 0 && slices.Contains([]string{"tick", "tell", "turn", "watch", "unwatch", "ask", "review"}, args[0]) && d.running == nil {
 		if err := d.startLoop(extra); err != nil {
 			return "", "", err
 		}
