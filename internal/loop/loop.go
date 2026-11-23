@@ -123,6 +123,8 @@ type Loop struct {
 
 	renaming map[string]string
 	renames  int
+	// lastPRs is each ticket's PR as its last read found it, kept while later reads fail.
+	lastPRs map[string]pullrequest.PullRequest
 
 	// writing counts the Linear writes for `dispatch ticket` requests running off the loop. editing
 	// holds each Linear ticket an edit is running on, with the edits of it waiting their turn.
@@ -722,6 +724,15 @@ func (l *Loop) onStreamEnded(m streamEnded) {
 	_, _ = fmt.Fprintf(l.o.Err, "%s dispatch: the worker stream ended: %v; workers update at each resync until it reopens\n", l.clock.Now().Format(time.TimeOnly), m.err)
 }
 
+// rememberPRs keeps the PR of each ticket whose read found one, until a read neither finds nor fails it.
+func (l *Loop) rememberPRs() {
+	if l.lastPRs == nil {
+		l.lastPRs = map[string]pullrequest.PullRequest{}
+	}
+	maps.DeleteFunc(l.lastPRs, func(id string, _ pullrequest.PullRequest) bool { return !l.wd.PRReadFailed[id] })
+	maps.Copy(l.lastPRs, l.wd.PRs)
+}
+
 func (l *Loop) onRead(m readDone) error {
 	l.reading = false
 	if m.err != nil {
@@ -738,6 +749,7 @@ func (l *Loop) onRead(m readDone) error {
 	nudged := l.wd.Nudged
 	freed := l.workersGoneIdle(l.wd, m.w)
 	l.wd = m.w
+	l.rememberPRs()
 	if m.parts&world.FromLocal != 0 {
 		if err := l.resyncWorkers(m.parts == world.Everything); err != nil {
 			return err

@@ -219,7 +219,7 @@ const usage = `usage: dispatch run
   review       review start <ticket> <head> reports that this session is reviewing the ticket's PR at
                head, 7 to 40 hex digits of its head commit, and prints "reviewing <ticket> at <head>".
                While the PR is at that head, the start is under an hour old and the worker is gone,
-               unconfirmed, or idle, not just nudged and not in a turn, an In Review ticket's
+               unconfirmed, or idle with a Stop that says it is waiting, an In Review ticket's
                workspace shows 🔍. review done <ticket> ends the ticket's review, whoever started it,
                and prints "review of <ticket> done", or exits 1 with "dispatch: <ticket> has no
                review". A later start replaces the earlier one. Exits 1 on bad arguments and 3 with

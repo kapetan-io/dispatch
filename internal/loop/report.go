@@ -79,6 +79,8 @@ func (l *Loop) onRequest(r request) error {
 		r.reply <- l.onAsk(r.Ask)
 	case OpReviewStart, OpReviewDone:
 		r.reply <- l.onReview(r)
+		// The label reads the review at the end of a cycle, so one runs now rather than at the resync.
+		l.readAgain(world.FromLocal)
 	case OpTicket:
 		l.onTicket(r.Call, r.reply)
 	case OpWatch, OpUnwatch:

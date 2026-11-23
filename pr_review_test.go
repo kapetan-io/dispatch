@@ -17,10 +17,13 @@ const (
 	reviewedPrefix = "4f2a9c1"
 )
 
-// Review runs `dispatch review` with args. A loop starts first when none runs.
+// Review runs `dispatch review` with args. A loop starts first when none runs. It returns once the
+// cycle the command wakes has renamed what it renames, so a later tick reads the multiplexer after it.
 func (d *Dispatch) Review(args ...string) Result {
 	d.t.Helper()
-	return d.Run(append([]string{"review"}, args...)...)
+	res := d.Run(append([]string{"review"}, args...)...)
+	d.settleLoop()
+	return res
 }
 
 // ReviewWhileDown is Review with no dispatch running.
@@ -70,7 +73,6 @@ func TestReviewShowsAMagnifierForAnIdleOrGoneWorkerWhateverThePRsState(t *testin
 		{name: "IdleStoppedReady", agent: "idle", stop: "idle", pr: cleanPR(reviewedHead)},
 		{name: "IdleStoppedChecksRunning", agent: "idle", stop: "idle", pr: prState{head: reviewedHead, checks: "PENDING", mergeable: "MERGEABLE"}},
 		{name: "IdleStoppedUnresolvedThread", agent: "idle", stop: "idle", pr: prState{head: reviewedHead, checks: "SUCCESS", mergeable: "MERGEABLE", unresolved: 1}},
-		{name: "IdleNoStopReady", agent: "idle", pr: cleanPR(reviewedHead)},
 		{name: "UnconfirmedReady", agent: "idle", stop: "idle", unconfirmed: true, pr: cleanPR(reviewedHead)},
 		{name: "GoneReady", pr: cleanPR(reviewedHead)},
 		{name: "GoneChecksRunning", pr: prState{head: reviewedHead, checks: "PENDING", mergeable: "MERGEABLE"}},
@@ -370,7 +372,7 @@ func TestReviewDropsTheKeptMagnifierAnHourAfterItsStartWhenThePRCannotBeRead(t *
 	d.Advance(61 * time.Minute)
 	d.Tick()
 
-	assert.Equal(t, []string{"w-ENG-1|🔍 ENG-1", "w-ENG-1|💤 ENG-1"}, d.Workers.Renames())
+	assert.Equal(t, []string{"w-ENG-1|🔍 ENG-1", "w-ENG-1|👀 ENG-1"}, d.Workers.Renames())
 }
 
 func TestReviewDropsTheKeptMagnifierOfAWorkerThatStartsWorkingWhenThePRCannotBeRead(t *testing.T) {
@@ -481,4 +483,55 @@ func TestReviewDoneWhileDispatchIsDownLeavesTheReview(t *testing.T) {
 	require.EqualError(t, res.Err, "not running")
 	assert.Equal(t, 3, res.Code)
 	assert.Equal(t, []string{"w-ENG-1|🔍 ENG-1"}, d.Workers.Renames())
+}
+
+func TestReviewDoneWhileThePRCannotBeReadReturnsTheLabelThePRHad(t *testing.T) {
+	t.Parallel()
+	d := reviewedTicket(t)
+	d.startReview()
+	d.Tick()
+
+	d.GitHub.FailRead(errors.New("exit status 1"))
+	d.Advance(time.Minute)
+	d.Tick()
+	require.NoError(t, d.Review("done", "ENG-1").Err)
+	d.Tick()
+
+	assert.Equal(t, []string{"w-ENG-1|🔍 ENG-1", "w-ENG-1|👀 ENG-1"}, d.Workers.Renames())
+}
+
+func TestReviewStartAndDoneShowAtOnce(t *testing.T) {
+	t.Parallel()
+	d := reviewedTicket(t)
+	d.Tick()
+
+	// No tick follows either command: the renames come from the cycles they wake.
+	d.startReview()
+	require.NoError(t, d.Review("done", "ENG-1").Err)
+
+	assert.Equal(t, []string{"w-ENG-1|👀 ENG-1", "w-ENG-1|🔍 ENG-1", "w-ENG-1|👀 ENG-1"}, d.Workers.Renames())
+}
+
+func TestReviewLeavesTheGreenOfAnIdleWorkerWithNoStop(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		pr   prState
+	}{
+		{name: "Ready", pr: cleanPR(reviewedHead)},
+		{name: "ChecksRunning", pr: prState{head: reviewedHead, checks: "PENDING", mergeable: "MERGEABLE"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			d := reviewDispatch(t)
+			d.Linear.Tickets(ticket("ENG-1", "In Review", "dispatch"))
+			d.Workers.Running("ENG-1", "idle")
+			d.GitHub.PullRequest("ENG-1", test.pr)
+
+			d.startReview()
+			d.Tick()
+
+			assert.Equal(t, []string{"w-ENG-1|🟢 ENG-1"}, d.Workers.Renames())
+		})
+	}
 }

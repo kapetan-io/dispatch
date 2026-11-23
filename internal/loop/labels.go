@@ -117,10 +117,15 @@ func (l *Loop) ticketEmoji(wd world.World, scope world.Scope, t ticket.Ticket, h
 		return l.workspaceEmoji(w, wd.Asking(t.Identifier), pullrequest.PullRequest{}, "", false), true
 	case scope.Is(t, ticket.InReview):
 		pr, read := wd.PRs[t.Identifier]
+		kept := false
+		if !read && wd.PRReadFailed[t.Identifier] && strings.HasPrefix(have, emojiReviewing) {
+			// 🔍 hid the label the last read gave, so that read's PR decides the label again. With no
+			// read since dispatch started, the 🔍 stays on the review's age alone.
+			pr, read = l.lastPRs[t.Identifier]
+			kept = !read
+		}
 		// While GitHub is still computing a ready PR's merge state, the label is the one the PR had.
 		pr.Ready = pr.Ready || pr.KeptReady
-		// A PR that could not be read has no head to match, so a 🔍 it showed stays on the review's age alone.
-		kept := !read && wd.PRReadFailed[t.Identifier] && strings.HasPrefix(have, emojiReviewing)
 		return l.workspaceEmoji(w, wd.Asking(t.Identifier), pr, l.repoOf(t).OpenPRAs, l.reviewing(t, pr, read, kept)), true
 	case scope.Is(t, ticket.NeedsHuman):
 		return emojiNeedsHuman, true
@@ -219,7 +224,7 @@ var prLabels = []string{emojiReadyForReview, emojiAwaitingApproval, emojiAwaitin
 // tasks, may still be busy, so it stays green. A Stop that lists a running task keeps it green
 // even while the PR's checks run.
 // A PR review shows 🔍 over every label below it once the worker is idle or gone, except 🟢 while an
-// idle worker is still in its turn.
+// idle worker may still be busy.
 // A ready PR shows who it waits on once the worker is idle or gone: 👀 for you, ⏳ for
 // its approvers and 🔀 for whoever merges it. openAs is the PR's repo setting.
 func (l *Loop) workspaceEmoji(w world.Worker, asking bool, pr pullrequest.PullRequest, openAs string, reviewing bool) string {
@@ -228,7 +233,7 @@ func (l *Loop) workspaceEmoji(w world.Worker, asking bool, pr pullrequest.PullRe
 	}
 	gone := w.State == world.NoWorker || w.State == world.Idle && w.UnconfirmedSince != 0
 	idle := w.State == world.Idle && !gone
-	if reviewing && idle && l.inTurn(w) {
+	if reviewing && idle && l.mayBeBusy(w) {
 		return emojiBusy
 	}
 	if reviewing && (idle || gone) {
@@ -259,6 +264,12 @@ func (l *Loop) workspaceEmoji(w world.Worker, asking bool, pr pullrequest.PullRe
 		return emojiBusy
 	}
 	return emojiWaiting
+}
+
+// mayBeBusy is true when the idle worker has no Stop that listed its tasks, or is still in its turn.
+func (l *Loop) mayBeBusy(w world.Worker) bool {
+	stop, ok := l.rowOn(w.TreePath).Stop(w.Session)
+	return !ok || !stop.Reported || l.inTurn(w)
 }
 
 // inTurn is true when the idle worker's last Stop lists a background task still running, or its
