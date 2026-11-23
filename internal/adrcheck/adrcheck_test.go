@@ -375,7 +375,7 @@ func TestOtherFencedBlocksAndTextAfterAQuotedOneStillFail(t *testing.T) {
 		{"url in a quoted fence", "```quoted\nhttps://github.com/kapetan-io/dispatch/pull/1\n```", `:12: cites the repo's pull requests, commits, branches or issues: "https://github.com/kapetan-io/dispatch/pull/1"`},
 		{"emphasised path", "See **internal/email/retry.go**.", `:11: references a file or directory in the repo: "internal/email/retry.go"`},
 		{"path on a fence's opening line", "```quoted internal/email/retry.go\nother/x.go\n```", `:11: references a file or directory in the repo: "internal/email/retry.go"`},
-		{"quoted fence never closed", "```quoted\nother/x.go", ":11: has a quoted fenced block that is never closed, so paths after it go unchecked: \"```quoted\""},
+		{"quoted fence never closed", "```quoted\nother/x.go", ":11: has a quoted fenced block with no closing line (a closing line holds only the fence characters), so paths after it go unchecked: \"```quoted\""},
 		{"ticket in a quoted fence", "```quoted\nENG-12\n```", `:12: cites a ticket: "ENG-12"`},
 		{"history in a quoted fence", "```quoted\nsee #12\n```", `:12: cites the repo's pull requests, commits, branches or issues: "#12"`},
 	} {
@@ -393,6 +393,11 @@ func TestPathFindingNamesTheWayToQuote(t *testing.T) {
 	code, stdout, _ := run(t, root)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stdout, "(if it is another repo's output, open its fence with ```quoted)")
+
+	root = repo(t, map[string]string{"0001-fake.md": adrWith("```quoted internal/email/retry.go\n```")})
+	_, stdout, _ = run(t, root)
+	assert.Contains(t, stdout, `references a file or directory in the repo: "internal/email/retry.go"`)
+	assert.NotContains(t, stdout, "open its fence")
 
 	root = repo(t, map[string]string{"0001-fake.md": adrWith("Read [the rules](../rules.md).")})
 	_, stdout, _ = run(t, root)

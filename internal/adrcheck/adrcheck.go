@@ -71,7 +71,7 @@ const (
 	citesRepoPath    = "references a file or directory in the repo"
 	citesRepoHistory = "cites the repo's pull requests, commits, branches or issues"
 	citesMissingADR  = "links to an ADR that doesn't exist"
-	unclosedQuote    = "has a quoted fenced block that is never closed, so paths after it go unchecked"
+	unclosedQuote    = "has a quoted fenced block with no closing line (a closing line holds only the fence characters), so paths after it go unchecked"
 	sharesNumber     = "shares its number with another ADR"
 	badStatus        = "has a Status outside the allowed forms (Proposed, Accepted, Rejected, Deprecated, Superseded by ADR N, Superseded in part by ADR N, Supersedes in part ADR N, Amends ADR N, Amended by ADR N)"
 	emptyStatus      = "has an empty Status"
@@ -279,7 +279,7 @@ func (r *checker) check(file, body string) []Problem {
 			switch {
 			case reason == citesRepoPath && inQuote:
 				// Another repo's output names files that are not this repo's.
-			case reason == citesRepoPath && prose:
+			case reason == citesRepoPath && prose && !quoted:
 				addHint(n, reason, text, quotedHint)
 			default:
 				add(n, reason, text)
