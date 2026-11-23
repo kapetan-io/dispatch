@@ -3,7 +3,9 @@ name: adr-check
 # A reusable check that fails a pull request when an ADR under docs/adr cites a
 # ticket, a file or directory in the repo, or the repo's pull requests, commits,
 # branches or issues, has a missing Status or one outside the allowed forms, shares
-# its number with another ADR, or links to an ADR that doesn't exist. A repo calls it:
+# its number with another ADR, or links to an ADR that doesn't exist. A path with
+# a `*` inside it, and a path in a fenced block opened with ```quoted, are not repo files.
+# A repo calls it:
 #
 #   jobs:
 #     adr:

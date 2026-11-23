@@ -2,7 +2,9 @@
 // ticket id, a reference to a file or directory in the repo, a link into the repo's
 // pull requests, commits, branches or issues, a missing Status or one outside the
 // allowed forms, a number another ADR already has, or a link to an ADR that doesn't
-// exist.
+// exist. A path with a `*` inside it is a pattern, not a file reference, and a fenced block whose
+// opening line carries the word "quoted" (```quoted) holds another repo's output, so
+// its file paths are not checked.
 package adrcheck
 
 import (
@@ -14,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,10 +34,15 @@ type Problem struct {
 	Line   int
 	Reason string
 	Text   string
+	Hint   string // how an author gets past the finding, when there is a way
 }
 
 func (p Problem) String() string {
-	return fmt.Sprintf("%s:%d: %s: %q", p.File, p.Line, p.Reason, p.Text)
+	s := fmt.Sprintf("%s:%d: %s: %q", p.File, p.Line, p.Reason, p.Text)
+	if p.Hint != "" {
+		s += " (" + p.Hint + ")"
+	}
+	return s
 }
 
 // Run checks every ADR under <root>/docs/adr and prints one line per problem. It
@@ -64,10 +72,14 @@ const (
 	citesRepoHistory = "cites the repo's pull requests, commits, branches or issues"
 	citesMissingADR  = "links to an ADR that doesn't exist"
 	sharesNumber     = "shares its number with another ADR"
-	badStatus        = "has a Status outside the allowed forms (Proposed, Accepted, Rejected, Deprecated, Superseded by ADR N, Superseded in part by ADR N, Amends ADR N, Amended by ADR N)"
+	badStatus        = "has a Status outside the allowed forms (Proposed, Accepted, Rejected, Deprecated, Superseded by ADR N, Superseded in part by ADR N, Supersedes in part ADR N, Amends ADR N, Amended by ADR N)"
 	emptyStatus      = "has an empty Status"
 	missingStatus    = "has no Status section"
 	statusMissingADR = "has a Status naming an ADR that doesn't exist"
+
+	// quotedMarker opens a fenced block that quotes another repo's output.
+	quotedMarker = "quoted"
+	quotedHint   = "if it is another repo's output, open its fence with ```" + quotedMarker
 )
 
 func run(args []string, opts Options) ([]Problem, error) {
@@ -191,8 +203,9 @@ func (r *checker) checkAll() ([]Problem, error) {
 }
 
 var (
+	fenceLine      = regexp.MustCompile("^(`{3,}|~{3,})(.*)$")
 	statusHeading  = regexp.MustCompile(`(?i)^##\s+status\s*$`)
-	allowedStatus  = regexp.MustCompile(`^(?:Proposed|Accepted|Rejected|Deprecated|(?:Superseded by|Superseded in part by|Amends|Amended by) ADR[ -](\d+))$`)
+	allowedStatus  = regexp.MustCompile(`^(?:Proposed|Accepted|Rejected|Deprecated|(?:Superseded by|Superseded in part by|Supersedes in part|Amends|Amended by) ADR[ -](\d+))$`)
 	mdLink         = regexp.MustCompile(`\[([^\]]*)\]\(\s*<?([^)\s>]+)>?[^)]*\)`)
 	linkDefinition = regexp.MustCompile(`^\s*\[[^\]^][^\]]*\]:\s*<?(\S+?)>?(?:\s|$)`)
 	urlPattern     = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://[^\s)>\]]*[^\s)>\].,;:!?'"]`)
@@ -212,19 +225,31 @@ var sourceExtensions = map[string]bool{
 func (r *checker) check(file, body string) []Problem {
 	var problems []Problem
 	seen := map[Problem]bool{}
-	add := func(line int, reason, text string) {
-		p := Problem{File: file, Line: line, Reason: reason, Text: text}
+	addHint := func(line int, reason, text, hint string) {
+		p := Problem{File: file, Line: line, Reason: reason, Text: text, Hint: hint}
 		if !seen[p] {
 			seen[p] = true
 			problems = append(problems, p)
 		}
 	}
+	add := func(line int, reason, text string) { addHint(line, reason, text, "") }
 	lines := strings.Split(body, "\n")
 	statusAt, statusLines := 0, 0
 	inStatus := false
+	var fence string // the opening run of backticks or tildes, while inside a fenced block
+	quoted := false  // the open fenced block quotes another repo's output
 	for i, line := range lines {
 		n := i + 1
 		trimmed := strings.TrimSpace(line)
+		if m := fenceLine.FindStringSubmatch(trimmed); m != nil {
+			switch {
+			case fence == "":
+				fence = m[1]
+				quoted = slices.Contains(strings.Fields(m[2]), quotedMarker)
+			case m[1][0] == fence[0] && len(m[1]) >= len(fence) && strings.TrimSpace(m[2]) == "":
+				fence, quoted = "", false
+			}
+		}
 		if statusHeading.MatchString(trimmed) {
 			statusAt, inStatus = n, true
 			continue
@@ -247,7 +272,16 @@ func (r *checker) check(file, body string) []Problem {
 				add(n, citesTicket, m)
 			}
 		}
-		r.references(file, line, func(reason, text string) { add(n, reason, text) })
+		r.references(file, line, func(reason, text string) {
+			switch {
+			case reason == citesRepoPath && quoted:
+				// Another repo's output names files that are not this repo's.
+			case reason == citesRepoPath:
+				addHint(n, reason, text, quotedHint)
+			default:
+				add(n, reason, text)
+			}
+		})
 	}
 	switch {
 	case statusAt == 0:
@@ -332,7 +366,8 @@ func (r *checker) linkTarget(file, target string, image bool) string {
 // repoPath returns the path a prose token names in the repo, or "". A token names
 // one when it resolves to an existing file or directory other than an ADR, or when
 // it has a directory separator and a source-file extension. A bare word such as
-// "rules" is never a path, even when a directory has that name.
+// "rules" is never a path, even when a directory has that name, and a path with a
+// `*` inside it never is either. A `*` at either end is read as markdown emphasis.
 func (r *checker) repoPath(file, token string) string {
 	token = strings.TrimLeft(token, "`\"'([{*_")
 	token = strings.TrimRight(token, "`\"')]}*_,;:.!?")
@@ -340,14 +375,16 @@ func (r *checker) repoPath(file, token string) string {
 		return ""
 	}
 	path := lineSuffix.ReplaceAllString(token, "")
+	// A `*` inside a path makes it a pattern, so no file it matches can be stale.
+	if strings.Contains(path, "*") {
+		return ""
+	}
 	resolved := resolve(file, path, false)
 	if strings.Trim(path, "./") == "" || resolved == "" || isADRPath(resolved) || resolved == adrDir {
 		return ""
 	}
-	if !strings.Contains(path, "*") {
-		if _, err := os.Stat(filepath.Join(r.root, resolved)); err == nil {
-			return token
-		}
+	if _, err := os.Stat(filepath.Join(r.root, resolved)); err == nil {
+		return token
 	}
 	if strings.Contains(path, "/") && !strings.HasPrefix(path, "/") && sourceExtensions[filepath.Ext(path)] {
 		return token
