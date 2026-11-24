@@ -246,7 +246,7 @@ func (r *checker) check(file, body string) []Problem {
 		trimmed := strings.TrimSpace(line)
 		// Both are the state before this line's own fence marker applies, so a fence's opening line is not inside it.
 		inQuote := quoted
-		inFence := fence != ""
+		wasFenced := fence != ""
 		if m := fenceLine.FindStringSubmatch(trimmed); m != nil {
 			switch {
 			case fence == "":
@@ -256,7 +256,8 @@ func (r *checker) check(file, body string) []Problem {
 				fence, quoted = "", false
 			}
 		}
-		// A line inside any fence, its closing line included, is never a heading or a Status line.
+		// A fenced block, its opening and closing lines included, is never a heading or a Status line.
+		inFence := wasFenced || fence != ""
 		if !inFence && statusHeading.MatchString(trimmed) {
 			statusAt, inStatus = n, true
 			continue

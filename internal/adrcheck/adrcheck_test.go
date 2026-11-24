@@ -403,12 +403,27 @@ func TestHeadingsInsideAFencedBlockAreNotStatus(t *testing.T) {
 		})
 	}
 
+	// A fence opened inside the Status section is quoted text, its opening and closing lines included.
+	for name, status := range map[string]string{
+		"backtick fence": "Accepted\n\n```\n# comment\n```\n",
+		"tilde fence":    "Accepted\n\n~~~text\n## Status\n~~~\n",
+		"fence first":    "```\nnot a status\n```\n\nAccepted\n",
+	} {
+		t.Run("fence inside Status, "+name, func(t *testing.T) {
+			root := repo(t, map[string]string{"0001-fake.md": "# 1. Fake\n\n## Status\n\n" + status})
+			code, stdout, _ := run(t, root)
+			assert.Equal(t, 0, code)
+			assert.Empty(t, stdout)
+		})
+	}
+
 	// A heading inside a fence does not end the real Status section, so the line after the fence is still checked.
 	root := repo(t, map[string]string{"0001-fake.md": "# 1. Fake\n\n## Status\n\n```\n# comment\n```\n\nBogus\n"})
 	code, stdout, _ := run(t, root)
 	assert.Equal(t, 1, code)
-	assert.Contains(t, stdout, `has a Status outside the allowed forms`)
+	assert.Contains(t, stdout, ":9: has a Status outside the allowed forms")
 	assert.Contains(t, stdout, `"Bogus"`)
+	assert.NotContains(t, stdout, "```")
 }
 
 func TestMissingStatusStillFailsWhenOnlyAFenceHoldsOne(t *testing.T) {
