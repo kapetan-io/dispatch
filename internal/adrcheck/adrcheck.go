@@ -4,7 +4,8 @@
 // allowed forms, a number another ADR already has, or a link to an ADR that doesn't
 // exist. A path with a `*` inside it is a pattern, not a file reference, and a fenced block whose
 // opening line carries the word "quoted" (```quoted) holds another repo's output, so
-// its file paths are not checked. Such a block that is never closed is reported.
+// its file paths are not checked. Such a block that is never closed is reported. A heading inside any
+// fenced block is example text, so it neither starts nor ends the Status section.
 package adrcheck
 
 import (
@@ -243,7 +244,9 @@ func (r *checker) check(file, body string) []Problem {
 	for i, line := range lines {
 		n := i + 1
 		trimmed := strings.TrimSpace(line)
-		inQuote := quoted // a fence's own opening line is not inside it
+		// Both are the state before this line's own fence marker applies, so a fence's opening line is not inside it.
+		inQuote := quoted
+		inFence := fence != ""
 		if m := fenceLine.FindStringSubmatch(trimmed); m != nil {
 			switch {
 			case fence == "":
@@ -253,14 +256,15 @@ func (r *checker) check(file, body string) []Problem {
 				fence, quoted = "", false
 			}
 		}
-		if statusHeading.MatchString(trimmed) {
+		// A line inside any fence, its closing line included, is never a heading or a Status line.
+		if !inFence && statusHeading.MatchString(trimmed) {
 			statusAt, inStatus = n, true
 			continue
 		}
-		if strings.HasPrefix(trimmed, "#") {
+		if !inFence && strings.HasPrefix(trimmed, "#") {
 			inStatus = false
 		}
-		if inStatus && trimmed != "" {
+		if !inFence && inStatus && trimmed != "" {
 			statusLines++
 			m := allowedStatus.FindStringSubmatch(trimmed)
 			switch {

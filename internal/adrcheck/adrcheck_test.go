@@ -388,6 +388,36 @@ func TestOtherFencedBlocksAndTextAfterAQuotedOneStillFail(t *testing.T) {
 	}
 }
 
+func TestHeadingsInsideAFencedBlockAreNotStatus(t *testing.T) {
+	for name, body := range map[string]string{
+		"status heading in a backtick fence": "```\n## Status\nsome output\n```",
+		"status heading in a tilde fence":    "~~~text\n## Status\nsome output\n~~~",
+		"status heading in a quoted fence":   "```quoted\n## Status\nsome output\n```",
+		"longer fence holds a shorter one":   "````\n```\n## Status\nsome output\n````",
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := repo(t, map[string]string{"0001-fake.md": adrWith(body)})
+			code, stdout, _ := run(t, root)
+			assert.Equal(t, 0, code)
+			assert.Empty(t, stdout)
+		})
+	}
+
+	// A heading inside a fence does not end the real Status section, so the line after the fence is still checked.
+	root := repo(t, map[string]string{"0001-fake.md": "# 1. Fake\n\n## Status\n\n```\n# comment\n```\n\nBogus\n"})
+	code, stdout, _ := run(t, root)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stdout, `has a Status outside the allowed forms`)
+	assert.Contains(t, stdout, `"Bogus"`)
+}
+
+func TestMissingStatusStillFailsWhenOnlyAFenceHoldsOne(t *testing.T) {
+	root := repo(t, map[string]string{"0001-fake.md": "# 1. Fake\n\n## Context\n\n```\n## Status\nAccepted\n```\n"})
+	code, stdout, _ := run(t, root)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stdout, "has no Status section")
+}
+
 func TestPathFindingNamesTheWayToQuote(t *testing.T) {
 	root := repo(t, map[string]string{"0001-fake.md": adrWith("See internal/email/retry.go.")})
 	code, stdout, _ := run(t, root)
